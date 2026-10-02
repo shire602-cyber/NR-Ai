@@ -6,7 +6,9 @@ import { pool } from "../db";
 import { uaeDayStart, uaeDayEnd, uaeMonthStart, uaeMonthEnd, uaeYmdParts } from "../utils/date";
 import { round2, roundRowsWithTotal, buildBalanceSheetTotals } from "../services/financial-statements";
 import Decimal from "decimal.js";
-import { listOpenReceivables } from "../services/invoice-outstanding";
+import { computeDashboardKpis, resolveDashboardPeriod } from "../reports/kpis";
+import { isYmd } from "../reports/dates";
+import { PL_EXCLUDED_SOURCES, accountBalances, periodProfit } from "../reports/ledger";
 
 // Summing float journal amounts leaks binary noise (3428.3300000000017) into
 // responses; round money to fils at the response boundary.
@@ -39,204 +41,13 @@ export function registerDashboardRoutes(app: Express) {
   // Dashboard Stats Routes
   // =====================================
 
-  async function getEnhancedDashboardStats(companyId: string) {
-    const now = new Date();
-    // Period buckets must use UAE-local calendar months. `new Date(y, m, 1)`
-    // anchors at the server's local timezone, which on UTC infrastructure
-    // pushes UAE late-evening activity into the previous month.
-    const currentMonthStart = uaeMonthStart(now);
-    const { year: nowY, month: nowM } = uaeYmdParts(now);
-    const lastMonthAnchor = new Date(Date.UTC(nowY, nowM - 1, 15));
-    const lastMonthStart = uaeMonthStart(lastMonthAnchor);
-    const lastMonthEnd = uaeMonthEnd(lastMonthAnchor);
-
-    const [invoices, accounts, allEntries, allLines, receipts, invoicePayments] = await Promise.all([
-      storage.getInvoicesByCompanyId(companyId),
-      storage.getAccountsByCompanyId(companyId),
-      storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
-      storage.getJournalLinesByCompanyId(companyId),
-      storage.getReceiptsByCompanyId(companyId),
-      storage.getInvoicePaymentsByCompanyId(companyId),
-    ]);
-
-    // Only posted entries affect financial balances; drafts and voided
-    // entries must be excluded so the dashboard does not inflate revenue,
-    // expenses, or cash position.
-    const entries = allEntries.filter((e) => e.status === "posted");
-
-    const entryDateMap = new Map<string, Date>(entries.map((e) => [e.id, new Date(e.date)]));
-    const accountMap = new Map(accounts.map((a) => [a.id, a]));
-
-    // Per-account all-time balance
-    const allTimeBalance = new Map<string, number>();
-    // Income/expense per account for current and last month
-    const currentMonthBalance = new Map<string, number>();
-    const lastMonthBalance = new Map<string, number>();
-    // Monthly expense totals for last 3 completed months
-    const burnMonthlyTotals: number[] = [0, 0, 0];
-
-    for (const line of allLines) {
-      const account = accountMap.get(line.accountId);
-      if (!account) continue;
-      const entryDate = entryDateMap.get(line.entryId);
-      if (!entryDate) continue;
-
-      const debit = line.debit || 0;
-      const credit = line.credit || 0;
-
-      // All-time balance (normal balance by type)
-      const prev = allTimeBalance.get(line.accountId) || 0;
-      if (account.type === "asset" || account.type === "expense") {
-        allTimeBalance.set(line.accountId, prev + debit - credit);
-      } else {
-        allTimeBalance.set(line.accountId, prev + credit - debit);
-      }
-
-      // Current month income/expense
-      if (entryDate >= currentMonthStart) {
-        const cb = currentMonthBalance.get(line.accountId) || 0;
-        if (account.type === "income") currentMonthBalance.set(line.accountId, cb + credit - debit);
-        else if (account.type === "expense")
-          currentMonthBalance.set(line.accountId, cb + debit - credit);
-      }
-
-      // Last month income/expense
-      if (entryDate >= lastMonthStart && entryDate <= lastMonthEnd) {
-        const lb = lastMonthBalance.get(line.accountId) || 0;
-        if (account.type === "income") lastMonthBalance.set(line.accountId, lb + credit - debit);
-        else if (account.type === "expense")
-          lastMonthBalance.set(line.accountId, lb + debit - credit);
-      }
-
-      // Burn rate: last 3 completed months' expenses (UAE calendar months).
-      if (account.type === "expense") {
-        for (let i = 1; i <= 3; i++) {
-          const anchor = new Date(Date.UTC(nowY, nowM - i, 15));
-          const mStart = uaeMonthStart(anchor);
-          const mEnd = uaeMonthEnd(anchor);
-          if (entryDate >= mStart && entryDate <= mEnd) {
-            burnMonthlyTotals[i - 1] += debit - credit;
-          }
-        }
-      }
-    }
-
-    // ── Cash Position ─────────────────────────────────────────────
-    // Cash position must reflect actual liquid funds only — bank accounts,
-    // cash on hand, and petty cash. The previous filter keyed on
-    // subType='current_asset', which also pulled in AR, VAT Receivable,
-    // Prepaid Expenses, and Inventory and inflated the dashboard figure.
-    // Default chart-of-accounts assigns cash codes 1010 (Cash on Hand),
-    // 1020 (Bank Accounts) and 1030 (Petty Cash); custom accounts may use
-    // subType='cash'/'bank' or have an explicit cash/bank/petty name.
-    const cashAccountIds = new Set(
-      accounts.filter((a) => a.type === "asset" && isCashOrBankAccount(a)).map((a) => a.id)
-    );
-
-    let cashPosition = 0;
-    for (const [accountId, balance] of allTimeBalance) {
-      if (cashAccountIds.has(accountId)) cashPosition += balance;
-    }
-
-    // ── Total Revenue / Expenses (all-time) ───────────────────────
-    let revenue = 0;
-    let expenses = 0;
-    for (const [accountId, balance] of allTimeBalance) {
-      const account = accountMap.get(accountId);
-      if (!account) continue;
-      if (account.type === "income") revenue += balance;
-      else if (account.type === "expense") expenses += balance;
-    }
-
-    // ── Monthly Burn Rate & Runway ────────────────────────────────
-    const monthlyBurnRate = burnMonthlyTotals.reduce((s, v) => s + v, 0) / 3;
-    const cashRunway = monthlyBurnRate > 0 ? cashPosition / monthlyBurnRate : null;
-
-    // ── Growth Rates ──────────────────────────────────────────────
-    const currentRevenue = Array.from(currentMonthBalance.entries())
-      .filter(([id]) => accountMap.get(id)?.type === "income")
-      .reduce((s, [, v]) => s + v, 0);
-    const lastRevenue = Array.from(lastMonthBalance.entries())
-      .filter(([id]) => accountMap.get(id)?.type === "income")
-      .reduce((s, [, v]) => s + v, 0);
-    const currentExpenses = Array.from(currentMonthBalance.entries())
-      .filter(([id]) => accountMap.get(id)?.type === "expense")
-      .reduce((s, [, v]) => s + v, 0);
-    const lastExpenses = Array.from(lastMonthBalance.entries())
-      .filter(([id]) => accountMap.get(id)?.type === "expense")
-      .reduce((s, [, v]) => s + v, 0);
-
-    const revenueGrowth =
-      lastRevenue > 0 ? ((currentRevenue - lastRevenue) / lastRevenue) * 100 : null;
-    const expenseGrowth =
-      lastExpenses > 0 ? ((currentExpenses - lastExpenses) / lastExpenses) * 100 : null;
-
-    // ── Top 5 Expense Categories This Month ──────────────────────
-    const topExpenseCategories = Array.from(currentMonthBalance.entries())
-      .filter(([id, v]) => accountMap.get(id)?.type === "expense" && v > 0)
-      .map(([id, value]) => ({ name: accountMap.get(id)!.nameEn, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-
-    // ── AR Aging ──────────────────────────────────────────────────
-    // Only legally-issued invoices count toward AR. Drafts have not been
-    // delivered to the customer and create no receivable; partial means
-    // some amount remains outstanding. Aging buckets count days *past due*
-    // from the invoice's due date; if no dueDate, default to issue+30.
-    // Amounts are what is still OUTSTANDING (total - payments - credit notes,
-    // the shared definition), in AED. Credit notes are netted off their invoice
-    // instead of being counted as receivables of their own.
-    const openReceivables = listOpenReceivables(invoices, invoicePayments);
-    const arAging = { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
-    for (const { invoice: inv, outstandingBase } of openReceivables) {
-      const due = inv.dueDate
-        ? new Date(inv.dueDate)
-        : new Date(new Date(inv.date).getTime() + 30 * 86400000);
-      const daysPastDue = Math.floor((now.getTime() - due.getTime()) / 86400000);
-      if (daysPastDue <= 30) arAging.days0to30 += outstandingBase;
-      else if (daysPastDue <= 60) arAging.days31to60 += outstandingBase;
-      else if (daysPastDue <= 90) arAging.days61to90 += outstandingBase;
-      else arAging.days90plus += outstandingBase;
-    }
-
-    // ── AP Aging ──────────────────────────────────────────────────
-    // In this schema, a receipt is "posted" when its journal entry has
-    // been created — and that JE credits the payment account, i.e. cash
-    // has already left. So *unposted* receipts are the outstanding bills
-    // that still owe a payment. Aging buckets count days *past due*
-    // against a net-30 derived due date (the receipts table does not
-    // carry an explicit dueDate). Bills not yet due land in the
-    // "current" bucket so they aren't double-counted as overdue.
-    const unpaidReceipts = receipts.filter((rec) => !rec.posted && rec.date);
-    const apAging = { current: 0, days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
-    for (const rec of unpaidReceipts) {
-      const due = new Date(new Date(rec.date!).getTime() + 30 * 86400000);
-      const daysPastDue = Math.floor((now.getTime() - due.getTime()) / 86400000);
-      const amount = (rec.amount || 0) + (rec.vatAmount || 0);
-      if (daysPastDue < 0) apAging.current += amount;
-      else if (daysPastDue <= 30) apAging.days0to30 += amount;
-      else if (daysPastDue <= 60) apAging.days31to60 += amount;
-      else if (daysPastDue <= 90) apAging.days61to90 += amount;
-      else apAging.days90plus += amount;
-    }
-
-    const outstanding = openReceivables.reduce((sum, r) => sum + r.outstandingBase, 0);
-
-    return {
-      revenue: round2(revenue),
-      expenses: round2(expenses),
-      outstanding: round2(outstanding),
-      totalInvoices: invoices.length,
-      totalEntries: entries.length,
-      cashPosition: round2(cashPosition),
-      monthlyBurnRate: round2(monthlyBurnRate),
-      cashRunway: cashRunway === null ? null : round2(cashRunway),
-      arAging: roundValues(arAging),
-      apAging: roundValues(apAging),
-      revenueGrowth: revenueGrowth === null ? null : round2(revenueGrowth),
-      expenseGrowth: expenseGrowth === null ? null : round2(expenseGrowth),
-      topExpenseCategories: roundRows(topExpenseCategories, "value"),
-    };
+  // Phase 8 D4: KPIs are computed in SQL by server/reports/kpis.ts over the shared ledger layer (docs/KPI_DEFINITIONS.md):
+  // revenue and expenses are the SELECTED period (month to date by default, `period=ytd`, or `period=custom&from&to`);
+  // there is no all-time option (422 INVALID_PERIOD). AR/AP come from the as-of ageing SQL, payables from posted bills.
+  async function getEnhancedDashboardStats(companyId: string, query: Record<string, unknown> = {}) {
+    const { rows } = await pool.query(`SELECT fiscal_year_start_month FROM companies WHERE id = $1`, [companyId]);
+    const period = resolveDashboardPeriod(query, Number(rows[0]?.fiscal_year_start_month ?? 1) || 1);
+    return computeDashboardKpis(companyId, period);
   }
 
   app.get(
@@ -247,7 +58,7 @@ export function registerDashboardRoutes(app: Express) {
       const { companyId } = req.params;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-      res.json(await getEnhancedDashboardStats(companyId));
+      res.json(await getEnhancedDashboardStats(companyId, req.query as Record<string, unknown>));
     })
   );
 
@@ -260,34 +71,13 @@ export function registerDashboardRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      // Pull all GL lines for the tenant in a single join, then filter by
-      // posted-entry membership in memory. The previous loop issued one query
-      // per journal entry, which scaled linearly with ledger size.
-      const [allEntries, accounts, allLines] = await Promise.all([
-        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
-        storage.getAccountsByCompanyId(companyId),
-        storage.getJournalLinesByCompanyId(companyId),
-      ]);
-      const postedEntryIds = new Set(
-        allEntries.filter((e) => e.status === "posted").map((e) => e.id)
-      );
-      const expenseAccountIds = new Set(
-        accounts.filter((a) => a.type === "expense").map((a) => a.id)
-      );
-      const accountNameById = new Map(accounts.map((a) => [a.id, a.nameEn]));
-
-      const balances = new Map<string, number>();
-      for (const line of allLines) {
-        if (!postedEntryIds.has(line.entryId)) continue;
-        if (!expenseAccountIds.has(line.accountId)) continue;
-        const current = balances.get(line.accountId) || 0;
-        balances.set(line.accountId, current + line.debit - line.credit);
-      }
-
-      const breakdown = Array.from(expenseAccountIds)
-        .map((id) => ({ name: accountNameById.get(id)!, value: balances.get(id) || 0 }))
+      // One grouped SQL pass over the posted lines (the shared ledger layer), never the whole ledger in memory.
+      const accts = await accountBalances(pool, companyId, { excludeSources: PL_EXCLUDED_SOURCES });
+      const breakdown = accts
+        .filter((a) => a.type === "expense")
+        .map((a) => ({ name: a.nameEn, value: a.debit - a.credit }))
         .filter((item) => item.value > 0)
-        .sort((a, b) => b.value - a.value)
+        .sort((x, y) => y.value - x.value)
         .slice(0, 5);
 
       res.json(roundRows(breakdown, "value"));
@@ -303,52 +93,45 @@ export function registerDashboardRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      // Single batched fetch — issues 4 queries total instead of (months × entries).
-      const [invoices, allEntries, accounts, allLines] = await Promise.all([
-        storage.getInvoicesByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
-        storage.getAccountsByCompanyId(companyId),
-        storage.getJournalLinesByCompanyId(companyId),
-      ]);
-      // Drafts and voided entries must not influence monthly trend totals.
-      const entryDateById = new Map(
-        allEntries.filter((e) => e.status === "posted").map((e) => [e.id, new Date(e.date)])
-      );
-      const expenseAccountIds = new Set(
-        accounts.filter((a) => a.type === "expense").map((a) => a.id)
-      );
-
       const months = Array.from({ length: 6 }, (_, i) => {
         const date = new Date();
+        date.setDate(1);
         date.setMonth(date.getMonth() - (5 - i));
         return {
           month: date.toLocaleDateString("en-US", { month: "short" }),
-          monthNum: date.getMonth(),
-          yearNum: date.getFullYear(),
+          key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
         };
       });
+      const since = `${months[0].key}-01`;
 
-      const trends = months.map(({ month, monthNum, yearNum }) => {
-        const revenue = invoices
-          .filter((inv) => {
-            if (inv.status === "draft" || inv.status === "void" || inv.status === "cancelled")
-              return false;
-            const invDate = new Date(inv.date);
-            return invDate.getMonth() === monthNum && invDate.getFullYear() === yearNum;
-          })
-          .reduce((sum, inv) => sum + (inv.subtotal || 0), 0);
-
-        let expenses = 0;
-        for (const line of allLines) {
-          if (!expenseAccountIds.has(line.accountId)) continue;
-          const entryDate = entryDateById.get(line.entryId);
-          if (!entryDate) continue;
-          if (entryDate.getMonth() !== monthNum || entryDate.getFullYear() !== yearNum) continue;
-          expenses += line.debit - line.credit;
-        }
-
-        return { month, revenue: round2(revenue), expenses: round2(expenses) };
-      });
+      // Two grouped queries for the six months instead of loading every invoice and journal line.
+      // Drafts, voids and year-end closing entries stay out of the totals.
+      const [rev, exp] = await Promise.all([
+        pool.query(
+          `SELECT to_char(date, 'YYYY-MM') AS ym, COALESCE(SUM(subtotal), 0) AS total
+             FROM invoices
+            WHERE company_id = $1 AND status NOT IN ('draft', 'void', 'cancelled') AND date >= $2::date
+            GROUP BY 1`,
+          [companyId, since]
+        ),
+        pool.query(
+          `SELECT to_char(je.date, 'YYYY-MM') AS ym, COALESCE(SUM(jl.debit - jl.credit), 0) AS total
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.entry_id
+             JOIN accounts a ON a.id = jl.account_id
+            WHERE je.company_id = $1 AND je.status = 'posted' AND a.type = 'expense'
+              AND je.source <> ALL($3::text[]) AND je.date >= $2::date
+            GROUP BY 1`,
+          [companyId, since, [...PL_EXCLUDED_SOURCES]]
+        ),
+      ]);
+      const revenueBy = new Map<string, number>(rev.rows.map((r: any) => [r.ym as string, Number(r.total)]));
+      const expensesBy = new Map<string, number>(exp.rows.map((r: any) => [r.ym as string, Number(r.total)]));
+      const trends = months.map(({ month, key }) => ({
+        month,
+        revenue: round2(revenueBy.get(key) ?? 0),
+        expenses: round2(expensesBy.get(key) ?? 0),
+      }));
 
       res.json(trends);
     })
@@ -358,68 +141,40 @@ export function registerDashboardRoutes(app: Express) {
   // Reports Routes
   // =====================================
 
+  // Phase 8 D4: P&L and balance sheet are read through the shared ledger layer (server/reports/ledger.ts, SQL sums over
+  // posted lines), the same code the report engine and the dashboard KPIs use. Response shapes are unchanged.
+  const optionalDay = (raw: unknown): string | undefined | "INVALID" => {
+    if (raw === undefined || raw === null || raw === "") return undefined;
+    const day = String(raw).slice(0, 10);
+    return isYmd(day) ? day : "INVALID";
+  };
+
   app.get(
     "/api/companies/:companyId/reports/pl",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       const { companyId } = req.params;
-      const { startDate, endDate } = req.query;
+      const from = optionalDay(req.query.startDate);
+      const to = optionalDay(req.query.endDate);
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-      // P&L must reflect only posted journal activity; drafts/voided entries
-      // would otherwise inflate revenue and expense totals.
-      const [accounts, allEntries, allLines] = await Promise.all([
-        storage.getAccountsByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
-        storage.getJournalLinesByCompanyId(companyId),
-      ]);
-
-      const start = startDate ? uaeDayStart(startDate as string) : null;
-      const end = endDate ? uaeDayEnd(endDate as string) : null;
-      const entries = allEntries
-        .filter((e) => e.status === "posted")
-        .filter((entry) => {
-          if (!start && !end) return true;
-          const entryDate = new Date(entry.date);
-          if (start && entryDate < start) return false;
-          if (end && entryDate > end) return false;
-          return true;
-        });
-
-      const eligibleEntryIds = new Set(entries.map((e) => e.id));
-      const accountById = new Map(accounts.map((a) => [a.id, a]));
-      const balances = new Map<string, number>();
-
-      for (const line of allLines) {
-        if (!eligibleEntryIds.has(line.entryId)) continue;
-        const account = accountById.get(line.accountId);
-        if (!account) continue;
-
-        const current = balances.get(account.id) || 0;
-        if (account.type === "income") {
-          balances.set(account.id, current + line.credit - line.debit);
-        } else if (account.type === "expense") {
-          balances.set(account.id, current + line.debit - line.credit);
-        }
+      if (from === "INVALID" || to === "INVALID") {
+        return res.status(400).json({ message: "startDate and endDate must be YYYY-MM-DD", code: "INVALID_PARAMS" });
       }
-
-      // Negative balances are legitimate: a refund creates negative revenue,
-      // a vendor credit creates negative expense, contra accounts are
-      // commonly carried at the opposite sign of their parent. Filter out
-      // only zero-activity rows so the P&L still ties to the GL.
-      const revenue = accounts
+      // P&L reflects posted entries only, and leaves out year-end close entries so a closed year still shows its profit.
+      const accts = await accountBalances(pool, companyId, { from, to, excludeSources: PL_EXCLUDED_SOURCES });
+      // Negative balances are legitimate (a refund is negative revenue, a vendor credit negative expense); only zero rows go.
+      const revenue = accts
         .filter((a) => a.type === "income")
-        .map((a) => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }))
-        .filter((item) => item.amount !== 0);
-
-      const expenses = accounts
+        .map((a) => ({ accountName: a.nameEn, amount: a.credit - a.debit }))
+        .filter((item) => round2(item.amount) !== 0);
+      const expenses = accts
         .filter((a) => a.type === "expense")
-        .map((a) => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }))
-        .filter((item) => item.amount !== 0);
+        .map((a) => ({ accountName: a.nameEn, amount: a.debit - a.credit }))
+        .filter((item) => round2(item.amount) !== 0);
 
-      // Rows rounded first; totals and net profit are sums of the rounded rows
-      // so the report always ties to what it displays.
+      // Rows rounded first; totals and net profit are sums of the rounded rows so the report ties to what it displays.
       const revenueRounded = roundRowsWithTotal(revenue);
       const expensesRounded = roundRowsWithTotal(expenses);
 
@@ -440,89 +195,31 @@ export function registerDashboardRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       const { companyId } = req.params;
-      const { startDate, endDate } = req.query;
+      const from = optionalDay(req.query.startDate);
+      const to = optionalDay(req.query.endDate);
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-      // Balance sheet must reflect only posted journal activity.
-      const [accounts, allEntriesRaw, allLines] = await Promise.all([
-        storage.getAccountsByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
-        storage.getJournalLinesByCompanyId(companyId),
-      ]);
-      const allEntries = allEntriesRaw.filter((e) => e.status === "posted");
-
-      // A balance sheet is a *point-in-time* snapshot: every asset, liability
-      // and equity balance is cumulative from the inception of the books
-      // through `endDate`. Period-scoping these would erase opening balances
-      // and break Assets = Liabilities + Equity. P&L (income/expense) IS
-      // period-scoped so we can compute current-period net income to roll
-      // into equity. `startDate` only constrains the P&L slice.
-      const end = endDate ? uaeDayEnd(endDate as string) : null;
-      const start = startDate ? uaeDayStart(startDate as string) : null;
-
-      const balanceSheetEntryIds = new Set(
-        allEntries.filter((entry) => !end || new Date(entry.date) <= end).map((e) => e.id)
-      );
-      const periodEntryIds = new Set(
-        allEntries
-          .filter((entry) => {
-            const entryDate = new Date(entry.date);
-            if (start && entryDate < start) return false;
-            if (end && entryDate > end) return false;
-            return true;
-          })
-          .map((e) => e.id)
-      );
-      const accountById = new Map(accounts.map((a) => [a.id, a]));
-
-      // Cumulative balances for asset/liability/equity accounts. Single pass
-      // over allLines avoids per-entry round-trips.
-      const balances = new Map<string, number>();
-      let periodRevenue = 0;
-      let periodExpenses = 0;
-      for (const line of allLines) {
-        const account = accountById.get(line.accountId);
-        if (!account) continue;
-
-        if (balanceSheetEntryIds.has(line.entryId)) {
-          if (
-            account.type === "asset" ||
-            account.type === "liability" ||
-            account.type === "equity"
-          ) {
-            const current = balances.get(account.id) || 0;
-            if (account.type === "asset") {
-              balances.set(account.id, current + line.debit - line.credit);
-            } else {
-              balances.set(account.id, current + line.credit - line.debit);
-            }
-          }
-        }
-
-        if (periodEntryIds.has(line.entryId)) {
-          if (account.type === "income") periodRevenue += line.credit - line.debit;
-          else if (account.type === "expense") periodExpenses += line.debit - line.credit;
-        }
+      if (from === "INVALID" || to === "INVALID") {
+        return res.status(400).json({ message: "startDate and endDate must be YYYY-MM-DD", code: "INVALID_PARAMS" });
       }
-      const netIncome = periodRevenue - periodExpenses;
+      // A balance sheet is a point-in-time snapshot: every asset, liability and equity balance is cumulative from the
+      // start of the books through `endDate`, year-end close entries included (they carry profit into equity).
+      // `startDate` only constrains the "current period" earnings line.
+      const accts = await accountBalances(pool, companyId, { to });
+      const balances = (type: string) =>
+        accts
+          .filter((a) => a.type === type)
+          .map((a) => ({ accountName: a.nameEn, amount: type === "asset" ? a.debit - a.credit : a.credit - a.debit }));
+      const assets = balances("asset");
+      const liabilities = balances("liability");
+      const equity = balances("equity");
 
-      const assets = accounts
-        .filter((a) => a.type === "asset")
-        .map((a) => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }));
-
-      const liabilities = accounts
-        .filter((a) => a.type === "liability")
-        .map((a) => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }));
-
-      const equity = accounts
-        .filter((a) => a.type === "equity")
-        .map((a) => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }));
-
-      // Surface net income as a synthetic equity row so the totals balance
-      // and a reader can see how YTD earnings flowed into equity.
-      if (netIncome !== 0) {
-        equity.push({ accountName: "Current Period Net Income", amount: netIncome });
-      }
+      // Earnings still sitting in the P&L accounts (not yet carried into equity by a year-end close).
+      const unclosed = round2(accts.filter((a) => a.type === "income" || a.type === "expense").reduce((sum, a) => sum + (a.credit - a.debit), 0));
+      const periodNet = from ? (await periodProfit(pool, companyId, from, to, PL_EXCLUDED_SOURCES)).net : unclosed;
+      const priorEarnings = round2(unclosed - periodNet);
+      if (periodNet !== 0) equity.push({ accountName: "Current Period Net Income", amount: periodNet });
+      if (priorEarnings !== 0) equity.push({ accountName: "Prior Period Earnings (not yet closed)", amount: priorEarnings });
 
       // Rows rounded first; every total is the sum of the rounded rows.
       const bs = buildBalanceSheetTotals({ assets, liabilities, equity });
@@ -537,7 +234,7 @@ export function registerDashboardRoutes(app: Express) {
         totalEquity: bs.equity.total,
         totalLiabilitiesAndEquity: bs.totalLiabilitiesAndEquity,
         isBalanced: bs.isBalanced,
-        currentPeriodNetIncome: round2(netIncome),
+        currentPeriodNetIncome: round2(periodNet),
       });
     })
   );
@@ -616,7 +313,7 @@ export function registerDashboardRoutes(app: Express) {
            COALESCE(SUM(vat_amount * COALESCE(exchange_rate, 1)), 0) AS vat
          FROM vendor_bills
          WHERE company_id = $1
-           AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
+           AND status NOT IN ('void', 'cancelled', 'draft', 'pending', 'pending_approval')
            AND COALESCE(reverse_charge, false) = false
            ${billVatFilters.length ? `AND ${billVatFilters.join(" AND ")}` : ""}`,
         billVatParams
@@ -656,8 +353,8 @@ export function registerDashboardRoutes(app: Express) {
           cashPosition: 0,
           monthlyBurnRate: 0,
           cashRunway: null,
-          arAging: { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
-          apAging: { current: 0, days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+          arAging: { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+          apAging: { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
           revenueGrowth: null,
           expenseGrowth: null,
           topExpenseCategories: [],
@@ -665,7 +362,7 @@ export function registerDashboardRoutes(app: Express) {
       }
       const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-      res.json(await getEnhancedDashboardStats(companyId as string));
+      res.json(await getEnhancedDashboardStats(companyId as string, req.query as Record<string, unknown>));
     })
   );
 
@@ -685,8 +382,8 @@ export function registerDashboardRoutes(app: Express) {
           cashPosition: 0,
           monthlyBurnRate: 0,
           cashRunway: null,
-          arAging: { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
-          apAging: { current: 0, days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+          arAging: { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+          apAging: { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
           revenueGrowth: null,
           expenseGrowth: null,
           topExpenseCategories: [],
@@ -694,7 +391,7 @@ export function registerDashboardRoutes(app: Express) {
       }
       const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-      res.json(await getEnhancedDashboardStats(companyId as string));
+      res.json(await getEnhancedDashboardStats(companyId as string, req.query as Record<string, unknown>));
     })
   );
 

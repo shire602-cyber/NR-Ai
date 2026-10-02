@@ -25,6 +25,7 @@ import { ACCOUNT_CODES } from "../constants";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { advanceSequencePast, previewSequenceJumps, type SequenceJump } from "./invoice-numbering.service";
 import { recordAudit } from "./audit.service";
+import { drizzleQueryable, resolveVendorWith } from "./vendor-contact.service";
 import { uaeTodayYmd } from "./vat-period-status.service";
 import { assertFilingPermission, postSettlementJournal, type FilingActor } from "./tax-filing.service";
 import { fromFils, toFils } from "./tax-filing-core";
@@ -135,7 +136,7 @@ export async function firstTransactionDate(companyId: string): Promise<string | 
       UNION ALL SELECT date FROM invoices
         WHERE company_id = ${companyId} AND status NOT IN ('draft', 'void', 'cancelled') AND COALESCE(is_opening_balance, false) = false
       UNION ALL SELECT bill_date FROM vendor_bills
-        WHERE company_id = ${companyId} AND status NOT IN ('draft', 'void', 'cancelled', 'pending') AND COALESCE(is_opening_balance, false) = false
+        WHERE company_id = ${companyId} AND status NOT IN ('draft', 'void', 'cancelled', 'pending', 'pending_approval') AND COALESCE(is_opening_balance, false) = false
       UNION ALL SELECT COALESCE(date, created_at) FROM receipts WHERE company_id = ${companyId}
     ) t`);
   return ((res.rows ?? res)[0]?.first as string | null) ?? null;
@@ -375,11 +376,13 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
     await advanceSequencePast(tx, companyId, "invoice", invDocs.map((d) => d.number));
     // Open vendor bills, likewise: approved, no journal, no VAT.
     for (const d of billDocs) {
+      // One contacts table: the opening bill is linked to (or creates) the vendor contact.
+      const vendor = await resolveVendorWith(drizzleQueryable(tx), companyId, { vendorName: d.party });
       const res: any = await tx.execute(sql`
         INSERT INTO vendor_bills (company_id, vendor_name, bill_number, bill_date, due_date, currency, subtotal, vat_amount,
-                                  total_amount, amount_paid, status, exchange_rate, is_opening_balance, notes)
+                                  total_amount, amount_paid, status, exchange_rate, is_opening_balance, notes, vendor_id)
         VALUES (${companyId}, ${d.party}, ${d.number}, ${d.date}::date, ${d.dueDate}::date, ${d.currency}, ${d.amount}, 0,
-                ${d.amount}, 0, 'approved', ${d.exchangeRate}, true, 'Opening balance')
+                ${d.amount}, 0, 'approved', ${d.exchangeRate}, true, 'Opening balance', ${vendor.vendorId})
         RETURNING id`);
       const billId = (res.rows ?? res)[0].id;
       await tx.execute(sql`

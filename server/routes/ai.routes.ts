@@ -8,7 +8,6 @@ import { storage } from "../storage";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { parseBankTransactionInput } from "../services/bank-transaction-input.service";
 import { asyncHandler } from "../middleware/errorHandler";
-import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { categorizationRequestSchema } from "../../shared/schema";
@@ -22,6 +21,9 @@ import { recordStoredFile } from "../services/document-upload.service";
 import { estimateDecodedBytes } from "../services/document-validation";
 import { randomUUID } from "crypto";
 import { listOpenReceivables } from "../services/invoice-outstanding";
+import { applyMatch } from "../services/bank-posting.service";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
+import { assertCanPostBanking } from "../services/bank-access";
 import {
   getModelStats,
   getClassifierConfig,
@@ -205,81 +207,13 @@ Amount: ${validated.amount} ${validated.currency}`,
     })
   );
 
-  // AI Bank Statement Parser Route
+  // Retired: this took any text, was not tied to a company and spent AI credit for anyone signed in.
+  // PDF statements are parsed server-side by POST /api/companies/:companyId/bank-statements/imports/pdf.
   app.post(
     "/api/ai/parse-bank-statement",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      try {
-        const { text } = req.body;
-
-        if (!text || text.trim().length < 10) {
-          return res.status(400).json({ message: "Bank statement text is required" });
-        }
-
-        // Use OpenAI to parse bank statement transactions
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            {
-              role: "system",
-              content: `You are an expert at parsing bank statements from UAE banks. Extract transaction data from the provided text which was extracted from a PDF bank statement.
-
-Your task is to identify and extract all financial transactions found in the text. For each transaction, extract:
-- date: The transaction date in YYYY-MM-DD format (convert from any format found)
-- description: A clean description of the transaction
-- amount: The transaction amount as a number (negative for debits/withdrawals, positive for credits/deposits)
-- reference: Any reference number if available, otherwise null
-
-Important notes:
-- The text may be OCR output so expect some errors - try to interpret the data intelligently
-- UAE banks include: ENBD, Mashreq, FAB, ADCB, RAKBANK, Dubai Islamic Bank, etc.
-- Common patterns: ATM withdrawals, POS purchases, salary credits, transfers, utility payments (DEWA, du, Etisalat)
-- If amounts are in parentheses or marked DR/CR, interpret correctly (DR = debit = negative)
-- Dates may be in various formats: DD/MM/YYYY, DD-MMM-YYYY, etc.
-
-Respond with a JSON object containing:
-{
-  "transactions": [
-    { "date": "YYYY-MM-DD", "description": "...", "amount": number, "reference": "..." or null },
-    ...
-  ]
-}
-
-If no valid transactions can be found, return { "transactions": [] }`,
-            },
-            {
-              role: "user",
-              content: `Parse the following bank statement text and extract all transactions:\n\n${text.substring(0, 15000)}`,
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.2,
-        });
-
-        const aiResponse = JSON.parse(
-          completion.choices[0].message.content || '{"transactions": []}'
-        );
-
-        // Validate and clean up transactions
-        const validTransactions = (aiResponse.transactions || [])
-          .filter((t: any) => {
-            return t.date && t.description && typeof t.amount === "number" && !isNaN(t.amount);
-          })
-          .map((t: any) => ({
-            date: t.date,
-            description: t.description.substring(0, 200),
-            amount: t.amount.toString(),
-            reference: t.reference || null,
-          }));
-
-        log.info({ count: validTransactions.length }, "Parsed bank statement");
-
-        res.json({ transactions: validTransactions });
-      } catch (error: any) {
-        log.error({ err: error }, "AI bank statement parsing error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to parse bank statement", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
-      }
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.status(410).json({ message: "Use the statement import.", code: "USE_STATEMENT_IMPORT" });
     })
   );
 
@@ -973,19 +907,19 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           return res.status(404).json({ message: "Transaction not found" });
         }
 
-        // Same guard as every other bank path: a future bank date is refused
-        // and the period lock is checked on the bank date.
+        // One matching path for every bank screen: payments go through the document services, nothing credits
+        // Accounts Receivable without an invoice payment (see bank-posting.service).
+        const kind = matchType === "journal_entry" ? "journal" : matchType;
+        if (!["invoice", "bill", "receipt", "journal"].includes(kind)) {
+          return res.status(400).json({ message: "matchType must be invoice, bill, receipt or journal" });
+        }
+        await assertCanPostBanking(userId, txn.companyId);
+        // Same guard as every other bank path: a future bank date is refused and the period lock is checked on the bank date.
         await resolveSettlementDate(txn.companyId, { fallback: txn.transactionDate });
-
-        const transaction = await storage.reconcileBankTransaction(
-          id,
-          txn.companyId,
-          matchId,
-          matchType
-        );
-        res.json(transaction);
+        const result = await applyMatch({ companyId: txn.companyId, userId }, { transactionId: id, kind, targetId: matchId });
+        res.json({ ...result.transaction, matchStatus: "matched" });
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.code ? { code: error.code } : {}), ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1055,44 +989,13 @@ ${JSON.stringify(ledgerData, null, 2)}`,
     })
   );
 
-  // Import bank transactions from CSV
+  // Retired: it inserted orphan, unvalidated rows with no account, de-duplication or file record.
   app.post(
     "/api/companies/:companyId/bank-transactions/import",
     authMiddleware,
     requireCustomer,
-    asyncHandler(async (req: Request, res: Response) => {
-      try {
-        const { companyId } = req.params;
-        const { transactions } = req.body;
-        const userId = (req as any).user.id;
-
-        // Verify company access
-        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-        if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-
-        if (!Array.isArray(transactions)) {
-          return res.status(400).json({ message: "Transactions array required" });
-        }
-
-        const imported = [];
-        for (const t of transactions) {
-          const transaction = await storage.createBankTransaction({
-            companyId,
-            transactionDate: new Date(t.date),
-            description: t.description,
-            amount: parseFloat(t.amount),
-            reference: t.reference,
-            importSource: "csv",
-          });
-          imported.push(transaction);
-        }
-
-        res.json({ imported: imported.length, transactions: imported });
-      } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
-      }
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.status(410).json({ message: "Use the statement import.", code: "USE_STATEMENT_IMPORT" });
     })
   );
 

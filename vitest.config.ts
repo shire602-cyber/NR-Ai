@@ -37,6 +37,8 @@ export default defineConfig({
     },
     setupFiles: ["./tests/setup.ts"],
   },
+  // tsconfig keeps JSX for Vite; component tests render .tsx with react-dom/server, which needs it compiled.
+  oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "client/src"),

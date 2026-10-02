@@ -135,6 +135,9 @@ export const messages = defineMessages(
     assetsRegistered_few: "{count} assets registered",
     assetsRegistered_many: "{count} assets registered",
     assetsRegistered_other: "{count} assets registered",
+    tabAssets: "Assets",
+    tabRegister: "Asset register",
+    tabSchedule: "Depreciation schedule",
   },
   {
     assetNameIsRequired: "اسم الأصل مطلوب",
@@ -269,5 +272,8 @@ export const messages = defineMessages(
     assetsRegistered_few: "{count} أصول مسجلة",
     assetsRegistered_many: "{count} أصلًا مسجلًا",
     assetsRegistered_other: "{count} أصل مسجل",
+    tabAssets: "الأصول",
+    tabRegister: "سجل الأصول",
+    tabSchedule: "جدول الإهلاك",
   }
 );

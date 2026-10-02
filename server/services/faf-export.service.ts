@@ -460,7 +460,7 @@ async function* billBatches(companyId: string, from: string, to: string): AsyncG
          FROM vendor_bills
         WHERE company_id = $1
           AND bill_date >= $2::date AND bill_date < ($3::date + 1)
-          AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
+          AND status NOT IN ('void', 'cancelled', 'draft', 'pending', 'pending_approval')
           AND COALESCE(is_opening_balance, false) = false
           AND (bill_date, id) > ($4::timestamp, $5::uuid)
         ORDER BY bill_date, id

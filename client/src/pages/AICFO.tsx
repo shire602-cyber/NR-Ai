@@ -52,9 +52,14 @@ interface Message {
 }
 
 interface DashboardStats {
+  // Phase 8 D4: one period (month to date by default), never all time. See docs/KPI_DEFINITIONS.md.
+  period?: { kind: string; from: string; to: string };
   revenue: number;
   expenses: number;
+  netProfit?: number;
   outstanding: number;
+  overdueReceivables?: number;
+  payablesOutstanding?: number;
   totalInvoices: number;
   totalEntries: number;
 }
@@ -322,7 +327,9 @@ export default function AICFO() {
                       {formatCurrency(stats.revenue || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats.totalInvoices || 0} {tr("invoicesLast30Days")}
+                      {stats.period
+                        ? tr("periodRange", { from: stats.period.from, to: stats.period.to })
+                        : null}
                     </p>
                   </>
                 ) : (
@@ -345,7 +352,9 @@ export default function AICFO() {
                       {formatCurrency(stats.expenses || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats.totalEntries || 0} {tr("entriesLast30Days")}
+                      {stats.period
+                        ? tr("periodRange", { from: stats.period.from, to: stats.period.to })
+                        : null}
                     </p>
                   </>
                 ) : (
@@ -355,31 +364,29 @@ export default function AICFO() {
             </Card>
 
             <Card
-              className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? "border-success/30 " : "border-destructive/30 "}`}
+              className={`hover-elevate ${(stats?.netProfit ?? 0) >= 0 ? "border-success/30 " : "border-destructive/30 "}`}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">{tr("netProfit")}</CardTitle>
                 <Target
-                  className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
+                  className={`w-4 h-4 ${(stats?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
                 />
               </CardHeader>
               <CardContent>
-                {plLoading ? (
+                {statsLoading ? (
                   <Skeleton className="h-10 w-40" />
-                ) : profitLoss ? (
+                ) : stats ? (
                   <>
                     <div
                       dir="ltr"
-                      className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
+                      className={`text-3xl font-bold font-mono ${(stats.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
                     >
-                      {formatCurrency(profitLoss.netProfit || 0, "AED")}
+                      {formatCurrency(stats.netProfit ?? 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {profitLoss.totalRevenue
+                      {stats.revenue
                         ? tr("margin", {
-                            value: ((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(
-                              1
-                            ),
+                            value: (((stats.netProfit ?? 0) / stats.revenue) * 100).toFixed(1),
                           })
                         : tr("noRevenueYet")}
                     </p>
@@ -411,6 +418,22 @@ export default function AICFO() {
                     <p className="text-sm text-muted-foreground">
                       {tr("youHaveOutstandingAmountsThatNeed")}
                     </p>
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          {tr("overdueReceivables")}
+                        </dt>
+                        <dd dir="ltr" className="font-mono font-medium text-destructive">
+                          {formatCurrency(stats.overdueReceivables || 0, "AED")}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">{tr("payablesOwed")}</dt>
+                        <dd dir="ltr" className="font-mono font-medium">
+                          {formatCurrency(stats.payablesOutstanding || 0, "AED")}
+                        </dd>
+                      </div>
+                    </dl>
                     <Button variant="outline" size="sm" className="w-fit">
                       {tr("viewOutstandingInvoices")}
                     </Button>

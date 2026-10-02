@@ -69,6 +69,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AssetRegisterTab } from "@/components/assets/AssetRegisterTab";
+import { DepreciationScheduleTab } from "@/components/assets/DepreciationScheduleTab";
+import { DEFAULT_PROCEEDS, DisposalProceedsField } from "@/components/assets/DisposalProceedsField";
+import { proceedsAccountOptions } from "@/components/assets/proceeds-accounts";
+import { messages as bankingCommon } from "@/components/banking/BankingCommon.i18n";
+import { bankingErrorText } from "@/components/banking/banking-common";
+import type { BankAccount as LedgerBankAccount, LedgerAccount } from "@/lib/banking-api-types";
 import { messages as pageMessages } from "./FixedAssets.i18n";
 
 // ─── Types ───────────────────────────────────────────────
@@ -164,6 +172,7 @@ type AssetFormData = z.infer<typeof assetFormSchema>;
 const disposeFormSchema = z.object({
   disposalDate: z.string().min(1, pageMessages.marker("disposalDateIsRequired")),
   disposalAmount: z.coerce.number().min(0, pageMessages.marker("disposalAmountMustBe0")),
+  proceedsAccountId: z.string().optional(),
   notes: z.string().optional().nullable(),
 });
 
@@ -180,6 +189,7 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
 export default function FixedAssets() {
   const tr = pageMessages.useT();
+  const trBank = bankingCommon.useT();
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -204,6 +214,16 @@ export default function FixedAssets() {
     queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
     enabled: !!companyId,
   });
+
+  const { data: ledgerAccounts = [] } = useQuery<LedgerAccount[]>({
+    queryKey: ["/api/companies", companyId, "accounts"],
+    enabled: !!companyId,
+  });
+  const { data: bankAccountList = [] } = useQuery<LedgerBankAccount[]>({
+    queryKey: ["/api/companies", companyId, "bank-accounts"],
+    enabled: !!companyId,
+  });
+  const proceedsOptions = proceedsAccountOptions(ledgerAccounts, bankAccountList);
 
   // ─── Forms ──────────────────────────────────────────────
 
@@ -230,6 +250,7 @@ export default function FixedAssets() {
     defaultValues: {
       disposalDate: "",
       disposalAmount: 0,
+      proceedsAccountId: DEFAULT_PROCEEDS,
       notes: "",
     },
   });
@@ -318,6 +339,12 @@ export default function FixedAssets() {
     },
   });
 
+  // the register and the schedule are keyed by their query string, so they are matched by prefix
+  const invalidateAssetReports = () =>
+    queryClient.invalidateQueries({
+      predicate: (q) => typeof q.queryKey[0] === "string" && q.queryKey[0].startsWith(`/api/companies/${companyId}/fixed-assets/`),
+    });
+
   const disposeMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: DisposeFormData }) =>
       apiRequest("POST", `/api/fixed-assets/${id}/dispose`, data),
@@ -334,12 +361,17 @@ export default function FixedAssets() {
           formatCurrency: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
         }),
       });
+      invalidateAssetReports();
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
       disposeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({
+        title: tr("error"),
+        description: bankingErrorText(trBank, error, locale),
+        variant: "destructive",
+      });
     },
   });
 
@@ -351,6 +383,7 @@ export default function FixedAssets() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
+      invalidateAssetReports();
       toast({
         title: tr("batchDepreciationComplete"),
         description: tr("processedAssetsFor", {
@@ -412,6 +445,7 @@ export default function FixedAssets() {
     disposeForm.reset({
       disposalDate: format(new Date(), "yyyy-MM-dd"),
       disposalAmount: 0,
+      proceedsAccountId: DEFAULT_PROCEEDS,
       notes: "",
     });
     setDisposeDialogOpen(true);
@@ -427,7 +461,11 @@ export default function FixedAssets() {
 
   const handleDisposeSubmit = (data: DisposeFormData) => {
     if (!disposingAsset) return;
-    disposeMutation.mutate({ id: disposingAsset.id, data });
+    const { proceedsAccountId, ...rest } = data;
+    disposeMutation.mutate({
+      id: disposingAsset.id,
+      data: proceedsAccountId && proceedsAccountId !== DEFAULT_PROCEEDS ? { ...rest, proceedsAccountId } : rest,
+    });
   };
 
   const handleDepRunSubmit = (data: DepreciationRunData) => {
@@ -517,6 +555,15 @@ export default function FixedAssets() {
         </div>
       </div>
 
+      <Tabs defaultValue="assets">
+        <div className="overflow-x-auto">
+          <TabsList>
+            <TabsTrigger value="assets">{tr("tabAssets")}</TabsTrigger>
+            <TabsTrigger value="register">{tr("tabRegister")}</TabsTrigger>
+            <TabsTrigger value="schedule">{tr("tabSchedule")}</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="assets" className="mt-4 space-y-6">
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -760,6 +807,15 @@ export default function FixedAssets() {
           )}
         </CardContent>
       </Card>
+
+        </TabsContent>
+        <TabsContent value="register" className="mt-4">
+          <AssetRegisterTab companyId={companyId} />
+        </TabsContent>
+        <TabsContent value="schedule" className="mt-4">
+          <DepreciationScheduleTab companyId={companyId} />
+        </TabsContent>
+      </Tabs>
 
       {/* ─── Create/Edit Asset Dialog ──────────────────────── */}
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
@@ -1055,6 +1111,8 @@ export default function FixedAssets() {
                   </FormItem>
                 )}
               />
+
+              <DisposalProceedsField control={disposeForm.control} name="proceedsAccountId" accounts={proceedsOptions} />
 
               <FormField
                 control={disposeForm.control}

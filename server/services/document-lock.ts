@@ -77,4 +77,25 @@ export const LOCK_NS = {
   FX_REVALUATION: 1003,
   /** Per company-month: shared by postings, exclusive for whoever locks the month (posting-lock.ts). */
   PERIOD_POSTING: 1004,
+  /** Phase 8 D1: a quote's state change (send, accept, decline, revise, convert) one at a time. */
+  QUOTE: 1005,
+  /** Phase 8 D1: a gateway payment (one Stripe payment intent / charge) is settled and refunded one at a time. */
+  GATEWAY: 1006,
+  /** D3 banking (1301-1399): one bank line being matched, posted or unmatched. */
+  BANK_TRANSACTION: 1301,
+  /** D3: count-then-insert of statement lines for one bank account (imports and feed syncs). */
+  BANK_ACCOUNT_IMPORT: 1302,
+  /** D3: completing or reopening a reconciliation session for one bank account. */
+  BANK_RECONCILIATION: 1303,
+  // 1020-1029 are reserved for Phase 8 D2 (purchases, projects and people).
+  /** Approval gate: one approve decision per bill, claim, PO, payroll run or journal at a time. */
+  APPROVAL: 1020,
+  /** Invoice-from-unbilled on one project. */
+  PROJECT_INVOICE: 1021,
+  /** Leave requests of one employee (balance and overlap checks). */
+  LEAVE: 1022,
+  /** Employee loan lifecycle (cancel, repay) against payroll approve. */
+  EMPLOYEE_LOAN: 1023,
+  /** Final settlement of one employee. */
+  SETTLEMENT: 1024,
 } as const;

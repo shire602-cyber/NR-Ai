@@ -22,6 +22,7 @@ export const messages = defineMessages(
     totalStaff: "Total Staff",
     clientsStaff: "Clients / Staff",
     avgClientsAdmin: "Avg Clients / Admin",
+    consolidatedStatements: "Consolidated client statements",
   },
   {
     overdueInvoices: "الفواتير المتأخرة",
@@ -44,5 +45,6 @@ export const messages = defineMessages(
     totalStaff: "إجمالي الموظفين",
     clientsStaff: "العملاء / الموظف",
     avgClientsAdmin: "متوسط العملاء / مسؤول",
+    consolidatedStatements: "قوائم موحّدة للعملاء",
   }
 );

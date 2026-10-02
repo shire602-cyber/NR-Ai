@@ -1,446 +1,225 @@
 import type { Express, Request, Response } from "express";
-import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { z } from "zod";
+import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
+import { validate } from "../middleware/validate";
+import { pool } from "../db";
 import { storage } from "../storage";
-import { insertBankConnectionSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
-import {
-  getBankProvider,
-  getAvailableProviders,
-  isOpenBankingConfigured,
-  tokenNeedsRefresh,
-} from "../services/open-banking.service";
+import { AppError } from "../errors";
 import { createLogger } from "../config/logger";
+import { getEnv } from "../config/env";
+import { decryptSecret } from "../services/secret-vault";
+import { toPublicBankConnection } from "../services/bank-connection-view";
+import { assertCanPostBanking } from "../services/bank-access";
+import { getAvailableProviders, getLeanClient, isOpenBankingConfigured, providerEnvironment, ProviderError } from "../services/open-banking.service";
+import { signFeedState } from "../services/bank-feed-state";
+import { ensureProviderCustomer } from "../services/bank-feed-link.service";
+import { syncConnection } from "../services/bank-feed-sync.service";
+import { importStatementFile } from "../services/bank-import.service";
+import { recordAudit } from "../services/audit.service";
 
 const logger = createLogger("bank-routes");
 
-export function registerBankRoutes(app: Express) {
-  // =====================================
-  // Bank Connection & Import Routes
-  // =====================================
+const uuid = z.string().uuid();
+const companyParams = z.object({ companyId: uuid }).passthrough();
+const companyConnParams = z.object({ companyId: uuid, id: uuid }).passthrough();
+const connParams = z.object({ id: uuid }).passthrough();
 
-  // Customer-only: List bank connections by company
+const manualConnectionSchema = z.object({
+  bankName: z.string().max(120).nullish(),
+  accountName: z.string().max(120).nullish(),
+  accountNumberLast4: z.string().max(4).nullish(),
+  iban: z.string().max(64).nullish(),
+  bankAccountId: uuid.nullish(),
+});
+
+const syncSchema = z.object({ fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).passthrough();
+
+const clean = (v: string | null | undefined, max: number): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+
+export function registerBankRoutes(app: Express) {
+  const guard = [authMiddleware, requireCustomer, requireFeature("bankImport"), validate({ params: companyParams }), requireCompanyAccess("params")];
+
+  /** A connection of the caller's company, or 404 (another company's connection is indistinguishable from a missing one). */
+  async function ownConnection(req: Request) {
+    const connection = await storage.getBankConnection(req.params.id);
+    if (!connection || !(await storage.hasCompanyAccess(req.user!.id, connection.companyId))) {
+      throw new AppError({ message: "Bank connection not found", statusCode: 404, code: "BANK_CONNECTION_NOT_FOUND" });
+    }
+    return connection;
+  }
+
+  // Connections never carry tokens, consent ids or the provider's entity id in a response.
   app.get(
     "/api/companies/:companyId/bank-connections",
-    authMiddleware,
-    requireCustomer,
-    requireFeature("bankImport"),
+    ...guard,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const connections = await storage.getBankConnectionsByCompanyId(companyId);
-      res.json(connections);
+      const connections = await storage.getBankConnectionsByCompanyId(req.params.companyId);
+      res.json(connections.map(toPublicBankConnection));
     })
   );
 
-  // Customer-only: Create bank connection
+  // Manual statement source only. Feed connections are created by POST /bank-feeds/connections after a signed link flow.
   app.post(
     "/api/companies/:companyId/bank-connections",
-    authMiddleware,
-    requireCustomer,
-    requireFeature("bankImport"),
+    ...guard,
+    validate({ body: manualConnectionSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      const body = req.body as z.infer<typeof manualConnectionSchema>;
+      let bankAccountId: string | null = null;
+      if (body.bankAccountId) {
+        const bankAccount = await storage.getBankAccountById(body.bankAccountId);
+        if (!bankAccount || bankAccount.companyId !== companyId) throw new AppError({ message: "Bank account not found", statusCode: 404, code: "BANK_ACCOUNT_NOT_FOUND" });
+        bankAccountId = bankAccount.id;
       }
-
       const connection = await storage.createBankConnection({
-        ...pickAllowed(req.body, insertBankConnectionSchema, ["companyId"]),
         companyId,
+        provider: "manual",
+        connectionType: "statement",
+        status: "active",
+        autoSync: false,
+        bankName: clean(body.bankName, 120),
+        accountName: clean(body.accountName, 120),
+        accountNumberLast4: clean(body.accountNumberLast4, 4),
+        iban: clean(body.iban, 64),
+        bankAccountId,
       } as any);
-
       logger.info({ connectionId: connection.id, companyId }, "Bank connection created");
-      res.status(201).json(connection);
+      res.status(201).json(toPublicBankConnection(connection));
     })
   );
 
-  // Customer-only: Delete bank connection
+  // Disconnect: secrets are removed, the row and every imported transaction stay.
   app.delete(
     "/api/bank-connections/:id",
     authMiddleware,
     requireCustomer,
+    validate({ params: connParams }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const connection = await storage.getBankConnection(id);
-      if (!connection) {
-        return res.status(404).json({ message: "Bank connection not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, connection.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.deleteBankConnection(id);
-      res.json({ message: "Bank connection deleted" });
+      const connection = await ownConnection(req);
+      await assertCanPostBanking(req.user!.id, connection.companyId);
+      await pool.query(
+        `UPDATE bank_connections
+            SET status = 'disconnected', auto_sync = false, access_token = NULL, refresh_token = NULL, provider_entity_id = NULL,
+                consent_id = NULL, token_expires_at = NULL, sync_lease_until = NULL, updated_at = now()
+          WHERE id = $1`,
+        [connection.id]
+      );
+      await recordAudit({ userId: req.user!.id, companyId: connection.companyId, action: "bank.feed_disconnect", entityType: "bank_connection", entityId: connection.id, req });
+      res.json({ message: "Bank connection disconnected" });
     })
   );
 
-  // Customer-only: Import bank statement (CSV)
+  // Statement text for a connection that is linked to a bank account: the same import path as every other statement.
   app.post(
     "/api/companies/:companyId/bank-connections/:id/import",
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
+    validate({ params: companyConnParams, body: z.object({ csvContent: z.string().min(1).max(7_000_000), fileName: z.string().max(255).optional() }) }),
+    requireCompanyAccess("params"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
       const connection = await storage.getBankConnection(id);
-      if (!connection) {
-        return res.status(404).json({ message: "Bank connection not found" });
+      if (!connection || connection.companyId !== companyId) throw new AppError({ message: "Bank connection not found", statusCode: 404, code: "BANK_CONNECTION_NOT_FOUND" });
+      const account = connection.bankAccountId ? await storage.getBankAccountById(connection.bankAccountId) : undefined;
+      if (!account || account.companyId !== companyId) {
+        throw new AppError({ message: "Link this connection to a bank account first.", statusCode: 422, code: "BANK_ACCOUNT_NOT_LINKED" });
       }
-
-      if (connection.companyId !== companyId) {
-        return res.status(403).json({ message: "Bank connection does not belong to this company" });
-      }
-
-      const { csvContent } = req.body;
-      if (!csvContent || typeof csvContent !== "string") {
-        return res.status(400).json({ message: "CSV content is required" });
-      }
-
-      // Parse CSV content
-      const lines = csvContent.trim().split("\n");
-      if (lines.length < 2) {
-        return res
-          .status(400)
-          .json({ message: "CSV must contain a header row and at least one data row" });
-      }
-
-      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-      const dateIdx = headers.findIndex((h) => h === "date");
-      const descIdx = headers.findIndex(
-        (h) => h === "description" || h === "memo" || h === "narrative"
-      );
-      const amountIdx = headers.findIndex((h) => h === "amount");
-      const debitIdx = headers.findIndex((h) => h === "debit");
-      const creditIdx = headers.findIndex((h) => h === "credit");
-      const refIdx = headers.findIndex((h) => h === "reference" || h === "ref");
-
-      if (dateIdx === -1) {
-        return res.status(400).json({ message: 'CSV must contain a "date" column' });
-      }
-
-      if (amountIdx === -1 && (debitIdx === -1 || creditIdx === -1)) {
-        return res.status(400).json({
-          message: 'CSV must contain an "amount" column, or both "debit" and "credit" columns',
-        });
-      }
-
-      const transactions = [];
-      const errors = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const row = lines[i].split(",").map((c) => c.trim());
-        if (row.length < 2 || row.every((c) => !c)) continue; // Skip empty rows
-
-        try {
-          const date = new Date(row[dateIdx]);
-          if (isNaN(date.getTime())) {
-            errors.push(`Row ${i + 1}: Invalid date "${row[dateIdx]}"`);
-            continue;
-          }
-
-          let amount: number;
-          if (amountIdx !== -1) {
-            amount = parseFloat(row[amountIdx].replace(/[^0-9.-]/g, ""));
-          } else {
-            const debit = parseFloat(row[debitIdx].replace(/[^0-9.-]/g, "") || "0");
-            const credit = parseFloat(row[creditIdx].replace(/[^0-9.-]/g, "") || "0");
-            amount = credit - debit; // positive = credit (inflow), negative = debit (outflow)
-          }
-
-          if (isNaN(amount)) {
-            errors.push(`Row ${i + 1}: Invalid amount`);
-            continue;
-          }
-
-          const description = descIdx !== -1 ? row[descIdx] : "";
-          const reference = refIdx !== -1 ? row[refIdx] : "";
-
-          const transaction = await storage.createBankTransaction({
-            bankConnectionId: id,
-            companyId,
-            transactionDate: date,
-            description,
-            amount,
-            reference,
-          });
-
-          transactions.push(transaction);
-        } catch (err) {
-          errors.push(`Row ${i + 1}: ${(err as Error).message}`);
-        }
-      }
-
-      logger.info(
-        { connectionId: id, imported: transactions.length },
-        "Bank transactions imported"
-      );
-      res.json({
-        imported: transactions.length,
-        errors: errors.length > 0 ? errors : undefined,
-        transactions,
-      });
+      const outcome = await importStatementFile({ companyId, userId: req.user!.id, account, content: req.body.csvContent, fileName: req.body.fileName, format: "auto" });
+      const { insertedIds: _ids, ...body } = outcome;
+      res.json({ ...body, imported: outcome.imported });
     })
   );
 
-  // =====================================
-  // Open Banking / Wio Bank API Routes
-  // =====================================
-
-  // Get available bank providers
+  // Providers the company may use: [] unless a feed provider is configured.
   app.get(
     "/api/bank/providers",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      res.json({
-        providers: getAvailableProviders(),
-        isConfigured: isOpenBankingConfigured(),
-      });
+      res.json({ providers: getAvailableProviders(), isConfigured: isOpenBankingConfigured(), environment: providerEnvironment() });
     })
   );
 
-  // Initiate bank connection via Open Banking (get auth URL)
+  // Legacy "connect": 400 when no provider is set, otherwise the same Link session as POST /bank-feeds/lean/session.
   app.post(
     "/api/companies/:companyId/bank-connections/connect",
-    authMiddleware,
-    requireCustomer,
-    requireFeature("bankImport"),
+    ...guard,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-      const { provider: providerName, redirectUrl } = req.body;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      const userId = req.user!.id;
+      await assertCanPostBanking(userId, companyId);
+      const client = getLeanClient();
+      if (!client) throw new AppError({ message: "Bank feeds are not configured.", statusCode: 400, code: "BANK_PROVIDER_NOT_CONFIGURED" });
+      try {
+        const customerId = await ensureProviderCustomer(client, companyId);
+        res.json({
+          provider: "lean",
+          appToken: client.appToken,
+          customerId,
+          accessToken: await client.customerToken(customerId),
+          sandbox: client.environment === "sandbox",
+          state: signFeedState({ companyId, userId, secret: (getEnv() as any).SESSION_SECRET }),
+        });
+      } catch (err) {
+        if (err instanceof ProviderError) throw new AppError({ message: "The bank provider could not be reached.", statusCode: 502, code: "BANK_PROVIDER_ERROR" });
+        throw err;
       }
-
-      if (!providerName || !redirectUrl) {
-        return res.status(400).json({ message: "Provider name and redirect URL are required" });
-      }
-
-      const provider = getBankProvider(providerName);
-      if (!provider) {
-        return res.status(400).json({ message: `Bank provider "${providerName}" not available` });
-      }
-
-      const authUrl = await provider.getAuthUrl(companyId, redirectUrl);
-      res.json({ authUrl, provider: providerName });
     })
   );
 
-  // Handle OAuth callback from bank provider
+  // Retired: it used to treat any `code` as the provider's entity id, so a user could attach another tenant's bank.
   app.post(
     "/api/companies/:companyId/bank-connections/callback",
     authMiddleware,
     requireCustomer,
-    requireFeature("bankImport"),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      const userId = (req as any).user.id;
-      const { provider: providerName, code, state } = req.body;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const provider = getBankProvider(providerName);
-      if (!provider) {
-        return res.status(400).json({ message: `Bank provider "${providerName}" not available` });
-      }
-
-      // Exchange code for tokens
-      const tokens = await provider.handleCallback(code, state || companyId);
-
-      // Fetch accounts from the bank
-      const bankAccounts = await provider.fetchAccounts(tokens.accessToken);
-
-      if (bankAccounts.length === 0) {
-        return res.status(400).json({ message: "No bank accounts found" });
-      }
-
-      // Create a bank connection for each account
-      const connections = [];
-      for (const account of bankAccounts) {
-        const connection = await storage.createBankConnection({
-          companyId,
-          bankName: account.bankName,
-          accountNumberLast4: account.last4,
-          connectionType: "api",
-          status: "active",
-          provider: providerName,
-          externalAccountId: account.externalId,
-          iban: account.iban,
-          consentId: tokens.consentId || null,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          tokenExpiresAt: tokens.expiresAt,
-          autoSync: true,
-        });
-        connections.push(connection);
-      }
-
-      logger.info({ connectionCount: connections.length, providerName }, "Bank accounts connected");
-      res.status(201).json({ connections, accounts: bankAccounts });
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.status(410).json({ message: "This callback is retired. Use the bank feed link flow.", code: "USE_BANK_FEEDS" });
     })
   );
 
-  // Sync transactions from connected bank account
+  // Sync booked transactions through the statement import path. Posts nothing.
   app.post(
     "/api/bank-connections/:id/sync",
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
+    validate({ params: connParams, body: syncSchema }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-      const { fromDate, toDate } = req.body;
-
-      const connection = await storage.getBankConnection(id);
-      if (!connection) {
-        return res.status(404).json({ message: "Bank connection not found" });
+      const connection = await ownConnection(req);
+      await assertCanPostBanking(req.user!.id, connection.companyId);
+      try {
+        const result = await syncConnection({ connectionId: connection.id, companyId: connection.companyId, fromDate: req.body.fromDate ?? null });
+        res.json(result);
+      } catch (err) {
+        if (err instanceof ProviderError) throw new AppError({ message: "The bank provider could not be reached.", statusCode: 502, code: "BANK_PROVIDER_ERROR" });
+        throw err;
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, connection.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (connection.connectionType !== "api" || !connection.provider) {
-        return res.status(400).json({ message: "This connection does not support API sync" });
-      }
-
-      const provider = getBankProvider(connection.provider);
-      if (!provider) {
-        return res.status(400).json({ message: "Provider not available" });
-      }
-
-      // Refresh token if needed
-      let accessToken = connection.accessToken;
-      if (tokenNeedsRefresh(connection.tokenExpiresAt) && connection.refreshToken) {
-        try {
-          const newTokens = await provider.refreshToken(connection.refreshToken);
-          await storage.updateBankConnectionTokens(id, {
-            accessToken: newTokens.accessToken,
-            refreshToken: newTokens.refreshToken,
-            tokenExpiresAt: newTokens.expiresAt,
-          });
-          accessToken = newTokens.accessToken;
-        } catch (err) {
-          await storage.updateBankConnectionTokens(id, {
-            status: "error",
-            lastError: "Token refresh failed. Please reconnect.",
-          });
-          return res.status(401).json({ message: "Bank connection expired. Please reconnect." });
-        }
-      }
-
-      if (!accessToken) {
-        return res.status(401).json({ message: "No access token. Please reconnect." });
-      }
-
-      // Fetch transactions
-      const from = fromDate ? new Date(fromDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const to = toDate ? new Date(toDate) : new Date();
-
-      const bankTransactions = await provider.fetchTransactions(
-        accessToken,
-        connection.externalAccountId || "",
-        from,
-        to
-      );
-
-      // Import transactions (deduplicate by reference)
-      let imported = 0;
-      for (const tx of bankTransactions) {
-        try {
-          await storage.createBankTransaction({
-            companyId: connection.companyId,
-            bankAccountId: connection.bankAccountId,
-            bankConnectionId: id,
-            transactionDate: tx.date,
-            description: tx.description,
-            amount: tx.amount,
-            reference: tx.reference || tx.externalId,
-            importSource: "api",
-          });
-          imported++;
-        } catch {
-          // Skip duplicates (unique constraint on reference)
-        }
-      }
-
-      // Update last sync time
-      await storage.updateBankConnection(id, { lastSyncedAt: new Date() });
-
-      logger.info(
-        { connectionId: id, imported, provider: connection.provider },
-        "Bank transactions synced"
-      );
-      res.json({ synced: imported, total: bankTransactions.length });
     })
   );
 
-  // Get balance for connected bank account
   app.get(
     "/api/bank-connections/:id/balance",
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
+    validate({ params: connParams }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const connection = await storage.getBankConnection(id);
-      if (!connection) {
-        return res.status(404).json({ message: "Bank connection not found" });
+      const connection = await ownConnection(req);
+      const client = getLeanClient();
+      const entityId = decryptSecret((connection as any).providerEntityId);
+      if (connection.provider !== "lean" || !client || !entityId || !connection.externalAccountId || connection.status === "disconnected") {
+        throw new AppError({ message: "This connection does not support balance fetching", statusCode: 400, code: "BALANCE_NOT_SUPPORTED" });
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, connection.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      try {
+        res.json(await client.fetchBalance(entityId, connection.externalAccountId));
+      } catch (err) {
+        if (err instanceof ProviderError) throw new AppError({ message: "The bank provider could not be reached.", statusCode: 502, code: "BANK_PROVIDER_ERROR" });
+        throw err;
       }
-
-      if (connection.connectionType !== "api" || !connection.provider || !connection.accessToken) {
-        return res
-          .status(400)
-          .json({ message: "This connection does not support balance fetching" });
-      }
-
-      const provider = getBankProvider(connection.provider);
-      if (!provider) {
-        return res.status(400).json({ message: "Provider not available" });
-      }
-
-      const balance = await provider.fetchBalance(
-        connection.accessToken,
-        connection.externalAccountId || ""
-      );
-
-      res.json(balance);
     })
   );
 }

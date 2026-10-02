@@ -17,16 +17,18 @@ import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../
 import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import { UAE_VAT_RATE } from "../constants";
 import { round2 } from "../services/financial-statements";
+import { dayEndTs, dayStartTs, isYmd, todayYmd } from "../reports/dates";
+import { SqlParams, accountBalances, ledgerLinesSql, money } from "../reports/ledger";
 import {
   asOfParams,
   parseAgingAsOf,
   payableAgingAsOfSql,
+  postedBillSql,
   receivableAgingAsOfSql,
 } from "../services/aging-as-of.service";
 import {
   creditedSql,
   openReceivableSql,
-  outstandingBaseSql,
   outstandingSql,
   paidSql,
 } from "../services/invoice-outstanding.db";
@@ -315,70 +317,15 @@ export function registerReportRoutes(app: Express) {
       if (!parsedAsOf.ok) {
         return res.status(400).json({ message: parsedAsOf.message, code: parsedAsOf.code });
       }
-      const agingAsOf = parsedAsOf.asOf;
+      // Phase 8 D4: one code path. Without `asOf` the report is the as-of report for today (Dubai), so receivables and
+      // payables tie to accounts 1040 and 2010: payables are POSTED bills only, with a due date of COALESCE(due_date,
+      // bill_date + 30 days); an invoice or bill due today is "current" and ages from tomorrow.
+      const today = todayYmd();
+      const agingAsOf = parsedAsOf.asOf ?? { ymd: today, dayEnd: dayEndTs(today) };
 
-      const [receivableResult, payableResult] = agingAsOf
-        ? await Promise.all([
-            pool.query(receivableAgingAsOfSql(), asOfParams(companyId, agingAsOf)),
-            pool.query(payableAgingAsOfSql(), asOfParams(companyId, agingAsOf)),
-          ])
-        : await Promise.all([
-        pool.query(
-          `WITH open_invoices AS (
-            SELECT
-              COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
-              ${outstandingBaseSql("i")} AS open_balance_aed,
-              COALESCE(i.due_date, i.date + INTERVAL '30 days') AS due_date
-            FROM invoices i
-            WHERE i.company_id = $1
-              AND ${openReceivableSql("i")}
-          )
-          SELECT
-            name,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date >= NOW()), 0)::float AS current_balance,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'), 0)::float AS days_30,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'), 0)::float AS days_60,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'), 0)::float AS days_90,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '90 days'), 0)::float AS over_90,
-            COALESCE(SUM(open_balance_aed), 0)::float AS total
-          FROM open_invoices
-          GROUP BY name
-          ORDER BY total DESC, name ASC`,
-          [companyId]
-        ),
-        pool.query(
-          `WITH open_bills AS (
-            SELECT
-              COALESCE(NULLIF(TRIM(vendor_name), ''), 'Unknown Vendor') AS name,
-              GREATEST(total_amount - COALESCE(amount_paid, 0), 0)
-                * COALESCE(NULLIF(exchange_rate, 0), 1) AS open_balance_aed,
-              due_date
-            FROM vendor_bills
-            WHERE company_id = $1
-              AND COALESCE(status, 'pending') NOT IN ('paid', 'void', 'cancelled')
-              AND GREATEST(total_amount - COALESCE(amount_paid, 0), 0) > 0
-            -- approved, unapplied vendor credits are negative payables (A/P holds them from their date)
-            UNION ALL
-            SELECT
-              COALESCE(NULLIF(TRIM(vendor_name), ''), 'Unknown Vendor') AS name,
-              -remaining_amount * COALESCE(NULLIF(exchange_rate, 0), 1) AS open_balance_aed,
-              NULL::timestamp AS due_date
-            FROM vendor_credit_notes
-            WHERE company_id = $1 AND status = 'approved' AND remaining_amount > 0 AND "date" <= NOW()
-          )
-          SELECT
-            name,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date IS NULL OR due_date >= NOW()), 0)::float AS current_balance,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'), 0)::float AS days_30,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'), 0)::float AS days_60,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'), 0)::float AS days_90,
-            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '90 days'), 0)::float AS over_90,
-            COALESCE(SUM(open_balance_aed), 0)::float AS total
-          FROM open_bills
-          GROUP BY name
-          ORDER BY total DESC, name ASC`,
-          [companyId]
-        ),
+      const [receivableResult, payableResult] = await Promise.all([
+        pool.query(receivableAgingAsOfSql(), asOfParams(companyId, agingAsOf)),
+        pool.query(payableAgingAsOfSql(), asOfParams(companyId, agingAsOf)),
       ]);
 
       // Buckets are rounded first; the row total is the sum of the rounded
@@ -425,112 +372,40 @@ export function registerReportRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      // Load all accounts for this company
-      const companyAccounts = await db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.companyId, companyId));
+      // Phase 8 D4: on the shared ledger layer (SQL sums), the same code as the run-route trial balance, instead of loading every
+      // journal line into memory (2 s at 50,000 lines). Day boundaries are Dubai days; the response is unchanged:
+      //  - asset / liability / equity accounts: cumulative through `to` (point in time), so the trial balance ties to the balance sheet;
+      //  - income / expense accounts: the period's activity only.
+      const day = (v?: string) => (v && isYmd(String(v).slice(0, 10)) ? String(v).slice(0, 10) : undefined);
+      const fromDay = day(from);
+      const toDay = day(to);
+      // One pass over the lines gives both slices and the foreign-currency flags (the old code loaded every line twice).
+      const tb = new SqlParams();
+      const periodFrom = tb.p(fromDay ? dayStartTs(fromDay) : "0001-01-01T00:00:00");
+      const [companyAccounts, sums] = await Promise.all([
+        db.select().from(accounts).where(eq(accounts.companyId, companyId)),
+        pool.query(
+          `WITH ${ledgerLinesSql(tb, companyId, { to: toDay })}
+           SELECT l.account_id, COALESCE(SUM(l.debit), 0)::text AS cd, COALESCE(SUM(l.credit), 0)::text AS cc,
+                  COALESCE(SUM(l.debit) FILTER (WHERE l.entry_date >= ${periodFrom}::timestamp), 0)::text AS pd,
+                  COALESCE(SUM(l.credit) FILTER (WHERE l.entry_date >= ${periodFrom}::timestamp), 0)::text AS pc,
+                  COALESCE(bool_or(l.foreign_currency IS NOT NULL), false) AS fc_all,
+                  COALESCE(bool_or(l.foreign_currency IS NOT NULL AND l.entry_date >= ${periodFrom}::timestamp), false) AS fc_period
+             FROM ledger l GROUP BY l.account_id`,
+          tb.values
+        ),
+      ]);
+      const slices = new Map<string, any>(sums.rows.map((r: any) => [String(r.account_id), r]));
 
-      // Period filter for income/expense activity. Use UAE-day boundaries so
-      // a transaction at, say, 23:00 UAE on Dec 31 is bucketed into Dec 31
-      // rather than slipping into the next year via UTC conversion.
-      const fromDate = from ? uaeDayStart(from) : undefined;
-      const toDate = to ? uaeDayEnd(to) : undefined;
-
-      // Period entries — used for income/expense balances which ARE
-      // period-scoped (a P&L line in the trial balance reflects the
-      // reporting period only).
-      const periodCond = and(
-        eq(journalEntries.companyId, companyId),
-        eq(journalEntries.status, "posted"),
-        fromDate ? gte(journalEntries.date, fromDate) : undefined,
-        toDate ? lte(journalEntries.date, toDate) : undefined
-      );
-
-      const periodEntryRows: Array<{ id: string }> = await db
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(periodCond);
-      const periodEntryIds = periodEntryRows.map((e) => e.id);
-
-      // Cumulative entries — used for asset/liability/equity (balance-sheet)
-      // accounts. A trial balance for those carries the opening balance
-      // through `to`, otherwise the trial balance won't tie to the balance
-      // sheet and won't actually balance.
-      const cumulativeCond = and(
-        eq(journalEntries.companyId, companyId),
-        eq(journalEntries.status, "posted"),
-        toDate ? lte(journalEntries.date, toDate) : undefined
-      );
-
-      const cumulativeEntryRows: Array<{ id: string }> = await db
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(cumulativeCond);
-      const cumulativeEntryIds = cumulativeEntryRows.map((e) => e.id);
-
-      const periodLines: JournalLine[] =
-        periodEntryIds.length > 0
-          ? await db
-              .select()
-              .from(journalLines)
-              .where(inArray(journalLines.entryId, periodEntryIds))
-          : [];
-
-      const cumulativeLines: JournalLine[] =
-        cumulativeEntryIds.length > 0
-          ? await db
-              .select()
-              .from(journalLines)
-              .where(inArray(journalLines.entryId, cumulativeEntryIds))
-          : [];
-
-      const periodTotals = new Map<
-        string,
-        { totalDebit: number; totalCredit: number; hasForeignLines: boolean }
-      >();
-      for (const line of periodLines) {
-        const existing = periodTotals.get(line.accountId) ?? {
-          totalDebit: 0,
-          totalCredit: 0,
-          hasForeignLines: false,
-        };
-        existing.totalDebit += line.debit ?? 0;
-        existing.totalCredit += line.credit ?? 0;
-        if (line.foreignCurrency) existing.hasForeignLines = true;
-        periodTotals.set(line.accountId, existing);
-      }
-
-      const cumulativeTotals = new Map<
-        string,
-        { totalDebit: number; totalCredit: number; hasForeignLines: boolean }
-      >();
-      for (const line of cumulativeLines) {
-        const existing = cumulativeTotals.get(line.accountId) ?? {
-          totalDebit: 0,
-          totalCredit: 0,
-          hasForeignLines: false,
-        };
-        existing.totalDebit += line.debit ?? 0;
-        existing.totalCredit += line.credit ?? 0;
-        if (line.foreignCurrency) existing.hasForeignLines = true;
-        cumulativeTotals.set(line.accountId, existing);
-      }
-
-      // Build result rows. For each account pick the correct slice:
-      //  - Asset/Liability/Equity: cumulative through `to` (point-in-time)
-      //  - Income/Expense: period activity only
       const rows = (companyAccounts as Account[])
         .sort((a: Account, b: Account) => (a.code ?? "").localeCompare(b.code ?? ""))
         .map((account: Account) => {
           const isBalanceSheet = ["asset", "liability", "equity"].includes(account.type);
-          const { totalDebit, totalCredit, hasForeignLines } = (isBalanceSheet
-            ? cumulativeTotals
-            : periodTotals
-          ).get(account.id) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
-          const balance = ["asset", "expense"].includes(account.type)
-            ? totalDebit - totalCredit
-            : totalCredit - totalDebit;
+          const slice = slices.get(account.id);
+          const totalDebit = slice ? money(isBalanceSheet ? slice.cd : slice.pd) : 0;
+          const totalCredit = slice ? money(isBalanceSheet ? slice.cc : slice.pc) : 0;
+          const hasForeignLines = slice ? (isBalanceSheet ? slice.fc_all === true : slice.fc_period === true) : false;
+          const balance = ["asset", "expense"].includes(account.type) ? totalDebit - totalCredit : totalCredit - totalDebit;
           return {
             accountId: account.id,
             accountName: account.nameEn,
@@ -620,6 +495,7 @@ export function registerReportRoutes(app: Express) {
           FROM vendor_bills
           WHERE company_id = $1
             AND status NOT IN ('paid')
+            AND ${postedBillSql("vendor_bills")}
             AND GREATEST(total_amount - amount_paid, 0) > 0
           GROUP BY vendor_name, currency
           ORDER BY open_balance DESC`,

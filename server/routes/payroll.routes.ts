@@ -16,6 +16,21 @@ import { generatePayslipPDF } from "../services/pdf-payslip.service";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import { calculateGratuityForEmployee, completedYearsBetween, isUaeOrGccNational, round2 } from "../services/gratuity";
+import { leaveDeductionsForMonth } from "../services/leave.service";
+import { markRunInstalmentsDeducted, releaseRunInstalments, reserveInstalmentsForItem } from "../services/employee-loan.service";
+import { ensureEmployeeLoansAccount } from "../services/hr-journal";
+import { buildPayrollRegister, registerToCsv } from "../services/payroll-register.service";
+import { LOCK_NS, withDocumentLock } from "../services/document-lock";
+import { loadApprovalDocument } from "../services/approval-queue.service";
+import {
+  auditApprovalStep,
+  beginApprovalStep,
+  notifyApprovalProgress,
+  pendingApprovalBody,
+  recordApprovalStep,
+  resolveActor,
+} from "../services/approval-gate.service";
 import {
   BASIC_SALARY_POSITIVE_MESSAGE,
   partitionPayrollEligible,
@@ -42,61 +57,6 @@ const PENSION_EMPLOYER_RATE = 0.125;
 const DAYS_PER_MONTH = 30;
 const MONTHS_PER_YEAR = 12;
 const DAYS_PER_YEAR_30D = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 360
-
-// GCC nationalities (ISO-2 codes plus a few common spellings) eligible for
-// equivalent-treatment pension under GCC Unified Pension Extension. Match is
-// case-insensitive and trimmed; everything else is treated as expat.
-const GCC_NATIONALITIES = new Set([
-  "AE",
-  "UAE",
-  "EMIRATI",
-  "EMIRATES",
-  "UNITED ARAB EMIRATES",
-  "SA",
-  "KSA",
-  "SAUDI",
-  "SAUDI ARABIA",
-  "SAUDI ARABIAN",
-  "BH",
-  "BAHRAIN",
-  "BAHRAINI",
-  "KW",
-  "KUWAIT",
-  "KUWAITI",
-  "OM",
-  "OMAN",
-  "OMANI",
-  "QA",
-  "QATAR",
-  "QATARI",
-]);
-
-function isUaeOrGccNational(nationality: string | null | undefined): boolean {
-  if (!nationality) return false;
-  return GCC_NATIONALITIES.has(nationality.trim().toUpperCase());
-}
-
-// Round half-away-from-zero to 2dp; numeric(15,2) columns demand exact 2dp.
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-// Calendar-correct anniversary walk: how many full years elapsed between
-// `start` and `end`. Used to pick the 21-day vs 30-day gratuity tier.
-function completedYearsBetween(start: Date, end: Date): number {
-  if (!(start instanceof Date) || isNaN(start.getTime())) return 0;
-  if (end.getTime() <= start.getTime()) return 0;
-  let cursor = new Date(start);
-  let years = 0;
-  while (true) {
-    const next = new Date(cursor);
-    next.setFullYear(next.getFullYear() + 1);
-    if (next.getTime() > end.getTime()) break;
-    cursor = next;
-    years++;
-  }
-  return years;
-}
 
 // Last day of the given (1-indexed) payroll period, in UTC. Day 0 of month
 // `periodMonth` (0-indexed = periodMonth-1, then +1 month, day 0) lands on the
@@ -210,118 +170,6 @@ function calculatePayrollLine(input: {
   };
 }
 
-/**
- * UAE Labour Law (Federal Decree-Law 33/2021, Art. 51) gratuity calculation
- * for non-GCC employees:
- *   - First 5 years: 21 days of basic salary per year
- *   - After 5 years: 30 days of basic salary per year
- *   - Total cannot exceed two years' total wage (basic + allowances)
- *   - Service < 1 year: ineligible
- *   - Daily wage = basic / 30
- * Year-counting uses calendar anniversaries (completed years) plus a
- * day-rated trailing partial year — the law does not use 365.25-day approx.
- */
-function calculateGratuityForEmployee(opts: {
-  joinDate: Date;
-  endDate: Date;
-  basicSalary: number;
-  totalWage: number; // basic + housing + transport + other
-  isGccNational: boolean;
-}) {
-  const { joinDate, endDate, basicSalary, totalWage, isGccNational } = opts;
-
-  if (isGccNational) {
-    return {
-      eligible: false,
-      reason: "gcc_national",
-      yearsOfService: 0,
-      completedYears: 0,
-      trailingDays: 0,
-      dailyWage: 0,
-      firstFiveYearsGratuity: 0,
-      remainingYearsGratuity: 0,
-      uncappedGratuity: 0,
-      maxGratuity: 0,
-      totalGratuity: 0,
-      isCapped: false,
-    };
-  }
-
-  // Step 1: completed years via anniversary walk (calendar-correct).
-  let cursor = new Date(joinDate);
-  let completedYears = 0;
-  while (true) {
-    const next = new Date(cursor);
-    next.setFullYear(next.getFullYear() + 1);
-    if (next.getTime() > endDate.getTime()) break;
-    cursor = next;
-    completedYears++;
-  }
-
-  // Step 2: trailing partial-year days.
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const trailingDays = Math.max(0, Math.floor((endDate.getTime() - cursor.getTime()) / msPerDay));
-
-  // Total continuous-service expressed for display.
-  const yearsOfService = completedYears + trailingDays / 365;
-
-  if (yearsOfService < 1) {
-    return {
-      eligible: false,
-      reason: "less_than_one_year",
-      yearsOfService,
-      completedYears,
-      trailingDays,
-      dailyWage: 0,
-      firstFiveYearsGratuity: 0,
-      remainingYearsGratuity: 0,
-      uncappedGratuity: 0,
-      maxGratuity: round2(totalWage * 24),
-      totalGratuity: 0,
-      isCapped: false,
-    };
-  }
-
-  const dailyWage = basicSalary / 30;
-
-  // Step 3: tiered days-credit calculation.
-  const yearsInFirst5 = Math.min(completedYears, 5);
-  const yearsAfter5 = Math.max(0, completedYears - 5);
-  let firstFiveDays = yearsInFirst5 * 21;
-  let afterFiveDays = yearsAfter5 * 30;
-
-  if (trailingDays > 0) {
-    const nextYearNumber = completedYears + 1; // 1-indexed
-    const ratePerYear = nextYearNumber <= 5 ? 21 : 30;
-    const partial = (trailingDays / 365) * ratePerYear;
-    if (nextYearNumber <= 5) firstFiveDays += partial;
-    else afterFiveDays += partial;
-  }
-
-  const firstFiveYearsGratuity = firstFiveDays * dailyWage;
-  const remainingYearsGratuity = afterFiveDays * dailyWage;
-  const uncappedGratuity = firstFiveYearsGratuity + remainingYearsGratuity;
-
-  // Step 4: 2-years total-wage cap (Art. 51(2)).
-  const maxGratuity = totalWage * 24;
-  const totalGratuity = Math.min(uncappedGratuity, maxGratuity);
-
-  return {
-    eligible: true,
-    reason: null as string | null,
-    yearsOfService,
-    completedYears,
-    trailingDays,
-    dailyWage: round2(dailyWage),
-    firstFiveYearsGratuity: round2(firstFiveYearsGratuity),
-    remainingYearsGratuity: round2(remainingYearsGratuity),
-    uncappedGratuity: round2(uncappedGratuity),
-    maxGratuity: round2(maxGratuity),
-    totalGratuity: round2(totalGratuity),
-    isCapped: uncappedGratuity > maxGratuity,
-  };
-}
-
 // ─── Inline table references for direct DB queries ─────────
 // Since we are not modifying shared/schema.ts, we reference tables via raw SQL
 // through the db query builder using sql template literals where needed,
@@ -341,6 +189,13 @@ async function query<T = any>(text: string, params: any[] = []): Promise<T[]> {
 async function queryOne<T = any>(text: string, params: any[] = []): Promise<T | undefined> {
   const rows = await query<T>(text, params);
   return rows[0];
+}
+
+/** A calculation refused part-way: rolls the transaction back and answers 400 with this body. */
+class CalcAbort extends Error {
+  constructor(public readonly body: Record<string, unknown>) {
+    super(String(body.message ?? "Payroll calculation refused"));
+  }
 }
 
 export function registerPayrollRoutes(app: Express) {
@@ -729,14 +584,21 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      if (run.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This payroll run is waiting for approval and cannot be edited. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
       if (run.status === "approved") {
         return res.status(400).json({ message: "Cannot modify an approved payroll run" });
       }
 
+      // The status is never set from a request: it moves through calculate and approve (which post the ledger
+      // and honour the approval rules), so a PATCH cannot approve a run around them.
       const allowedFields: Record<string, string> = {
         periodMonth: "period_month",
         periodYear: "period_year",
-        status: "status",
       };
 
       const setClauses: string[] = [];
@@ -789,156 +651,254 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      if (run.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This payroll run is waiting for approval and cannot be recalculated. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
       if (run.status === "approved") {
         return res.status(400).json({ message: "Cannot recalculate an approved payroll run" });
       }
 
-      // Preserve manually-edited items: only recreate the un-edited ones so
-      // accountants don't lose hand-entered overtime/deductions on every recalc.
-      const preservedItems = await query(
-        "SELECT * FROM payroll_items WHERE payroll_run_id = $1 AND manually_edited = true",
-        [id]
-      );
-      const preservedEmployeeIds = new Set(preservedItems.map((it: any) => it.employee_id));
+      // The whole recalculation is one transaction: a failure part-way (a negative net, a lock) leaves the run,
+      // its items and the loan reservations exactly as they were.
+      const calcClient = await (db as any).$client.connect();
+      const client = calcClient;
+      const tq = async (text: string, params: any[] = []) => (await client.query(text, params)).rows as any[];
+      const tqOne = async (text: string, params: any[] = []) => (await tq(text, params))[0];
+      let preservedItems: any[] = [];
+      let warnings: any = [];
+      let employeeCount = 0;
+      let updated: any;
+      try {
+        await client.query("BEGIN");
+        // A recalculation gives back the loan instalments this run had reserved; they are reserved again below.
+        await releaseRunInstalments(id, client);
 
-      await query(
-        "DELETE FROM payroll_items WHERE payroll_run_id = $1 AND manually_edited = false",
-        [id]
-      );
+        // Preserve manually-edited items: only recreate the un-edited ones so
+        // accountants don't lose hand-entered overtime/deductions on every recalc.
+        preservedItems = await tq(
+          "SELECT * FROM payroll_items WHERE payroll_run_id = $1 AND manually_edited = true",
+          [id]
+        );
+        const preservedEmployeeIds = new Set(preservedItems.map((it: any) => it.employee_id));
 
-      // Get all active employees for this company
-      const activeEmployees = await query(
-        "SELECT * FROM employees WHERE company_id = $1 AND status = 'active'",
-        [run.company_id]
-      );
+        await tq(
+          "DELETE FROM payroll_items WHERE payroll_run_id = $1 AND manually_edited = false",
+          [id]
+        );
 
-      // Zero-salary employees are excluded (with a warning) rather than
-      // failing the whole run.
-      const { eligible: employees, warnings } = partitionPayrollEligible(activeEmployees);
+        // Get all active employees for this company
+        const activeEmployees = await tq(
+          "SELECT * FROM employees WHERE company_id = $1 AND status = 'active'",
+          [run.company_id]
+        );
 
-      if (employees.length === 0 && preservedItems.length === 0) {
-        return res.status(400).json({
-          message:
-            activeEmployees.length === 0
-              ? "No active employees found for this company"
-              : "No active employees with a basic salary above zero found for this company",
-          warnings,
-        });
-      }
+        // Zero-salary employees are excluded (with a warning) rather than
+        // failing the whole run.
+        const partition = partitionPayrollEligible(activeEmployees);
+        const employees = partition.eligible;
+        warnings = partition.warnings;
 
-      let totalBasic = 0;
-      let totalAllowances = 0;
-      let totalDeductions = 0;
-      let totalNet = 0;
-      let totalPensionEmployee = 0;
-      let totalPensionEmployer = 0;
-      let totalGratuityAccrual = 0;
-
-      // End of the payroll period — used to choose the gratuity tier (21 vs 30
-      // days/year) per Art. 51 based on the employee's tenure at period close.
-      const periodEnd = periodEndDate(run.period_month, run.period_year);
-
-      // Re-include preserved (manually edited) items in the run totals.
-      for (const item of preservedItems) {
-        totalBasic += parseFloat(item.basic_salary) || 0;
-        totalAllowances +=
-          (parseFloat(item.housing_allowance) || 0) +
-          (parseFloat(item.transport_allowance) || 0) +
-          (parseFloat(item.other_allowance) || 0) +
-          (parseFloat(item.overtime) || 0);
-        totalDeductions +=
-          (parseFloat(item.deductions) || 0) + (parseFloat(item.pension_employee) || 0);
-        totalNet += parseFloat(item.net_salary) || 0;
-        totalPensionEmployee += parseFloat(item.pension_employee) || 0;
-        totalPensionEmployer += parseFloat(item.pension_employer) || 0;
-        totalGratuityAccrual += parseFloat(item.gratuity_accrual) || 0;
-      }
-
-      // Calculate a fresh payroll item for each active employee that wasn't
-      // preserved manually.
-      for (const emp of employees) {
-        if (preservedEmployeeIds.has(emp.id)) continue;
-
-        const tenureYears = emp.join_date
-          ? completedYearsBetween(new Date(emp.join_date), periodEnd)
-          : 0;
-
-        const calc = calculatePayrollLine({
-          basic: parseFloat(emp.basic_salary) || 0,
-          housing: parseFloat(emp.housing_allowance) || 0,
-          transport: parseFloat(emp.transport_allowance) || 0,
-          other: parseFloat(emp.other_allowance) || 0,
-          overtime: 0,
-          generalDeductions: 0,
-          isGccNational: isUaeOrGccNational(emp.nationality),
-          tenureYears,
-        });
-
-        if (calc.netSalary < 0) {
-          return res.status(400).json({
-            message: `Net salary is negative for employee ${emp.full_name} (${emp.employee_number ?? emp.id}). Deductions exceed gross pay.`,
-            employeeId: emp.id,
-            grossPay: calc.grossPay,
-            deductions: calc.generalDeductions + calc.pensionEmployee,
+        if (employees.length === 0 && preservedItems.length === 0) {
+          throw new CalcAbort({
+            message:
+              activeEmployees.length === 0
+                ? "No active employees found for this company"
+                : "No active employees with a basic salary above zero found for this company",
+            warnings,
           });
         }
 
-        await query(
-          `INSERT INTO payroll_items (
-          payroll_run_id, employee_id,
-          basic_salary, housing_allowance, transport_allowance, other_allowance,
-          overtime, deductions, pension_employee, pension_employer, gratuity_accrual,
-          net_salary, payment_mode, status, manually_edited
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'bank_transfer', 'pending', false)`,
+        let totalBasic = 0;
+        let totalAllowances = 0;
+        let totalDeductions = 0;
+        let totalNet = 0;
+        let totalPensionEmployee = 0;
+        let totalPensionEmployer = 0;
+        let totalGratuityAccrual = 0;
+        let totalLeaveDeductions = 0;
+        let totalLoanDeductions = 0;
+
+        // End of the payroll period — used to choose the gratuity tier (21 vs 30
+        // days/year) per Art. 51 based on the employee's tenure at period close.
+        const periodEnd = periodEndDate(run.period_month, run.period_year);
+
+        // Approved leave of the month (unpaid, half-pay and sick-leave tiers) takes basic/30 or basic/60 a day.
+        const leaveByEmployee = await leaveDeductionsForMonth(run.company_id, run.period_year, run.period_month, [
+          ...employees.filter((e: any) => !preservedEmployeeIds.has(e.id)).map((e: any) => ({ id: e.id, basic: parseFloat(e.basic_salary) || 0 })),
+          ...preservedItems.map((it: any) => ({ id: it.employee_id, basic: parseFloat(it.basic_salary) || 0 })),
+        ]);
+
+        // Re-include preserved (manually edited) items in the run totals. Leave and loan deductions and the net are
+        // always recomputed, even for an edited item: the hand-entered overtime and deductions stay as typed.
+        for (const item of preservedItems) {
+          const gross =
+            (parseFloat(item.basic_salary) || 0) +
+            (parseFloat(item.housing_allowance) || 0) +
+            (parseFloat(item.transport_allowance) || 0) +
+            (parseFloat(item.other_allowance) || 0) +
+            (parseFloat(item.overtime) || 0);
+          const leave = leaveByEmployee.get(item.employee_id) ?? { unpaidDays: 0, halfDays: 0, deduction: 0 };
+          const loan = await reserveInstalmentsForItem({
+            client,
+            companyId: run.company_id,
+            runId: id,
+            itemId: item.id,
+            employeeId: item.employee_id,
+            periodYear: run.period_year,
+            periodMonth: run.period_month,
+            grossPay: gross,
+            generalDeductions: parseFloat(item.deductions) || 0,
+          });
+          const net = round2(gross - leave.deduction - loan - (parseFloat(item.pension_employee) || 0) - (parseFloat(item.deductions) || 0));
+          if (net < 0) {
+            throw new CalcAbort({
+              message: `Net salary is negative for employee ${item.employee_id}. Leave, loan and other deductions exceed gross pay.`,
+              employeeId: item.employee_id,
+              grossPay: round2(gross),
+            });
+          }
+          await tq(
+            `UPDATE payroll_items SET leave_deduction = $2, loan_deduction = $3, unpaid_leave_days = $4, half_pay_leave_days = $5, net_salary = $6 WHERE id = $1`,
+            [item.id, leave.deduction, loan, leave.unpaidDays, leave.halfDays, net]
+          );
+          totalBasic += parseFloat(item.basic_salary) || 0;
+          totalAllowances +=
+            (parseFloat(item.housing_allowance) || 0) +
+            (parseFloat(item.transport_allowance) || 0) +
+            (parseFloat(item.other_allowance) || 0) +
+            (parseFloat(item.overtime) || 0);
+          totalDeductions +=
+            (parseFloat(item.deductions) || 0) + (parseFloat(item.pension_employee) || 0) + leave.deduction + loan;
+          totalNet += net;
+          totalPensionEmployee += parseFloat(item.pension_employee) || 0;
+          totalPensionEmployer += parseFloat(item.pension_employer) || 0;
+          totalGratuityAccrual += parseFloat(item.gratuity_accrual) || 0;
+          totalLeaveDeductions += leave.deduction;
+          totalLoanDeductions += loan;
+        }
+
+        // Calculate a fresh payroll item for each active employee that wasn't
+        // preserved manually.
+        for (const emp of employees) {
+          if (preservedEmployeeIds.has(emp.id)) continue;
+
+          const tenureYears = emp.join_date
+            ? completedYearsBetween(new Date(emp.join_date), periodEnd)
+            : 0;
+
+          const calc = calculatePayrollLine({
+            basic: parseFloat(emp.basic_salary) || 0,
+            housing: parseFloat(emp.housing_allowance) || 0,
+            transport: parseFloat(emp.transport_allowance) || 0,
+            other: parseFloat(emp.other_allowance) || 0,
+            overtime: 0,
+            generalDeductions: 0,
+            isGccNational: isUaeOrGccNational(emp.nationality),
+            tenureYears,
+          });
+
+          const leave = leaveByEmployee.get(emp.id) ?? { unpaidDays: 0, halfDays: 0, deduction: 0 };
+          if (round2(calc.netSalary - leave.deduction) < 0) {
+            throw new CalcAbort({
+              message: `Net salary is negative for employee ${emp.full_name} (${emp.employee_number ?? emp.id}). Deductions exceed gross pay.`,
+              employeeId: emp.id,
+              grossPay: calc.grossPay,
+              deductions: calc.generalDeductions + calc.pensionEmployee + leave.deduction,
+            });
+          }
+
+          const [insertedItem] = await tq(
+            `INSERT INTO payroll_items (
+            payroll_run_id, employee_id,
+            basic_salary, housing_allowance, transport_allowance, other_allowance,
+            overtime, deductions, pension_employee, pension_employer, gratuity_accrual,
+            net_salary, payment_mode, status, manually_edited,
+            leave_deduction, unpaid_leave_days, half_pay_leave_days
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'bank_transfer', 'pending', false, $13, $14, $15)
+          RETURNING id`,
+            [
+              id,
+              emp.id,
+              calc.basic,
+              calc.housing,
+              calc.transport,
+              calc.other,
+              calc.overtime,
+              calc.generalDeductions,
+              calc.pensionEmployee,
+              calc.pensionEmployer,
+              calc.gratuityAccrual,
+              round2(calc.netSalary - leave.deduction),
+              leave.deduction,
+              leave.unpaidDays,
+              leave.halfDays,
+            ]
+          );
+
+          // Loan instalments due by this period come off the pay, up to 50 % of gross with the other deductions.
+          const loan = await reserveInstalmentsForItem({
+            client,
+            companyId: run.company_id,
+            runId: id,
+            itemId: insertedItem.id,
+            employeeId: emp.id,
+            periodYear: run.period_year,
+            periodMonth: run.period_month,
+            grossPay: calc.grossPay,
+            generalDeductions: calc.generalDeductions,
+          });
+          const net = round2(calc.netSalary - leave.deduction - loan);
+          if (loan > 0) await tq("UPDATE payroll_items SET loan_deduction = $2, net_salary = $3 WHERE id = $1", [insertedItem.id, loan, net]);
+
+          totalBasic += calc.basic;
+          totalAllowances += calc.housing + calc.transport + calc.other + calc.overtime;
+          totalDeductions += calc.generalDeductions + calc.pensionEmployee + leave.deduction + loan;
+          totalNet += net;
+          totalLeaveDeductions += leave.deduction;
+          totalLoanDeductions += loan;
+          totalPensionEmployee += calc.pensionEmployee;
+          totalPensionEmployer += calc.pensionEmployer;
+          totalGratuityAccrual += calc.gratuityAccrual;
+        }
+
+        employeeCount =
+          preservedItems.length +
+          employees.filter((e: any) => !preservedEmployeeIds.has(e.id)).length;
+
+        // Update the payroll run totals
+        updated = await tqOne(
+          `UPDATE payroll_runs SET
+          total_basic = $1, total_allowances = $2, total_deductions = $3,
+          total_net = $4, total_pension_employee = $5, total_pension_employer = $6,
+          total_gratuity_accrual = $7,
+          employee_count = $8, status = 'calculated',
+          total_leave_deductions = $10, total_loan_deductions = $11
+         WHERE id = $9 RETURNING *`,
           [
+            round2(totalBasic),
+            round2(totalAllowances),
+            round2(totalDeductions),
+            round2(totalNet),
+            round2(totalPensionEmployee),
+            round2(totalPensionEmployer),
+            round2(totalGratuityAccrual),
+            employeeCount,
             id,
-            emp.id,
-            calc.basic,
-            calc.housing,
-            calc.transport,
-            calc.other,
-            calc.overtime,
-            calc.generalDeductions,
-            calc.pensionEmployee,
-            calc.pensionEmployer,
-            calc.gratuityAccrual,
-            calc.netSalary,
+            round2(totalLeaveDeductions),
+            round2(totalLoanDeductions),
           ]
         );
-
-        totalBasic += calc.basic;
-        totalAllowances += calc.housing + calc.transport + calc.other + calc.overtime;
-        totalDeductions += calc.generalDeductions + calc.pensionEmployee;
-        totalNet += calc.netSalary;
-        totalPensionEmployee += calc.pensionEmployee;
-        totalPensionEmployer += calc.pensionEmployer;
-        totalGratuityAccrual += calc.gratuityAccrual;
+        await client.query("COMMIT");
+      } catch (calcError) {
+        await client.query("ROLLBACK").catch(() => {});
+        if (calcError instanceof CalcAbort) return res.status(400).json(calcError.body);
+        throw calcError;
+      } finally {
+        calcClient.release();
       }
-
-      const employeeCount =
-        preservedItems.length +
-        employees.filter((e: any) => !preservedEmployeeIds.has(e.id)).length;
-
-      // Update the payroll run totals
-      const updated = await queryOne(
-        `UPDATE payroll_runs SET
-        total_basic = $1, total_allowances = $2, total_deductions = $3,
-        total_net = $4, total_pension_employee = $5, total_pension_employer = $6,
-        total_gratuity_accrual = $7,
-        employee_count = $8, status = 'calculated'
-       WHERE id = $9 RETURNING *`,
-        [
-          round2(totalBasic),
-          round2(totalAllowances),
-          round2(totalDeductions),
-          round2(totalNet),
-          round2(totalPensionEmployee),
-          round2(totalPensionEmployer),
-          round2(totalGratuityAccrual),
-          employeeCount,
-          id,
-        ]
-      );
 
       log.info(
         {
@@ -972,6 +932,14 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // The status check, the approval rules and the posting run under the run's approval lock with the run
+      // re-read inside it: ten parallel approves post one journal entry, not ten.
+      return await withDocumentLock(id, LOCK_NS.APPROVAL, async (tx) => {
+      const run = await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]);
+      if (!run) {
+        return res.status(404).json({ message: "Payroll run not found" });
+      }
+
       if (run.status === "approved") {
         return res.status(400).json({ message: "Payroll run is already approved" });
       }
@@ -991,7 +959,7 @@ export function registerPayrollRoutes(app: Express) {
       const items = await query(
         `SELECT basic_salary, housing_allowance, transport_allowance, other_allowance,
               overtime, deductions, pension_employee, pension_employer,
-              gratuity_accrual, net_salary
+              gratuity_accrual, net_salary, leave_deduction, loan_deduction
          FROM payroll_items WHERE payroll_run_id = $1`,
         [id]
       );
@@ -1002,12 +970,28 @@ export function registerPayrollRoutes(app: Express) {
         });
       }
 
+      // Approval rules (amount and role): none = the single-step approval this route always had.
+      const approvalDoc = await loadApprovalDocument("payroll_run", id);
+      const approvalActor = await resolveActor((req as any).user, run.company_id);
+      const approvalStep = approvalDoc
+        ? await beginApprovalStep(tx, approvalDoc, approvalActor, { previousStatus: run.status })
+        : ({ kind: "none" } as const);
+      if (approvalStep.kind === "step" && !approvalStep.isFinal) {
+        const request = await recordApprovalStep(tx, approvalStep, approvalActor);
+        const waiting = await queryOne("UPDATE payroll_runs SET status = 'pending_approval' WHERE id = $1 RETURNING *", [id]);
+        await auditApprovalStep({ req, actor: approvalActor, doc: approvalDoc!, request, stepNumber: approvalStep.stepNumber, decision: "approved" });
+        void notifyApprovalProgress({ doc: approvalDoc!, request, actor: approvalActor, outcome: "needs_next_step" });
+        return res.json({ ...waiting, ...pendingApprovalBody(approvalStep) });
+      }
+
       let grossComp = 0; // basic + allowances + overtime — debit to 5020
       let netPay = 0; // credit to 2030 Salaries Payable
       let pensionEmployee = 0; // employee withholding (already in net delta)
       let pensionEmployer = 0; // debit 5025 / additional credit to 2032
       let gratuityAccrual = 0; // debit 5028 / credit 2036
       let generalDeductions = 0; // credit 2034
+      let leaveDeductions = 0; // unpaid / half-pay / sick-tier leave: not an expense (reduces the debit to 5020)
+      let loanDeductions = 0; // credit 1080 Employee Loans: instalments recovered from pay
 
       for (const it of items) {
         const basic = parseFloat(it.basic_salary) || 0;
@@ -1021,6 +1005,8 @@ export function registerPayrollRoutes(app: Express) {
         pensionEmployer += parseFloat(it.pension_employer) || 0;
         gratuityAccrual += parseFloat(it.gratuity_accrual) || 0;
         generalDeductions += parseFloat(it.deductions) || 0;
+        leaveDeductions += parseFloat(it.leave_deduction) || 0;
+        loanDeductions += parseFloat(it.loan_deduction) || 0;
       }
 
       grossComp = round2(grossComp);
@@ -1029,6 +1015,10 @@ export function registerPayrollRoutes(app: Express) {
       pensionEmployer = round2(pensionEmployer);
       gratuityAccrual = round2(gratuityAccrual);
       generalDeductions = round2(generalDeductions);
+      leaveDeductions = round2(leaveDeductions);
+      loanDeductions = round2(loanDeductions);
+      // What the company actually pays out as salary cost: gross less the pay withheld for leave.
+      const salaryCost = round2(grossComp - leaveDeductions);
 
       // Look up the accounts we need. Migration 0030 backfills these for every
       // existing company; new companies get them via defaultChartOfAccounts.
@@ -1084,10 +1074,10 @@ export function registerPayrollRoutes(app: Express) {
         description: string;
       }> = [];
 
-      if (grossComp > 0) {
+      if (salaryCost > 0) {
         jeLines.push({
           accountId: salariesExpense.id,
-          debit: grossComp,
+          debit: salaryCost,
           credit: 0,
           description: `Salaries & wages expense - payroll ${periodLabel}`,
         });
@@ -1141,9 +1131,19 @@ export function registerPayrollRoutes(app: Express) {
           description: `End-of-service gratuity provision - payroll ${periodLabel}`,
         });
       }
+      if (loanDeductions > 0) {
+        jeLines.push({
+          accountId: await ensureEmployeeLoansAccount(run.company_id),
+          debit: 0,
+          credit: loanDeductions,
+          description: `Employee loan instalments recovered - payroll ${periodLabel}`,
+        });
+      }
 
-      const entryNumber = await storage.generateEntryNumber(run.company_id, periodEndDate);
-      const journalEntry = await storage.createJournalEntry(
+      // Idempotent: a run whose journal is already on the ledger (an approve that failed after posting) is not posted twice.
+      const existingJe = (await storage.getJournalEntriesBySource(run.company_id, "system", id)).find((e) => e.status === "posted");
+      const entryNumber = existingJe?.entryNumber ?? (await storage.generateEntryNumber(run.company_id, periodEndDate));
+      const journalEntry = existingJe ?? await storage.createJournalEntry(
         {
           companyId: run.company_id,
           date: periodEndDate,
@@ -1171,6 +1171,14 @@ export function registerPayrollRoutes(app: Express) {
         "UPDATE payroll_items SET status = 'paid', journal_entry_id = $1 WHERE payroll_run_id = $2",
         [journalEntry.id, id]
       );
+      // The loan instalments this run reserved are now deducted; a loan with nothing left owed is settled.
+      await markRunInstalmentsDeducted(id);
+
+      if (approvalStep.kind === "step") {
+        const request = await recordApprovalStep(tx, approvalStep, approvalActor);
+        await auditApprovalStep({ req, actor: approvalActor, doc: approvalDoc!, request, stepNumber: approvalStep.stepNumber, decision: "approved" });
+        void notifyApprovalProgress({ doc: approvalDoc!, request, actor: approvalActor, outcome: "approved" });
+      }
 
       await recordAudit({
         userId,
@@ -1189,6 +1197,8 @@ export function registerPayrollRoutes(app: Express) {
           pensionEmployer,
           gratuityAccrual,
           generalDeductions,
+          leaveDeductions,
+          loanDeductions,
         },
         req,
       });
@@ -1204,7 +1214,8 @@ export function registerPayrollRoutes(app: Express) {
         },
         "Payroll run approved and journal entry posted"
       );
-      res.json(updated);
+      return res.json(updated);
+      });
     })
   );
 
@@ -1229,6 +1240,14 @@ export function registerPayrollRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, run.company_id);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      // The bank file pays the employees: it is only produced for a run that was approved (and therefore posted).
+      if (run.status !== "approved" && run.status !== "paid") {
+        return res.status(409).json({
+          message: "Approve the payroll run before generating the WPS file.",
+          code: "PAYROLL_NOT_APPROVED",
+        });
       }
 
       // Get company details
@@ -1279,7 +1298,10 @@ export function registerPayrollRoutes(app: Express) {
         otherAllowance: item.other_allowance,
         overtime: item.overtime,
         deductions: round2(
-          (parseFloat(item.deductions) || 0) + (parseFloat(item.pension_employee) || 0)
+          (parseFloat(item.deductions) || 0) +
+            (parseFloat(item.pension_employee) || 0) +
+            (parseFloat(item.leave_deduction) || 0) +
+            (parseFloat(item.loan_deduction) || 0)
         ),
         netSalary: item.net_salary,
         paymentMode: item.payment_mode,
@@ -1374,7 +1396,7 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (run.status !== "calculated" && run.status !== "approved") {
+      if (run.status !== "calculated" && run.status !== "pending_approval" && run.status !== "approved") {
         return res.status(409).json({
           message: "Payslips are available once the payroll run has been calculated.",
           code: "PAYROLL_RUN_NOT_CALCULATED",
@@ -1422,6 +1444,10 @@ export function registerPayrollRoutes(app: Express) {
           pensionEmployer: row.pension_employer,
           gratuityAccrual: row.gratuity_accrual,
           netSalary: row.net_salary,
+          leaveDeduction: row.leave_deduction,
+          loanDeduction: row.loan_deduction,
+          unpaidLeaveDays: row.unpaid_leave_days,
+          halfPayLeaveDays: row.half_pay_leave_days,
         },
       });
 
@@ -1432,6 +1458,28 @@ export function registerPayrollRoutes(app: Express) {
         "Content-Length": pdf.length.toString(),
       });
       res.send(pdf);
+    })
+  );
+
+  // Payroll register: every pay component per employee, the totals and a tie-out to the posted journal.
+  app.get(
+    "/api/payroll-runs/:id/register",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const run = /^[0-9a-f-]{36}$/i.test(id) ? await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]) : undefined;
+      if (!run || !(await storage.hasCompanyAccess(userId, run.company_id))) {
+        return res.status(404).json({ message: "Payroll run not found" });
+      }
+      const register = await buildPayrollRegister(run);
+      if (req.query.format === "csv") {
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="payroll-register-${run.period_year}-${String(run.period_month).padStart(2, "0")}.csv"`);
+        return res.send(registerToCsv(register));
+      }
+      res.json(register);
     })
   );
 
@@ -1462,6 +1510,12 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      if (item.run_status === "pending_approval") {
+        return res.status(409).json({
+          message: "This payroll run is waiting for approval and its items cannot be changed. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
       if (item.run_status === "approved") {
         return res.status(400).json({ message: "Cannot modify items in an approved payroll run" });
       }
@@ -1497,12 +1551,16 @@ export function registerPayrollRoutes(app: Express) {
         tenureYears,
       });
 
-      if (calc.netSalary < 0) {
+      // Leave and loan deductions are set by the calculation; an edit keeps them and recomputes the net around them.
+      const leaveDeduction = parseFloat(item.leave_deduction) || 0;
+      const loanDeduction = parseFloat(item.loan_deduction) || 0;
+      const netAfterHr = round2(calc.netSalary - leaveDeduction - loanDeduction);
+      if (netAfterHr < 0) {
         return res.status(400).json({
           message: "Net salary cannot be negative — deductions exceed gross pay.",
           grossPay: calc.grossPay,
-          deductions: calc.generalDeductions + calc.pensionEmployee,
-          netSalary: calc.netSalary,
+          deductions: calc.generalDeductions + calc.pensionEmployee + leaveDeduction + loanDeduction,
+          netSalary: netAfterHr,
         });
       }
 
@@ -1519,7 +1577,7 @@ export function registerPayrollRoutes(app: Express) {
           calc.pensionEmployee,
           calc.pensionEmployer,
           calc.gratuityAccrual,
-          calc.netSalary,
+          netAfterHr,
           id,
         ]
       );
@@ -1529,7 +1587,9 @@ export function registerPayrollRoutes(app: Express) {
         `SELECT
          SUM(basic_salary) as total_basic,
          SUM(housing_allowance + transport_allowance + other_allowance + overtime) as total_allowances,
-         SUM(deductions + pension_employee) as total_deductions,
+         SUM(deductions + pension_employee + leave_deduction + loan_deduction) as total_deductions,
+         SUM(leave_deduction) as total_leave_deductions,
+         SUM(loan_deduction) as total_loan_deductions,
          SUM(net_salary) as total_net,
          SUM(pension_employee) as total_pension_employee,
          SUM(pension_employer) as total_pension_employer,
@@ -1544,7 +1604,8 @@ export function registerPayrollRoutes(app: Express) {
           `UPDATE payroll_runs SET
           total_basic = $1, total_allowances = $2, total_deductions = $3,
           total_net = $4, total_pension_employee = $5, total_pension_employer = $6,
-          total_gratuity_accrual = $7, employee_count = $8
+          total_gratuity_accrual = $7, employee_count = $8,
+          total_leave_deductions = $10, total_loan_deductions = $11
          WHERE id = $9`,
           [
             runTotals.total_basic ?? 0,
@@ -1556,6 +1617,8 @@ export function registerPayrollRoutes(app: Express) {
             runTotals.total_gratuity_accrual ?? 0,
             runTotals.employee_count ?? 0,
             item.payroll_run_id,
+            runTotals.total_leave_deductions ?? 0,
+            runTotals.total_loan_deductions ?? 0,
           ]
         );
       }

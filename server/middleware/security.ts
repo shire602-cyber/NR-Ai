@@ -19,6 +19,11 @@ import {
  */
 const CREDENTIAL_AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 
+/** v1 API traffic is limited per API key (api-v1/limits.ts), not by the per-user browser limiters. */
+export function isApiV1Path(path: string): boolean {
+  return path === "/v1" || path.startsWith("/v1/");
+}
+
 export function isCredentialAuthPath(path: string): boolean {
   return CREDENTIAL_AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 }
@@ -142,8 +147,20 @@ export function applySecurityMiddleware(app: Express): void {
         "X-Requested-With",
         "X-CSRF-Token",
         "X-XSRF-Token",
+        "Idempotency-Key",
       ],
-      exposedHeaders: ["Content-Disposition", "X-Billing-Would-Block", "X-Total-Count", "X-Page", "X-Per-Page", "Retry-After", "RateLimit-Reset"],
+      exposedHeaders: [
+        "Content-Disposition",
+        "X-Billing-Would-Block",
+        "X-Total-Count",
+        "X-Page",
+        "X-Per-Page",
+        "Retry-After",
+        "RateLimit-Reset",
+        "RateLimit-Limit",
+        "RateLimit-Remaining",
+        "Idempotent-Replayed",
+      ],
       maxAge: 86400, // Cache preflight for 24 hours
     })
   );
@@ -169,6 +186,11 @@ export function applySecurityMiddleware(app: Express): void {
     })
   );
   app.use("/api/client-errors", buildLimiter(limiterProfiles.clientErrors));
+  // Phase 8 D1: public quote answers and public checkout are the only no-login writes; 20 per 15 minutes per IP.
+  app.use(
+    ["/api/public/quotes/", "/api/public/invoices/"],
+    buildLimiter({ ...limiterProfiles.publicAction, skipMethods: ["GET", "HEAD", "OPTIONS"] })
+  );
   app.use("/api/ai/", buildLimiter(limiterProfiles.ai));
   app.use("/api/ocr/", buildLimiter(limiterProfiles.ai));
   app.use("/api/firm/bulk/ocr", buildLimiter(limiterProfiles.ai));
@@ -180,7 +202,7 @@ export function applySecurityMiddleware(app: Express): void {
     "/api/",
     buildLimiter({
       ...limiterProfiles.read,
-      skipIf: (req) => !["GET", "HEAD", "OPTIONS"].includes(req.method),
+      skipIf: (req) => isApiV1Path(req.path) || !["GET", "HEAD", "OPTIONS"].includes(req.method),
     })
   );
   app.use(
@@ -188,6 +210,7 @@ export function applySecurityMiddleware(app: Express): void {
     buildLimiter({
       ...limiterProfiles.api,
       skipMethods: ["GET", "HEAD", "OPTIONS"],
+      skipIf: (req) => isApiV1Path(req.path),
     })
   );
 

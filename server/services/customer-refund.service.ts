@@ -143,7 +143,7 @@ export interface CreateRefundInput {
 const NEVER_REFUND_FROM = new Set<string>([ACCOUNT_CODES.AR, ACCOUNT_CODES.INVENTORY]);
 
 /** A refund is paid from a cash or bank account: an asset account that is one, or is linked to a bank account record. */
-async function isRefundAccount(
+export async function isRefundAccount(
   account: { id: string; type: string; code?: string | null; nameEn?: string | null; subType?: string | null },
   companyId: string
 ): Promise<boolean> {

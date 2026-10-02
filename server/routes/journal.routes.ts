@@ -21,6 +21,19 @@ import {
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { editRefusal, reversalRefusal } from "../services/journal-entry-protection";
+import { LOCK_NS, withDocumentLock } from "../services/document-lock";
+import { loadApprovalDocument } from "../services/approval-queue.service";
+import {
+  assertNoPendingApproval,
+  auditApprovalStep,
+  beginApprovalStep,
+  checkJournalCreateAsPosted,
+  notifyApprovalProgress,
+  pendingApprovalBody,
+  recordApprovalStep,
+  recordJournalCreateApproval,
+  resolveActor,
+} from "../services/approval-gate.service";
 
 const log = createLogger("journal");
 
@@ -236,11 +249,16 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: vatProblem, code: VAT_JOURNAL_DESCRIPTION_REQUIRED });
       }
 
-      // Generate entry number atomically via storage helper
-      const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
-
       // Determine if posting immediately
       const isPosting = status === "posted";
+
+      // Approval rules: a journal created as posted passes only a one-step rule its creator may sign;
+      // otherwise it must be saved as a draft and submitted for approval.
+      const createActor = await resolveActor((req as any).user, companyId);
+      const createApproval = isPosting ? await checkJournalCreateAsPosted(companyId, totalDebit, createActor) : null;
+
+      // Generate entry number atomically via storage helper
+      const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
 
       // Create journal entry + lines atomically (storage validates balance & wraps in transaction)
       const entry = await storage.createJournalEntry(
@@ -254,6 +272,18 @@ export function registerJournalRoutes(app: Express) {
           description: line.description || null,
         }))
       );
+
+      if (createApproval) {
+        await recordJournalCreateApproval({
+          req,
+          companyId,
+          entryId: entry.id,
+          entryNumber: entry.entryNumber,
+          amountAed: totalDebit,
+          approval: createApproval,
+          actor: createActor,
+        });
+      }
 
       await recordAudit({
         userId,
@@ -335,6 +365,9 @@ export function registerJournalRoutes(app: Express) {
         return res.status(409).json({ message: readOnly.message, code: readOnly.code, source: readOnly.source });
       }
 
+      // A journal waiting for its approvals is frozen: reject it first to change or delete it.
+      await assertNoPendingApproval("manual_journal", entry.id, "changed");
+
       // IMMUTABILITY: Posted entries cannot be edited - must be reversed instead
       if (entry.status === "posted") {
         return res.status(400).json({
@@ -349,6 +382,14 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({
           message: "Void journal entries cannot be edited.",
           code: "ENTRY_VOID",
+        });
+      }
+
+      // Posting goes only through POST /api/journal/:id/post, which honours the approval rules.
+      if (req.body.status === "posted") {
+        return res.status(409).json({
+          message: "A draft is posted with the post action, not by editing it.",
+          code: "USE_POST_ROUTE",
         });
       }
 
@@ -555,25 +596,51 @@ export function registerJournalRoutes(app: Express) {
       // A-4: cannot post a draft that is dated in the future.
       assertNotFutureDate(entry.date);
 
-      const updatedEntry = await storage.updateJournalEntry(id, entry.companyId, {
-        status: "posted",
-        postedBy: userId,
-        postedAt: new Date(),
-      });
+      // Approval rules (amount and role) under the entry's approval lock, status re-read inside it:
+      // a journal covered by a rule posts only on its final approval; the creator never approves their own.
+      const outcome = await withDocumentLock(id, LOCK_NS.APPROVAL, async (tx) => {
+        const current = await storage.getJournalEntryById(id);
+        if (!current || current.status !== "draft") {
+          return { status: 400, body: { message: "Entry is already posted and cannot be modified", code: `ENTRY_${String(current?.status ?? "missing").toUpperCase()}` } };
+        }
+        const doc = await loadApprovalDocument("manual_journal", id);
+        const actor = await resolveActor((req as any).user, entry.companyId);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: "draft" }) : ({ kind: "none" } as const);
 
-      await recordAudit({
-        userId,
-        companyId: entry.companyId,
-        action: "journal.post",
-        entityType: "journal_entry",
-        entityId: id,
-        before: { status: "draft" },
-        after: { status: "posted" },
-        req,
-      });
+        if (step.kind === "step" && !step.isFinal) {
+          const request = await recordApprovalStep(tx, step, actor);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "needs_next_step" });
+          return { status: 200, body: { id, ...pendingApprovalBody(step), status: "draft", message: "Approval recorded" } };
+        }
 
-      log.info({ id }, "Entry posted successfully");
-      res.json({ id: updatedEntry.id, status: "posted", message: "Entry posted successfully" });
+        const updatedEntry = await storage.updateJournalEntry(id, entry.companyId, {
+          status: "posted",
+          postedBy: userId,
+          postedAt: new Date(),
+        });
+
+        if (step.kind === "step") {
+          const request = await recordApprovalStep(tx, step, actor);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "approved" });
+        }
+
+        await recordAudit({
+          userId,
+          companyId: entry.companyId,
+          action: "journal.post",
+          entityType: "journal_entry",
+          entityId: id,
+          before: { status: "draft" },
+          after: { status: "posted" },
+          req,
+        });
+
+        log.info({ id }, "Entry posted successfully");
+        return { status: 200, body: { id: updatedEntry.id, status: "posted", message: "Entry posted successfully" } };
+      });
+      res.status(outcome.status).json(outcome.body);
     })
   );
 
@@ -709,6 +776,9 @@ export function registerJournalRoutes(app: Express) {
       if (readOnly) {
         return res.status(409).json({ message: readOnly.message, code: readOnly.code, source: readOnly.source });
       }
+
+      // A journal waiting for its approvals is frozen: reject it first to change or delete it.
+      await assertNoPendingApproval("manual_journal", entry.id, "changed");
 
       // IMMUTABILITY: Posted entries cannot be deleted - must be reversed
       if (entry.status === "posted") {

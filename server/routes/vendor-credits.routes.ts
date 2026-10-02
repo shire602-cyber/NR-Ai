@@ -50,6 +50,7 @@ const rateSchema = z
   });
 
 const createSchema = z.object({
+  vendor_id: z.string().uuid().optional().nullable(),
   vendor_name: z.string().min(1).max(255).optional(),
   vendor_trn: z.string().max(20).optional().nullable(),
   bill_id: z.string().uuid().optional().nullable(),

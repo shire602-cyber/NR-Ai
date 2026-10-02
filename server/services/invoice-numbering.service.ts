@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { AppError } from "../errors";
 
-export type InvoiceDocType = "invoice" | "credit_note" | "quote";
+export type InvoiceDocType = "invoice" | "credit_note" | "quote" | "sales_order" | "delivery_note" | "advance";
 
 const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
@@ -12,6 +12,11 @@ const PREFIX: Record<InvoiceDocType, string> = {
   // `quotes.number` is NOT NULL, and the create route used to leave it unset,
   // which made every API-created quote fail with a 500.
   quote: "QT",
+  // Phase 8 D1: sales orders, their delivery notes and customer advances are not tax documents (the advance TAX
+  // invoice is an ordinary INV- invoice), but each needs a unique, sequential, server-allocated number.
+  sales_order: "SO",
+  delivery_note: "DN",
+  advance: "ADV",
 };
 
 export function formatInvoiceNumber(docType: InvoiceDocType, year: number, n: number): string {
@@ -152,10 +157,13 @@ export function sequenceJumps(
 type Executor = typeof db;
 
 /** Credit notes live in `invoices`; quotes in `quotes`. */
-const NUMBER_TABLE: Record<InvoiceDocType, "invoices" | "quotes"> = {
+const NUMBER_TABLE: Record<InvoiceDocType, "invoices" | "quotes" | "sales_orders" | "sales_order_deliveries" | "customer_advances"> = {
   invoice: "invoices",
   credit_note: "invoices",
   quote: "quotes",
+  sales_order: "sales_orders",
+  delivery_note: "sales_order_deliveries",
+  advance: "customer_advances",
 };
 
 /** Counter values >= `from` already used by documents of this company (sorted, bounded). */

@@ -12,6 +12,9 @@
 //    journal entry. Voided on or before the day: it no longer counts. Voided AFTER the day: at that day
 //    it still stood, so it counts (a void with no reversal entry was never posted and never counts).
 //    Vendor bills have no void date on the ledger, so a void / cancelled bill is left out of every as-of;
+//  * a vendor bill counts only once it is POSTED to the ledger (Phase 8 D4): status approved / partial / paid /
+//    overdue. Pending and draft bills are not in account 2010, so counting them made ageing differ from the ledger
+//    (payables ageing total = -2010). Their due date is COALESCE(due_date, bill_date + 30 days), like receivables;
 //  * buckets are whole calendar days from the due date to the as-of day: due on or after the day is
 //    "current", 1-30, 31-60, 61-90 days past due, over 90. (The default report compares instants and
 //    shows a document due earlier today as 1-30; as-of reads day to day, so due that day is current.)
@@ -63,7 +66,13 @@ const voidedAfterSql = (a: string) =>
      HAVING MIN(je_v.date::date) > $2::date)`;
 
 /** The document stood at the as-of day: not void/cancelled, or voided only after it. */
-const standingSql = (a: string) => `(${a}.status NOT IN ('void', 'cancelled') OR ${voidedAfterSql(a)})`;
+export const standingSql = (a: string) => `(${a}.status NOT IN ('void', 'cancelled') OR ${voidedAfterSql(a)})`;
+
+/** Bill statuses that have posted to accounts payable (bill-posting.service.ts posts on approval). */
+export const POSTED_BILL_STATUSES = ["approved", "partial", "paid", "overdue"] as const;
+export const postedBillSql = (b: string) => `COALESCE(${b}.status, 'pending') IN ('approved', 'partial', 'paid', 'overdue')`;
+/** Due date of a bill: its own, or the bill date plus 30 days when none was entered. */
+export const billDueDateSql = (b: string) => `COALESCE(${b}.due_date, ${b}.bill_date + INTERVAL '30 days')::date`;
 
 /** Open balance of invoice `i` at the as-of day, document currency (never below 0). */
 export const invoiceOutstandingAsOfSql = (a: string) =>
@@ -148,10 +157,11 @@ export function payableAgingAsOfSql(): string {
     SELECT
       COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
       ${billOutstandingAsOfSql("b")} * COALESCE(NULLIF(b.exchange_rate, 0), 1) AS open_balance_aed,
-      b.due_date::date AS due_date
+      ${billDueDateSql("b")} AS due_date
     FROM vendor_bills b
     WHERE b.company_id = $1
-      AND COALESCE(b.status, 'pending') NOT IN ('void', 'cancelled')
+      -- a pending / pending-approval bill has no payable on the ledger yet: ageing must tie to account 2010
+      AND ${postedBillSql("b")}
       AND b.bill_date <= $3::timestamp
     UNION ALL
     SELECT
@@ -181,9 +191,9 @@ export function billAgingBucketsAsOfSql(): string {
   const d90p = `${due} < ${ref} - ${DAYS(90)}`;
   const col = (cond: string, name: string) => c(cond).replace("%A", `${name}_amount`).replace("%C", `${name}_count`);
   return `WITH open_bills AS (
-    SELECT ${billOutstandingAsOfSql("b")} AS open_amount, b.due_date::date AS due_date, false AS is_credit
+    SELECT ${billOutstandingAsOfSql("b")} AS open_amount, ${billDueDateSql("b")} AS due_date, false AS is_credit
       FROM vendor_bills b
-     WHERE b.company_id = $1 AND COALESCE(b.status, 'pending') NOT IN ('void', 'cancelled')
+     WHERE b.company_id = $1 AND ${postedBillSql("b")}
        AND b.bill_date <= $3::timestamp
     UNION ALL
     SELECT ${unappliedCreditAsOfSql("c")} AS open_amount, NULL::date AS due_date, true AS is_credit

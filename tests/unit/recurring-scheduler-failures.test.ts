@@ -55,6 +55,9 @@ vi.mock("../../server/services/document-fx-rate", () => ({
 vi.mock("../../server/services/invoice-posting.service", () => ({
   postInvoiceRevenueJournal: vi.fn(async () => true),
 }));
+// Phase 8 D1: lines are written (and derived) by the shared sales-lines service; this test is about run control.
+vi.mock("../../server/services/sales-lines.service", () => ({ replaceInvoiceLines: vi.fn(async () => ({})) }));
+vi.mock("../../server/services/recurring-send.service", () => ({ sendGeneratedRecurringInvoice: vi.fn(async () => ({ status: "sent" })) }));
 vi.mock("../../server/services/report-delivery-scheduler.service", () => ({ scanDueReportDeliveries: vi.fn() }));
 vi.mock("../../server/services/auth-tokens.service", () => ({ purgeExpiredAuthTokens: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: vi.fn() } }));

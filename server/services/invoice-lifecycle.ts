@@ -257,7 +257,7 @@ export function buildReversalLines(args: {
   const total = round2(args.amounts.total);
   const { accounts, labels } = args;
 
-  const split = args.revenueSplit?.filter((r) => round2(r.amount) > 0);
+  const split = args.revenueSplit?.filter((r) => round2(r.amount) !== 0);
   const hasSplit = !!split && split.length > 0;
   if (!accounts.accountsReceivableId || (!accounts.salesRevenueId && !hasSplit)) {
     return {
@@ -292,12 +292,12 @@ export function buildReversalLines(args: {
     }
   }
   const lines: JournalLine[] = hasSplit
-    ? split!.map((r) => ({
-        accountId: r.accountId,
-        debit: round2(r.amount),
-        credit: 0,
-        description: labels.revenue,
-      }))
+    ? split!.map((r) =>
+        // A negative amount is a contra group (discount): the reversal credits it back.
+        r.amount < 0
+          ? { accountId: r.accountId, debit: 0, credit: round2(-r.amount), description: labels.revenue }
+          : { accountId: r.accountId, debit: round2(r.amount), credit: 0, description: labels.revenue }
+      )
     : [{ accountId: accounts.salesRevenueId!, debit: subtotal, credit: 0, description: labels.revenue }];
   if (vatAmount > 0 && accounts.vatPayableId) {
     lines.push({ accountId: accounts.vatPayableId, debit: vatAmount, credit: 0, description: labels.vat });

@@ -7,6 +7,8 @@ import { createLogger } from "../config/logger";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
 import { insertCustomerContactSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
+import { checkPriceListsForCompany } from "../services/price-list.service";
+import { pool } from "../db";
 
 const log = createLogger("contacts");
 
@@ -40,6 +42,34 @@ const contactTemplateRows = [
     Country: "UAE",
   },
 ];
+
+const CONTACT_TYPES = ["customer", "vendor", "both"] as const;
+type ContactType = (typeof CONTACT_TYPES)[number];
+
+/** Contacts of a type: "customer" includes "both", "vendor" includes "both". */
+const TYPE_FILTERS: Record<string, ContactType[]> = {
+  customer: ["customer", "both"],
+  vendor: ["vendor", "both"],
+};
+
+/**
+ * A contact may only lose a side while nothing on that side points at it: a vendor with bills,
+ * purchase orders or credit notes cannot become customer-only, a customer with invoices, quotes
+ * or refunds cannot become vendor-only (409 CONTACT_TYPE_IN_USE).
+ */
+async function contactTypeInUse(companyId: string, contactId: string, nextType: ContactType): Promise<boolean> {
+  if (nextType === "both") return false;
+  const tables =
+    nextType === "customer"
+      ? ["vendor_bills", "purchase_orders", "vendor_credit_notes"]
+      : ["invoices", "quotes", "customer_refunds"];
+  const column = nextType === "customer" ? "vendor_id" : "contact_id";
+  for (const table of tables) {
+    const found = await pool.query(`SELECT 1 FROM ${table} WHERE company_id = $1 AND ${column} = $2 LIMIT 1`, [companyId, contactId]);
+    if (found.rows.length > 0) return true;
+  }
+  return false;
+}
 
 function pickImportValue(row: Record<string, any>, keys: string[]): string {
   for (const key of keys) {
@@ -83,7 +113,12 @@ export function registerContactRoutes(app: Express) {
       }
 
       const contacts = await storage.getCustomerContactsByCompanyId(companyId);
-      res.json(contacts);
+      // ?type=customer|vendor narrows the list (a "both" contact is in each); omitted = everything.
+      const wanted = typeof req.query.type === "string" ? TYPE_FILTERS[req.query.type] : undefined;
+      if (typeof req.query.type === "string" && !wanted) {
+        return res.status(400).json({ message: "type must be customer or vendor", code: "INVALID_CONTACT_TYPE" });
+      }
+      res.json(wanted ? contacts.filter((c) => wanted.includes((c.contactType ?? "customer") as ContactType)) : contacts);
     })
   );
 
@@ -120,6 +155,13 @@ export function registerContactRoutes(app: Express) {
         }
         contactData.trnNumber = trn;
       }
+
+      if (contactData.contactType !== undefined && !CONTACT_TYPES.includes(contactData.contactType)) {
+        return res.status(400).json({ message: "contactType must be customer, vendor or both", code: "INVALID_CONTACT_TYPE" });
+      }
+      // Phase 8 D1: a price list id must be one of THIS company's lists.
+      const listCheck = await checkPriceListsForCompany(companyId, [contactData.priceListId]);
+      if (!listCheck.ok) return res.status(422).json({ message: listCheck.message, code: listCheck.code });
 
       // Check for duplicate email within company
       if (contactData.email) {
@@ -362,12 +404,22 @@ export function registerContactRoutes(app: Express) {
       }
 
       // S-M1: allowlist update fields (tenant scope cannot be changed here).
+      const updateData = pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]);
+      const listCheck = await checkPriceListsForCompany(companyId, [updateData.priceListId as string | null | undefined]);
+      if (!listCheck.ok) return res.status(422).json({ message: listCheck.message, code: listCheck.code });
+      if (updateData.contactType !== undefined) {
+        if (!CONTACT_TYPES.includes(updateData.contactType as ContactType)) {
+          return res.status(400).json({ message: "contactType must be customer, vendor or both", code: "INVALID_CONTACT_TYPE" });
+        }
+        if (updateData.contactType !== existing.contactType && (await contactTypeInUse(companyId, id, updateData.contactType as ContactType))) {
+          return res.status(409).json({
+            message: "Documents already use this contact on the side you are removing. Keep it as both, or void the documents first.",
+            code: "CONTACT_TYPE_IN_USE",
+          });
+        }
+      }
       // S-L3: scope the write to the company.
-      const contact = await storage.updateCustomerContact(
-        id,
-        pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]) as any,
-        companyId
-      );
+      const contact = await storage.updateCustomerContact(id, updateData as any, companyId);
       res.json(contact);
     })
   );

@@ -25,6 +25,8 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import { useTranslation } from "@/lib/i18n";
 import { messages as pageMessages } from "./FirmAnalytics.i18n";
 
@@ -168,6 +170,11 @@ export default function FirmAnalytics() {
         title={(t as any).firmAnalytics || tr("firmAnalytics")}
         description={
           (t as any).firmAnalyticsDesc || tr("revenueUtilizationAndClientHealthOverview")
+        }
+        actions={
+          <Button asChild variant="outline" data-testid="link-consolidated-statements">
+            <Link href="/reports/run/consolidated-statements">{tr("consolidatedStatements")}</Link>
+          </Button>
         }
       />
 

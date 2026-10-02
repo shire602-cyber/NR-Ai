@@ -147,7 +147,8 @@ async function main() {
 
       r = await mkTxn(ymd(-1));
       r = await api("POST", `/api/bank-transactions/${r.json?.id}/reconcile`, { token: c.token, body: { matchId: inv.id, matchType: "invoice" } });
-      ok("I3: an ordinary past bank date still reconciles", r.status === 200 && r.json?.isReconciled === true, { s: r.status, j: r.json });
+      // Phase 8 D3: a bank line with no ledger account cannot be reconciled without posting (it used to flip the flag only).
+      ok("I3: an ordinary past bank date passes the date guards (a line with no ledger account answers 422 BANK_GL_NOT_LINKED, not a silent flag)", r.status === 422 && r.json?.code === "BANK_GL_NOT_LINKED", { s: r.status, j: r.json });
     }
 
     // ───────── Item 4: payroll allowances are strictly parsed ─────────

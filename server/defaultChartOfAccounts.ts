@@ -39,6 +39,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isSystemAccount: true,
   },
   {
+    code: "1025",
+    nameEn: "Payment Gateway Clearing",
+    nameAr: "حساب تسوية بوابة الدفع",
+    description: "Card payments collected online and not yet paid out to the bank",
+    type: "asset",
+    subType: "current_asset",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
     code: "1030",
     nameEn: "Petty Cash",
     nameAr: "النثرية",
@@ -92,6 +103,18 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isVatAccount: false,
     vatType: null,
     isSystemAccount: false,
+  },
+
+  {
+    code: "1080",
+    nameEn: "Employee Loans",
+    nameAr: "قروض الموظفين",
+    description: "Loans and salary advances to employees, recovered through payroll deductions",
+    type: "asset",
+    subType: "current_asset",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
   },
 
   // ===========================
@@ -278,6 +301,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isSystemAccount: false,
   },
   {
+    code: "2055",
+    nameEn: "Customer Advances",
+    nameAr: "دفعات العملاء المقدمة",
+    description: "Advance tax invoices and deposits received before the supply, until applied or refunded",
+    type: "liability",
+    subType: "current_liability",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
     code: "2060",
     nameEn: "Corporate Tax Payable",
     nameAr: "ضريبة الشركات المستحقة",
@@ -387,6 +421,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isVatAccount: false,
     vatType: null,
     isSystemAccount: false,
+  },
+  {
+    code: "4035",
+    nameEn: "Shipping Income",
+    nameAr: "إيرادات الشحن",
+    description: "Delivery and shipping charged to customers",
+    type: "income",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
   },
   {
     code: "4040",

@@ -1601,6 +1601,8 @@ export default function MuhasibLanding() {
                 [tr("terms"), "/terms"],
                 [tr("cookies"), "/cookies"],
                 [tr("trustSecurity"), "/trust"],
+                [tr("footerHelp"), "/help"],
+                [tr("footerApiDocs"), "/developers/api"],
               ]}
             />
           </div>

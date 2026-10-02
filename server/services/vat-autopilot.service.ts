@@ -786,7 +786,7 @@ export async function calculateVatReturn(
        FROM vendor_bills
        WHERE company_id = $1
          AND bill_date >= $2::date AND bill_date <= $3::date
-         AND status NOT IN ('void','cancelled','draft','pending')
+         AND status NOT IN ('void','cancelled','draft','pending','pending_approval')
          AND COALESCE(is_opening_balance, false) = false`,
       // Calendar-date comparison — timestamptz casts shift boundaries in
       // non-UTC server timezones (e.g. an Apr 1 bill falling out of Q2).

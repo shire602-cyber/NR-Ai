@@ -1,4 +1,5 @@
 import { Router, type Express, type Request, type Response } from "express";
+import { assertNotBankRuleReceipt } from "../services/bank-rules.service";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -395,6 +396,7 @@ export function registerReceiptRoutes(app: Express) {
       if (!before) {
         return res.status(404).json({ message: "Receipt not found" });
       }
+      await assertNotBankRuleReceipt(id);
       const updatedReceipt = await storage.updateReceipt(id, before.companyId, req.body);
       await recordAudit({
         userId,
@@ -438,6 +440,7 @@ export function registerReceiptRoutes(app: Express) {
         existing as { createdAt: Date | string; retentionExpiresAt?: Date | string | null },
         "Receipt"
       );
+      await assertNotBankRuleReceipt(id);
 
       if (existing.imagePath) {
         await deleteReceiptImage(existing.imagePath);

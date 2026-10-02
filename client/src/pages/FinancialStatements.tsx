@@ -193,11 +193,11 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
               <Label>{tr("startDate")}</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <Input type="date" aria-label={tr("startDate")} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>{tr("endDate")}</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <Input type="date" aria-label={tr("endDate")} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 me-2" />
@@ -328,7 +328,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div className="space-y-2">
               <Label>{tr("asOfDate")}</Label>
-              <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+              <Input type="date" aria-label={tr("asOfDate")} value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 me-2" />
@@ -528,11 +528,11 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-4 items-end">
             <div className="space-y-2">
               <Label>{tr("startDate")}</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <Input type="date" aria-label={tr("startDate")} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>{tr("endDate")}</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <Input type="date" aria-label={tr("endDate")} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 me-2" />

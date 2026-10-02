@@ -21,7 +21,7 @@ import {
   UBL_NS_INVOICE,
   type CreditNoteSyntax,
 } from "./einvoice-constants";
-import { validateForEInvoicing, vatCategoryFor } from "./einvoice-validation";
+import { isAllowanceLine, validateForEInvoicing, vatCategoryFor } from "./einvoice-validation";
 
 // Re-exported so existing imports (`from "./einvoice.service"`) keep working.
 export { EINVOICE_CUSTOMIZATION_ID, EINVOICE_PROFILE_ID, validateForEInvoicing, vatCategoryFor };
@@ -195,6 +195,32 @@ export function generateEInvoiceXML(
     g.tax += ext * rate;
     taxByGroup.set(key, g);
   }
+  // Discounts and advance deductions (signed derived lines, Phase 8 D1) are sent as DOCUMENT-LEVEL allowances per tax
+  // category, so the invoice lines carry the gross item amounts and the VAT subtotals above (which net the signed lines)
+  // stay what the tax authority recomputes.
+  const allowances = new Map<string, { reason: string; category: string; rate: number; amount: number }>();
+  for (const line of lines) {
+    if (!isAllowanceLine(line)) continue;
+    const category = vatCategoryFor(line);
+    const rate = category === "S" ? (line.vatRate ?? UAE_VAT_RATE) : 0;
+    const reason = line.lineKind === "advance" ? "Advance payment deducted" : "Discount";
+    const key = `${reason}:${category}:${rate}`;
+    const a = allowances.get(key) || { reason, category, rate, amount: 0 };
+    a.amount += Math.abs(line.quantity * line.unitPrice);
+    allowances.set(key, a);
+  }
+  const allowanceXml = [...allowances.values()]
+    .map(
+      (a) =>
+        `<cac:AllowanceCharge>${el("cbc:ChargeIndicator", "false")}${el("cbc:AllowanceChargeReason", a.reason)}` +
+        `${el("cbc:Amount", amount(a.amount), cur)}` +
+        `<cac:TaxCategory>${el("cbc:ID", a.category)}${el("cbc:Percent", (a.rate * 100).toFixed(2))}` +
+        `<cac:TaxScheme>${el("cbc:ID", "VAT")}</cac:TaxScheme></cac:TaxCategory></cac:AllowanceCharge>`
+    )
+    .join("");
+  const allowanceTotal = [...allowances.values()].reduce((sum, a) => sum + a.amount, 0);
+  const invoiceLines = lines.filter((l) => !isAllowanceLine(l));
+
   const taxSubtotals = [...taxByGroup.values()]
     .map(
       ({ category, rate, taxable, tax }) =>
@@ -270,16 +296,19 @@ export function generateEInvoiceXML(
     currency !== "AED"
       ? `<cac:TaxTotal>${el("cbc:TaxAmount", amount(vatTotal * exchangeRate), ' currencyID="AED"')}</cac:TaxTotal>`
       : "";
+  // With allowances the line total is the gross of the lines and the allowances come off it (TaxExclusive = invoice subtotal).
+  const lineExtension = allowances.size > 0 ? sign(invoice.subtotal) + (asCreditNoteRoot ? allowanceTotal : sign(1) * allowanceTotal) : sign(invoice.subtotal);
   const monetary =
-    `<cac:LegalMonetaryTotal>${el("cbc:LineExtensionAmount", amount(sign(invoice.subtotal)), cur)}` +
+    `<cac:LegalMonetaryTotal>${el("cbc:LineExtensionAmount", amount(lineExtension), cur)}` +
     `${el("cbc:TaxExclusiveAmount", amount(sign(invoice.subtotal)), cur)}` +
     `${el("cbc:TaxInclusiveAmount", amount(sign(invoice.total)), cur)}` +
+    `${allowances.size > 0 ? el("cbc:AllowanceTotalAmount", amount(allowanceTotal), cur) : ""}` +
     `${el("cbc:PayableAmount", amount(sign(invoice.total)), cur)}</cac:LegalMonetaryTotal>`;
 
   // ── lines ──
   const lineElement = asCreditNoteRoot ? "cac:CreditNoteLine" : "cac:InvoiceLine";
   const quantityElement = asCreditNoteRoot ? "cbc:CreditedQuantity" : "cbc:InvoicedQuantity";
-  const linesXml = lines.map((line, index) => {
+  const linesXml = invoiceLines.map((line, index) => {
     const ext = sign(line.quantity * line.unitPrice);
     const category = vatCategoryFor(line);
     const percent = category === "S" ? (line.vatRate ?? UAE_VAT_RATE) * 100 : 0;
@@ -328,6 +357,7 @@ export function generateEInvoiceXML(
     delivery,
     paymentMeans,
     paymentTerms,
+    allowanceXml,
     taxTotal,
     aedTaxTotal,
     monetary,

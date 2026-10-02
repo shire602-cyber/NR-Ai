@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import { storage } from "../storage";
+import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { webhookEventsForAudit } from "./webhook-events";
 import { emitWebhookEvent } from "./webhook.service";
@@ -26,9 +27,19 @@ interface AuditParams {
  * change posted ledger state, money movement, access control, or user
  * permissions.
  */
+/** Events about a person rather than a company; they get a company id only when the person has exactly one. */
+const USER_SCOPED_ACTION = /^(login$|logout$|2fa\.|session\.|password\.|auth\.)/;
+
+async function soleCompanyOf(userId: string): Promise<string | null> {
+  const { rows } = await pool.query(`SELECT company_id FROM company_users WHERE user_id = $1 LIMIT 2`, [userId]);
+  return rows.length === 1 ? (rows[0].company_id as string) : null;
+}
+
 export async function recordAudit(params: AuditParams): Promise<void> {
   try {
-    const { userId, companyId, action, entityType, entityId, before, after, req, extra } = params;
+    const { userId, action, entityType, entityId, before, after, req, extra } = params;
+    let companyId = params.companyId;
+    if (!companyId && userId && USER_SCOPED_ACTION.test(action)) companyId = await soleCompanyOf(userId);
     const details = JSON.stringify({
       companyId: companyId ?? null,
       before: before ?? null,
@@ -42,6 +53,7 @@ export async function recordAudit(params: AuditParams): Promise<void> {
     const userAgent = (req?.headers["user-agent"] as string | undefined) || null;
     await storage.createAuditLog({
       userId: userId || null,
+      companyId: companyId ?? null,
       action,
       resourceType: entityType,
       resourceId: entityId ?? null,

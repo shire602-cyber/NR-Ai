@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { format } from "date-fns";
@@ -332,6 +333,7 @@ export default function AccountLedger() {
             variant="ghost"
             size="icon"
             onClick={() => navigate("/chart-of-accounts")}
+            aria-label={iconLabels.t("back")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -386,6 +388,7 @@ export default function AccountLedger() {
             variant="outline"
             size="icon"
             onClick={() => refetch()}
+            aria-label={iconLabels.t("refresh")}
             data-testid="button-refresh"
           >
             <RefreshCw className="h-4 w-4" />

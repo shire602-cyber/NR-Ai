@@ -16,7 +16,8 @@ export function registerPortalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       const { companyId } = req.params;
-      const limit = parseInt(req.query.limit as string) || 100;
+      // Phase 8 D4: `limit` is capped (it used to be unbounded); the full trail is the paginated Audit Trail report.
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 1000);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {

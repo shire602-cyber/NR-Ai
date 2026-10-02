@@ -4,6 +4,8 @@ import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
 import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency, formatUnitPrice } from "../../shared/format-unit-price";
+import { advanceTitles, buildPdfRows, SALES_ROW_LABELS } from "./pdf-sales-rows";
+import { pdfFieldsFor } from "./custom-fields.service";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -13,8 +15,16 @@ type PdfDoc = any;
 
 export type InvoicePdfTemplate = "standard" | "nra";
 
+export interface PdfCustomField {
+  labelEn: string;
+  labelAr: string;
+  value: string;
+}
+
 export interface GenerateInvoicePdfOptions {
   template?: InvoicePdfTemplate;
+  /** Custom fields flagged for PDFs; loaded from the database when omitted. */
+  customFields?: PdfCustomField[];
 }
 
 export function invoicePdfTemplateForCompany(company: Company): InvoicePdfTemplate {
@@ -32,13 +42,22 @@ export async function generateInvoicePDF(
     return generateNraInvoicePDF(invoice, lines);
   }
 
-  return generateStandardInvoicePDF(invoice, lines, company);
+  let customFields = options.customFields;
+  if (!customFields) {
+    try {
+      customFields = await pdfFieldsFor(invoice.companyId, "invoice", invoice.id);
+    } catch {
+      customFields = []; // a PDF must never fail because a custom-field read did
+    }
+  }
+  return generateStandardInvoicePDF(invoice, lines, company, customFields);
 }
 
 async function generateStandardInvoicePDF(
   invoice: Invoice,
   lines: InvoiceLine[],
-  company: Company
+  company: Company,
+  customFields: PdfCustomField[] = []
 ): Promise<Buffer> {
   let qrPng: Buffer | null = null;
   if (company.trnVatNumber) {
@@ -78,8 +97,9 @@ async function generateStandardInvoicePDF(
       const contentWidth = pageWidth - 2 * margin;
 
       const isVATRegistered = !!company.trnVatNumber;
-      const invoiceLabelEn = isVATRegistered ? "TAX INVOICE" : "INVOICE";
-      const invoiceLabelAr = isVATRegistered ? "فاتورة ضريبية" : "فاتورة";
+      const advanceTitle = advanceTitles(invoice.invoiceType, lines as any);
+      const invoiceLabelEn = advanceTitle ? advanceTitle.en : isVATRegistered ? "TAX INVOICE" : "INVOICE";
+      const invoiceLabelAr = advanceTitle ? advanceTitle.ar : isVATRegistered ? "فاتورة ضريبية" : "فاتورة";
 
       doc.rect(0, 0, pageWidth, 110).fill("#1E40AF");
 
@@ -143,25 +163,31 @@ async function generateStandardInvoicePDF(
       const metaBoxH = 55;
       doc.rect(margin, y, contentWidth, metaBoxH).fill("#F0F9FF").stroke("#BAE6FD");
 
-      const metaColW = contentWidth / 4;
+      // An advance (deposit) invoice has no payment terms and no due date: it is paid when issued.
+      const isAdvanceInvoice = invoice.invoiceType === "advance";
       const metaFields = [
         { label: "Invoice # / رقم الفاتورة", value: invoice.number },
         { label: "Issue Date / تاريخ الإصدار", value: formatDate(invoice.date) },
-        {
-          label: "Due Date / تاريخ الاستحقاق",
-          value: invoice.dueDate
-            ? formatDate(invoice.dueDate)
-            : paymentTermsLabel(invoice.paymentTerms, invoice.date),
-        },
+        ...(isAdvanceInvoice
+          ? []
+          : [
+              {
+                label: "Due Date / تاريخ الاستحقاق",
+                value: invoice.dueDate
+                  ? formatDate(invoice.dueDate)
+                  : paymentTermsLabel(invoice.paymentTerms, invoice.date),
+              },
+            ]),
         { label: "Status / الحالة", value: (invoice.status || "draft").toUpperCase() },
       ];
 
+      const metaColWidth = contentWidth / metaFields.length;
       metaFields.forEach((field, i) => {
-        const x = margin + i * metaColW + 8;
+        const x = margin + i * metaColWidth + 8;
         doc.fontSize(7).fillColor("#6B7280").font("Helvetica");
-        doc.text(field.label, x, y + 10, { width: metaColW - 10 });
+        doc.text(field.label, x, y + 10, { width: metaColWidth - 10 });
         doc.fontSize(9).fillColor("#111827").font("Helvetica-Bold");
-        doc.text(field.value, x, y + 26, { width: metaColW - 10 });
+        doc.text(field.value, x, y + 26, { width: metaColWidth - 10 });
       });
 
       y += metaBoxH + 16;
@@ -212,21 +238,34 @@ async function generateStandardInvoicePDF(
 
       y = Math.max(fromY, toY) + 10;
 
+      // Custom fields flagged "show on PDF": both labels, e.g. "PO Number / رقم أمر الشراء: PO-7781".
+      if (customFields.length > 0) {
+        doc.fontSize(9).fillColor("#374151").font("Helvetica");
+        for (const field of customFields) {
+          const text = `${field.labelEn} / ${field.labelAr}: ${field.value}`;
+          doc.text(text, margin, y, { width: contentWidth });
+          y += Math.max(12, doc.heightOfString(text, { width: contentWidth }) + 2);
+        }
+        y += 6;
+      }
+
       const tableTop = y;
       const rowH = 22;
       const colX = {
         desc: margin + 5,
-        qty: margin + 248,
-        price: margin + 308,
-        vat: margin + 376,
+        qty: margin + 222,
+        price: margin + 258,
+        disc: margin + 318,
+        vat: margin + 362,
         amount: pageWidth - margin - 5,
       };
       const colWidths = {
-        desc: 238,
-        qty: 55,
-        price: 63,
-        vat: 60,
-        amount: 65,
+        desc: 215,
+        qty: 36,
+        price: 58,
+        disc: 44,
+        vat: 44,
+        amount: 78,
       };
 
       doc.rect(margin, tableTop, contentWidth, rowH).fill("#1E40AF");
@@ -234,6 +273,7 @@ async function generateStandardInvoicePDF(
       doc.text("Description", colX.desc, tableTop + 7);
       doc.text("Qty", colX.qty, tableTop + 7, { width: colWidths.qty, align: "center" });
       doc.text("Unit Price", colX.price, tableTop + 7, { width: colWidths.price, align: "right" });
+      doc.text(SALES_ROW_LABELS.discountColumn.en, colX.disc, tableTop + 7, { width: colWidths.disc, align: "right" });
       doc.text("VAT %", colX.vat, tableTop + 7, { width: colWidths.vat, align: "center" });
       doc.text("Amount", colX.amount - colWidths.amount - 1, tableTop + 7, {
         width: colWidths.amount,
@@ -243,31 +283,50 @@ async function generateStandardInvoicePDF(
       y = tableTop + rowH;
 
       doc.font("Helvetica").fillColor("#1F2937").fontSize(9);
-      lines.forEach((line, index) => {
+      // Line discounts print on their item (Disc. column, net amount); document discounts, delivery and the
+      // advances deducted get a row of their own (see pdf-sales-rows.ts).
+      const printRows = buildPdfRows(lines as any[]);
+      printRows.forEach((row, index) => {
         const bgColor = index % 2 === 0 ? "#FFFFFF" : "#F8FAFC";
         doc.rect(margin, y, contentWidth, rowH).fill(bgColor);
         doc.rect(margin, y, contentWidth, rowH).stroke("#E5E7EB");
 
-        const lineTotal = line.quantity * line.unitPrice;
-        const vatPercent = ((line.vatRate ?? UAE_VAT_RATE) * 100).toFixed(0);
+        const vatPercent = (row.vatRate * 100).toFixed(0);
+        const description =
+          row.kind === "discount"
+            ? `${SALES_ROW_LABELS.discount.en} / ${SALES_ROW_LABELS.discount.ar}`
+            : row.kind === "shipping"
+              ? `${row.description || SALES_ROW_LABELS.shipping.en} / ${SALES_ROW_LABELS.shipping.ar}`
+              : row.description;
 
         doc.fillColor("#1F2937").fontSize(9);
-        doc.text(line.description, colX.desc, y + 7, { width: colWidths.desc });
-        doc.text(line.quantity.toString(), colX.qty, y + 7, {
-          width: colWidths.qty,
-          align: "center",
-        });
-        const unitPriceText = formatUnitPriceCurrency(line.unitPrice, invoice.currency);
-        doc.fontSize(fitFontSize(doc, unitPriceText, colWidths.price, 9));
-        doc.text(unitPriceText, colX.price, y + 7, {
-          width: colWidths.price,
-          align: "right",
-          lineBreak: false,
-        });
-        doc.fontSize(9);
+        if (row.kind === "advance") {
+          // "Less advance ADV-2026-00001 (INV-2026-00007)": one line, shrunk to the column when long.
+          doc.fontSize(fitFontSize(doc, description, colWidths.desc, 9));
+          doc.text(description, colX.desc, y + 7, { width: colWidths.desc, lineBreak: false });
+          doc.fontSize(9);
+        } else {
+          doc.text(description, colX.desc, y + 7, { width: colWidths.desc });
+        }
+        if (row.quantity !== null) {
+          doc.text(row.quantity.toString(), colX.qty, y + 7, { width: colWidths.qty, align: "center" });
+        }
+        if (row.unitPrice !== null) {
+          const unitPriceText = formatUnitPriceCurrency(row.unitPrice, invoice.currency);
+          doc.fontSize(fitFontSize(doc, unitPriceText, colWidths.price, 9));
+          doc.text(unitPriceText, colX.price, y + 7, {
+            width: colWidths.price,
+            align: "right",
+            lineBreak: false,
+          });
+          doc.fontSize(9);
+        }
+        if (row.discountLabel) {
+          doc.text(row.discountLabel, colX.disc, y + 7, { width: colWidths.disc, align: "right", lineBreak: false });
+        }
         doc.text(`${vatPercent}%`, colX.vat, y + 7, { width: colWidths.vat, align: "center" });
         doc.text(
-          formatAmount(lineTotal, invoice.currency),
+          formatAmount(row.amount, invoice.currency),
           colX.amount - colWidths.amount - 1,
           y + 7,
           { width: colWidths.amount, align: "right" }
@@ -366,7 +425,7 @@ async function generateStandardInvoicePDF(
 
       y += 40;
 
-      if (invoice.paymentTerms) {
+      if (invoice.paymentTerms && invoice.invoiceType !== "advance") {
         doc.fontSize(8).fillColor("#374151").font("Helvetica-Bold");
         doc.text("Payment Terms:", margin, y);
         doc.font("Helvetica").fillColor("#6B7280");

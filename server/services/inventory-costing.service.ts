@@ -96,7 +96,7 @@ async function findAccount(tx: Tx, companyId: string, code: string, type: string
  * A system account of the default chart, created from the template for a chart that predates it
  * (5200 COGS, 5210 Inventory Adjustments, 2015 Goods Received Not Invoiced).
  */
-async function ensureSystemAccount(tx: Tx, companyId: string, code: string, type: string): Promise<{ id: string }> {
+export async function ensureSystemAccount(tx: Tx, companyId: string, code: string, type: string): Promise<{ id: string }> {
   const existing = await findAccount(tx, companyId, code, type);
   if (existing) return existing;
   const template = defaultChartOfAccounts.find((a) => a.code === code);

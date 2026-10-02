@@ -207,6 +207,8 @@ export function registerCorporateTaxRoutes(app: Express) {
         lossBroughtForward,
         smallBusinessReliefElected,
         priorPeriodsExceededRevenueCap,
+        // MD 73/2023: relief ends with tax periods ending after 31 Dec 2026.
+        taxPeriodEnd: ctReturn.taxPeriodEnd,
         exemptionThreshold: Number(ctReturn.exemptionThreshold) || UAE_CT_EXEMPTION_THRESHOLD,
         taxRate: Number(ctReturn.taxRate) || 0.09,
       });

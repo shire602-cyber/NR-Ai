@@ -1125,6 +1125,12 @@ export class DatabaseStorage implements IStorage {
 
   async setUserActive(userId: string, isActive: boolean): Promise<void> {
     await db.update(users).set({ isActive }).where(eq(users.id, userId));
+    if (!isActive) {
+      // A deactivated account must lose every live session at once (D5).
+      await db.execute(
+        sql`UPDATE refresh_sessions SET revoked_at = now(), revoked_reason = 'deactivated' WHERE user_id = ${userId} AND revoked_at IS NULL`
+      );
+    }
   }
 
   // Password reset tokens
@@ -1211,11 +1217,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined> {
-    const [companyUser] = await db
-      .select()
+    // A soft-deleted company has no members as far as access goes (D5, F5): it is only
+    // reachable through the deletion-request endpoints, which look at company_users directly.
+    const [row] = await db
+      .select({ companyUser: companyUsers })
       .from(companyUsers)
-      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)));
-    return companyUser || undefined;
+      .innerJoin(companies, eq(companies.id, companyUsers.companyId))
+      .where(
+        and(
+          eq(companyUsers.companyId, companyId),
+          eq(companyUsers.userId, userId),
+          isNull(companies.deletedAt)
+        )
+      );
+    return row?.companyUser || undefined;
   }
 
   /**
@@ -1638,48 +1653,33 @@ export class DatabaseStorage implements IStorage {
   async getAccountsWithBalances(companyId: string, dateRange?: { start: Date; end: Date }) {
     const accountsList = await db.select().from(accounts).where(eq(accounts.companyId, companyId));
 
-    const results = await Promise.all(
-      accountsList.map(async (account: any) => {
-        let lines = await db
-          .select({
-            debit: journalLines.debit,
-            credit: journalLines.credit,
-            date: journalEntries.date,
-            status: journalEntries.status,
-          })
-          .from(journalLines)
-          .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-          .where(eq(journalLines.accountId, account.id));
+    // One grouped query instead of one query per account with the dates filtered in JS (D5, F6).
+    // Bounds go in as ISO strings: entry dates are written as UTC wall time, so comparing against
+    // the UTC rendering of the bound is exactly what the old in-memory comparison did.
+    const bounds = dateRange
+      ? sql`AND je.date >= ${dateRange.start.toISOString()}::timestamp AND je.date <= ${dateRange.end.toISOString()}::timestamp`
+      : sql``;
+    const totals: any = await db.execute(sql`
+      SELECT jl.account_id AS account_id, SUM(jl.debit) AS debit_total, SUM(jl.credit) AS credit_total
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+       WHERE je.company_id = ${companyId} AND je.status = 'posted' ${bounds}
+       GROUP BY jl.account_id`);
+    const byAccount = new Map<string, { debit: number; credit: number }>();
+    for (const row of totals.rows ?? totals) {
+      byAccount.set(row.account_id, { debit: Number(row.debit_total) || 0, credit: Number(row.credit_total) || 0 });
+    }
 
-        if (dateRange) {
-          lines = lines.filter((line: any) => {
-            const lineDate = new Date(line.date);
-            return lineDate >= dateRange.start && lineDate <= dateRange.end;
-          });
-        }
-
-        const postedLines = lines.filter((l: any) => l.status === "posted");
-
-        const debitTotal = postedLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
-        const creditTotal = postedLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
-
-        let balance = 0;
-        if (["asset", "expense"].includes(account.type)) {
-          balance = debitTotal - creditTotal;
-        } else {
-          balance = creditTotal - debitTotal;
-        }
-
-        return {
-          account,
-          balance,
-          debitTotal,
-          creditTotal,
-        };
-      })
-    );
-
-    return results;
+    return accountsList.map((account: any) => {
+      const t = byAccount.get(account.id) ?? { debit: 0, credit: 0 };
+      const balance = ["asset", "expense"].includes(account.type) ? t.debit - t.credit : t.credit - t.debit;
+      return {
+        account,
+        balance: Math.round(balance * 100) / 100,
+        debitTotal: t.debit,
+        creditTotal: t.credit,
+      };
+    });
   }
 
   async getAccountLedger(
@@ -2259,12 +2259,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]> {
-    return await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+    return await db
+      .select()
+      .from(invoiceLines)
+      .where(eq(invoiceLines.invoiceId, invoiceId))
+      .orderBy(asc(invoiceLines.sortOrder), asc(invoiceLines.id));
   }
 
   async getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]> {
     if (invoiceIds.length === 0) return [];
-    return await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds));
+    return await db
+      .select()
+      .from(invoiceLines)
+      .where(inArray(invoiceLines.invoiceId, invoiceIds))
+      .orderBy(asc(invoiceLines.sortOrder), asc(invoiceLines.id));
   }
 
   async deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void> {
@@ -3085,7 +3093,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getQuoteLinesByQuoteId(quoteId: string): Promise<QuoteLine[]> {
-    return await db.select().from(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+    return await db
+      .select()
+      .from(quoteLines)
+      .where(eq(quoteLines.quoteId, quoteId))
+      .orderBy(asc(quoteLines.sortOrder), asc(quoteLines.id));
   }
 
   async createQuoteLine(data: InsertQuoteLine): Promise<QuoteLine> {
@@ -4916,6 +4928,8 @@ export class DatabaseStorage implements IStorage {
     const conditions = [
       eq(recurringInvoices.isActive, true),
       lte(recurringInvoices.nextRunDate, sql`now()`),
+      // A company in its deletion window generates nothing (D5).
+      sql`NOT EXISTS (SELECT 1 FROM companies c WHERE c.id = ${recurringInvoices.companyId} AND c.deleted_at IS NOT NULL)`,
     ];
     if (excludeIds.length > 0) conditions.push(notInArray(recurringInvoices.id, excludeIds));
     const rows = await tx

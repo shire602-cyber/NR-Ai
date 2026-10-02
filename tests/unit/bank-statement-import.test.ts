@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBankCsv } from "../../server/routes/bank-statements.routes";
+import { parseBankCsv } from "../../server/services/bank-statement-parsers";
 
 describe("bank statement CSV import", () => {
   it("parses Arabic UAE statement headers and Arabic-Indic amounts", () => {

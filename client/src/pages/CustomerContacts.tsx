@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Upload,
@@ -66,7 +67,13 @@ import type { CustomerContact } from "@shared/schema";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { CustomerStatementDialog } from "@/components/CustomerStatementDialog";
+import { VendorStatementDialog } from "@/components/VendorStatementDialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { messages as pageMessages } from "./CustomerContacts.i18n";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
+import { CustomFieldsEditor } from "@/components/sales/CustomFieldsEditor";
+import { useCustomFieldDraft } from "@/components/sales/useCustomFieldDraft";
+import { salesErrorMessage, salesKeys, type PriceListSummary } from "@/lib/sales-api";
 
 interface ImportResult {
   message: string;
@@ -131,6 +138,14 @@ function ContactForm({
   onCancel: () => void;
 }) {
   const tr = pageMessages.useT();
+  const salesTr = salesMessages.useT();
+  const { companyId: formCompanyId } = useDefaultCompany();
+  const customFieldDraft = useCustomFieldDraft(formCompanyId, "contact", contact?.id);
+  const { data: priceLists = [] } = useQuery<PriceListSummary[]>({
+    queryKey: salesKeys.priceLists(formCompanyId),
+    enabled: !!formCompanyId,
+  });
+  const [priceListId, setPriceListId] = useState<string>((contact as { priceListId?: string | null } | null | undefined)?.priceListId ?? "");
 
   const [formData, setFormData] = useState({
     name: contact?.name || "",
@@ -140,6 +155,7 @@ function ContactForm({
     address: contact?.address || "",
     city: contact?.city || "",
     country: contact?.country || "UAE",
+    contactType: ((contact as { contactType?: string } | null | undefined)?.contactType as string) || "customer",
   });
 
   return (
@@ -186,7 +202,19 @@ function ContactForm({
             data-testid="input-contact-trn"
           />
         </div>
-        <div />
+        <div className="space-y-2">
+          <Label>{tr("contactType")}</Label>
+          <Select value={formData.contactType} onValueChange={(v) => setFormData({ ...formData, contactType: v })}>
+            <SelectTrigger data-testid="select-contact-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="customer">{tr("typeCustomer")}</SelectItem>
+              <SelectItem value="vendor">{tr("typeVendor")}</SelectItem>
+              <SelectItem value="both">{tr("typeBoth")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <div className="space-y-2">
         <Label>{tr("address")}</Label>
@@ -217,13 +245,41 @@ function ContactForm({
           />
         </div>
       </div>
+      {priceLists.length > 0 && (
+        <div className="space-y-2">
+          <Label>{salesTr("contactPriceList")}</Label>
+          <Select value={priceListId || "__none__"} onValueChange={(v) => setPriceListId(v === "__none__" ? "" : v)}>
+            <SelectTrigger data-testid="select-contact-price-list">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{salesTr("contactNoPriceList")}</SelectItem>
+              {priceLists
+                .filter((l) => l.isActive || l.id === priceListId)
+                .map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.name} ({l.currency})
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{salesTr("contactPriceListHelp")}</p>
+        </div>
+      )}
+      <CustomFieldsEditor draft={customFieldDraft} />
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
           {tr("cancel")}
         </Button>
         <Button
-          onClick={() => onSubmit(formData)}
-          disabled={!formData.name || !formData.email}
+          onClick={() =>
+            onSubmit({
+              ...formData,
+              priceListId: priceListId || null,
+              __saveCustomFields: customFieldDraft.dirty ? customFieldDraft.save : undefined,
+            })
+          }
+          disabled={!formData.name || (formData.contactType !== "vendor" && !formData.email)}
           data-testid="button-save-contact"
         >
           {contact ? tr("update") : tr("create")} {tr("contact")}
@@ -248,6 +304,8 @@ export default function CustomerContacts() {
   const [editContact, setEditContact] = useState<CustomerContact | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [statementContact, setStatementContact] = useState<CustomerContact | null>(null);
+  const [vendorStatementContact, setVendorStatementContact] = useState<CustomerContact | null>(null);
+  const [typeFilter, setTypeFilter] = useState<"all" | "customer" | "vendor">("all");
   const [portalLinkDialog, setPortalLinkDialog] = useState<{
     open: boolean;
     url: string;
@@ -283,9 +341,22 @@ export default function CustomerContacts() {
     },
   });
 
+  // The contact is saved by now; a custom field the server refuses is reported, not lost silently.
+  const saveContactCustomFields = async (save: ((id: string) => Promise<void>) | undefined, id: string | undefined) => {
+    if (!save || !id) return;
+    try {
+      await save(id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: salesMessages.t("customFieldsNotSaved"), description: salesErrorMessage(error, (k) => salesMessages.t(k), salesMessages.t("pleaseTryAgain")) });
+    }
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest("POST", `/api/companies/${companyId}/customer-contacts`, data);
+      const { __saveCustomFields, ...body } = data;
+      const saved = await apiRequest("POST", `/api/companies/${companyId}/customer-contacts`, body);
+      await saveContactCustomFields(__saveCustomFields, saved?.id);
+      return saved;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -305,7 +376,10 @@ export default function CustomerContacts() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return apiRequest("PUT", `/api/companies/${companyId}/customer-contacts/${id}`, data);
+      const { __saveCustomFields, ...body } = data;
+      const saved = await apiRequest("PUT", `/api/companies/${companyId}/customer-contacts/${id}`, body);
+      await saveContactCustomFields(__saveCustomFields, id);
+      return saved;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -318,7 +392,7 @@ export default function CustomerContacts() {
       toast({
         variant: "destructive",
         title: tr("failedToUpdateContact"),
-        description: error?.message,
+        description: error?.code === "CONTACT_TYPE_IN_USE" ? tr("typeInUse") : error?.message,
       });
     },
   });
@@ -492,11 +566,14 @@ export default function CustomerContacts() {
       );
   };
 
+  const typeOf = (contact: CustomerContact): "customer" | "vendor" | "both" =>
+    ((contact as { contactType?: string }).contactType as "customer" | "vendor" | "both") || "customer";
   const filteredContacts = contacts.filter(
     (contact) =>
-      contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.phone?.toLowerCase().includes(searchTerm.toLowerCase())
+      (typeFilter === "all" || typeOf(contact) === "both" || typeOf(contact) === typeFilter) &&
+      (contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.phone?.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -574,6 +651,16 @@ export default function CustomerContacts() {
                 data-testid="input-search-contacts"
               />
             </div>
+            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as "all" | "customer" | "vendor")}>
+              <SelectTrigger className="w-[200px]" aria-label={tr("filterByType")} data-testid="select-contact-type-filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tr("typeAll")}</SelectItem>
+                <SelectItem value="customer">{tr("typeCustomer")}</SelectItem>
+                <SelectItem value="vendor">{tr("typeVendor")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <Card>
@@ -620,6 +707,15 @@ export default function CustomerContacts() {
                           <Building2 className="w-4 h-4 text-muted-foreground" />
                           <span className="font-medium">{contact.name}</span>
                         </div>
+                      ),
+                    },
+                    {
+                      key: "type",
+                      header: tr("typeColumn"),
+                      cell: (contact) => (
+                        <Badge variant={typeOf(contact) === "customer" ? "outline" : "secondary"} data-testid={`badge-contact-type-${contact.id}`}>
+                          {typeOf(contact) === "vendor" ? tr("typeVendor") : typeOf(contact) === "both" ? tr("typeBoth") : tr("typeCustomer")}
+                        </Badge>
                       ),
                     },
                     {
@@ -685,19 +781,33 @@ export default function CustomerContacts() {
                           >
                             <Link2 className="w-4 h-4" />
                           </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title={tr("statement")}
-                            onClick={() => setStatementContact(contact)}
-                            data-testid={`button-statement-${contact.id}`}
-                          >
-                            <FileText className="w-4 h-4" />
-                          </Button>
+                          {typeOf(contact) !== "vendor" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title={tr("statement")}
+                              onClick={() => setStatementContact(contact)}
+                              data-testid={`button-statement-${contact.id}`}
+                            >
+                              <FileText className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {typeOf(contact) !== "customer" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title={tr("vendorStatement")}
+                              onClick={() => setVendorStatementContact(contact)}
+                              data-testid={`button-vendor-statement-${contact.id}`}
+                            >
+                              <FileText className="w-4 h-4 text-info" />
+                            </Button>
+                          )}
                           <Button
                             size="icon"
                             variant="ghost"
                             onClick={() => setEditContact(contact)}
+                            aria-label={iconLabels.t("edit")}
                             data-testid={`button-edit-contact-${contact.id}`}
                           >
                             <Edit className="w-4 h-4" />
@@ -706,6 +816,7 @@ export default function CustomerContacts() {
                             size="icon"
                             variant="ghost"
                             onClick={() => setContactToDelete(contact)}
+                            aria-label={iconLabels.t("delete")}
                             data-testid={`button-delete-contact-${contact.id}`}
                           >
                             <Trash2 className="w-4 h-4" />
@@ -930,6 +1041,14 @@ export default function CustomerContacts() {
           companyId={companyId}
           contact={statementContact}
           onClose={() => setStatementContact(null)}
+        />
+      )}
+
+      {companyId && (
+        <VendorStatementDialog
+          companyId={companyId}
+          contact={vendorStatementContact}
+          onClose={() => setVendorStatementContact(null)}
         />
       )}
 

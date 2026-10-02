@@ -372,3 +372,54 @@ describe("remainderBuckets + compareBuckets (final credit note lines)", () => {
     }
   });
 });
+
+describe("contra groups (Phase 8 D1: discount lines post to 4050)", () => {
+  const DISCOUNT = "acc-4050";
+  const disc = (net: number, id?: string) => ({
+    id,
+    description: "Discount",
+    quantity: 1,
+    unitPrice: -net,
+    vatRate: 0.05,
+    vatSupplyType: "standard_rated",
+    revenueAccountId: DISCOUNT,
+  });
+  const invoiceLines = [orig("L1", 1000, null), disc(100, "D1"), disc(50, "D2")];
+
+  it("remainingByAccount keeps the contra group with its sign", () => {
+    const r = remainingByAccount({ originalLines: invoiceLines, creditedLines: [], ctx });
+    expect(byAcct(r)[DEFAULT]).toBe(1000);
+    expect(byAcct(r)[DISCOUNT]).toBe(-150);
+    expect(r.vat).toBe(42.5);
+  });
+
+  it("an earlier partial credit reduces the contra group towards zero, never past it", () => {
+    const r = remainingByAccount({
+      originalLines: invoiceLines,
+      creditedLines: [credit(400, null), { ...disc(60), quantity: -1 }],
+      ctx,
+    });
+    expect(byAcct(r)[DEFAULT]).toBe(600);
+    expect(byAcct(r)[DISCOUNT]).toBe(-90);
+    const over = remainingByAccount({
+      originalLines: invoiceLines,
+      creditedLines: [{ ...disc(500), quantity: -1 }],
+      ctx,
+    });
+    expect(byAcct(over)[DISCOUNT]).toBeUndefined();
+  });
+
+  it("remainingLines returns the contra lines with their negative net", () => {
+    const left = remainingLines({ originalLines: invoiceLines, creditedLines: [credit(1000, null), { ...disc(100), quantity: -1 }], ctx });
+    expect(left).toHaveLength(1);
+    expect(left[0].net).toBe(-50);
+    expect(left[0].revenueAccountId).toBe(DISCOUNT);
+  });
+
+  it("remainderBuckets mirrors the whole invoice, discounts included", () => {
+    const b = remainderBuckets({ originalLines: invoiceLines, creditedLines: [], ctx });
+    const total = b.reduce((s, x) => s + x.net, 0);
+    expect(total).toBe(850);
+    expect(b.reduce((s, x) => s + x.vat, 0)).toBe(42.5);
+  });
+});

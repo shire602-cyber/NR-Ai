@@ -71,6 +71,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { VirtualList } from "@/components/VirtualList";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { messages as approvalFeedbackMessages } from "@/lib/approval-feedback.i18n";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { useSubscription } from "@/hooks/useSubscription";
+import { approvalFeedback, failureToast } from "@/lib/approval-feedback";
+import { ApiError } from "@/lib/queryClient";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./Journal.i18n";
 
 const journalLineSchema = z.object({
@@ -173,10 +181,16 @@ export default function Journal() {
     enabled: !!selectedCompanyId,
   });
 
+  const { canAccess } = useSubscription();
   const { data: entries, isLoading } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
+  const approvalProgress = useApprovalProgress(
+    selectedCompanyId ?? undefined,
+    "manual_journal",
+    canAccess("approvals") && (entries ?? []).some((e) => e.status === "draft" && (!e.source || e.source === "manual"))
+  );
 
   const form = useForm<JournalFormData>({
     resolver: zodResolver(journalSchema),
@@ -229,11 +243,16 @@ export default function Journal() {
         setPendingBackdated({ kind: "create", data: variables });
         return;
       }
-      toast({
-        variant: "destructive",
-        title: tr("failedToPostEntry"),
-        description: error?.message || tr("pleaseCheckThatDebitsEqualCredits"),
-      });
+      const approval = approvalFeedback(error);
+      toast(
+        approval
+          ? { variant: "destructive", ...approval }
+          : {
+              variant: "destructive",
+              title: tr("failedToPostEntry"),
+              description: error?.message || tr("pleaseCheckThatDebitsEqualCredits"),
+            }
+      );
     },
   });
 
@@ -278,18 +297,38 @@ export default function Journal() {
 
   const postMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/journal/${id}/post`),
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
+      }
       toast({
         title: tr("entryPosted"),
         description: tr("journalEntryHasBeenPostedAnd"),
       });
     },
     onError: (error: any) => {
+      toast(failureToast(error, tr("failedToPostEntry")));
+    },
+  });
+
+  const submitForApprovalMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/journal/${id}/submit-for-approval`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "approvals"] });
+      toast({ title: approvalFeedbackMessages.t("submittedTitle"), description: approvalFeedbackMessages.t("submittedBody") });
+    },
+    onError: (error: unknown) => {
+      const notRequired = error instanceof ApiError && error.code === "APPROVAL_NOT_REQUIRED";
       toast({
         variant: "destructive",
-        title: tr("failedToPostEntry"),
-        description: error?.message,
+        title: approvalFeedbackMessages.t("submitFailed"),
+        description: notRequired ? approvalFeedbackMessages.t("noRuleBody") : (error as Error)?.message,
       });
     },
   });
@@ -709,6 +748,7 @@ export default function Journal() {
               )[entry.source] ?? "sourceOther"
             );
 
+            const approvalState = approvalProgress.get(entry.id);
             const getStatusBadge = () => {
               if (isPosted) {
                 return (
@@ -725,6 +765,9 @@ export default function Journal() {
                   </StatusBadge>
                 );
               } else {
+                if (approvalState) {
+                  return <ApprovalStatusBadge status="pending" completedSteps={approvalState.completedSteps} requiredSteps={approvalState.requiredSteps} />;
+                }
                 return (
                   <StatusBadge tone="warning">
                     <FileText className="w-3 h-3 me-1" />
@@ -801,7 +844,18 @@ export default function Journal() {
                             <Send className="w-4 h-4 me-2" />
                             {tr("post")}
                           </Button>
-                          {isManual && (
+                          {isManual && !approvalState && canAccess("approvals") && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => submitForApprovalMutation.mutate(entry.id)}
+                              disabled={submitForApprovalMutation.isPending}
+                              data-testid={`button-submit-approval-${entry.id}`}
+                            >
+                              {approvalFeedbackMessages.t("submitForApproval")}
+                            </Button>
+                          )}
+                          {isManual && !approvalState && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -812,7 +866,7 @@ export default function Journal() {
                               {tr("edit")}
                             </Button>
                           )}
-                          {isManual && (
+                          {isManual && !approvalState && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button

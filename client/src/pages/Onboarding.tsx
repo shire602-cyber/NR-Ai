@@ -1,4 +1,5 @@
 import OpeningBalancesOnboardingStep from "@/components/compliance/OpeningBalancesOnboardingStep";
+import { DeletedCompaniesNotice } from "@/components/data/DeletedCompaniesNotice";
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -121,7 +122,12 @@ export default function Onboarding() {
   if (user?.firmRole === "firm_owner" || user?.firmRole === "firm_admin") {
     return <FirmOnboarding firmRole={user.firmRole} />;
   }
-  return <CustomerOnboarding />;
+  return (
+    <>
+      <DeletedCompaniesNotice />
+      <CustomerOnboarding />
+    </>
+  );
 }
 
 function CustomerOnboarding() {

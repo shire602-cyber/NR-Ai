@@ -46,13 +46,19 @@ if (isNeon) {
   const ws = await import("ws");
   neonConfig.webSocketConstructor = ws.default;
   pool = new NeonPool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
+  // Every connection speaks UTC: DB-default now() in timestamp columns must agree with the UTC wall times the app writes.
+  pool.on("connect", (client: any) => {
+    void client.query("SET TIME ZONE 'UTC'");
+  });
   db = neonDrizzle({ client: pool, schema });
   _driver = "neon";
 } else {
   // Use standard pg driver for Railway/Docker/standard PostgreSQL
   const pg = await import("pg");
   const { drizzle: pgDrizzle } = await import("drizzle-orm/node-postgres");
-  pool = new pg.default.Pool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
+  // timezone=UTC in the startup options: `timestamp` columns hold UTC wall time (drizzle writes it that way), so
+  // a DB-side DEFAULT now() must not depend on the host database's zone (it used to store Asia/Dubai wall time).
+  pool = new pg.default.Pool({ connectionString: DATABASE_URL, options: "-c timezone=UTC", ...POOL_CONFIG });
   // Prevent unhandled 'error' events from crashing the process
   pool.on("error", (err: Error) => {
     log.error({ err: err.message }, "Unexpected pool client error");

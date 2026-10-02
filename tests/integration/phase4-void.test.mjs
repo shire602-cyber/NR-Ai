@@ -582,9 +582,11 @@ async function sectionA() {
     ok("A1: the same journal saved as a DRAFT without a description is accepted", draft.status === 200, { s: draft.status, t: draft.text.slice(0, 200) });
     const post = await api("POST", `/api/journal/${draft.json?.id}/post`, { token: C.token });
     ok("A1: posting that draft without a description is refused", post.status === 400 && post.json?.code === "VAT_JOURNAL_DESCRIPTION_REQUIRED", { s: post.status, j: post.json });
+    // Posting by editing is refused outright (C1, Phase 8 D2): a draft is posted only with the post action.
     const put = await api("PUT", `/api/journal/${draft.json?.id}`, { token: C.token, body: { date: lastMid, status: "posted", confirmBackdated: true, lines } });
-    ok("A1: posting it through PUT without a description is refused", put.status === 400 && put.json?.code === "VAT_JOURNAL_DESCRIPTION_REQUIRED", { s: put.status, j: put.json });
-    const putOk = await api("PUT", `/api/journal/${draft.json?.id}`, { token: C.token, body: { date: lastMid, status: "posted", memo: "Correct over-declared output VAT (client credit)", confirmBackdated: true, lines } });
+    ok("A1: posting it through PUT is refused (409 USE_POST_ROUTE)", put.status === 409 && put.json?.code === "USE_POST_ROUTE", { s: put.status, j: put.json });
+    const putMemo = await api("PUT", `/api/journal/${draft.json?.id}`, { token: C.token, body: { date: lastMid, memo: "Correct over-declared output VAT (client credit)", confirmBackdated: true, lines } });
+    const putOk = putMemo.status === 200 ? await api("POST", `/api/journal/${draft.json?.id}/post`, { token: C.token }) : putMemo;
     ok("A1: with a description the draft posts (200)", putOk.status === 200, { s: putOk.status, t: putOk.text.slice(0, 200) });
     const other = await C.journal(lastMid, [{ accountId: bank, debit: 5, credit: 0 }, { accountId: (await C.account("4010")).id, debit: 0, credit: 5 }]);
     ok("A1: a journal that does not touch VAT needs no description", other.status === 200, { s: other.status });

@@ -71,6 +71,16 @@ import { formatCurrency } from "@/lib/format";
 import { getAuthHeaders } from "@/lib/auth";
 import { downloadPdf } from "@/lib/download-pdf";
 import { apiUrl } from "@/lib/api";
+import { LeaveTab } from "@/components/payroll/LeaveTab";
+import { LoansTab } from "@/components/payroll/LoansTab";
+import { FinalSettlementTab } from "@/components/payroll/FinalSettlementTab";
+import { PayrollRegisterDialog } from "@/components/payroll/PayrollRegisterDialog";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { useMyCompanyRole } from "@/hooks/useMyCompanyRole";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./Payroll.i18n";
 
 // ─── Types ───────────────────────────────────────────────
@@ -110,6 +120,8 @@ interface PayrollRun {
   total_basic: string;
   total_allowances: string;
   total_deductions: string;
+  total_leave_deductions?: string;
+  total_loan_deductions?: string;
   total_net: string;
   employee_count: number;
   status: string;
@@ -134,6 +146,10 @@ interface PayrollItem {
   other_allowance: string;
   overtime: string;
   deductions: string;
+  leave_deduction?: string;
+  loan_deduction?: string;
+  unpaid_leave_days?: string;
+  half_pay_leave_days?: string;
   deduction_notes: string | null;
   net_salary: string;
   payment_mode: string;
@@ -232,6 +248,7 @@ export default function Payroll() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [payrollRunDialogOpen, setPayrollRunDialogOpen] = useState(false);
   const [viewingRunId, setViewingRunId] = useState<string | null>(null);
+  const [registerRunId, setRegisterRunId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDialogOpen, setEditItemDialogOpen] = useState(false);
 
@@ -262,6 +279,8 @@ export default function Payroll() {
   });
 
   const viewingRun = payrollRuns.find((r) => r.id === viewingRunId);
+  const { canWriteHr } = useMyCompanyRole(companyId ?? undefined);
+  const approvalProgress = useApprovalProgress(companyId ?? undefined, "payroll_run", payrollRuns.some((r) => r.status === "pending_approval"));
 
   // ─── Forms ───────────────────────────────────────────
 
@@ -393,31 +412,25 @@ export default function Payroll() {
 
   const approvePayrollMutation = useMutation({
     mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/approve`),
-    onMutate: async (runId: string) => {
-      const queryKey = [`/api/companies/${companyId}/payroll-runs`] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) =>
-          old?.map((run: any) => (run.id === runId ? { ...run, status: "approved" } : run)) ?? []
-      );
-      return { previous, queryKey };
-    },
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
       }
       toast({
         title: tr("payrollApproved"),
         description: tr("thePayrollRunHasBeenApproved"),
       });
     },
-    onError: (error: Error, _runId, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+    onError: (error: Error) => {
+      toast(failureToast(error, tr("error")));
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
@@ -591,8 +604,12 @@ export default function Payroll() {
 
   // ─── Helpers ───────────────────────────────────────
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, runId?: string) => {
     switch (status) {
+      case "pending_approval": {
+        const progress = runId ? approvalProgress.get(runId) : undefined;
+        return <ApprovalStatusBadge status="pending_approval" completedSteps={progress?.completedSteps} requiredSteps={progress?.requiredSteps} />;
+      }
       case "active":
         return (
           <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
@@ -690,7 +707,7 @@ export default function Payroll() {
                       ),
                     })}
                   </span>
-                  <span>{getStatusBadge(viewingRun.status)}</span>
+                  <span>{getStatusBadge(viewingRun.status, viewingRun.id)}</span>
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -704,17 +721,19 @@ export default function Payroll() {
                     {calculatePayrollMutation.isPending ? tr("calculating") : tr("calculate")}
                   </Button>
                 )}
-                {viewingRun.status === "calculated" && (
+                {(viewingRun.status === "calculated" || viewingRun.status === "pending_approval") && (
                   <>
-                    <Button
-                      onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
-                      variant="outline"
-                      disabled={calculatePayrollMutation.isPending}
-                      className="flex items-center gap-2"
-                    >
-                      <Calculator className="w-4 h-4" />
-                      {tr("recalculate")}
-                    </Button>
+                    {viewingRun.status === "calculated" && (
+                      <Button
+                        onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
+                        variant="outline"
+                        disabled={calculatePayrollMutation.isPending}
+                        className="flex items-center gap-2"
+                      >
+                        <Calculator className="w-4 h-4" />
+                        {tr("recalculate")}
+                      </Button>
+                    )}
                     <Button
                       onClick={() => approvePayrollMutation.mutate(viewingRunId)}
                       disabled={approvePayrollMutation.isPending}
@@ -725,7 +744,18 @@ export default function Payroll() {
                     </Button>
                   </>
                 )}
-                {(viewingRun.status === "calculated" || viewingRun.status === "approved") && (
+                {viewingRun.status !== "draft" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setRegisterRunId(viewingRunId)}
+                    className="flex items-center gap-2"
+                    data-testid="button-open-register"
+                  >
+                    <FileText className="w-4 h-4" />
+                    {tr("register")}
+                  </Button>
+                )}
+                {viewingRun.status === "approved" && (
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadSIF(viewingRunId)}
@@ -741,7 +771,7 @@ export default function Payroll() {
 
           {/* Summary cards */}
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">{tr("totalBasic")}</div>
                 <div className="text-lg font-semibold">
@@ -758,6 +788,18 @@ export default function Payroll() {
                 <div className="text-sm text-muted-foreground">{tr("totalDeductions")}</div>
                 <div className="text-lg font-semibold text-destructive">
                   {formatCurrency(parseFloat(viewingRun.total_deductions) || 0, "AED", locale)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3" data-testid="card-total-leave-deductions">
+                <div className="text-sm text-muted-foreground">{tr("leaveDeductions")}</div>
+                <div className="text-lg font-semibold text-destructive">
+                  {formatCurrency(parseFloat(viewingRun.total_leave_deductions ?? "0") || 0, "AED", locale)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3" data-testid="card-total-loan-deductions">
+                <div className="text-sm text-muted-foreground">{tr("loanDeductions")}</div>
+                <div className="text-lg font-semibold text-destructive">
+                  {formatCurrency(parseFloat(viewingRun.total_loan_deductions ?? "0") || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
@@ -789,6 +831,8 @@ export default function Payroll() {
                       <TableHead className="text-end">{tr("basic")}</TableHead>
                       <TableHead className="text-end">{tr("allowances")}</TableHead>
                       <TableHead className="text-end">{tr("overtime")}</TableHead>
+                      <TableHead className="text-end">{tr("leaveShort")}</TableHead>
+                      <TableHead className="text-end">{tr("loansShort")}</TableHead>
                       <TableHead className="text-end">{tr("deductions")}</TableHead>
                       <TableHead className="text-end">{tr("netSalary")}</TableHead>
                       <TableHead>{tr("status")}</TableHead>
@@ -825,6 +869,12 @@ export default function Payroll() {
                           <TableCell className="text-end">
                             {formatCurrency(parseFloat(item.overtime) || 0, "AED", locale)}
                           </TableCell>
+                          <TableCell className="text-end text-destructive" data-testid={`cell-leave-deduction-${item.id}`}>
+                            {formatCurrency(parseFloat(item.leave_deduction ?? "0") || 0, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-end text-destructive" data-testid={`cell-loan-deduction-${item.id}`}>
+                            {formatCurrency(parseFloat(item.loan_deduction ?? "0") || 0, "AED", locale)}
+                          </TableCell>
                           <TableCell className="text-end text-destructive">
                             {formatCurrency(parseFloat(item.deductions) || 0, "AED", locale)}
                           </TableCell>
@@ -833,8 +883,7 @@ export default function Payroll() {
                           </TableCell>
                           <TableCell>{getStatusBadge(item.status)}</TableCell>
                           <TableCell className="text-end">
-                            {(viewingRun.status === "calculated" ||
-                              viewingRun.status === "approved") && (
+                            {viewingRun.status !== "draft" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -845,7 +894,7 @@ export default function Payroll() {
                                 <FileText className="w-4 h-4" />
                               </Button>
                             )}
-                            {viewingRun.status !== "approved" && (
+                            {viewingRun.status !== "approved" && viewingRun.status !== "pending_approval" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -974,6 +1023,15 @@ export default function Payroll() {
           <TabsTrigger value="gratuity" className="flex items-center gap-2">
             <Calculator className="w-4 h-4" />
             {tr("gratuityCalculator")}
+          </TabsTrigger>
+          <TabsTrigger value="leave" className="flex items-center gap-2" data-testid="tab-payroll-leave">
+            {tr("tabLeave")}
+          </TabsTrigger>
+          <TabsTrigger value="loans" className="flex items-center gap-2" data-testid="tab-payroll-loans">
+            {tr("tabLoans")}
+          </TabsTrigger>
+          <TabsTrigger value="settlement" className="flex items-center gap-2" data-testid="tab-payroll-settlement">
+            {tr("tabSettlement")}
           </TabsTrigger>
         </TabsList>
 
@@ -1132,7 +1190,7 @@ export default function Payroll() {
                           <TableCell className="text-end font-mono">
                             {formatCurrency(parseFloat(run.total_net) || 0, "AED", locale)}
                           </TableCell>
-                          <TableCell>{getStatusBadge(run.status)}</TableCell>
+                          <TableCell>{getStatusBadge(run.status, run.id)}</TableCell>
                           <TableCell className="text-muted-foreground whitespace-nowrap">
                             {run.created_at
                               ? format(new Date(run.created_at), "MMM dd, yyyy")
@@ -1159,7 +1217,7 @@ export default function Payroll() {
                                   <Calculator className="w-4 h-4" />
                                 </Button>
                               )}
-                              {run.status === "calculated" && (
+                              {(run.status === "calculated" || run.status === "pending_approval") && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1171,7 +1229,18 @@ export default function Payroll() {
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>
                               )}
-                              {(run.status === "calculated" || run.status === "approved") && (
+                              {run.status !== "draft" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setRegisterRunId(run.id)}
+                                  title={tr("registerTitle")}
+                                  data-testid={`button-register-${run.id}`}
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {run.status === "approved" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1351,7 +1420,20 @@ export default function Payroll() {
             )}
           </div>
         </TabsContent>
+
+        {/* ─── Leave, loans and final settlement (Phase 8 D2) ── */}
+        <TabsContent value="leave">
+          {companyId && <LeaveTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
+        </TabsContent>
+        <TabsContent value="loans">
+          {companyId && <LoansTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
+        </TabsContent>
+        <TabsContent value="settlement">
+          {companyId && <FinalSettlementTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
+        </TabsContent>
       </Tabs>
+
+      <PayrollRegisterDialog runId={registerRunId} onClose={() => setRegisterRunId(null)} />
 
       {/* ─── Employee Create/Edit Dialog ──────────────── */}
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>

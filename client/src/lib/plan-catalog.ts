@@ -65,7 +65,9 @@ export type GatedFeature =
   | "multiCurrency"
   | "payroll"
   | "fixedAssets"
-  | "costCenters";
+  | "costCenters"
+  | "projects"
+  | "approvals";
 
 export const FEATURE_MIN_PLAN: Record<GatedFeature, PlanId> = {
   recurringInvoices: "starter",
@@ -77,10 +79,13 @@ export const FEATURE_MIN_PLAN: Record<GatedFeature, PlanId> = {
   purchaseOrders: "professional",
   bulkOps: "professional",
   costCenters: "professional",
+  // Phase 8 D2: project time and billing, and amount/role approval rules (server TIER_FEATURES.projects / .approvals)
+  projects: "professional",
+  approvals: "professional",
   fixedAssets: "professional",
   advancedReports: "professional",
   payroll: "professional",
-  apiAccess: "enterprise",
+  apiAccess: "professional",
 };
 
 export function planIncludes(plan: PlanId, feature: GatedFeature): boolean {

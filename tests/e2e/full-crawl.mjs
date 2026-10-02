@@ -632,6 +632,17 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
+    // The real UI flow: a bank account linked to the ledger first, then the connection that points at it.
+    const coa = await (await page.request.get(`${BASE}/api/companies/${companyId}/accounts`)).json();
+    const bankGl = (Array.isArray(coa) ? coa : []).find((x) => x.code === "1020");
+    const baRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-accounts`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: { nameEn: "Current AED", bankName: "Emirates NBD", currency: "AED", glAccountId: bankGl?.id },
+    });
+    const bankAccount = baRes.status() === 201 ? await baRes.json() : null;
+    if (!bankAccount?.id) {
+      await fail("bank-import bank account", { detail: `status ${baRes.status()}: ${(await baRes.text()).slice(0, 200)}` });
+    }
     const connRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-connections`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
@@ -639,6 +650,7 @@ async function main() {
         connectionType: "statement",
         bankName: "Emirates NBD",
         accountName: "Current AED",
+        bankAccountId: bankAccount?.id,
       },
     });
     if (connRes.status() !== 201) {
@@ -1097,23 +1109,28 @@ async function main() {
       }
     }
 
-    // API keys are switched off (no public API verifies them): create must be an
-    // honest 501 NOT_AVAILABLE and must never hand out a key; list still works.
+    // API keys: created with a valid scopes array, the key (muh_...) is shown once and never listed, then revoked.
     const keyRes = await page.request.post(`${BASE}/api/companies/${companyId}/api-keys`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { name: "E2E key", scopes: "read" },
+      data: { name: "E2E key", scopes: ["read:reports"] },
     });
     const created = await keyRes.json().catch(() => ({}));
-    if (keyRes.status() !== 501 || created?.code !== "NOT_AVAILABLE" || created?.key) {
-      await fail("api-key create is 501", {
-        detail: `status ${keyRes.status()}: ${JSON.stringify(created).slice(0, 120)}`,
+    if (keyRes.status() !== 201 || !String(created?.key ?? "").startsWith("muh_") || !created?.id) {
+      await fail("api-key create", {
+        detail: `status ${keyRes.status()}: ${JSON.stringify({ ...created, key: created?.key ? "(present)" : undefined }).slice(0, 160)}`,
       });
     } else {
       const list = await (
         await page.request.get(`${BASE}/api/companies/${companyId}/api-keys`)
       ).json();
-      if (!Array.isArray(list) || list.some((k) => k.keyHash)) {
-        await fail("api-key list", { detail: "list missing or leaks keyHash" });
+      if (!Array.isArray(list) || list.some((k) => k.keyHash || k.key)) {
+        await fail("api-key list", { detail: "list missing or leaks the key or its hash" });
+      }
+      const revoke = await page.request.delete(`${BASE}/api/companies/${companyId}/api-keys/${created.id}`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+      });
+      if (revoke.status() !== 200 && revoke.status() !== 204) {
+        await fail("api-key revoke", { detail: `status ${revoke.status()}` });
       }
     }
 

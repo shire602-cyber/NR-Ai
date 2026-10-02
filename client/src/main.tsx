@@ -14,8 +14,10 @@ import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
 import "./index.css";
 import { registerServiceWorker } from "@/lib/pwa";
+import { initStackTables } from "@/lib/stack-tables";
 
 createRoot(document.getElementById("root")!).render(<App />);
+initStackTables();
 
 // Register the service worker after the React app has mounted so the initial
 // render isn't blocked by network registration.

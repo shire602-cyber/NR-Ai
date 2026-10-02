@@ -17,10 +17,10 @@ describe("Mobile launch UX guards", () => {
   });
 
   it("keeps bank reconciliation usable on narrow screens", () => {
-    const source = read("client/src/pages/BankReconciliation.tsx");
+    const source = read("client/src/components/banking/BankTransactionsTab.tsx");
 
     expect(source).toContain('data-testid="mobile-bank-transaction-list"');
-    expect(source).toContain("mobile-button-match");
+    expect(source).toContain("button-match-");
     expect(source).toContain("hidden rounded-md border overflow-x-auto md:block");
   });
 

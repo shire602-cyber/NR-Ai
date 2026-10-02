@@ -28,6 +28,8 @@ const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
 const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
 const Dashboard = lazyWithReload(() => import("@/pages/Dashboard"));
+const ReportRun = lazyWithReload(() => import("@/pages/ReportRun"));
+const ReportSchedules = lazyWithReload(() => import("@/pages/ReportSchedules"));
 const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
@@ -38,6 +40,11 @@ const TermsOfService = lazyWithReload(() => import("@/pages/TermsOfService"));
 const CookiePolicy = lazyWithReload(() => import("@/pages/CookiePolicy"));
 const TrustSecurity = lazyWithReload(() => import("@/pages/TrustSecurity"));
 const HelpCenter = lazyWithReload(() => import("@/pages/HelpCenter"));
+const HelpArticle = lazyWithReload(() => import("@/pages/HelpArticle"));
+const ApiDocs = lazyWithReload(() => import("@/pages/ApiDocs"));
+const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings"));
+const DataPrivacy = lazyWithReload(() => import("@/pages/DataPrivacy"));
+const ImportWizard = lazyWithReload(() => import("@/pages/ImportWizard"));
 const MigrationGuides = lazyWithReload(() => import("@/pages/MigrationGuides"));
 const DemoWorkspace = lazyWithReload(() => import("@/pages/DemoWorkspace"));
 
@@ -99,8 +106,15 @@ const VendorCredits = lazyWithReload(() => import("@/pages/VendorCredits"));
 const ExpenseClaims = lazyWithReload(() => import("@/pages/ExpenseClaims"));
 const Inventory = lazyWithReload(() => import("@/pages/Inventory"));
 const Quotes = lazyWithReload(() => import("@/pages/Quotes"));
+const SalesOrders = lazyWithReload(() => import("@/pages/SalesOrders"));
+const CustomerAdvances = lazyWithReload(() => import("@/pages/CustomerAdvances"));
+const SalesSettings = lazyWithReload(() => import("@/pages/SalesSettings"));
+const PublicQuoteView = lazyWithReload(() => import("@/pages/PublicQuoteView"));
 const CreditNotes = lazyWithReload(() => import("@/pages/CreditNotes"));
 const PurchaseOrders = lazyWithReload(() => import("@/pages/PurchaseOrders"));
+const Approvals = lazyWithReload(() => import("@/pages/Approvals"));
+const Projects = lazyWithReload(() => import("@/pages/Projects"));
+const ProjectDetail = lazyWithReload(() => import("@/pages/ProjectDetail"));
 const CostCenters = lazyWithReload(() => import("@/pages/CostCenters"));
 const FinancialStatements = lazyWithReload(() => import("@/pages/FinancialStatements"));
 const ReconciliationRules = lazyWithReload(() => import("@/pages/ReconciliationRules"));
@@ -203,6 +217,7 @@ import { OnboardingWizard } from "@/components/Onboarding";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
+import { DrillHighlight } from "@/components/reports/DrillHighlight";
 import { openCommandPalette } from "@/lib/commandPalette";
 
 function FirmContextBanner() {
@@ -283,6 +298,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <SkipLink />
+      <DrillHighlight />
       <div className="flex h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
@@ -545,12 +561,15 @@ function Router() {
     pathname === "/pricing" ||
     pathname === "/trust" ||
     pathname === "/help" ||
+    pathname.startsWith("/help/") ||
+    pathname === "/developers/api" ||
     pathname === "/migration-guides" ||
     pathname === "/demo" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname === "/cookies" ||
     pathname.startsWith("/view/invoice/") ||
+    pathname.startsWith("/view/quote/") ||
     pathname.startsWith("/accept-invite/") ||
     pathname.startsWith("/portal/")
   ) {
@@ -572,11 +591,14 @@ function Router() {
               <Route path="/reset-password" component={ResetPassword} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+              <Route path="/view/quote/:token" component={PublicQuoteView} />
               <Route path="/accept-invite/:token" component={AcceptInvite} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />
               <Route path="/help" component={HelpCenter} />
+              <Route path="/help/:slug" component={HelpArticle} />
+              <Route path="/developers/api" component={ApiDocs} />
               <Route path="/migration-guides" component={MigrationGuides} />
               <Route path="/demo" component={DemoWorkspace} />
               <Route path="/privacy" component={PrivacyPolicy} />
@@ -598,6 +620,9 @@ function Router() {
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/company-profile" component={CompanyProfile} />
             <Route path="/settings/company" component={CompanySettings} />
+            <Route path="/settings/security" component={SecuritySettings} />
+            <Route path="/settings/data" component={DataPrivacy} />
+            <Route path="/import" component={ImportWizard} />
             <Route path="/accounts" component={Accounts} />
             <Route path="/chart-of-accounts" component={ChartOfAccounts} />
             <Route path="/accounts/:id/ledger" component={AccountLedger} />
@@ -607,13 +632,22 @@ function Router() {
             <Route path="/journal" component={Journal} />
             <Route path="/journal/:id" component={JournalEntryDetail} />
             <Route path="/reports" component={Reports} />
+            <Route path="/reports/run" component={ReportRun} />
+            <Route path="/reports/run/:reportId" component={ReportRun} />
+            <Route path="/reports/schedules" component={ReportSchedules} />
             <Route path="/receipts" component={Receipts} />
             <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
             <Route path="/contacts" component={CustomerContacts} />
             <Route path="/inventory" component={Inventory} />
             <Route path="/quotes" component={Quotes} />
+            <Route path="/sales-orders" component={SalesOrders} />
+            <Route path="/customer-advances" component={CustomerAdvances} />
+            <Route path="/settings/sales" component={SalesSettings} />
             <Route path="/credit-notes" component={CreditNotes} />
             <Route path="/purchase-orders" component={PurchaseOrders} />
+            <Route path="/approvals" component={Approvals} />
+            <Route path="/projects" component={Projects} />
+            <Route path="/projects/:id" component={ProjectDetail} />
             <Route path="/cost-centers" component={CostCenters} />
             <Route path="/financial-statements" component={FinancialStatements} />
             <Route path="/reconciliation-rules" component={ReconciliationRules} />

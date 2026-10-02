@@ -30,6 +30,7 @@ import { CALENDAR_DATE_SHORT_FORMAT, formatCurrency, formatDate } from "@/lib/fo
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PageHeader } from "@/components/ui/page-header";
 import { CheckCircle, Edit, FileText, MoreHorizontal, Plus, Trash2, Undo2 } from "lucide-react";
+import { VendorPicker } from "@/components/purchases/VendorPicker";
 import { messages as pageMessages } from "./VendorCredits.i18n";
 
 // ===========================
@@ -38,6 +39,7 @@ import { messages as pageMessages } from "./VendorCredits.i18n";
 
 interface VendorCredit {
   id: string;
+  vendor_id?: string | null;
   vendor_name: string;
   vendor_trn: string | null;
   bill_id: string | null;
@@ -75,6 +77,7 @@ interface CreditDetail extends VendorCredit {
 
 interface BillRow {
   id: string;
+  vendor_id?: string | null;
   vendor_name: string;
   vendor_trn: string | null;
   bill_number: string | null;
@@ -362,6 +365,7 @@ function CreditFormDialog(props: {
   const base = `/api/companies/${companyId}/vendor-credits`;
 
   const [billId, setBillId] = useState(NO_BILL);
+  const [vendorId, setVendorId] = useState<string | null>(null);
   const [vendorName, setVendorName] = useState("");
   const [vendorTrn, setVendorTrn] = useState("");
   const [date, setDate] = useState(todayYmd());
@@ -375,6 +379,7 @@ function CreditFormDialog(props: {
     queryFn: async () => {
       const d: CreditDetail = await apiRequest("GET", `${base}/${editingId}`);
       setBillId(d.bill_id ?? NO_BILL);
+      setVendorId(d.vendor_id ?? null);
       setVendorName(d.vendor_name);
       setVendorTrn(d.vendor_trn ?? "");
       setDate(d.date);
@@ -396,7 +401,7 @@ function CreditFormDialog(props: {
   });
 
   const linkedBill = bills.find((b) => b.id === billId);
-  const selectableBills = bills.filter((b) => b.status !== "pending");
+  const selectableBills = bills.filter((b) => b.status !== "pending" && b.status !== "pending_approval");
 
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -417,6 +422,7 @@ function CreditFormDialog(props: {
     setBillId(id);
     const bill = bills.find((b) => b.id === id);
     if (bill) {
+      setVendorId(bill.vendor_id ?? null);
       setVendorName(bill.vendor_name);
       setVendorTrn(bill.vendor_trn ?? "");
     }
@@ -426,6 +432,7 @@ function CreditFormDialog(props: {
     mutationFn: () => {
       const payload = {
         bill_id: billId === NO_BILL ? null : billId,
+        vendor_id: vendorId,
         vendor_name: vendorName.trim() || undefined,
         vendor_trn: vendorTrn.trim() || null,
         vendor_reference: vendorReference.trim() || null,
@@ -497,7 +504,17 @@ function CreditFormDialog(props: {
             </div>
             <div className="space-y-2">
               <Label>{tr("vendorName")}</Label>
-              <Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} disabled={billId !== NO_BILL} />
+              <VendorPicker
+                companyId={companyId}
+                vendorId={vendorId}
+                fallbackName={vendorName}
+                disabled={billId !== NO_BILL}
+                onSelect={(vendor) => {
+                  setVendorId(vendor.id);
+                  setVendorName(vendor.name);
+                  if (vendor.trnNumber) setVendorTrn(vendor.trnNumber);
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label>{tr("vendorTrn")}</Label>

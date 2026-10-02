@@ -11,6 +11,7 @@
  *    snapshot; if the books have moved since, `driftDetected` says so per box.
  */
 
+import { invalidateVatDueNext } from "../reports/kpis";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Request } from "express";
 import { db } from "../db";
@@ -178,7 +179,7 @@ export interface VatFilingResult {
   clearing: { irrecoverableVat: number; rounding: number; manualAdjustment: number };
 }
 
-export async function recordVatFiling(args: {
+async function recordVatFilingInner(args: {
   user: FilingActor;
   returnId: string;
   input: {
@@ -728,4 +729,14 @@ export async function findFiledVatReturnsCoveringMonth(companyId: string, monthE
     referenceNumber: r.reference_number,
     filedAt: r.filed_at,
   }));
+}
+
+/** Filing a return moves the VAT "due next" on the dashboard: drop its cache for the company, before and after. */
+export async function recordVatFiling(args: Parameters<typeof recordVatFilingInner>[0]): Promise<VatFilingResult> {
+  const companyId = (await loadVatReturn(args.returnId).catch(() => null))?.companyId;
+  try {
+    return await recordVatFilingInner(args);
+  } finally {
+    if (companyId) invalidateVatDueNext(companyId);
+  }
 }

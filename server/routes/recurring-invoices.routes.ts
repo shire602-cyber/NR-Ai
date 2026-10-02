@@ -1,6 +1,5 @@
 import { type Express, type Request, type Response } from "express";
 import { storage } from "../storage";
-import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
@@ -8,6 +7,54 @@ import { checkRevenueAccountsForCompany } from "../services/revenue-account-guar
 import { normalizeDocumentLines } from "../services/document-line-limits";
 import { normaliseVatRate } from "../services/document-totals.service";
 import { deriveVatSupplyType } from "../services/vat-supply-type";
+import { deriveSalesLines } from "../../shared/sales-line-math";
+import { db } from "../db";
+import { customerContacts } from "../../shared/schema";
+import { and, eq } from "drizzle-orm";
+
+const MAX_TERMS_DAYS = 365;
+
+/** The contact a template bills (must be this company's) and whether it has an email to auto-send to. */
+async function loadTemplateContact(companyId: string, contactId: unknown) {
+  if (contactId === undefined || contactId === null || contactId === "") return { ok: true as const, contact: null };
+  if (typeof contactId !== "string" || !/^[0-9a-f-]{36}$/i.test(contactId)) {
+    return { ok: false as const, code: "CONTACT_NOT_FOUND", message: "contactId is not a contact of this company." };
+  }
+  const [contact] = await db
+    .select()
+    .from(customerContacts)
+    .where(and(eq(customerContacts.id, contactId), eq(customerContacts.companyId, companyId)));
+  if (!contact) return { ok: false as const, code: "CONTACT_NOT_FOUND", message: "contactId is not a contact of this company." };
+  return { ok: true as const, contact };
+}
+
+function parseTermsDays(value: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= MAX_TERMS_DAYS ? { ok: true, value: n } : { ok: false };
+}
+
+// A template whose lines cannot be derived (a discount above its line, two shipping lines) would fail every run.
+function derivationProblem(linesJson: unknown): { code: string; message: string } | null {
+  try {
+    const lines = JSON.parse(typeof linesJson === "string" ? linesJson : JSON.stringify(linesJson));
+    if (!Array.isArray(lines)) return null;
+    const res = deriveSalesLines({
+      lines: lines.map((l: any) => ({
+        kind: l?.lineKind === "shipping" ? "shipping" : "item",
+        description: String(l?.description ?? ""),
+        quantity: Number(l?.quantity),
+        unitPrice: Number(l?.unitPrice),
+        vatRate: normaliseVatRate(l?.vatRate),
+        discountType: l?.lineKind === "shipping" ? null : (l?.discountType ?? null),
+        discountValue: l?.lineKind === "shipping" ? null : (l?.discountValue ?? null),
+      })),
+    });
+    return res.ok ? null : { code: res.code, message: res.message };
+  } catch {
+    return null;
+  }
+}
 
 // Lines live as JSON on the template; pull out the revenue accounts the lines
 // chose so they can be validated against the company chart.
@@ -106,7 +153,22 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { customerName, customerTrn, currency, frequency, startDate, endDate } = req.body;
+      const { customerTrn, currency, frequency, startDate, endDate } = req.body;
+      let customerName = req.body.customerName;
+      const autoSend = req.body.autoSend === true;
+      const terms = parseTermsDays(req.body.paymentTermsDays);
+      if (!terms.ok) {
+        return res.status(422).json({ message: `paymentTermsDays must be a whole number from 0 to ${MAX_TERMS_DAYS}`, code: "INVALID_PAYMENT_TERMS" });
+      }
+      const contactResult = await loadTemplateContact(companyId, req.body.contactId);
+      if (!contactResult.ok) return res.status(422).json({ message: contactResult.message, code: contactResult.code });
+      if (contactResult.contact && !customerName) customerName = contactResult.contact.name;
+      if (autoSend && !contactResult.contact?.email?.trim()) {
+        return res.status(422).json({
+          message: "Auto-send needs a customer contact with an email address.",
+          code: "CONTACT_EMAIL_REQUIRED",
+        });
+      }
 
       // `linesJson` is the storage column name. Every other document endpoint in
       // this API takes `lines`, so accept that too rather than making callers
@@ -147,6 +209,8 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       if (!revenueCheck.ok) {
         return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
       }
+      const problem = derivationProblem(linesJson);
+      if (problem) return res.status(422).json(problem);
 
       const parsedStartDate = new Date(startDate);
       const parsedEndDate = endDate ? new Date(endDate) : null;
@@ -164,7 +228,10 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         isActive: true,
         lastGeneratedInvoiceId: null,
         totalGenerated: 0,
-      });
+        contactId: contactResult.contact?.id ?? null,
+        autoSend,
+        paymentTermsDays: terms.value,
+      } as any);
 
       log.info({ id: item.id, companyId }, "Created recurring invoice");
       res.json(item);
@@ -200,6 +267,20 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         endDate,
         linesJson,
       } = req.body;
+      const patchTerms = parseTermsDays(req.body.paymentTermsDays);
+      if (!patchTerms.ok) {
+        return res.status(422).json({ message: `paymentTermsDays must be a whole number from 0 to ${MAX_TERMS_DAYS}`, code: "INVALID_PAYMENT_TERMS" });
+      }
+      const nextContactId = req.body.contactId !== undefined ? (req.body.contactId || null) : existing.contactId;
+      const patchContact = await loadTemplateContact(existing.companyId, nextContactId);
+      if (!patchContact.ok) return res.status(422).json({ message: patchContact.message, code: patchContact.code });
+      const nextAutoSend = req.body.autoSend !== undefined ? req.body.autoSend === true : existing.autoSend;
+      if (nextAutoSend && !patchContact.contact?.email?.trim()) {
+        return res.status(422).json({
+          message: "Auto-send needs a customer contact with an email address.",
+          code: "CONTACT_EMAIL_REQUIRED",
+        });
+      }
 
       // Validate frequency if provided
       if (frequency) {
@@ -229,7 +310,14 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       if (startDate !== undefined) updateData.startDate = new Date(startDate);
       if (nextRunDate !== undefined) updateData.nextRunDate = new Date(nextRunDate);
       if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
-      if (linesJson !== undefined) updateData.linesJson = normalizeTemplateLines(linesJson);
+      if (linesJson !== undefined) {
+        const problem = derivationProblem(linesJson);
+        if (problem) return res.status(422).json(problem);
+        updateData.linesJson = normalizeTemplateLines(linesJson);
+      }
+      if (req.body.contactId !== undefined) updateData.contactId = patchContact.contact?.id ?? null;
+      if (req.body.autoSend !== undefined) updateData.autoSend = nextAutoSend;
+      if (req.body.paymentTermsDays !== undefined) updateData.paymentTermsDays = patchTerms.value;
 
       const item = await storage.updateRecurringInvoice(id, updateData);
       log.info({ id }, "Updated recurring invoice");

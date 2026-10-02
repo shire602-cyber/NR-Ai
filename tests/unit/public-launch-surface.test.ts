@@ -167,15 +167,17 @@ describe("Public SaaS launch surface", () => {
     const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
     const migrationSource = readRepoFile("client/src/pages/MigrationGuides.tsx");
 
-    for (const expectedHelpTopic of [
-      "Set up your company",
-      "Create VAT-ready invoices",
-      "Import receipts and contacts",
-      "Reconcile bank statements",
-      "Migrate from mazeed or Wafeq",
+    // The help centre is a searchable set of bundled articles (client/src/help/<locale>/<slug>.md).
+    for (const [slug, expectedHelpTopic] of [
+      ["getting-started", "Set up your company"],
+      ["invoices", "Create and send VAT invoices"],
+      ["receipts", "Receipts and scanning"],
+      ["bank-reconciliation", "Bank reconciliation"],
+      ["import-data", "Import data from another system"],
     ]) {
-      expect(helpSource).toContain(expectedHelpTopic);
+      expect(readRepoFile(`client/src/help/en/${slug}.md`)).toContain(`title: ${expectedHelpTopic}`);
     }
+    expect(helpSource).toContain("Search the help centre");
 
     for (const expectedMigrationTopic of [
       "Move from mazeed",

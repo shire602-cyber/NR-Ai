@@ -191,6 +191,11 @@ export function computeCtLiability(input: {
 
 /** Art. 21 + Ministerial Decision 73/2023: relief available while revenue ≤ AED 3M. */
 export const CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP = 3_000_000;
+/**
+ * Ministerial Decision 73/2023: Small Business Relief is available only for tax periods ending on or before this day.
+ * (Phase 8 D4: the computation used to check the revenue cap alone, so it kept granting relief past the sunset.)
+ */
+export const CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END = "2026-12-31";
 /** Art. 37(2): carried-forward losses offset at most 75% of taxable income. */
 export const CT_LOSS_OFFSET_LIMIT = 0.75;
 /** Cabinet Decision 116/2022: 0% band on the first AED 375,000. */
@@ -257,6 +262,11 @@ export interface CtComputationInput {
    * even if current revenue is within the cap.
    */
   priorPeriodsExceededRevenueCap?: boolean;
+  /**
+   * The last day of the tax period (YYYY-MM-DD or a Date). Relief ends with periods ending after
+   * CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END (31 Dec 2026); when absent the sunset cannot be checked and is not applied.
+   */
+  taxPeriodEnd?: string | Date | null;
   exemptionThreshold?: number;
   taxRate?: number;
 }
@@ -277,6 +287,8 @@ export interface CtComputationResult {
     eligible: boolean;
     applied: boolean;
     revenueCap: number;
+    /** Why relief is not available (when elected but not eligible, or just not eligible). */
+    ineligibleReason?: "revenue_cap" | "prior_period_breach" | "period_after_sunset";
   };
   lossBroughtForward: number;
   lossReliefApplied: number;
@@ -334,9 +346,22 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
   const sbrElected = input.smallBusinessReliefElected === true;
   // A-B16: eligible only if the cap is met this period AND was never breached
   // in a prior period.
-  const sbrEligible =
-    input.totalRevenue <= CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP &&
-    input.priorPeriodsExceededRevenueCap !== true;
+  const periodEndYmd =
+    input.taxPeriodEnd == null
+      ? null
+      : typeof input.taxPeriodEnd === "string"
+        ? input.taxPeriodEnd.slice(0, 10)
+        : input.taxPeriodEnd.toISOString().slice(0, 10);
+  const afterSunset = periodEndYmd !== null && periodEndYmd > CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END;
+  const ineligibleReason: "revenue_cap" | "prior_period_breach" | "period_after_sunset" | undefined =
+    input.totalRevenue > CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP
+      ? "revenue_cap"
+      : input.priorPeriodsExceededRevenueCap === true
+        ? "prior_period_breach"
+        : afterSunset
+          ? "period_after_sunset"
+          : undefined;
+  const sbrEligible = ineligibleReason === undefined;
   const sbrApplied = sbrElected && sbrEligible;
 
   let lossReliefApplied = 0;
@@ -420,6 +445,7 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
       eligible: sbrEligible,
       applied: sbrApplied,
       revenueCap: CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+      ...(ineligibleReason ? { ineligibleReason } : {}),
     },
     lossBroughtForward: round2(lossBroughtForward),
     lossReliefApplied,

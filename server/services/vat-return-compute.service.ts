@@ -10,10 +10,18 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { AppError } from "../errors";
-import { companies, receipts as receiptsTable } from "../../shared/schema";
+import { companies } from "../../shared/schema";
 import { round2 } from "./financial-statements";
 import { aggregateReturnSalesLines } from "./vat-sales-lines";
 import { loadPeriodSalesDocuments } from "./vat-period-documents.service";
+import {
+  loadPeriodBills,
+  loadPeriodExpenseClaimItems,
+  loadPeriodReceipts,
+  loadPeriodVendorCredits,
+  totalPurchases,
+  type PurchaseDocRow,
+} from "./vat-period-purchases.service";
 import { loadVatJournalAdjustments } from "./vat-adjustments.service";
 import { buildGeneratedVatReturnValues } from "./vat-return-payload.service";
 
@@ -65,9 +73,6 @@ export async function computeVatReturnForPeriod(args: {
   }
   const companyEmirate = company.emirate;
 
-  // Calculate VAT from invoices and receipts
-  const receipts: any[] = await ex.select().from(receiptsTable).where(eq(receiptsTable.companyId, companyId));
-
   const startDate = new Date(periodStart);
   // periodEnd is a calendar date — include the entire final day so
   // invoices timestamped during it aren't dropped from the return.
@@ -101,140 +106,34 @@ export async function computeVatReturnForPeriod(args: {
   // with negative invoice lines after A-B11, so the invoice loop above
   // captures them exactly once and applies the invoice exchange rate.
 
-  // Calculate input tax from receipts — only posted receipts can be
-  // claimed for input VAT recovery on a VAT return.
-  const periodReceipts = receipts.filter((rec) => {
-    if (!rec.posted) return false;
-    const recDate = new Date(rec.date || rec.createdAt);
-    return recDate >= startDate && recDate <= endDate;
-  });
-
-  // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
-  // (input side, subject to partial-exemption recovery), ordinary receipts
-  // feed Box 9.
-  const ordinaryReceipts = periodReceipts.filter((r) => !r.reverseCharge);
-  const reverseChargeReceipts = periodReceipts.filter((r) => r.reverseCharge);
-
-  // FTA reporting is in AED. A receipt stores its DOCUMENT-currency amount
-  // plus the transaction-date rate, so both the expense base and the input
-  // VAT must be converted before they reach Boxes 9/10/11 — exactly as the
-  // invoice lines above and the vendor bills below already do.
-  //
-  // Without this, a USD 1,000 receipt (VAT USD 50) at 3.6725 reported AED
-  // 1,000 of expenses and AED 50 of recoverable input VAT instead of AED
-  // 3,672.50 and AED 183.63 — the business under-claims and OVERPAYS the
-  // FTA. For AED receipts the rate is 1, so this is a no-op.
-  const recRate = (rec: { exchangeRate?: number | string | null }): number => {
-    const r = Number(rec.exchangeRate);
-    return Number.isFinite(r) && r > 0 ? r : 1;
+  // Purchase documents of the period: posted receipts, approved bills, approved vendor credits (negative) and
+  // approved / paid expense claims. The loaders live in vat-period-purchases.service.ts so the VAT Audit: Purchases
+  // Detail report reads the very same rows. Reverse-charge documents feed Boxes 3 (output) and 10 (input side,
+  // subject to partial-exemption recovery); ordinary ones feed Box 9. Amounts are AED: the rate booked on each
+  // document (a USD 1,000 receipt with VAT USD 50 at 3.6725 is AED 3,672.50 and AED 183.63).
+  const receiptRows = await loadPeriodReceipts(ex, companyId, startDate, endDate);
+  const periodReceipts = receiptRows;
+  const fromDay = startDate.toISOString().slice(0, 10);
+  const toDay = endDate.toISOString().slice(0, 10);
+  // Bills, vendor credits and expense claims: the bill-pay / claims schema may not be installed in dev, so fail
+  // open (inside a caller's transaction a failed statement aborts it: propagate).
+  const tolerant = async (load: () => Promise<PurchaseDocRow[]>): Promise<PurchaseDocRow[]> => {
+    try {
+      return await load();
+    } catch (err) {
+      if (args.executor) throw err;
+      return [];
+    }
   };
+  const billRows = await tolerant(() => loadPeriodBills(ex, companyId, fromDay, toDay));
+  const creditRows = await tolerant(() => loadPeriodVendorCredits(ex, companyId, fromDay, toDay));
+  const claimRows = await tolerant(() => loadPeriodExpenseClaimItems(ex, companyId, fromDay, toDay));
+  const purchaseTotals = totalPurchases([...receiptRows, ...billRows, ...creditRows, ...claimRows]);
 
-  let totalExpenses = ordinaryReceipts.reduce(
-    (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-    0
-  );
-  let inputTaxGross = ordinaryReceipts.reduce(
-    (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-    0
-  );
-
-  let reverseChargeAmount = reverseChargeReceipts.reduce(
-    (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-    0
-  );
-  let reverseChargeVatGross = reverseChargeReceipts.reduce(
-    (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-    0
-  );
-
-  // Vendor bills — pulled direct from vendor_bills since the bill module
-  // isn't in Drizzle yet. Reverse-charge bills feed Boxes 3/10; ordinary
-  // approved bills carry recoverable input VAT into Box 9 alongside
-  // posted receipts. Pending bills are excluded: input VAT is only
-  // claimable once the bill is approved (matching when it posts to GL).
-  try {
-    const fromDay = startDate.toISOString().slice(0, 10);
-    const toDay = endDate.toISOString().slice(0, 10);
-    const billRes = rowsOf(
-      await ex.execute(sql`
-        SELECT
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-        FROM vendor_bills
-        WHERE company_id = ${companyId}
-          AND bill_date >= ${fromDay}::date
-          AND bill_date <= ${toDay}::date
-          AND status NOT IN ('void','cancelled','draft','pending')
-          AND COALESCE(is_opening_balance, false) = false`)
-    );
-    // Compare calendar dates, not timestamps — casting the JS Date to
-    // timestamptz shifts period boundaries in non-UTC server timezones.
-    reverseChargeAmount += Number(billRes[0]?.rc_amount || 0);
-    reverseChargeVatGross += Number(billRes[0]?.rc_vat || 0);
-    totalExpenses += Number(billRes[0]?.std_amount || 0);
-    inputTaxGross += Number(billRes[0]?.std_vat || 0);
-  } catch (err) {
-    // Bill-pay schema may not be installed in dev — fail open, log via parent.
-    // (Inside a caller's transaction a failed statement aborts it: propagate.)
-    if (args.executor) throw err;
-  }
-
-  // Approved vendor credit notes dated in the period reduce the bill purchases above by
-  // their net and VAT (same date rule and rate conversion; Box 9 drops by the credit).
-  try {
-    const fromDay = startDate.toISOString().slice(0, 10);
-    const toDay = endDate.toISOString().slice(0, 10);
-    const creditRes = rowsOf(
-      await ex.execute(sql`
-        SELECT
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-        FROM vendor_credit_notes
-        WHERE company_id = ${companyId}
-          AND "date" >= ${fromDay}::date
-          AND "date" <= ${toDay}::date
-          AND status = 'approved'`)
-    );
-    reverseChargeAmount -= Number(creditRes[0]?.rc_amount || 0);
-    reverseChargeVatGross -= Number(creditRes[0]?.rc_vat || 0);
-    totalExpenses -= Number(creditRes[0]?.std_amount || 0);
-    inputTaxGross -= Number(creditRes[0]?.std_vat || 0);
-  } catch (err) {
-    if (args.executor) throw err;
-  }
-
-  // Expense claims — TD5 (found by blind-accountant audit): approval posts
-  // net→expense and VAT→input VAT (1050) to the GL, but the return never
-  // read them, so box 9/13 under-claimed recoverable input VAT and the GL
-  // could never reconcile to the filed return. Approved/paid claims with
-  // item dates inside the period now feed Box 9 exactly like bills.
-  // Entertainment-category items are excluded from VAT recovery
-  // (Art. 53 blocked input tax) to mirror the posting service.
-  try {
-    const fromDay = startDate.toISOString().slice(0, 10);
-    const toDay = endDate.toISOString().slice(0, 10);
-    const claimRes = rowsOf(
-      await ex.execute(sql`
-        SELECT
-          COALESCE(SUM(i.amount), 0) AS claim_amount,
-          COALESCE(SUM(i.vat_amount) FILTER (WHERE LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%'), 0) AS claim_vat
-        FROM expense_claim_items i
-        JOIN expense_claims c ON c.id = i.claim_id
-        WHERE c.company_id = ${companyId}
-          AND c.status IN ('approved','paid')
-          AND i.expense_date >= ${fromDay}::date
-          AND i.expense_date <= ${toDay}::date`)
-    );
-    totalExpenses += Number(claimRes[0]?.claim_amount || 0);
-    inputTaxGross += Number(claimRes[0]?.claim_vat || 0);
-  } catch (err) {
-    // Expense-claims schema may not be installed — fail open like bills.
-    if (args.executor) throw err;
-  }
+  let totalExpenses = purchaseTotals.totalExpenses;
+  let inputTaxGross = purchaseTotals.inputTaxGross;
+  let reverseChargeAmount = purchaseTotals.reverseChargeAmount;
+  let reverseChargeVatGross = purchaseTotals.reverseChargeVatGross;
 
   // Summing float line amounts leaves binary noise (3428.3300000000017);
   // settle every accumulator to fils before deriving boxes from them.

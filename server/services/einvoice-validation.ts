@@ -158,7 +158,10 @@ export function validateForEInvoicing(
       issues.push(issue("LINE_QUANTITY_INVALID", `lines[${i}].quantity`, "line", TEXT.LINE_QUANTITY_INVALID(), i));
     }
     const price = line.unitPrice as unknown;
-    if (price === null || price === undefined || !Number.isFinite(Number(price)) || Number(price) < 0) {
+    // Derived signed lines (discounts, advance deductions; Phase 8 D1) are sent as document-level allowances, not as
+    // invoice lines, so their negative price is exactly what they are.
+    const derivedSigned = isAllowanceLine(line);
+    if (!derivedSigned && (price === null || price === undefined || !Number.isFinite(Number(price)) || Number(price) < 0)) {
       issues.push(issue("LINE_UNIT_PRICE_INVALID", `lines[${i}].unitPrice`, "line", TEXT.LINE_UNIT_PRICE_INVALID(), i));
     }
 
@@ -203,4 +206,9 @@ export function validateForEInvoicing(
   }
 
   return issues;
+}
+
+/** Discount and advance-deduction lines: sent as document-level cac:AllowanceCharge, never as invoice lines. */
+export function isAllowanceLine(line: { lineKind?: string | null }): boolean {
+  return line.lineKind === "discount" || line.lineKind === "advance";
 }

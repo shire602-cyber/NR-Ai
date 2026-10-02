@@ -10,11 +10,24 @@ import { billQuantitySchema, billUnitPriceSchema, computeBillLines } from "../se
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { recordBillPayment } from "../services/bill-payment.service";
 import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { normalizeCalendarColumns, toCalendarYmd } from "../utils/date";
 import { recordAudit } from "../services/audit.service";
 import { asOfParams, billAgingBucketsAsOfSql, parseAgingAsOf } from "../services/aging-as-of.service";
 import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
+import { resolveVendor } from "../services/vendor-contact.service";
+import { assertProjectsOfCompany, recordProjectExpensesForBill } from "../services/project.service";
+import { LOCK_NS, withDocumentLock } from "../services/document-lock";
+import { loadApprovalDocument } from "../services/approval-queue.service";
+import {
+  auditApprovalStep,
+  beginApprovalStep,
+  notifyApprovalProgress,
+  pendingApprovalBody,
+  recordApprovalStep,
+  resolveActor,
+} from "../services/approval-gate.service";
 
 const log = createLogger("bill-pay");
 
@@ -45,10 +58,15 @@ const billLineItemSchema = z.object({
       { message: "VAT rate must be 0% or 5% (UAE)" }
     ),
   account_id: z.string().uuid().optional().nullable(),
+  // Phase 8 D2: a cost tagged with a project, optionally billable to the project's customer.
+  project_id: z.string().uuid().optional().nullable(),
+  is_billable: z.boolean().optional(),
 });
 
-const billCreateSchema = z.object({
-  vendor_name: z.string().min(1, "Vendor name is required").max(255),
+const billCreateSchema = z
+  .object({
+  vendor_id: z.string().uuid().optional().nullable(),
+  vendor_name: z.string().min(1, "Vendor name is required").max(255).optional(),
   vendor_trn: z.string().max(20).optional().nullable(),
   bill_number: z.string().max(64).optional().nullable(),
   bill_date: billIsoDate,
@@ -66,9 +84,11 @@ const billCreateSchema = z.object({
       message: "exchange_rate must be positive",
     }),
   line_items: z.array(billLineItemSchema).min(1, "At least one line item is required"),
-});
+  })
+  .refine((b) => !!b.vendor_id || !!b.vendor_name, { message: "Vendor name is required", path: ["vendor_name"] });
 
 const billUpdateSchema = z.object({
+  vendor_id: z.string().uuid().optional().nullable(),
   vendor_name: z.string().min(1).max(255).optional(),
   vendor_trn: z.string().max(20).optional().nullable(),
   bill_number: z.string().max(64).optional().nullable(),
@@ -92,6 +112,8 @@ const billPaymentSchema = z.object({
   payment_method: z.enum(["bank_transfer", "cash", "cheque", "credit_card", "other"]).optional(),
   reference: z.string().max(255).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  // The bank or cash GL account the money leaves (default 1020 / 1010).
+  payment_account_id: z.string().uuid().optional().nullable(),
 });
 
 // bill_date / due_date / payment_date are date-only values held in
@@ -107,6 +129,15 @@ const normalizeBill = <R extends Record<string, any>>(row: R): R =>
   normalizeCalendarColumns(row, BILL_DATE_COLUMNS);
 const normalizePayment = <R extends Record<string, any>>(row: R): R =>
   normalizeCalendarColumns(row, PAYMENT_DATE_COLUMNS);
+
+/** Every line account must be an account of THIS company; a foreign id would post to another tenant's chart. */
+async function foreignLineAccounts(companyId: string, lines: Array<{ account_id?: string | null }> | undefined): Promise<string[]> {
+  const ids = Array.from(new Set((lines ?? []).map((l) => l.account_id).filter((x): x is string => !!x)));
+  if (ids.length === 0) return [];
+  const { rows } = await pool.query(`SELECT id FROM accounts WHERE company_id = $1 AND id = ANY($2::uuid[])`, [companyId, ids]);
+  const ok = new Set(rows.map((r: any) => r.id));
+  return ids.filter((id) => !ok.has(id));
+}
 
 export function registerBillPayRoutes(app: Express) {
   // =====================================
@@ -170,8 +201,8 @@ export function registerBillPayRoutes(app: Express) {
         if (
           bill.due_date &&
           new Date(bill.due_date) < now &&
-          bill.status !== "paid" &&
-          bill.status !== "overdue"
+          // only a bill that is on the ledger and still owes money is overdue (never pending, waiting, void or paid)
+          (bill.status === "approved" || bill.status === "partial")
         ) {
           return { ...bill, status: "overdue" };
         }
@@ -237,9 +268,15 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const foreign = await foreignLineAccounts(companyId, req.body.line_items);
+      if (foreign.length > 0) {
+        return res.status(400).json({ message: "A line account does not belong to this company", code: "INVALID_ACCOUNT", details: { accountIds: foreign } });
+      }
+
       const {
-        vendor_name,
-        vendor_trn,
+        vendor_id,
+        vendor_name: requestedVendorName,
+        vendor_trn: requestedVendorTrn,
         bill_number,
         bill_date,
         due_date,
@@ -285,7 +322,18 @@ export function registerBillPayRoutes(app: Express) {
       // response so an accountant can review it, rather than silently changing
       // the tax treatment.
       const billReverseCharge = reverse_charge === true;
+
+      // One contacts table: link the bill to the vendor contact (validated, found by name, or created).
+      const vendor = await resolveVendor(companyId, {
+        vendorId: vendor_id,
+        vendorName: requestedVendorName,
+        vendorTrn: requestedVendorTrn,
+      });
+      const vendor_name = vendor.vendorName;
+      const vendor_trn = vendor.vendorTrn;
       const missingVendorTrn = !vendor_trn;
+
+      await assertProjectsOfCompany(companyId, line_items.map((l: any) => l.project_id));
 
       // Totals from exact-decimal line maths (unit price rounded to 6dp and
       // quantity to 4dp before each line amount is computed).
@@ -302,8 +350,8 @@ export function registerBillPayRoutes(app: Express) {
         `INSERT INTO vendor_bills (
         company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
         currency, subtotal, vat_amount, total_amount, amount_paid, status,
-        category, notes, attachment_url, reverse_charge, exchange_rate
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        category, notes, attachment_url, reverse_charge, exchange_rate, vendor_id, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *`,
         [
           companyId,
@@ -323,6 +371,8 @@ export function registerBillPayRoutes(app: Express) {
           attachment_url || null,
           billReverseCharge,
           fxRate,
+          vendor.vendorId,
+          userId,
         ]
       );
 
@@ -332,8 +382,8 @@ export function registerBillPayRoutes(app: Express) {
       for (const [i, line] of line_items.entries()) {
         const computedLine = computed.lines[i];
         await pool.query(
-          `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge, project_id, is_billable)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             bill.id,
             line.description,
@@ -343,28 +393,25 @@ export function registerBillPayRoutes(app: Express) {
             computedLine.amount,
             line.account_id || null,
             billReverseCharge,
+            line.project_id || null,
+            line.project_id ? line.is_billable === true : false,
           ]
         );
       }
 
       log.info({ billId: bill.id, companyId, reverseCharge: billReverseCharge }, "Vendor bill created");
-      res.json({
-        ...bill,
-        // Advisory only — never a silent change of tax treatment.
-        ...(missingVendorTrn && !billReverseCharge
-          ? {
-              warnings: [
-                {
-                  code: "VENDOR_TRN_MISSING",
-                  message:
-                    "No vendor TRN recorded. This bill is treated as an ordinary domestic purchase " +
-                    "(input VAT recoverable in Box 9). If this supply is subject to the reverse charge " +
-                    "(imports, designated zones), set reverse_charge explicitly.",
-                },
-              ],
-            }
-          : {}),
-      });
+      const billWarnings: Array<{ code: string; message: string }> = [...vendor.warnings];
+      // Advisory only — never a silent change of tax treatment.
+      if (missingVendorTrn && !billReverseCharge) {
+        billWarnings.push({
+          code: "VENDOR_TRN_MISSING",
+          message:
+            "No vendor TRN recorded. This bill is treated as an ordinary domestic purchase " +
+            "(input VAT recoverable in Box 9). If this supply is subject to the reverse charge " +
+            "(imports, designated zones), set reverse_charge explicitly.",
+        });
+      }
+      res.json({ ...bill, ...(billWarnings.length > 0 ? { warnings: billWarnings } : {}) });
     })
   );
 
@@ -399,6 +446,18 @@ export function registerBillPayRoutes(app: Express) {
         });
       }
 
+      const foreignOnEdit = await foreignLineAccounts(bill.company_id, req.body.line_items);
+      if (foreignOnEdit.length > 0) {
+        return res.status(400).json({ message: "A line account does not belong to this company", code: "INVALID_ACCOUNT", details: { accountIds: foreignOnEdit } });
+      }
+
+      if (bill.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This bill is waiting for approval and cannot be edited. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
+
       // Only a bill that has not hit the books can be edited. An approved bill has its payable posted;
       // payments and applied credits settle it. Editing amounts or the vendor underneath those would
       // leave the ledger, the payments and the credits describing different bills.
@@ -416,6 +475,7 @@ export function registerBillPayRoutes(app: Express) {
       }
 
       const {
+        vendor_id,
         vendor_name,
         vendor_trn,
         bill_number,
@@ -448,8 +508,22 @@ export function registerBillPayRoutes(app: Express) {
         }
       };
 
-      addUpdate("vendor_name", vendor_name);
-      addUpdate("vendor_trn", vendor_trn);
+      // A changed vendor (by id or by name) is re-resolved against the contacts table; a name-only edit
+      // that matches nothing creates the vendor, so the bill never keeps a stale link.
+      let patchWarnings: Array<{ code: string; message: string }> = [];
+      if (vendor_id !== undefined || vendor_name !== undefined) {
+        const vendor = await resolveVendor(bill.company_id, {
+          vendorId: vendor_id,
+          vendorName: vendor_id ? undefined : vendor_name ?? bill.vendor_name,
+          vendorTrn: vendor_trn ?? undefined,
+        });
+        patchWarnings = vendor.warnings;
+        addUpdate("vendor_id", vendor.vendorId);
+        addUpdate("vendor_name", vendor.vendorName);
+        addUpdate("vendor_trn", vendor_trn === undefined ? vendor.vendorTrn : vendor_trn);
+      } else {
+        addUpdate("vendor_trn", vendor_trn);
+      }
       addUpdate("bill_number", bill_number);
       addUpdate("bill_date", bill_date ? toCalendarYmd(bill_date) : bill_date);
       addUpdate("due_date", due_date ? toCalendarYmd(due_date) : due_date);
@@ -457,6 +531,8 @@ export function registerBillPayRoutes(app: Express) {
       addUpdate("category", category);
       addUpdate("notes", notes);
       addUpdate("attachment_url", attachment_url);
+
+      if (Array.isArray(line_items)) await assertProjectsOfCompany(bill.company_id, line_items.map((l: any) => l.project_id));
 
       // If line_items provided, recalculate totals
       const hasNewLines = Array.isArray(line_items) && line_items.length > 0;
@@ -490,8 +566,8 @@ export function registerBillPayRoutes(app: Express) {
         for (const [i, line] of line_items.entries()) {
           const computedLine = computed.lines[i];
           await pool.query(
-            `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, project_id, is_billable)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
               id,
               line.description,
@@ -500,13 +576,15 @@ export function registerBillPayRoutes(app: Express) {
               computedLine.vatRatePercent,
               computedLine.amount,
               line.account_id || null,
+              line.project_id || null,
+              line.project_id ? line.is_billable === true : false,
             ]
           );
         }
       }
 
       log.info({ billId: id }, "Vendor bill updated");
-      res.json(updatedBill);
+      res.json(patchWarnings.length > 0 ? { ...updatedBill, warnings: patchWarnings } : updatedBill);
     })
   );
 
@@ -530,6 +608,13 @@ export function registerBillPayRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (bill.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This bill is waiting for approval and cannot be deleted. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
       }
 
       // FTA 5-year retention.
@@ -574,52 +659,83 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(404).json({ message: "Bill not found" });
       }
 
-      const bill = normalizeBill(billResult.rows[0]);
+      const companyId: string = billResult.rows[0].company_id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (bill.status !== "pending") {
-        return res.status(400).json({ message: "Only pending bills can be approved" });
-      }
+      // Everything from the status check to the posting runs under the document's approval lock with the
+      // bill re-read inside it, so ten parallel approvals post once (and a second signer waits for the first).
+      const outcome = await withDocumentLock(id, LOCK_NS.APPROVAL, async (tx) => {
+        const fresh = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
+        const bill = normalizeBill(fresh.rows[0]);
+        if (!bill) return { status: 404, body: { message: "Bill not found" } };
 
-      // Approval triggers the AP journal entry on bill_date — block if locked.
-      await assertPeriodNotLocked(bill.company_id, bill.bill_date);
+        if (bill.status !== "pending" && bill.status !== "pending_approval") {
+          return { status: 400, body: { message: "Only pending bills can be approved" } };
+        }
 
-      // Post the AP journal entry BEFORE flipping status — if posting fails the
-      // bill stays pending and the books never diverge from the subledger.
-      const linesResult = await pool.query(
-        `SELECT description, amount, account_id FROM bill_line_items WHERE bill_id = $1`,
-        [id]
-      );
-      await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId);
+        // Approval triggers the AP journal entry on bill_date — block if locked.
+        await assertPeriodNotLocked(bill.company_id, bill.bill_date);
 
-      const updateResult = await pool.query(
-        `UPDATE vendor_bills
+        // Approval rules (amount and role): none = the single-step approval this route always had.
+        const doc = await loadApprovalDocument("bill", id);
+        const actor = await resolveActor(req.user!, bill.company_id);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: bill.status }) : ({ kind: "none" } as const);
+
+        if (step.kind === "step" && !step.isFinal) {
+          const request = await recordApprovalStep(tx, step, actor);
+          const updated = await pool.query(`UPDATE vendor_bills SET status = 'pending_approval' WHERE id = $1 RETURNING *`, [id]);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "needs_next_step" });
+          return { status: 200, body: { ...normalizeBill(updated.rows[0]), ...pendingApprovalBody(step) } };
+        }
+
+        // Post the AP journal entry BEFORE flipping status — if posting fails the
+        // bill stays pending and the books never diverge from the subledger.
+        const linesResult = await pool.query(
+          `SELECT description, amount, account_id, project_id FROM bill_line_items WHERE bill_id = $1`,
+          [id]
+        );
+        await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId);
+
+        const updateResult = await pool.query(
+          `UPDATE vendor_bills
        SET status = 'approved', approved_by = $1, approved_at = NOW()
        WHERE id = $2 RETURNING *`,
-        [userId, id]
-      );
+          [userId, id]
+        );
 
-      log.info({ billId: id, approvedBy: userId }, "Vendor bill approved");
-      await recordAudit({
-        userId,
-        companyId: bill.company_id,
-        action: "bill.approve",
-        entityType: "vendor_bill",
-        entityId: id,
-        before: { status: "pending" },
-        after: {
-          status: "approved",
-          number: bill.bill_number,
-          total: bill.total_amount,
-          currency: bill.currency,
-        },
-        req,
+        // Lines tagged with a project become billable project costs once the bill is on the ledger.
+        await recordProjectExpensesForBill(id);
+
+        if (step.kind === "step") {
+          const request = await recordApprovalStep(tx, step, actor);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "approved" });
+        }
+
+        log.info({ billId: id, approvedBy: userId }, "Vendor bill approved");
+        await recordAudit({
+          userId,
+          companyId: bill.company_id,
+          action: "bill.approve",
+          entityType: "vendor_bill",
+          entityId: id,
+          before: { status: bill.status },
+          after: {
+            status: "approved",
+            number: bill.bill_number,
+            total: bill.total_amount,
+            currency: bill.currency,
+          },
+          req,
+        });
+        return { status: 200, body: normalizeBill(updateResult.rows[0]) };
       });
-      res.json(normalizeBill(updateResult.rows[0]));
+      res.status(outcome.status).json(outcome.body);
     })
   );
 
@@ -646,7 +762,22 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { payment_date: requestedPaymentDate, amount, payment_method, reference, notes } = req.body;
+      // A bill that has not been approved has no payable on the ledger: a payment would debit A/P with nothing
+      // to settle and push the bill into 'partial', after which it could never be approved.
+      if (bill.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This bill is waiting for approval and cannot be paid yet.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
+      if (["pending", "draft", "void", "cancelled"].includes(String(bill.status))) {
+        return res.status(409).json({
+          message: "Approve the bill before recording a payment.",
+          code: "BILL_NOT_APPROVED",
+        });
+      }
+
+      const { payment_date: requestedPaymentDate, amount, payment_method, reference, notes, payment_account_id } = req.body;
 
       const paymentAmount = amount;
 
@@ -657,89 +788,26 @@ export function registerBillPayRoutes(app: Express) {
         requested: requestedPaymentDate,
       });
 
-      // S-C1: serialize concurrent payments and keep the subledger consistent.
-      // Lock the bill row, recompute the paid total from bill_payments UNDER the
-      // lock (never trust a possibly-stale amount_paid column), guard the
-      // overpayment with Decimal math, and write the payment row + bill update
-      // in one transaction. Previously these were independent pool.query calls
-      // with a float guard and no row lock, so two concurrent payments could
-      // each pass the check and overpay the vendor, and a failed final UPDATE
-      // left amount_paid stale (the next payment then computed off a wrong base).
-      const client = await pool.connect();
-      let payment: any;
-      let newAmountPaid = 0;
-      let newStatus = "partial";
-      let totalAmount = 0;
-      try {
-        await client.query("BEGIN");
-        const lockRes = await client.query(
-          "SELECT total_amount FROM vendor_bills WHERE id = $1 FOR UPDATE",
-          [id]
-        );
-        const sumRes = await client.query(
-          // Vendor credit notes applied to the bill settle it just like cash does.
-          `SELECT COALESCE((SELECT SUM(amount) FROM bill_payments WHERE bill_id = $1), 0)
-                + COALESCE((SELECT SUM(amount) FROM vendor_credit_applications WHERE bill_id = $1), 0) AS paid`,
-          [id]
-        );
-        const totalD = new Decimal(lockRes.rows[0]?.total_amount ?? bill.total_amount ?? 0);
-        const paidD = new Decimal(sumRes.rows[0]?.paid ?? 0);
-        const remainingD = totalD.minus(paidD);
-        const amountD = new Decimal(paymentAmount);
-        // 0.005 tolerance for legitimate 2dp rounding.
-        if (amountD.greaterThan(remainingD.plus("0.005"))) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: `Payment amount (${amountD.toFixed(2)}) exceeds remaining balance (${remainingD.toFixed(2)})`,
-          });
-        }
-        const insertRes = await client.query(
-          `INSERT INTO bill_payments (bill_id, payment_date, amount, payment_method, reference, notes)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [
-            id,
-            payment_date,
-            amountD.toFixed(2),
-            payment_method || "bank_transfer",
-            reference || null,
-            notes || null,
-          ]
-        );
-        payment = normalizePayment(insertRes.rows[0]);
-        const newPaidD = paidD.plus(amountD);
-        newStatus = newPaidD.greaterThanOrEqualTo(totalD.minus("0.005")) ? "paid" : "partial";
-        newAmountPaid = newPaidD.toNumber();
-        totalAmount = totalD.toNumber();
-        await client.query(
-          `UPDATE vendor_bills
-             SET amount_paid = $1, status = $2, paid_at = ${newStatus === "paid" ? "NOW()" : "paid_at"}
-           WHERE id = $3`,
-          [newPaidD.toFixed(2), newStatus, id]
-        );
-        await client.query("COMMIT");
-      } catch (txErr) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw txErr;
-      } finally {
-        client.release();
-      }
-
-      // Post the cash JE (Dr A/P, Cr Bank) after the subledger commit. The
-      // poster is idempotent (dedupes by source) and any missing GL posting can
-      // be repaired with the backfill-gl endpoint, so a failure here cannot
-      // corrupt or roll back the recorded payment — we surface it instead.
-      // (The bill subledger and the Drizzle-managed GL are separate drivers;
-      // unifying bill-pay onto storage.recordInvoicePayment-style posting is the
-      // ideal future step.)
-      try {
-        await postBillPaymentJournal(bill, payment, userId);
-      } catch (postErr) {
-        log.error(
-          { billId: id, paymentId: payment.id, err: postErr },
-          "Bill payment recorded but GL posting failed — run backfill-gl to repair"
-        );
-      }
+      // The payment row, the bill's paid total and the cash journal commit together (bill-payment.service):
+      // the bill row is locked, the paid total recomputed under the lock, and the journal posted in the same
+      // transaction, so a failed posting can no longer leave a payment without its ledger entry. The bank GL
+      // account may be chosen (payment_account_id); the default stays 1020 (1010 for cash).
+      const paid = await recordBillPayment({
+        billId: id,
+        companyId: bill.company_id,
+        amount: paymentAmount,
+        paymentDate: payment_date,
+        paymentMethod: payment_method,
+        reference,
+        notes,
+        paymentAccountId: payment_account_id,
+        userId,
+        requirePayableStatus: false,
+      });
+      const payment = normalizePayment(paid.payment);
+      const newStatus = paid.billStatus;
+      const newAmountPaid = paid.amountPaid;
+      const totalAmount = paid.totalAmount;
 
       log.info(
         { billId: id, paymentId: payment.id, amount: paymentAmount, newStatus },
@@ -796,7 +864,7 @@ export function registerBillPayRoutes(app: Express) {
           const before = await storage.getJournalEntriesBySource(companyId, "bill", bill.id);
           if (!before.some((e) => e.status === "posted")) {
             const linesRes = await pool.query(
-              `SELECT description, amount, account_id FROM bill_line_items WHERE bill_id = $1`,
+              `SELECT description, amount, account_id, project_id FROM bill_line_items WHERE bill_id = $1`,
               [bill.id]
             );
             await postBillApprovalJournal(bill, linesRes.rows, bill.category ?? null, userId);
@@ -848,8 +916,8 @@ export function registerBillPayRoutes(app: Express) {
 
       const result = await pool.query(
         `SELECT
-        COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'pending'), 0) AS pending_total,
+        COUNT(*) FILTER (WHERE status IN ('pending', 'pending_approval')) AS pending_count,
+        COALESCE(SUM(total_amount) FILTER (WHERE status IN ('pending', 'pending_approval')), 0) AS pending_total,
         COUNT(*) FILTER (WHERE status = 'approved') AS approved_count,
         COALESCE(SUM(total_amount) FILTER (WHERE status = 'approved'), 0) AS approved_total,
         COUNT(*) FILTER (WHERE status = 'partial') AS partial_count,

@@ -35,6 +35,7 @@ import {
 
 import { buildInvoiceBalances } from "../services/invoice-outstanding";
 import { getInvoiceBalance } from "../services/invoice-outstanding.db";
+import { lateFeeConfigSchema } from "../services/late-fee-math";
 
 const log = createLogger("chasing");
 
@@ -136,7 +137,20 @@ const updateConfigSchema = z.object({
   preferredMethod: z.enum(["email"]).optional(),
   doNotChaseContactIds: z.array(z.string().uuid()).optional(),
   defaultLanguage: z.enum(["en", "ar"]).optional(),
+  // Phase 8 D1: compensatory late fee, off by default (applied once per invoice by the daily job).
+  lateFee: lateFeeConfigSchema.optional(),
 });
+
+/** The late-fee setting as the API shows it (nested), whatever the column names. */
+function lateFeeView(config: any) {
+  return {
+    enabled: Boolean(config?.lateFeeEnabled),
+    type: (config?.lateFeeType as string) ?? "percent",
+    value: Number(config?.lateFeeValue ?? 0),
+    afterDays: Number(config?.lateFeeAfterDays ?? 15),
+    vatTreatment: (config?.lateFeeVatTreatment as string) ?? "out_of_scope",
+  };
+}
 
 const upsertTemplateSchema = z.object({
   level: z.number().int().min(1).max(4),
@@ -630,8 +644,8 @@ export function registerChasingRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
       const config = await storage.getChaseConfig(companyId);
-      res.json(
-        config ?? {
+      res.json({
+        ...(config ?? {
           companyId,
           autoChaseEnabled: false,
           chaseFrequencyDays: 7,
@@ -639,8 +653,9 @@ export function registerChasingRoutes(app: Express) {
           preferredMethod: "email",
           doNotChaseContactIds: "[]",
           defaultLanguage: "en",
-        }
-      );
+        }),
+        lateFee: lateFeeView(config),
+      });
     })
   );
 
@@ -657,14 +672,23 @@ export function registerChasingRoutes(app: Express) {
       const parse = updateConfigSchema.safeParse(req.body);
       if (!parse.success)
         return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
-      const { doNotChaseContactIds, ...rest } = parse.data;
+      const { doNotChaseContactIds, lateFee, ...rest } = parse.data;
       const updated = await storage.upsertChaseConfig(companyId, {
         ...rest,
         ...(doNotChaseContactIds
           ? { doNotChaseContactIds: JSON.stringify(doNotChaseContactIds) }
           : {}),
+        ...(lateFee
+          ? {
+              lateFeeEnabled: lateFee.enabled,
+              lateFeeType: lateFee.type,
+              lateFeeValue: lateFee.value,
+              lateFeeAfterDays: lateFee.afterDays,
+              lateFeeVatTreatment: lateFee.vatTreatment,
+            }
+          : {}),
       });
-      res.json(updated);
+      res.json({ ...updated, lateFee: lateFeeView(updated) });
     })
   );
 

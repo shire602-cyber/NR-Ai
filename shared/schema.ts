@@ -13,6 +13,7 @@ import {
   customType,
   jsonb,
   date,
+  bigint,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -21,7 +22,7 @@ import { sql } from "drizzle-orm";
 // Monetary amount stored as NUMERIC(15,2) in Postgres for exact decimal arithmetic.
 // fromDriver rounds to 2 decimals so JS-side floating-point drift cannot accumulate
 // across multi-line entries (a long-term decimal library is the proper fix).
-const money = customType<{ data: number; driverData: string }>({
+export const money = customType<{ data: number; driverData: string }>({
   dataType() {
     return "numeric(15,2)";
   },
@@ -169,6 +170,11 @@ export const refreshSessions = pgTable(
     lastUsedAt: timestamp("last_used_at"),
     userAgent: text("user_agent"),
     ipAddress: text("ip_address"),
+    deviceHash: text("device_hash"),
+    revokedReason: text("revoked_reason"),
+    previousTokenHash: text("previous_token_hash"),
+    altTokenHashes: text("alt_token_hashes").array().notNull().default(sql`'{}'`),
+    rotatedAt: timestamp("rotated_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -362,10 +368,14 @@ export const companies = pgTable("companies", {
   // Phase 6: when true, issuing an invoice also posts cost of goods sold (Dr 5200 / Cr 1070)
   // for lines sold from products that track inventory, at weighted-average cost.
   inventoryCostingEnabled: boolean("inventory_costing_enabled").notNull().default(false),
+  // D3 (0110): read scanned PDF bank statements with the AI provider (paid per call, capped at 10 pages). Off by default.
+  bankPdfAiFallback: boolean("bank_pdf_ai_fallback").notNull().default(false),
 
   // Soft delete — UAE FTA requires 5-year retention; hard deletes are disallowed
   deletedAt: timestamp("deleted_at"),
   isActive: boolean("is_active").notNull().default(true),
+  // D5: owners/accountants/CFOs of this company must have TOTP enabled
+  requireTwoFactor: boolean("require_two_factor").notNull().default(false),
 
   // Invoice Customization
   invoiceShowLogo: boolean("invoice_show_logo").notNull().default(true),
@@ -397,6 +407,11 @@ export const companies = pgTable("companies", {
 export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,
   createdAt: true,
+  // D5: never client-writable through the generic company routes. Soft delete
+  // goes through the owner-only deletion request, the 2FA requirement through
+  // PATCH /api/companies/:id/security.
+  deletedAt: true,
+  requireTwoFactor: true,
 });
 
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
@@ -624,6 +639,77 @@ export const insertCompanyReportDeliveryRunSchema = createInsertSchema(
 export type InsertCompanyReportDeliveryRun = z.infer<typeof insertCompanyReportDeliveryRunSchema>;
 export type CompanyReportDeliveryRun = typeof companyReportDeliveryRuns.$inferSelect;
 
+// Phase 8 D4: per-report scheduled email delivery (migration 0114). Separate from the persona-pack
+// delivery runs above: those point at static subscription ids.
+export const reportSchedules = pgTable(
+  "report_schedules",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    reportId: text("report_id").notNull(),
+    params: jsonb("params")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    format: text("format").notNull(), // pdf | csv | xlsx
+    lang: text("lang").notNull().default("en"), // en | ar
+    cadence: text("cadence").notNull(), // daily | weekly | monthly
+    dayOfWeek: integer("day_of_week"),
+    dayOfMonth: integer("day_of_month"),
+    hourDubai: integer("hour_dubai").notNull().default(7),
+    recipientUserIds: jsonb("recipient_user_ids")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at").notNull(),
+    lastRunAt: timestamp("last_run_at"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_report_schedules_company").on(table.companyId),
+  })
+);
+
+export const reportScheduleRuns = pgTable(
+  "report_schedule_runs",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => reportSchedules.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    slotKey: text("slot_key").notNull(), // '2026-10-05T07' or 'manual:<uuid>'
+    trigger: text("trigger").notNull().default("schedule"), // schedule | manual
+    status: text("status").notNull(), // running | sent | skipped | failed
+    reason: text("reason"),
+    resolvedParams: jsonb("resolved_params")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    rowCount: integer("row_count"),
+    byteSize: integer("byte_size"),
+    sha256: text("sha256"),
+    recipientsSent: integer("recipients_sent").notNull().default(0),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (table) => ({
+    slotUnique: unique("report_schedule_runs_slot_unique").on(table.scheduleId, table.slotKey),
+    companyIdx: index("idx_report_schedule_runs_company").on(table.companyId, table.startedAt),
+  })
+);
+
+export type ReportSchedule = typeof reportSchedules.$inferSelect;
+export type ReportScheduleRun = typeof reportScheduleRuns.$inferSelect;
+
 export const companyReportDeliverySchedulerScans = pgTable(
   "company_report_delivery_scheduler_scans",
   {
@@ -816,6 +902,10 @@ export const accounts = pgTable(
     isSystemAccount: boolean("is_system_account").notNull().default(false), // System accounts cannot be deleted
     isActive: boolean("is_active").notNull().default(true),
     isArchived: boolean("is_archived").notNull().default(false), // Soft delete / archive
+    // Phase 8 D4: the group company on the other side of an intercompany account (migration 0116).
+    intercompanyCompanyId: uuid("intercompany_company_id").references((): any => companies.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at"),
   },
@@ -937,6 +1027,8 @@ export const journalLines = pgTable(
     reconciledAt: timestamp("reconciled_at"),
     reconciledBy: uuid("reconciled_by").references(() => users.id),
     bankTransactionId: uuid("bank_transaction_id"), // Reference to matched bank transaction
+    // Phase 8 D2 (0107): the project a cost or revenue line belongs to (projects.id); profitability reads it.
+    projectId: uuid("project_id"),
   },
   (table) => ({
     entryIdIdx: index("idx_journal_lines_entry_id").on(table.entryId),
@@ -1053,6 +1145,15 @@ export const invoices = pgTable(
     contactId: uuid("contact_id").references((): any => customerContacts.id, {
       onDelete: "set null",
     }),
+    // Phase 8 D1 (0102): document discount, shipping and the late-fee link. The signed lines carry the
+    // amounts; these columns keep the client's input and the totals for display.
+    discountType: text("discount_type"), // percent | amount
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0),
+    shippingAmount: money("shipping_amount").notNull().default(0),
+    lateFeeForInvoiceId: uuid("late_fee_for_invoice_id"),
+    // Phase 8 D1 (0104): the sales order this invoice bills.
+    salesOrderId: uuid("sales_order_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -1098,6 +1199,19 @@ export const invoiceLines = pgTable(
     }),
     // Optional product sold on this line; drives stock movement and COGS when tracked.
     productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
+    // Phase 8 D1 (0102): signed derived lines (discount | shipping | advance | late_fee), see shared/sales-line-math.ts.
+    lineKind: text("line_kind").notNull().default("item"),
+    parentLineId: uuid("parent_line_id"),
+    discountType: text("discount_type"), // percent | amount (on the item the discount belongs to)
+    discountValue: rate("discount_value"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    customerAdvanceId: uuid("customer_advance_id"),
+    // Phase 8 D1 (0103): the price list the unit price came from.
+    priceListId: uuid("price_list_id"),
+    // Phase 8 D1 (0104): the sales order line this line bills.
+    salesOrderLineId: uuid("sales_order_line_id"),
+    // Phase 8 D2 (0107): the project this line bills (time, billable costs); revenue posts tagged with it.
+    projectId: uuid("project_id"),
   },
   (table) => ({
     invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
@@ -1138,6 +1252,18 @@ export const quotes = pgTable(
     status: text("status").notNull().default("draft"), // draft | sent | accepted | declined | expired | converted
     convertedInvoiceId: uuid("converted_invoice_id"),
     notes: text("notes"),
+    // Phase 8 D1 (0102): document discount and shipping.
+    discountType: text("discount_type"),
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0),
+    shippingAmount: money("shipping_amount").notNull().default(0),
+    // Phase 8 D1 (0104): public share link, status timestamps and the sales order it became.
+    shareToken: text("share_token"),
+    shareTokenExpiresAt: timestamp("share_token_expires_at"),
+    sentAt: timestamp("sent_at"),
+    acceptedAt: timestamp("accepted_at"),
+    declinedAt: timestamp("declined_at"),
+    convertedSalesOrderId: uuid("converted_sales_order_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1175,6 +1301,13 @@ export const quoteLines = pgTable(
       onDelete: "set null",
     }),
     productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
+    // Phase 8 D1 (0102): same line model as invoice lines.
+    lineKind: text("line_kind").notNull().default("item"),
+    parentLineId: uuid("parent_line_id"),
+    discountType: text("discount_type"),
+    discountValue: rate("discount_value"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    priceListId: uuid("price_list_id"),
   },
   (table) => ({
     quoteIdIdx: index("idx_quote_lines_quote_id").on(table.quoteId),
@@ -1187,6 +1320,461 @@ export const insertQuoteLineSchema = createInsertSchema(quoteLines).omit({
 
 export type InsertQuoteLine = z.infer<typeof insertQuoteLineSchema>;
 export type QuoteLine = typeof quoteLines.$inferSelect;
+
+// ===========================
+// Customer advances (Phase 8 D1, migration 0102)
+// An advance is an advance tax invoice (its line posts to 2055 Customer Advances) that the customer pays
+// like any invoice; applications deduct it on the final invoice, refunds go through a credit note.
+// ===========================
+export const customerAdvances = pgTable(
+  "customer_advances",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references((): any => customerContacts.id, { onDelete: "restrict" }),
+    number: text("number").notNull(), // ADV-YYYY-NNNNN
+    kind: text("kind").notNull().default("advance"), // advance | deposit
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    salesOrderId: uuid("sales_order_id"),
+    currency: text("currency").notNull().default("AED"),
+    vatRate: vatRateType("vat_rate").notNull().default(0.05),
+    vatSupplyType: text("vat_supply_type").notNull().default("standard_rated"),
+    netAmount: money("net_amount").notNull(),
+    vatAmount: money("vat_amount").notNull().default(0),
+    grossAmount: money("gross_amount").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("open"), // open | applied | refunded | void
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    invoiceUnique: unique("customer_advances_invoice_unique").on(table.invoiceId),
+    companyNumberUnique: unique("customer_advances_company_number_unique").on(table.companyId, table.number),
+    contactStatusIdx: index("idx_customer_advances_company_contact_status").on(
+      table.companyId,
+      table.contactId,
+      table.status
+    ),
+  })
+);
+export type CustomerAdvance = typeof customerAdvances.$inferSelect;
+export type InsertCustomerAdvance = typeof customerAdvances.$inferInsert;
+
+export const customerAdvanceApplications = pgTable(
+  "customer_advance_applications",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    advanceId: uuid("advance_id")
+      .notNull()
+      .references(() => customerAdvances.id, { onDelete: "restrict" }),
+    kind: text("kind").notNull().default("application"), // application | refund
+    invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }), // final invoice or credit note
+    invoiceLineId: uuid("invoice_line_id").references(() => invoiceLines.id, { onDelete: "set null" }),
+    netAmount: money("net_amount").notNull(),
+    vatAmount: money("vat_amount").notNull().default(0),
+    status: text("status").notNull().default("active"), // pending | active | reversed
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    advanceIdx: index("idx_customer_advance_applications_advance").on(table.advanceId, table.status),
+    invoiceIdx: index("idx_customer_advance_applications_invoice").on(table.invoiceId),
+    companyIdx: index("idx_customer_advance_applications_company").on(table.companyId),
+  })
+);
+
+// ===========================
+// Custom fields and price lists (Phase 8 D1, migration 0103)
+// ===========================
+export const customFieldDefinitions = pgTable(
+  "custom_field_definitions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    entity: text("entity").notNull(), // contact | invoice | quote | bill | sales_order
+    key: text("key").notNull(),
+    labelEn: text("label_en").notNull(),
+    labelAr: text("label_ar").notNull(),
+    fieldType: text("field_type").notNull().default("text"), // text | number | date | select
+    options: jsonb("options").notNull().default(sql`'[]'::jsonb`),
+    showOnPdf: boolean("show_on_pdf").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isArchived: boolean("is_archived").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueKey: unique("custom_field_definitions_unique").on(table.companyId, table.entity, table.key),
+    companyEntityIdx: index("idx_custom_field_definitions_company_entity").on(table.companyId, table.entity),
+  })
+);
+export type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect;
+
+export const customFieldValues = pgTable(
+  "custom_field_values",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    entity: text("entity").notNull(),
+    recordId: uuid("record_id").notNull(),
+    definitionId: uuid("definition_id")
+      .notNull()
+      .references(() => customFieldDefinitions.id, { onDelete: "cascade" }),
+    value: text("value").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueValue: unique("custom_field_values_unique").on(table.definitionId, table.recordId),
+    recordIdx: index("idx_custom_field_values_record").on(table.companyId, table.entity, table.recordId),
+  })
+);
+export type CustomFieldValue = typeof customFieldValues.$inferSelect;
+
+export const priceLists = pgTable(
+  "price_lists",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    currency: text("currency").notNull().default("AED"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    nameUnique: unique("price_lists_company_name_unique").on(table.companyId, table.name),
+    companyIdx: index("idx_price_lists_company").on(table.companyId),
+  })
+);
+export type PriceList = typeof priceLists.$inferSelect;
+
+export const priceListItems = pgTable(
+  "price_list_items",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    priceListId: uuid("price_list_id")
+      .notNull()
+      .references(() => priceLists.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references((): any => products.id, { onDelete: "cascade" }),
+    unitPrice: unitPriceType("unit_price").notNull(),
+  },
+  (table) => ({
+    itemUnique: unique("price_list_items_unique").on(table.priceListId, table.productId),
+    companyIdx: index("idx_price_list_items_company").on(table.companyId),
+  })
+);
+export type PriceListItem = typeof priceListItems.$inferSelect;
+
+
+// ===========================
+// Quote signatures and sales orders (Phase 8 D1, migration 0104)
+// ===========================
+export const quoteSignatures = pgTable(
+  "quote_signatures",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    quoteId: uuid("quote_id").notNull(),
+    quoteNumber: text("quote_number").notNull(),
+    customerName: text("customer_name").notNull(),
+    currency: text("currency").notNull().default("AED"),
+    total: money("total").notNull().default(0),
+    action: text("action").notNull(), // accepted | declined
+    signerName: text("signer_name").notNull(),
+    signerEmail: text("signer_email").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    reason: text("reason"),
+    quoteHash: text("quote_hash").notNull(),
+    signedAt: timestamp("signed_at").defaultNow().notNull(),
+    supersededAt: timestamp("superseded_at"),
+    retentionExpiresAt: timestamp("retention_expires_at").notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_quote_signatures_company").on(table.companyId),
+  })
+);
+export type QuoteSignature = typeof quoteSignatures.$inferSelect;
+
+export const salesOrders = pgTable(
+  "sales_orders",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    number: text("number").notNull(), // SO-YYYY-NNNNN
+    contactId: uuid("contact_id")
+      .notNull()
+      .references((): any => customerContacts.id, { onDelete: "restrict" }),
+    customerName: text("customer_name").notNull(),
+    customerTrn: text("customer_trn"),
+    quoteId: uuid("quote_id").references(() => quotes.id, { onDelete: "set null" }),
+    date: timestamp("date").notNull(),
+    expectedDate: timestamp("expected_date"),
+    currency: text("currency").notNull().default("AED"),
+    exchangeRate: rate("exchange_rate").notNull().default(1),
+    discountType: text("discount_type"),
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0),
+    shippingAmount: money("shipping_amount").notNull().default(0),
+    subtotal: money("subtotal").notNull().default(0),
+    vatAmount: money("vat_amount").notNull().default(0),
+    total: money("total").notNull().default(0),
+    status: text("status").notNull().default("open"), // open | closed | cancelled
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyNumberUnique: unique("sales_orders_company_number_unique").on(table.companyId, table.number),
+    companyStatusIdx: index("idx_sales_orders_company_status").on(table.companyId, table.status),
+    contactIdx: index("idx_sales_orders_contact").on(table.contactId),
+  })
+);
+export type SalesOrder = typeof salesOrders.$inferSelect;
+
+export const salesOrderLines = pgTable(
+  "sales_order_lines",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    salesOrderId: uuid("sales_order_id")
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    quantity: quantityType("quantity").notNull(),
+    unitPrice: unitPriceType("unit_price").notNull(),
+    vatRate: vatRateType("vat_rate").notNull().default(0.05),
+    vatSupplyType: text("vat_supply_type").default("standard_rated"),
+    revenueAccountId: uuid("revenue_account_id").references((): any => accounts.id, { onDelete: "set null" }),
+    productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
+    lineKind: text("line_kind").notNull().default("item"),
+    parentLineId: uuid("parent_line_id"),
+    discountType: text("discount_type"),
+    discountValue: rate("discount_value"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    priceListId: uuid("price_list_id"),
+  },
+  (table) => ({
+    orderIdx: index("idx_sales_order_lines_order").on(table.salesOrderId, table.sortOrder),
+  })
+);
+export type SalesOrderLine = typeof salesOrderLines.$inferSelect;
+
+export const salesOrderDeliveries = pgTable(
+  "sales_order_deliveries",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    salesOrderId: uuid("sales_order_id")
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: "restrict" }),
+    number: text("number").notNull(), // DN-YYYY-NNNNN
+    date: timestamp("date").notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyNumberUnique: unique("sales_order_deliveries_company_number_unique").on(table.companyId, table.number),
+    orderIdx: index("idx_sales_order_deliveries_order").on(table.salesOrderId),
+  })
+);
+export type SalesOrderDelivery = typeof salesOrderDeliveries.$inferSelect;
+
+export const salesOrderDeliveryLines = pgTable(
+  "sales_order_delivery_lines",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    deliveryId: uuid("delivery_id")
+      .notNull()
+      .references(() => salesOrderDeliveries.id, { onDelete: "cascade" }),
+    salesOrderLineId: uuid("sales_order_line_id")
+      .notNull()
+      .references(() => salesOrderLines.id, { onDelete: "restrict" }),
+    quantity: quantityType("quantity").notNull(),
+  },
+  (table) => ({
+    deliveryIdx: index("idx_sales_order_delivery_lines_delivery").on(table.deliveryId),
+    lineIdx: index("idx_sales_order_delivery_lines_line").on(table.salesOrderLineId),
+  })
+);
+export type SalesOrderDeliveryLine = typeof salesOrderDeliveryLines.$inferSelect;
+
+
+// ===========================
+// Online payments (Phase 8 D1, migration 0105)
+// ===========================
+export const paymentGatewayConnections = pgTable(
+  "payment_gateway_connections",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("stripe"),
+    externalAccountId: text("external_account_id"), // acct_...
+    status: text("status").notNull().default("pending"), // pending | active | revoked
+    livemode: boolean("livemode").notNull().default(false),
+    stateHash: text("state_hash"),
+    allowPartial: boolean("allow_partial").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
+    connectedBy: uuid("connected_by").references(() => users.id),
+    connectedAt: timestamp("connected_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyProviderUnique: unique("payment_gateway_connections_company_provider_unique").on(table.companyId, table.provider),
+  })
+);
+export type PaymentGatewayConnection = typeof paymentGatewayConnections.$inferSelect;
+
+export const paymentLinks = pgTable(
+  "payment_links",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("stripe"),
+    providerSessionId: text("provider_session_id").notNull(),
+    amount: money("amount").notNull(),
+    currency: text("currency").notNull(),
+    status: text("status").notNull().default("open"), // open | completed | expired
+    url: text("url"),
+    createdVia: text("created_via").notNull().default("public"),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    sessionUnique: unique("payment_links_session_unique").on(table.providerSessionId),
+    invoiceIdx: index("idx_payment_links_invoice").on(table.invoiceId, table.status),
+  })
+);
+export type PaymentLink = typeof paymentLinks.$inferSelect;
+
+export const gatewayPayments = pgTable(
+  "gateway_payments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    paymentLinkId: uuid("payment_link_id").references(() => paymentLinks.id, { onDelete: "set null" }),
+    provider: text("provider").notNull().default("stripe"),
+    providerPaymentId: text("provider_payment_id").notNull(),
+    providerChargeId: text("provider_charge_id"),
+    amount: money("amount").notNull(),
+    currency: text("currency").notNull(),
+    exchangeRate: rate("exchange_rate").notNull().default(1),
+    feeAed: money("fee_aed").notNull().default(0),
+    status: text("status").notNull().default("received"), // received | payment_posted | settled | unallocated
+    invoicePaymentId: uuid("invoice_payment_id").references(() => invoicePayments.id, { onDelete: "set null" }),
+    feeJournalEntryId: uuid("fee_journal_entry_id").references(() => journalEntries.id, { onDelete: "set null" }),
+    refundedAmount: money("refunded_amount").notNull().default(0),
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    paymentUnique: unique("gateway_payments_provider_payment_unique").on(table.provider, table.providerPaymentId),
+    companyIdx: index("idx_gateway_payments_company").on(table.companyId, table.status),
+    invoiceIdx: index("idx_gateway_payments_invoice").on(table.invoiceId),
+  })
+);
+export type GatewayPayment = typeof gatewayPayments.$inferSelect;
+
+export const gatewayRefunds = pgTable(
+  "gateway_refunds",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    gatewayPaymentId: uuid("gateway_payment_id")
+      .notNull()
+      .references(() => gatewayPayments.id, { onDelete: "restrict" }),
+    provider: text("provider").notNull().default("stripe"),
+    providerRefundId: text("provider_refund_id").notNull(),
+    amount: money("amount").notNull(),
+    creditNoteId: uuid("credit_note_id").references(() => invoices.id, { onDelete: "set null" }),
+    customerRefundId: uuid("customer_refund_id").references(() => customerRefunds.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("received"), // received | credit_note_posted | settled | unallocated
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    refundUnique: unique("gateway_refunds_provider_refund_unique").on(table.provider, table.providerRefundId),
+    paymentIdx: index("idx_gateway_refunds_payment").on(table.gatewayPaymentId),
+  })
+);
+export type GatewayRefund = typeof gatewayRefunds.$inferSelect;
+
+export type CustomerAdvanceApplication = typeof customerAdvanceApplications.$inferSelect;
+export type InsertCustomerAdvanceApplication = typeof customerAdvanceApplications.$inferInsert;
 
 // ===========================
 // Credit Notes (FTA-compliant corrections to issued invoices)
@@ -1280,6 +1868,9 @@ export const purchaseOrders = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
     number: text("number").notNull(),
+    vendorId: uuid("vendor_id").references((): any => customerContacts.id, { onDelete: "set null" }),
+    // who entered it (migration 0124): the approval engine refuses self-approval
+    createdBy: uuid("created_by").references((): any => users.id, { onDelete: "set null" }),
     vendorName: text("vendor_name").notNull(),
     vendorTrn: text("vendor_trn"),
     date: timestamp("date").notNull(),
@@ -1395,6 +1986,13 @@ export const reconciliationRules = pgTable(
     priority: integer("priority").notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
     timesApplied: integer("times_applied").notNull().default(0),
+    // D3 (0110): split lines [{accountId, percent, description?}], VAT on outflows, scope filters
+    splitLines: jsonb("split_lines").notNull().default(sql`'[]'::jsonb`),
+    vatRate: money("vat_rate").notNull().default(0), // 0 | 5
+    direction: text("direction").notNull().default("any"), // any | inflow | outflow
+    bankAccountId: uuid("bank_account_id").references(() => bankAccounts.id, { onDelete: "set null" }),
+    amountMin: money("amount_min"),
+    amountMax: money("amount_max"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1477,6 +2075,11 @@ export const bankConnections = pgTable(
     refreshToken: text("refresh_token"),
     tokenExpiresAt: timestamp("token_expires_at"),
     status: text("status").notNull().default("active"), // active | error | disconnected
+    // D3 (0112): provider entity id (encrypted), sync lease, failure counter, environment
+    providerEntityId: text("provider_entity_id"),
+    syncLeaseUntil: timestamp("sync_lease_until"),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    environment: text("environment"),
     lastSyncedAt: timestamp("last_synced_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1552,6 +2155,12 @@ export const apiKeys = pgTable(
     lastUsedAt: timestamp("last_used_at"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // D5 (0119): v1 API controls
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: uuid("revoked_by").references(() => users.id),
+    rateLimitPerMinute: integer("rate_limit_per_minute").notNull().default(60),
+    rateLimitPerDay: integer("rate_limit_per_day").notNull().default(5000),
   },
   (table) => ({
     companyIdIdx: index("idx_api_keys_company_id").on(table.companyId),
@@ -1562,6 +2171,152 @@ export const apiKeys = pgTable(
 export const insertApiKeySchema = createInsertSchema(apiKeys).omit({ id: true, createdAt: true });
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type ApiKey = typeof apiKeys.$inferSelect;
+
+// ===========================
+// D5 platform tables (0118-0121): 2FA, idempotency, request log, exports,
+// company deletion, import jobs. SQL is the source of truth; see migrations.
+// ===========================
+export const userTotp = pgTable("user_totp", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  secretEnc: text("secret_enc").notNull(),
+  enabledAt: timestamp("enabled_at"),
+  lastUsedStep: bigint("last_used_step", { mode: "number" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type UserTotp = typeof userTotp.$inferSelect;
+
+export const userRecoveryCodes = pgTable(
+  "user_recovery_codes",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userHashUq: uniqueIndex("uq_user_recovery_codes_user_hash").on(table.userId, table.codeHash),
+  })
+);
+
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    apiKeyId: uuid("api_key_id")
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: "cascade" }),
+    idemKey: text("idem_key").notNull(),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    requestHash: text("request_hash").notNull(),
+    status: text("status").notNull().default("in_flight"),
+    responseStatus: integer("response_status"),
+    responseBody: jsonb("response_body"),
+    responseLocation: text("response_location"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => ({
+    uq: uniqueIndex("uq_idempotency_keys_scope").on(
+      table.apiKeyId,
+      table.idemKey,
+      table.method,
+      table.path
+    ),
+  })
+);
+
+export const companyDataExports = pgTable("company_data_exports", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  requestedBy: uuid("requested_by").references(() => users.id),
+  status: text("status").notNull().default("queued"),
+  storedFileId: uuid("stored_file_id"),
+  sha256: text("sha256"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  manifest: jsonb("manifest"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  expiresAt: timestamp("expires_at"),
+});
+
+export const companyDeletionRequests = pgTable("company_deletion_requests", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  // No foreign key: the row outlives the company it records the erasure of.
+  companyId: uuid("company_id").notNull(),
+  companyName: text("company_name"),
+  requestedBy: uuid("requested_by").references(() => users.id),
+  status: text("status").notNull().default("pending"),
+  reason: text("reason"),
+  firmConfirmedBy: uuid("firm_confirmed_by").references(() => users.id),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  purgeAfter: timestamp("purge_after"),
+  restoredAt: timestamp("restored_at"),
+  purgedAt: timestamp("purged_at"),
+  retentionExpiresAt: timestamp("retention_expires_at"),
+});
+
+export const importJobs = pgTable("import_jobs", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").references(() => users.id),
+  source: text("source").notNull(),
+  entity: text("entity").notNull(),
+  status: text("status").notNull().default("uploaded"),
+  storedFileId: uuid("stored_file_id"),
+  filename: text("filename"),
+  mapping: jsonb("mapping"),
+  options: jsonb("options"),
+  rowCount: integer("row_count").notNull().default(0),
+  errorCount: integer("error_count").notNull().default(0),
+  result: jsonb("result"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  committedAt: timestamp("committed_at"),
+});
+
+export const importJobRows = pgTable(
+  "import_job_rows",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => importJobs.id, { onDelete: "cascade" }),
+    rowNumber: integer("row_number").notNull(),
+    raw: jsonb("raw"),
+    normalized: jsonb("normalized"),
+    errors: jsonb("errors"),
+    action: text("action").notNull().default("create"),
+    createdEntityId: uuid("created_entity_id"),
+  },
+  (table) => ({
+    jobRowUq: uniqueIndex("uq_import_job_rows_job_row").on(table.jobId, table.rowNumber),
+  })
+);
 
 // ===========================
 // Webhook Endpoints + Deliveries (outbound integrations)
@@ -1798,6 +2553,12 @@ export const recurringInvoices = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     lastGeneratedInvoiceId: uuid("last_generated_invoice_id"),
     totalGenerated: integer("total_generated").notNull().default(0),
+    // Phase 8 D1 (0103): the customer, payment terms for the due date, and email on generation.
+    contactId: uuid("contact_id"),
+    autoSend: boolean("auto_send").notNull().default(false),
+    paymentTermsDays: integer("payment_terms_days"),
+    lastSendStatus: text("last_send_status"), // sent | not_sent
+    lastSendError: text("last_send_error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -1975,6 +2736,8 @@ export const customerContacts = pgTable(
     email: text("email"),
     phone: text("phone"),
     whatsappNumber: text("whatsapp_number"),
+    // customer | vendor | both (migration 0106): one contacts table for both sides of the ledger
+    contactType: text("contact_type").notNull().default("customer"),
     trnNumber: text("trn_number"),
     address: text("address"),
     city: text("city"),
@@ -1982,6 +2745,8 @@ export const customerContacts = pgTable(
     contactPerson: text("contact_person"),
     paymentTerms: integer("payment_terms").default(30),
     notes: text("notes"),
+    // Phase 8 D1 (0103): the customer's price list (defaults the unit price of new lines).
+    priceListId: uuid("price_list_id"),
     isActive: boolean("is_active").default(true).notNull(),
     portalAccessToken: text("portal_access_token").unique(),
     portalAccessExpiresAt: timestamp("portal_access_expires_at"),
@@ -2373,6 +3138,7 @@ export const bankAccounts = pgTable(
     iban: text("iban"),
     currency: text("currency").notNull().default("AED"),
     glAccountId: uuid("gl_account_id").references(() => accounts.id), // Linked GL account
+    reconcileFrom: date("reconcile_from"), // lines dated before this count as already cleared (0112)
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -2417,6 +3183,16 @@ export const bankTransactions = pgTable(
     matchedInvoiceId: uuid("matched_invoice_id").references(() => invoices.id),
     matchConfidence: real("match_confidence"), // AI confidence for the match
     importSource: text("import_source"), // manual | csv | api
+    // D3 (0110): import keys, bill link, reconciliation stamp
+    importId: uuid("import_id"),
+    externalId: text("external_id"),
+    dedupeKey: text("dedupe_key"),
+    valueDate: date("value_date"),
+    matchedBillId: uuid("matched_bill_id"),
+    suggestedRuleId: uuid("suggested_rule_id"),
+    reconciledAt: timestamp("reconciled_at"),
+    reconciledBy: uuid("reconciled_by"),
+    reconciliationId: uuid("reconciliation_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -2436,6 +3212,125 @@ export const insertBankTransactionSchema = createInsertSchema(bankTransactions).
 
 export type InsertBankTransaction = z.infer<typeof insertBankTransactionSchema>;
 export type BankTransaction = typeof bankTransactions.$inferSelect;
+
+// ===========================
+// D3 banking: statement imports, provider customers, reconciliation sessions, forecast scenarios,
+// and read definitions for the raw-SQL fixed asset tables (0110-0113)
+// ===========================
+export const bankStatementImports = pgTable("bank_statement_imports", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  bankAccountId: uuid("bank_account_id").notNull().references(() => bankAccounts.id, { onDelete: "cascade" }),
+  source: text("source").notNull(), // csv | ofx | mt940 | camt053 | pdf | feed
+  status: text("status").notNull().default("committed"), // staged | committed | discarded
+  storedFileKey: text("stored_file_key"),
+  filename: text("filename"),
+  parser: text("parser"),
+  currency: text("currency"),
+  statementFrom: date("statement_from"),
+  statementTo: date("statement_to"),
+  openingBalance: money("opening_balance"),
+  closingBalance: money("closing_balance"),
+  rowCount: integer("row_count"),
+  importedCount: integer("imported_count"),
+  duplicateCount: integer("duplicate_count"),
+  stagedRows: jsonb("staged_rows"),
+  warnings: jsonb("warnings").notNull().default(sql`'[]'::jsonb`),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  committedAt: timestamp("committed_at"),
+});
+export type BankStatementImport = typeof bankStatementImports.$inferSelect;
+export type InsertBankStatementImport = typeof bankStatementImports.$inferInsert;
+
+export const bankProviderCustomers = pgTable(
+  "bank_provider_customers",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalCustomerId: text("external_customer_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({ uniqueCompanyProvider: unique("uq_bank_provider_customer").on(table.companyId, table.provider) })
+);
+export type BankProviderCustomer = typeof bankProviderCustomers.$inferSelect;
+
+export const bankReconciliations = pgTable("bank_reconciliations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  bankAccountId: uuid("bank_account_id").notNull().references(() => bankAccounts.id, { onDelete: "cascade" }),
+  statementDate: date("statement_date").notNull(),
+  statementBalance: money("statement_balance").notNull(),
+  ledgerBalance: money("ledger_balance").notNull(),
+  status: text("status").notNull().default("completed"), // completed | reopened
+  snapshot: jsonb("snapshot"),
+  completedBy: uuid("completed_by"),
+  completedAt: timestamp("completed_at").defaultNow(),
+  reopenedBy: uuid("reopened_by"),
+  reopenedAt: timestamp("reopened_at"),
+});
+export type BankReconciliation = typeof bankReconciliations.$inferSelect;
+
+export const cashflowForecastScenarios = pgTable(
+  "cashflow_forecast_scenarios",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    receiptDelayDays: integer("receipt_delay_days").notNull().default(0),
+    paymentDelayDays: integer("payment_delay_days").notNull().default(0),
+    collectionRatePct: money("collection_rate_pct").notNull().default(100),
+    includeRecurring: boolean("include_recurring").notNull().default(true),
+    includePayroll: boolean("include_payroll").notNull().default(true),
+    payrollPayDay: integer("payroll_pay_day").notNull().default(28),
+    adjustments: jsonb("adjustments").notNull().default(sql`'[]'::jsonb`),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({ uniqueName: unique("uq_cashflow_scenario_name").on(table.companyId, table.name) })
+);
+export type CashflowForecastScenario = typeof cashflowForecastScenarios.$inferSelect;
+
+// Raw-SQL tables (migrations only): read definitions so reports can query typed.
+export const fixedAssets = pgTable("fixed_assets", {
+  id: uuid("id").primaryKey(),
+  companyId: uuid("company_id").notNull(),
+  assetName: text("asset_name").notNull(),
+  assetNameAr: text("asset_name_ar"),
+  assetNumber: text("asset_number"),
+  category: text("category").notNull(),
+  purchaseDate: timestamp("purchase_date").notNull(),
+  purchaseCost: money("purchase_cost").notNull(),
+  salvageValue: money("salvage_value"),
+  usefulLifeYears: integer("useful_life_years").notNull(),
+  depreciationMethod: text("depreciation_method"),
+  accumulatedDepreciation: money("accumulated_depreciation"),
+  netBookValue: money("net_book_value"),
+  status: text("status"), // active | disposed | fully_depreciated
+  disposalDate: timestamp("disposal_date"),
+  disposalAmount: money("disposal_amount"),
+  disposalJournalId: uuid("disposal_journal_id"),
+  disposalAccountId: uuid("disposal_account_id"),
+  needsCapitalizationJe: boolean("needs_capitalization_je").notNull().default(false),
+  createdAt: timestamp("created_at"),
+});
+export type FixedAsset = typeof fixedAssets.$inferSelect;
+
+export const depreciationSchedules = pgTable("depreciation_schedules", {
+  id: uuid("id").primaryKey(),
+  companyId: uuid("company_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  periodYear: integer("period_year").notNull(),
+  periodMonth: integer("period_month").notNull(),
+  amount: money("amount").notNull(),
+  journalEntryId: uuid("journal_entry_id"),
+  postedAt: timestamp("posted_at"),
+  postedBy: uuid("posted_by"),
+});
+export type DepreciationSchedule = typeof depreciationSchedules.$inferSelect;
 
 // ===========================
 // Cash Flow Forecasts
@@ -3645,6 +4540,8 @@ export const auditLogs = pgTable(
     action: text("action").notNull(), // create | update | delete | login | logout | admin_action
     resourceType: text("resource_type").notNull(), // user | company | invoice | receipt | setting | subscription
     resourceId: text("resource_id"),
+    // Phase 8 D4 (0117): the company the action belongs to, so the Audit Trail report can show financial activity.
+    companyId: uuid("company_id"),
     details: text("details"), // JSON with change details
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
@@ -4577,6 +5474,12 @@ export const chaseConfigs = pgTable("chase_configs", {
   // parse / serialize on the way in/out.
   doNotChaseContactIds: text("do_not_chase_contact_ids").notNull().default("[]"),
   defaultLanguage: text("default_language").notNull().default("en"),
+  // Phase 8 D1 (0103): compensatory late fee, OFF by default, applied once per invoice by the daily job.
+  lateFeeEnabled: boolean("late_fee_enabled").notNull().default(false),
+  lateFeeType: text("late_fee_type").notNull().default("percent"), // percent | fixed
+  lateFeeValue: rate("late_fee_value").notNull().default(0),
+  lateFeeAfterDays: integer("late_fee_after_days").notNull().default(15),
+  lateFeeVatTreatment: text("late_fee_vat_treatment").notNull().default("out_of_scope"), // out_of_scope | standard_rated
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
 });

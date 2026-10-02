@@ -62,6 +62,11 @@ export const envSchema = z.object({
   // === Stripe Billing ===
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  // === Online invoice payment: Stripe Connect Standard (Phase 8 D1). Off without these. ===
+  STRIPE_CONNECT_CLIENT_ID: z.string().optional(), // ca_... (OAuth onboarding of each company's own Stripe account)
+  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(), // signs events of connected accounts (Connect endpoint)
+  // Test-only fake gateway adapter ("1" turns it on). A production boot with it set is refused.
+  PAYMENT_GATEWAY_FAKE: z.string().optional(),
   STRIPE_PRICE_STARTER_MONTHLY: z.string().optional(),
   STRIPE_PRICE_STARTER_YEARLY: z.string().optional(),
   STRIPE_PRICE_PROFESSIONAL_MONTHLY: z.string().optional(),
@@ -87,14 +92,14 @@ export const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
 
-  // === Open Banking (Wio Bank) ===
-  WIO_CLIENT_ID: z.string().optional(),
-  WIO_CLIENT_SECRET: z.string().optional(),
-  WIO_API_BASE_URL: z.string().optional(),
-
   // === Open Banking (Lean Technologies aggregator) ===
+  // Off unless LEAN_APP_TOKEN (the application id) and LEAN_CLIENT_SECRET are both set. LEAN_ENV defaults to the
+  // sandbox; the two base URLs override the host of each environment (docs.leantech.me, and the in-test mock).
   LEAN_APP_TOKEN: z.string().optional(),
+  LEAN_CLIENT_SECRET: z.string().optional(),
+  LEAN_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
   LEAN_API_BASE_URL: z.string().optional(),
+  LEAN_AUTH_BASE_URL: z.string().optional(),
 
   // === Error tracking (optional - Sentry free tier) ===
   // Unset: errors are logged only and the Sentry SDK is never loaded.
@@ -201,8 +206,21 @@ export function validateEnv(): Env {
     process.exit(1);
   }
 
+  if (isFakeGatewayInProduction(result.data)) {
+    process.stderr.write(
+      "\nEnvironment validation failed:\n\n  PAYMENT_GATEWAY_FAKE=1 is a test-only switch and must not be set in production: " +
+        "it would accept unsigned-by-Stripe payments as real money.\n\n"
+    );
+    process.exit(1);
+  }
+
   _env = result.data;
   return result.data;
+}
+
+/** The fake payment gateway must never run in production (it settles invoices without a real charge). */
+export function isFakeGatewayInProduction(env: { NODE_ENV?: string; PAYMENT_GATEWAY_FAKE?: string }): boolean {
+  return env.NODE_ENV === "production" && env.PAYMENT_GATEWAY_FAKE === "1";
 }
 
 /**

@@ -26,6 +26,8 @@ const getFeatureLabels = (): Record<string, string> => ({
   webhooks: pageMessages.t("webhooksIntegrations"),
   fixedAssets: pageMessages.t("fixedAssetsDepreciation"),
   costCenters: pageMessages.t("costCenters"),
+  projects: pageMessages.t("projects"),
+  approvals: pageMessages.t("approvals"),
 });
 
 export function UpgradePrompt({ feature, requiredTier, title, description }: UpgradePromptProps) {

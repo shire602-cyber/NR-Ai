@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { CameraCapture } from "@/components/CameraCapture";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
@@ -1420,6 +1421,7 @@ export default function Receipts() {
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tr("clickOrDropMoreImagesTo")}</p>
+                <CameraCapture onCapture={handleFilesSelect} />
               </div>
             ) : (
               <div className="space-y-4">
@@ -1446,6 +1448,7 @@ export default function Receipts() {
                 >
                   {tr("browseFiles")}
                 </Button>
+                <CameraCapture onCapture={handleFilesSelect} />
               </div>
             )}
           </div>

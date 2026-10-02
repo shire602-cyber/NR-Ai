@@ -5,6 +5,22 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { buildInvoiceBalances, receivableOutstanding } from "../services/invoice-outstanding";
 import crypto from "crypto";
+import { pdfFieldsForMany } from "../services/custom-fields.service";
+import { getReadyConnection } from "../services/payment-gateway/connection.service";
+import { onlinePaymentViewFrom } from "../services/payment-gateway/checkout.service";
+
+/**
+ * Does this invoice belong to the portal's customer? The contact link decides; only an invoice that has no
+ * contact at all (older data) falls back to the customer name. Matching by name alone let a customer with the same
+ * name as another contact see, and later pay, that contact's invoices.
+ */
+export function invoiceBelongsToContact(
+  invoice: { contactId?: string | null; customerName: string },
+  contact: { id: string; name: string }
+): boolean {
+  if (invoice.contactId) return invoice.contactId === contact.id;
+  return invoice.customerName.toLowerCase() === contact.name.toLowerCase();
+}
 
 /**
  * Portal Public Routes
@@ -106,10 +122,15 @@ export function registerPortalPublicRoutes(app: Express) {
         return res.status(410).json({ message: "This portal link has expired" });
       }
 
-      // Find invoices matching this customer's name within the same company
+      // Find this customer's invoices within the same company (contact link first, name only for legacy rows)
       const allInvoices = await storage.getInvoicesByCompanyId(contact.companyId);
-      const customerInvoices = allInvoices.filter(
-        (inv) => inv.customerName.toLowerCase() === contact.name.toLowerCase()
+      // A draft is a working document, not yet issued to the customer: never shown here.
+      const customerInvoices = allInvoices.filter((inv) => inv.status !== "draft" && invoiceBelongsToContact(inv, contact));
+      const readyConnection = await getReadyConnection(contact.companyId);
+      const customFields = await pdfFieldsForMany(
+        contact.companyId,
+        "invoice",
+        customerInvoices.map((inv) => inv.id)
       );
       // What the customer still owes: total - payments - credit notes (shared definition).
       const balances = buildInvoiceBalances(
@@ -130,6 +151,11 @@ export function registerPortalPublicRoutes(app: Express) {
         invoiceType: inv.invoiceType,
         outstandingAmount: receivableOutstanding(inv, balances.get(inv.id)),
         isFullyCredited: balances.get(inv.id)?.isFullyCredited ?? false,
+        dueDate: inv.dueDate,
+        discountAmount: inv.discountAmount,
+        shippingAmount: inv.shippingAmount,
+        customFields: customFields.get(inv.id) ?? [],
+        onlinePayment: onlinePaymentViewFrom(readyConnection, inv, receivableOutstanding(inv, balances.get(inv.id))),
       }));
 
       res.json(sanitizedInvoices);
@@ -160,7 +186,7 @@ export function registerPortalPublicRoutes(app: Express) {
       }
 
       // Verify the invoice belongs to this customer
-      if (invoice.customerName.toLowerCase() !== contact.name.toLowerCase()) {
+      if (invoice.status === "draft" || !invoiceBelongsToContact(invoice, contact)) {
         return res.status(403).json({ message: "Access denied to this invoice" });
       }
 

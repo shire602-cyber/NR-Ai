@@ -633,3 +633,23 @@ export async function sendStatementEmail(args: {
     attachments: [{ filename: args.filename, content: args.pdf, contentType: "application/pdf" }],
   });
 }
+
+/** A scheduled report (PDF, CSV or XLSX) as an attachment (Phase 8 D4). Never throws; check `sent`. */
+export async function sendReportEmail(args: {
+  to: string;
+  subject: string;
+  message: string;
+  fromName?: string;
+  file: Buffer;
+  filename: string;
+  contentType: string;
+}): Promise<SendEmailResult> {
+  return deliver({
+    to: args.to,
+    subject: args.subject,
+    html: wrapPlainTextInHtml(args.message, args.fromName),
+    text: args.message,
+    fromName: args.fromName,
+    attachments: [{ filename: args.filename, content: args.file, contentType: args.contentType }],
+  });
+}

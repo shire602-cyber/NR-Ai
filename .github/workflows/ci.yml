@@ -93,6 +93,9 @@ jobs:
       RL_AUTH_MAX: "100000"
       RL_READ_MAX: "100000"
       RL_AI_MAX: "100000"
+      # Online-payment sections of the Phase 8 sales suite run against the
+      # in-process fake gateway (refused in production).
+      PAYMENT_GATEWAY_FAKE: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -171,6 +174,9 @@ jobs:
       RL_AUTH_MAX: "100000"
       RL_READ_MAX: "100000"
       RL_AI_MAX: "100000"
+      # Online-payment sections of the Phase 8 sales suite run against the
+      # in-process fake gateway (refused in production).
+      PAYMENT_GATEWAY_FAKE: "1"
 
     steps:
       - uses: actions/checkout@v4

@@ -72,6 +72,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { VendorPicker } from "@/components/purchases/VendorPicker";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./PurchaseOrders.i18n";
 
 const poLineSchema = z.object({
@@ -84,6 +90,7 @@ const poLineSchema = z.object({
 const purchaseOrderSchema = z.object({
   companyId: z.string().uuid(),
   number: z.string().min(1, pageMessages.marker("poNumberIsRequired")),
+  vendorId: z.string().optional().nullable(),
   vendorName: z.string().min(1, pageMessages.marker("vendorNameIsRequired")),
   vendorTrn: z.string().optional(),
   date: z.date(),
@@ -99,6 +106,7 @@ interface PurchaseOrder {
   id: string;
   companyId: string;
   number: string;
+  vendorId?: string | null;
   vendorName: string;
   vendorTrn?: string;
   date: string;
@@ -132,6 +140,7 @@ export default function PurchaseOrders() {
     defaultValues: {
       companyId: selectedCompanyId || "",
       number: `PO-${Date.now()}`,
+      vendorId: null,
       vendorName: "",
       vendorTrn: "",
       date: new Date(),
@@ -233,18 +242,22 @@ export default function PurchaseOrders() {
       if (!action) throw new Error(`Unknown status: ${status}`);
       return apiRequest("POST", `/api/purchase-orders/${id}/${action}`);
     },
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
+      }
       toast({ title: tr("statusUpdated"), description: tr("purchaseOrderStatusHasBeenUpdated") });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToUpdateStatus"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToUpdateStatus")));
     },
   });
 
@@ -252,6 +265,7 @@ export default function PurchaseOrders() {
     form.reset({
       companyId: selectedCompanyId || "",
       number: `PO-${Date.now()}`,
+      vendorId: null,
       vendorName: "",
       vendorTrn: "",
       date: new Date(),
@@ -270,6 +284,7 @@ export default function PurchaseOrders() {
       form.reset({
         companyId: full.companyId,
         number: full.number,
+        vendorId: full.vendorId ?? null,
         vendorName: full.vendorName,
         vendorTrn: full.vendorTrn || "",
         date: new Date(full.date),
@@ -306,6 +321,8 @@ export default function PurchaseOrders() {
       createMutation.mutate(poData);
     }
   };
+
+  const approvalProgress = useApprovalProgress(selectedCompanyId ?? undefined, "purchase_order", (purchaseOrders ?? []).some((p) => p.status === "pending_approval"));
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -447,7 +464,16 @@ export default function PurchaseOrders() {
                       <FormItem>
                         <FormLabel>{tr("vendorName")}</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <VendorPicker
+                            companyId={selectedCompanyId ?? undefined}
+                            vendorId={form.watch("vendorId")}
+                            fallbackName={field.value}
+                            onSelect={(vendor) => {
+                              form.setValue("vendorId", vendor.id, { shouldDirty: true });
+                              form.setValue("vendorName", vendor.name, { shouldDirty: true, shouldValidate: true });
+                              if (vendor.trnNumber) form.setValue("vendorTrn", vendor.trnNumber, { shouldDirty: true });
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -759,9 +785,13 @@ export default function PurchaseOrders() {
                         {formatCurrency(po.total, po.currency, locale)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge className={cn("capitalize", getStatusBadgeColor(po.status))}>
-                          {po.status}
-                        </Badge>
+                        {po.status === "pending_approval" ? (
+                          <ApprovalStatusBadge status="pending_approval" completedSteps={approvalProgress.get(po.id)?.completedSteps} requiredSteps={approvalProgress.get(po.id)?.requiredSteps} />
+                        ) : (
+                          <Badge className={cn("capitalize", getStatusBadgeColor(po.status))}>
+                            {po.status}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <DropdownMenu>
@@ -791,7 +821,7 @@ export default function PurchaseOrders() {
                               onClick={() =>
                                 updateStatusMutation.mutate({ id: po.id, status: "approved" })
                               }
-                              disabled={po.status !== "sent"}
+                              disabled={po.status !== "sent" && po.status !== "pending_approval"}
                             >
                               <CheckCircle className="w-4 h-4 me-2" />
                               {tr("approve")}

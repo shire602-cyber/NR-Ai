@@ -146,6 +146,16 @@ import {
   type ReportWorkflowGapFilter,
   type ReportWorkspaceIcon,
 } from "@/lib/reportCatalog";
+import { CalendarClock, ExternalLink } from "lucide-react";
+import { ReportExportMenu } from "@/components/reports/ReportExportMenu";
+import {
+  REPORT_SCHEDULES_HREF,
+  REPORT_VIEWER_INDEX,
+  buildShareQuery,
+  downloadReportFile,
+  reportViewerHref,
+  stateForTabReport,
+} from "@/lib/reportRunApi";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11767,8 +11777,45 @@ export default function Reports() {
     }
   };
 
+  // Phase 8 D4: every live report also runs on the server (CSV, XLSX and PDF are rendered there from the same rows).
+  const focusedServerEntry = hasFocusedReportSelection
+    ? reportCatalog.find(
+        (report) => report.id === selectedReportId && report.status === "live" && (report.params?.length ?? 0) > 0
+      )
+    : undefined;
+  const focusedServerState = focusedServerEntry
+    ? stateForTabReport(focusedServerEntry.id, {
+        from: dateRange.from && dateRange.to ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+        to: dateRange.from && dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+        agingAsOf: agingAsOf || undefined,
+      })
+    : undefined;
+  const exportFocusedFromServer = async (kind: "xlsx" | "csv" | "pdf") => {
+    if (!focusedServerEntry || !focusedServerState || !selectedCompanyId) return;
+    setIsExporting(true);
+    try {
+      await downloadReportFile(
+        selectedCompanyId,
+        focusedServerEntry.id,
+        focusedServerEntry.params ?? [],
+        focusedServerState,
+        kind,
+        locale === "ar" ? "ar" : "en"
+      );
+      toast({ title: tr("exportSuccessful") });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: tr("exportFailed"), description: error?.message });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleExportExcel = (kind: "xlsx" | "csv" = "xlsx") => {
     const exportRows = kind === "csv" ? exportToCsv : exportToExcel;
+    if (focusedServerEntry) {
+      void exportFocusedFromServer(kind);
+      return;
+    }
     const notify: typeof toast = (opts) =>
       toast(kind === "csv" ? { ...opts, description: tr("exportedToCsv") } : opts);
     const dateRangeStr =
@@ -11985,6 +12032,18 @@ export default function Reports() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" data-testid="button-report-library">
+              <Link href={REPORT_VIEWER_INDEX}>
+                <FileText className="w-4 h-4 me-2" />
+                {tr("allServerReports")}
+              </Link>
+            </Button>
+            <Button asChild variant="outline" data-testid="button-report-schedules">
+              <Link href={REPORT_SCHEDULES_HREF}>
+                <CalendarClock className="w-4 h-4 me-2" />
+                {tr("reportSchedules")}
+              </Link>
+            </Button>
             <Button asChild variant="outline" data-testid="button-report-proof-trail">
               <Link href={evidenceSectionHref("proof-drilldown")}>
                 <FileText className="w-4 h-4 me-2" />
@@ -12055,6 +12114,29 @@ export default function Reports() {
                 </p>
               </div>
             </div>
+            {focusedServerEntry && focusedServerState ? (
+              <div className="flex flex-wrap items-center gap-2" data-testid="focused-report-server-actions">
+                <ReportExportMenu
+                  companyId={selectedCompanyId}
+                  reportId={focusedServerEntry.id}
+                  reportName={reportViewerTitle}
+                  kinds={focusedServerEntry.params ?? []}
+                  state={focusedServerState}
+                  align="start"
+                />
+                <Button asChild variant="outline" data-testid="button-open-full-report">
+                  <Link
+                    href={reportViewerHref(
+                      focusedServerEntry.id,
+                      buildShareQuery(focusedServerEntry.id, focusedServerEntry.params ?? [], focusedServerState)
+                    )}
+                  >
+                    <ExternalLink className="w-4 h-4 me-2" />
+                    {tr("openFullReport")}
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">

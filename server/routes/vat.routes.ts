@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { invalidateVatDueNext } from "../reports/kpis";
 import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
@@ -464,6 +465,8 @@ export function registerVATRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      // The dashboard's "VAT due next" is cached per company; a generated return changes it.
+      invalidateVatDueNext(companyId);
 
       // Validate the period before doing anything else. A UAE VAT period is a
       // month or a quarter; absurd spans (e.g. 1900-01-01 → 2999-12-31) must be

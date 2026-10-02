@@ -85,6 +85,24 @@ export interface CustomerStatement {
   totalCredits: number;
   closingBalance: number;
   aging: StatementAging;
+  /**
+   * Phase 8 D1: advances and deposits received and not yet applied, shown as a MEMO. They are not a credit on
+   * the receivable balance (the advance invoice is already paid and nets to zero there).
+   */
+  unappliedAdvances?: StatementAdvanceMemo[];
+}
+
+export interface StatementAdvanceMemo {
+  number: string;
+  kind: string;
+  invoiceNumber: string;
+  date: string;
+  netAmount: number;
+  vatAmount: number;
+  grossAmount: number;
+  /** Net still available to apply or refund, and the same with VAT. */
+  availableNet: number;
+  availableGross: number;
 }
 
 const NOT_ISSUED = ["draft", "void", "cancelled"];
@@ -337,6 +355,33 @@ export async function buildCustomerStatement(args: {
       )
     : { rows: [] };
   const refunds = await loadRefunds(pool, args.companyId, contact);
+  const advanceResult = await pool.query(
+    `SELECT a.number, a.kind, i.number AS "invoiceNumber", to_char(i.date, 'YYYY-MM-DD') AS date,
+            a.net_amount::float8 AS "netAmount", a.vat_amount::float8 AS "vatAmount", a.gross_amount::float8 AS "grossAmount",
+            a.vat_rate::float8 AS "vatRate",
+            (a.net_amount - COALESCE((SELECT SUM(x.net_amount) FROM customer_advance_applications x
+                WHERE x.advance_id = a.id
+                  AND ((x.kind = 'application' AND x.status = 'active') OR (x.kind = 'refund' AND x.status IN ('active', 'pending')))), 0))::float8
+              AS "availableNet"
+       FROM customer_advances a JOIN invoices i ON i.id = a.invoice_id
+      WHERE a.company_id = $1 AND a.contact_id = $2 AND a.status <> 'void'
+        AND i.status NOT IN ('draft', 'void', 'cancelled') AND to_char(i.date, 'YYYY-MM-DD') <= $3
+      ORDER BY i.date, a.number`,
+    [args.companyId, contact.id, args.to]
+  );
+  const unappliedAdvances: StatementAdvanceMemo[] = advanceResult.rows
+    .filter((r: any) => r.availableNet > 0.004)
+    .map((r: any) => ({
+      number: r.number,
+      kind: r.kind,
+      invoiceNumber: r.invoiceNumber,
+      date: r.date,
+      netAmount: r.netAmount,
+      vatAmount: r.vatAmount,
+      grossAmount: r.grossAmount,
+      availableNet: Math.round(r.availableNet * 100) / 100,
+      availableGross: Math.round(r.availableNet * (1 + (r.vatRate || 0)) * 100) / 100,
+    }));
 
   return {
     ...computeCustomerStatement({
@@ -346,6 +391,7 @@ export async function buildCustomerStatement(args: {
       from: args.from,
       to: args.to,
     }),
+    unappliedAdvances,
     contact,
   };
 }

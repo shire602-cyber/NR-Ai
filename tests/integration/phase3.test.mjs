@@ -1,6 +1,6 @@
 // Phase 3 integration tests: nothing a customer can reach pretends to work.
 //   3.1  e-commerce sync is honest (501), no secrets in integration rows
-//   3.2  API key issuance is off (501); list + revoke still work
+//   3.2  API keys: issuance is real since Phase 8 (scoped keys); a malformed request stores nothing, list never exposes the hash, revoke is soft
 //   3.3  webhooks fire for the documented events, after commit, without ever failing the request
 //   3.4  client-portal invite flow + portal user isolation
 //   BASE_URL=http://127.0.0.1:5057 DATABASE_URL=... node tests/integration/phase3.test.mjs
@@ -89,18 +89,18 @@ async function main() {
     // ───────── 3.2 API keys ─────────
     {
       let r = await api("POST", `/api/companies/${cid}/api-keys`, { token: cust.token, body: { name: "ci", scopes: "read" } });
-      ok("3.2: create is 501 NOT_AVAILABLE and returns no key", r.status === 501 && r.json?.code === "NOT_AVAILABLE" && !r.json?.key, { s: r.status, j: r.json });
+      ok("3.2: a malformed create (scopes is not an array) is 400 and returns no key", r.status === 400 && r.json?.code === "VALIDATION_ERROR" && !r.json?.key, { s: r.status, j: r.json });
       const n0 = (await q(`SELECT count(*)::int AS n FROM api_keys WHERE company_id = $1`, [cid])).rows[0].n;
       ok("3.2: create stored nothing", n0 === 0, n0);
 
-      const k = (await q(`INSERT INTO api_keys (company_id, name, key_hash, key_prefix, scopes, created_by) VALUES ($1, 'old key', 'HASHVALUE123', 'abcd1234', 'read', $2) RETURNING id`, [cid, cust.userId])).rows[0];
+      const k = (await q(`INSERT INTO api_keys (company_id, name, key_hash, key_prefix, scopes, created_by) VALUES ($1, 'old key', 'HASHVALUE123', substr(md5(random()::text), 1, 8), 'read', $2) RETURNING id`, [cid, cust.userId])).rows[0];
       r = await api("GET", `/api/companies/${cid}/api-keys`, { token: cust.token });
       ok("3.2: list still works and never exposes the hash", r.status === 200 && r.json?.length === 1 && !/HASHVALUE123|keyHash/.test(r.text), { s: r.status, t: r.text });
       r = await api("PUT", `/api/api-keys/${k.id}`, { token: cust.token, body: { isActive: true } });
-      ok("3.2: update (re-activate) is 501 NOT_AVAILABLE", r.status === 501 && r.json?.code === "NOT_AVAILABLE", { s: r.status });
+      ok("3.2: update (re-activate) is refused: keys are immutable (405)", r.status === 405 && r.json?.code === "API_KEY_IMMUTABLE", { s: r.status });
       r = await api("DELETE", `/api/api-keys/${k.id}`, { token: cust.token });
-      const gone = (await q(`SELECT count(*)::int AS n FROM api_keys WHERE id = $1`, [k.id])).rows[0].n;
-      ok("3.2: revoke still works", r.status === 200 && gone === 0, { s: r.status, gone });
+      const after = (await q(`SELECT is_active, revoked_at FROM api_keys WHERE id = $1`, [k.id])).rows[0];
+      ok("3.2: revoke still works (soft: the row stays, inactive and stamped)", r.status === 200 && after?.is_active === false && after?.revoked_at !== null, { s: r.status, after });
     }
 
     // ───────── 3.3 webhooks ─────────

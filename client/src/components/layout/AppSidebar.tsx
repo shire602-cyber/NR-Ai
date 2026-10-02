@@ -204,6 +204,7 @@ export function AppSidebar() {
             isActive={hasActive}
             onClick={() => setLocation(groupUrl)}
             data-testid={`group-${group.key}`}
+            aria-label={groupTitle}
           >
             <Icon className="w-4 h-4" />
             <span>{groupTitle}</span>
@@ -218,6 +219,8 @@ export function AppSidebar() {
           onClick={() => toggleGroup(group.key)}
           className={cn(hasActive && "text-primary font-medium")}
           data-testid={`group-${group.key}`}
+          aria-label={groupTitle}
+          aria-expanded={isExpanded}
         >
           <Icon className="w-4 h-4" />
           <span>{groupTitle}</span>

@@ -38,6 +38,12 @@ import { countLiveRefunds } from "./customer-refund.service";
 import { uaeCalendarDate } from "../utils/date";
 import { restockForVoidInTx, undoCreditNoteRestockInTx } from "./inventory-costing.service";
 import { createLogger } from "../config/logger";
+import {
+  guardAndVoidAdvance,
+  reactivateApplicationsForInvoice,
+  reverseApplicationsForInvoice,
+  reverseRefundForCreditNote,
+} from "./advance-ledger.service";
 
 const log = createLogger("invoice-void");
 
@@ -121,6 +127,12 @@ export async function voidOrCancelInvoice(args: {
       );
     }
 
+    // Phase 8 D1: an advance invoice that has been deducted or refunded cannot be voided underneath those.
+    if (invoice.invoiceType === "advance") {
+      const guard = await guardAndVoidAdvance(tx, companyId, invoiceId);
+      if (!guard.ok) return fail(409, "ADVANCE_IN_USE", guard.message);
+    }
+
     // A-1: refuse to void/cancel an invoice that has recorded payments (the
     // reversal only unwinds revenue/VAT/AR; the cash would be left orphaned).
     const payments = await tx.select().from(invoicePayments).where(eq(invoicePayments.invoiceId, invoiceId));
@@ -172,6 +184,7 @@ export async function voidOrCancelInvoice(args: {
         accountId: l.accountId,
         debit: Number(l.debit) || 0,
         credit: Number(l.credit) || 0,
+        projectId: l.projectId ?? null,
       }));
       const reversalLegs = reverseToZero(postedLines, {
         arAccountId: accountsReceivable?.id ?? null,
@@ -248,6 +261,12 @@ export async function voidOrCancelInvoice(args: {
     // open / partial / paid status back (a credited invoice becomes payable again).
     if (invoice.invoiceType === "credit_note" && invoice.originalInvoiceId) {
       await syncInvoiceStatusFromBalance(tx, companyId, invoice.originalInvoiceId);
+      // ...and, if that credit note had released advances the invoice deducted, deduct them again.
+      await reactivateApplicationsForInvoice(tx, companyId, invoice.originalInvoiceId);
+      await reverseRefundForCreditNote(tx, companyId, invoiceId);
+    } else {
+      // A voided / cancelled invoice releases the advances it deducted (the reversal re-credited 2055).
+      await reverseApplicationsForInvoice(tx, companyId, invoiceId);
     }
     return { ok: true, reversalEntryId } as VoidOutcome;
   });

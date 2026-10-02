@@ -1628,6 +1628,9 @@ export const messages = defineMessages(
     n7DayNetCashNeed: "7-day net cash need",
     n7DayBillCoverage: "7-day bill coverage",
     n7DayNetWorkload: "7-day net workload",
+    allServerReports: "All reports",
+    reportSchedules: "Schedules",
+    openFullReport: "Open full report",
   },
   {
     live: "مباشر",
@@ -3234,5 +3237,8 @@ export const messages = defineMessages(
     n7DayNetCashNeed: "صافي الحاجة النقدية لـ7 أيام",
     n7DayBillCoverage: "تغطية الفواتير لـ7 أيام",
     n7DayNetWorkload: "صافي حجم العمل لـ7 أيام",
+    allServerReports: "جميع التقارير",
+    reportSchedules: "الجداول",
+    openFullReport: "فتح التقرير الكامل",
   }
 );

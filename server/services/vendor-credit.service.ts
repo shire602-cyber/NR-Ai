@@ -26,6 +26,7 @@ import {
   remainingApplicable,
 } from "./vendor-credit-posting";
 import { toCalendarYmd, uaeCalendarDate } from "../utils/date";
+import { resolveVendor, type VendorWarning } from "./vendor-contact.service";
 
 const log = createLogger("vendor-credit");
 
@@ -46,6 +47,7 @@ export interface VendorCreditLineInput {
 }
 
 export interface VendorCreditInput {
+  vendor_id?: string | null;
   vendor_name?: string;
   vendor_trn?: string | null;
   bill_id?: string | null;
@@ -96,6 +98,8 @@ async function validateLineAccounts(companyId: string, lines: VendorCreditLineIn
 }
 
 interface ResolvedHeader {
+  vendor_id: string | null;
+  warnings: VendorWarning[];
   vendor_name: string;
   vendor_trn: string | null;
   bill_id: string | null;
@@ -108,6 +112,7 @@ interface ResolvedHeader {
 async function resolveHeader(companyId: string, input: VendorCreditInput): Promise<ResolvedHeader> {
   let vendorName = input.vendor_name?.trim() || "";
   let vendorTrn = input.vendor_trn ?? null;
+  let vendorId: string | null = input.vendor_id ?? null;
   let currency = (input.currency || "AED").toUpperCase();
   let rate = Number(input.exchange_rate) > 0 ? Number(input.exchange_rate) : 1;
   let reverseCharge = input.reverse_charge === true;
@@ -115,12 +120,14 @@ async function resolveHeader(companyId: string, input: VendorCreditInput): Promi
 
   if (input.bill_id) {
     const res = await pool.query(
-      `SELECT vendor_name, vendor_trn, currency, exchange_rate, reverse_charge
+      `SELECT vendor_id, vendor_name, vendor_trn, currency, exchange_rate, reverse_charge
          FROM vendor_bills WHERE id = $1 AND company_id = $2`,
       [input.bill_id, companyId]
     );
     const bill = res.rows[0];
     if (!bill) throw err(404, "BILL_NOT_FOUND", "The referenced vendor bill was not found.");
+    // The credit inherits the bill's vendor unless a vendor (by id or by name) was given.
+    if (!vendorId && !vendorName) vendorId = bill.vendor_id ?? null;
     vendorName = vendorName || bill.vendor_name;
     vendorTrn = vendorTrn ?? bill.vendor_trn ?? null;
     currency = String(bill.currency || "AED").toUpperCase();
@@ -129,11 +136,12 @@ async function resolveHeader(companyId: string, input: VendorCreditInput): Promi
     reverseCharge = bill.reverse_charge === true;
   }
 
-  if (!vendorName) throw err(422, "VENDOR_REQUIRED", "Vendor name is required.");
+  if (!vendorName && !vendorId) throw err(422, "VENDOR_REQUIRED", "Vendor name is required.");
   if (currency !== "AED" && !rateGiven) {
     throw err(422, "NO_EXCHANGE_RATE", `Foreign-currency credit notes require exchange_rate (${currency}→AED).`);
   }
-  return { vendor_name: vendorName, vendor_trn: vendorTrn, bill_id: input.bill_id ?? null, currency, exchange_rate: rate, reverse_charge: reverseCharge };
+  const vendor = await resolveVendor(companyId, { vendorId, vendorName: vendorId ? undefined : vendorName, vendorTrn });
+  return { vendor_id: vendor.vendorId, warnings: vendor.warnings, vendor_name: vendor.vendorName, vendor_trn: vendor.vendorTrn, bill_id: input.bill_id ?? null, currency, exchange_rate: rate, reverse_charge: reverseCharge };
 }
 
 async function insertLines(client: PoolClient, creditId: string, input: VendorCreditInput, totals: ReturnType<typeof computeCreditTotals>) {
@@ -167,20 +175,23 @@ export async function createVendorCredit(companyId: string, userId: string, inpu
     const ins = await client.query(
       `INSERT INTO vendor_credit_notes
          (company_id, vendor_name, vendor_trn, bill_id, number, vendor_reference, "date", currency, exchange_rate,
-          subtotal, vat_amount, total, reverse_charge, status, remaining_amount, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',0,$14,$15)
+          subtotal, vat_amount, total, reverse_charge, status, remaining_amount, notes, created_by, vendor_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',0,$14,$15,$16)
        RETURNING id`,
       [
         companyId, header.vendor_name, header.vendor_trn, header.bill_id, number,
         input.vendor_reference || null, ymd, header.currency, header.exchange_rate,
         totals.subtotal, totals.vatAmount, totals.total, header.reverse_charge,
-        input.notes || null, userId,
+        input.notes || null, userId, header.vendor_id,
       ]
     );
     await insertLines(client, ins.rows[0].id, input, totals);
     log.info({ companyId, number }, "Vendor credit note drafted");
     return ins.rows[0].id as string;
-  }).then((id) => getVendorCredit(companyId, id));
+  }).then(async (id) => {
+    const created = await getVendorCredit(companyId, id);
+    return created && header.warnings.length > 0 ? { ...created, warnings: header.warnings } : created;
+  });
 }
 
 export async function updateVendorCredit(companyId: string, id: string, input: Partial<VendorCreditInput>) {
@@ -188,7 +199,10 @@ export async function updateVendorCredit(companyId: string, id: string, input: P
   if (!current) throw err(404, "NOT_FOUND", "Vendor credit note not found.");
   if (current.status !== "draft") throw err(409, "NOT_DRAFT", "Only draft credit notes can be edited.");
 
+  // A vendor given by id wins; a vendor given by name alone is re-resolved by name; otherwise the link stays.
+  const keepVendorLink = input.vendor_id === undefined && input.vendor_name === undefined;
   const merged: VendorCreditInput = {
+    vendor_id: input.vendor_id !== undefined ? input.vendor_id : keepVendorLink ? current.vendor_id ?? null : null,
     vendor_name: input.vendor_name ?? current.vendor_name,
     vendor_trn: input.vendor_trn === undefined ? current.vendor_trn : input.vendor_trn,
     bill_id: input.bill_id === undefined ? current.bill_id : input.bill_id,
@@ -223,12 +237,12 @@ export async function updateVendorCredit(companyId: string, id: string, input: P
     await client.query(
       `UPDATE vendor_credit_notes SET vendor_name=$1, vendor_trn=$2, bill_id=$3, vendor_reference=$4, "date"=$5,
               currency=$6, exchange_rate=$7, subtotal=$8, vat_amount=$9, total=$10, reverse_charge=$11,
-              notes=$12, updated_at=NOW()
+              notes=$12, vendor_id=$15, updated_at=NOW()
         WHERE id=$13 AND company_id=$14`,
       [
         header.vendor_name, header.vendor_trn, header.bill_id, merged.vendor_reference || null, ymd,
         header.currency, header.exchange_rate, totals.subtotal, totals.vatAmount, totals.total,
-        header.reverse_charge, merged.notes || null, id, companyId,
+        header.reverse_charge, merged.notes || null, id, companyId, header.vendor_id,
       ]
     );
     await client.query(`DELETE FROM vendor_credit_note_lines WHERE credit_note_id = $1`, [id]);

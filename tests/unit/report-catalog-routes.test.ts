@@ -121,9 +121,11 @@ describe("report catalog discovery route", () => {
   it("builds deep-linked catalog metadata from the shared report catalog", () => {
     const discovery = buildReportCatalogDiscovery();
 
-    expect(discovery.summary.liveReportCount).toBe(33);
+    // 33 in-page reports + 23 over existing tables (wave 1) on the server report engine (Phase 8 D4).
+    // Wave 2 (over the D1-D3 tables) adds 11: 67.
+    expect(discovery.summary.liveReportCount).toBe(67);
     expect(discovery.summary.apiReportCount).toBe(0);
-    expect(discovery.summary.readyReportCount).toBe(33);
+    expect(discovery.summary.readyReportCount).toBe(67);
     expect(discovery.summary.reportCount).toBe(reportCatalog.length);
     expect(discovery.summary.deliverySubscriptionCount).toBe(6);
     expect(discovery.summary.automationStarterCount).toBe(6);
@@ -320,11 +322,15 @@ describe("report catalog discovery route", () => {
         }
         expect(context?.workspaceHref).toContain("persona=");
         expect(context?.workflowHref).toContain("workflowSearch=");
-        expect(context?.quickAccessHref).toContain("#report-quick-access-title");
-        expect(context?.automationImpactHref).toContain("#report-automation-impact-title");
-        expect(context?.automationStarters.length).toBeGreaterThan(0);
-        expect(context?.deliverySubscriptions.length).toBeGreaterThan(0);
-        expect(context?.comparisonPresets.length).toBeGreaterThan(0);
+        // The persona packs (quick access, impact, starters, delivery subscriptions, comparison presets) cover the in-page
+        // reports. The reports served by the server engine (/reports/run/:id) are delivered by their own per-report schedules.
+        if (!report.href?.startsWith("/reports/run/")) {
+          expect(context?.quickAccessHref).toContain("#report-quick-access-title");
+          expect(context?.automationImpactHref).toContain("#report-automation-impact-title");
+          expect(context?.automationStarters.length).toBeGreaterThan(0);
+          expect(context?.deliverySubscriptions.length).toBeGreaterThan(0);
+          expect(context?.comparisonPresets.length).toBeGreaterThan(0);
+        }
       }
     }
   });

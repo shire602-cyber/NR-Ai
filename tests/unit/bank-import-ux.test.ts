@@ -1,22 +1,25 @@
-import { readFileSync } from "node:fs";
 import { readSourceWithMessages } from "../helpers/read-source";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const source = readSourceWithMessages(process.cwd(), "client/src/pages/BankReconciliation.tsx");
+const dialog = readSourceWithMessages(process.cwd(), "client/src/components/banking/StatementImportDialog.tsx");
+const panel = readSourceWithMessages(process.cwd(), "client/src/components/banking/StatementImportsPanel.tsx");
+const page = readSourceWithMessages(process.cwd(), "client/src/pages/BankReconciliation.tsx");
 
 describe("Bank import launch UX", () => {
   it("keeps a sample CSV path for buyers without live bank feeds", () => {
-    expect(source).toContain("muhasib-sample-bank-statement.csv");
-    expect(source).toContain("Live bank feeds are not required");
-    expect(source).toContain("Arabic/English generic");
-    expect(source).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
-    expect(source).toContain("Amount + Dr/Cr type columns are supported");
-    expect(source).toContain('data-testid="button-download-sample-bank-csv"');
+    expect(dialog).toContain("muhasib-sample-bank-statement.csv");
+    expect(dialog).toContain("CSV (comma, semicolon or tab separated; Debit/Credit or signed amount)");
+    expect(dialog).toContain('data-testid="button-download-sample-bank-csv"');
+    expect(panel).toContain("Live bank feeds are not required");
   });
 
   it("keeps duplicate import feedback visible to users", () => {
-    expect(source).toContain("skippedDuplicates");
-    expect(source).toContain("Matching suggestions are being prepared");
+    expect(dialog).toContain("already existed and were skipped");
+    expect(dialog).toContain("Nothing new: every line in this file was already imported.");
+  });
+
+  it("shows the bank feeds tab only when a provider is configured", () => {
+    expect(page).toContain("feedsAvailable && <TabsTrigger");
+    expect(page).toContain("providers?.providers.length");
   });
 });

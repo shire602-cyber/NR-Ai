@@ -104,6 +104,29 @@ import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
 import { downloadPdf } from "@/lib/download-pdf";
 import { messages as pageMessages } from "./Invoices.i18n";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
+import { InvoiceTypeBadge } from "@/components/sales/SalesShared";
+import { LineDiscountFields } from "@/components/sales/LineDiscountFields";
+import { DocumentAdjustments, SalesTotalsSummary } from "@/components/sales/DocumentAdjustments";
+import { CustomFieldsEditor } from "@/components/sales/CustomFieldsEditor";
+import { useCustomFieldDraft } from "@/components/sales/useCustomFieldDraft";
+import { useSalesAdjustments } from "@/components/sales/useSalesAdjustments";
+import { ApplyAdvanceDialog } from "@/components/sales/ApplyAdvanceDialog";
+import { ContactPicker, usePriceListResolution } from "@/components/sales/ContactPicker";
+import { AvailabilityBadge, useProductAvailability } from "@/components/sales/AvailabilityBadge";
+import {
+  advanceDeductionsFrom,
+  buildSalesBody,
+  invoiceDisplayStatus,
+  itemFormFromRow,
+  lineTotalWithVat,
+  previewTotals,
+  priceForProduct,
+  salesErrorMessage,
+  splitStoredLines,
+  type AdvanceApplicationRow,
+  type ItemLineForm,
+} from "@/lib/sales-api";
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
@@ -116,6 +139,10 @@ const invoiceLineSchema = z.object({
   productId: z.string().nullable().optional(),
   // Round-tripped from the server so editing never loses an exempt / out-of-scope tag.
   vatSupplyType: z.string().nullable().optional(),
+  // Phase 8: line discount and the price list the unit price came from.
+  discountType: z.enum(["percent", "amount"]).nullable().optional(),
+  discountValue: z.union([z.number(), z.string()]).nullable().optional(),
+  priceListId: z.string().nullable().optional(),
 });
 
 // Sentinel for the "Default" option: Radix Select items cannot have an empty value.
@@ -128,6 +155,7 @@ const invoiceSchema = z.object({
   number: z.string().min(1, pageMessages.marker("invoiceNumberIsRequired")),
   customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
+  contactId: z.string().nullable().optional(),
   date: z.date(),
   currency: z.string().default("AED"),
   lines: z.array(invoiceLineSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
@@ -210,6 +238,16 @@ export default function Invoices() {
     enabled: !!selectedCompanyId,
   });
 
+  const salesTr = salesMessages.useT();
+  const adjustments = useSalesAdjustments();
+  const [advanceApplications, setAdvanceApplications] = useState<AdvanceApplicationRow[]>([]);
+  const customFieldDraft = useCustomFieldDraft(selectedCompanyId, "invoice", editingInvoice?.id);
+  const resetSalesExtras = () => {
+    adjustments.reset();
+    setAdvanceApplications([]);
+    customFieldDraft.reset();
+  };
+
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
@@ -235,9 +273,22 @@ export default function Invoices() {
     name: "lines",
   });
 
+  // The invoice is saved by now; a custom field the server refuses (wrong type, locked) is reported, not lost silently.
+  const saveCustomFields = async (id: string | undefined) => {
+    if (!id || !customFieldDraft.dirty) return;
+    try {
+      await customFieldDraft.save(id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: salesTr("customFieldsNotSaved"), description: salesErrorMessage(error, (k) => salesTr(k), salesTr("pleaseTryAgain")) });
+    }
+  };
+
   const createMutation = useMutation({
-    mutationFn: (data: InvoiceFormData) =>
-      apiRequest("POST", `/api/companies/${selectedCompanyId}/invoices`, data),
+    mutationFn: async (data: InvoiceFormData) => {
+      const saved = await apiRequest("POST", `/api/companies/${selectedCompanyId}/invoices`, data);
+      await saveCustomFields(saved?.id);
+      return saved;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -248,6 +299,7 @@ export default function Invoices() {
       });
       setDialogOpen(false);
       setEditingInvoice(null);
+      resetSalesExtras();
       form.reset({
         companyId: selectedCompanyId,
         number: `INV-${Date.now()}`,
@@ -262,14 +314,17 @@ export default function Invoices() {
       toast({
         variant: "destructive",
         title: tr("failedToCreateInvoice"),
-        description: error?.message || tr("pleaseTryAgain"),
+        description: salesErrorMessage(error, (k) => salesTr(k), tr("pleaseTryAgain")),
       });
     },
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: InvoiceFormData }) =>
-      apiRequest("PUT", `/api/invoices/${id}`, data),
+    mutationFn: async ({ id, data }: { id: string; data: InvoiceFormData }) => {
+      const saved = await apiRequest("PUT", `/api/invoices/${id}`, data);
+      await saveCustomFields(id);
+      return saved;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -280,6 +335,7 @@ export default function Invoices() {
       });
       setDialogOpen(false);
       setEditingInvoice(null);
+      resetSalesExtras();
       form.reset({
         companyId: selectedCompanyId,
         number: `INV-${Date.now()}`,
@@ -294,7 +350,7 @@ export default function Invoices() {
       toast({
         variant: "destructive",
         title: tr("failedToUpdateInvoice"),
-        description: error?.message || tr("pleaseTryAgain"),
+        description: salesErrorMessage(error, (k) => salesTr(k), tr("pleaseTryAgain")),
       });
     },
   });
@@ -530,10 +586,16 @@ export default function Invoices() {
         number: fullInvoice.number,
         customerName: fullInvoice.customerName,
         customerTrn: fullInvoice.customerTrn || "",
+        contactId: fullInvoice.contactId ?? null,
         date: new Date(fullInvoice.date),
         currency: fullInvoice.currency,
-        lines: fullInvoice.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: splitStoredLines(fullInvoice.lines).items.length
+          ? splitStoredLines(fullInvoice.lines).items.map(itemFormFromRow) as InvoiceFormData["lines"]
+          : [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
+      adjustments.loadFrom(fullInvoice);
+      setAdvanceApplications(fullInvoice.advanceApplications ?? []);
+      customFieldDraft.reset();
       setDialogOpen(true);
     } catch (error: any) {
       toast({
@@ -555,28 +617,24 @@ export default function Invoices() {
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     });
     setEditingInvoice(null);
+    resetSalesExtras();
   };
 
   const onSubmit = async (data: InvoiceFormData) => {
     try {
+      // Items, the shipping line and the discount inputs. Derived lines (discount, advance) are rebuilt by the server.
+      const salesBody = buildSalesBody({
+        items: data.lines as ItemLineForm[],
+        shipping: adjustments.shipping,
+        shippingDescription: salesTr("shippingLineDescription"),
+        discountType: adjustments.discountType,
+        discountValue: adjustments.discountValue,
+      });
       const invoiceData = {
         ...data,
         companyId: selectedCompanyId!,
-        lines: data.lines.map((line) => ({
-          description: line.description,
-          quantity: Number(line.quantity),
-          unitPrice: Number(line.unitPrice),
-          vatRate: Number(line.vatRate),
-          revenueAccountId: line.revenueAccountId || null,
-          productId: line.productId || null,
-          // The RATE decides the supply type, so a stored type is only
-          // meaningful (and only sent) for 0% lines; sending a stale
-          // exempt / out-of-scope tag on a taxed line is what used to hide its
-          // VAT from the return.
-          ...(line.vatSupplyType && Number(line.vatRate) === 0
-            ? { vatSupplyType: line.vatSupplyType }
-            : {}),
-        })),
+        contactId: data.contactId || null,
+        ...salesBody,
       };
 
       // Proceed with save directly - similar check removed for better UX
@@ -597,8 +655,14 @@ export default function Invoices() {
     resetForm();
   };
 
+  // What the list shows: the stored status, or "Overdue" for a sent / partly paid invoice past its due date.
+  const statusLabel = (status: string) =>
+    status === "overdue" ? salesTr("invStatusOverdue") : String(t[status as keyof typeof t] ?? status);
+
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
+      case "overdue":
+        return "bg-danger-subtle text-destructive ";
       case "paid":
         return "bg-success-subtle text-success ";
       case "partial":
@@ -613,14 +677,27 @@ export default function Invoices() {
     }
   };
 
-  // Calculate totals for preview
+  // Totals preview: the same shared math the server uses (discounts, shipping, advances)
   const watchLines = form.watch("lines");
-  const subtotal = watchLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
-  const vatAmount = watchLines.reduce(
-    (sum, line) => sum + line.quantity * line.unitPrice * line.vatRate,
-    0
+  const preview = previewTotals({
+    items: watchLines as ItemLineForm[],
+    shipping: adjustments.shipping,
+    discountType: adjustments.discountType,
+    discountValue: adjustments.discountValue,
+    advances: advanceDeductionsFrom(advanceApplications),
+  });
+  const watchContactId = form.watch("contactId");
+  const priceResolution = usePriceListResolution(selectedCompanyId, watchContactId, form.watch("currency") || "AED");
+  const availability = useProductAvailability(
+    selectedCompanyId,
+    watchLines.map((l) => l.productId)
   );
-  const total = subtotal + vatAmount;
+  const reloadEditingInvoice = async () => {
+    if (!editingInvoice) return;
+    const full = await apiRequest("GET", `/api/invoices/${editingInvoice.id}`);
+    setEditingInvoice(full);
+    setAdvanceApplications(full.advanceApplications ?? []);
+  };
 
   // Invoice Branding Form
   const brandingForm = useForm<InvoiceBrandingFormData>({
@@ -834,6 +911,7 @@ export default function Invoices() {
                 setDialogOpen(open);
                 if (!open) {
                   setEditingInvoice(null);
+                  resetSalesExtras();
                   form.reset({
                     companyId: selectedCompanyId,
                     number: `INV-${Date.now()}`,
@@ -922,6 +1000,24 @@ export default function Invoices() {
                       />
                     </div>
 
+                    <ContactPicker
+                      companyId={selectedCompanyId}
+                      contactId={watchContactId}
+                      testId="select-invoice-contact"
+                      onSelect={(contact) => {
+                        form.setValue("contactId", contact?.id ?? null);
+                        if (contact) {
+                          form.setValue("customerName", contact.name);
+                          form.setValue("customerTrn", contact.trnNumber ?? "");
+                        }
+                      }}
+                    />
+                    {priceResolution.data?.priceListId && (
+                      <p className="text-xs text-muted-foreground" data-testid="price-list-applied">
+                        {salesTr("priceListApplied")}
+                      </p>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
@@ -978,7 +1074,7 @@ export default function Invoices() {
                           key={field.id}
                           className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
                         >
-                          <div className="col-span-4">
+                          <div className="col-span-12 sm:col-span-3">
                             <FormField
                               control={form.control}
                               name={`lines.${index}.description`}
@@ -988,6 +1084,7 @@ export default function Invoices() {
                                     <Input
                                       {...field}
                                       placeholder={t.description}
+                                      aria-label={t.description}
                                       data-testid={`input-line-description-${index}`}
                                     />
                                   </FormControl>
@@ -995,7 +1092,7 @@ export default function Invoices() {
                               )}
                             />
                           </div>
-                          <div className="col-span-1.5">
+                          <div className="col-span-4 sm:col-span-2">
                             <FormField
                               control={form.control}
                               name={`lines.${index}.quantity`}
@@ -1021,7 +1118,7 @@ export default function Invoices() {
                               )}
                             />
                           </div>
-                          <div className="col-span-1.5">
+                          <div className="col-span-4 sm:col-span-2">
                             <FormField
                               control={form.control}
                               name={`lines.${index}.unitPrice`}
@@ -1047,7 +1144,7 @@ export default function Invoices() {
                               )}
                             />
                           </div>
-                          <div className="col-span-1.5">
+                          <div className="col-span-4 sm:col-span-2">
                             <FormField
                               control={form.control}
                               name={`lines.${index}.vatRate`}
@@ -1078,18 +1175,22 @@ export default function Invoices() {
                               )}
                             />
                           </div>
-                          <div className="col-span-2">
+                          <div className="col-span-10 sm:col-span-2">
                             <div className="h-10 flex items-center justify-end font-mono text-sm">
                               {formatCurrency(
-                                (watchLines[index]?.quantity || 0) *
-                                  (watchLines[index]?.unitPrice || 0) *
-                                  (1 + (watchLines[index]?.vatRate || 0)),
+                                lineTotalWithVat({
+                                  quantity: watchLines[index]?.quantity || 0,
+                                  unitPrice: watchLines[index]?.unitPrice || 0,
+                                  vatRate: watchLines[index]?.vatRate || 0,
+                                  discountType: watchLines[index]?.discountType,
+                                  discountValue: watchLines[index]?.discountValue,
+                                }),
                                 "AED",
                                 locale
                               )}
                             </div>
                           </div>
-                          <div className="col-span-1 flex items-center justify-center">
+                          <div className="col-span-2 sm:col-span-1 flex items-center justify-center">
                             {fields.length > 1 && (
                               <Button
                                 type="button"
@@ -1100,6 +1201,30 @@ export default function Invoices() {
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
+                            )}
+                          </div>
+                          <div className="col-span-12 flex flex-wrap items-center gap-x-4 gap-y-2">
+                            <span className="text-xs text-muted-foreground">{salesTr("lineDiscount")}</span>
+                            <LineDiscountFields
+                              label={String(index + 1)}
+                              type={watchLines[index]?.discountType}
+                              value={watchLines[index]?.discountValue}
+                              testId={`line-discount-${index}`}
+                              onChange={(next) => {
+                                form.setValue(`lines.${index}.discountType`, next.type);
+                                form.setValue(`lines.${index}.discountValue`, next.value);
+                              }}
+                            />
+                            {watchLines[index]?.productId && (
+                              <AvailabilityBadge
+                                requested={Number(watchLines[index]?.quantity) || 0}
+                                availability={availability.get(watchLines[index]?.productId as string)}
+                                tracked={
+                                  pickerProducts.find((p) => p.id === watchLines[index]?.productId)
+                                    ?.trackInventory !== false
+                                }
+                                testId={`availability-${index}`}
+                              />
                             )}
                           </div>
                           {pickerProducts.length > 0 && (
@@ -1127,10 +1252,14 @@ export default function Invoices() {
                                           `lines.${index}.description`,
                                           locale === "ar" && picked.nameAr ? picked.nameAr : picked.name
                                         );
-                                        form.setValue(
-                                          `lines.${index}.unitPrice`,
-                                          Number(picked.unitPrice) || 0
+                                        // The customer's price list wins; the price stays editable.
+                                        const priced = priceForProduct(
+                                          picked.id,
+                                          picked.unitPrice,
+                                          priceResolution.data
                                         );
+                                        form.setValue(`lines.${index}.unitPrice`, priced.unitPrice);
+                                        form.setValue(`lines.${index}.priceListId`, priced.priceListId);
                                         form.setValue(
                                           `lines.${index}.vatRate`,
                                           Number(picked.vatRate) === 0 ? 0 : 0.05
@@ -1208,37 +1337,34 @@ export default function Invoices() {
                       ))}
                     </div>
 
-                    <div className="border-t pt-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{t.subtotal}</span>
-                        <span dir="ltr" className="font-mono font-medium">
-                          {formatCurrency(subtotal, "AED", locale)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          {t.vat} (
-                          {watchLines.some((line) => line.vatRate !== 0)
-                            ? tr("avg", {
-                                round: Math.round(
-                                  (watchLines.reduce((sum, line) => sum + line.vatRate, 0) /
-                                    Math.max(1, watchLines.filter((l) => l.vatRate > 0).length)) *
-                                    100
-                                ),
-                              })
-                            : "0%"}
-                          )
-                        </span>
-                        <span dir="ltr" className="font-mono font-medium">
-                          {formatCurrency(vatAmount, "AED", locale)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                        <span>{t.total}</span>
-                        <span dir="ltr" className="font-mono">
-                          {formatCurrency(total, "AED", locale)}
-                        </span>
-                      </div>
+                    <div className="border-t pt-4 space-y-4">
+                      <DocumentAdjustments
+                        discountType={adjustments.discountType}
+                        discountValue={adjustments.discountValue}
+                        onDiscountChange={adjustments.setDiscount}
+                        shipping={adjustments.shipping}
+                        onShippingChange={adjustments.setShipping}
+                      />
+                      <CustomFieldsEditor draft={customFieldDraft} />
+                      {editingInvoice && selectedCompanyId ? (
+                        <ApplyAdvanceDialog
+                          companyId={selectedCompanyId}
+                          invoiceId={editingInvoice.id}
+                          contactId={watchContactId}
+                          applications={advanceApplications}
+                          disabled={editingInvoice.status !== "draft"}
+                          onChanged={reloadEditingInvoice}
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground" data-testid="advance-save-first">
+                          {salesTr("advanceSaveFirst")}
+                        </p>
+                      )}
+                      <SalesTotalsSummary
+                        preview={preview}
+                        currency="AED"
+                        advances={advanceApplications.filter((a) => a.kind === "application" && a.status === "active")}
+                      />
                     </div>
 
                     <div className="flex gap-3 pt-4">
@@ -1286,6 +1412,7 @@ export default function Invoices() {
                           <p dir="ltr" className="font-mono text-sm font-semibold truncate">
                             {invoice.number}
                           </p>
+                          <InvoiceTypeBadge invoiceType={invoice.invoiceType} />
                           <p className="text-sm font-medium truncate">{invoice.customerName}</p>
                           <p className="text-xs text-muted-foreground">
                             {formatDate(invoice.date, locale)}
@@ -1302,10 +1429,10 @@ export default function Invoices() {
                           disabled={updateStatusMutation.isPending}
                         >
                           <SelectTrigger
-                            className={cn("h-9 border-0", getStatusBadgeColor(invoice.status))}
+                            className={cn("h-9 border-0", getStatusBadgeColor(invoiceDisplayStatus(invoice)))}
                             data-testid={`mobile-select-status-${invoice.id}`}
                           >
-                            <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
+                            <SelectValue>{statusLabel(invoiceDisplayStatus(invoice))}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="draft">{t.draft}</SelectItem>
@@ -1375,7 +1502,10 @@ export default function Invoices() {
                       scrollRef={tableScrollRef}
                       renderRow={(invoice) => (
                         <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-                          <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
+                          <TableCell className="font-mono font-medium">
+                            {invoice.number}
+                            <InvoiceTypeBadge invoiceType={invoice.invoiceType} className="ms-2" />
+                          </TableCell>
                           <TableCell>{invoice.customerName}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {formatDate(invoice.date, locale)}
@@ -1390,10 +1520,10 @@ export default function Invoices() {
                               disabled={updateStatusMutation.isPending}
                             >
                               <SelectTrigger
-                                className={cn("w-32 border-0", getStatusBadgeColor(invoice.status))}
+                                className={cn("w-32 border-0", getStatusBadgeColor(invoiceDisplayStatus(invoice)))}
                                 data-testid={`select-status-${invoice.id}`}
                               >
-                                <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
+                                <SelectValue>{statusLabel(invoiceDisplayStatus(invoice))}</SelectValue>
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem

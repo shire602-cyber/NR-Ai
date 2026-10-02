@@ -75,6 +75,13 @@ import {
   BarChart3,
   Receipt,
 } from "lucide-react";
+import { VendorPicker } from "@/components/purchases/VendorPicker";
+import { LineProjectFields } from "@/components/projects/LineProjectFields";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
 import { messages as pageMessages } from "./BillPay.i18n";
 
 // ===========================
@@ -84,6 +91,7 @@ import { messages as pageMessages } from "./BillPay.i18n";
 interface VendorBill {
   id: string;
   company_id: string;
+  vendor_id?: string | null;
   vendor_name: string;
   vendor_trn: string | null;
   bill_number: string | null;
@@ -113,6 +121,8 @@ interface BillLineItem {
   vat_rate: string;
   amount: string;
   account_id: string | null;
+  project_id?: string | null;
+  is_billable?: boolean;
   created_at: string;
 }
 
@@ -158,9 +168,12 @@ const billLineSchema = z.object({
   unit_price: z.coerce.number().min(0, pageMessages.marker("priceMustBeNonNegative")),
   vat_rate: z.coerce.number().default(5),
   account_id: z.string().optional(),
+  project_id: z.string().optional().nullable(),
+  is_billable: z.boolean().optional(),
 });
 
 const billFormSchema = z.object({
+  vendor_id: z.string().optional().nullable(),
   vendor_name: z.string().min(1, pageMessages.marker("vendorNameIsRequired")),
   vendor_trn: z.string().optional(),
   bill_number: z.string().optional(),
@@ -187,8 +200,10 @@ type PaymentFormData = z.infer<typeof paymentFormSchema>;
 // Status helpers
 // ===========================
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, progress?: { completedSteps: number; requiredSteps: number }) {
   switch (status) {
+    case "pending_approval":
+      return <ApprovalStatusBadge status="pending_approval" completedSteps={progress?.completedSteps} requiredSteps={progress?.requiredSteps} />;
     case "pending":
       return (
         <Badge variant="outline" className="bg-muted text-foreground ">
@@ -238,6 +253,7 @@ function initialBillPayTab(): BillPayTab {
 
 export default function BillPay() {
   const tr = pageMessages.useT();
+  const approvalTr = approvalMessages.useT();
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -260,6 +276,8 @@ export default function BillPay() {
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
   });
+
+  const approvalProgress = useApprovalProgress(companyId ?? undefined, "bill", bills.some((b) => b.status === "pending_approval"));
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
@@ -338,6 +356,7 @@ export default function BillPay() {
   const billForm = useForm<BillFormData>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
+      vendor_id: null,
       vendor_name: "",
       vendor_trn: "",
       bill_number: "",
@@ -346,7 +365,7 @@ export default function BillPay() {
       currency: "AED",
       category: "",
       notes: "",
-      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "", project_id: null, is_billable: false }],
     },
   });
 
@@ -396,6 +415,8 @@ export default function BillPay() {
         line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
+          project_id: l.project_id || null,
+          is_billable: !!l.project_id && !!l.is_billable,
         })),
       };
       return apiRequest("POST", `/api/companies/${companyId}/bills`, payload);
@@ -424,6 +445,8 @@ export default function BillPay() {
         line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
+          project_id: l.project_id || null,
+          is_billable: !!l.project_id && !!l.is_billable,
         })),
       };
       return apiRequest("PATCH", `/api/bills/${id}`, payload);
@@ -436,11 +459,7 @@ export default function BillPay() {
       resetBillForm();
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToUpdateBill"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToUpdateBill")));
     },
   });
 
@@ -451,26 +470,26 @@ export default function BillPay() {
       toast({ title: tr("billDeleted"), description: tr("vendorBillHasBeenDeleted") });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToDeleteBill"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToDeleteBill")));
     },
   });
 
   const approveBillMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/bills/${id}/approve`),
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       invalidateBills();
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
+      }
       toast({ title: tr("billApproved"), description: tr("theBillHasBeenApproved") });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToApproveBill"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToApproveBill")));
     },
   });
 
@@ -516,6 +535,7 @@ export default function BillPay() {
 
   const resetBillForm = () => {
     billForm.reset({
+      vendor_id: null,
       vendor_name: "",
       vendor_trn: "",
       bill_number: "",
@@ -524,7 +544,7 @@ export default function BillPay() {
       currency: "AED",
       category: "",
       notes: "",
-      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "", project_id: null, is_billable: false }],
     });
     setEditingBill(null);
   };
@@ -534,6 +554,7 @@ export default function BillPay() {
       const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
       setEditingBill(detail);
       billForm.reset({
+        vendor_id: detail.vendor_id ?? null,
         vendor_name: detail.vendor_name,
         vendor_trn: detail.vendor_trn || "",
         bill_number: detail.bill_number || "",
@@ -550,8 +571,10 @@ export default function BillPay() {
                 unit_price: Number(l.unit_price),
                 vat_rate: Number(l.vat_rate),
                 account_id: l.account_id || "",
+                project_id: l.project_id ?? null,
+                is_billable: !!l.is_billable,
               }))
-            : [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+            : [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "", project_id: null, is_billable: false }],
       });
       setBillDialogOpen(true);
     } catch (error: any) {
@@ -671,6 +694,7 @@ export default function BillPay() {
                     <SelectContent>
                       <SelectItem value="all">{tr("allStatuses")}</SelectItem>
                       <SelectItem value="pending">{tr("pending")}</SelectItem>
+                      <SelectItem value="pending_approval">{approvalTr("pendingApproval")}</SelectItem>
                       <SelectItem value="approved">{tr("approved")}</SelectItem>
                       <SelectItem value="partial">{tr("partial")}</SelectItem>
                       <SelectItem value="paid">{tr("paid")}</SelectItem>
@@ -713,7 +737,16 @@ export default function BillPay() {
                               <FormItem>
                                 <FormLabel>{tr("vendorName")}</FormLabel>
                                 <FormControl>
-                                  <Input {...field} placeholder={tr("vendorCompanyName")} />
+                                  <VendorPicker
+                                    companyId={companyId ?? undefined}
+                                    vendorId={billForm.watch("vendor_id")}
+                                    fallbackName={field.value}
+                                    onSelect={(vendor) => {
+                                      billForm.setValue("vendor_id", vendor.id, { shouldDirty: true });
+                                      billForm.setValue("vendor_name", vendor.name, { shouldDirty: true, shouldValidate: true });
+                                      if (vendor.trnNumber) billForm.setValue("vendor_trn", vendor.trnNumber, { shouldDirty: true });
+                                    }}
+                                  />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -1027,6 +1060,18 @@ export default function BillPay() {
                                   </Button>
                                 )}
                               </div>
+                              <div className="col-span-12">
+                                <LineProjectFields
+                                  companyId={companyId ?? undefined}
+                                  projectId={watchLines[index]?.project_id}
+                                  isBillable={watchLines[index]?.is_billable}
+                                  testIdSuffix={`-${index}`}
+                                  onChange={({ projectId, isBillable }) => {
+                                    billForm.setValue(`line_items.${index}.project_id`, projectId, { shouldDirty: true });
+                                    billForm.setValue(`line_items.${index}.is_billable`, isBillable, { shouldDirty: true });
+                                  }}
+                                />
+                              </div>
                             </div>
                           ))}
 
@@ -1149,7 +1194,7 @@ export default function BillPay() {
                             <TableCell className="text-end">
                               {formatCurrency(Number(bill.amount_paid), bill.currency || "AED")}
                             </TableCell>
-                            <TableCell>{getStatusBadge(bill.status)}</TableCell>
+                            <TableCell>{getStatusBadge(bill.status, approvalProgress.get(bill.id))}</TableCell>
                             <TableCell className="text-end">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -1162,7 +1207,7 @@ export default function BillPay() {
                                     <Edit className="w-4 h-4 me-2" />
                                     {tr("edit")}
                                   </DropdownMenuItem>
-                                  {bill.status === "pending" && (
+                                  {(bill.status === "pending" || bill.status === "pending_approval") && (
                                     <DropdownMenuItem
                                       onClick={() => approveBillMutation.mutate(bill.id)}
                                     >
@@ -1170,7 +1215,7 @@ export default function BillPay() {
                                       {tr("approve")}
                                     </DropdownMenuItem>
                                   )}
-                                  {bill.status !== "paid" && (
+                                  {!["paid", "pending", "pending_approval"].includes(bill.status) && (
                                     <DropdownMenuItem onClick={() => handlePayBill(bill)}>
                                       <DollarSign className="w-4 h-4 me-2" />
                                       {tr("recordPayment")}

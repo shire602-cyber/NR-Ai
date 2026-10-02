@@ -64,16 +64,22 @@ const accountSchema = z.object({
   nameAr: z.string().optional(),
   type: z.enum(["asset", "liability", "equity", "income", "expense"]),
   isActive: z.boolean().default(true),
+  // Phase 8 D4: the group company on the other side of an intercompany account (consolidated statements).
+  intercompanyCompanyId: z.string().uuid().nullable().optional(),
 });
 
 type AccountFormData = z.infer<typeof accountSchema>;
+
+/** Select value that means "no counterparty" (a Radix Select item cannot have an empty value). */
+const NO_COUNTERPARTY = "__none__";
 
 export default function Accounts() {
   const tr = pageMessages.useT();
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: selectedCompanyId, companies = [] } = useDefaultCompany();
+  const counterpartyCompanies = companies.filter((c) => c.id !== selectedCompanyId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -91,6 +97,7 @@ export default function Accounts() {
       nameAr: "",
       type: "asset",
       isActive: true,
+      intercompanyCompanyId: null,
     },
   });
 
@@ -177,6 +184,7 @@ export default function Accounts() {
       nameAr: account.nameAr || "",
       type: account.type as "asset" | "liability" | "equity" | "income" | "expense",
       isActive: account.isActive,
+      intercompanyCompanyId: account.intercompanyCompanyId ?? null,
     });
     setDialogOpen(true);
   };
@@ -317,6 +325,39 @@ export default function Accounts() {
                   </FormItem>
                 )}
               />
+              {counterpartyCompanies.length > 0 ? (
+                <FormField
+                  control={form.control}
+                  name="intercompanyCompanyId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("intercompanyCounterparty")}</FormLabel>
+                      <Select
+                        onValueChange={(value) =>
+                          field.onChange(value === NO_COUNTERPARTY ? null : value)
+                        }
+                        value={field.value ?? NO_COUNTERPARTY}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-intercompany-counterparty">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={NO_COUNTERPARTY}>{tr("intercompanyNone")}</SelectItem>
+                          {counterpartyCompanies.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">{tr("intercompanyHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
               <div className="flex gap-3 pt-4">
                 <Button
                   type="button"
@@ -371,6 +412,18 @@ export default function Accounts() {
                     <TableRow key={account.id} data-testid={`account-row-${account.id}`}>
                       <TableCell>
                         {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
+                        {account.intercompanyCompanyId ? (
+                          <span
+                            className="block text-xs text-muted-foreground"
+                            data-testid={`intercompany-note-${account.id}`}
+                          >
+                            {tr("intercompanyWith", {
+                              company:
+                                companies.find((c) => c.id === account.intercompanyCompanyId)
+                                  ?.name ?? tr("intercompanyUnknownCompany"),
+                            })}
+                          </span>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getTypeBadgeColor(account.type)}>
@@ -400,6 +453,7 @@ export default function Accounts() {
                                 size="icon"
                                 data-testid={`button-delete-account-${account.id}`}
                                 disabled={deleteMutation.isPending}
+                                aria-label={tr("deleteAccount")}
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>

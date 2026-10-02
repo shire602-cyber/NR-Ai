@@ -22,6 +22,7 @@ const UNDO_HINTS: Record<string, string> = {
   payment: "Delete or edit the payment on the invoice or bill it settles.",
   receipt: "Change or delete the receipt it was posted from.",
   customer_refund: "Void the refund on the credit note it was paid against.",
+  gateway_fee: "It follows the online payment it was charged on; it cannot be undone separately. Record a correcting entry if the provider fee was wrong.",
   bill: "Void the bill, or record a supplier credit note.",
   vendor_credit_note: "Void the vendor credit note (only possible while it is not applied to a bill).",
   vendor_credit_fx: "It follows the credit note application; the credit cannot be voided once applied to a bill.",
@@ -39,6 +40,13 @@ const UNDO_HINTS: Record<string, string> = {
   fx_revaluation: "Run the FX revaluation again for the period, or reverse it from the FX revaluation screen.",
   fx_revaluation_reversal: "Run the FX revaluation again from the FX revaluation screen.",
   bank_reconciliation: "Undo the bank reconciliation match or adjustment.",
+  bank_rule: "Undo the bank rule posting from the bank transaction (Unmatch), which also removes its receipt.",
+  employee_loan: "Cancel the loan (only while nothing has been deducted) on the employee loans screen.",
+  employee_loan_cancel: "Create the loan again from the employee loans screen.",
+  employee_loan_repayment: "Correct the loan on the employee loans screen.",
+  final_settlement: "Void the final settlement (while it is unpaid) on the final settlement screen.",
+  final_settlement_payment: "Void the final settlement from its screen; a paid settlement needs a correcting entry.",
+  final_settlement_void: "Create the final settlement again from the final settlement screen.",
   reversal: "Reverse the original manual journal instead.",
 };
 const GENERIC_HINT = "Undo it from the screen or document that created it.";

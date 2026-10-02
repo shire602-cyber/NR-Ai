@@ -86,6 +86,8 @@ interface BillLineRow {
   description: string;
   amount: string | number;
   account_id: string | null;
+  /** Phase 8 D2: the project the cost belongs to; the expense debit is tagged with it. */
+  project_id?: string | null;
 }
 
 function toDate(value: string | Date): Date {
@@ -167,7 +169,7 @@ export async function postBillApprovalJournal(
   const billDate = toDate(bill.bill_date);
   const billRef = bill.bill_number || bill.id.slice(0, 8);
 
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> =
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string; projectId?: string }> =
     [];
 
   for (const line of lineItems) {
@@ -177,6 +179,7 @@ export async function postBillApprovalJournal(
       debit: round2(Number(line.amount) * fxRate),
       credit: 0,
       description: `Bill ${billRef} - ${line.description}`.slice(0, 255),
+      ...(line.project_id ? { projectId: line.project_id } : {}),
     });
   }
 

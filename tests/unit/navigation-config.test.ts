@@ -86,6 +86,19 @@ describe("sidebar navigation config", () => {
     }
   });
 
+  it("puts sales orders and customer advances under Sales and the sales settings under Settings", () => {
+    const sales = CUSTOMER_GROUPS.find((g) => g.key === "sales");
+    expect(sales?.items.map((i) => i.url)).toEqual(expect.arrayContaining(["/sales-orders", "/customer-advances"]));
+    const settings = CUSTOMER_GROUPS.find((g) => g.key === "settings");
+    expect(settings?.items.map((i) => i.url)).toContain("/settings/sales");
+    for (const url of ["/sales-orders", "/customer-advances", "/settings/sales"]) expect(routePaths.has(url), url).toBe(true);
+  });
+
+  it("serves the public quote page without the app shell", () => {
+    expect(routePaths.has("/view/quote/:token")).toBe(true);
+    expect(appSource).toContain('pathname.startsWith("/view/quote/")');
+  });
+
   it("offers a single AI entry", () => {
     const ai = ALL_DESTINATIONS.filter((u) => /^\/ai-|smart-assistant/.test(u));
     expect(ai).toEqual(["/ai-cfo"]);
@@ -98,6 +111,32 @@ describe("sidebar navigation config", () => {
     const titleKeys = ALL_GROUPS.flatMap((g) => g.items.map((i) => i.titleKey));
     expect(titleKeys).not.toContain("apiKeys");
     expect(titleKeys).not.toContain("integrationsHub");
+  });
+
+  it("lists the cash-flow forecast under Banking and keeps reconciliation rules in More", () => {
+    const banking = CUSTOMER_GROUPS.find((g) => g.key === "banking");
+    expect(banking?.items.map((i) => i.url)).toEqual(["/bank-reconciliation", "/auto-reconcile", "/cashflow-forecast"]);
+    expect(MORE_GROUP.items.map((i) => i.url)).toContain("/reconciliation-rules");
+    expect(banking?.items.map((i) => i.url)).not.toContain("/reconciliation-rules");
+  });
+
+  it("puts Projects under Sales and Approvals under Accounting, both routed in App.tsx (Phase 8 D2)", () => {
+    const sales = CUSTOMER_GROUPS.find((g) => g.key === "sales")!;
+    const accounting = CUSTOMER_GROUPS.find((g) => g.key === "accounting")!;
+    expect(sales.items.map((i) => i.url)).toContain("/projects");
+    expect(accounting.items.map((i) => i.url)).toContain("/approvals");
+    for (const path of ["/projects", "/projects/:id", "/approvals"]) expect(routePaths.has(path), path).toBe(true);
+  });
+
+  it("offers Security under Settings and Developers, Data and privacy and Import data in More, all routed (Phase 8 D5)", () => {
+    const settings = CUSTOMER_GROUPS.find((g) => g.key === "settings")!;
+    expect(settings.items.map((i) => i.url)).toContain("/settings/security");
+    expect(MORE_GROUP.items.map((i) => i.url)).toEqual(expect.arrayContaining(["/developer-settings", "/settings/data", "/import"]));
+    for (const path of ["/settings/security", "/settings/data", "/import", "/developer-settings", "/developers/api", "/help/:slug"]) {
+      expect(routePaths.has(path), path).toBe(true);
+    }
+    // The API is real now, so its keys page is no longer a hidden feature.
+    expect(HIDDEN_FEATURE_ROUTES).not.toContain("/api-keys");
   });
 
   it("keeps the firm section as it was", () => {

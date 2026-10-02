@@ -34,7 +34,14 @@ export function requireRole(...roles: string[]) {
     const [membership] = await db
       .select({ role: companyUsers.role })
       .from(companyUsers)
-      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, req.user.id)))
+      .innerJoin(companies, eq(companies.id, companyUsers.companyId))
+      .where(
+        and(
+          eq(companyUsers.companyId, companyId),
+          eq(companyUsers.userId, req.user.id),
+          isNull(companies.deletedAt)
+        )
+      )
       .limit(1);
 
     if (!membership) {

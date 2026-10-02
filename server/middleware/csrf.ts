@@ -15,6 +15,7 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/register$/,
   /^\/api\/auth\/refresh$/,
   /^\/api\/auth\/refresh-token$/,
+  /^\/api\/auth\/2fa\/verify$/,
   /^\/api\/auth\/forgot-password$/,
   /^\/api\/auth\/reset-password$/,
   /^\/api\/portal\//,
@@ -38,6 +39,9 @@ const PUBLIC_CSRF_PROTECTED = [
   /^\/api\/referral\/track-signup$/,
   /^\/api\/invitations\/accept\//,
   /^\/api\/auth\/logout$/,
+  // Phase 8 D1: public quote answers and public invoice checkout (a visitor without credentials, but CSRF-protected).
+  /^\/api\/public\/quotes\//,
+  /^\/api\/public\/invoices\/[^/]+\/checkout$/,
 ];
 
 const SESSION_COOKIE_NAME = "connect.sid";

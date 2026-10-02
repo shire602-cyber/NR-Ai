@@ -76,6 +76,12 @@ import {
 import type { RecurringInvoice } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { messages as pageMessages } from "./RecurringInvoices.i18n";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
+import { ContactPicker } from "@/components/sales/ContactPicker";
+import { salesErrorMessage } from "@/lib/sales-api";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Mail } from "lucide-react";
 
 const lineItemSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
@@ -87,6 +93,9 @@ const lineItemSchema = z.object({
 const recurringInvoiceSchema = z.object({
   customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
+  contactId: z.string().nullable().optional(),
+  autoSend: z.boolean().default(false),
+  paymentTermsDays: z.union([z.number(), z.string()]).nullable().optional(),
   currency: z.string().default("AED"),
   frequency: z.enum(["weekly", "monthly", "quarterly", "yearly"]),
   startDate: z.date(),
@@ -112,6 +121,7 @@ const frequencyLabelsAr: Record<string, string> = {
 
 export default function RecurringInvoices() {
   const tr = pageMessages.useT();
+  const salesTr = salesMessages.useT();
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -130,6 +140,9 @@ export default function RecurringInvoices() {
     defaultValues: {
       customerName: "",
       customerTrn: "",
+      contactId: null,
+      autoSend: false,
+      paymentTermsDays: 30,
       currency: "AED",
       frequency: "monthly",
       startDate: new Date(),
@@ -148,6 +161,9 @@ export default function RecurringInvoices() {
       return await apiRequest("POST", `/api/companies/${selectedCompanyId}/recurring-invoices`, {
         customerName: data.customerName,
         customerTrn: data.customerTrn || null,
+        contactId: data.contactId || null,
+        autoSend: data.autoSend,
+        paymentTermsDays: data.paymentTermsDays === "" || data.paymentTermsDays === null || data.paymentTermsDays === undefined ? null : Number(data.paymentTermsDays),
         currency: data.currency,
         frequency: data.frequency,
         startDate: data.startDate.toISOString(),
@@ -167,7 +183,7 @@ export default function RecurringInvoices() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: salesErrorMessage(error, (k) => salesTr(k), tr("error")), variant: "destructive" });
     },
   });
 
@@ -176,6 +192,9 @@ export default function RecurringInvoices() {
       return await apiRequest("PATCH", `/api/recurring-invoices/${id}`, {
         customerName: data.customerName,
         customerTrn: data.customerTrn || null,
+        contactId: data.contactId || null,
+        autoSend: data.autoSend,
+        paymentTermsDays: data.paymentTermsDays === "" || data.paymentTermsDays === null || data.paymentTermsDays === undefined ? null : Number(data.paymentTermsDays),
         currency: data.currency,
         frequency: data.frequency,
         startDate: data.startDate.toISOString(),
@@ -197,7 +216,7 @@ export default function RecurringInvoices() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: salesErrorMessage(error, (k) => salesTr(k), tr("error")), variant: "destructive" });
     },
   });
 
@@ -235,6 +254,9 @@ export default function RecurringInvoices() {
     form.reset({
       customerName: "",
       customerTrn: "",
+      contactId: null,
+      autoSend: false,
+      paymentTermsDays: 30,
       currency: "AED",
       frequency: "monthly",
       startDate: new Date(),
@@ -255,6 +277,9 @@ export default function RecurringInvoices() {
     form.reset({
       customerName: item.customerName,
       customerTrn: item.customerTrn || "",
+      contactId: (item as any).contactId ?? null,
+      autoSend: Boolean((item as any).autoSend),
+      paymentTermsDays: (item as any).paymentTermsDays ?? null,
       currency: item.currency,
       frequency: item.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
       startDate: new Date(item.startDate),
@@ -313,6 +338,21 @@ export default function RecurringInvoices() {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <ContactPicker
+                  companyId={selectedCompanyId}
+                  contactId={form.watch("contactId")}
+                  testId="select-recurring-contact"
+                  onSelect={(contact) => {
+                    form.setValue("contactId", contact?.id ?? null);
+                    if (contact) {
+                      form.setValue("customerName", contact.name);
+                      form.setValue("customerTrn", contact.trnNumber ?? "");
+                    } else {
+                      form.setValue("autoSend", false);
+                    }
+                  }}
+                />
+
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -337,6 +377,46 @@ export default function RecurringInvoices() {
                           <Input {...field} />
                         </FormControl>
                         <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="space-y-3 rounded-md border p-3" data-testid="recurring-auto-send">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Label htmlFor="recurring-auto-send-switch">{salesTr("autoSend")}</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {form.watch("contactId") ? salesTr("autoSendHelp") : salesTr("autoSendNeedsContact")}
+                      </p>
+                    </div>
+                    <Switch
+                      id="recurring-auto-send-switch"
+                      checked={form.watch("autoSend")}
+                      disabled={!form.watch("contactId")}
+                      onCheckedChange={(v) => form.setValue("autoSend", v)}
+                      data-testid="switch-recurring-auto-send"
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="paymentTermsDays"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{salesTr("paymentTermsDays")}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            dir="ltr"
+                            className="w-32 font-mono"
+                            value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value === "" ? null : parseInt(e.target.value, 10))}
+                            data-testid="input-recurring-terms"
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">{salesTr("paymentTermsHelp")}</p>
                       </FormItem>
                     )}
                   />
@@ -626,7 +706,21 @@ export default function RecurringInvoices() {
               <TableBody>
                 {recurringInvoices.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.customerName}</TableCell>
+                    <TableCell className="font-medium">
+                      {item.customerName}
+                      {(item as any).autoSend && (
+                        <Badge variant="outline" className="ms-2 gap-1 text-xs" data-testid={`badge-auto-send-${item.id}`}>
+                          <Mail className="h-3 w-3" />
+                          {salesTr("autoSendBadge")}
+                        </Badge>
+                      )}
+                      {(item as any).autoSend && (item as any).lastSendStatus === "not_sent" && (
+                        <span className="mt-1 block text-xs font-normal text-warning" data-testid={`last-send-failed-${item.id}`}>
+                          {salesTr("lastSendFailed")}
+                          {(item as any).lastSendError ? `: ${(item as any).lastSendError}` : ""}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{getFreqLabel(item.frequency)}</Badge>
                     </TableCell>

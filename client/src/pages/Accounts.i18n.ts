@@ -37,6 +37,12 @@ export const messages = defineMessages(
       "Note: This account cannot be deleted if it has existing transactions.",
     cancel: "Cancel",
     delete: "Delete",
+    intercompanyCounterparty: "Intercompany counterparty",
+    intercompanyNone: "None",
+    intercompanyHint:
+      "Pick the group company on the other side of this account so consolidated statements can eliminate it.",
+    intercompanyWith: "Intercompany with {company}",
+    intercompanyUnknownCompany: "another company",
   },
   {
     accountNameEnIsRequired: "اسم الحساب (بالإنجليزية) مطلوب",
@@ -72,5 +78,11 @@ export const messages = defineMessages(
     noteThisAccountCannotBeDeleted: "ملاحظة: لا يمكن حذف هذا الحساب إن كانت عليه معاملات.",
     cancel: "إلغاء",
     delete: "حذف",
+    intercompanyCounterparty: "الشركة المقابلة (بين شركات المجموعة)",
+    intercompanyNone: "لا شيء",
+    intercompanyHint:
+      "اختر شركة المجموعة على الجانب الآخر من هذا الحساب ليتمكن التوحيد من استبعاده.",
+    intercompanyWith: "بين شركات المجموعة مع {company}",
+    intercompanyUnknownCompany: "شركة أخرى",
   }
 );
