@@ -8,6 +8,7 @@ import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
 import { isTokenBlacklisted } from "../services/auth-tokens.service";
 import { isSessionActive } from "../services/sessions";
 import { isUserDeactivated, isPortalUserAllowedPath } from "../services/portal-invitations";
+import { EMPLOYEE_ROLE_REFUSAL, wasEmployeeRefused } from "./employee-denial";
 
 const log = createLogger("auth");
 
@@ -324,7 +325,8 @@ export function requireCompanyAccess(paramSource?: "params" | "body" | "query") 
         { userId: req.user.id, companyId: candidate, path: req.path },
         "requireCompanyAccess denied"
       );
-      res.status(403).json({ message: "Access denied to this company" });
+      // An employee-role member is limited to their own HR records: say so, with the code the client keys on.
+      res.status(403).json(wasEmployeeRefused() ? EMPLOYEE_ROLE_REFUSAL : { message: "Access denied to this company" });
       return;
     }
 

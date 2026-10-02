@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton, StatCardSkeleton } from "@/components/ui/loading-skeletons";
+import { useMyCompanyRole } from "@/hooks/useMyCompanyRole";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -205,6 +206,10 @@ export default function ExpenseClaims() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const currentUser = getStoredUser();
+  // An employee files and follows their own claims; reviewing, paying and the company summary are for finance roles
+  // (the server refuses them with ROLE_REQUIRED, so the controls are not shown).
+  const { role: myRole } = useMyCompanyRole(companyId ?? undefined);
+  const canReview = myRole !== "employee";
 
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [editingClaim, setEditingClaim] = useState<ExpenseClaim | null>(null);
@@ -226,7 +231,7 @@ export default function ExpenseClaims() {
 
   const { data: summary } = useQuery<ClaimSummary>({
     queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
-    enabled: !!companyId,
+    enabled: !!companyId && canReview,
   });
 
   // ─── Derived data ─────────────────────────────────────
@@ -711,7 +716,7 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {isReview && (claim.status === "submitted" || claim.status === "pending_approval") && (
+                      {isReview && canReview && (claim.status === "submitted" || claim.status === "pending_approval") && (
                         <>
                           <Button
                             variant="ghost"
@@ -733,7 +738,7 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {claim.status === "approved" && (
+                      {canReview && claim.status === "approved" && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -770,6 +775,7 @@ export default function ExpenseClaims() {
       </div>
 
       {/* ─── Summary Cards ─────────────────────────────── */}
+      {canReview && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -809,7 +815,7 @@ export default function ExpenseClaims() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </div>)}
 
       {/* ─── Tabs ──────────────────────────────────────── */}
       <Tabs defaultValue="my-claims" className="space-y-4">
@@ -818,6 +824,7 @@ export default function ExpenseClaims() {
             <FileText className="w-4 h-4" />
             {tr("myClaims")}
           </TabsTrigger>
+          {canReview && (
           <TabsTrigger value="review" className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4" />
             {tr("review")}
@@ -826,7 +833,7 @@ export default function ExpenseClaims() {
                 {submittedClaims.length}
               </StatusBadge>
             )}
-          </TabsTrigger>
+          </TabsTrigger>)}
           <TabsTrigger value="all-claims" className="flex items-center gap-2">
             <Receipt className="w-4 h-4" />
             {tr("allClaims")}
@@ -864,6 +871,7 @@ export default function ExpenseClaims() {
         </TabsContent>
 
         {/* ─── Review Tab ──────────────────────────────── */}
+        {canReview && (
         <TabsContent value="review">
           <Card>
             <CardHeader>
@@ -885,7 +893,7 @@ export default function ExpenseClaims() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent>)}
 
         {/* ─── All Claims Tab ──────────────────────────── */}
         <TabsContent value="all-claims">
@@ -1087,7 +1095,7 @@ export default function ExpenseClaims() {
                         name={`items.${index}.amount`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t.amount || tr("amount")} (AED) *</FormLabel>
+                            <FormLabel>{tr("amountNetOfVat")} *</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" min="0" {...field} />
                             </FormControl>
@@ -1277,7 +1285,7 @@ export default function ExpenseClaims() {
                           <TableHead>{tr("category2")}</TableHead>
                           <TableHead>{t.description || tr("description")}</TableHead>
                           <TableHead>{tr("merchant")}</TableHead>
-                          <TableHead className="text-end">{t.amount || tr("amount")}</TableHead>
+                          <TableHead className="text-end">{tr("amountNetOfVat")}</TableHead>
                           <TableHead className="text-end">{tr("vat")}</TableHead>
                           <TableHead>{tr("receipt")}</TableHead>
                         </TableRow>

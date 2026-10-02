@@ -19,11 +19,15 @@
  *
  * Env / args:
  *   BASE_URL        app URL (default http://localhost:5000)
- *   AUDIT_EMAIL / AUDIT_PASSWORD   an existing user (required)
+ *   AUDIT_EMAIL / AUDIT_PASSWORD   optional: an existing user. Without them the script registers its own owner
+ *                       (random credentials, never printed) and completes the company onboarding, all through the API
  *   --locales en,ar     (default both)
  *   --routes /a,/b      override the list
  *   --shots <dir>       save a screenshot per screen
  *   --extra /a,/b       audit more routes after the 25 (public ones such as /developers/api work too)
+ *   --employee          also sign in as an employee-role user (invited by the AUDIT_EMAIL owner) and check the
+ *                       self-service shell: own pages open, every finance route redirects to /payroll with a notice,
+ *                       the menu offers no finance entries, and the employee pages pass the 375 px audit
  *   --selftest          prove the checks can fail: inject known-bad markup and expect every check to fire
  *   --no-seed           do not create demo records
  *   --json <file>       write the findings as JSON
@@ -31,6 +35,7 @@
  *
  * Exit code 1 when any check fails.
  */
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright-core";
@@ -38,8 +43,8 @@ import { chromium } from "playwright-core";
 const args = process.argv.slice(2);
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
-const EMAIL = process.env.AUDIT_EMAIL;
-const PASSWORD = process.env.AUDIT_PASSWORD;
+let EMAIL = process.env.AUDIT_EMAIL;
+let PASSWORD = process.env.AUDIT_PASSWORD;
 const LOCALES = (flag("--locales") || "en,ar").split(",");
 const SHOTS = flag("--shots");
 const JSON_OUT = flag("--json");
@@ -263,6 +268,95 @@ function auditInPage() {
   return findings;
 }
 
+const EMPLOYEE_ALLOWED = [
+  ["Employee dashboard", "/dashboard", "[data-testid=employee-dashboard]"],
+  ["Employee payroll", "/payroll", null],
+  ["Employee leave", "/payroll?tab=leave", null],
+  ["Employee loans", "/payroll?tab=loans", null],
+  ["Employee expense claims", "/expense-claims", null],
+  ["Employee security", "/settings/security", null],
+];
+const FINANCE_ROUTES = ["/invoices", "/quotes", "/bill-pay", "/journal", "/chart-of-accounts", "/reports", "/vat-filing", "/contacts", "/inventory", "/bank-reconciliation", "/settings/company", "/team", "/settings/data", "/import", "/developer-settings", "/approvals", "/financial-statements"];
+
+/** Returns the number of failed expectations. */
+async function employeeAudit(browser, ownerRequest) {
+  let failed = 0;
+  const check = (name, ok, detail = "") => {
+    console.log(`${ok ? "PASS" : "FAIL"}  [employee] ${name}${ok ? "" : ` ${detail}`}`);
+    if (!ok) failed++;
+  };
+  const login = await ownerRequest.post(`${BASE}/api/auth/login`, { data: { email: EMAIL, password: PASSWORD } });
+  const owner = await login.json();
+  const companies = (await api(ownerRequest, "GET", "/api/companies", { token: owner.token })).json;
+  const cid = companies?.[0]?.id;
+  const empEmail = `audit-employee-${Date.now()}@example.com`;
+  const empPassword = `Aud1t-${Math.random().toString(36).slice(2)}Xx9`;
+  const regContext = await browser.newContext(); // its own cookie jar: a session cookie would outrank the owner's Bearer token
+  const reg = await regContext.request.post(`${BASE}/api/auth/register`, { data: { name: "Audit Employee", email: empEmail, password: empPassword } });
+  const invite = await api(ownerRequest, "POST", `/api/companies/${cid}/team/invite`, { token: owner.token, data: { email: empEmail, role: "employee" } });
+  await regContext.close();
+  check("employee user invited", reg.ok() && invite.status === 201, `register ${reg.status()} invite ${invite.status} ${JSON.stringify(invite.json)}`);
+  if (!invite.json) return failed + 1;
+
+  for (const [label, viewport] of [["desktop", { width: 1280, height: 900 }], ["375px", { width: 375, height: 812 }]]) {
+    const context = await browser.newContext({ viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 });
+    await context.addInitScript((id) => {
+      try {
+        localStorage.setItem("muhasib_active_company_id", id);
+        localStorage.setItem("i18n-storage", JSON.stringify({ state: { locale: "en" }, version: 0 }));
+      } catch {
+        /* storage blocked */
+      }
+    }, cid);
+    const res = await context.request.post(`${BASE}/api/auth/login`, { data: { email: empEmail, password: empPassword } });
+    const body = await res.json();
+    await api(context.request, "PATCH", "/api/onboarding", { token: body.token, data: { showTour: false } });
+    const page = await context.newPage();
+    const forbiddenCalls = [];
+    page.on("response", (r) => {
+      if (r.status() === 403 && r.url().includes("/api/")) forbiddenCalls.push(new URL(r.url()).pathname);
+    });
+
+    for (const [name, route, marker] of EMPLOYEE_ALLOWED) {
+      await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" }).catch(() => undefined);
+      await page.waitForSelector("h1", { timeout: 4000 }).catch(() => undefined);
+      const path = new URL(page.url()).pathname;
+      const dialog = await page.locator('[role="dialog"][data-state="open"]').count();
+      check(`${label}: ${name} opens`, path === new URL(route, BASE).pathname && (!marker || (await page.locator(marker).count()) === 1) && dialog === 0, `${path} dialogs=${dialog} dialogText=${dialog ? (await page.locator('[role="dialog"]').first().innerText()).slice(0, 80) : ""}`);
+      if (route === "/expense-claims") {
+        const review = await page.getByRole("tab", { name: /review/i }).count();
+        const approve = await page.locator('button[title="Approve"], button[title="Reject"], button[title="Mark as paid"]').count();
+        check(`${label}: expense claims hide the Review tab and approve/reject/pay controls`, review === 0 && approve === 0, `review tabs ${review}, controls ${approve}`);
+      }
+      if (label === "375px") {
+        const findings = await page.evaluate(auditInPage);
+        const n = Object.values(findings).reduce((t, l) => t + l.length, 0);
+        check(`375 px audit: ${name}`, n === 0, JSON.stringify(findings));
+      }
+    }
+
+    forbiddenCalls.length = 0;
+    for (const route of FINANCE_ROUTES) {
+      await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" }).catch(() => undefined);
+      await page.waitForTimeout(300);
+      const url = new URL(page.url());
+      const noticed = (await page.locator("[data-testid=notice-role-redirect]").count()) === 1;
+      check(`${label}: ${route} redirects to /payroll with a notice`, url.pathname === "/payroll" && noticed, url.pathname + url.search);
+    }
+    check(`${label}: the redirected finance screens fired no refused API calls`, forbiddenCalls.length === 0, [...new Set(forbiddenCalls)].join(", "));
+
+    if (label === "desktop") {
+      await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+      const offered = await page.$$eval("aside a[href], [data-sidebar] a[href]", (as) => as.map((a) => a.getAttribute("href")));
+      const financeLinks = offered.filter((h) => h && FINANCE_ROUTES.includes(h.split("?")[0]));
+      check("menu offers no finance entries", financeLinks.length === 0, financeLinks.join(", "));
+      check("menu offers payroll, leave, loans, account and help", ["/payroll", "/payroll?tab=leave", "/payroll?tab=loans", "/expense-claims", "/settings/security", "/help"].every((h) => offered.includes(h)), offered.join(", "));
+    }
+    await context.close();
+  }
+  return failed;
+}
+
 async function selftest() {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--no-sandbox"] });
   const page = await (await browser.newContext({ viewport: { width: 375, height: 812 } })).newPage();
@@ -280,8 +374,18 @@ async function selftest() {
 async function main() {
   if (args.includes("--selftest")) return selftest();
   if (!EMAIL || !PASSWORD) {
-    console.error("Set AUDIT_EMAIL and AUDIT_PASSWORD (a local test user).");
-    process.exit(2);
+    // Self-seeding: a throwaway owner with a random password, so nothing secret is needed in the environment.
+    const stamp = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+    EMAIL = `audit-owner-${stamp}@example.com`;
+    PASSWORD = `Aud1t-${crypto.randomBytes(9).toString("hex")}Xx`;
+    const reg = await fetch(`${BASE}/api/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Audit Owner", email: EMAIL, password: PASSWORD }) });
+    const body = await reg.json().catch(() => ({}));
+    if (!reg.ok || !body.token || !body.company?.id) {
+      console.error(`could not register an audit owner (${reg.status}). Is BASE_URL a running dev server?`);
+      process.exit(2);
+    }
+    await fetch(`${BASE}/api/companies/${body.company.id}/onboarding/complete`, { method: "POST", headers: { Authorization: `Bearer ${body.token}` } });
+    console.log("Registered a throwaway audit owner and completed its onboarding.");
   }
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--no-sandbox"] });
@@ -368,6 +472,11 @@ async function main() {
       }
     }
     await context.close();
+  }
+  if (args.includes("--employee")) {
+    const ownerContext = await browser.newContext();
+    failures += await employeeAudit(browser, ownerContext.request);
+    await ownerContext.close();
   }
   await browser.close();
   if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(results, null, 2));

@@ -14,7 +14,7 @@
 import { and, eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
-import { invoices as invoicesTable, type Invoice } from "../../shared/schema";
+import { customerContacts, invoices as invoicesTable, type Invoice } from "../../shared/schema";
 import { withDocumentLock, LOCK_NS } from "./document-lock";
 import { assertPeriodNotLocked, assertNotFutureDate } from "./period-lock.service";
 import { postInvoiceRevenueJournalInTx } from "./invoice-posting.service";
@@ -65,6 +65,19 @@ export async function issueInvoice(
         });
       }
       if (current.status !== "draft") return { ok: true } as IssueResult; // already issued by someone else
+
+      // Place of supply: a draft made without one (quote conversion, project invoice, recurring template) takes
+      // the customer's emirate now; from here on it is part of the issued document.
+      if (!(current as any).emirate && current.contactId) {
+        const [contactRow] = await tx
+          .select({ emirate: customerContacts.emirate })
+          .from(customerContacts)
+          .where(and(eq(customerContacts.id, current.contactId), eq(customerContacts.companyId, invoice.companyId)));
+        if (contactRow?.emirate) {
+          await tx.update(invoicesTable).set({ emirate: contactRow.emirate } as any).where(eq(invoicesTable.id, id));
+          (current as any).emirate = contactRow.emirate;
+        }
+      }
 
       // Inventory first: stock is checked and consumed (and COGS posted) BEFORE revenue is recognised, so a
       // short-stock invoice is refused with 422 INSUFFICIENT_STOCK and nothing has been posted.

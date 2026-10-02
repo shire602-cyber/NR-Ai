@@ -47,6 +47,27 @@ export const messages = defineMessages(
     profitForPeriod: "Profit for {formatPeriodLabel}",
     closingSummaryExplained:
       "This shows what the business earned in {formatPeriodLabel}. A month-end close does not post closing entries: revenue and expenses stay in the profit and loss, and nothing is moved to retained earnings until the financial-year close.",
+    lockVatWarning: "The VAT return for this period is not prepared yet.",
+    lockVatWarningDetail:
+      "A locked month stops postings dated in it. Prepare the VAT return first, or lock anyway and unlock the month later if the return needs a correction.",
+    lockVatOverrideLabel: "Lock anyway: the VAT return is not prepared yet",
+    lockOverrideReasonLabel: "Why is it locked before the VAT return? (written to the audit trail)",
+    lockOverrideReasonPlaceholder: "At least 10 characters",
+    unlockPeriod: "Unlock Period",
+    unlocking: "Unlocking...",
+    unlockPeriodTitle: "Unlock {formatPeriodLabel}?",
+    unlockPeriodExplained:
+      "Unlocking reopens this one month for postings, edits and voids. Everything you change is recorded against your name.",
+    unlockReasonLabel: "Reason for unlocking",
+    unlockReasonPlaceholder: "Why this month is being reopened (at least 10 characters)",
+    unlockReasonRule: "Write a reason of at least 10 characters to unlock.",
+    unlockAuditNote: "The unlock, your name and this reason are written to the audit trail.",
+    unlockAuditLink: "View unlock history",
+    periodUnlocked: "Period unlocked",
+    periodUnlockedDescription:
+      "{formatPeriodLabel} is open again. The unlock is in the audit trail.",
+    unlockFailed: "The period could not be unlocked",
+    unlockOwnerOnly: "Only the company owner can unlock a closed month.",
     cancel: "Cancel",
     lockPeriod: "Lock Period",
     lockingWillPreventAnyModificationsTo:
@@ -109,6 +130,26 @@ export const messages = defineMessages(
     profitForPeriod: "ربح {formatPeriodLabel}",
     closingSummaryExplained:
       "يعرض هذا ما حققته المنشأة في {formatPeriodLabel}. إقفال نهاية الشهر لا ينشئ قيود إقفال: تبقى الإيرادات والمصروفات في قائمة الدخل، ولا يُنقل شيء إلى الأرباح المحتجزة قبل إقفال السنة المالية.",
+    lockVatWarning: "لم يُعدّ إقرار ضريبة القيمة المضافة لهذه الفترة بعد.",
+    lockVatWarningDetail:
+      "الشهر المقفل يمنع القيود المؤرخة فيه. أعدّ إقرار ضريبة القيمة المضافة أولًا، أو اقفل على أي حال وافتح الشهر لاحقًا إذا احتاج الإقرار إلى تصحيح.",
+    lockVatOverrideLabel: "القفل على أي حال: لم يُعدّ إقرار ضريبة القيمة المضافة بعد",
+    lockOverrideReasonLabel: "لماذا يُقفل قبل إقرار ضريبة القيمة المضافة؟ (يُكتب في سجل التدقيق)",
+    lockOverrideReasonPlaceholder: "10 أحرف على الأقل",
+    unlockPeriod: "فتح الفترة",
+    unlocking: "جارٍ الفتح...",
+    unlockPeriodTitle: "فتح {formatPeriodLabel}؟",
+    unlockPeriodExplained:
+      "يعيد الفتح هذا الشهر وحده للقيود والتعديلات والإلغاء. يُسجَّل كل ما تغيّره باسمك.",
+    unlockReasonLabel: "سبب الفتح",
+    unlockReasonPlaceholder: "سبب إعادة فتح هذا الشهر (10 أحرف على الأقل)",
+    unlockReasonRule: "اكتب سببًا من 10 أحرف على الأقل لفتح الفترة.",
+    unlockAuditNote: "يُكتب الفتح واسمك وهذا السبب في سجل التدقيق.",
+    unlockAuditLink: "عرض سجل الفتح",
+    periodUnlocked: "تم فتح الفترة",
+    periodUnlockedDescription: "{formatPeriodLabel} مفتوح من جديد. الفتح مسجَّل في سجل التدقيق.",
+    unlockFailed: "تعذر فتح الفترة",
+    unlockOwnerOnly: "يمكن لمالك الشركة وحده فتح شهر مقفل.",
     cancel: "إلغاء",
     lockPeriod: "قفل الفترة",
     lockingWillPreventAnyModificationsTo:

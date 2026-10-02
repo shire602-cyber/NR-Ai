@@ -39,7 +39,10 @@ export type PostingBypass =
   // the year-end closing entry, dated the last day of a year whose December a VAT filing has locked
   | { reason: "year_end_close"; closeId?: string }
   // its reversal when the year is reopened
-  | { reason: "year_end_reopen"; closeId: string };
+  | { reason: "year_end_reopen"; closeId: string }
+  // the VAT filing journal (clearing of the VAT accounts), dated the filing day, when that day's month was locked meanwhile:
+  // only the filing flow constructs it, and it is labelled as the VAT filing journal
+  | { reason: "vat_filing"; returnId: string };
 
 /** Calendar month (UTC) of a date, "YYYY-MM": the convention month_end_close uses. */
 export function monthKeyOf(date: DateLike): string {

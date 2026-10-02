@@ -38,7 +38,8 @@ import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
-import { ADMIN_GROUP, CUSTOMER_GROUPS, MORE_GROUP, NRA_GROUP, type NavGroup } from "./nav-config";
+import { ADMIN_GROUP, CUSTOMER_GROUPS, EMPLOYEE_GROUPS, MORE_GROUP, NRA_GROUP, type NavGroup } from "./nav-config";
+import { useIsEmployee } from "./EmployeeShell";
 import { messages as pageMessages } from "./AppSidebar.i18n";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -117,15 +118,19 @@ export function AppSidebar() {
   const showNraCenter = shouldShowNraCenterNav(currentUser, { inClientContext: isFirmContext });
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
+  const isEmployee = useIsEmployee() === true;
   const allGroups = useMemo<NavGroup[]>(
-    () => [
-      ...CUSTOMER_GROUPS,
-      ...(showNraCenter ? [NRA_GROUP] : []),
-      ...(isAdmin ? [ADMIN_GROUP] : []),
-      // Collapsed catch-all for less-used pages; always last.
-      MORE_GROUP,
-    ],
-    [showNraCenter, isAdmin]
+    () =>
+      isEmployee
+        ? EMPLOYEE_GROUPS
+        : [
+            ...CUSTOMER_GROUPS,
+            ...(showNraCenter ? [NRA_GROUP] : []),
+            ...(isAdmin ? [ADMIN_GROUP] : []),
+            // Collapsed catch-all for less-used pages; always last.
+            MORE_GROUP,
+          ],
+    [showNraCenter, isAdmin, isEmployee]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
@@ -156,6 +161,11 @@ export function AppSidebar() {
       }
     }
   }, [location, allGroups]);
+
+  // An employee has a single short group: keep it open.
+  useEffect(() => {
+    if (isEmployee) setExpandedGroup("my-work");
+  }, [isEmployee]);
 
   const toggleGroup = (key: string) => {
     setExpandedGroup((prev) => {

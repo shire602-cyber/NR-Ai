@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canWriteHrRole, isOwnerRole } from "@/lib/purchasing-hr";
 
@@ -13,13 +14,16 @@ interface TeamMember {
  */
 export function useMyCompanyRole(companyId: string | undefined) {
   const { data: me } = useCurrentUser();
+  // /api/companies carries the caller's own role (myRole); an employee may not read the team list at all.
+  const { company } = useDefaultCompany();
+  const ownRole = (company as { myRole?: string | null } | undefined)?.myRole ?? null;
   const team = useQuery<TeamMember[]>({
     queryKey: ["/api/companies", companyId, "team"],
-    enabled: Boolean(companyId),
+    enabled: Boolean(companyId) && !ownRole,
     staleTime: 5 * 60_000,
   });
   const members = Array.isArray(team.data) ? team.data : [];
-  const role = members.find((m) => m.userId === me?.id)?.role ?? null;
+  const role = ownRole ?? members.find((m) => m.userId === me?.id)?.role ?? null;
   // Firm staff and platform admins act as accountants (server: rank 1) even without a membership row.
   const staff = me as { isAdmin?: boolean; firmRole?: string | null } | null | undefined;
   const isStaff = Boolean(staff?.isAdmin || staff?.firmRole);

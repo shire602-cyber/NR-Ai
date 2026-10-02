@@ -67,7 +67,9 @@ export async function resolvePaymentAccount(
 
   if (paymentAccountId) {
     const account = accounts.find((a) => a.id === paymentAccountId);
-    if (!account || account.isActive === false || account.type !== "asset") {
+    // a credit card (a liability account managed as a bank account) can pay a bill: the card is credited, as the money leaves on credit
+    const isCard = account?.type === "liability" && managedGl.has(account.id);
+    if (!account || account.isActive === false || (account.type !== "asset" && !isCard)) {
       throw new AppError({ message: "The payment account must be an active asset (bank or cash) account of this company.", statusCode: 422, code: "PAYMENT_ACCOUNT_INVALID" });
     }
     if (isHeader(account.id)) {

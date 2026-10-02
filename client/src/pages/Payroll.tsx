@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useSearch } from "wouter";
+import { payrollTabFromSearch } from "@/lib/employee-shell";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -67,12 +69,14 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate, CALENDAR_DATE_SHORT_FORMAT } from "@/lib/format";
 import { getAuthHeaders } from "@/lib/auth";
 import { downloadPdf } from "@/lib/download-pdf";
 import { apiUrl } from "@/lib/api";
 import { LeaveTab } from "@/components/payroll/LeaveTab";
 import { LoansTab } from "@/components/payroll/LoansTab";
+import { useConfirmAction } from "@/components/ConfirmDialog";
+import { PayslipsTab } from "@/components/payroll/PayslipsTab";
 import { FinalSettlementTab } from "@/components/payroll/FinalSettlementTab";
 import { RecordPaymentDialog } from "@/components/payroll/RecordPaymentDialog";
 import { PayrollRegisterDialog } from "@/components/payroll/PayrollRegisterDialog";
@@ -102,6 +106,9 @@ interface Employee {
   routing_code: string | null;
   mol_person_id?: string | null;
   opening_gratuity_provision?: string | null;
+  opening_leave_days?: string | null;
+  opening_leave_provision?: string | null;
+  opening_provisions_as_of?: string | null;
   department: string | null;
   designation: string | null;
   join_date: string | null;
@@ -197,6 +204,9 @@ const employeeFormSchema = z.object({
   routingCode: z.string().optional(),
   molPersonId: z.string().regex(/^(\d{14})?$/, pageMessages.marker("molPersonIdInvalid")).optional(),
   openingGratuityProvision: z.coerce.number().min(0).default(0),
+  openingLeaveDays: z.coerce.number().min(0).default(0),
+  openingLeaveProvision: z.coerce.number().min(0).default(0),
+  openingProvisionsAsOf: z.string().optional(),
   department: z.string().optional(),
   designation: z.string().optional(),
   joinDate: z.string().optional(),
@@ -292,7 +302,17 @@ export default function Payroll() {
   });
 
   const viewingRun = payrollRuns.find((r) => r.id === viewingRunId);
+  // Employees with service before the first payroll period and no opening provisions (the server names them; it is what the
+  // register and the calculate warnings use). Fetched for any open run that has not posted yet.
+  const { data: runRegister } = useQuery<{ priorServiceMissing?: Array<{ employeeId: string; name: string }> }>({
+    queryKey: ["/api/payroll-runs", viewingRunId, "register", "prior-service"],
+    enabled: !!viewingRunId && !!viewingRun && ["draft", "calculated", "pending_approval"].includes(viewingRun.status),
+    queryFn: () => apiRequest("GET", `/api/payroll-runs/${viewingRunId}/register`),
+  });
+  const firstRunWarningEmployees = runRegister?.priorServiceMissing ?? [];
   const { canWriteHr, isLoading: isLoadingRole } = useMyCompanyRole(companyId ?? undefined);
+  // ?tab=leave / ?tab=loans / ?tab=payslips opens that tab (the employee menu links straight to them).
+  const requestedTab = payrollTabFromSearch(useSearch());
   // The team members an employee record can be linked to (an accountant or above links; same cache entry as the role).
   const { data: teamMembers = [] } = useQuery<Array<{ userId: string; role: string; user?: { name: string; email: string } }>>({
     queryKey: ["/api/companies", companyId ?? undefined, "team"],
@@ -318,6 +338,9 @@ export default function Payroll() {
       routingCode: "",
       molPersonId: "",
       openingGratuityProvision: 0,
+      openingLeaveDays: 0,
+      openingLeaveProvision: 0,
+      openingProvisionsAsOf: "",
       department: "",
       designation: "",
       joinDate: "",
@@ -416,12 +439,12 @@ export default function Payroll() {
     mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/calculate`),
     onSuccess: (result: any, calculatedRunId: string) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
-      const notes: Array<{ code: string; name: string; days: number; date: string | null }> = Array.isArray(result?.proRataNotes) ? result.proRataNotes : [];
+      const notes: Array<{ code: string; name: string; days: number; basis?: number; date: string | null }> = Array.isArray(result?.proRataNotes) ? result.proRataNotes : [];
       const others: string[] = Array.isArray(result?.otherWarnings) ? result.otherWarnings : Array.isArray(result?.warnings) ? result.warnings : [];
       setWarningsByRun((prev) => ({
         ...prev,
         [calculatedRunId]: [
-          ...notes.map((n) => tr(`proRata_${n.code}` as "proRata_joined", { name: n.name, days: n.days, date: n.date ?? "-" })),
+          ...notes.map((n) => tr(`proRata_${n.code}` as "proRata_joined", { name: n.name, days: n.days, basis: n.basis ?? 30, date: n.date ?? "-" })),
           ...others,
         ],
       }));
@@ -464,6 +487,23 @@ export default function Payroll() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+    },
+  });
+
+  // Service before the first run: provisions the opening fields did not cover are booked once, on purpose, not inside the first month.
+  const [askConfirm, confirmDialog] = useConfirmAction();
+  const catchUpMutation = useMutation({
+    mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/book-prior-service-catchup`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-runs"] });
+      toast({ title: tr("catchUpBooked"), description: tr("catchUpBookedBody") });
+    },
+    onError: (error: any) => {
+      const unavailable = error?.status === 404 || error?.status === 405;
+      const nothing = error?.code === "NOTHING_TO_BOOK";
+      toast({ title: tr("catchUpFailed"), description: nothing ? tr("catchUpNothing") : unavailable ? tr("catchUpUnavailable") : error?.message, variant: "destructive" });
     },
   });
 
@@ -528,6 +568,9 @@ export default function Payroll() {
       routingCode: "",
       molPersonId: "",
       openingGratuityProvision: 0,
+      openingLeaveDays: 0,
+      openingLeaveProvision: 0,
+      openingProvisionsAsOf: "",
       department: "",
       designation: "",
       joinDate: "",
@@ -557,6 +600,9 @@ export default function Payroll() {
       routingCode: emp.routing_code || "",
       molPersonId: emp.mol_person_id || "",
       openingGratuityProvision: parseFloat(emp.opening_gratuity_provision ?? "0") || 0,
+      openingLeaveDays: parseFloat(emp.opening_leave_days ?? "0") || 0,
+      openingLeaveProvision: parseFloat(emp.opening_leave_provision ?? "0") || 0,
+      openingProvisionsAsOf: emp.opening_provisions_as_of ? String(emp.opening_provisions_as_of).slice(0, 10) : "",
       department: emp.department || "",
       designation: emp.designation || "",
       joinDate: emp.join_date ? emp.join_date.split("T")[0] : "",
@@ -730,6 +776,29 @@ export default function Payroll() {
     );
   }
 
+  // Dialogs opened from the run list AND from the run detail view (record payment, register, delete run).
+  // They must be mounted in both views: the detail view returns early, so dialogs rendered only at the end of the page never appear there.
+  const runLevelDialogs = (
+    <>
+      <PayrollRegisterDialog runId={registerRunId} onClose={() => setRegisterRunId(null)} />
+      {companyId && <RecordPaymentDialog companyId={companyId} runId={payRunId} onClose={() => setPayRunId(null)} />}
+      <AlertDialog open={!!deleteRunId} onOpenChange={(open) => !open && setDeleteRunId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tr("deleteRunTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("deleteRunBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteRunId && deleteRunMutation.mutate(deleteRunId)} data-testid="button-confirm-delete-run">
+              {tr("deleteRun")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+
   // ─── Render: Run detail view ───────────────────────
 
   if (viewingRunId && viewingRun) {
@@ -840,6 +909,24 @@ export default function Payroll() {
 
           {/* Summary cards */}
           <CardContent>
+            {firstRunWarningEmployees.length > 0 && (
+              <div className="mb-4 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-sm space-y-2" role="status" data-testid="payroll-first-run-warning">
+                <div className="font-medium">{tr("firstRunWarningTitle")}</div>
+                <p>{tr("firstRunWarningBody")}</p>
+                <p className="text-muted-foreground" data-testid="text-first-run-employees">{firstRunWarningEmployees.map((e) => e.name).join(", ")}</p>
+                {canWriteHr && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={catchUpMutation.isPending}
+                    onClick={() => askConfirm(tr("catchUpConfirm"), () => catchUpMutation.mutate(viewingRun.id))}
+                    data-testid="button-book-catchup"
+                  >
+                    {tr("catchUpAction")}
+                  </Button>
+                )}
+              </div>
+            )}
             {(warningsByRun[viewingRunId ?? ""] ?? []).length > 0 && (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-sm" role="status" data-testid="payroll-run-warnings">
                 <div className="font-medium">{tr("runWarningsTitle")}</div>
@@ -928,8 +1015,8 @@ export default function Payroll() {
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">
                             <div>
-                              {item.employee_name}
-                              {item.days_worked != null && Number(item.days_worked) < 30 && (
+                              {locale === "ar" && item.employee_name_ar ? item.employee_name_ar : item.employee_name}
+                              {item.days_worked != null && Number(item.days_worked) > 0 && (
                                 <div className="text-xs text-warning" data-testid={`days-worked-${item.id}`}>
                                   {tr("daysWorkedOf", { days: Number(item.days_worked) })}
                                 </div>
@@ -1074,6 +1161,9 @@ export default function Payroll() {
             </Form>
           </DialogContent>
         </Dialog>
+
+        {runLevelDialogs}
+        {confirmDialog}
       </div>
     );
   }
@@ -1098,7 +1188,8 @@ export default function Payroll() {
         <p className="text-sm text-muted-foreground" data-testid="payroll-own-records-notice">{tr("ownRecordsNotice")}</p>
       )}
 
-      <Tabs defaultValue="employees" className="space-y-4">
+      {/* An employee login starts on their own payslips; HR roles on the employee list. */}
+      <Tabs key={`${isLoadingRole || canWriteHr ? "hr" : "own"}:${requestedTab ?? ""}`} defaultValue={requestedTab ?? (isLoadingRole || canWriteHr ? "employees" : "payslips")} className="space-y-4">
         <TabsList>
           <TabsTrigger value="employees" className="flex shrink-0 items-center gap-2">
             <Users className="w-4 h-4" />
@@ -1110,6 +1201,9 @@ export default function Payroll() {
               {tr("payrollRuns")}
             </TabsTrigger>
           )}
+          <TabsTrigger value="payslips" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-payslips">
+            {tr("tabPayslips")}
+          </TabsTrigger>
           <TabsTrigger value="gratuity" className="flex shrink-0 items-center gap-2">
             <Calculator className="w-4 h-4" />
             {tr("gratuityCalculator")}
@@ -1182,7 +1276,7 @@ export default function Payroll() {
                         <TableRow key={emp.id}>
                           <TableCell className="font-medium">
                             <div>
-                              {emp.full_name}
+                              {locale === "ar" && emp.full_name_ar ? emp.full_name_ar : emp.full_name}
                               {emp.full_name_ar && (
                                 <div className="text-xs text-muted-foreground">
                                   {emp.full_name_ar}
@@ -1285,7 +1379,7 @@ export default function Payroll() {
                           <TableCell>{getStatusBadge(run.status, run.id)}</TableCell>
                           <TableCell className="text-muted-foreground whitespace-nowrap">
                             {run.created_at
-                              ? format(new Date(run.created_at), "MMM dd, yyyy")
+                              ? formatDate(run.created_at, locale)
                               : "-"}
                           </TableCell>
                           <TableCell className="text-end">
@@ -1433,13 +1527,13 @@ export default function Payroll() {
                         <div className="text-muted-foreground">{tr("joinDate")}</div>
                         <div className="font-medium">
                           {gratuityResult.joinDate
-                            ? format(new Date(gratuityResult.joinDate), "MMM dd, yyyy")
+                            ? formatDate(gratuityResult.joinDate, locale, CALENDAR_DATE_SHORT_FORMAT)
                             : "-"}
                         </div>
 
                         <div className="text-muted-foreground">{tr("terminationDate")}</div>
                         <div className="font-medium">
-                          {format(new Date(gratuityResult.terminationDate), "MMM dd, yyyy")}
+                          {formatDate(gratuityResult.terminationDate, locale, CALENDAR_DATE_SHORT_FORMAT)}
                         </div>
 
                         <div className="text-muted-foreground">{tr("yearsOfService")}</div>
@@ -1463,7 +1557,7 @@ export default function Payroll() {
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="text-muted-foreground">
                           {tr("first5YearsYrsX21", {
-                            firstFiveYears: gratuityResult.firstFiveYears,
+                            firstFiveYears: gratuityResult.firstFiveYears ?? Math.round(Math.min(gratuityResult.yearsOfService, 5) * 100) / 100,
                           })}
                         </div>
                         <div className="font-medium">
@@ -1472,7 +1566,7 @@ export default function Payroll() {
 
                         <div className="text-muted-foreground">
                           {tr("after5YearsYrsX30", {
-                            remainingYears: gratuityResult.remainingYears,
+                            remainingYears: gratuityResult.remainingYears ?? Math.round(Math.max(0, gratuityResult.yearsOfService - 5) * 100) / 100,
                           })}
                         </div>
                         <div className="font-medium">
@@ -1514,6 +1608,10 @@ export default function Payroll() {
         </TabsContent>
 
         {/* ─── Leave, loans and final settlement (Phase 8 D2) ── */}
+        <TabsContent value="payslips">
+          <PayslipsTab runs={payrollRuns} ownOnly={!canWriteHr} />
+        </TabsContent>
+
         <TabsContent value="leave">
           {companyId && <LeaveTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
         </TabsContent>
@@ -1525,22 +1623,7 @@ export default function Payroll() {
         </TabsContent>
       </Tabs>
 
-      <PayrollRegisterDialog runId={registerRunId} onClose={() => setRegisterRunId(null)} />
-      {companyId && <RecordPaymentDialog companyId={companyId} runId={payRunId} onClose={() => setPayRunId(null)} />}
-      <AlertDialog open={!!deleteRunId} onOpenChange={(open) => !open && setDeleteRunId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{tr("deleteRunTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{tr("deleteRunBody")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteRunId && deleteRunMutation.mutate(deleteRunId)} data-testid="button-confirm-delete-run">
-              {tr("deleteRun")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {runLevelDialogs}
 
       {/* ─── Employee Create/Edit Dialog ──────────────── */}
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>
@@ -1810,6 +1893,48 @@ export default function Payroll() {
                         <Input type="number" min="0" step="0.01" {...field} data-testid="input-opening-gratuity-provision" />
                       </FormControl>
                       <p className="text-xs text-muted-foreground">{tr("openingGratuityProvisionHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingLeaveDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingLeaveDays")}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.5" {...field} data-testid="input-opening-leave-days" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingLeaveDaysHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingLeaveProvision"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingLeaveProvision")}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.01" {...field} data-testid="input-opening-leave-provision" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingLeaveProvisionHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingProvisionsAsOf"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingProvisionAsOf")}</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} value={field.value ?? ""} data-testid="input-opening-provision-asof" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingProvisionAsOfHint")}</p>
                       <FormMessage />
                     </FormItem>
                   )}

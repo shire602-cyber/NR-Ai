@@ -186,6 +186,8 @@ const en = {
   yeReopenDone: "Financial year reopened",
   yeNone: "No financial years to show yet.",
   yeFailed: "The year-end action failed",
+  yeBlockNotEnded: "The financial year has not ended yet.",
+  yeBlockDrafts: "{count} draft journal entries are dated in this year. Post or delete them first.",
   yeNoticeOpening: "Starting with balances from another system?",
   yeOpeningLink: "Enter opening balances",
 
@@ -231,7 +233,8 @@ const en = {
   obPosted: "Opening balances posted",
   obPostFailed: "Could not post the opening balances",
   obActiveTitle: "Opening balances are in place",
-  obActiveBody: "Opening balances as of {date} were posted. {invoices} open invoices and {bills} open bills came with them.",
+  obActiveBody:
+    "Opening balances as of {date} were posted. {invoices} open invoices and {bills} open bills came with them.",
   obReverse: "Reverse opening balances",
   obReverseTitle: "Reverse the opening balances?",
   obReverseBody:
@@ -421,6 +424,8 @@ const ar: Record<ComplianceKey, string> = {
   yeReopenDone: "تمت إعادة فتح السنة المالية",
   yeNone: "لا توجد سنوات مالية لعرضها بعد.",
   yeFailed: "فشل إجراء نهاية السنة",
+  yeBlockNotEnded: "لم تنتهِ السنة المالية بعد.",
+  yeBlockDrafts: "يوجد {count} قيد يومية مسوّدة مؤرخة في هذه السنة. رحّلها أو احذفها أولًا.",
   yeNoticeOpening: "تبدأ بأرصدة من نظام آخر؟",
   yeOpeningLink: "أدخل الأرصدة الافتتاحية",
 
@@ -465,7 +470,8 @@ const ar: Record<ComplianceKey, string> = {
   obPosted: "تم ترحيل الأرصدة الافتتاحية",
   obPostFailed: "تعذّر ترحيل الأرصدة الافتتاحية",
   obActiveTitle: "الأرصدة الافتتاحية قائمة",
-  obActiveBody: "رُحِّلت الأرصدة الافتتاحية كما في {date}. رافقتها {invoices} فاتورة مفتوحة و{bills} فاتورة مورد مفتوحة.",
+  obActiveBody:
+    "رُحِّلت الأرصدة الافتتاحية كما في {date}. رافقتها {invoices} فاتورة مفتوحة و{bills} فاتورة مورد مفتوحة.",
   obReverse: "عكس الأرصدة الافتتاحية",
   obReverseTitle: "عكس الأرصدة الافتتاحية؟",
   obReverseBody:

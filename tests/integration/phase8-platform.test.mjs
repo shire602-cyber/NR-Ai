@@ -1411,7 +1411,7 @@ async function frontendHelpContent() {
   const routeMap = fs.readFileSync(path.join(repo, "client", "src", "lib", "help", "route-map.ts"), "utf8");
   const exact = Object.fromEntries([...routeMap.matchAll(/^\s+"(\/[^"]*)":\s*"([^"]+)",$/gm)].map((m) => [m[1], m[2]]));
   const prefixes = [...routeMap.matchAll(/\["(\/[^"]+\/)",\s*"([^"]+)"\]/g)].map((m) => [m[1], m[2]]);
-  const resolve = (p) => exact[p] ?? prefixes.find(([pre]) => p.startsWith(pre))?.[1] ?? null;
+  const resolve = (url) => { const p = url.split(/[?#]/)[0]; return exact[p] ?? prefixes.find(([pre]) => p.startsWith(pre))?.[1] ?? null; }; // the app strips the query too (helpSlugForPath)
   const nav = fs.readFileSync(path.join(repo, "client", "src", "components", "layout", "nav-config.ts"), "utf8");
   const urls = [...new Set([...nav.matchAll(/url:\s*"(\/[^"]*)"/g)].map((m) => m[1]).concat("/dashboard"))];
   const unmapped = urls.filter((u) => !resolve(u) || !en.includes(resolve(u)));

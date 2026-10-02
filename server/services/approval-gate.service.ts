@@ -449,6 +449,8 @@ async function restoreRejectedDocument(doc: ApprovalDocument, actor: GateActor, 
       return;
     case "manual_journal":
       return; // stays a draft; the closed request releases the edit lock
+    case "final_settlement":
+      return; // stays a draft; resubmit to ask again
   }
 }
 

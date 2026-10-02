@@ -80,7 +80,7 @@ interface InvoiceRow {
   outstandingAmount?: number;
 }
 
-export function InvoiceAllocationPanel(props: PanelBase) {
+export function InvoiceAllocationPanel(props: PanelBase & { exchangeRate?: number }) {
   const tr = messages.useT();
   const locale = useI18n((s) => s.locale);
   const line = Math.abs(props.transaction.amount);
@@ -195,7 +195,7 @@ export function InvoiceAllocationPanel(props: PanelBase) {
               type="button"
               size="sm"
               disabled={!canPost || post.isPending}
-              onClick={() => post.mutate({ matchedType: "invoices", allocations: allocations.map((a) => ({ invoiceId: a.invoiceId, amount: a.amount })), keepAsCredit: keepCredit && state.excess > 0.004 ? true : undefined })}
+              onClick={() => post.mutate({ matchedType: "invoices", allocations: allocations.map((a) => ({ invoiceId: a.invoiceId, amount: a.amount })), keepAsCredit: keepCredit && state.excess > 0.004 ? true : undefined, ...(props.exchangeRate ? { exchangeRate: props.exchangeRate } : {}) })}
               data-testid="button-post-allocation"
             >
               {post.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}

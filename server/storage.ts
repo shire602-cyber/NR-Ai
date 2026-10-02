@@ -276,6 +276,7 @@ import { getInvoiceBalance } from "./services/invoice-outstanding.db";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 import { lockAndCheckMonth, type PostingBypass } from "./services/posting-lock";
+import { markEmployeeRefused } from "./middleware/employee-denial";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
@@ -1454,14 +1455,31 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
+  /**
+   * Whether the user may work in the company. An employee-role membership is refused unless the caller opts in with
+   * `{ employeeSelfService: true }`: that role only covers the user's own HR records, so only routes that serve those
+   * records opt in. The third argument is the caller's firm role (as before) or the options object.
+   */
   async hasCompanyAccess(
     userId: string,
     companyId: string,
-    firmRole?: string | null
+    firmRoleOrOptions?: string | null | { employeeSelfService?: boolean; firmRole?: string | null }
   ): Promise<boolean> {
-    // Direct company_users membership.
-    if (await this.getUserRole(companyId, userId)) return true;
+    const options = firmRoleOrOptions !== null && typeof firmRoleOrOptions === "object" ? firmRoleOrOptions : undefined;
+    const firmRole = options ? options.firmRole : (firmRoleOrOptions as string | null | undefined);
 
+    // Direct company_users membership.
+    const membership = await this.getUserRole(companyId, userId);
+    if (membership && (membership.role !== "employee" || options?.employeeSelfService === true)) return true;
+
+    const allowed = await this.hasFirmAccess(userId, companyId, firmRole);
+    // Flag the refusal so the route answers ROLE_REQUIRED (see middleware/employee-denial.ts).
+    if (!allowed && membership) markEmployeeRefused();
+    return allowed;
+  }
+
+  /** Firm staff access to a client company (a firm owner, or a firm admin with an explicit assignment). */
+  private async hasFirmAccess(userId: string, companyId: string, firmRole?: string | null): Promise<boolean> {
     // Look up firm role if caller didn't pass it. This makes all existing
     // call sites firm-aware without per-route changes.
     let role: string | null = firmRole ?? null;
@@ -5251,8 +5269,23 @@ export class DatabaseStorage implements IStorage {
         e.code = built.code;
         throw e;
       }
+      // Teardown 7 F1: money received into a foreign-currency bank account carries its own currency amount and the rate it
+      // was booked at, so the account's ledger can be read (and reconciled) in that currency.
+      let bankCurrency = String(input.paymentAccountCurrency || "").toUpperCase();
+      if (!bankCurrency) {
+        // a payment keyed by hand names only the ledger account: the managed bank account behind it knows the currency
+        const cur: any = await tx.execute(sql`SELECT currency FROM bank_accounts WHERE company_id = ${input.companyId} AND gl_account_id = ${input.paymentAccountId} LIMIT 1`);
+        bankCurrency = String(((cur.rows ?? cur) as Array<{ currency: string | null }>)[0]?.currency || "").toUpperCase();
+      }
+      const foreignBank = bankCurrency !== "" && bankCurrency !== "AED" && bankCurrency === String(lockedInvoice.currency || "").toUpperCase();
+      const foreignReceived = Math.round((allocation.appliedToReceivable + allocation.customerCredit) * 100) / 100;
       for (const line of built.lines) {
-        await tx.insert(journalLines).values({ entryId: entry.id, ...line });
+        const onBank = foreignBank && line.accountId === input.paymentAccountId && line.debit > 0;
+        await tx.insert(journalLines).values({
+          entryId: entry.id,
+          ...line,
+          ...(onBank ? { foreignCurrency: bankCurrency, foreignDebit: foreignReceived, exchangeRate: payRate } : {}),
+        });
       }
 
       // Record the payment row.

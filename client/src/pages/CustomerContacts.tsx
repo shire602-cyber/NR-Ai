@@ -78,6 +78,8 @@ import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 import { CustomFieldsEditor } from "@/components/sales/CustomFieldsEditor";
 import { useCustomFieldDraft } from "@/components/sales/useCustomFieldDraft";
 import { salesErrorMessage, salesKeys, type PriceListSummary } from "@/lib/sales-api";
+import { EmirateSelect } from "@/components/sales/EmirateSelect";
+import { emirateValue } from "@/lib/emirates";
 
 interface ImportResult {
   message: string;
@@ -143,7 +145,7 @@ function ContactForm({
 }) {
   const tr = pageMessages.useT();
   const salesTr = salesMessages.useT();
-  const { companyId: formCompanyId } = useDefaultCompany();
+  const { companyId: formCompanyId, company: formCompany } = useDefaultCompany();
   const customFieldDraft = useCustomFieldDraft(formCompanyId, "contact", contact?.id);
   const { data: priceLists = [] } = useQuery<PriceListSummary[]>({
     queryKey: salesKeys.priceLists(formCompanyId),
@@ -160,6 +162,7 @@ function ContactForm({
     city: contact?.city || "",
     country: contact?.country || "UAE",
     contactType: ((contact as { contactType?: string } | null | undefined)?.contactType as string) || "customer",
+    emirate: emirateValue((contact as { emirate?: string | null } | null | undefined)?.emirate) as string | null,
   });
 
   return (
@@ -249,6 +252,17 @@ function ContactForm({
           />
         </div>
       </div>
+      <div className="space-y-2">
+        <Label htmlFor="contact-emirate">{salesTr("emirate")}</Label>
+        <EmirateSelect
+          id="contact-emirate"
+          value={formData.emirate}
+          onChange={(v) => setFormData({ ...formData, emirate: v })}
+          companyEmirate={(formCompany as { emirate?: string | null } | null | undefined)?.emirate}
+          testId="select-contact-emirate"
+        />
+        <p className="text-xs text-muted-foreground">{salesTr("contactEmirateHelp")}</p>
+      </div>
       {priceLists.length > 0 && (
         <div className="space-y-2">
           <Label>{salesTr("contactPriceList")}</Label>
@@ -283,7 +297,7 @@ function ContactForm({
               __saveCustomFields: customFieldDraft.dirty ? customFieldDraft.save : undefined,
             })
           }
-          disabled={!formData.name || (formData.contactType !== "vendor" && !formData.email)}
+          disabled={!formData.name}
           data-testid="button-save-contact"
         >
           {contact ? tr("update") : tr("create")} {tr("contact")}

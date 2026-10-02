@@ -34,7 +34,7 @@ import {
   recordJournalCreateApproval,
   resolveActor,
 } from "../services/approval-gate.service";
-import { parseCalendarDay } from "../utils/date";
+import { calendarDayYmd, parseCalendarDay } from "../utils/date";
 
 const log = createLogger("journal");
 
@@ -653,7 +653,7 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { reason } = req.body;
+      const { reason, date: reversalDateInput } = req.body;
 
       const entry = await findJournalEntryForUser(userId, id);
       if (!entry) {
@@ -675,7 +675,18 @@ export function registerJournalRoutes(app: Express) {
       // The reversal posts a new JE on `now`. Block if today is in a locked
       // period — reversing a posted entry into a closed period must go through
       // an unlock-and-amend flow instead.
-      const now = new Date();
+      // The reversal date follows the document-date contract (a calendar day, or an instant read as its UAE day); omitted it is today.
+      // It cannot be in the future or before the entry it reverses, and its month must be open (the usual PERIOD_LOCKED refusal).
+      let now = new Date();
+      if (reversalDateInput !== undefined && reversalDateInput !== null && String(reversalDateInput).trim() !== "") {
+        const parsed = parseCalendarDay(reversalDateInput);
+        if (!parsed) return res.status(400).json({ message: "date must be a calendar day (YYYY-MM-DD)", code: "INVALID_DATE" });
+        if (calendarDayYmd(parsed) < calendarDayYmd(parseCalendarDay(entry.date) ?? new Date(entry.date))) {
+          return res.status(422).json({ message: "A reversal cannot be dated before the entry it reverses.", code: "REVERSAL_BEFORE_ORIGINAL" });
+        }
+        assertNotFutureDate(parsed);
+        now = parsed;
+      }
       await assertPeriodNotLocked(entry.companyId, now);
 
       // Get original lines

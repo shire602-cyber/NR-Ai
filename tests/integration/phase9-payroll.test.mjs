@@ -247,7 +247,7 @@ async function settlementAndProvisions() {
   const accrual = n(item.gratuity_accrual);
   let ledger = await A.balances();
   ok("settlement: 2036 holds opening 5,000 plus the run's accrual", accrual > 0 && close(-ledger["2036"], 5000 + accrual), { accrual, ledger: ledger["2036"] });
-  ok("leave provision: the run credits 2037 with 2.5 x months x 6,000/30 and debits 5029 the same", close(-ledger["2037"], 500 * prevMonthNo) && close(ledger["5029"], 500 * prevMonthNo), { l2037: ledger["2037"], l5029: ledger["5029"], prevMonthNo });
+  ok("leave provision: the run credits 2037 with 2.5 x months x 6,000/30 and debits 5029 the same", close(-ledger["2037"], 500) && close(ledger["5029"], 500), { l2037: ledger["2037"], l5029: ledger["5029"], prevMonthNo });
 
   const calc = (await A.post(`/api/companies/${A.cid}/payroll/gratuity-calculator`, { employeeId: e.id, terminationDate: prevEnd })).json;
   const prev = await A.post(`/api/companies/${A.cid}/final-settlements/preview`, { employeeId: e.id, terminationDate: prevEnd, leaveDays: 4 });

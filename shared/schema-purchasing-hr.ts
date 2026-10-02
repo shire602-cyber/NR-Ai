@@ -261,6 +261,11 @@ export const employees = pgTable("employees", {
   // Phase 9 (0126)
   molPersonId: text("mol_person_id"),
   openingGratuityProvision: money("opening_gratuity_provision").notNull().default(0),
+  // Teardown 7 (0128): what the company already held for this employee when payroll started here, as of a date
+  openingLeaveDays: num("opening_leave_days").notNull().default(0),
+  openingLeaveProvision: money("opening_leave_provision").notNull().default(0),
+  openingProvisionsAsOf: date("opening_provisions_as_of", { mode: "string" }),
+  priorServiceCatchupAt: timestamp("prior_service_catchup_at"),
 });
 export type EmployeeRow = typeof employees.$inferSelect;
 
@@ -333,7 +338,7 @@ export type PayrollItemRow = typeof payrollItems.$inferSelect;
 // ===========================
 // Approvals (migration 0108)
 // ===========================
-export const APPROVAL_DOCUMENT_TYPES = ["bill", "expense_claim", "purchase_order", "payroll_run", "manual_journal"] as const;
+export const APPROVAL_DOCUMENT_TYPES = ["bill", "expense_claim", "purchase_order", "payroll_run", "manual_journal", "final_settlement"] as const;
 export type ApprovalDocumentType = (typeof APPROVAL_DOCUMENT_TYPES)[number];
 export const APPROVER_ROLES = ["accountant", "cfo", "owner"] as const;
 export type ApproverRole = (typeof APPROVER_ROLES)[number];
@@ -708,6 +713,8 @@ export const employeeFinalSettlements = pgTable("employee_final_settlements", {
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // 0128: when a draft was last recalculated
+  calculatedAt: timestamp("calculated_at"),
 });
 export type EmployeeFinalSettlementRow = typeof employeeFinalSettlements.$inferSelect;
 

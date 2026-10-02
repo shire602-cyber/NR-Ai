@@ -302,9 +302,9 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
   },
   {
     code: "2050",
-    nameEn: "Deferred Revenue",
-    nameAr: "الإيرادات المؤجلة",
-    description: "Payments received before goods/services delivered",
+    nameEn: "Customer Credit",
+    nameAr: "رصيد دائن للعملاء",
+    description: "Payments received above what the customer owed (overpayments), refundable from the customer's page",
     type: "liability",
     subType: "current_liability",
     isVatAccount: false,

@@ -101,7 +101,8 @@ const detailRows = (res) => (res.json?.rows ?? []).filter((r) => r.kind === "det
 const byCode = (res, code) => detailRows(res).find((r) => r.cells.code === code);
 
 async function main() {
-  db = new pg.Client({ connectionString: DB_URL });
+  // UTC session like the server's pool (db.ts): `timestamp` columns hold UTC wall time, so a raw INSERT's now() default must be UTC too (the dev Postgres runs in Asia/Dubai: its now() is 4 hours ahead and lands rows on the next UAE day after 20:00).
+  db = new pg.Client({ connectionString: DB_URL, options: "-c timezone=UTC" });
   await db.connect();
   try {
     await engineAndStatements();
@@ -566,7 +567,7 @@ async function consolidation() {
 async function auditAndAbuse() {
   const U = await newCompany("audit");
   await db.query(`INSERT INTO activity_logs (user_id, company_id, action, entity_type, entity_id, description, ip_address, created_at)
-                  SELECT $1, $2, CASE WHEN g % 2 = 0 THEN 'invoice.create' ELSE 'bill.approve' END, 'invoice', gen_random_uuid()::text, 'Row ' || g, '10.0.0.1', now() - (g || ' seconds')::interval
+                  SELECT $1, $2, CASE WHEN g % 2 = 0 THEN 'invoice.create' ELSE 'bill.approve' END, 'invoice', gen_random_uuid()::text, 'Row ' || g, '10.0.0.1', (now() AT TIME ZONE 'UTC') - (g || ' seconds')::interval
                     FROM generate_series(1, 1200) g`, [U.userId, U.cid]);
   let r = await U.run("audit-trail", `from=${yearStart}&to=${today}&limit=500`);
   ok("A1: Audit Trail 1,200 rows: page 1 has 500 rows and total 1,200", r.status === 200 && r.json?.rows?.length === 500 && r.json?.page?.total >= 1200, r.json?.page);
@@ -594,7 +595,7 @@ async function auditAndAbuse() {
   ok("abuse: the same report exports to XLSX", xr.status === 200, xr.status);
 
   // 5,001-row PDF is refused, CSV is fine
-  await db.query(`INSERT INTO journal_entries (company_id, entry_number, date, memo, status, source, created_by) SELECT $1, 'BIG-' || g, now(), 'bulk', 'posted', 'manual', $2 FROM generate_series(1, 2501) g`, [X.cid, X.userId]);
+  await db.query(`INSERT INTO journal_entries (company_id, entry_number, date, memo, status, source, created_by) SELECT $1, 'BIG-' || g, (now() AT TIME ZONE 'UTC'), 'bulk', 'posted', 'manual', $2 FROM generate_series(1, 2501) g`, [X.cid, X.userId]);
   await db.query(`INSERT INTO journal_lines (entry_id, account_id, debit, credit) SELECT je.id, $2, 1, 0 FROM journal_entries je WHERE je.company_id = $1 AND je.entry_number LIKE 'BIG-%'`, [X.cid, X.acct("1020").id]);
   await db.query(`INSERT INTO journal_lines (entry_id, account_id, debit, credit) SELECT je.id, $2, 0, 1 FROM journal_entries je WHERE je.company_id = $1 AND je.entry_number LIKE 'BIG-%'`, [X.cid, X.acct("4010").id]);
   r = await X.run("account-transactions", `from=${yearStart}&to=${today}&format=pdf`, { raw: true });
@@ -731,7 +732,7 @@ async function schedulesAndAccess() {
   r = await api("POST", `/api/companies/${S.cid}/report-schedules`, { token: employee.json.token, body: body() });
   ok("R1: an employee cannot create a schedule (403)", r.status === 403, { s: r.status, j: r.json });
   r = await api("GET", `/api/companies/${S.cid}/report-schedules`, { token: employee.json.token });
-  ok("R1: but can list them (members see what is scheduled)", r.status === 200, r.status);
+  ok("R1: nor list them (the employee role only covers its own HR records: 403 ROLE_REQUIRED)", r.status === 403 && r.json?.code === "ROLE_REQUIRED", { s: r.status, j: r.json });
   const acct = await api("POST", "/api/auth/register", { body: { name: "acct", email: `acct_${rnd}@example.com`, password: "Password123!" } });
   await db.query(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1,$2,'accountant')`, [S.cid, acct.json.user.id]);
   r = await api("GET", `/api/companies/${S.cid}/reports/run/payroll-register?from=${yearStart}&to=${today}`, { token: acct.json.token });
@@ -1143,11 +1144,12 @@ async function fixRound() {
   await db.query(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1,$2,'employee')`, [R.cid, emp.json.user.id]);
   await post(`/api/companies/${R.cid}/report-schedules`, { reportId: "payroll-register", params: { rangePreset: "lastMonth" }, format: "csv", lang: "en", cadence: "monthly", dayOfMonth: 5, hourDubai: 7, recipientUserIds: [R.userId] }, R.token);
   const mine = (await api("GET", `/api/companies/${R.cid}/report-schedules`, { token: R.token })).json;
-  const theirs = (await api("GET", `/api/companies/${R.cid}/report-schedules`, { token: emp.json.token })).json;
-  ok("fix 13: an employee does not see schedules of sensitive reports (the owner does)", mine.some((x) => x.reportId === "payroll-register") && !theirs.some((x) => x.reportId === "payroll-register") && theirs.some((x) => x.reportId === "trial-balance"), { mine: mine.map((x) => x.reportId), theirs: theirs.map((x) => x.reportId) });
+  const theirsRes = await api("GET", `/api/companies/${R.cid}/report-schedules`, { token: emp.json.token });
+  // The employee role is kept out of the schedules altogether (employee-denial middleware), so it cannot see the sensitive ones either.
+  ok("fix 13: an employee sees no schedules (403 ROLE_REQUIRED), the owner sees the payroll one", mine.some((x) => x.reportId === "payroll-register") && theirsRes.status === 403 && theirsRes.json?.code === "ROLE_REQUIRED", { mine: mine.map((x) => x.reportId), s: theirsRes.status, j: theirsRes.json });
   // pending bills paginate instead of being capped at 1,000
   const Q = await newCompany("fixpend");
-  await db.query(`INSERT INTO vendor_bills (company_id, vendor_name, bill_date, due_date, subtotal, vat_amount, total_amount, status) SELECT $1, 'Pending ' || g, now(), now(), 10, 0.5, 10.5, 'pending' FROM generate_series(1, 1100) g`, [Q.cid]);
+  await db.query(`INSERT INTO vendor_bills (company_id, vendor_name, bill_date, due_date, subtotal, vat_amount, total_amount, status) SELECT $1, 'Pending ' || g, (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC'), 10, 0.5, 10.5, 'pending' FROM generate_series(1, 1100) g`, [Q.cid]);
   r = await Q.run("payables-detail", `asOf=${today}&limit=1000&offset=1000`);
   ok("fix 13: 1,100 pending bills are all reachable by paging (total >= 1,100, no silent cap)", r.status === 200 && r.json?.page?.total >= 1100 && detailRows(r).length >= 100, r.json?.page);
   // drill ids

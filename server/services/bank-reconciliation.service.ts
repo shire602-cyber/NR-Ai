@@ -57,7 +57,7 @@ async function loadStatement(
   const from = account.reconcileFrom ? ymd(account.reconcileFrom) : null;
   // A foreign-currency account is reconciled in its own currency. Lines that carry the foreign amount use it; a line that
   // was keyed in AED only (an opening balance, a plain journal) is converted at the company rate of its day; a
-  // revaluation moves AED only and has no foreign amount at all, so it is left out.
+  // revaluation (ours, or one keyed by hand as Dr bank / Cr 4090) moves AED only: a rate difference, left out.
   const foreignExpr = sql`CASE WHEN jl.foreign_currency = ${currency} THEN COALESCE(jl.foreign_debit, 0) - COALESCE(jl.foreign_credit, 0) ELSE 0 END`;
   const aedOnlyExpr = sql`CASE WHEN jl.foreign_currency IS NULL OR jl.foreign_currency <> ${currency} THEN jl.debit - jl.credit ELSE 0 END`;
   const rateCache = new Map<string, number | null>();
@@ -75,6 +75,10 @@ async function loadStatement(
              SUM(${aedOnlyExpr})::float8 AS a_net,
              EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted' AND ${sql.raw(dubaiDaySql("rv.date"))} <= ${asOf}::date) AS reversed,
              (je.reversed_entry_id IS NOT NULL) AS is_reversal,
+             -- every other line of the entry is an exchange gain or loss (4090 / 5140): a revaluation keyed by hand, a rate difference
+             (EXISTS (SELECT 1 FROM journal_lines jo JOIN accounts ao ON ao.id = jo.account_id WHERE jo.entry_id = je.id AND ao.code IN ('4090', '5140'))
+              AND NOT EXISTS (SELECT 1 FROM journal_lines jo JOIN accounts ao ON ao.id = jo.account_id
+                               WHERE jo.entry_id = je.id AND jo.account_id <> ${account.glAccountId} AND ao.code NOT IN ('4090', '5140'))) AS fx_only,
              EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND ${linkedTo("bt", "je")}
                        AND bt.bank_statement_account_id = ${account.id} AND ${sql.raw(dubaiDaySql("bt.transaction_date"))} <= ${asOf}::date) AS cleared
         FROM journal_lines jl
@@ -92,7 +96,7 @@ async function loadStatement(
     if (foreign) {
       net = Number(r.f_net) || 0;
       const aedOnly = Number(r.a_net) || 0;
-      if (Math.abs(aedOnly) > 0.005 && !String(r.source).startsWith("fx_revaluation")) {
+      if (Math.abs(aedOnly) > 0.005 && !String(r.source).startsWith("fx_revaluation") && !r.fx_only) {
         const rate = await rateOn(r.day);
         if (rate && rate > 0) net += aedOnly / rate;
         else if (!warnings.includes("FX_RATE_MISSING")) warnings.push("FX_RATE_MISSING");

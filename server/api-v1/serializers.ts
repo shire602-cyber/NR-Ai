@@ -19,7 +19,7 @@ export const isoTs = (ts: string | null | undefined): string | null => (ts ? `${
 const DAY = (col: string) => `to_char(${col}, 'YYYY-MM-DD')`;
 
 // ───────────────────────── Contacts ─────────────────────────
-export const CONTACT_COLUMNS = `c.id, c.name, c.name_ar, c.contact_type, c.email, c.phone, c.trn_number, c.address, c.city, c.country,
+export const CONTACT_COLUMNS = `c.id, c.name, c.name_ar, c.contact_type, c.email, c.phone, c.trn_number, c.address, c.city, c.emirate, c.country,
   c.contact_person, c.payment_terms, c.notes, c.is_active, ${TS_SQL("c.created_at")} AS ts`;
 export function contactFromRow(r: any) {
   return {
@@ -32,6 +32,7 @@ export function contactFromRow(r: any) {
     trn: r.trn_number ?? null,
     address: r.address ?? null,
     city: r.city ?? null,
+    emirate: r.emirate ?? null,
     country: r.country ?? null,
     contactPerson: r.contact_person ?? null,
     paymentTermsDays: r.payment_terms ?? null,
@@ -95,7 +96,7 @@ export async function loadItem(companyId: string, id: string) {
 }
 
 // ───────────────────────── Invoices ─────────────────────────
-export const INVOICE_COLUMNS = `i.id, i.number, i.status, i.invoice_type, i.contact_id, i.customer_name, i.customer_trn,
+export const INVOICE_COLUMNS = `i.id, i.number, i.status, i.invoice_type, i.contact_id, i.customer_name, i.customer_trn, i.emirate,
   ${DAY("i.date")} AS day, ${DAY("i.due_date")} AS due_day, i.currency, i.exchange_rate, i.subtotal, i.vat_amount, i.total,
   ${TS_SQL("i.created_at")} AS ts`;
 export function invoiceFromRow(r: any) {
@@ -107,6 +108,7 @@ export function invoiceFromRow(r: any) {
     contactId: r.contact_id ?? null,
     customerName: r.customer_name,
     customerTrn: r.customer_trn ?? null,
+    emirate: r.emirate ?? null,
     date: r.day,
     dueDate: r.due_day ?? null,
     currency: r.currency,

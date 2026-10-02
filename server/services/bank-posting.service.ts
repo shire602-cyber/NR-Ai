@@ -31,6 +31,7 @@ import {
   linkedTo,
   matchPatch,
   periodLockedCode,
+  receiptRate,
   readTransaction,
   rowsOf,
   save,
@@ -54,6 +55,8 @@ export interface MatchInput {
   allocations?: Array<{ invoiceId: string; amount?: number }>;
   /** invoice / invoices: keep what is left after the invoices as customer credit (2050) instead of refusing it. */
   keepAsCredit?: boolean;
+  /** invoice / invoices on a foreign-currency account: AED per unit on the receipt day (default: the company's rate for that day). */
+  exchangeRate?: number | null;
   /** split: one bank line over several accounts. */
   lines?: Array<{ accountId: string; amount?: number; percent?: number; description?: string | null }>;
 }
@@ -107,6 +110,7 @@ async function matchInvoice(tx: Tx, ctx: PostCtx, txn: BankTransaction, bank: { 
         allocations: [{ invoiceId: invoice.id }],
         keepAsCredit: true,
         paymentDate: input.paymentDate,
+        exchangeRate: input.exchangeRate,
         confidence: input.confidence,
       });
       return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "invoice" };
@@ -117,6 +121,7 @@ async function matchInvoice(tx: Tx, ctx: PostCtx, txn: BankTransaction, bank: { 
     });
   }
   const { date } = await resolveSettlementDate(ctx.companyId, { requested: input.paymentDate, fallback: txn.transactionDate });
+  const paymentRate = await receiptRate(ctx.companyId, bank.currency, date, input.exchangeRate);
 
   let result;
   try {
@@ -130,6 +135,7 @@ async function matchInvoice(tx: Tx, ctx: PostCtx, txn: BankTransaction, bank: { 
       notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),
       paymentAccountId: bank.glAccountId,
       paymentAccountCurrency: bank.currency,
+      paymentExchangeRate: paymentRate,
       receivableAccountId: ar.id,
       createdBy: ctx.userId,
     });
@@ -310,6 +316,7 @@ async function applyMatchLocked(ctx: PostCtx, input: MatchInput): Promise<MatchR
           allocations: input.allocations ?? [{ invoiceId: input.targetId }],
           keepAsCredit: input.keepAsCredit,
           paymentDate: input.paymentDate,
+          exchangeRate: input.exchangeRate,
           confidence: input.confidence,
         });
         return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "invoices" as const };

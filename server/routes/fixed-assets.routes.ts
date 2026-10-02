@@ -7,7 +7,9 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
-import { isBankOrCashAccount } from "../services/bank-posting-common";
+import { disposeAsset, previewDisposal } from "../services/fixed-asset-disposal.service";
+import { linkAssetToSource, resolveSourceLink, unlinkAsset } from "../services/fixed-asset-link.service";
+import { isPeriodLocked } from "../services/month-end.service";
 import { isNonDepreciableCategory } from "../services/fixed-asset-depreciation-math";
 import {
   depreciateThrough,
@@ -39,6 +41,17 @@ async function countMonthsAlreadyDepreciated(
     [assetId, beforeYear, beforeMonth]
   );
   return result.rows[0]?.n ?? 0;
+}
+
+/** The financial year that is already closed and contains the day, if any. */
+async function closedYearContaining(companyId: string, day: string): Promise<{ year: number; start: string; end: string } | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const r = await pool.query(
+    `SELECT to_char(year_start, 'YYYY-MM-DD') AS s, to_char(year_end, 'YYYY-MM-DD') AS e FROM year_end_closes
+      WHERE company_id = $1 AND status = 'closed' AND year_start <= $2::date AND year_end >= $2::date LIMIT 1`,
+    [companyId, day]
+  );
+  return r.rows[0] ? { year: Number(String(r.rows[0].e).slice(0, 4)), start: r.rows[0].s, end: r.rows[0].e } : null;
 }
 
 export function registerFixedAssetRoutes(app: Express) {
@@ -120,6 +133,9 @@ export function registerFixedAssetRoutes(app: Express) {
         serialNumber,
         notes,
         paymentAccountId,
+        billId,
+        billLineId,
+        journalEntryId,
       } = req.body;
 
       // Land has no useful life, so usefulLifeYears is optional for it but
@@ -149,9 +165,36 @@ export function registerFixedAssetRoutes(app: Express) {
         return res.status(400).json({ message: "salvageValue cannot exceed purchaseCost" });
       }
 
-      // Block creating an asset purchased inside a locked period — the
-      // capitalization/depreciation journal entries derive from purchase_date.
-      await assertPeriodNotLocked(companyId, purchaseDate);
+      // An asset recorded by a bill or journal line is already in the books: nothing is posted for it (Teardown 7 F3).
+      const wantsLink = !!(billId || journalEntryId);
+      if (wantsLink && paymentAccountId) {
+        return res.status(422).json({
+          message: "An asset linked to a bill or journal is already in the books: do not also choose a payment account (its cost would be posted twice).",
+          code: "LINK_AND_PAYMENT_ACCOUNT",
+        });
+      }
+      const sourceLink = wantsLink ? await resolveSourceLink({ companyId, cost, billId, billLineId, journalEntryId }) : null;
+
+      // Only a capitalization journal posts into the purchase date's period, so only it needs that period open. Registering
+      // an asset bought in a closed year (or a locked month) without a journal posts nothing there: it succeeds and says so
+      // (F7); the depreciation of the closed months is caught up later in the first open period, never inside the closed one.
+      const purchaseDay = String(purchaseDate).slice(0, 10);
+      const closedYear = await closedYearContaining(companyId, purchaseDay);
+      const warnings: Array<{ code: string; message: string; year?: number }> = [];
+      if (paymentAccountId) {
+        if (closedYear) {
+          return res.status(422).json({
+            message: `The purchase date is in the closed financial year ${closedYear.year}: the capitalization entry cannot be posted there. Register the asset without a payment account and link it to the bill or journal that bought it.`,
+            code: "ASSET_IN_CLOSED_YEAR",
+            details: { year: closedYear.year, yearStart: closedYear.start, yearEnd: closedYear.end },
+          });
+        }
+        await assertPeriodNotLocked(companyId, purchaseDate);
+      } else if (closedYear) {
+        warnings.push({ code: "ASSET_IN_CLOSED_YEAR", year: closedYear.year, message: `The purchase date is in the closed financial year ${closedYear.year}. Nothing was posted there; its depreciation is caught up in the first open period.` });
+      } else if (await isPeriodLocked(companyId, purchaseDay)) {
+        warnings.push({ code: "ASSET_PERIOD_LOCKED_NO_POSTING", message: "The purchase date is in a locked period. Nothing was posted there; its depreciation is caught up in the first open period." });
+      }
 
       // Resolve the payment account up-front so we can fail fast before
       // inserting the asset row when an invalid account id is supplied.
@@ -167,13 +210,13 @@ export function registerFixedAssetRoutes(app: Express) {
       }
 
       const nbv = cost - 0; // Initial NBV = cost (no depreciation yet)
-      const needsCapJe = !paymentAccountId;
+      const needsCapJe = !paymentAccountId && !sourceLink;
       // land is not depreciated; the column is NOT NULL, so 0 stands for "no useful life" (category land skips every month)
       const lifeYears = isLand ? 0 : usefulLifeYears;
 
       const result = await pool.query(
-        `INSERT INTO fixed_assets (company_id, asset_name, asset_name_ar, asset_number, category, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, accumulated_depreciation, net_book_value, location, serial_number, notes, needs_capitalization_je)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12, $13, $14, $15)
+        `INSERT INTO fixed_assets (company_id, asset_name, asset_name_ar, asset_number, category, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, accumulated_depreciation, net_book_value, location, serial_number, notes, needs_capitalization_je, source_bill_id, source_journal_entry_id, source_journal_line_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING *`,
         [
           companyId,
@@ -191,6 +234,9 @@ export function registerFixedAssetRoutes(app: Express) {
           serialNumber || null,
           notes || null,
           needsCapJe,
+          sourceLink?.billId ?? null,
+          sourceLink?.journalEntryId ?? null,
+          sourceLink?.journalLineId ?? null,
         ]
       );
 
@@ -267,7 +313,7 @@ export function registerFixedAssetRoutes(app: Express) {
         },
         "Fixed asset created"
       );
-      res.json({ ...asset, capitalizationJournalEntryId });
+      res.json({ ...asset, capitalizationJournalEntryId, linkedDocument: sourceLink?.document ?? null, warnings });
     })
   );
 
@@ -762,12 +808,48 @@ export function registerFixedAssetRoutes(app: Express) {
   // Disposal
   // =====================================
 
-  // Record disposal of an asset and post the disposal journal entry:
-  //   Dr Cash                        proceeds
-  //   Dr Accumulated Depreciation    accDep
-  //   Dr Loss on Asset Disposal      loss   (if proceeds < NBV)
-  //                            Cr Fixed Assets at Cost     cost
-  //                            Cr Gain on Asset Disposal   gain   (if proceeds > NBV)
+  // Link an asset to the posted bill or journal that bought it (F3), or take the link off again. Posts nothing.
+  const assetOfCompany = async (req: Request, res: Response): Promise<{ id: string; companyId: string } | null> => {
+    const found = await pool.query(`SELECT id, company_id FROM fixed_assets WHERE id = $1`, [req.params.id]);
+    if (found.rows.length === 0) {
+      res.status(404).json({ message: "Fixed asset not found" });
+      return null;
+    }
+    if (!(await storage.hasCompanyAccess((req as any).user.id, found.rows[0].company_id))) {
+      res.status(403).json({ message: "Access denied" });
+      return null;
+    }
+    return { id: found.rows[0].id, companyId: found.rows[0].company_id };
+  };
+  app.post(
+    "/api/fixed-assets/:id/link",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const a = await assetOfCompany(req, res);
+      if (!a) return;
+      const { billId, billLineId, journalEntryId } = req.body ?? {};
+      const out = await linkAssetToSource(a.companyId, a.id, { billId, billLineId, journalEntryId });
+      await recordAudit({ userId: (req as any).user.id, companyId: a.companyId, action: "fixed_asset.link", entityType: "fixed_asset", entityId: a.id, after: { billId: out.link.billId, journalEntryId: out.link.journalEntryId }, req });
+      res.json({ ...out.asset, linkedDocument: out.link.document });
+    })
+  );
+  app.delete(
+    "/api/fixed-assets/:id/link",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const a = await assetOfCompany(req, res);
+      if (!a) return;
+      const row = await unlinkAsset(a.companyId, a.id);
+      await recordAudit({ userId: (req as any).user.id, companyId: a.companyId, action: "fixed_asset.unlink", entityType: "fixed_asset", entityId: a.id, after: {}, req });
+      res.json(row);
+    })
+  );
+
+  // Record the disposal of an asset (fixed-asset-disposal.service.ts): depreciation to the disposal date (the disposal month
+  // pro rata by days, anything posted beyond it reversed), gain or loss against the book value then, and, for a sale that is a
+  // supply, a tax invoice to the buyer so the output VAT reaches 2020 and the VAT return.
   app.post(
     "/api/fixed-assets/:id/dispose",
     authMiddleware,
@@ -775,291 +857,33 @@ export function registerFixedAssetRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-
-      const existing = await pool.query(`SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE id = $1`, [id]);
-      if (existing.rows.length === 0) {
-        return res.status(404).json({ message: "Fixed asset not found" });
-      }
-
-      const asset = withPurchaseDay(existing.rows[0]);
-      const hasAccess = await storage.hasCompanyAccess(userId, asset.company_id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (asset.status === "disposed") {
-        return res.status(400).json({ message: "Asset is already disposed" });
-      }
-
-      const { disposalDate, disposalAmount, notes, proceedsAccountId } = req.body;
-      if (!disposalDate) {
-        return res.status(400).json({ message: "disposalDate is required" });
-      }
-
-      // Disposal posts a JE on disposalDate — block locked periods.
-      await assertPeriodNotLocked(asset.company_id, disposalDate);
-
-      const dispDate = new Date(disposalDate);
-      if (isNaN(dispDate.getTime())) {
-        return res.status(400).json({ message: "disposalDate is not a valid date" });
-      }
-
-      const purchaseDate =
-        asset.purchase_date instanceof Date ? asset.purchase_date : new Date(asset.purchase_date);
-      if (dispDate.getTime() < purchaseDate.getTime()) {
-        return res.status(400).json({ message: "disposalDate cannot precede purchaseDate" });
-      }
-
-      const proceeds = round2(parseFloat(disposalAmount || 0));
-
-      // Resolve all required system accounts before opening the transaction so
-      // we fail fast on missing chart-of-accounts setup. We have to estimate
-      // gain/loss using a tentative NBV here — the catch-up depreciation may
-      // change accumulated_depreciation before the disposal JE actually posts.
-      const companyAccounts = await storage.getAccountsByCompanyId(asset.company_id);
-      const accDepAccount = companyAccounts.find((a) => a.code === "1240" && a.isSystemAccount);
-      const fixedAssetCostAccount = companyAccounts.find(
-        (a) => a.code === "1290" && a.isSystemAccount
+      const existing = await pool.query(`SELECT company_id FROM fixed_assets WHERE id = $1`, [id]);
+      if (existing.rows.length === 0) return res.status(404).json({ message: "Fixed asset not found" });
+      const companyId = existing.rows[0].company_id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) return res.status(403).json({ message: "Access denied" });
+      const { disposalDate, disposalAmount, notes, proceedsAccountId, buyerId, buyerName, vatTreatment, emirate } = req.body ?? {};
+      if (!disposalDate) return res.status(400).json({ message: "disposalDate is required" });
+      res.json(
+        await disposeAsset({ companyId, assetId: id, userId, disposalDate, disposalAmount, notes, proceedsAccountId, buyerId, buyerName, vatTreatment, emirate })
       );
-      const cashAccount = companyAccounts.find((a) => a.code === "1010" && a.isSystemAccount);
-      // Proceeds go to the bank or cash account the money arrived in (default: 1010 Cash). The account must be this
-      // company's, active, and of bank/cash type.
-      let proceedsAccount = cashAccount;
-      if (proceedsAccountId !== undefined && proceedsAccountId !== null && proceedsAccountId !== "") {
-        const managed = new Set(
-          (await storage.getBankAccountsByCompanyId(asset.company_id)).map((b) => b.glAccountId).filter((v): v is string => !!v)
-        );
-        const chosen = companyAccounts.find((a) => a.id === proceedsAccountId);
-        if (!chosen || chosen.isActive === false || chosen.isArchived === true || !isBankOrCashAccount(chosen, managed, chosen.id)) {
-          return res.status(422).json({
-            message: "The proceeds account must be an active bank or cash account of this company.",
-            code: "PROCEEDS_ACCOUNT_INVALID",
-          });
-        }
-        proceedsAccount = chosen;
-      }
-      const gainAccount = companyAccounts.find((a) => a.code === "4080" && a.isSystemAccount);
-      const lossAccount = companyAccounts.find((a) => a.code === "5130" && a.isSystemAccount);
-      const depExpenseAccount = companyAccounts.find((a) => a.code === "5100" && a.isSystemAccount);
+    })
+  );
 
-      const baseMissing: string[] = [];
-      if (!accDepAccount) baseMissing.push("1240");
-      if (!fixedAssetCostAccount) baseMissing.push("1290");
-      if (proceeds > 0 && !proceedsAccount) baseMissing.push("1010");
-      if (baseMissing.length > 0) {
-        return res.status(500).json({
-          message: `Disposal cannot post — missing system accounts: ${baseMissing.join(", ")}. Run migrations to create them.`,
-        });
-      }
-
-      // Disposal catch-up + disposal JE run in one transaction. If any of the
-      // catch-up depreciation entries fail, we don't want a half-depreciated
-      // asset stranded between two states.
-      const client = await pool.connect();
-      let updatedAssetRow: any = null;
-      let disposalJeId: string | null = null;
-      let netBookValueAtDisposal = 0;
-      let gainLoss = 0;
-      let gainLossType: "gain" | "loss" | "breakeven" = "breakeven";
-      const catchUpEntries: Array<{
-        year: number;
-        month: number;
-        amount: number;
-        journalEntryId: string;
-      }> = [];
-
-      try {
-        await client.query("BEGIN");
-
-        // Lock the asset row so concurrent depreciation/dispose calls serialise
-        // here rather than racing on accumulated_depreciation.
-        const lockedAsset = await client.query(
-          `SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE id = $1 FOR UPDATE`,
-          [id]
-        );
-        if (lockedAsset.rows.length === 0) {
-          await client.query("ROLLBACK");
-          return res.status(404).json({ message: "Fixed asset not found" });
-        }
-        let workingAsset = withPurchaseDay(lockedAsset.rows[0]);
-        if (workingAsset.status === "disposed") {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ message: "Asset is already disposed" });
-        }
-
-        // Per-(company, JE date) advisory xact lock for the entry-number
-        // allocator. Catch-up + disposal share the disposal-month numbering;
-        // catch-up months in earlier periods get their own per-period locks.
-        const lockKey1 = hashStringToInt(asset.company_id);
-        const lockedDates = new Set<string>();
-        const lockDate = async (d: Date) => {
-          const key = d.toISOString().slice(0, 10);
-          if (lockedDates.has(key)) return;
-          const lockKey2 = hashStringToInt(`JE-${key.replace(/-/g, "")}`);
-          await client.query("SELECT pg_advisory_xact_lock($1, $2)", [lockKey1, lockKey2]);
-          lockedDates.add(key);
-        };
-
-        // -------------------- CATCH-UP DEPRECIATION ---------------------
-        // Post every unposted month from the first depreciation month through the month BEFORE disposal (full-month
-        // convention: the asset is gone before the disposal month closes), each dated its month end, in order.
-        if (!depExpenseAccount) {
-          throw new Error("Depreciation expense account (5100) not found — required for catch-up depreciation");
-        }
-        {
-          const dispYear = dispDate.getUTCFullYear();
-          const dispMonth = dispDate.getUTCMonth() + 1;
-          const endYear = dispMonth === 1 ? dispYear - 1 : dispYear;
-          const endMonth = dispMonth === 1 ? 12 : dispMonth - 1;
-          const caught = await depreciateThrough(client, {
-            asset: workingAsset,
-            toYear: endYear,
-            toMonth: endMonth,
-            userId,
-            depExpenseAccountId: depExpenseAccount.id,
-            accDepAccountId: accDepAccount!.id,
-            // nothing is backdated: one journal, dated the disposal date, for every month not yet posted
-            mode: "disposal",
-            disposalDate: dispDate,
-          });
-          for (const m of caught.catchUp?.months ?? []) {
-            catchUpEntries.push({ year: m.year, month: m.month, amount: m.amount, journalEntryId: caught.catchUp!.journalEntryId });
-          }
-          if (caught.catchUp) {
-            workingAsset = { ...workingAsset, accumulated_depreciation: caught.accumulated, net_book_value: caught.netBookValue };
-          }
-        }
-
-        // -------------------- DISPOSAL JE -------------------------------
-        const cost = parseFloat(workingAsset.purchase_cost);
-        const accDep = parseFloat(workingAsset.accumulated_depreciation || 0);
-        const nbv = round2(cost - accDep);
-        gainLoss = round2(proceeds - nbv);
-        const isGain = gainLoss > 0;
-        const isLoss = gainLoss < 0;
-        gainLossType = isGain ? "gain" : isLoss ? "loss" : "breakeven";
-        netBookValueAtDisposal = nbv;
-
-        const missing: string[] = [];
-        if (isGain && !gainAccount) missing.push("4080");
-        if (isLoss && !lossAccount) missing.push("5130");
-        if (missing.length > 0) {
-          throw new Error(
-            `Disposal cannot post — missing system accounts: ${missing.join(", ")}. Run migrations to create them.`
-          );
-        }
-
-        type Line = { accountId: string; debit: number; credit: number; description: string };
-        const lines: Line[] = [];
-        if (proceeds > 0) {
-          lines.push({
-            accountId: proceedsAccount!.id,
-            debit: proceeds,
-            credit: 0,
-            description: `Proceeds from disposal of ${workingAsset.asset_name}`,
-          });
-        }
-        if (accDep > 0) {
-          lines.push({
-            accountId: accDepAccount!.id,
-            debit: round2(accDep),
-            credit: 0,
-            description: `Reverse accumulated depreciation on ${workingAsset.asset_name}`,
-          });
-        }
-        if (isLoss) {
-          lines.push({
-            accountId: lossAccount!.id,
-            debit: round2(-gainLoss),
-            credit: 0,
-            description: `Loss on disposal of ${workingAsset.asset_name}`,
-          });
-        }
-        lines.push({
-          accountId: fixedAssetCostAccount!.id,
-          debit: 0,
-          credit: round2(cost),
-          description: `Remove cost of ${workingAsset.asset_name}`,
-        });
-        if (isGain) {
-          lines.push({
-            accountId: gainAccount!.id,
-            debit: 0,
-            credit: round2(gainLoss),
-            description: `Gain on disposal of ${workingAsset.asset_name}`,
-          });
-        }
-
-        await lockDate(dispDate);
-        const allocateDispNum = await makeEntryNumberAllocator(
-          client,
-          workingAsset.company_id,
-          dispDate
-        );
-        const disposalJe = await insertJournalEntryTx(
-          client,
-          {
-            companyId: workingAsset.company_id,
-            entryNumber: allocateDispNum(),
-            date: dispDate,
-            memo: `Disposal: ${workingAsset.asset_name}`,
-            status: "posted",
-            source: "system",
-            sourceId: id,
-            createdBy: userId,
-            postedBy: userId,
-            postedAt: new Date(),
-          },
-          lines
-        );
-        disposalJeId = disposalJe.id;
-
-        await client.query(
-          `UPDATE fixed_assets SET
-          status = 'disposed',
-          disposal_date = $1,
-          disposal_amount = $2,
-          net_book_value = 0,
-          notes = COALESCE($3, notes),
-          disposal_journal_id = $5,
-          disposal_account_id = $6
-         WHERE id = $4`,
-          [dispDate, proceeds, notes || null, id, disposalJeId, proceeds > 0 ? proceedsAccount!.id : null]
-        );
-        const finalRow = await client.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
-        updatedAssetRow = finalRow.rows[0];
-
-        await client.query("COMMIT");
-      } catch (err) {
-        await client
-          .query("ROLLBACK")
-          .catch((rbErr: unknown) => log.error({ rbErr }, "ROLLBACK failed during disposal"));
-        throw err;
-      } finally {
-        client.release();
-      }
-
-      log.info(
-        {
-          assetId: id,
-          proceeds,
-          netBookValueAtDisposal,
-          gainLoss,
-          gainLossType,
-          catchUpMonths: catchUpEntries.length,
-          journalEntryId: disposalJeId,
-        },
-        "Asset disposed"
-      );
-      res.json({
-        asset: updatedAssetRow,
-        disposalAmount: proceeds,
-        netBookValueAtDisposal,
-        gainLoss,
-        gainLossType,
-        journalEntryId: disposalJeId,
-        catchUpDepreciation: catchUpEntries,
-      });
+  // What a disposal would do, before it is posted: depreciation to the date, VAT, book value, gain or loss.
+  app.get(
+    "/api/fixed-assets/:id/dispose-preview",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const existing = await pool.query(`SELECT company_id FROM fixed_assets WHERE id = $1`, [id]);
+      if (existing.rows.length === 0) return res.status(404).json({ message: "Fixed asset not found" });
+      const companyId = existing.rows[0].company_id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) return res.status(403).json({ message: "Access denied" });
+      const date = typeof req.query.date === "string" ? req.query.date : "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ message: "date (YYYY-MM-DD) is required" });
+      res.json(await previewDisposal(companyId, id, { date, amount: Number(req.query.amount ?? 0), vatTreatment: req.query.vatTreatment }));
     })
   );
 

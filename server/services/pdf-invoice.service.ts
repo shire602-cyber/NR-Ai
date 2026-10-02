@@ -255,6 +255,16 @@ async function generateStandardInvoicePDF(
 
       y += metaBoxH + 16;
 
+      // A tax credit note states why it was issued.
+      const creditReason = isCreditNote ? String((invoice as any).creditNoteReason ?? "").trim() : "";
+      if (creditReason) {
+        doc.fontSize(8).fillColor("#6B7280").font("Helvetica-Bold");
+        doc.text("Reason for issue / سبب الإصدار", margin, y - 6, { width: contentWidth });
+        doc.fontSize(9).fillColor("#111827").font("Helvetica");
+        doc.text(creditReason, margin, y + 5, { width: contentWidth });
+        y += 12 + doc.heightOfString(creditReason, { width: contentWidth }) + 6;
+      }
+
       const halfW = contentWidth / 2 - 8;
       const partiesTop = y;
 
@@ -297,6 +307,14 @@ async function generateStandardInvoicePDF(
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
         doc.text(buyerAddress, toX, toY, { width: halfW });
         toY += Math.max(12 * countLines(buyerAddress), doc.heightOfString(buyerAddress, { width: halfW }));
+      }
+      // The emirate of the supply (VAT 201 box 1): printed under the customer so the place of supply is on the document.
+      const supplyEmirate = String((invoice as any).emirate ?? "").trim();
+      if (supplyEmirate && !isOpeningBalance) {
+        const label = supplyEmirate.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+        doc.fontSize(9).fillColor("#374151").font("Helvetica");
+        doc.text(`Place of supply / مكان التوريد: ${label}`, toX, toY, { width: halfW });
+        toY += 12;
       }
 
       y = Math.max(fromY, toY) + 10;

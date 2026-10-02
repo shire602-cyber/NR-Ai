@@ -1,19 +1,15 @@
-// Refund of (part of) a payment on a settled invoice, entered by hand: a bank or card refund the company made
-// outside the app, or a gateway refund that was not reflected automatically.
-//
-// It is the same two steps the gateway refund runs (payment-gateway/refund.service.ts), so the ledger, the customer
-// statement and the AR ageing all see it like any other credit note and refund:
-//   1. a credit note on the invoice for the refunded gross (split per VAT bucket, partial by construction),
-//   2. a customer refund of that credit note: Dr 1040 Accounts Receivable / Cr the bank (or 1025 gateway clearing).
+// Refunds of money on an invoice. A refund is a payment-side event: Dr 1040 Accounts Receivable / Cr the bank (or
+// 1025 gateway clearing) against the credit balance a credit note left, through the customer-refund service. It never
+// reverses sales or output VAT: that is what a credit note does, once. issueRefundCreditNote below is only for a
+// refund made in the provider's dashboard (payment-gateway/refund.service.ts), which has no credit note yet.
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { invoiceLines, invoices } from "../../shared/schema";
 import { storage } from "../storage";
 import { AppError } from "../middleware/errorHandler";
 import { issueCreditNote, revenueContextOf } from "./credit-note-issue.service";
-import { createRefund, isRefundAccount } from "./customer-refund.service";
-import { getInvoiceBalance } from "./invoice-outstanding.db";
+import { createRefund, getRefundSummary, isRefundAccount, voidRefund } from "./customer-refund.service";
 import { remainingVatBuckets } from "./credit-note-remainder.service";
 import { splitGrossRefund } from "../../shared/sales-line-math";
 import { uaeCalendarDate } from "../utils/date";
@@ -74,6 +70,28 @@ export async function issueRefundCreditNote(args: {
   return { ok: true, creditNote: cn.creditNote };
 }
 
+/** Live credit notes of an invoice with what each can still pay back (document currency), oldest first. */
+export async function refundableCreditNotes(companyId: string, invoiceId: string) {
+  const notes = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.companyId, companyId), eq(invoices.originalInvoiceId, invoiceId), eq(invoices.invoiceType, "credit_note")))
+    .orderBy(asc(invoices.createdAt));
+  const out: Array<{ id: string; number: string; refundable: number }> = [];
+  for (const cn of notes) {
+    if (cn.status === "void" || cn.status === "cancelled" || cn.status === "draft") continue;
+    const summary = await getRefundSummary(companyId, cn.id);
+    if (summary.refundable > 0.004) out.push({ id: cn.id, number: cn.number, refundable: summary.refundable });
+  }
+  return out;
+}
+
+/**
+ * Refund money to the customer on an invoice. A refund of money is a payment-side event only: Dr 1040 Accounts
+ * Receivable / Cr the bank, through the customer-refund service, against the credit balance an existing credit note
+ * left. It never issues a credit note of its own (that would reverse sales and output VAT a second time). To pay back
+ * more than the credit balance, credit the goods or services first (a credit note), then refund.
+ */
 export async function refundInvoicePayment(input: {
   companyId: string;
   invoiceId: string;
@@ -90,7 +108,6 @@ export async function refundInvoicePayment(input: {
   if (!original || original.invoiceType === "credit_note") {
     throw new AppError({ message: "Invoice not found", statusCode: 404, code: "INVOICE_NOT_FOUND" });
   }
-  // Everything that can refuse is checked BEFORE the credit note exists.
   const bank = await storage.getAccount(input.bankAccountId, companyId);
   if (!bank || !(await isRefundAccount(bank, companyId))) {
     throw new AppError({
@@ -100,41 +117,64 @@ export async function refundInvoicePayment(input: {
     });
   }
   if (!(input.amount > 0)) throw new AppError({ message: "Refund amount must be greater than zero.", statusCode: 422, code: "INVALID_AMOUNT" });
-  const balance = await getInvoiceBalance(companyId, original.id);
-  if (balance.paid <= 0.005) {
-    throw new AppError({ message: `Invoice ${original.number} has no payment to refund.`, statusCode: 422, code: "NO_PAYMENT_TO_REFUND" });
-  }
-  if (balance.outstanding > 0.005) {
+
+  const available = await refundableCreditNotes(companyId, original.id);
+  const total = Math.round(available.reduce((s, c) => s + c.refundable, 0) * 100) / 100;
+  if (total <= 0.004) {
     throw new AppError({
-      message: `Invoice ${original.number} still has ${balance.outstanding.toFixed(2)} outstanding. Refund a payment once the invoice is settled; use the customer's credit to refund an overpayment.`,
+      message: `Invoice ${original.number} has no credit balance to refund. Issue a credit note for the goods or services returned first; the refund pays back the credit it leaves.`,
       statusCode: 422,
-      code: "INVOICE_NOT_SETTLED",
+      code: "NO_CREDIT_BALANCE",
     });
   }
-  if (input.amount > balance.paid + 0.005) {
-    throw new AppError({ message: `The refund (${input.amount.toFixed(2)}) is more than the ${balance.paid.toFixed(2)} paid on invoice ${original.number}.`, statusCode: 422, code: "REFUND_EXCEEDS_PAYMENT" });
+  if (input.amount > total + 0.005) {
+    throw new AppError({
+      message: `The refund (${input.amount.toFixed(2)}) is more than the credit balance of invoice ${original.number} (${total.toFixed(2)}).`,
+      statusCode: 422,
+      code: "REFUND_EXCEEDS_CREDIT",
+    });
   }
 
-  const cn = await issueRefundCreditNote({ companyId, original, userId: input.userId, amount: input.amount, date: input.date });
-  if (!cn.ok) throw new AppError({ message: cn.message, statusCode: cn.status, code: cn.code });
-  try {
+  const refunds: any[] = [];
+  let left = Math.round(input.amount * 100) / 100;
+  for (const cn of available) {
+    if (left <= 0.004) break;
+    const part = Math.round(Math.min(left, cn.refundable) * 100) / 100;
     const out = await createRefund({
       companyId,
-      creditNoteId: cn.creditNote.id,
+      creditNoteId: cn.id,
       userId: input.userId,
-      amount: Math.abs(Number(cn.creditNote.total)),
+      amount: part,
       date: input.date,
       bankAccountId: input.bankAccountId,
       exchangeRate: input.exchangeRate,
       reference: input.reference,
       notes: input.notes,
     });
-    return { creditNote: cn.creditNote, refund: out.refund, journalEntryId: out.journalEntryId };
-  } catch (err: any) {
-    throw new AppError({
-      message: `The credit note ${cn.creditNote.number} was issued, but the refund could not be recorded: ${err?.message ?? "unknown error"}. Refund it from the credit note.`,
-      statusCode: err?.statusCode ?? 422,
-      code: "REFUND_AFTER_CREDIT_NOTE_FAILED",
-    });
+    refunds.push({ ...out.refund, creditNoteId: cn.id, creditNoteNumber: cn.number });
+    left = Math.round((left - part) * 100) / 100;
   }
+  return { refunds, refund: refunds[0], remaining: Math.round((total - input.amount) * 100) / 100 };
+}
+
+/** The refunds paid on an invoice's credit notes (live and void), for its payments list. */
+export async function listInvoiceRefunds(companyId: string, invoiceId: string) {
+  const res: any = await db.execute(sql`
+    SELECT r.id, r.credit_note_id AS "creditNoteId", cn.number AS "creditNoteNumber", r.amount::float8 AS amount, r.currency,
+           to_char(r.refund_date, 'YYYY-MM-DD') AS date, r.reference, r.notes, r.bank_account_id AS "bankAccountId",
+           r.voided_at AS "voidedAt", r.created_at AS "createdAt"
+      FROM customer_refunds r JOIN invoices cn ON cn.id = r.credit_note_id
+     WHERE r.company_id = ${companyId} AND cn.original_invoice_id = ${invoiceId}
+     ORDER BY r.created_at`);
+  return (res.rows ?? res) as any[];
+}
+
+/** Void one refund of an invoice (reverses its journal, restores the credit balance); the credit note can then be voided. */
+export async function voidInvoiceRefund(input: { companyId: string; invoiceId: string; refundId: string; userId: string }) {
+  const res: any = await db.execute(sql`
+    SELECT r.credit_note_id AS "creditNoteId" FROM customer_refunds r JOIN invoices cn ON cn.id = r.credit_note_id
+     WHERE r.id = ${input.refundId} AND r.company_id = ${input.companyId} AND cn.original_invoice_id = ${input.invoiceId}`);
+  const row = (res.rows ?? res)[0];
+  if (!row) throw new AppError({ message: "Refund not found", statusCode: 404, code: "REFUND_NOT_FOUND" });
+  return await voidRefund({ companyId: input.companyId, creditNoteId: row.creditNoteId, refundId: input.refundId, userId: input.userId });
 }

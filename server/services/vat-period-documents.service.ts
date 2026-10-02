@@ -23,6 +23,8 @@ export interface PeriodSalesInvoice extends VatSalesInvoiceRow {
   exchangeRate: number;
   customerName: string | null;
   customerTrn: string | null;
+  /** Emirate of the supply (invoices.emirate); null = the company's own emirate. */
+  emirate: string | null;
   voidedOn: string | null;
   voidedAtMs: number | null;
   /** Voided after its period, but the filed return that covers it never declared it. */
@@ -66,7 +68,7 @@ export async function fetchPeriodSalesCandidates(
   const inv = rowsOf(
     await ex.execute(sql`
       SELECT i.id, i.number, ${sql.raw(dubaiDayTextSql("i.date"))} AS date_ymd, ${STATUS_AS_ISSUED} AS status, i.invoice_type,
-             i.exchange_rate, i.customer_name, i.customer_trn, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
+             i.exchange_rate, i.customer_name, i.customer_trn, i.emirate, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
         FROM invoices i ${lateral}
        WHERE ${where}
        ORDER BY i.date, i.id`)
@@ -100,6 +102,7 @@ export async function fetchPeriodSalesCandidates(
       exchangeRate: Number(r.exchange_rate) > 0 ? Number(r.exchange_rate) : 1,
       customerName: r.customer_name ?? null,
       customerTrn: r.customer_trn ?? null,
+      emirate: r.emirate ?? null,
       voidedOn: r.voided_on ?? null,
       voidedAtMs: r.at_ms == null ? null : Number(r.at_ms),
       neverDeclared: declared.has(String(r.id)),
@@ -126,5 +129,6 @@ export async function loadPeriodSalesDocuments(
   const candidates = await fetchPeriodSalesCandidates(ex, companyId, periodStart, periodEnd);
   const selected = selectPeriodSalesDocuments({ ...candidates, periodStart, periodEnd });
   const rateByInvoiceId = new Map(selected.invoices.map((i) => [i.id, i.exchangeRate]));
-  return { ...selected, rateByInvoiceId };
+  const emirateByInvoiceId = new Map<string, string | null>(selected.invoices.map((i) => [i.id, i.emirate ?? null]));
+  return { ...selected, rateByInvoiceId, emirateByInvoiceId };
 }

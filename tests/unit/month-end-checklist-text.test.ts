@@ -15,6 +15,12 @@ describe("month-end checklist text", () => {
     expect(resolveDetails("2 classifications pending review")?.key).toBe("dAiPending");
     expect(resolveDetails("No bank transactions in this period")?.key).toBe("dNoBank");
   });
+  it("covers the revaluation item and the VAT sentences", () => {
+    expect(resolveTitle({ id: 8, title: "", description: "" })?.key).toBe("title8");
+    expect(resolveDetails("Not revalued at 2026-09-30: ADCB USD (USD)")).toEqual({ key: "dFxOpen", params: { date: "2026-09-30", names: "ADCB USD (USD)" } });
+    expect(resolveDetails("1 foreign-currency bank account(s) revalued at 2026-09-30")?.key).toBe("dFxDone");
+    expect(resolveDetails("No VAT return prepared for this period")?.key).toBe("dNoVat");
+  });
   it("returns null for a sentence it does not know", () => {
     expect(resolveDetails("Something the server added later")).toBeNull();
     expect(resolveDetails(undefined)).toBeNull();

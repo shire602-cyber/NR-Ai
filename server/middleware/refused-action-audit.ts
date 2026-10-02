@@ -25,7 +25,7 @@ const RESOURCE_TABLE: Record<string, string> = {
   "expense-claims": "expense_claims",
   "sales-orders": "sales_orders",
 };
-const APPROVAL_TABLE: Record<string, string> = { bill: "vendor_bills", manual_journal: "journal_entries", purchase_order: "purchase_orders", expense_claim: "expense_claims" };
+const APPROVAL_TABLE: Record<string, string> = { bill: "vendor_bills", manual_journal: "journal_entries", purchase_order: "purchase_orders", expense_claim: "expense_claims", final_settlement: "employee_final_settlements" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PER_USER_PER_MINUTE = 30;

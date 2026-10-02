@@ -1,6 +1,7 @@
 // Tax reports (Phase 8 D4): VAT Summary, VAT Return (201), VAT Audit (sales and purchases detail), VAT control
 // reconciliation, Corporate Tax Estimate and the CT computation workpaper.
 
+import { supplyEmirate } from "../../services/vat-emirate";
 import Decimal from "decimal.js";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { CT_ADJUSTMENT_CATEGORIES, computeCtComputation, type CtBridgeAdjustment } from "../../../shared/ct-workpaper";
@@ -87,8 +88,22 @@ async function vatReturn(ctx: ReportContext): Promise<ReportOutput> {
   const buy = { target: "report" as const, id: "vat-audit-purchases" };
   const box = (n: string, en: string, ar: string, amount: number | null, vat: number | null, adj: number | null, drill?: typeof target) =>
     detail(`box:${n}`, { box: n, name: pick(ctx, en, ar), amount, vat, adjustment: adj }, drill);
+  // Box 1 by the emirate of each supply (1a-1g): a row for every emirate the period has supplies in.
+  const EMIRATE_ROWS: Array<[string, string, string, string]> = [
+    ["1a", "box1aAbuDhabi", "Abu Dhabi", "أبوظبي"],
+    ["1b", "box1bDubai", "Dubai", "دبي"],
+    ["1c", "box1cSharjah", "Sharjah", "الشارقة"],
+    ["1d", "box1dAjman", "Ajman", "عجمان"],
+    ["1e", "box1eUmmAlQuwain", "Umm Al Quwain", "أم القيوين"],
+    ["1f", "box1fRasAlKhaimah", "Ras Al Khaimah", "رأس الخيمة"],
+    ["1g", "box1gFujairah", "Fujairah", "الفجيرة"],
+  ];
+  const emirateRows = EMIRATE_ROWS.filter(([, key]) => Number(r[`${key}Amount`] ?? 0) !== 0 || Number(r[`${key}Vat`] ?? 0) !== 0 || Number(r[`${key}Adj`] ?? 0) !== 0).map(([n, key, en, ar]) =>
+    detail(`box:${n}`, { box: n, name: pick(ctx, `Standard rated supplies: ${en}`, `التوريدات الخاضعة للنسبة الأساسية: ${ar}`), amount: Number(r[`${key}Amount`] ?? 0), vat: Number(r[`${key}Vat`] ?? 0), adjustment: Number(r[`${key}Adj`] ?? 0) }, target, 1)
+  );
   const rows = [
     box("1", "Standard rated supplies", "التوريدات الخاضعة للنسبة الأساسية", sum("Amount"), sum("Vat"), sum("Adj"), target),
+    ...emirateRows,
     box("3", "Reverse charge supplies", "التوريدات الخاضعة للاحتساب العكسي", r.box3ReverseChargeAmount, r.box3ReverseChargeVat, null, buy),
     box("4", "Zero rated supplies", "التوريدات الخاضعة لنسبة الصفر", r.box4ZeroRatedAmount, null, null, target),
     box("5", "Exempt supplies", "التوريدات المعفاة", r.box5ExemptAmount, null, null, target),
@@ -156,7 +171,8 @@ async function vatAuditSales(ctx: ReportContext): Promise<ReportOutput> {
           trn: inv.customerTrn ?? "",
           description: (line.description ?? "") + (inv.effect === "reverse_in_period" ? ` (${pick(ctx, "cancelled", "ملغاة")})` : ""),
           supply: pick(ctx, SUPPLY_LABEL[a.category][0], SUPPLY_LABEL[a.category][1]),
-          emirate: ctx.company.emirate ?? "",
+          // the emirate of the supply: the document's own, else the company's (box 1a-1g of the return)
+          emirate: supplyEmirate(inv.emirate, ctx.company.emirate),
           rate: round2(rate * 100),
           amount: a.amountAed,
           vat: a.vatAed,

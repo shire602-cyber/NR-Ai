@@ -26,6 +26,10 @@ export interface CreditableInvoice {
   /** The invoice date: a credit note cannot be dated before it. */
   date?: string | null;
   currency: string;
+  /** AED per unit of the invoice currency (1 for AED). */
+  exchangeRate?: number | string | null;
+  /** The emirate of supply the credit note inherits (null: the company's emirate). */
+  emirate?: string | null;
   total: number | string;
   creditedAmount?: number | string | null;
   lines: CreditableLineRow[];

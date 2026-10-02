@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTranslation } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
+import { aedEquivalent, BASE_CURRENCY } from "@/lib/fx";
 import type { DiscountType, PreviewResult, ShippingForm } from "@/lib/sales-api";
 import { messages } from "./SalesShared.i18n";
 
@@ -97,10 +98,12 @@ interface TotalsProps {
   currency: string;
   /** The advances deducted on this invoice (shown as "Less advance ..." rows). */
   advances?: Array<{ advanceNumber: string; netAmount: number }>;
+  /** AED per unit of a foreign document currency: the total is also shown in AED beneath. */
+  exchangeRate?: number | null;
 }
 
 /** Items, discount, shipping, advances, subtotal, VAT and total: the same arithmetic the server posts. */
-export function SalesTotalsSummary({ preview, currency, advances }: TotalsProps) {
+export function SalesTotalsSummary({ preview, currency, advances, exchangeRate }: TotalsProps) {
   const tr = messages.useT();
   const { locale } = useTranslation();
   if (!preview) return null;
@@ -140,6 +143,12 @@ export function SalesTotalsSummary({ preview, currency, advances }: TotalsProps)
           </span>
         </div>
       ))}
+      {currency !== BASE_CURRENCY && exchangeRate && exchangeRate > 0 ? (
+        <div className="flex justify-between text-sm text-muted-foreground" data-testid="total-aed-equivalent">
+          <span>{tr("aedEquivalent")}</span>
+          <span dir="ltr" className="font-mono">{formatCurrency(aedEquivalent(t.total, exchangeRate), BASE_CURRENCY, locale)}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

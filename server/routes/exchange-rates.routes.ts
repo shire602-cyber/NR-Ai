@@ -136,10 +136,11 @@ export function registerExchangeRateRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { from, to, amount } = req.query as {
+      const { from, to, amount, date } = req.query as {
         from?: string;
         to?: string;
         amount?: string;
+        date?: string;
       };
 
       if (!(await requireAccess(req, res, companyId))) return;
@@ -164,7 +165,14 @@ export function registerExchangeRateRoutes(app: Express) {
       }
 
       // Own rate, then system rate, then the inverse pair (see resolveRate).
-      const found = await getLatestRateDetailed(from, to, undefined, companyId);
+      // The rate on file for that day (the screens pass the payment date); today's when none is given.
+      let asOf: Date | undefined;
+      if (date !== undefined) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ message: "date must be YYYY-MM-DD" });
+        asOf = new Date(`${date}T23:59:59.999Z`);
+        if (Number.isNaN(asOf.getTime())) return res.status(400).json({ message: "date is not a valid date" });
+      }
+      const found = await getLatestRateDetailed(from, to, asOf, companyId);
       if (!found) {
         return res.status(404).json({ message: `No exchange rate found for ${from}/${to}` });
       }

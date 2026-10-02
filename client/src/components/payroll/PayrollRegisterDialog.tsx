@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
 import { downloadPdf } from "@/lib/download-pdf";
-import { periodLabel, type PayrollRegister } from "@/lib/purchasing-hr";
+import { periodLabel, type PayrollRegister, type RegisterRow } from "@/lib/purchasing-hr";
 import { messages } from "./PayrollRegisterDialog.i18n";
 
 interface Props {
@@ -24,8 +24,30 @@ export function PayrollRegisterDialog({ runId, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const { data, isLoading, isError } = useQuery<PayrollRegister>({ queryKey: ["/api/payroll-runs", runId, "register"], enabled: !!runId });
   const money = (n: number) => formatCurrency(n, "AED", locale);
+  // Fixed columns first, then the employer-side and provision columns the register carries. A column that is absent
+  // from the response (an older server) is left out rather than shown as zero.
+  const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+  const extra = (r: RegisterRow, key: string) => num((r as unknown as Record<string, unknown>)[key]);
+  const first = data?.rows[0] as unknown as Record<string, unknown> | undefined;
+  const has = (key: string) => !!first && key in first;
+  const columns: Array<{ key: string; label: string; strong?: boolean; value: (r: RegisterRow) => number }> = [
+    { key: "basic", label: tr("colBasic"), value: (r) => num(r.basic) },
+    { key: "allowances", label: tr("colAllowances"), value: (r) => num(r.housing) + num(r.transport) + num(r.other) },
+    { key: "overtime", label: tr("colOvertime"), value: (r) => num(r.overtime) },
+    { key: "gross", label: tr("colGross"), value: (r) => num(r.gross) },
+    { key: "leaveDeduction", label: tr("colLeave"), value: (r) => num(r.leaveDeduction) },
+    { key: "loanDeduction", label: tr("colLoans"), value: (r) => num(r.loanDeduction) },
+    { key: "deductions", label: tr("colDeductions"), value: (r) => num(r.deductions) },
+    { key: "pensionEmployee", label: tr("colPension"), value: (r) => num(r.pensionEmployee) },
+    ...(has("liabilityDeductions") ? [{ key: "liabilityDeductions", label: tr("colLiabilityDeductions"), value: (r: RegisterRow) => extra(r, "liabilityDeductions") }] : []),
+    { key: "net", label: tr("colNet"), strong: true, value: (r) => num(r.net) },
+    { key: "pensionEmployer", label: tr("colPensionEmployer"), value: (r) => num(r.pensionEmployer) },
+    { key: "gratuityAccrual", label: tr("colGratuityAccrual"), value: (r) => num(r.gratuityAccrual) },
+    ...(has("leaveProvision") ? [{ key: "leaveProvision", label: tr("colLeaveProvision"), value: (r: RegisterRow) => extra(r, "leaveProvision") }] : []),
+    ...(has("employerCost") ? [{ key: "employerCost", label: tr("colEmployerCost"), strong: true, value: (r: RegisterRow) => extra(r, "employerCost") }] : []),
+  ];
   const tieLabel = (account: string, fallback: string) => {
-    const key = (`tie${account}`) as "tie2030" | "tie5020" | "tie1080" | "tie2034" | "tie5025" | "tie5028";
+    const key = (`tie${account}`) as "tie2030" | "tie5020" | "tie1080" | "tie2034" | "tie5025" | "tie5028" | "tie2037" | "tie5029" | "tie2036";
     return key in messages.tables.en ? tr(key) : fallback;
   };
 
@@ -57,20 +79,24 @@ export function PayrollRegisterDialog({ runId, onClose }: Props) {
           <p className="text-sm text-muted-foreground">{tr("empty")}</p>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-md border stack-table">
+            {data.isDraft && (
+              <div className="rounded-md border border-warning/40 bg-warning-subtle p-3 text-sm font-medium" role="status" data-testid="register-draft-banner">
+                {tr("draftBanner")}
+              </div>
+            )}
+            {(data.priorServiceMissing?.length ?? 0) > 0 && (
+              <div className="rounded-md border border-warning/40 bg-warning-subtle p-3 text-sm" role="status" data-testid="register-prior-service">
+                {tr("priorServiceMissing", { names: data.priorServiceMissing!.map((m) => m.name).join(", ") })}
+              </div>
+            )}
+            <div className="overflow-x-auto rounded-md border stack-table" data-testid="register-table">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{tr("colEmployee")}</TableHead>
-                    <TableHead className="text-end">{tr("colBasic")}</TableHead>
-                    <TableHead className="text-end">{tr("colAllowances")}</TableHead>
-                    <TableHead className="text-end">{tr("colOvertime")}</TableHead>
-                    <TableHead className="text-end">{tr("colGross")}</TableHead>
-                    <TableHead className="text-end">{tr("colLeave")}</TableHead>
-                    <TableHead className="text-end">{tr("colLoans")}</TableHead>
-                    <TableHead className="text-end">{tr("colDeductions")}</TableHead>
-                    <TableHead className="text-end">{tr("colPension")}</TableHead>
-                    <TableHead className="text-end">{tr("colNet")}</TableHead>
+                    {columns.map((c) => (
+                      <TableHead key={c.key} className="text-end">{c.label}</TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -82,34 +108,60 @@ export function PayrollRegisterDialog({ runId, onClose }: Props) {
                         {r.unpaidLeaveDays > 0 && <div className="text-xs text-muted-foreground">{tr("unpaidDays", { days: r.unpaidLeaveDays })}</div>}
                         {r.halfPayLeaveDays > 0 && <div className="text-xs text-muted-foreground">{tr("halfDays", { days: r.halfPayLeaveDays })}</div>}
                       </TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.basic)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.housing + r.transport + r.other)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.overtime)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.gross)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.leaveDeduction)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.loanDeduction)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.deductions)}</TableCell>
-                      <TableCell className="text-end tabular-nums">{money(r.pensionEmployee)}</TableCell>
-                      <TableCell className="text-end tabular-nums font-semibold">{money(r.net)}</TableCell>
+                      {columns.map((c) => (
+                        <TableCell key={c.key} className={`text-end tabular-nums ${c.strong ? "font-semibold" : ""}`}>{money(c.value(r))}</TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>
                 <TableFooter>
                   <TableRow data-testid="row-register-totals">
                     <TableCell className="font-semibold">{tr("totals")}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.basic)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.housing + data.totals.transport + data.totals.other)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.overtime)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.gross)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.leaveDeduction)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.loanDeduction)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.deductions)}</TableCell>
-                    <TableCell className="text-end tabular-nums">{money(data.totals.pensionEmployee)}</TableCell>
-                    <TableCell className="text-end tabular-nums font-semibold" data-testid="text-register-net-total">{money(data.totals.net)}</TableCell>
+                    {columns.map((c) => (
+                      <TableCell key={c.key} className={`text-end tabular-nums ${c.strong ? "font-semibold" : ""}`} data-testid={c.key === "net" ? "text-register-net-total" : undefined}>
+                        {money(c.value(data.totals as unknown as RegisterRow))}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 </TableFooter>
               </Table>
             </div>
+
+            {data.reconciliation?.available && (
+              <section className="space-y-2" data-testid="register-reconciliation">
+                <h3 className="font-medium">{tr("reconciliationTitle")}</h3>
+                <div className="overflow-x-auto rounded-md border stack-table">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tr("colCheck")}</TableHead>
+                        <TableHead>{tr("colAccount")}</TableHead>
+                        <TableHead className="text-end">{tr("colRegister")}</TableHead>
+                        <TableHead className="text-end">{tr("colLedger")}</TableHead>
+                        <TableHead className="text-end">{tr("colDifference")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.reconciliation.rows.map((r) => (
+                        <TableRow key={r.code} data-testid={`row-reconciliation-${r.code}`}>
+                          <TableCell>{tieLabel(r.code, r.label)}</TableCell>
+                          <TableCell dir="ltr" className="text-start">{r.code}</TableCell>
+                          <TableCell className="text-end tabular-nums">{money(r.register)}</TableCell>
+                          <TableCell className="text-end tabular-nums">{money(r.ledger)}</TableCell>
+                          <TableCell className={`text-end tabular-nums ${Math.abs(r.difference) < 0.005 ? "" : "text-destructive font-semibold"}`}>{money(r.difference)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell colSpan={4} className="font-semibold">{data.reconciliation.ok ? tr("recOk") : tr("recOff")}</TableCell>
+                        <TableCell className="text-end tabular-nums font-semibold" data-testid="text-reconciliation-difference">{money(data.reconciliation.difference)}</TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  </Table>
+                </div>
+              </section>
+            )}
 
             <section className="space-y-2">
               <h3 className="font-medium">{tr("tieOutTitle")}</h3>

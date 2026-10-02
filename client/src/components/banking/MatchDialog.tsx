@@ -12,13 +12,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
-import { formatCalendarDate } from "@/lib/calendar-date";
+import { formatCalendarDate, uaeDayOf } from "@/lib/calendar-date";
 import { accountName } from "@/lib/account-name";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { BankAccount, BankTransaction, LedgerAccount, MatchSuggestion } from "@/lib/banking-api-types";
 import { ApiError } from "@/lib/queryClient";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { InvoiceAllocationPanel, MatchedSummary, SplitEntryPanel, TransferPanel } from "./MatchDialogPanels";
+import { FxRateField } from "./FxRateField";
+import { parseRate } from "./fx-preview";
 import { messages as panels } from "./MatchDialogPanels.i18n";
 import { messages } from "./MatchDialog.i18n";
 import { messages as common } from "./BankingCommon.i18n";
@@ -47,6 +49,8 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
   const { toast } = useToast();
   const [accountId, setAccountId] = useState("");
   const [memo, setMemo] = useState("");
+  // foreign-currency bank line: the rate on the day of the line (AED per unit), shown with the gain or loss it books
+  const [fxRateText, setFxRateText] = useState("");
   const [overpay, setOverpay] = useState<{ suggestion: MatchSuggestion; excess: number } | null>(null);
   const trp = panels.useT();
 
@@ -55,6 +59,7 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
     setAccountId("");
     setMemo("");
     setOverpay(null);
+    setFxRateText("");
   }, [open, transaction?.id]);
 
   const base = `/api/companies/${companyId}/bank-statements`;
@@ -95,9 +100,9 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
       const tid = transaction!.id;
       if (s.kind === "rule") return apiRequest("POST", `${base}/${tid}/apply-rule`, { ruleId: s.targetId });
       if (s.kind === "transfer") return apiRequest("POST", `${base}/${tid}/transfer`, { otherTransactionId: s.targetId });
-      if (s.kind === "invoices") return apiRequest("POST", `${base}/${tid}/match`, { matchedType: "invoices", allocations: (s.targetIds ?? [s.targetId]).map((invoiceId) => ({ invoiceId })), ...(keepAsCredit ? { keepAsCredit: true } : {}) });
+      if (s.kind === "invoices") return apiRequest("POST", `${base}/${tid}/match`, { matchedType: "invoices", allocations: (s.targetIds ?? [s.targetId]).map((invoiceId) => ({ invoiceId })), ...(keepAsCredit ? { keepAsCredit: true } : {}), ...(fxRate ? { exchangeRate: fxRate } : {}) });
       if (s.kind === "account") return apiRequest("POST", `${base}/${tid}/create-entry`, { accountId: s.targetId });
-      return apiRequest("POST", `${base}/${tid}/match`, { matchedType: s.kind, matchedId: s.targetId, ...(keepAsCredit ? { keepAsCredit: true } : {}) });
+      return apiRequest("POST", `${base}/${tid}/match`, { matchedType: s.kind, matchedId: s.targetId, ...(keepAsCredit ? { keepAsCredit: true } : {}), ...(fxRate && s.kind === "invoice" ? { exchangeRate: fxRate } : {}) });
     },
     onSuccess: () => done(tr("toastMatched"), tr("toastMatchedBody")),
     onError: (err: unknown, args) => {
@@ -123,6 +128,11 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
     onError: fail(tr("toastUnmatchFailed")),
   });
 
+  const foreign = currency.toUpperCase() !== "AED";
+  const fxRate = foreign ? (parseRate(fxRateText) ?? undefined) : undefined;
+  const { data: invoiceRows = [] } = useQuery<Array<{ id: string; exchangeRate?: number | string }>>({ queryKey: ["/api/companies", companyId, "invoices"], enabled: open && foreign && !!companyId && !matched });
+  const firstInvoiceSuggestion = suggestions?.find((s) => s.kind === "invoice" || s.kind === "invoices");
+  const bookRate = Number(invoiceRows.find((i) => i.id === firstInvoiceSuggestion?.targetId)?.exchangeRate) || undefined;
   const busy = matchMutation.isPending || createMutation.isPending || unmatchMutation.isPending;
   const amount = transaction?.amount ?? 0;
 
@@ -182,6 +192,19 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
                 </div>
               ) : (
                 <>
+                  {foreign && amount > 0 && transaction && (
+                    <FxRateField
+                      companyId={companyId}
+                      currency={currency}
+                      date={uaeDayOf(transaction.transactionDate)}
+                      amount={Math.abs(amount)}
+                      bookRate={bookRate}
+                      kind="receipt"
+                      value={fxRateText}
+                      onChange={setFxRateText}
+                      testId="match-fx"
+                    />
+                  )}
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tr("suggestions")}</p>
                     {isLoading ? (
@@ -279,7 +302,7 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
                   </div>
 
                   <div className="space-y-2" data-testid="match-extras">
-                    {amount > 0 && <InvoiceAllocationPanel companyId={companyId} transaction={transaction} currency={currency} onPosted={() => done(tr("toastMatched"), tr("toastMatchedBody"))} />}
+                    {amount > 0 && <InvoiceAllocationPanel companyId={companyId} transaction={transaction} currency={currency} exchangeRate={fxRate} onPosted={() => done(tr("toastMatched"), tr("toastMatchedBody"))} />}
                     <SplitEntryPanel companyId={companyId} transaction={transaction} currency={currency} accounts={pickable} onPosted={() => done(tr("toastCreated"), tr("toastMatchedBody"))} />
                     <TransferPanel companyId={companyId} transaction={transaction} currency={currency} transactions={transactions} bankAccounts={bankAccounts} onPosted={() => done(tr("toastMatched"), tr("toastMatchedBody"))} />
                   </div>

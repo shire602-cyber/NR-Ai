@@ -16,7 +16,7 @@ Choose **Invite**, enter their email and pick a role. They receive an email to j
 
 - **Owner** has full control, including approval rules, security and deleting the company.
 - **Accountant** and **CFO** work with the books, reports and filings.
-- **Employee** sees **only their own records**: their expense claims, payslips and leave. An employee cannot open the company's invoices, bills, ledgers or reports.
+- **Employee** gets a self-service workspace with **only their own records**: their payslips, leave and loans, plus account settings and help. Their dashboard shows their own leave balance and latest payslip. An employee cannot open the company's invoices, bills, ledgers, reports or any other finance screen: opening one takes them back to their own payroll page, and the server refuses the request.
 
 ## Change or remove access
 

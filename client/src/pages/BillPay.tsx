@@ -89,6 +89,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
 import { PaymentAccountSelect } from "@/components/banking/PaymentAccountSelect";
+import { FxRateField } from "@/components/banking/FxRateField";
+import { parseRate as parseFxRate } from "@/components/banking/fx-preview";
 import { messages as pageMessages } from "./BillPay.i18n";
 
 // ===========================
@@ -288,6 +290,8 @@ export default function BillPay() {
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
   const [foreignVendor, setForeignVendor] = useState(false);
   const [payingBill, setPayingBill] = useState<VendorBill | null>(null);
+  // foreign-currency bills: the rate on the payment day (AED per unit), defaulted from the rates on file
+  const [payRateText, setPayRateText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [vendorSearch, setVendorSearch] = useState("");
 
@@ -538,6 +542,7 @@ export default function BillPay() {
       const payload = {
         ...data,
         payment_date: toDateOnly(data.payment_date),
+        ...(parseFxRate(payRateText) && (payingBill?.currency || "AED") !== "AED" ? { exchange_rate: parseFxRate(payRateText) } : {}),
       };
       return apiRequest("POST", `/api/bills/${billId}/payments`, payload);
     },
@@ -634,6 +639,7 @@ export default function BillPay() {
   const handlePayBill = (bill: VendorBill) => {
     const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
     setPayingBill(bill);
+    setPayRateText("");
     paymentForm.reset({
       payment_date: parseYmd(todayYmd()),
       amount: Number(remaining.toFixed(2)),
@@ -1734,6 +1740,19 @@ export default function BillPay() {
                   </FormItem>
                 )}
               />
+              {payingBill && (
+                <FxRateField
+                  companyId={companyId ?? ""}
+                  currency={payingBill.currency || "AED"}
+                  date={toDateOnly(paymentForm.watch("payment_date"))}
+                  amount={Number(paymentForm.watch("amount")) || 0}
+                  bookRate={Number((payingBill as any).exchange_rate) || 1}
+                  kind="payment"
+                  value={payRateText}
+                  onChange={setPayRateText}
+                  testId="bill-payment-fx"
+                />
+              )}
               <FormField
                 control={paymentForm.control}
                 name="reference"
@@ -1771,7 +1790,7 @@ export default function BillPay() {
                 >
                   {tr("cancel")}
                 </Button>
-                <Button type="submit" disabled={recordPaymentMutation.isPending}>
+                <Button type="submit" disabled={recordPaymentMutation.isPending || ((payingBill?.currency || "AED") !== "AED" && !parseFxRate(payRateText))}>
                   {recordPaymentMutation.isPending ? tr("recording") : tr("recordPayment")}
                 </Button>
               </DialogFooter>

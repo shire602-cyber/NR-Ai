@@ -6,6 +6,7 @@
 import Decimal from "decimal.js";
 import { UAE_VAT_RATE } from "../constants";
 import { classifyVatLineForReturn } from "./vat-supply-type";
+import { supplyEmirate, type VatEmirate } from "./vat-emirate";
 
 export interface ReturnSalesLine {
   invoiceId: string;
@@ -20,6 +21,8 @@ export interface ReturnSalesTotals {
   standardRatedVat: number;
   zeroRatedAmount: number;
   exemptAmount: number;
+  /** Standard-rated supplies per emirate (box 1a-1g): each document's own emirate, else the fallback. Adds up to the two totals. */
+  standardByEmirate: Partial<Record<VatEmirate, { amount: number; vat: number }>>;
 }
 
 export type ReturnLineCategory = "standard" | "zero_rated" | "exempt" | "excluded";
@@ -92,15 +95,23 @@ export function allocateReturnSalesLines(lines: ReturnSalesLine[], rateByInvoice
  */
 export function aggregateReturnSalesLines(
   lines: ReturnSalesLine[],
-  rateByInvoiceId: Map<string, number>
+  rateByInvoiceId: Map<string, number>,
+  emirateByInvoiceId: Map<string, string | null> = new Map(),
+  fallbackEmirate: string | null = null
 ): ReturnSalesTotals {
   const totals = { standardRatedAmount: D(0), standardRatedVat: D(0), zeroRatedAmount: D(0), exemptAmount: D(0) };
-  for (const l of allocateReturnSalesLines(lines, rateByInvoiceId)) {
+  const byEmirate = new Map<VatEmirate, { amount: Decimal; vat: Decimal }>();
+  const allocated = allocateReturnSalesLines(lines, rateByInvoiceId);
+  for (const l of allocated) {
     switch (l.category) {
-      case "standard":
+      case "standard": {
         totals.standardRatedAmount = totals.standardRatedAmount.plus(l.amountAed);
         totals.standardRatedVat = totals.standardRatedVat.plus(l.vatAed);
+        const emirate = supplyEmirate(emirateByInvoiceId.get(lines[l.index].invoiceId), fallbackEmirate);
+        const cur = byEmirate.get(emirate) ?? { amount: D(0), vat: D(0) };
+        byEmirate.set(emirate, { amount: cur.amount.plus(l.amountAed), vat: cur.vat.plus(l.vatAed) });
         break;
+      }
       case "zero_rated":
         totals.zeroRatedAmount = totals.zeroRatedAmount.plus(l.amountAed);
         break;
@@ -116,5 +127,6 @@ export function aggregateReturnSalesLines(
     standardRatedVat: totals.standardRatedVat.toNumber(),
     zeroRatedAmount: totals.zeroRatedAmount.toNumber(),
     exemptAmount: totals.exemptAmount.toNumber(),
+    standardByEmirate: Object.fromEntries([...byEmirate].map(([k, v]) => [k, { amount: v.amount.toNumber(), vat: v.vat.toNumber() }])),
   };
 }

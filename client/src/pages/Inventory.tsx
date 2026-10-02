@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { unitLabel } from "@/lib/unit-label";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -491,7 +492,7 @@ export default function Inventory() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>{tr("name")}</TableHead>
-                        <TableHead>SKU</TableHead>
+                        <TableHead>{salesTr("skuLabel")}</TableHead>
                         <TableHead className="text-end">{tr("unitPrice")}</TableHead>
                         <TableHead className="text-end">{tr("costPrice")}</TableHead>
                         <TableHead className="text-end">{tr("averageCost")}</TableHead>
@@ -552,7 +553,7 @@ export default function Inventory() {
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell>{product.unit}</TableCell>
+                            <TableCell>{unitLabel(product.unit, locale)}</TableCell>
                             <TableCell>
                               {product.isActive ? (
                                 <Badge
@@ -727,7 +728,7 @@ export default function Inventory() {
                   name="sku"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>SKU</FormLabel>
+                      <FormLabel>{salesTr("skuLabel")}</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., PROD-001" {...field} value={field.value || ""} />
                       </FormControl>

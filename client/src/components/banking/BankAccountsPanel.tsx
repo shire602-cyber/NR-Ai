@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Landmark, Pencil, Plus } from "lucide-react";
+import { Landmark, Pencil, Plus, Scale } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -16,9 +16,10 @@ interface Props {
   bankAccounts: BankAccount[];
   onAdd: () => void;
   onEdit: (account: BankAccount) => void;
+  onRevalue: (account: BankAccount) => void;
 }
 
-export function BankAccountsPanel({ companyId, bankAccounts, onAdd, onEdit }: Props) {
+export function BankAccountsPanel({ companyId, bankAccounts, onAdd, onEdit, onRevalue }: Props) {
   const tr = messages.useT();
   const locale = useI18n((s) => s.locale);
   const { data: accounts = [] } = useQuery<LedgerAccount[]>({ queryKey: ["/api/companies", companyId, "accounts"], enabled: !!companyId });
@@ -66,6 +67,7 @@ export function BankAccountsPanel({ companyId, bankAccounts, onAdd, onEdit }: Pr
                   <TableRow key={a.id} data-testid={`bank-account-${a.id}`}>
                     <TableCell className="font-medium" dir="auto">
                       {a.nameEn}
+                      {a.accountKind === "credit_card" && <span className="ms-2 text-[11px] font-normal text-muted-foreground">{tr("kindCard")}</span>}
                       {a.iban && (
                         <span dir="ltr" className="block text-xs font-mono text-muted-foreground text-start">
                           {a.iban}
@@ -81,7 +83,13 @@ export function BankAccountsPanel({ companyId, bankAccounts, onAdd, onEdit }: Pr
                     <TableCell>
                       <StatusBadge tone={a.isActive ? "success" : "neutral"}>{a.isActive ? tr("active") : tr("inactive")}</StatusBadge>
                     </TableCell>
-                    <TableCell className="text-end">
+                    <TableCell className="text-end whitespace-nowrap">
+                      {(a.currency || "AED").toUpperCase() !== "AED" && (
+                        <Button variant="outline" size="sm" className="me-2" onClick={() => onRevalue(a)} data-testid={`button-revalue-${a.id}`}>
+                          <Scale className="h-3.5 w-3.5 me-1" />
+                          {tr("revalue")}
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" aria-label={tr("edit")} onClick={() => onEdit(a)} data-testid={`button-edit-bank-${a.id}`}>
                         <Pencil className="h-4 w-4" />
                       </Button>

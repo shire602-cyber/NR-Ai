@@ -143,8 +143,10 @@ export default function OpeningBalances() {
         amount: num(d.amount),
         exchangeRate: num(d.exchangeRate) || 1,
       })),
+      // Opening stock rides with the opening entry: dated the opening date, counted in the balancing amount.
+      openingStock: openingStockPayload(stock),
     }),
-    [effectiveDate, grid, invoices, bills]
+    [effectiveDate, grid, invoices, bills, stock]
   );
   const signature = JSON.stringify(payload);
 
@@ -172,13 +174,9 @@ export default function OpeningBalances() {
 
   const postMutation = useMutation({
     mutationFn: async () => {
-      const posted = await apiRequest("POST", `/api/companies/${companyId}/opening-balances`, payload);
-      // Opening stock by item: the product update sets quantity and cost, and the server journals the
-      // value to Inventory (Dr 1070 / Cr Opening Balance Equity).
-      for (const row of openingStockPayload(stock)) {
-        await apiRequest("PATCH", `/api/products/${row.productId}`, { currentStock: row.quantity, costPrice: row.unitCost });
-      }
-      return posted;
+      // Opening stock by item is part of the same request: the server posts it on the opening date (Dr 1070 in the opening
+      // entry, plus a stock movement dated the same day).
+      return await apiRequest("POST", `/api/companies/${companyId}/opening-balances`, payload);
     },
     onSuccess: () => {
       setStock({});

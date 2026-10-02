@@ -47,6 +47,21 @@ function receiptKeyOrNull(
   return value;
 }
 
+/**
+ * An employee-role member files and follows their own claims only: they may open, change, delete and submit a claim
+ * they submitted, never a colleague's (403 EXPENSE_CLAIM_OWN_ONLY). Everyone else with company access is unchanged.
+ * Approving, rejecting, paying and the summary stay closed to the employee role (default deny in hasCompanyAccess).
+ */
+async function ownClaimOnly(req: Request, res: Response, claim: { company_id: string; submitted_by: string | null }): Promise<boolean> {
+  const userId = (req as any).user.id as string;
+  const membership = await storage.getUserRole(claim.company_id, userId);
+  if (membership?.role === "employee" && claim.submitted_by !== userId) {
+    res.status(403).json({ message: "You can only see your own expense claims.", code: "EXPENSE_CLAIM_OWN_ONLY" });
+    return false;
+  }
+  return true;
+}
+
 export function registerExpenseClaimRoutes(app: Express) {
   // =====================================
   // Expense Claims Routes
@@ -62,7 +77,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       const userId = (req as any).user.id;
       const { status, submitted_by } = req.query;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -70,6 +85,12 @@ export function registerExpenseClaimRoutes(app: Express) {
       let query = "SELECT * FROM expense_claims WHERE company_id = $1";
       const params: any[] = [companyId];
       let paramIndex = 2;
+      // an employee-role member lists only the claims they submitted
+      if ((await storage.getUserRole(companyId, userId))?.role === "employee") {
+        query += ` AND submitted_by = $${paramIndex}`;
+        params.push(userId);
+        paramIndex++;
+      }
 
       if (status && typeof status === "string") {
         query += ` AND status = $${paramIndex}`;
@@ -106,10 +127,11 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
       const itemsResult = await pool.query(
         "SELECT * FROM expense_claim_items WHERE claim_id = $1 ORDER BY expense_date ASC",
@@ -129,7 +151,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -212,7 +234,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+      if (!(await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true }))) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -246,14 +268,15 @@ export function registerExpenseClaimRoutes(app: Express) {
         return res.status(404).json({ message: "Receipt not found" });
       }
 
-      const claimResult = await pool.query("SELECT company_id FROM expense_claims WHERE id = $1", [id]);
+      const claimResult = await pool.query("SELECT company_id, submitted_by FROM expense_claims WHERE id = $1", [id]);
       if (claimResult.rows.length === 0) {
         return res.status(404).json({ message: "Expense claim not found" });
       }
       const companyId: string = claimResult.rows[0].company_id;
-      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+      if (!(await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true }))) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claimResult.rows[0]))) return;
 
       const itemResult = await pool.query(
         "SELECT receipt_url FROM expense_claim_items WHERE id = $1 AND claim_id = $2",
@@ -284,10 +307,11 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
       if (claim.status === "pending_approval") {
         return res.status(409).json({
@@ -386,10 +410,11 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
       if (claim.status === "pending_approval") {
         return res.status(409).json({
@@ -425,10 +450,11 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
       if (claim.status !== "draft") {
         return res.status(400).json({ message: "Only draft claims can be submitted" });

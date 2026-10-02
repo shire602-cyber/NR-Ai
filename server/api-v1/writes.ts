@@ -44,6 +44,7 @@ function contactBody(b: any) {
     trnNumber: b.trn,
     address: b.address,
     city: b.city,
+    emirate: b.emirate,
     country: b.country,
     contactPerson: b.contactPerson,
     paymentTerms: b.paymentTermsDays,
@@ -107,6 +108,7 @@ export const createInvoice: Handler = async (req, res, next) => {
     customerName,
     customerTrn,
     customerAddress,
+    emirate: b.emirate,
     contactId: b.contactId ?? undefined,
     date: b.date,
     // An explicit dueDate wins; otherwise the payment terms set it (the internal route stores terms but never derived a date).

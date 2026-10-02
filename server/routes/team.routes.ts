@@ -53,7 +53,7 @@ export function registerTeamRoutes(app: Express) {
       }
 
       // Check if already a member
-      const existingAccess = await storage.hasCompanyAccess(invitedUser.id, companyId);
+      const existingAccess = await storage.hasCompanyAccess(invitedUser.id, companyId, { employeeSelfService: true });
       if (existingAccess) {
         return res.status(400).json({ message: "User is already a team member" });
       }

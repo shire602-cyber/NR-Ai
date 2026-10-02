@@ -359,7 +359,8 @@ async function t2CreditNotes() {
   ok("T2 its journal is dated the same day", je?.d === cnDay, je);
   const legacy = await api("POST", `/api/companies/${cid}/credit-notes`, { token, body: { customerName: "x", lines: [] } });
   ok("T2 the legacy New Credit Note route stays 410 and names the replacement", legacy.status === 410 && /invoices\/:invoiceId\/credit-note/.test(legacy.text), legacy.text?.slice(0, 200));
-  await api("POST", `/api/companies/${cid}/month-end/lock-period`, { token, body: { periodEnd: addDays(today, -6) } });
+  const lockRes = await api("POST", `/api/companies/${cid}/month-end/lock-period`, { token, body: { periodEnd: addDays(today, -6), overrideVatCheck: true, overrideReason: "test: locking before the VAT return" } });
+  ok("T2 the period lock is accepted", lockRes.status === 200, { s: lockRes.status, t: lockRes.text?.slice(0, 200) });
   const locked = await api("POST", `/api/companies/${cid}/invoices/${inv.id}/credit-note`, { token, body: { date: addDays(today, -10), lines: [{ description: "y", quantity: 1, unitPrice: 10, vatRate: 0.05 }] } });
   ok("T2 a credit note dated inside a locked period is refused (403)", locked.status === 403, { s: locked.status, t: locked.text?.slice(0, 160) });
   const open = await api("POST", `/api/companies/${cid}/invoices/${inv.id}/credit-note`, { token, body: { date: addDays(today, -2), lines: [{ description: "z", quantity: 1, unitPrice: 10, vatRate: 0.05 }] } });
@@ -450,21 +451,24 @@ async function t2Gateway() {
   const rp = await api("POST", `/api/companies/${cid}/invoices/${c.id}/payments`, { token, body: { amount: 1050, date: today, method: "gateway", paymentAccountId: clearing } });
   ok("T2 Record Payment accepts the gateway clearing account 1025", rp.status === 201, rp.text?.slice(0, 200));
   const bank = C.acct("1020").id;
+  // A refund is a payment-side event (teardown 7): the goods are credited first, the refund pays back that credit.
+  const cn525 = await api("POST", `/api/companies/${cid}/invoices/${c.id}/credit-note`, { token, body: { date: today, lines: [{ description: "Returned", quantity: 1, unitPrice: 500, vatRate: 0.05 }] } });
+  ok("T2 a credit note of 525 is issued first", cn525.status === 201 || cn525.status === 200, cn525.text?.slice(0, 160));
   const rf = await api("POST", `/api/companies/${cid}/invoices/${c.id}/payment-refunds`, { token, body: { amount: 525, date: today, bankAccountId: clearing, reference: "RF-77" } });
-  ok("T2 refund 525 of the payment (credit note + refund)", rf.status === 201 && rf.json?.creditNote?.id && rf.json?.refund?.id, rf.text?.slice(0, 240));
+  ok("T2 refund 525 of the credit balance (no second credit note)", rf.status === 201 && rf.json?.refund?.id && !rf.json?.creditNote, rf.text?.slice(0, 240));
   const rj = await C.entryOf("customer_refund", rf.json?.refund?.id);
   ok("T2 the refund posts Dr 1040 525 / Cr 1025 525", close(rj["1040"]?.dr, 525) && close(rj["1025"]?.cr, 525), rj);
   const stmt = await api("GET", `/api/companies/${cid}/contacts/${cust.id}/statement?from=${addDays(today, -30)}&to=${today}`, { token });
   const types = (stmt.json?.lines ?? []).map((l) => l.type);
   ok("T2 the customer statement shows the credit note and the refund", types.includes("credit_note") && types.includes("refund"), types);
   const tooMuch = await api("POST", `/api/companies/${cid}/invoices/${c.id}/payment-refunds`, { token, body: { amount: 900, date: today, bankAccountId: bank } });
-  ok("T2 refunding more than was paid is refused", tooMuch.status === 422, { s: tooMuch.status, t: tooMuch.text?.slice(0, 200) });
+  ok("T2 refunding more than the credit balance is refused", tooMuch.status === 422, { s: tooMuch.status, t: tooMuch.text?.slice(0, 200) });
   const bal = await C.balances();
   const aging = (await api("GET", `/api/reports/${cid}/aging`, { token })).json ?? [];
   const arAging = r2(aging.filter((r) => r.type === "receivable").reduce((acc, r) => acc + n(r.total), 0));
   ok("T2 AR ageing equals the AR control account 1040", close(arAging, bal["1040"] ?? 0), { arAging, gl: bal["1040"] });
   const unpaid = await api("POST", `/api/companies/${cid}/invoices/${b.id}/payment-refunds`, { token, body: { amount: 10, date: today, bankAccountId: bank } });
-  ok("T2 an invoice with no payment cannot be refunded", unpaid.status === 422 && ["NO_PAYMENT_TO_REFUND", "INVOICE_NOT_SETTLED"].includes(unpaid.json?.code), { s: unpaid.status, c: unpaid.json?.code });
+  ok("T2 an invoice with no payment cannot be refunded", unpaid.status === 422 && unpaid.json?.code === "NO_CREDIT_BALANCE", { s: unpaid.status, c: unpaid.json?.code });
 }
 
 async function t2RevenueAccounts() {
@@ -600,8 +604,10 @@ async function s2ClientContract() {
   await C.issue(inv2.id);
   const bank = C.acct("1020").id;
   await api("POST", `/api/companies/${cid}/invoices/${inv2.id}/payments`, { token, body: { amount: 210, date: today, method: "bank", paymentAccountId: bank } });
+  // (teardown 7: a refund pays back a credit balance, so the goods are credited first)
+  await api("POST", `/api/companies/${cid}/invoices/${inv2.id}/credit-note`, { token, body: { date: today, lines: [{ description: "Goodwill", quantity: 1, unitPrice: 50, vatRate: 0.05 }] } });
   const rf = await api("POST", `/api/companies/${cid}/invoices/${inv2.id}/payment-refunds`, { token, body: { amount: 50, date: today, bankAccountId: bank, notes: "goodwill" } });
-  ok("S2 the refund dialog body is accepted (201 with creditNote and refund)", rf.status === 201 && rf.json?.creditNote && rf.json?.refund, { s: rf.status, t: rf.text?.slice(0, 200) });
+  ok("S2 the refund dialog body is accepted (201 with the refund, no second credit note)", rf.status === 201 && !rf.json?.creditNote && rf.json?.refund, { s: rf.status, t: rf.text?.slice(0, 200) });
   // the run-now buttons post an empty body
   const rr = await api("POST", `/api/companies/${cid}/recurring-invoices/run-now`, { token, body: {} });
   const lf = await api("POST", `/api/companies/${cid}/late-fees/run-now`, { token, body: {} });

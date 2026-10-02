@@ -31,8 +31,9 @@ export interface PostCtx {
 const DOCUMENT_ONLY_CODES = new Set<string>([ACCOUNT_CODES.AR, ACCOUNT_CODES.AP, ACCOUNT_CODES.VAT_INPUT, ACCOUNT_CODES.VAT_OUTPUT]);
 
 export const isBankOrCashAccount = (a: Pick<Account, "type" | "code" | "nameEn">, managedGlIds: Set<string> = new Set<string>(), id?: string): boolean =>
-  a.type === "asset" &&
-  ((id !== undefined && managedGlIds.has(id)) || ["1010", "1020", "1025"].includes(a.code) || /\b(bank|cash)\b/i.test(a.nameEn));
+  // a credit card is a liability account that is managed as a bank account
+  (a.type === "liability" && id !== undefined && managedGlIds.has(id)) ||
+  (a.type === "asset" && ((id !== undefined && managedGlIds.has(id)) || ["1010", "1020", "1025"].includes(a.code) || /\b(bank|cash)\b/i.test(a.nameEn)));
 
 export const isDocumentOnlyAccount = (a: Pick<Account, "code">): boolean => DOCUMENT_ONLY_CODES.has(a.code);
 
@@ -82,6 +83,19 @@ export async function bankRate(companyId: string, currency: string, date: Date):
   const r = await resolveDocumentExchangeRate({ currency, date, companyId, hint: "Add one under Exchange Rates." });
   if (!r.ok) throw appError(422, "FX_RATE_MISSING", r.message);
   return r.rate;
+}
+
+/**
+ * The rate a foreign-currency RECEIPT is booked at: the one the user typed, else the company's rate for the receipt day.
+ * Null for an AED account (nothing to convert). The difference to the rate the invoice was booked at is realised FX.
+ */
+export async function receiptRate(companyId: string, currency: string, date: Date, requested?: number | null): Promise<number | null> {
+  if (currency === "AED") return null;
+  if (requested !== undefined && requested !== null) {
+    if (!(Number(requested) > 0)) throw appError(422, "FX_RATE_INVALID", "The exchange rate must be above 0.");
+    return Number(requested);
+  }
+  return await bankRate(companyId, currency, date);
 }
 
 /** Chosen account for a posting: this company's, active, not archived, not the bank account itself. */

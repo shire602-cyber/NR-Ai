@@ -11,6 +11,7 @@ import {
   listLockedPeriods,
   aiValidation,
   getCloseHistory,
+  vatItemStatus,
 } from "../services/month-end.service";
 import { findFiledVatReturnsCoveringMonth } from "../services/vat-filing.service";
 
@@ -117,6 +118,23 @@ export function registerMonthEndRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Locking a month whose VAT return is not prepared yet needs an explicit, written override (audit-logged). Preparing, computing
+      // and filing the return never hit the period lock, so the usual order is: prepare the return, then lock.
+      const monthStart = `${String(periodEnd).slice(0, 7)}-01`;
+      const vat = await vatItemStatus(companyId, monthStart, String(periodEnd));
+      const overrideReason = typeof req.body?.overrideReason === "string" ? req.body.overrideReason.trim() : "";
+      const overridden = vat.open && req.body?.overrideVatCheck === true;
+      if (vat.open && !overridden) {
+        return res.status(409).json({
+          message: "The VAT return for this period is not prepared yet. Prepare it (a locked month does not stop that), or lock anyway with an override and a reason.",
+          code: "VAT_RETURN_OPEN",
+          details: { periodEnd, reason: vat.reason },
+        });
+      }
+      if (overridden && overrideReason.length < 10) {
+        return res.status(400).json({ message: "A reason of at least 10 characters is required to lock without the VAT return.", code: "VAT_OVERRIDE_REASON_REQUIRED" });
+      }
+
       const record = await lockPeriod(companyId, periodEnd, userId);
 
       const { recordAudit } = await import("../services/audit.service");
@@ -127,7 +145,8 @@ export function registerMonthEndRoutes(app: Express) {
         entityType: "period",
         entityId: periodEnd,
         before: null,
-        after: { periodEnd, lockedBy: userId },
+        after: { periodEnd, lockedBy: userId, vatReturnOverride: overridden },
+        extra: overridden ? { vatOverrideReason: overrideReason } : undefined,
         req,
       });
 
@@ -197,12 +216,9 @@ export function registerMonthEndRoutes(app: Express) {
    * A `reason` is mandatory when the month is covered by a VAT return that was
    * recorded as filed; it is written to the audit log with the filed returns.
    */
-  app.post(
-    "/api/period-lock/unlock",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
+  const unlockHandler = async (req: Request, res: Response, source: { companyId?: unknown; period?: unknown; reason?: unknown }) => {
       const userId = req.user!.id;
-      const { companyId, period, reason } = req.body ?? {};
+      const { companyId, period, reason } = source;
 
       if (!companyId || typeof companyId !== "string") {
         return res.status(400).json({ message: "companyId is required" });
@@ -260,6 +276,32 @@ export function registerMonthEndRoutes(app: Express) {
       });
 
       res.json(record);
+  };
+
+  app.post(
+    "/api/period-lock/unlock",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => unlockHandler(req, res, req.body ?? {}))
+  );
+
+  /**
+   * POST /api/companies/:companyId/month-end/unlock-period  (the screen's "Reopen month")
+   * The same unlock with the company in the path. Body: { period: "YYYY-MM" | periodEnd: "YYYY-MM-DD", reason }.
+   * Only the company's owner (or a firm owner / admin) may reopen a month; the reason (at least 10 characters) is mandatory and
+   * is written to the audit log (action period.unlock) together with any filed VAT return the month belongs to.
+   */
+  app.post(
+    "/api/companies/:companyId/month-end/unlock-period",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const body = req.body ?? {};
+      const period = typeof body.period === "string" ? body.period : typeof body.periodEnd === "string" ? String(body.periodEnd).slice(0, 7) : undefined;
+      const reason = typeof body.reason === "string" ? body.reason : "";
+      if (reason.trim().length < UNLOCK_REASON_MIN_LENGTH) {
+        return res.status(400).json({ message: `A reason of at least ${UNLOCK_REASON_MIN_LENGTH} characters is required to reopen a month.`, code: "UNLOCK_REASON_REQUIRED" });
+      }
+      return unlockHandler(req, res, { companyId: req.params.companyId, period, reason });
     })
   );
 

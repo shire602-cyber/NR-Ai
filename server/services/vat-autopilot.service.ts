@@ -14,6 +14,8 @@
  * those pure helpers using `pool.query` (matching the rest of the codebase).
  */
 
+import { EMIRATE_BOX_PREFIX, type VatEmirate } from "./vat-emirate";
+import { aggregateReturnSalesLines } from "./vat-sales-lines";
 import { blockedInputSql, isBlockedInputCategory } from "./blocked-input-vat";
 import { randomUUID } from "node:crypto";
 import { db, pool } from "../db";
@@ -415,7 +417,9 @@ export function buildVat201Boxes(
     totalExpenses: number;
     inputVatRecoverable: number;
   },
-  emirate: string
+  emirate: string,
+  /** Standard-rated supplies per emirate (each document's own emirate). Absent: all of them in `emirate`. */
+  byEmirate?: Partial<Record<VatEmirate, { amount: number; vat: number }>>
 ): Vat201BoxValues {
   const boxes: Vat201BoxValues = {
     box1aAbuDhabiAmount: 0,
@@ -451,6 +455,13 @@ export function buildVat201Boxes(
 
   const stdAmt = round2(components.standardRatedAmount);
   const stdVat = round2(components.standardRatedVat);
+  if (byEmirate && Object.keys(byEmirate).length > 0) {
+    for (const [slug, figures] of Object.entries(byEmirate)) {
+      const prefix = EMIRATE_BOX_PREFIX[slug as VatEmirate];
+      (boxes as unknown as Record<string, number>)[`${prefix}Amount`] = round2(figures!.amount);
+      (boxes as unknown as Record<string, number>)[`${prefix}Vat`] = round2(figures!.vat);
+    }
+  } else
   switch (emirate) {
     case "abu_dhabi":
       boxes.box1aAbuDhabiAmount = stdAmt;
@@ -743,9 +754,9 @@ export async function calculateVatReturn(
      FROM receipts
      WHERE company_id = $1
        AND posted = true
-       AND COALESCE(date, created_at) >= $2
-       AND COALESCE(date, created_at) <= $3`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
+       AND ((COALESCE(date, created_at) + INTERVAL '4 hours')::date) >= $2::date
+       AND ((COALESCE(date, created_at) + INTERVAL '4 hours')::date) <= $3::date`,
+    [companyId, resolvedPeriod.start.toISOString().slice(0, 10), resolvedPeriod.end.toISOString().slice(0, 10)]
   );
 
   let totalExpenses = 0;
@@ -891,10 +902,12 @@ export async function calculateVatReturn(
      JOIN accounts a ON a.id = jl.account_id
      WHERE je.company_id = $1
        AND je.status = 'posted'
-       AND je.date >= $2 AND je.date <= $3
+       -- the SAME days as the return: the UAE (Dubai) calendar day of the entry, between the period's first and last day
+       AND ((je.date + INTERVAL '4 hours')::date) >= $2::date AND ((je.date + INTERVAL '4 hours')::date) <= $3::date
+       AND je.source NOT IN ('vat_filing', 'vat_payment', 'opening_balance', 'opening_balance_reversal')
        AND a.is_vat_account = true
      GROUP BY a.vat_type`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
+    [companyId, resolvedPeriod.start.toISOString().slice(0, 10), resolvedPeriod.end.toISOString().slice(0, 10)]
   );
   let outputLedger = 0;
   let inputLedger = 0;
@@ -923,7 +936,8 @@ export async function calculateVatReturn(
       totalExpenses: boxes.totalExpenses,
       inputVatRecoverable: boxes.inputVatRecoverable,
     },
-    company.emirate
+    company.emirate,
+    aggregateReturnSalesLines(salesDocs.lines as any[], salesDocs.rateByInvoiceId, salesDocs.emirateByInvoiceId, company.emirate).standardByEmirate
   );
   const vat201 = applyJournalAdjustmentsToBoxes(vat201Base, journalAdjustments);
 
@@ -1052,6 +1066,81 @@ function storedRowToSummary(
   };
 }
 
+/** Periods ending on or after the VAT start day, newest first; the newest ended period always stays (a company with no history has one to prepare). */
+export function afterVatStart(periods: VatPeriod[], vatStart: Date | null): VatPeriod[] {
+  if (!vatStart) return periods;
+  const kept = periods.filter((p) => p.end.getTime() >= vatStart.getTime());
+  return kept.length > 0 ? kept : periods.slice(0, 1);
+}
+
+/**
+ * The day each company's VAT obligation began: its VAT registration date; failing that the first posted journal entry (the day
+ * the books start, e.g. the 1 Jul opening balances); failing that the day the company was created. No quarter that ended before
+ * it is ever due or overdue.
+ */
+export async function loadCompanyVatStartDates(companyIds: string[]): Promise<Map<string, Date>> {
+  if (companyIds.length === 0) return new Map();
+  const res = await pool.query(
+    `SELECT c.id,
+            to_char(COALESCE(c.tax_registration_date + INTERVAL '4 hours',
+                     (SELECT MIN(je.date + INTERVAL '4 hours') FROM journal_entries je WHERE je.company_id = c.id AND je.status = 'posted'),
+                     c.created_at + INTERVAL '4 hours'), 'YYYY-MM-DD') AS start_day
+       FROM companies c WHERE c.id = ANY($1::uuid[])`,
+    [companyIds]
+  );
+  const out = new Map<string, Date>();
+  for (const row of res.rows as Array<{ id: string; start_day: string | null }>) {
+    if (row.start_day) out.set(String(row.id), new Date(`${row.start_day}T00:00:00.000Z`));
+  }
+  return out;
+}
+
+export interface CurrentVatFilingPeriod {
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  /** ended_unfiled: the period has ended and no return of it is recorded as filed; open: today falls inside it. */
+  state: "ended_unfiled" | "open";
+  deadline: DeadlineStatus;
+  returnId: string | null;
+  returnStatus: string | null;
+  /** Older ended periods still unfiled (after the company's VAT start day), newest first. */
+  earlierUnfiled: Array<{ periodStart: string; periodEnd: string; dueDate: string }>;
+}
+
+/**
+ * The period the VAT Filing page works on: the last ENDED period whose return is not recorded as filed (Q3, due 28 Oct, while
+ * it is 2 Oct), and only when every ended period is filed, the one that contains today. Never a period that ended before the
+ * company's VAT start day.
+ */
+export async function currentVatFilingPeriod(companyId: string, now: Date = new Date()): Promise<CurrentVatFilingPeriod | null> {
+  const company = await loadCompanyConfig(companyId);
+  if (!company) return null;
+  const frequency = frequencyFromCompany(company.vatFilingFrequency);
+  const vatStart = (await loadCompanyVatStartDates([companyId])).get(companyId) ?? null;
+  const ended = afterVatStart(listRecentPeriods(frequency, company.vatPeriodStartMonth, 12, now), vatStart);
+  const returns = await pool.query(
+    `SELECT id, to_char(period_start, 'YYYY-MM-DD') AS ps, to_char(period_end, 'YYYY-MM-DD') AS pe, status
+       FROM vat_returns WHERE company_id = $1 AND COALESCE(is_amendment, false) = false AND status NOT IN ('void', 'cancelled')
+      ORDER BY created_at DESC`,
+    [companyId]
+  );
+  const returnFor = (p: VatPeriod) => (returns.rows as Array<{ id: string; ps: string; pe: string; status: string }>).find((r) => r.ps === p.start.toISOString().slice(0, 10) && r.pe === p.end.toISOString().slice(0, 10));
+  const unfiled = ended.filter((p) => returnFor(p)?.status !== "filed");
+  const summary = (p: VatPeriod) => ({ periodStart: p.start.toISOString().slice(0, 10), periodEnd: p.end.toISOString().slice(0, 10), dueDate: p.dueDate.toISOString().slice(0, 10) });
+  const chosen = unfiled[0] ?? detectPeriod(frequency, company.vatPeriodStartMonth, now);
+  const isEnded = chosen.end.getTime() <= now.getTime();
+  const ret = returnFor(chosen);
+  return {
+    ...summary(chosen),
+    state: isEnded ? "ended_unfiled" : "open",
+    deadline: deadlineStatus(chosen.dueDate, now),
+    returnId: ret?.id ?? null,
+    returnStatus: ret?.status ?? null,
+    earlierUnfiled: (isEnded ? unfiled.slice(1) : []).map(summary),
+  };
+}
+
 /**
  * List all VAT periods for a company. Recent periods that haven't been
  * persisted yet are generated synthetically so the UI can show a continuous
@@ -1065,7 +1154,10 @@ export async function listPeriodsForCompany(
   const company = await loadCompanyConfig(companyId);
   if (!company) return [];
   const frequency = frequencyFromCompany(company.vatFilingFrequency);
-  const synthetic = listRecentPeriods(frequency, company.vatPeriodStartMonth, recentCount, now);
+  // Only periods that end on or after the day the company's VAT obligation began: a company whose books start on 1 Jul 2026 owes
+  // nothing for the quarters before it, so none of them is listed (let alone as overdue).
+  const vatStart = (await loadCompanyVatStartDates([companyId])).get(companyId) ?? null;
+  const synthetic = afterVatStart(listRecentPeriods(frequency, company.vatPeriodStartMonth, recentCount, now), vatStart);
 
   const stored = await pool.query(
     `SELECT id, period_start, period_end, due_date, frequency, status,
@@ -1284,6 +1376,7 @@ export async function listDueDates(
     storedByCompany.set(key, [...(storedByCompany.get(key) ?? []), row]);
   }
 
+  const vatStarts = await loadCompanyVatStartDates(companyIds);
   const out: DueDateView[] = [];
   for (const c of companyRes.rows as Array<Record<string, unknown>>) {
     const cid = String(c.id);
@@ -1293,7 +1386,8 @@ export async function listDueDates(
       Number(c.vat_period_start_month),
       (c.company_type as string | null) ?? null
     );
-    const synthetic = listRecentPeriods(freq, periodStartMonth, 8, now);
+    const vatStart = vatStarts.get(cid) ?? null;
+    const synthetic = afterVatStart(listRecentPeriods(freq, periodStartMonth, 8, now), vatStart);
     const syntheticKeys = new Set(synthetic.map((period) => periodKey(period.start, period.end)));
     const scheduled = synthetic[0] ?? detectFilingPeriod(freq, periodStartMonth, now);
     let candidate: { periodEnd: Date; dueDate: Date; status: VatPeriodStatus } = {

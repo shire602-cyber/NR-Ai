@@ -19,6 +19,7 @@ import { useTranslation } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { periodLabel, type EmployeeLoan, type LoanPreview } from "@/lib/purchasing-hr";
+import { useConfirmAction } from "@/components/ConfirmDialog";
 import { messages } from "./LoansTab.i18n";
 
 interface Props {
@@ -32,6 +33,7 @@ const TONES: Record<EmployeeLoan["status"], StatusTone> = { active: "info", sett
 
 export function LoansTab({ companyId, employees, canWrite }: Props) {
   const tr = messages.useT();
+  const [askConfirm, confirmDialog] = useConfirmAction();
   const { locale } = useTranslation();
   const { toast } = useToast();
   const now = new Date();
@@ -122,6 +124,7 @@ export function LoansTab({ companyId, employees, canWrite }: Props) {
 
   return (
     <div className="space-y-4" data-testid="tab-loans">
+      {confirmDialog}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1 w-[200px]">
           <Label>{tr("filterStatus")}</Label>
@@ -191,7 +194,7 @@ export function LoansTab({ companyId, employees, canWrite }: Props) {
                           <Button size="sm" variant="outline" onClick={() => { setRepayAccount(""); setRepayDate(today()); setRepaying(l); }} data-testid={`button-loan-repay-${l.id}`}>
                             {tr("repay")}
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => window.confirm(tr("cancelConfirm")) && cancel.mutate(l.id)} disabled={cancel.isPending} data-testid={`button-loan-cancel-${l.id}`}>
+                          <Button size="sm" variant="ghost" onClick={() => askConfirm(tr("cancelConfirm"), () => cancel.mutate(l.id), { destructive: true })} disabled={cancel.isPending} data-testid={`button-loan-cancel-${l.id}`}>
                             {tr("cancelLoan")}
                           </Button>
                         </>

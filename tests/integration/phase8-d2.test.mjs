@@ -322,7 +322,7 @@ async function approvalRulesApi() {
   const negative = await A.post(`/api/companies/${A.cid}/approval-rules`, { documentType: "bill", name: "x", thresholdAed: -5, approverRoles: ["owner"] });
   ok("rules: a negative threshold is refused", negative.status === 400, negative.status);
   const listed = await A.get(`/api/companies/${A.cid}/approval-rules`, emp.token);
-  ok("rules: any member may list them", listed.status === 200 && listed.json.length === 1, { s: listed.status });
+  ok("rules: an employee-role member cannot list them (403 ROLE_REQUIRED)", listed.status === 403 && listed.json?.code === "ROLE_REQUIRED", { s: listed.status });
   const crossList = await B.get(`/api/companies/${A.cid}/approval-rules`);
   ok("tenant: B cannot list A's rules", crossList.status === 403, crossList.status);
   const crossPatch = await B.patch(`/api/approval-rules/${made.json.id}`, { thresholdAed: 1 });
@@ -341,12 +341,13 @@ async function approvalsBill() {
   const emp = await A.member("employee");
   const acct = await A.member("accountant");
   const acct2 = await A.member("accountant");
+  const preparer = await A.member("accountant");
   const rule = await A.post(`/api/companies/${A.cid}/approval-rules`, { documentType: "bill", name: "Over 5,000", thresholdAed: 5000, approverRoles: ["accountant", "owner"] });
 
   // D2-4: 6,000 + VAT = 6,300 needs two steps
-  const big = await A.bill(prevMid, 6000, { vendor_name: "Big Vendor" }, false, emp.token);
+  const big = await A.bill(prevMid, 6000, { vendor_name: "Big Vendor" }, false, preparer.token);
   const r1 = await A.post(`/api/bills/${big}/approve`, {}, emp.token);
-  ok("D2-4: an employee's approval is 403 APPROVAL_REQUIRED naming the role and step", r1.status === 403 && r1.json?.code === "APPROVAL_REQUIRED" && r1.json?.requiredRole === "accountant" && r1.json?.step === 1 && r1.json?.requiredSteps === 2, { s: r1.status, j: r1.json });
+  ok("D2-4: an employee-role member cannot approve at all (403 ROLE_REQUIRED, before any approval rule applies)", r1.status === 403 && r1.json?.code === "ROLE_REQUIRED", { s: r1.status, j: r1.json });
   ok("D2-4: nothing was recorded for the refused call", n((await db.query(`SELECT COUNT(*) AS c FROM approval_requests WHERE document_id = $1`, [big])).rows[0].c) === 0);
   const r2 = await A.post(`/api/bills/${big}/approve`, {}, acct.token);
   ok("D2-4: the accountant's approval is step 1 of 2, status pending_approval", r2.status === 200 && r2.json?.status === "pending_approval" && r2.json?.approval?.completedSteps === 1 && r2.json?.approval?.requiredSteps === 2 && r2.json?.approval?.nextRole === "owner", { s: r2.status, j: r2.json });
@@ -396,14 +397,14 @@ async function approvalsBill() {
   ok("D2-4: a 4,200 bill approves in one step", s1.status === 200 && s1.json?.status === "approved", { s: s1.status, j: s1.json?.status });
 
   // ten parallel final approvals post once
-  const race = await A.bill(prevMid, 6000, { vendor_name: "Race Vendor" }, false, emp.token);
+  const race = await A.bill(prevMid, 6000, { vendor_name: "Race Vendor" }, false, preparer.token);
   await A.post(`/api/bills/${race}/approve`, {}, acct.token);
   const burst = await Promise.all(Array.from({ length: 10 }, () => A.post(`/api/bills/${race}/approve`, {})));
   ok("D2-4: ten parallel final approvals: one 200", burst.filter((r) => r.status === 200).length === 1, burst.map((r) => r.status));
   ok("D2-4: ...one journal entry", (await A.jes("bill", race)).length === 1, (await A.jes("bill", race)).length);
 
   // reject restores the bill and frees it
-  const rej = await A.bill(prevMid, 6000, { vendor_name: "Reject Vendor" }, false, emp.token);
+  const rej = await A.bill(prevMid, 6000, { vendor_name: "Reject Vendor" }, false, preparer.token);
   await A.post(`/api/bills/${rej}/approve`, {}, acct.token);
   const rejected = await A.post(`/api/approvals/bill/${rej}/reject`, { comment: "wrong amount" }, acct2.token);
   ok("reject: a person below the next role cannot reject (403)", rejected.status === 403, rejected.status);
@@ -415,7 +416,7 @@ async function approvalsBill() {
   // queue
   const q = await A.get(`/api/companies/${A.cid}/approvals`);
   ok("queue: a rejected bill is no longer waiting for approval (F4)", q.status === 200 && !q.json.some((row) => row.documentId === rej), q.json?.slice?.(0, 3));
-  const unsigned = await A.bill(prevMid, 6000, { vendor_name: "Unsigned Vendor" }, false, emp.token);
+  const unsigned = await A.bill(prevMid, 6000, { vendor_name: "Unsigned Vendor" }, false, preparer.token);
   const q2 = await A.get(`/api/companies/${A.cid}/approvals`);
   ok("queue: pending lists the unsigned bill a rule covers", q2.status === 200 && q2.json.some((row) => row.documentId === unsigned && row.requestId === null && row.canAct === true), q2.json?.slice?.(0, 3));
   const history = await A.get(`/api/companies/${A.cid}/approvals?status=approved`);
@@ -441,7 +442,7 @@ async function approvalsOtherDocuments() {
   const claim = await A.post(`/api/companies/${A.cid}/expense-claims`, { title: "Client lunch", items: [{ expense_date: prevMid, category: "office supplies", description: "Paper", amount: 300, vat_amount: 15 }] }, acct.token);
   await A.post(`/api/expense-claims/${claim.json.id}/submit`, {}, acct.token);
   const c1 = await A.post(`/api/expense-claims/${claim.json.id}/approve`, {}, emp.token);
-  ok("D2-5 claim: an employee's approval is 403 APPROVAL_REQUIRED", c1.status === 403 && c1.json?.code === "APPROVAL_REQUIRED", { s: c1.status, j: c1.json });
+  ok("D2-5 claim: an employee-role member's approval is 403 ROLE_REQUIRED", c1.status === 403 && c1.json?.code === "ROLE_REQUIRED", { s: c1.status, j: c1.json });
   const c2 = await A.post(`/api/expense-claims/${claim.json.id}/approve`, {}, acct.token);
   ok("D2-5 claim: the submitter cannot approve their own claim (403 SELF_APPROVAL)", c2.status === 403 && c2.json?.code === "SELF_APPROVAL", { s: c2.status, j: c2.json });
   const c3 = await A.post(`/api/expense-claims/${claim.json.id}/approve`, {}, acct2.token);
@@ -499,7 +500,7 @@ async function approvalsOtherDocuments() {
   const patchStatus = await A.patch(`/api/payroll-runs/${run.json.id}`, { status: "approved" });
   ok("payroll: a PATCH cannot set the status around the approval", (await db.query(`SELECT status FROM payroll_runs WHERE id = $1`, [run.json.id])).rows[0].status === "calculated", patchStatus.status);
   const pr1 = await A.post(`/api/payroll-runs/${run.json.id}/approve`, {}, emp.token);
-  ok("D2-5 payroll: an employee's approval is 403 APPROVAL_REQUIRED", pr1.status === 403 && pr1.json?.code === "APPROVAL_REQUIRED", { s: pr1.status, j: pr1.json });
+  ok("D2-5 payroll: an employee-role member's approval is 403 ROLE_REQUIRED", pr1.status === 403 && pr1.json?.code === "ROLE_REQUIRED", { s: pr1.status, j: pr1.json });
   const pr2 = await A.post(`/api/payroll-runs/${run.json.id}/approve`, {}, acct.token);
   ok("D2-5 payroll: the accountant's approval is step 1 of 2", pr2.status === 200 && pr2.json?.status === "pending_approval" && pr2.json?.approval?.completedSteps === 1, { s: pr2.status, j: pr2.json });
   ok("D2-5 payroll: nothing posted yet", (await A.jes("system", run.json.id)).length === 0);
@@ -759,9 +760,12 @@ async function leaveBalances() {
 
   // role and tenant
   const byEmp = await A.post(`/api/companies/${A.cid}/leave-requests`, { employeeId: e1.id, leaveTypeId: sickId, startDate: prevMonthDay(7), endDate: prevMonthDay(7) }, emp.token);
-  ok("leave: an employee cannot create requests (403 ROLE_REQUIRED)", byEmp.status === 403 && byEmp.json?.code === "ROLE_REQUIRED", { s: byEmp.status, j: byEmp.json });
+  ok("leave: an employee cannot file leave for somebody else's record (403 HR_OWN_RECORDS_ONLY)", byEmp.status === 403 && byEmp.json?.code === "HR_OWN_RECORDS_ONLY", { s: byEmp.status, j: byEmp.json });
+  await A.patch(`/api/employees/${e1.id}`, { userId: emp.userId });
+  const ownLeave = await A.post(`/api/companies/${A.cid}/leave-requests`, { employeeId: e1.id, leaveTypeId: sickId, startDate: prevMonthDay(7), endDate: prevMonthDay(7) }, emp.token);
+  ok("leave: an employee files leave for their own linked record (201)", ownLeave.status === 201, { s: ownLeave.status, j: ownLeave.json });
   const readByEmp = await A.get(`/api/companies/${A.cid}/leave-requests`, emp.token);
-  ok("leave: any member can read", readByEmp.status === 200, readByEmp.status);
+  ok("leave: an employee reads their own requests", readByEmp.status === 200, readByEmp.status);
   const foreignEmp = await A.post(`/api/companies/${A.cid}/leave-requests`, { employeeId: bEmp.id, leaveTypeId: sickId, startDate: prevMonthDay(7), endDate: prevMonthDay(7) });
   ok("tenant: B's employee in A's leave request is 422 INVALID_EMPLOYEE", foreignEmp.status === 422 && foreignEmp.json?.code === "INVALID_EMPLOYEE", { s: foreignEmp.status, j: foreignEmp.json });
   const bType = await leaveTypeId(B, "sick");
@@ -1007,6 +1011,8 @@ const hasKeys = (obj, keys) => !!obj && keys.every((k) => k in obj);
 async function uiContracts() {
   const A = await newCompany("uiA");
   const acct = await A.member("accountant");
+  const acct2 = await A.member("accountant");
+  const preparer = await A.member("accountant");
   const emp = await A.member("employee");
 
   // contacts: type filter, `both` in each list, vendor picker data
@@ -1064,11 +1070,11 @@ async function uiContracts() {
 
   // approvals: the queue row, the pending body, the 403 body, the history rows, the reject body
   await A.post(`/api/companies/${A.cid}/approval-rules`, { documentType: "bill", name: "UI rule", thresholdAed: 1000, approverRoles: ["accountant", "owner"] });
-  // entered by the employee: the owner who signs the last step must not be the creator
-  const big = await A.bill(prevMid, 3000, { vendor_name: "UI Vendor", vendor_id: vend.id }, false, emp.token);
-  const refused = await A.post(`/api/bills/${big}/approve`, {}, emp.token);
-  ok("ui: the refusal toast reads code and details {step, requiredSteps, requiredRole}", refused.status === 403 && refused.json?.code === "APPROVAL_REQUIRED" && refused.json?.details?.requiredRole === "accountant" && refused.json?.details?.step === 1 && refused.json?.details?.requiredSteps === 2, refused.json);
+  // entered by a preparer (an accountant): the owner who signs the last step must not be the creator
+  const big = await A.bill(prevMid, 3000, { vendor_name: "UI Vendor", vendor_id: vend.id }, false, preparer.token);
   const step1 = await A.post(`/api/bills/${big}/approve`, {}, acct.token);
+  const refused = await A.post(`/api/bills/${big}/approve`, {}, acct2.token);
+  ok("ui: the refusal toast reads code and details {step, requiredSteps, requiredRole}", refused.status === 403 && refused.json?.code === "APPROVAL_REQUIRED" && refused.json?.details?.requiredRole === "owner" && refused.json?.details?.step === 2 && refused.json?.details?.requiredSteps === 2, refused.json);
   ok("ui: a recorded step answers {status: pending_approval, approval{completedSteps, requiredSteps, nextRole}}", step1.json?.status === "pending_approval" && hasKeys(step1.json?.approval, ["requestId", "completedSteps", "requiredSteps", "nextRole"]), step1.json);
   const queue = (await A.get(`/api/companies/${A.cid}/approvals?status=pending`)).json;
   const row = queue.find((r) => r.documentId === big);
@@ -1341,7 +1347,7 @@ async function noEligibleApprover() {
 // F4: a rejection ends the request; F10: the sole possible approver is the creator.
 async function rejectionEndsTheRequest() {
   const A = await newCompany("rjA");
-  const prep = await A.member("employee");
+  const prep = await A.member("accountant");
   const prep2 = await A.member("employee");
   const acct = await A.member("accountant");
   for (const [documentType, roles] of [["bill", ["owner"]], ["expense_claim", ["accountant"]], ["purchase_order", ["owner"]], ["payroll_run", ["accountant"]], ["manual_journal", ["owner"]]]) {

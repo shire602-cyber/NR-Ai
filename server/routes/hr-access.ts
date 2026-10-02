@@ -1,5 +1,6 @@
 // Shared access checks for the HR routes (leave, employee loans, final settlements).
-// Reads need company access; writes need an accountant or above (403 ROLE_REQUIRED): no employee self-service.
+// Reads need company access; writes need an accountant or above (403 ROLE_REQUIRED). The one self-service write is
+// hrOwnRecordWrite: an employee files and cancels leave for their own employee record only.
 
 import type { Request, Response } from "express";
 import { storage } from "../storage";
@@ -8,7 +9,7 @@ import { ROLE_RANK } from "../services/approval-rules";
 import { linkedEmployeeIds, narrowEmployeeFilter, readsOnlyOwnRecords, type HrReadScope } from "../services/hr-scope";
 
 export async function hrCompanyAccess(req: Request, res: Response, companyId: string, opts: { write: boolean }): Promise<boolean> {
-  if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
+  if (!(await storage.hasCompanyAccess(req.user!.id, companyId, { employeeSelfService: true }))) {
     res.status(403).json({ message: "Access denied" });
     return false;
   }
@@ -28,13 +29,27 @@ export async function hrCompanyAccess(req: Request, res: Response, companyId: st
  * no access to the company at all.
  */
 export async function hrReadScope(req: Request, res: Response, companyId: string): Promise<HrReadScope | null> {
-  if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
+  if (!(await storage.hasCompanyAccess(req.user!.id, companyId, { employeeSelfService: true }))) {
     res.status(403).json({ message: "Access denied" });
     return null;
   }
   const actor = await resolveActor(req.user!, companyId);
   if (!readsOnlyOwnRecords(actor.rank)) return { all: true };
   return { all: false, employeeIds: await linkedEmployeeIds(companyId, req.user!.id) };
+}
+
+/**
+ * A write an employee may make for their own record only (a leave request, cancelling their own leave): accountant
+ * and above may act for anyone, an employee only for the employee record linked to their login (403 HR_OWN_RECORDS_ONLY).
+ */
+export async function hrOwnRecordWrite(req: Request, res: Response, companyId: string, employeeId: string | null | undefined): Promise<boolean> {
+  if (!(await storage.hasCompanyAccess(req.user!.id, companyId, { employeeSelfService: true }))) {
+    res.status(403).json({ message: "Access denied" });
+    return false;
+  }
+  const actor = await resolveActor(req.user!, companyId);
+  if (!readsOnlyOwnRecords(actor.rank)) return true;
+  return allowEmployee(res, { all: false, employeeIds: await linkedEmployeeIds(companyId, req.user!.id) }, employeeId);
 }
 
 export const OWN_RECORDS_ONLY = { message: "You can only see your own HR records.", code: "HR_OWN_RECORDS_ONLY" } as const;
@@ -64,7 +79,7 @@ export function employeeFilterFor(res: Response, scope: HrReadScope, requested: 
 
 /** Company-wide payroll views (runs' totals, the register, the WPS file): accountant and above only. */
 export async function hrFullAccess(req: Request, res: Response, companyId: string): Promise<boolean> {
-  if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
+  if (!(await storage.hasCompanyAccess(req.user!.id, companyId, { employeeSelfService: true }))) {
     res.status(403).json({ message: "Access denied" });
     return false;
   }

@@ -73,6 +73,7 @@ const Accounts = lazyWithReload(() => import("@/pages/Accounts"));
 const ChartOfAccounts = lazyWithReload(() => import("@/pages/ChartOfAccounts"));
 const AccountLedger = lazyWithReload(() => import("@/pages/AccountLedger"));
 const Invoices = lazyWithReload(() => import("@/pages/Invoices"));
+const EmployeeDashboard = lazyWithReload(() => import("@/pages/EmployeeDashboard"));
 const Journal = lazyWithReload(() => import("@/pages/Journal"));
 const JournalEntryDetail = lazyWithReload(() => import("@/pages/JournalEntryDetail"));
 const Reports = lazyWithReload(() => import("@/pages/Reports"));
@@ -203,6 +204,8 @@ function loginRedirectForCurrentPath(): string {
 
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { MobileNav } from "@/components/MobileNav";
+import { RoleNotices, useEmployeeGuard, useIsEmployee } from "@/components/layout/EmployeeShell";
+import { employeeRedirectFor } from "@/lib/employee-shell";
 import { NotificationBell } from "@/components/NotificationBell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 import { RouteGuard } from "@/components/layout/RouteGuard";
@@ -256,15 +259,25 @@ function FirmContextBanner() {
   );
 }
 
+/** The dashboard: company KPIs for everyone except an employee, who sees their own summary. */
+function DashboardRoute() {
+  const isEmployee = useIsEmployee();
+  if (isEmployee === null) return null;
+  return isEmployee ? <EmployeeDashboard /> : <Dashboard />;
+}
+
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
   const { isFirmContext } = useActiveCompany();
   const pathname = pathnameOnly(location);
+  // An employee gets a self-service shell: finance screens redirect to their own payroll page.
+  const isEmployee = useIsEmployee();
+  useEmployeeGuard();
 
   useEffect(() => {
-    if (companyLoading || pathname === "/onboarding") return;
+    if (companyLoading || pathname === "/onboarding" || isEmployee) return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -288,7 +301,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(REDIRECT_FLAG, "1");
       navigate("/onboarding");
     }
-  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
+  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext, isEmployee]);
 
   const style = {
     "--sidebar-width": "16rem",
@@ -341,7 +354,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </button>
               <OfflineIndicator />
               <NotificationBell />
-              <Link href="/company-profile">
+              <Link href={isEmployee ? "/settings/security" : "/company-profile"}>
                 <motion.button
                   type="button"
                   whileHover={{ scale: 1.02 }}
@@ -361,6 +374,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             </div>
           </motion.header>
           <FirmContextBanner />
+          <RoleNotices />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
@@ -372,7 +386,10 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.25, ease: "easeOut" }}
                   >
-                    <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
+                    <SectionBoundary name={routeName(location)}>
+                      {/* Do not mount a finance screen for an employee (it would fire requests the server refuses). */}
+                      {isEmployee !== false && employeeRedirectFor(location) ? null : children}
+                    </SectionBoundary>
                   </motion.div>
                 </AnimatePresence>
               </RouteGuard>
@@ -381,7 +398,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <MobileNav />
-      <OnboardingWizard />
+      {/* The company-setup tour is for the people who set the company up, not for an employee. */}
+      {isEmployee !== true && <OnboardingWizard />}
       <CommandPaletteProvider />
       <GlobalShortcutsProvider />
     </SidebarProvider>
@@ -617,7 +635,7 @@ function Router() {
       <ProtectedLayout>
         <Suspense fallback={<PageLoader variant="list" />}>
           <Switch>
-            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/dashboard" component={DashboardRoute} />
             <Route path="/company-profile" component={CompanyProfile} />
             <Route path="/settings/company" component={CompanySettings} />
             <Route path="/settings/security" component={SecuritySettings} />

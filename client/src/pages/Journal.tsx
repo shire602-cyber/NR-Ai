@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { dubaiToday } from "@/lib/report-presets";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
@@ -43,6 +44,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { CardListSkeleton, PageSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -171,6 +173,8 @@ export default function Journal() {
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Date the reversal is posted on (a UAE calendar day, default today). Must fall in an open period: the server refuses otherwise.
+  const [reverseDate, setReverseDate] = useState(() => dubaiToday());
   const [editingEntry, setEditingEntry] = useState<any>(null);
   // Set when the API answers 409 BACKDATED_ENTRY_CONFIRMATION_REQUIRED; holds
   // the submission to replay with `confirmBackdated: true` once confirmed.
@@ -196,7 +200,8 @@ export default function Journal() {
   const approvalProgress = useApprovalProgress(
     selectedCompanyId ?? undefined,
     "manual_journal",
-    canAccess("approvals") && (entries ?? []).some((e) => e.status === "draft" && (!e.source || e.source === "manual"))
+    canAccess("approvals") &&
+      (entries ?? []).some((e) => e.status === "draft" && (!e.source || e.source === "manual"))
   );
 
   const form = useForm<JournalFormData>({
@@ -306,11 +311,18 @@ export default function Journal() {
     mutationFn: (id: string) => apiRequest("POST", `/api/journal/${id}/post`),
     onSuccess: (body: unknown) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "approvals"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "approvals"],
+      });
       if (isPendingApprovalBody(body)) {
         toast({
-          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
-          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+          title: approvalMessages.t("pendingApprovalSteps", {
+            done: body.approval.completedSteps,
+            total: body.approval.requiredSteps,
+          }),
+          description: body.approval.nextRole
+            ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) })
+            : undefined,
         });
         return;
       }
@@ -327,22 +339,29 @@ export default function Journal() {
   const submitForApprovalMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/journal/${id}/submit-for-approval`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "approvals"] });
-      toast({ title: approvalFeedbackMessages.t("submittedTitle"), description: approvalFeedbackMessages.t("submittedBody") });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "approvals"],
+      });
+      toast({
+        title: approvalFeedbackMessages.t("submittedTitle"),
+        description: approvalFeedbackMessages.t("submittedBody"),
+      });
     },
     onError: (error: unknown) => {
       const notRequired = error instanceof ApiError && error.code === "APPROVAL_NOT_REQUIRED";
       toast({
         variant: "destructive",
         title: approvalFeedbackMessages.t("submitFailed"),
-        description: notRequired ? approvalFeedbackMessages.t("noRuleBody") : (error as Error)?.message,
+        description: notRequired
+          ? approvalFeedbackMessages.t("noRuleBody")
+          : (error as Error)?.message,
       });
     },
   });
 
   const reverseMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      apiRequest("POST", `/api/journal/${id}/reverse`, { reason }),
+    mutationFn: ({ id, reason, date }: { id: string; reason?: string; date?: string }) =>
+      apiRequest("POST", `/api/journal/${id}/reverse`, { reason, ...(date ? { date } : {}) }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
@@ -385,7 +404,7 @@ export default function Journal() {
       setEditingEntry(fullEntry);
       form.reset({
         companyId: fullEntry.companyId,
-        date: (pickerDate(fullEntry.date) as Date),
+        date: pickerDate(fullEntry.date) as Date,
         memo: fullEntry.memo || "",
         lines: fullEntry.lines?.map((line: any) => ({
           accountId: line.accountId,
@@ -734,245 +753,295 @@ export default function Journal() {
         <CardListSkeleton count={4} />
       ) : entries && entries.length > 0 ? (
         <>
-        <ListPager view={journalView} pageSize={journalPageSize} cap={1000} testId="journal-pager" onPage={setJournalPage} onPageSize={(n) => { setJournalPageSize(n); setJournalPage(0); }} />
-        <VirtualList
-          items={(entries as any[]).slice(journalView.start, journalView.end)}
-          estimateSize={220}
-          threshold={100000}
-          height={Math.min(900, Math.max(600, (entries as any[]).length * 220))}
-          getKey={(entry) => entry.id}
-          className="space-y-4"
-          renderItem={(entry: any) => {
-            const isPosted = entry.status === "posted";
-            const isDraft = entry.status === "draft";
-            const isVoid = entry.status === "void";
-            // Only a journal typed in by a user is edited, deleted or reversed here. Entries posted by
-            // invoices, payments, filings, the year-end close ... are undone where they were created.
-            const isManual = !entry.source || entry.source === "manual";
-            const systemSourceLabel = tr(
-              (
-                SYSTEM_SOURCE_LABEL_KEYS as Record<
-                  string,
-                  (typeof SYSTEM_SOURCE_LABEL_KEYS)[keyof typeof SYSTEM_SOURCE_LABEL_KEYS]
-                >
-              )[entry.source] ?? "sourceOther"
-            );
+          <ListPager
+            view={journalView}
+            pageSize={journalPageSize}
+            cap={1000}
+            testId="journal-pager"
+            onPage={setJournalPage}
+            onPageSize={(n) => {
+              setJournalPageSize(n);
+              setJournalPage(0);
+            }}
+          />
+          <VirtualList
+            items={(entries as any[]).slice(journalView.start, journalView.end)}
+            estimateSize={220}
+            threshold={100000}
+            height={Math.min(900, Math.max(600, (entries as any[]).length * 220))}
+            getKey={(entry) => entry.id}
+            className="space-y-4"
+            renderItem={(entry: any) => {
+              const isPosted = entry.status === "posted";
+              const isDraft = entry.status === "draft";
+              const isVoid = entry.status === "void";
+              // Only a journal typed in by a user is edited, deleted or reversed here. Entries posted by
+              // invoices, payments, filings, the year-end close ... are undone where they were created.
+              const isManual = !entry.source || entry.source === "manual";
+              const systemSourceLabel = tr(
+                (
+                  SYSTEM_SOURCE_LABEL_KEYS as Record<
+                    string,
+                    (typeof SYSTEM_SOURCE_LABEL_KEYS)[keyof typeof SYSTEM_SOURCE_LABEL_KEYS]
+                  >
+                )[entry.source] ?? "sourceOther"
+              );
 
-            const approvalState = approvalProgress.get(entry.id);
-            const getStatusBadge = () => {
-              if (isPosted) {
-                return (
-                  <StatusBadge tone="success">
-                    <Lock className="w-3 h-3 me-1" />
-                    {tr("posted")}
-                  </StatusBadge>
-                );
-              } else if (isVoid) {
-                return (
-                  <StatusBadge tone="danger">
-                    <XCircle className="w-3 h-3 me-1" />
-                    {tr("void")}
-                  </StatusBadge>
-                );
-              } else {
-                if (approvalState) {
-                  return <ApprovalStatusBadge status="pending" completedSteps={approvalState.completedSteps} requiredSteps={approvalState.requiredSteps} />;
+              const approvalState = approvalProgress.get(entry.id);
+              const getStatusBadge = () => {
+                if (isPosted) {
+                  return (
+                    <StatusBadge tone="success">
+                      <Lock className="w-3 h-3 me-1" />
+                      {tr("posted")}
+                    </StatusBadge>
+                  );
+                } else if (isVoid) {
+                  return (
+                    <StatusBadge tone="danger">
+                      <XCircle className="w-3 h-3 me-1" />
+                      {tr("void")}
+                    </StatusBadge>
+                  );
+                } else {
+                  if (approvalState) {
+                    return (
+                      <ApprovalStatusBadge
+                        status="pending"
+                        completedSteps={approvalState.completedSteps}
+                        requiredSteps={approvalState.requiredSteps}
+                      />
+                    );
+                  }
+                  return (
+                    <StatusBadge tone="warning">
+                      <FileText className="w-3 h-3 me-1" />
+                      {tr("draft")}
+                    </StatusBadge>
+                  );
                 }
-                return (
-                  <StatusBadge tone="warning">
-                    <FileText className="w-3 h-3 me-1" />
-                    {tr("draft")}
-                  </StatusBadge>
-                );
-              }
-            };
-
-            const getSourceBadge = () => {
-              if (!entry.source || entry.source === "manual") return null;
-              const sources: Record<string, { label: string; tone: StatusTone }> = {
-                invoice: { label: tr("invoice"), tone: "info" },
-                receipt: { label: tr("receipt"), tone: "accent" },
-                payment: { label: tr("payment"), tone: "success" },
-                reversal: { label: tr("reversal"), tone: "warning" },
               };
-              const source = sources[entry.source];
-              if (!source) return null;
-              return <StatusBadge tone={source.tone}>{source.label}</StatusBadge>;
-            };
-            const sourceProofHref =
-              entry.source && entry.source !== "manual" && entry.sourceId
-                ? evidenceSourceHref(entry.source, entry.sourceId)
-                : evidenceSourceHref("journal_entry", entry.id, "evidence-audit-trail");
 
-            return (
-              <Card key={entry.id} className={cn(isVoid && "opacity-60")}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                        {entry.entryNumber && (
-                          <span dir="ltr" className="font-mono font-medium">
-                            {entry.entryNumber}
-                          </span>
+              const getSourceBadge = () => {
+                if (!entry.source || entry.source === "manual") return null;
+                const sources: Record<string, { label: string; tone: StatusTone }> = {
+                  invoice: { label: tr("invoice"), tone: "info" },
+                  receipt: { label: tr("receipt"), tone: "accent" },
+                  payment: { label: tr("payment"), tone: "success" },
+                  reversal: { label: tr("reversal"), tone: "warning" },
+                };
+                const source = sources[entry.source];
+                if (!source) return null;
+                return <StatusBadge tone={source.tone}>{source.label}</StatusBadge>;
+              };
+              const sourceProofHref =
+                entry.source && entry.source !== "manual" && entry.sourceId
+                  ? evidenceSourceHref(entry.source, entry.sourceId)
+                  : evidenceSourceHref("journal_entry", entry.id, "evidence-audit-trail");
+
+              return (
+                <Card key={entry.id} className={cn(isVoid && "opacity-60")}>
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                          {entry.entryNumber && (
+                            <span dir="ltr" className="font-mono font-medium">
+                              {entry.entryNumber}
+                            </span>
+                          )}
+                          <span>{formatDate(entry.date, locale)}</span>
+                        </div>
+                        {entry.memo && (
+                          <div className="font-medium">
+                            {localizeJournalText(entry.memo, locale)}
+                          </div>
                         )}
-                        <span>{formatDate(entry.date, locale)}</span>
-                      </div>
-                      {entry.memo && <div className="font-medium">{entry.memo}</div>}
-                      {!isManual && (
-                        <div
-                          className="text-xs text-muted-foreground mt-1"
-                          data-testid={`text-system-entry-${entry.id}`}
-                        >
-                          {tr("createdBySource", { source: systemSourceLabel })}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {getStatusBadge()}
-                      {getSourceBadge()}
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="sm"
-                        data-testid={`button-proof-journal-${entry.id}`}
-                      >
-                        <Link href={sourceProofHref}>
-                          <FileText className="w-4 h-4 me-2" />
-                          {tr("proof")}
-                        </Link>
-                      </Button>
-
-                      {isDraft && (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => postMutation.mutate(entry.id)}
-                            disabled={postMutation.isPending}
-                            data-testid={`button-post-journal-${entry.id}`}
+                        {!isManual && (
+                          <div
+                            className="text-xs text-muted-foreground mt-1"
+                            data-testid={`text-system-entry-${entry.id}`}
                           >
-                            <Send className="w-4 h-4 me-2" />
-                            {tr("post")}
-                          </Button>
-                          {isManual && !approvalState && canAccess("approvals") && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => submitForApprovalMutation.mutate(entry.id)}
-                              disabled={submitForApprovalMutation.isPending}
-                              data-testid={`button-submit-approval-${entry.id}`}
-                            >
-                              {approvalFeedbackMessages.t("submitForApproval")}
-                            </Button>
-                          )}
-                          {isManual && !approvalState && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditEntry(entry)}
-                              data-testid={`button-edit-journal-${entry.id}`}
-                            >
-                              <Edit className="w-4 h-4 me-2" />
-                              {tr("edit")}
-                            </Button>
-                          )}
-                          {isManual && !approvalState && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  data-testid={`button-delete-journal-${entry.id}`}
-                                >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>{tr("deleteDraftEntry")}</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    {tr("thisWillPermanentlyDeleteThisDraft")}
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteMutation.mutate(entry.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    {tr("delete")}
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </>
-                      )}
-
-                      {isPosted && isManual && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              data-testid={`button-reverse-journal-${entry.id}`}
-                            >
-                              <RotateCcw className="w-4 h-4 me-2" />
-                              {tr("reverse")}
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>{tr("reverseJournalEntry")}</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {tr("thisWillCreateANewReversing")}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() =>
-                                  reverseMutation.mutate({
-                                    id: entry.id,
-                                    reason: tr("userRequestedReversal"),
-                                  })
-                                }
-                              >
-                                {tr("reverseEntry")}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {entry.lines?.map((line: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-12 gap-4 text-sm py-2 border-b last:border-0"
-                      >
-                        <div className="col-span-6 flex items-center gap-2">
-                          <span dir="ltr" className="font-mono text-xs text-muted-foreground">
-                            {line.account?.code}
-                          </span>
-                          <span>{accountName(line.account, locale)}</span>
-                        </div>
-                        <div className="col-span-3 text-end font-mono">
-                          {line.debit > 0 ? formatNumber(line.debit, locale) : "-"}
-                        </div>
-                        <div className="col-span-3 text-end font-mono">
-                          {line.credit > 0 ? formatNumber(line.credit, locale) : "-"}
-                        </div>
+                            {tr("createdBySource", { source: systemSourceLabel })}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          }}
-        />
-        <ListPager view={journalView} pageSize={journalPageSize} cap={1000} testId="journal-pager-bottom" onPage={setJournalPage} onPageSize={(n) => { setJournalPageSize(n); setJournalPage(0); }} />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {getStatusBadge()}
+                        {getSourceBadge()}
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          data-testid={`button-proof-journal-${entry.id}`}
+                        >
+                          <Link href={sourceProofHref}>
+                            <FileText className="w-4 h-4 me-2" />
+                            {tr("proof")}
+                          </Link>
+                        </Button>
+
+                        {isDraft && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => postMutation.mutate(entry.id)}
+                              disabled={postMutation.isPending}
+                              data-testid={`button-post-journal-${entry.id}`}
+                            >
+                              <Send className="w-4 h-4 me-2" />
+                              {tr("post")}
+                            </Button>
+                            {isManual && !approvalState && canAccess("approvals") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => submitForApprovalMutation.mutate(entry.id)}
+                                disabled={submitForApprovalMutation.isPending}
+                                data-testid={`button-submit-approval-${entry.id}`}
+                              >
+                                {approvalFeedbackMessages.t("submitForApproval")}
+                              </Button>
+                            )}
+                            {isManual && !approvalState && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditEntry(entry)}
+                                data-testid={`button-edit-journal-${entry.id}`}
+                              >
+                                <Edit className="w-4 h-4 me-2" />
+                                {tr("edit")}
+                              </Button>
+                            )}
+                            {isManual && !approvalState && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    data-testid={`button-delete-journal-${entry.id}`}
+                                  >
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>{tr("deleteDraftEntry")}</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      {tr("thisWillPermanentlyDeleteThisDraft")}
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteMutation.mutate(entry.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      {tr("delete")}
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </>
+                        )}
+
+                        {isPosted && isManual && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                data-testid={`button-reverse-journal-${entry.id}`}
+                                onClick={() => setReverseDate(dubaiToday())}
+                              >
+                                <RotateCcw className="w-4 h-4 me-2" />
+                                {tr("reverse")}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>{tr("reverseJournalEntry")}</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {tr("thisWillCreateANewReversing")}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <div className="space-y-1.5">
+                                <label
+                                  htmlFor={`reverse-date-${entry.id}`}
+                                  className="text-sm font-medium"
+                                >
+                                  {tr("reversalDate")}
+                                </label>
+                                <Input
+                                  id={`reverse-date-${entry.id}`}
+                                  type="date"
+                                  value={reverseDate}
+                                  onChange={(e) => setReverseDate(e.target.value)}
+                                  data-testid="input-reversal-date"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  {tr("reversalDateHint")}
+                                </p>
+                              </div>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() =>
+                                    reverseMutation.mutate({
+                                      id: entry.id,
+                                      reason: tr("userRequestedReversal"),
+                                      date: reverseDate,
+                                    })
+                                  }
+                                >
+                                  {tr("reverseEntry")}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {entry.lines?.map((line: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-12 gap-4 text-sm py-2 border-b last:border-0"
+                        >
+                          <div className="col-span-6 flex items-center gap-2">
+                            <span dir="ltr" className="font-mono text-xs text-muted-foreground">
+                              {line.account?.code}
+                            </span>
+                            <span>{accountName(line.account, locale)}</span>
+                          </div>
+                          <div className="col-span-3 text-end font-mono">
+                            {line.debit > 0 ? formatNumber(line.debit, locale) : "-"}
+                          </div>
+                          <div className="col-span-3 text-end font-mono">
+                            {line.credit > 0 ? formatNumber(line.credit, locale) : "-"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }}
+          />
+          <ListPager
+            view={journalView}
+            pageSize={journalPageSize}
+            cap={1000}
+            testId="journal-pager-bottom"
+            onPage={setJournalPage}
+            onPageSize={(n) => {
+              setJournalPageSize(n);
+              setJournalPage(0);
+            }}
+          />
         </>
       ) : (
         <Card>

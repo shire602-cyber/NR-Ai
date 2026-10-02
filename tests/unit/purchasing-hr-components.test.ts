@@ -72,7 +72,7 @@ describe("approvalFeedback", () => {
   it("names the role a step needs", () => {
     const error = new ApiError("x", 403, "APPROVAL_REQUIRED", { step: 2, requiredSteps: 2, requiredRole: "owner" });
     const feedback = approvalFeedback(error);
-    expect(feedback?.description).toBe("Step 2 of 2 needs approval from a owner or higher.");
+    expect(feedback?.description).toBe("Step 2 of 2 needs approval from the owner role or higher.");
   });
 
   it("translates the role in Arabic", () => {

@@ -9,7 +9,8 @@ export const messages = defineMessages(
     purchaseBadge: "Purchase by journal",
     blockedPurchaseBadge: "Blocked input VAT",
     purchaseHint: "Recorded by manual journal: expense and input VAT in the same entry",
-    blockedPurchaseHint: "Blocked category (Art. 53): not part of box 9, the VAT is part of the expense",
+    blockedPurchaseHint:
+      "Blocked category (Art. 53): not part of box 9, the VAT is part of the expense",
     noDescription: "(no description)",
     adjustmentHint: "Manual VAT journal, included in the adjustment column",
     saleHint: "Recorded by manual journal: revenue and output VAT in the same entry",

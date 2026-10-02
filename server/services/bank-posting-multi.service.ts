@@ -24,6 +24,7 @@ import {
   findUnlinkedPaymentDetail,
   matchPatch,
   readTransaction,
+  receiptRate,
   resolveBank,
   resolveContraAccount,
   save,
@@ -57,6 +58,8 @@ export interface AllocationSpec {
   /** What to do with money left after every listed invoice is paid in full. */
   keepAsCredit?: boolean;
   paymentDate?: string | null;
+  /** Foreign-currency account: AED per unit on the receipt day (default: the company's rate for that day). */
+  exchangeRate?: number | null;
   confidence?: number | null;
 }
 
@@ -70,6 +73,7 @@ export async function allocateInvoicesInTx(tx: Tx, ctx: PostCtx, txn: BankTransa
   const ar = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
   if (!ar) throw appError(500, "AR_ACCOUNT_MISSING", "Accounts Receivable account not found");
   const { date } = await resolveSettlementDate(ctx.companyId, { requested: spec.paymentDate, fallback: txn.transactionDate });
+  const paymentRate = await receiptRate(ctx.companyId, bank.currency, date, spec.exchangeRate);
 
   // 1. plan and validate everything before anything is posted
   let remaining = Math.abs(Number(txn.amount));
@@ -129,6 +133,7 @@ export async function allocateInvoicesInTx(tx: Tx, ctx: PostCtx, txn: BankTransa
         notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),
         paymentAccountId: bank.glAccountId,
         paymentAccountCurrency: bank.currency,
+        paymentExchangeRate: paymentRate,
         receivableAccountId: ar.id,
         createdBy: ctx.userId,
         allowCredit: p.allowCredit,

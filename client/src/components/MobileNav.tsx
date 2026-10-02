@@ -1,6 +1,7 @@
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
+import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal, Banknote, CalendarDays, UserRound } from "lucide-react";
+import { useIsEmployee } from "@/components/layout/EmployeeShell";
 import { useState, useCallback } from "react";
 import {
   readyReportCatalog,
@@ -50,6 +51,14 @@ const getNavItems = (): NavItem[] => [
   { label: pageMessages.t("receipts"), icon: Camera, href: "/receipts" },
   { label: pageMessages.t("reports"), icon: BarChart3, href: "/reports" },
   { label: pageMessages.t("more"), icon: MoreHorizontal, href: "#", isMore: true },
+];
+
+/** An employee's bottom bar: their own pay, leave and account. */
+const getEmployeeNavItems = (): NavItem[] => [
+  { label: pageMessages.t("dashboard"), icon: LayoutDashboard, href: "/dashboard" },
+  { label: pageMessages.t("myPayroll"), icon: Banknote, href: "/payroll" },
+  { label: pageMessages.t("myLeave"), icon: CalendarDays, href: "/payroll?tab=leave" },
+  { label: pageMessages.t("myAccount"), icon: UserRound, href: "/settings/security" },
 ];
 
 const MOBILE_REPORTS_PER_PERSONA = 6;
@@ -232,6 +241,7 @@ export function MobileNav() {
 
   const [location, setLocation] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const isEmployee = useIsEmployee() === true;
 
   const handleNavClick = useCallback(
     (item: NavItem) => {
@@ -303,7 +313,7 @@ export function MobileNav() {
 
       {/* Bottom tab bar */}
       <nav className="mobile-nav" role="navigation" aria-label={tr("mainNavigation")}>
-        {getNavItems().map((item) => {
+        {(isEmployee ? getEmployeeNavItems() : getNavItems()).map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
 

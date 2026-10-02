@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +33,14 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import {
+  CALENDAR_DATE_SHORT_FORMAT,
+  formatCurrency,
+  formatDate as formatLocaleDate,
+} from "@/lib/format";
+import { statusLabel } from "@/lib/enum-labels";
+import { useI18n } from "@/lib/i18n";
+import { VatEmirateBreakdown } from "@/components/vat/VatEmirateBreakdown";
 import { PageHeader } from "@/components/ui/page-header";
 import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
 import {
@@ -137,28 +143,39 @@ const STATUS_VARIANT: Record<VatPeriodStatus, "default" | "secondary" | "destruc
 
 const LEVEL_BADGE: Record<DeadlineStatus["level"], { label: string; className: string }> = {
   ok: {
-    label: pageMessages.t("onTrack"),
+    get label() {
+      return pageMessages.t("onTrack");
+    },
     className: "bg-success-subtle text-success-subtle-foreground",
   },
   warning: {
-    label: pageMessages.t("dueSoon"),
+    get label() {
+      return pageMessages.t("dueSoon");
+    },
     className: "bg-warning-subtle text-warning-subtle-foreground",
   },
   critical: {
-    label: pageMessages.t("critical"),
+    get label() {
+      return pageMessages.t("critical");
+    },
     className: "bg-warning-subtle text-warning-subtle-foreground",
   },
   overdue: {
-    label: pageMessages.t("overdue"),
+    get label() {
+      return pageMessages.t("overdue");
+    },
     className: "bg-danger-subtle text-danger-subtle-foreground",
   },
 };
 
 function formatDate(iso: string): string {
-  // Period boundaries are UTC instants (e.g. 30 Jun 23:59:59.999Z). Format the
-  // UTC calendar date — local-time formatting in UAE (UTC+4) would roll the
-  // period end over to "01 Jul".
-  return format(new Date(iso.slice(0, 10) + "T00:00:00"), "dd MMM yyyy");
+  // Period boundaries are UTC instants (e.g. 30 Jun 23:59:59.999Z). Format the UTC calendar date: local-time
+  // formatting in UAE (UTC+4) would roll the period end over to "01 Jul". Month names follow the reader's language.
+  return formatLocaleDate(
+    new Date(`${iso.slice(0, 10)}T00:00:00Z`),
+    useI18n.getState().locale,
+    CALENDAR_DATE_SHORT_FORMAT
+  );
 }
 
 function periodKey(period: Pick<VatPeriodSummary, "periodStart" | "periodEnd">): string {
@@ -166,7 +183,7 @@ function periodKey(period: Pick<VatPeriodSummary, "periodStart" | "periodEnd">):
 }
 
 function periodLabel(period: Pick<VatPeriodSummary, "periodStart" | "periodEnd" | "frequency">) {
-  return `${formatDate(period.periodStart)} - ${formatDate(period.periodEnd)} (${period.frequency})`;
+  return `${formatDate(period.periodStart)} - ${formatDate(period.periodEnd)} (${statusLabel(period.frequency, useI18n.getState().locale)})`;
 }
 
 function calculationPath(companyId: string, period: VatPeriodSummary): string {
@@ -182,6 +199,7 @@ function calculationPath(companyId: string, period: VatPeriodSummary): string {
 
 export default function VATAutopilot() {
   const tr = pageMessages.useT();
+  const locale = useI18n((state) => state.locale);
 
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
@@ -400,8 +418,8 @@ export default function VATAutopilot() {
               <Badge className={LEVEL_BADGE[selectedPeriod.deadline.level].className}>
                 {LEVEL_BADGE[selectedPeriod.deadline.level].label}
               </Badge>
-              <Badge variant={STATUS_VARIANT[selectedPeriod.status]} className="capitalize">
-                {selectedPeriod.status}
+              <Badge variant={STATUS_VARIANT[selectedPeriod.status]}>
+                {statusLabel(selectedPeriod.status, locale)}
               </Badge>
             </div>
           ) : (
@@ -516,6 +534,8 @@ export default function VATAutopilot() {
                 </div>
               </div>
             </div>
+
+            <VatEmirateBreakdown boxes={visibleCalc.vat201} testId="autopilot-emirate-breakdown" />
 
             <div className="rounded-md bg-muted p-4 flex items-center justify-between">
               <span className="font-medium">{tr("box14NetVatPayable")}</span>
@@ -647,8 +667,8 @@ export default function VATAutopilot() {
                         <div className="font-medium">
                           {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}
                         </div>
-                        <div className="text-xs text-muted-foreground capitalize">
-                          {p.frequency}
+                        <div className="text-xs text-muted-foreground">
+                          {statusLabel(p.frequency, locale)}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -660,8 +680,8 @@ export default function VATAutopilot() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANT[p.status]} className="capitalize">
-                          {p.status}
+                        <Badge variant={STATUS_VARIANT[p.status]}>
+                          {statusLabel(p.status, locale)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-end">{formatCurrency(p.outputVat)}</TableCell>
@@ -729,8 +749,8 @@ export default function VATAutopilot() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[d.status]} className="capitalize">
-                        {d.status}
+                      <Badge variant={STATUS_VARIANT[d.status]}>
+                        {statusLabel(d.status, locale)}
                       </Badge>
                     </TableCell>
                   </TableRow>

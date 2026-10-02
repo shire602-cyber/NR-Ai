@@ -692,6 +692,9 @@ export async function issueCreditNote(args: {
         // The credit note belongs to the same customer contact, so statements and refunds find it.
         contactId: original.contactId ?? null,
         customerTrn: original.customerTrn || undefined,
+        // A credit note reverses the supply in the emirate the invoice was reported in.
+        emirate: (original as any).emirate ?? null,
+        creditNoteReason: typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 500) : null,
         date: cnDate,
         currency: original.currency,
         // VAT 201 converts every invoice row (credit notes included) with

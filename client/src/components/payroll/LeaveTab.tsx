@@ -122,7 +122,7 @@ export function LeaveTab({ companyId, employees, canWrite }: Props) {
             </Select>
           </div>
           {canWrite ? (
-            <Button onClick={() => { setProblem(null); setDialog(true); }} data-testid="button-new-leave-request">
+            <Button onClick={() => { setProblem(null); setEmployeeId(""); setTypeId(""); setReason(""); setStart(today()); setEnd(today()); setDialog(true); }} data-testid="button-new-leave-request">
               <CalendarPlus className="h-4 w-4 me-2" />
               {tr("newRequest")}
             </Button>

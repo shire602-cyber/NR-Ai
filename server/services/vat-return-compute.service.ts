@@ -13,6 +13,7 @@ import { AppError } from "../errors";
 import { companies } from "../../shared/schema";
 import { round2 } from "./financial-statements";
 import { aggregateReturnSalesLines } from "./vat-sales-lines";
+import { EMIRATE_BOX_PREFIX, supplyEmirate, type VatEmirate } from "./vat-emirate";
 import { loadPeriodSalesDocuments } from "./vat-period-documents.service";
 import {
   loadPeriodBills,
@@ -98,7 +99,7 @@ export async function computeVatReturnForPeriod(args: {
   // Placement of every line is decided by the shared classifyVatLineForReturn
   // rule (also used by the autopilot and the firm workpaper pull), so the
   // three engines cannot disagree: 0% out-of-scope lines land in no box.
-  const salesTotals = aggregateReturnSalesLines(sales.lines as any[], sales.rateByInvoiceId);
+  const salesTotals = aggregateReturnSalesLines(sales.lines as any[], sales.rateByInvoiceId, sales.emirateByInvoiceId, companyEmirate);
   standardRatedAmount = salesTotals.standardRatedAmount;
   standardRatedVat = salesTotals.standardRatedVat;
   zeroRatedAmount = salesTotals.zeroRatedAmount;
@@ -206,37 +207,19 @@ export async function computeVatReturnForPeriod(args: {
     box1gFujairahAdj: 0,
   };
 
-  // Assign standard rated sales to company's emirate
-  switch (companyEmirate) {
-    case "abu_dhabi":
-      emirateBreakdown.box1aAbuDhabiAmount = standardRatedAmount;
-      emirateBreakdown.box1aAbuDhabiVat = standardRatedVat;
-      break;
-    case "sharjah":
-      emirateBreakdown.box1cSharjahAmount = standardRatedAmount;
-      emirateBreakdown.box1cSharjahVat = standardRatedVat;
-      break;
-    case "ajman":
-      emirateBreakdown.box1dAjmanAmount = standardRatedAmount;
-      emirateBreakdown.box1dAjmanVat = standardRatedVat;
-      break;
-    case "umm_al_quwain":
-      emirateBreakdown.box1eUmmAlQuwainAmount = standardRatedAmount;
-      emirateBreakdown.box1eUmmAlQuwainVat = standardRatedVat;
-      break;
-    case "ras_al_khaimah":
-      emirateBreakdown.box1fRasAlKhaimahAmount = standardRatedAmount;
-      emirateBreakdown.box1fRasAlKhaimahVat = standardRatedVat;
-      break;
-    case "fujairah":
-      emirateBreakdown.box1gFujairahAmount = standardRatedAmount;
-      emirateBreakdown.box1gFujairahVat = standardRatedVat;
-      break;
-    case "dubai":
-    default:
-      emirateBreakdown.box1bDubaiAmount = standardRatedAmount;
-      emirateBreakdown.box1bDubaiVat = standardRatedVat;
-      break;
+  // Box 1 is split by the emirate of each supply: the document's own emirate (invoices.emirate), else the company's.
+  // The rows add up to the standard-rated totals (document-level rounding, vat-sales-lines.ts).
+  for (const [emirate, figures] of Object.entries(salesTotals.standardByEmirate)) {
+    const prefix = EMIRATE_BOX_PREFIX[emirate as VatEmirate];
+    (emirateBreakdown as Record<string, number>)[`${prefix}Amount`] = figures!.amount;
+    (emirateBreakdown as Record<string, number>)[`${prefix}Vat`] = figures!.vat;
+  }
+  // Taxable sales recorded by manual journal have no document, hence no emirate of their own: they are the company's.
+  if (journalAdjustments.salesAmount !== 0 || journalAdjustments.salesVat !== 0) {
+    const prefix = EMIRATE_BOX_PREFIX[supplyEmirate(null, companyEmirate)];
+    const row = emirateBreakdown as Record<string, number>;
+    row[`${prefix}Amount`] = round2((row[`${prefix}Amount`] ?? 0) + journalAdjustments.salesAmount);
+    row[`${prefix}Vat`] = round2((row[`${prefix}Vat`] ?? 0) + journalAdjustments.salesVat);
   }
 
   // Manual journals to the VAT accounts dated in the period are VAT adjustments (shared with the

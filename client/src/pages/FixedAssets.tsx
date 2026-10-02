@@ -15,6 +15,7 @@ import {
   TrendingDown,
   BarChart3,
   PlayCircle,
+  FileText,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,14 +65,20 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssetRegisterTab } from "@/components/assets/AssetRegisterTab";
 import { DepreciationScheduleTab } from "@/components/assets/DepreciationScheduleTab";
+import { AssetFromBillDialog } from "@/components/assets/AssetFromBillDialog";
+import { messages as fromBillMessages } from "@/components/assets/AssetFromBillDialog.i18n";
+import { assetErrorText, assetWarningText } from "@/components/assets/asset-errors";
+import { DisposalDetailsFields } from "@/components/assets/DisposalDetailsFields";
 import { DEFAULT_PROCEEDS, DisposalProceedsField } from "@/components/assets/DisposalProceedsField";
 import { proceedsAccountOptions } from "@/components/assets/proceeds-accounts";
 import { messages as bankingCommon } from "@/components/banking/BankingCommon.i18n";
@@ -173,6 +180,8 @@ const disposeFormSchema = z.object({
   disposalDate: z.string().min(1, pageMessages.marker("disposalDateIsRequired")),
   disposalAmount: z.coerce.number().min(0, pageMessages.marker("disposalAmountMustBe0")),
   proceedsAccountId: z.string().optional(),
+  buyerName: z.string().optional().nullable(),
+  vatTreatment: z.string().default("none"),
   notes: z.string().optional().nullable(),
 });
 
@@ -193,11 +202,14 @@ export default function FixedAssets() {
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
   const [disposeDialogOpen, setDisposeDialogOpen] = useState(false);
+  const [assetFormError, setAssetFormError] = useState("");
+  const [fromBillOpen, setFromBillOpen] = useState(false);
+  const fromBillTr = fromBillMessages.useT();
   const [disposingAsset, setDisposingAsset] = useState<FixedAsset | null>(null);
   const [depRunDialogOpen, setDepRunDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -251,6 +263,8 @@ export default function FixedAssets() {
       disposalDate: "",
       disposalAmount: 0,
       proceedsAccountId: DEFAULT_PROCEEDS,
+      buyerName: "",
+      vatTreatment: "none",
       notes: "",
     },
   });
@@ -268,20 +282,26 @@ export default function FixedAssets() {
   const createAssetMutation = useMutation({
     mutationFn: (data: AssetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/fixed-assets`, data),
-    onSuccess: () => {
+    onSuccess: (res: unknown) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
+      // an asset bought in a closed year or a locked month is registered but nothing is posted there: say so, and keep the message up
+      const warning = assetWarningText(fromBillTr, res);
       toast({
         title: tr("assetCreated"),
-        description: tr("theFixedAssetHasBeenAdded"),
-      });
+        description: warning ?? tr("theFixedAssetHasBeenAdded"),
+        ...(warning ? { duration: 30000, "data-testid": "asset-warning-toast" } : {}),
+      } as Parameters<typeof toast>[0]);
       setAssetDialogOpen(false);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      // a purchase date in a closed or locked period is refused: say why, in the dialog and in a message that stays
+      const text = assetErrorText(fromBillTr, error) ?? error?.message;
+      setAssetFormError(text ?? "");
+      toast({ title: tr("error"), description: text, variant: "destructive" });
     },
   });
 
@@ -356,10 +376,11 @@ export default function FixedAssets() {
       const glType = data.gainLossType === "gain" ? tr("gain") : tr("loss");
       toast({
         title: tr("assetDisposed"),
-        description: tr("onDisposal", {
-          glType,
-          formatCurrency: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
-        }),
+        description:
+          tr("onDisposal", {
+            glType,
+            formatCurrency: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
+          }) + (data.disposalInvoiceNumber ? ` ${tr("disposalInvoiceIssued", { number: data.disposalInvoiceNumber })}` : ""),
       });
       invalidateAssetReports();
       setDisposeDialogOpen(false);
@@ -404,6 +425,7 @@ export default function FixedAssets() {
 
   const handleOpenCreateDialog = () => {
     setEditingAsset(null);
+    setAssetFormError("");
     assetForm.reset({
       assetName: "",
       assetNameAr: "",
@@ -446,6 +468,9 @@ export default function FixedAssets() {
       disposalDate: format(new Date(), "yyyy-MM-dd"),
       disposalAmount: 0,
       proceedsAccountId: DEFAULT_PROCEEDS,
+      buyerName: "",
+      // selling a business asset is normally a taxable supply: a VAT-registered company starts at the standard rate
+      vatTreatment: company?.trnVatNumber?.trim() ? "standard" : "none",
       notes: "",
     });
     setDisposeDialogOpen(true);
@@ -461,10 +486,11 @@ export default function FixedAssets() {
 
   const handleDisposeSubmit = (data: DisposeFormData) => {
     if (!disposingAsset) return;
-    const { proceedsAccountId, ...rest } = data;
+    const { proceedsAccountId, buyerName, ...rest } = data;
+    const withBuyer = buyerName && buyerName.trim() ? { ...rest, buyerName: buyerName.trim() } : rest;
     disposeMutation.mutate({
       id: disposingAsset.id,
-      data: proceedsAccountId && proceedsAccountId !== DEFAULT_PROCEEDS ? { ...rest, proceedsAccountId } : rest,
+      data: proceedsAccountId && proceedsAccountId !== DEFAULT_PROCEEDS ? { ...withBuyer, proceedsAccountId } : withBuyer,
     });
   };
 
@@ -547,6 +573,10 @@ export default function FixedAssets() {
           >
             <PlayCircle className="w-4 h-4" />
             {tr("runDepreciation")}
+          </Button>
+          <Button variant="outline" onClick={() => setFromBillOpen(true)} className="flex items-center gap-2" data-testid="button-asset-from-bill">
+            <FileText className="w-4 h-4" />
+            {tr("fromBill")}
           </Button>
           <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
@@ -713,7 +743,7 @@ export default function FixedAssets() {
                     <TableHead>{tr("purchaseDate")}</TableHead>
                     <TableHead className="text-end">{tr("cost")}</TableHead>
                     <TableHead className="text-end">{tr("accumDep")}</TableHead>
-                    <TableHead className="text-end">NBV</TableHead>
+                    <TableHead className="text-end">{tr("colNbv")}</TableHead>
                     <TableHead>{tr("status")}</TableHead>
                     <TableHead className="text-end">{t.actions || tr("actions")}</TableHead>
                   </TableRow>
@@ -739,7 +769,7 @@ export default function FixedAssets() {
                       <TableCell>{assetCategoryLabel(asset.category)}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         {asset.purchase_date
-                          ? format(new Date(asset.purchase_date), "MMM dd, yyyy")
+                          ? formatCalendarDate(asset.purchase_date, locale, "short")
                           : "-"}
                       </TableCell>
                       <TableCell className="text-end">
@@ -817,6 +847,8 @@ export default function FixedAssets() {
         </TabsContent>
       </Tabs>
 
+      <AssetFromBillDialog open={fromBillOpen} onOpenChange={setFromBillOpen} companyId={companyId ?? ""} />
+
       {/* ─── Create/Edit Asset Dialog ──────────────────────── */}
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -829,6 +861,11 @@ export default function FixedAssets() {
 
           <Form {...assetForm}>
             <form onSubmit={assetForm.handleSubmit(handleAssetSubmit)} className="space-y-4">
+              {assetFormError && (
+                <Alert variant="destructive" data-testid="asset-form-error">
+                  <AlertDescription>{assetFormError}</AlertDescription>
+                </Alert>
+              )}
               <FormField
                 control={assetForm.control}
                 name="assetName"
@@ -1065,7 +1102,7 @@ export default function FixedAssets() {
 
       {/* ─── Dispose Dialog ────────────────────────────────── */}
       <Dialog open={disposeDialogOpen} onOpenChange={setDisposeDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{tr("disposeAsset")}</DialogTitle>
             <DialogDescription>
@@ -1113,6 +1150,17 @@ export default function FixedAssets() {
               />
 
               <DisposalProceedsField control={disposeForm.control} name="proceedsAccountId" accounts={proceedsOptions} />
+              {disposingAsset && (
+                <DisposalDetailsFields
+                  control={disposeForm.control}
+                  assetId={disposingAsset.id}
+                  companyId={companyId ?? ""}
+                  dateName="disposalDate"
+                  amountName="disposalAmount"
+                  buyerName="buyerName"
+                  vatName="vatTreatment"
+                />
+              )}
 
               <FormField
                 control={disposeForm.control}

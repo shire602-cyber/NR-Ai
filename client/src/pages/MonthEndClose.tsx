@@ -52,6 +52,21 @@ import {
   BookOpen,
 } from "lucide-react";
 import { ChecklistItemText } from "@/components/month-end/ChecklistItemText";
+import { RevalueActions } from "@/components/month-end/RevaluationChecklistRow";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Link } from "wouter";
+import { useReportScheduleAccess } from "@/hooks/useReportScheduleAccess";
+import {
+  UNLOCK_AUDIT_HREF,
+  canUnlockPeriod,
+  lockAllowed,
+  lockBody,
+  unlockBody,
+  unlockReasonOk,
+  vatItemOpen,
+} from "@/lib/period-lock";
 import { messages as pageMessages } from "./MonthEndClose.i18n";
 
 // ---- Types ----
@@ -113,6 +128,7 @@ const fixRoutes: Record<number, string> = {
   5: "/ai-features",
   6: "/fixed-assets",
   7: "/vat-filing",
+  8: "/exchange-rates",
 };
 
 // ---- Component ----
@@ -123,6 +139,12 @@ export default function MonthEndClose() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { myRole, user: signedInUser } = useReportScheduleAccess(companyId);
+  const canUnlock = canUnlockPeriod(signedInUser, myRole);
+  const [overrideVat, setOverrideVat] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [unlockReason, setUnlockReason] = useState("");
 
   // Default to previous month
   const now = new Date();
@@ -159,6 +181,11 @@ export default function MonthEndClose() {
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
+
+  // The VAT return item decides whether locking needs an explicit override.
+  // The server has the last word: if it refuses a lock with VAT_RETURN_OPEN the next try shows the warning and override.
+  const [serverSaysVatOpen, setServerSaysVatOpen] = useState(false);
+  const vatOpen = vatItemOpen(checklistData?.checklist) || serverSaysVatOpen;
 
   // ---- Mutations ----
 
@@ -200,9 +227,11 @@ export default function MonthEndClose() {
 
   const lockPeriodMutation = useMutation<CloseRecord>({
     mutationFn: async () => {
-      return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
-        periodEnd: periodDates.periodEnd,
-      });
+      return apiRequest(
+        "POST",
+        `/api/companies/${companyId}/month-end/lock-period`,
+        lockBody(periodDates.periodEnd, vatOpen, overrideVat, overrideReason)
+      );
     },
     onSuccess: () => {
       toast({
@@ -212,9 +241,45 @@ export default function MonthEndClose() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/month-end/history`],
       });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/checklist`],
+      });
+      setOverrideVat(false);
+      setOverrideReason("");
+      setServerSaysVatOpen(false);
     },
     onError: (error: Error) => {
+      if ((error as { code?: string }).code === "VAT_RETURN_OPEN") setServerSaysVatOpen(true);
       toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+    },
+  });
+
+  // Reopen one locked month. Owner only, with a written reason; the server writes the audit entry.
+  const unlockPeriodMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest(
+        "POST",
+        "/api/period-lock/unlock",
+        unlockBody(companyId as string, period, unlockReason)
+      ),
+    onSuccess: () => {
+      toast({
+        title: tr("periodUnlocked"),
+        description: tr("periodUnlockedDescription", {
+          formatPeriodLabel: formatPeriodLabel(period),
+        }),
+      });
+      setUnlockOpen(false);
+      setUnlockReason("");
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/history`],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/checklist`],
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: tr("unlockFailed"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -411,6 +476,9 @@ export default function MonthEndClose() {
                     )}
                     <ChecklistItemText item={item} />
                   </div>
+                  {item.status === "incomplete" && item.id === 8 && companyId && (
+                    <RevalueActions companyId={companyId} periodEnd={periodDates.periodEnd} />
+                  )}
                   {item.status === "incomplete" && fixRoutes[item.id] && (
                     <a href={fixRoutes[item.id]}>
                       <Button
@@ -552,17 +620,125 @@ export default function MonthEndClose() {
                 })}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {vatOpen ? (
+              <div
+                className="space-y-3 rounded-md border border-warning/40 bg-warning-subtle p-3 text-sm"
+                role="alert"
+                data-testid="lock-vat-warning"
+              >
+                <p className="flex items-start gap-2 font-medium">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  {tr("lockVatWarning")}
+                </p>
+                <p className="text-muted-foreground">{tr("lockVatWarningDetail")}</p>
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="lock-override-vat"
+                    checked={overrideVat}
+                    onCheckedChange={(v) => setOverrideVat(v === true)}
+                    data-testid="checkbox-lock-override-vat"
+                  />
+                  <Label htmlFor="lock-override-vat" className="cursor-pointer font-normal">
+                    {tr("lockVatOverrideLabel")}
+                  </Label>
+                </div>
+                {overrideVat ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="lock-override-reason">{tr("lockOverrideReasonLabel")}</Label>
+                    <Textarea
+                      id="lock-override-reason"
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      placeholder={tr("lockOverrideReasonPlaceholder")}
+                      rows={2}
+                      maxLength={500}
+                      data-testid="input-lock-override-reason"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <AlertDialogFooter>
-              <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+              <AlertDialogCancel
+                onClick={() => {
+                  setOverrideVat(false);
+                  setOverrideReason("");
+                }}
+              >
+                {tr("cancel")}
+              </AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => lockPeriodMutation.mutate()}
+                disabled={!lockAllowed(vatOpen, overrideVat, overrideReason)}
                 className="bg-destructive hover:bg-destructive"
+                data-testid="button-confirm-lock"
               >
                 {tr("lockPeriod")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Unlock Period: one month, owner only, with a reason */}
+        {isCurrentPeriodLocked ? (
+          canUnlock ? (
+            <AlertDialog open={unlockOpen} onOpenChange={setUnlockOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" data-testid="button-unlock-period">
+                  <Unlock className="h-4 w-4 me-2" />
+                  {tr("unlockPeriod")}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {tr("unlockPeriodTitle", { formatPeriodLabel: formatPeriodLabel(period) })}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>{tr("unlockPeriodExplained")}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-2">
+                  <Label htmlFor="unlock-reason">{tr("unlockReasonLabel")}</Label>
+                  <Textarea
+                    id="unlock-reason"
+                    value={unlockReason}
+                    onChange={(e) => setUnlockReason(e.target.value)}
+                    placeholder={tr("unlockReasonPlaceholder")}
+                    rows={3}
+                    maxLength={500}
+                    aria-invalid={unlockReason.trim() !== "" && !unlockReasonOk(unlockReason)}
+                    data-testid="input-unlock-reason"
+                  />
+                  {!unlockReasonOk(unlockReason) ? (
+                    <p className="text-xs text-muted-foreground">{tr("unlockReasonRule")}</p>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    {tr("unlockAuditNote")}{" "}
+                    <Link href={UNLOCK_AUDIT_HREF} className="underline">
+                      {tr("unlockAuditLink")}
+                    </Link>
+                  </p>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (unlockReasonOk(unlockReason)) unlockPeriodMutation.mutate();
+                    }}
+                    disabled={!unlockReasonOk(unlockReason) || unlockPeriodMutation.isPending}
+                    data-testid="button-confirm-unlock"
+                  >
+                    {unlockPeriodMutation.isPending ? tr("unlocking") : tr("unlockPeriod")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <p className="text-sm text-muted-foreground" data-testid="unlock-owner-only">
+              {tr("unlockOwnerOnly")}
+            </p>
+          )
+        ) : null}
       </div>
 
       {/* Closing summary: nothing is posted by a month-end close */}

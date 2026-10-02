@@ -23,6 +23,7 @@ export const BANKS = ["Emirates NBD", "ADCB", "FAB", "Mashreq", "Other"] as cons
 export const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "QAR", "KWD", "BHD", "OMR", "INR", "PKR", "EGP", "CHF", "JPY", "CNY"];
 
 interface FormState {
+  kind: "bank" | "credit_card";
   nameEn: string;
   bankName: string;
   iban: string;
@@ -36,9 +37,10 @@ interface FormState {
 /** Select value for "make the ledger account for me". */
 const NEW_LEDGER = "__new";
 
-const blank = (): FormState => ({ nameEn: "", bankName: "Other", iban: "", accountNumber: "", currency: "AED", glAccountId: NEW_LEDGER, reconcileFrom: "", isActive: true });
+const blank = (): FormState => ({ kind: "bank", nameEn: "", bankName: "Other", iban: "", accountNumber: "", currency: "AED", glAccountId: NEW_LEDGER, reconcileFrom: "", isActive: true });
 
-const fromAccount = (a: BankAccount): FormState => ({
+const fromAccount = (a: BankAccount, ledger?: LedgerAccount): FormState => ({
+  kind: a.accountKind === "credit_card" || ledger?.type === "liability" ? "credit_card" : "bank",
   nameEn: a.nameEn,
   bankName: a.bankName,
   iban: a.iban ?? "",
@@ -76,16 +78,16 @@ export function BankAccountDialog({ open, onOpenChange, companyId, account, acco
   const [created, setCreated] = useState<LedgerAccount[]>([]);
 
   useEffect(() => {
-    if (open) setForm(account ? fromAccount(account) : blank());
+    if (open) setForm(account ? fromAccount(account, accounts.find((x) => x.id === account.glAccountId)) : blank());
   }, [open, account]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
   const assets = useMemo(
     () =>
       [...accounts, ...created.filter((c) => !accounts.some((a) => a.id === c.id))]
-        .filter((a) => a.type === "asset" && a.isActive !== false && a.isArchived !== true)
+        .filter((a) => a.type === (form.kind === "credit_card" ? "liability" : "asset") && a.isActive !== false && a.isArchived !== true)
         .sort((x, y) => x.code.localeCompare(y.code)),
-    [accounts, created]
+    [accounts, created, form.kind]
   );
   const currencies = CURRENCIES.includes(form.currency) ? CURRENCIES : [form.currency, ...CURRENCIES];
   const valid = form.nameEn.trim() !== "" && form.bankName.trim() !== "" && /^[A-Za-z]{3}$/.test(form.currency) && form.glAccountId !== "";
@@ -100,6 +102,7 @@ export function BankAccountDialog({ open, onOpenChange, companyId, account, acco
         currency: form.currency.toUpperCase(),
         glAccountId: form.glAccountId === NEW_LEDGER ? null : form.glAccountId || null,
         ...(form.glAccountId === NEW_LEDGER && !account ? { createLedgerAccount: true } : {}),
+        ...(!account ? { kind: form.kind } : {}),
         reconcileFrom: form.reconcileFrom || null,
         ...(account ? { isActive: form.isActive } : {}),
       };
@@ -136,6 +139,19 @@ export function BankAccountDialog({ open, onOpenChange, companyId, account, acco
             <div className="space-y-1">
               <Label htmlFor="ba-name">{tr("name")}</Label>
               <Input id="ba-name" value={form.nameEn} onChange={(e) => set("nameEn", e.target.value)} placeholder={tr("namePlaceholder")} maxLength={255} dir="auto" data-testid="input-bank-name" />
+            </div>
+            <div className="space-y-1">
+              <Label>{tr("kind")}</Label>
+              <Select value={form.kind} onValueChange={(v) => setForm((f) => ({ ...f, kind: v as FormState["kind"], glAccountId: account ? f.glAccountId : NEW_LEDGER }))} disabled={!!account}>
+                <SelectTrigger data-testid="select-bank-kind">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank">{tr("kindBank")}</SelectItem>
+                  <SelectItem value="credit_card">{tr("kindCard")}</SelectItem>
+                </SelectContent>
+              </Select>
+              {form.kind === "credit_card" && <p className="text-xs text-muted-foreground">{tr("kindCardHint")}</p>}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
@@ -192,7 +208,7 @@ export function BankAccountDialog({ open, onOpenChange, companyId, account, acco
                     <SelectValue placeholder={tr("glPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent className="max-h-72">
-                    {!account && <SelectItem value={NEW_LEDGER}>{tr("glAuto")}</SelectItem>}
+                    {!account && <SelectItem value={NEW_LEDGER}>{form.kind === "credit_card" ? tr("glAutoCard") : tr("glAuto")}</SelectItem>}
                     {assets.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         <span dir="ltr" className="font-mono">
@@ -208,7 +224,7 @@ export function BankAccountDialog({ open, onOpenChange, companyId, account, acco
                   {tr("glNew")}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">{assets.length === 0 ? tr("noAssetAccounts") : tr("glHint")}</p>
+              <p className="text-xs text-muted-foreground">{assets.length === 0 ? tr("noAssetAccounts") : form.kind === "credit_card" ? tr("glHintCard") : tr("glHint")}</p>
             </div>
 
             <div className="space-y-1">
@@ -236,7 +252,7 @@ export function BankAccountDialog({ open, onOpenChange, companyId, account, acco
           </form>
         </DialogContent>
       </Dialog>
-      <GlAccountDialog open={glOpen} onOpenChange={setGlOpen} companyId={companyId} accounts={accounts} defaultType="asset" lockType codeFrom={1021} onCreated={(a) => {
+      <GlAccountDialog open={glOpen} onOpenChange={setGlOpen} companyId={companyId} accounts={accounts} defaultType={form.kind === "credit_card" ? "liability" : "asset"} lockType codeFrom={form.kind === "credit_card" ? undefined : 1021} onCreated={(a) => {
           setCreated((list) => [...list, a]);
           set("glAccountId", a.id);
         }} />

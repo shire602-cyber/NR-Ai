@@ -1,3 +1,4 @@
+import { normalizeVatEmirate } from "./vat-emirate";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "../db";
@@ -355,7 +356,8 @@ async function assertWorkpaperEditable(workpaper: VatWorkpaper): Promise<void> {
       "VAT_WORKPAPER_LOCKED"
     );
   }
-  await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd);
+  // Editing a workpaper, pulling its rows from the books and computing the return from it post nothing, so the period lock
+  // is not consulted here; posting a row to the ledger checks it (postVatWorkpaperRowToLedger).
 }
 
 export async function listVatWorkpapers(
@@ -443,7 +445,7 @@ export async function createVatWorkpaper(input: {
   if (!periodStart || !periodEnd) throw new ValidationError("Valid VAT period dates are required");
   if (periodEnd < periodStart)
     throw new ValidationError("VAT period end must be after period start");
-  await assertPeriodNotLocked(input.companyId, periodEnd);
+  // Creating or opening the workpaper of a period is a read of the books: a locked month does not stop it.
 
   const dueDate = parseDate(input.dueDate) ?? defaultVatDueDate(periodEnd);
   const [existing] = await db
@@ -997,7 +999,8 @@ export function mapBooksToVatWorkpaperRows(input: {
       documentDate: reversal && invoice.voidedOn ? invoice.voidedOn : invoice.date,
       counterpartyName: invoice.customerName ?? null,
       counterpartyTrn: invoice.customerTrn ?? null,
-      emirate: companyEmirate,
+      // the emirate of the supply: the document's own, else the company's (box 1a-1g)
+      emirate: normalizeVatEmirate((invoice as { emirate?: string | null }).emirate) ?? companyEmirate,
       status: "draft" as const,
       sourceMethod: "generated" as const,
       sourceDocumentType: "invoice",

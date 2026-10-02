@@ -110,7 +110,7 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
   const typeText = (t: ItemType) =>
     t === "DEPOSIT_IN_TRANSIT" ? tr("typeDeposit") : t === "OUTSTANDING_PAYMENT" ? tr("typeOutstanding") : t === "STATEMENT_CREDIT" ? tr("typeStatementCredit") : tr("typeStatementDebit");
   const sourceLabel = (source: string | null) =>
-    !source ? "" : source === "payment" ? tr("docPayment") : source === "bill_payment" ? tr("docBillPayment") : source === "bank_reconciliation" ? tr("docBankEntry") : source === "bank_rule" ? tr("docBankRule") : source === "manual" ? tr("docManual") : tr("docOther");
+    !source ? "" : source === "payment" ? tr("docPayment") : source === "bill_payment" ? tr("docBillPayment") : source === "bank_reconciliation" ? tr("docBankEntry") : source === "bank_rule" ? tr("docBankRule") : source === "manual" ? tr("docManual") : source.startsWith("fx_revaluation") ? tr("docRevaluation") : tr("docOther");
   const documentText = (i: ExplainedItem) =>
     i.document.number ? `${sourceLabel(i.document.source)} ${i.document.number}`.trim() : i.document.reference ? `${tr("docStatementLine")} ${i.document.reference}` : tr("docStatementLine");
 

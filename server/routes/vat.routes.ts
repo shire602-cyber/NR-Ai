@@ -1,3 +1,4 @@
+import { currentVatFilingPeriod } from "../services/vat-autopilot.service";
 import type { Express, Request, Response } from "express";
 import { invalidateVatDueNext } from "../reports/kpis";
 import { z } from "zod";
@@ -9,7 +10,6 @@ import { overlayVatReturns, recordVatFiling } from "../services/vat-filing.servi
 import { pool } from "../db";
 import { recordAudit } from "../services/audit.service";
 import { round2 } from "../services/financial-statements";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { MIN_MANUAL_EDIT_REASON, editedFigureKeys, mergeManualEdits } from "../services/tax-filing-core";
 import {
   assertVatPeriodEnded,
@@ -446,6 +446,21 @@ export function registerVATRoutes(app: Express) {
   // =====================================
 
   // Get VAT returns by company
+  // The period the VAT Filing page works on: the last ended period not yet filed (Q3 due 28 Oct while it is early October),
+  // else the period that contains today. Never a quarter before the company's VAT start day.
+  app.get(
+    "/api/companies/:companyId/vat-returns/current-period",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const current = await currentVatFilingPeriod(companyId);
+      if (!current) return res.status(404).json({ message: "Company not found" });
+      res.json(current);
+    })
+  );
+
   app.get(
     "/api/companies/:companyId/vat-returns",
     authMiddleware,
@@ -522,11 +537,9 @@ export function registerVATRoutes(app: Express) {
       }
       const previewMeta = vatPeriodPreviewMeta(periodStart, periodEnd, now);
 
-      // Generating a VAT return for a period that is already closed would
-      // produce numbers that disagree with the locked-period books. Block it.
-      if (periodEnd) {
-        await assertPeriodNotLocked(companyId, periodEnd);
-      }
+      // Computing a draft return is a READ of the books: it never hits the period lock (locking September must not stop the
+      // Q3 return from being prepared). Only a posting is subject to the lock; filing's clearing journal goes through the
+      // filing flow (vat-filing.service.ts).
 
       const { returnValues, metadata } = await computeVatReturnForPeriod({
         companyId,
@@ -647,9 +660,8 @@ export function registerVATRoutes(app: Express) {
         });
       }
 
-      // Submitting the return finalises the VAT settlement against periodEnd —
-      // refuse if the underlying period is already closed.
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
+      // Marking a return submitted posts nothing (the settlement journal is posted by the filing flow), so the period lock
+      // is not consulted here.
 
       // H2 — HONEST FILING STATUS.
       //

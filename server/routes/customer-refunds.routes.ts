@@ -8,12 +8,12 @@ import { calendarDaySchema } from "../utils/calendar-day-schema";
 import { recordAudit } from "../services/audit.service";
 import { createRefund, getRefundSummary, listRefunds, voidRefund } from "../services/customer-refund.service";
 import {
-  createCustomerCreditRefund,
   getCustomerCreditBalance,
   listCustomerCreditRefunds,
-  voidCustomerCreditRefund,
+  refundCustomerCredit,
+  voidCustomerCreditRefundAny,
 } from "../services/customer-credit-refund.service";
-import { refundInvoicePayment } from "../services/payment-refund.service";
+import { listInvoiceRefunds, refundableCreditNotes, refundInvoicePayment, voidInvoiceRefund } from "../services/payment-refund.service";
 
 const MAX_REFUND_AMOUNT = 999_999_999.99;
 
@@ -49,11 +49,51 @@ export function registerCustomerRefundRoutes(app: Express) {
         entityType: "invoice",
         entityId: invoiceId,
         before: null,
-        after: { creditNoteId: result.creditNote.id, refundId: result.refund.id, amount: result.refund.amount },
+        after: { refundIds: result.refunds.map((r) => r.id), amount: input.amount, remaining: result.remaining },
         req,
-        extra: { journalEntryId: result.journalEntryId },
       });
-      res.status(201).json({ creditNote: result.creditNote, refund: result.refund });
+      res.status(201).json({ refund: result.refund, refunds: result.refunds, remaining: result.remaining });
+    })
+  );
+
+  // The refunds paid on an invoice (live and void) and what can still be refunded: the payments list shows them with a Void action.
+  app.get(
+    "/api/companies/:companyId/invoices/:invoiceId/payment-refunds",
+    ...guards,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, invoiceId } = req.params;
+      if (!(await storage.hasCompanyAccess((req as any).user.id, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (!(await storage.getInvoice(invoiceId, companyId))) return res.status(404).json({ message: "Invoice not found" });
+      const [refunds, available] = await Promise.all([listInvoiceRefunds(companyId, invoiceId), refundableCreditNotes(companyId, invoiceId)]);
+      res.json({ refunds, refundable: Math.round(available.reduce((s, c) => s + c.refundable, 0) * 100) / 100 });
+    })
+  );
+
+  // Void a refund from the invoice's payments list: reverses its journal and restores the credit balance.
+  app.post(
+    "/api/companies/:companyId/invoices/:invoiceId/payment-refunds/:refundId/void",
+    ...guards,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, invoiceId, refundId } = req.params;
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await voidInvoiceRefund({ companyId, invoiceId, refundId, userId });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "invoice.payment_refund_void",
+        entityType: "invoice",
+        entityId: invoiceId,
+        before: { refundId },
+        after: { voidedAt: result.refund.voidedAt },
+        req,
+        extra: { reversalEntryId: result.reversalEntryId },
+      });
+      res.json({ refund: result.refund });
     })
   );
 
@@ -82,7 +122,7 @@ export function registerCustomerRefundRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
       const input = refundInputSchema.omit({ exchangeRate: true }).parse(req.body ?? {});
-      const result = await createCustomerCreditRefund({ companyId, contactId, userId, ...input });
+      const result = await refundCustomerCredit({ companyId, contactId, userId, ...input });
       await recordAudit({
         userId,
         companyId,
@@ -90,11 +130,10 @@ export function registerCustomerRefundRoutes(app: Express) {
         entityType: "customer",
         entityId: contactId,
         before: null,
-        after: { refundId: result.refund.id, amount: result.refund.amount, remaining: result.remaining },
+        after: { refundIds: result.refunds.map((r: any) => r.id), amount: input.amount, remaining: result.remaining },
         req,
-        extra: { journalEntryId: result.journalEntryId },
       });
-      res.status(201).json({ refund: result.refund, remaining: result.remaining });
+      res.status(201).json({ refund: result.refund, refunds: result.refunds, remaining: result.remaining });
     })
   );
 
@@ -107,7 +146,7 @@ export function registerCustomerRefundRoutes(app: Express) {
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
-      const result = await voidCustomerCreditRefund({ companyId, contactId, refundId, userId });
+      const result = await voidCustomerCreditRefundAny({ companyId, contactId, refundId, userId });
       await recordAudit({
         userId,
         companyId,

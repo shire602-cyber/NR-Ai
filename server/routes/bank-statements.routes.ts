@@ -21,6 +21,8 @@ import { computeBankReconciliationStatement } from "../services/bank-reconciliat
 import { reconciliationStatementCsv } from "../services/bank-reconciliation-math";
 import { uaeYmdParts } from "../utils/date";
 import { UAE_BANK_NAMES } from "../services/company-setup-rules";
+import { assertLinkableLedgerAccount, createBankLedgerAccount, ensureBankAccountLedger, withAccountKind } from "../services/bank-ledger-account";
+import { previewBankRevaluation, revalueAllBankAccounts, revalueBankAccount } from "../services/bank-revaluation.service";
 
 const log = createLogger("bank-statements");
 
@@ -59,6 +61,8 @@ const bankAccountCreateSchema = z.preprocess(
     glAccountId: uuid.optional().nullable(),
     /** Create the ledger account (an asset account, the next free code from 1021) instead of choosing one. */
     createLedgerAccount: z.boolean().optional(),
+    /** A credit card is a liability (2xxx) bank-type account: its ledger account is a liability, its purchases are credits. */
+    kind: z.enum(["bank", "credit_card"]).optional(),
     reconcileFrom: isoDay.optional().nullable(),
   })
 );
@@ -103,6 +107,8 @@ const matchSchema = z
     keepAsCredit: z.boolean().optional(),
     // Optional payment date for invoice and bill matches. Defaults to the bank line's date; not in the future, not in a locked period.
     paymentDate: z.string().min(1).optional().nullable(),
+    // Foreign-currency account: AED per unit on the receipt day. Default: the company's rate for that day.
+    exchangeRate: z.number().positive().max(1_000_000).optional().nullable(),
   })
   .refine((v) => (v.matchedType === "invoices" ? !!v.allocations?.length || !!v.matchedId : !!v.matchedId), { message: "matchedId is required (or allocations for invoices)", path: ["matchedId"] });
 
@@ -163,21 +169,8 @@ async function markSuggestions(companyId: string, bankAccountId: string): Promis
   }
 }
 
-/** A new asset account for a bank account: the next free code from 1021 (1020 stays the header). */
-async function createBankLedgerAccount(companyId: string, name: string): Promise<string> {
-  const accounts = await storage.getAccountsByCompanyId(companyId);
-  const taken = new Set(accounts.map((a) => a.code));
-  let n = 1021;
-  while (taken.has(String(n))) n++;
-  const created = await storage.createAccount({ companyId, code: String(n), nameEn: name.slice(0, 120), type: "asset", isActive: true, isSystemAccount: false } as any);
-  return created.id;
-}
-
 async function requireOwnGl(companyId: string, glAccountId: string): Promise<void> {
-  const account = await storage.getAccount(glAccountId, companyId);
-  if (!account || account.isActive === false || account.type !== "asset") {
-    throw new AppError({ message: "The linked ledger account must be an active asset account of this company.", statusCode: 422, code: "ACCOUNT_INVALID" });
-  }
+  assertLinkableLedgerAccount(await storage.getAccount(glAccountId, companyId));
 }
 
 export function registerBankStatementRoutes(app: Express) {
@@ -190,7 +183,60 @@ export function registerBankStatementRoutes(app: Express) {
     "/api/companies/:companyId/bank-accounts",
     ...guard,
     asyncHandler(async (req: Request, res: Response) => {
-      res.json(await storage.getBankAccountsByCompanyId(req.params.companyId));
+      const accounts = await storage.getBankAccountsByCompanyId(req.params.companyId);
+      // however an account was created, it has a ledger account: one that has none gets its own now
+      const healed = await Promise.all(accounts.map((a) => (a.isActive !== false && !a.glAccountId ? ensureBankAccountLedger(req.params.companyId, a) : a)));
+      res.json(await withAccountKind(req.params.companyId, healed));
+    })
+  );
+
+  // FX revaluation of foreign-currency bank balances (Teardown 7 F2)
+  const revalueSchema = z.object({
+    asOf: isoDay,
+    exchangeRate: z.number().positive().max(1_000_000).optional().nullable(),
+    // the screens call the closing rate `rate`
+    rate: z.number().positive().max(1_000_000).optional().nullable(),
+  });
+  app.get(
+    "/api/companies/:companyId/bank-accounts/:accountId/revaluation",
+    authMiddleware,
+    requireCustomer,
+    validate({ params: accountParams }),
+    requireCompanyAccess("params"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const asOf = typeof req.query.asOf === "string" ? req.query.asOf : today();
+      const rate = req.query.exchangeRate !== undefined ? Number(req.query.exchangeRate) : req.query.rate !== undefined ? Number(req.query.rate) : null;
+      res.json(await previewBankRevaluation(req.params.companyId, req.params.accountId, asOf, rate && rate > 0 ? rate : null));
+    })
+  );
+  app.post(
+    "/api/companies/:companyId/bank-accounts/:accountId/revalue",
+    authMiddleware,
+    requireCustomer,
+    validate({ params: accountParams, body: revalueSchema }),
+    requireCompanyAccess("params"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, accountId } = req.params;
+      const userId = req.user!.id;
+      await assertCanPostBanking(userId, companyId);
+      const result = await revalueBankAccount({ companyId, userId, bankAccountId: accountId, asOf: req.body.asOf, exchangeRate: req.body.exchangeRate ?? req.body.rate });
+      await recordAudit({ userId, companyId, action: "bank.fx_revaluation", entityType: "bank_account", entityId: accountId, after: { asOf: req.body.asOf, adjustmentAed: result.adjustmentAed, journalEntryId: result.journalEntryId }, req });
+      res.status(result.posted ? 201 : 200).json(result);
+    })
+  );
+  app.post(
+    "/api/companies/:companyId/bank-accounts/revalue",
+    authMiddleware,
+    requireCustomer,
+    validate({ params: companyParams, body: z.object({ asOf: isoDay }) }),
+    requireCompanyAccess("params"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = req.user!.id;
+      await assertCanPostBanking(userId, companyId);
+      const results = await revalueAllBankAccounts({ companyId, userId, asOf: req.body.asOf });
+      await recordAudit({ userId, companyId, action: "bank.fx_revaluation_all", entityType: "company", entityId: companyId, after: { asOf: req.body.asOf, accounts: results.length }, req });
+      res.status(201).json({ asOf: req.body.asOf, results });
     })
   );
 
@@ -202,11 +248,13 @@ export function registerBankStatementRoutes(app: Express) {
     requireCompanyAccess("params"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { nameEn, bankName, accountNumber, iban, currency, reconcileFrom, createLedgerAccount } = req.body;
+      const { nameEn, bankName, accountNumber, iban, currency, reconcileFrom, createLedgerAccount, kind } = req.body;
       assertKnownBank(bankName);
       let glAccountId: string | null | undefined = req.body.glAccountId;
       if (glAccountId) await requireOwnGl(companyId, glAccountId);
-      else if (createLedgerAccount) glAccountId = await createBankLedgerAccount(companyId, nameEn);
+      // A bank account with no ledger link cannot be offered on payments (they fall back to petty cash), so by default
+      // it gets its own ledger account. An explicit `glAccountId: null` (or createLedgerAccount: false) keeps it unlinked.
+      else if (createLedgerAccount === true || (createLedgerAccount === undefined && glAccountId === undefined)) glAccountId = await createBankLedgerAccount(companyId, nameEn, kind ?? "bank");
       const account = await storage.createBankAccount({
         companyId,
         nameEn,
@@ -218,7 +266,7 @@ export function registerBankStatementRoutes(app: Express) {
         reconcileFrom: reconcileFrom ?? null,
         isActive: true,
       } as any);
-      res.status(201).json(account);
+      res.status(201).json((await withAccountKind(companyId, [account]))[0]);
     })
   );
 
@@ -273,7 +321,7 @@ export function registerBankStatementRoutes(app: Express) {
           .set({ bankAccountId: glAccountId })
           .where(and(eq(bankTransactions.companyId, companyId), eq(bankTransactions.bankStatementAccountId, accountId)));
       }
-      res.json(updated);
+      res.json(updated ? (await withAccountKind(companyId, [updated]))[0] : updated);
     })
   );
 
@@ -383,10 +431,10 @@ export function registerBankStatementRoutes(app: Express) {
       const { companyId, tid } = req.params;
       const userId = req.user!.id;
       await assertCanPostBanking(userId, companyId);
-      const { matchedType, matchedId, paymentDate, allocations, keepAsCredit } = req.body;
+      const { matchedType, matchedId, paymentDate, allocations, keepAsCredit, exchangeRate } = req.body;
       const result = await applyMatch(
         { companyId, userId },
-        { transactionId: tid, kind: matchedType, targetId: matchedId ?? allocations?.[0]?.invoiceId ?? "", paymentDate, allocations, keepAsCredit }
+        { transactionId: tid, kind: matchedType, targetId: matchedId ?? allocations?.[0]?.invoiceId ?? "", paymentDate, allocations, keepAsCredit, exchangeRate }
       );
       await recordAudit({ userId, companyId, action: "bank.reconcile", entityType: "bank_transaction", entityId: tid, after: { matchedType, matchedId, journalEntryId: result.journalEntryId, matchStatus: "matched" }, req });
       res.json({ ...result.transaction, matchStatus: "matched", journalEntryId: result.journalEntryId });

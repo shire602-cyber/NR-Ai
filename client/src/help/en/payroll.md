@@ -20,7 +20,7 @@ Add each employee with salary components, joining date and bank details. For WPS
 
 **Joiners are pro-rated.** An employee who joins mid-month is paid for the days from the joining date to month end.
 
-**Leave and sick leave.** Unpaid leave and sick-leave deductions are calculated on the **full monthly wage**, not on the pro-rated amount. Paid leave deducts nothing.
+**Leave and sick leave.** Unpaid leave and sick-leave deductions are calculated on the **full monthly wage**, not on the pro-rated amount. Paid leave deducts nothing. **Unpaid leave is not service:** unpaid days are left out of the service period for gratuity and earn no annual leave (Federal Decree-Law 33/2021).
 
 ## Loans and advances
 

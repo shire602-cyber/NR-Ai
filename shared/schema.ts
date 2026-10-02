@@ -1102,6 +1102,11 @@ export const invoices = pgTable(
     customerName: text("customer_name").notNull(),
     customerTrn: text("customer_trn"),
     customerAddress: text("customer_address"),
+    // Place of supply for the VAT 201 box 1 split (0129): abu_dhabi | dubai | ... ; NULL = the company's emirate.
+    // Taken from the contact at creation, editable while a draft; a credit note copies its invoice's.
+    emirate: text("emirate"),
+    // Why a credit note was issued (0129); printed on the credit note PDF.
+    creditNoteReason: text("credit_note_reason"),
     date: timestamp("date").notNull(),
     dueDate: timestamp("due_date"),
     paymentTerms: text("payment_terms").default("net30"),
@@ -2784,6 +2789,8 @@ export const customerContacts = pgTable(
     trnNumber: text("trn_number"),
     address: text("address"),
     city: text("city"),
+    // Place of establishment (0129): abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah.
+    emirate: text("emirate"),
     country: text("country").default("UAE"),
     contactPerson: text("contact_person"),
     paymentTerms: integer("payment_terms").default(30),
@@ -3358,6 +3365,16 @@ export const fixedAssets = pgTable("fixed_assets", {
   disposalJournalId: uuid("disposal_journal_id"),
   disposalAccountId: uuid("disposal_account_id"),
   needsCapitalizationJe: boolean("needs_capitalization_je").notNull().default(false),
+  // 0130: the purchase document that records the asset in the books, and how a disposal was taxed and invoiced
+  sourceBillId: uuid("source_bill_id"),
+  sourceJournalEntryId: uuid("source_journal_entry_id"),
+  sourceJournalLineId: uuid("source_journal_line_id"),
+  disposalBuyerId: uuid("disposal_buyer_id"),
+  disposalBuyerName: text("disposal_buyer_name"),
+  disposalVatTreatment: text("disposal_vat_treatment"), // standard | zero_rated | exempt (none = not a supply)
+  disposalVatAmount: money("disposal_vat_amount"),
+  disposalInvoiceId: uuid("disposal_invoice_id"),
+  disposalDepreciationReversed: money("disposal_depreciation_reversed"),
   createdAt: timestamp("created_at"),
 });
 export type FixedAsset = typeof fixedAssets.$inferSelect;

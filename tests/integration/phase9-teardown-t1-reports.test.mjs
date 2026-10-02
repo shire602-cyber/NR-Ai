@@ -189,7 +189,8 @@ async function monthEndClose() {
   ok("F3: 'Generate closing entries' for a month posts nothing (200, posted false, no entry)", close.status === 200 && close.json?.posted === false && !close.json?.entryNumber, { s: close.status, j: close.json });
   const closing = (await db.query(`SELECT count(*)::int AS c FROM journal_entries WHERE company_id = $1 AND source = 'system' AND memo LIKE 'Closing entries%'`, [C.cid])).rows[0].c;
   ok("F3: no closing journal entry exists", closing === 0, closing);
-  const lock = await C.post(`/api/companies/${C.cid}/month-end/lock-period`, { periodEnd: `${y}-09-30` });
+  // the quarter's last month with VAT in it and no return yet: locking needs the explicit, audit-logged override (teardown 7 / #6)
+  const lock = await C.post(`/api/companies/${C.cid}/month-end/lock-period`, { periodEnd: `${y}-09-30`, overrideVatCheck: true, overrideReason: "Return follows the quarter end" });
   ok("F3: the month still locks", lock.status === 200 || lock.status === 201, lock.status);
   const q3After = await profit(`${y}-07-01`, `${y}-09-30`);
   ok("F3: the Q3 P&L after the September close shows the Q3 figures (net 2,000), unchanged", close2(q3Before, 2000) && close2(q3After, 2000), { q3Before, q3After });

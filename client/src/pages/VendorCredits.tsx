@@ -34,6 +34,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PageHeader } from "@/components/ui/page-header";
 import { CheckCircle, Edit, FileText, MoreHorizontal, Plus, Trash2, Undo2 } from "lucide-react";
 import { VendorPicker } from "@/components/purchases/VendorPicker";
+import { useConfirmAction } from "@/components/ConfirmDialog";
 import { messages as pageMessages } from "./VendorCredits.i18n";
 
 // ===========================
@@ -111,6 +112,7 @@ function statusBadge(status: string, label: (s: "draft" | "approved" | "void") =
 }
 
 export default function VendorCredits() {
+  const [askConfirm, confirmDialog] = useConfirmAction();
   const locale = useI18n((s) => s.locale);
   const tr = pageMessages.useT();
   const { toast } = useToast();
@@ -287,7 +289,7 @@ export default function VendorCredits() {
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => {
-                                  if (confirm(tr("confirmApprove"))) approveMutation.mutate(c.id);
+                                  askConfirm(tr("confirmApprove"), () => approveMutation.mutate(c.id));
                                 }}
                               >
                                 <CheckCircle className="w-4 h-4 me-2" />
@@ -307,7 +309,7 @@ export default function VendorCredits() {
                               <DropdownMenuItem
                                 className="text-destructive"
                                 onClick={() => {
-                                  if (confirm(tr("confirmVoid"))) voidMutation.mutate(c.id);
+                                  askConfirm(tr("confirmVoid"), () => voidMutation.mutate(c.id), { destructive: true });
                                 }}
                               >
                                 <Trash2 className="w-4 h-4 me-2" />
@@ -346,6 +348,7 @@ export default function VendorCredits() {
           onApplied={refresh}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

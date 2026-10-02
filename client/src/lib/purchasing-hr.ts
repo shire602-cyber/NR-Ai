@@ -80,8 +80,8 @@ export function exactVendorMatch<T extends VendorContact>(vendors: readonly T[],
 // Approvals
 // ---------------------------------------------------------------------------
 
-export type ApprovalDocumentType = "bill" | "expense_claim" | "purchase_order" | "payroll_run" | "manual_journal";
-export const APPROVAL_DOCUMENT_TYPES: readonly ApprovalDocumentType[] = ["bill", "expense_claim", "purchase_order", "payroll_run", "manual_journal"];
+export type ApprovalDocumentType = "bill" | "expense_claim" | "purchase_order" | "payroll_run" | "manual_journal" | "final_settlement";
+export const APPROVAL_DOCUMENT_TYPES: readonly ApprovalDocumentType[] = ["bill", "expense_claim", "purchase_order", "payroll_run", "manual_journal", "final_settlement"];
 export type ApproverRole = "accountant" | "cfo" | "owner";
 
 export interface ApprovalRule {
@@ -161,6 +161,8 @@ export function approvalActionPath(type: ApprovalDocumentType, id: string): stri
       return `/api/payroll-runs/${id}/approve`;
     case "manual_journal":
       return `/api/journal/${id}/post`;
+    case "final_settlement":
+      return `/api/final-settlements/${id}/post`;
   }
 }
 
@@ -176,6 +178,8 @@ export function approvalDocumentHref(type: ApprovalDocumentType, id?: string): s
       return "/payroll";
     case "manual_journal":
       return id ? `/journal/${id}` : "/journal";
+    case "final_settlement":
+      return "/payroll";
   }
 }
 
@@ -519,6 +523,8 @@ export interface FinalSettlement extends SettlementAmounts {
   leaveDays: number;
   status: SettlementStatus;
   paidDate: string | null;
+  /** Drafts are recalculated from today's books on every read; this says when. */
+  calculatedAt?: string | null;
 }
 
 export interface RegisterRow {
@@ -550,6 +556,18 @@ export interface PayrollRegister {
   status: string;
   rows: RegisterRow[];
   totals: Omit<RegisterRow, "employeeId" | "employeeNumber" | "employeeName" | "department">;
+  /** True while the run is not approved: its figures can still change. */
+  isDraft?: boolean;
+  warnings?: string[];
+  /** Employees with service before the first payroll period and no opening provisions. */
+  priorServiceMissing?: Array<{ employeeId: string; name: string }>;
+  /** The run's postings next to the register totals, with the difference (it must be zero). */
+  reconciliation?: {
+    available: boolean;
+    ok: boolean;
+    difference: number;
+    rows: Array<{ code: string; label: string; register: number; ledger: number; difference: number }>;
+  };
   journalTieOut: {
     available: boolean;
     entryId: string | null;

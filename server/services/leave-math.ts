@@ -30,6 +30,7 @@ const dayNumber = (ymd: string): number => Math.floor(Date.parse(`${ymd}T00:00:0
 const lastDayOfMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymdOf = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
+const addDays = (ymd: string, days: number): string => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 /** Days per completed service month: 0 in months 1-6, 2 in months 7-12, then the type's annual days / 12 (2.5 for 30). */
 export function accrualRateForServiceMonth(serviceMonth: number, annualDays = 30): number {
@@ -109,6 +110,19 @@ export function leaveBalance(args: {
    * carried into that year unless an opening balance was entered (no invented carry-forward).
    */
   trackingStartYear?: number;
+  /**
+   * Prior service: the days the company already held for the employee on `openingAsOfYmd` (opening_leave_days). They are
+   * the opening balance of that date's year; accrual and leave taken count from the next day on.
+   */
+  openingDays?: number;
+  openingAsOfYmd?: string;
+  /** Approved days (any pay policy) falling between two dates, inclusive. Falls back to the whole year. */
+  takenBetween?: (fromYmd: string, toYmd: string) => number;
+  /**
+   * Unpaid-leave days between two dates, inclusive. Unpaid absence is not service (Decree-Law 33/2021): each unpaid
+   * day takes annualDays / 360 off a monthly-service accrual (2.5 days a month = 1/12 day per unpaid day).
+   */
+  unpaidDaysBetween?: (fromYmd: string, toYmd: string) => number;
 }): LeaveBalanceResult {
   const year = parse(args.asOfYmd).y;
   const joinYear = parse(args.joinYmd).y;
@@ -119,13 +133,25 @@ export function leaveBalance(args: {
   };
   const at = (y: number, asOf: string): LeaveBalanceResult => {
     const override = args.overrides.get(y);
+    const openingYear = args.openingAsOfYmd && args.openingDays !== undefined ? parse(args.openingAsOfYmd).y : undefined;
+    const fromOpening = openingYear === y ? addDays(args.openingAsOfYmd!, 1) : null;
     let opening: number;
     if (override?.opening !== undefined && override.opening !== null) opening = Number(override.opening);
-    else if (y > joinYear && (args.trackingStartYear === undefined || y > args.trackingStartYear)) opening = r2(Math.min(args.type.carryForwardMaxDays, Math.max(0, closing(y - 1))));
+    else if (fromOpening) opening = Number(args.openingDays);
+    else if (y > joinYear && ((args.trackingStartYear === undefined || y > args.trackingStartYear) || (openingYear !== undefined && y > openingYear))) opening = r2(Math.min(args.type.carryForwardMaxDays, Math.max(0, closing(y - 1))));
     else opening = 0;
-    const accrued = accruedInYear(args.type, args.joinYmd, y, asOf);
+    const yearStart = ymdOf(y, 1, 1);
+    const yearEnd = ymdOf(y, 12, 31);
+    const to = asOf < yearEnd ? asOf : yearEnd;
+    const from = fromOpening && !(override?.opening !== undefined && override.opening !== null) ? fromOpening : yearStart;
+    let accrued = accruedInYear(args.type, args.joinYmd, y, asOf);
+    if (from !== yearStart) accrued = Math.max(0, r2(new Decimal(accrued).minus(accruedInYear(args.type, args.joinYmd, y, addDays(from, -1)))));
+    if (args.type.accrual === "monthly_service" && args.unpaidDaysBetween && to >= from) {
+      const unpaid = args.unpaidDaysBetween(from, to);
+      if (unpaid > 0) accrued = Math.max(0, r2(new Decimal(accrued).minus(new Decimal(unpaid).times(args.type.annualDays).div(360))));
+    }
     const adjustment = Number(override?.adjustment ?? 0);
-    const taken = args.takenInYear(y);
+    const taken = from !== yearStart && args.takenBetween ? args.takenBetween(from, to) : args.takenInYear(y);
     return { year: y, opening, accrued, adjustment, taken, balance: r2(opening + accrued + adjustment - taken) };
   };
   return at(year, args.asOfYmd);

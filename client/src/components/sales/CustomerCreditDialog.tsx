@@ -47,14 +47,8 @@ export function CustomerCreditDialog({ companyId, contact, onClose }: Props) {
   const [date, setDate] = useState(todayYmd());
   const [accountId, setAccountId] = useState("");
   const [reference, setReference] = useState("");
-  const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
 
-  const key = ["customer-credit", companyId, contact?.id];
-  const { data } = useQuery<CreditInfo>({
-    queryKey: key,
-    enabled: open,
-    queryFn: () => apiRequest("GET", salesEndpoints.customerCredit(companyId, contact!.id)),
-  });
+  const { data } = useCustomerCredit(companyId, contact?.id, open);
   const { data: accounts = [] } = useQuery<any[]>({ queryKey: ["/api/companies", companyId, "accounts"], enabled: open });
   const paying = accounts.filter((a) => isCashOrBankAccount(a) && a.isActive !== false);
   const available = data?.balance.available ?? 0;
@@ -64,7 +58,6 @@ export function CustomerCreditDialog({ companyId, contact, onClose }: Props) {
     setDate(todayYmd());
     setAccountId("");
     setReference("");
-    setConfirmVoid(null);
   }, [open]);
   useEffect(() => {
     setAmount(available > 0 ? String(available) : "");
@@ -74,11 +67,7 @@ export function CustomerCreditDialog({ companyId, contact, onClose }: Props) {
   const valid = n > 0 && n <= available + 0.004 && !!accountId && !!date;
   const fail = (title: string) => (error: unknown) =>
     toast({ variant: "destructive", title, description: salesErrorMessage(error, (k) => tr(k), tr("pleaseTryAgain")) });
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: key });
-    queryClient.invalidateQueries({ queryKey: ["statement-advances", companyId, contact?.id] });
-    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal"] });
-  };
+  const refresh = () => refreshCustomerCredit(companyId, contact?.id);
 
   const refund = useMutation({
     mutationFn: () =>
@@ -90,16 +79,6 @@ export function CustomerCreditDialog({ companyId, contact, onClose }: Props) {
     },
     onError: fail(tr("creditRefundFailed")),
   });
-  const voidRefund = useMutation({
-    mutationFn: (refundId: string) => apiRequest("POST", salesEndpoints.voidCustomerCreditRefund(companyId, contact!.id, refundId), {}),
-    onSuccess: () => {
-      refresh();
-      setConfirmVoid(null);
-      toast({ title: tr("creditRefundVoided") });
-    },
-    onError: fail(tr("creditRefundVoidFailed")),
-  });
-
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="customer-credit-dialog">
@@ -148,7 +127,51 @@ export function CustomerCreditDialog({ companyId, contact, onClose }: Props) {
             available <= 0 && <p className="text-sm text-muted-foreground">{tr("creditNoBalance")}</p>
           )}
 
-          <div className="space-y-2">
+          <CreditRefundList companyId={companyId} contactId={contact?.id ?? null} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export const customerCreditKey = (companyId: string, contactId: string | null | undefined) => ["customer-credit", companyId, contactId];
+
+export function useCustomerCredit(companyId: string, contactId: string | null | undefined, enabled = true) {
+  return useQuery<CreditInfo>({
+    queryKey: customerCreditKey(companyId, contactId),
+    enabled: enabled && !!contactId,
+    queryFn: () => apiRequest("GET", salesEndpoints.customerCredit(companyId, contactId!)),
+  });
+}
+
+/** Everything that shows a customer's credit or refunds is read again after a refund or a void. */
+export function refreshCustomerCredit(companyId: string, contactId: string | null | undefined) {
+  queryClient.invalidateQueries({ queryKey: customerCreditKey(companyId, contactId) });
+  queryClient.invalidateQueries({ queryKey: ["statement-advances", companyId, contactId] });
+  queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "invoices"] });
+}
+
+/** The refunds paid out of a customer's credit balance, each with a two-step "Void refund". */
+export function CreditRefundList({ companyId, contactId }: { companyId: string; contactId: string | null }) {
+  const tr = messages.useT();
+  const { locale } = useTranslation();
+  const { toast } = useToast();
+  const canManage = useCanManageFinance(companyId);
+  const { data } = useCustomerCredit(companyId, contactId);
+  const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
+  const voidRefund = useMutation({
+    mutationFn: (refundId: string) => apiRequest("POST", salesEndpoints.voidCustomerCreditRefund(companyId, contactId!, refundId), {}),
+    onSuccess: () => {
+      refreshCustomerCredit(companyId, contactId);
+      setConfirmVoid(null);
+      toast({ title: tr("creditRefundVoided") });
+    },
+    onError: (error: unknown) => toast({ variant: "destructive", title: tr("creditRefundVoidFailed"), description: salesErrorMessage(error, (k) => tr(k), tr("pleaseTryAgain")) }),
+  });
+
+  return (
+    <div className="space-y-2" data-testid="credit-refund-list">
             <h4 className="text-sm font-medium">{tr("creditRefundsPaid")}</h4>
             {(data?.refunds ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground">{tr("creditRefundsNone")}</p>
@@ -181,8 +204,5 @@ export function CustomerCreditDialog({ companyId, contact, onClose }: Props) {
               </ul>
             )}
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

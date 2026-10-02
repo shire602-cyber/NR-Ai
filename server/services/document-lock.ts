@@ -87,6 +87,8 @@ export const LOCK_NS = {
   BANK_ACCOUNT_IMPORT: 1302,
   /** D3: completing or reopening a reconciliation session for one bank account. */
   BANK_RECONCILIATION: 1303,
+  /** D3: revaluing one foreign-currency bank account at one date (one entry per account and date). */
+  BANK_REVALUATION: 1304,
   // 1020-1029 are reserved for Phase 8 D2 (purchases, projects and people).
   /** Approval gate: one approve decision per bill, claim, PO, payroll run or journal at a time. */
   APPROVAL: 1020,

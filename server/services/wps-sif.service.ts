@@ -111,7 +111,8 @@ export function edrLine(run: SifRun, item: SifItem, e: SifEmployee): string {
   const start = joinedInPeriod ? e.joinYmd! : periodStart;
   const end = leftInPeriod ? e.terminationYmd! : periodEnd;
   // A full month reports the calendar days; a part month reports the days paid (30-day basis), the same figure the pay used.
-  const partMonth = item.daysWorked !== null && item.daysWorked !== undefined && num(item.daysWorked) > 0 && num(item.daysWorked) < 30;
+  // (payroll_items.days_worked is the inclusive calendar count, set for any month that is not whole: 15-31 Aug = 17.)
+  const partMonth = item.daysWorked !== null && item.daysWorked !== undefined && num(item.daysWorked) > 0 && num(item.daysWorked) < daysInMonth;
   const days = partMonth ? Math.round(num(item.daysWorked)) : daysInMonth;
 
   const net = num(item.netSalary);

@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { formatCurrency } from "@/lib/format";
 import {
   ArrowLeft,
@@ -244,7 +245,7 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground" data-testid="text-memo">
-              {entry.memo}
+              {localizeJournalText(entry.memo, locale)}
             </p>
           </CardContent>
         </Card>

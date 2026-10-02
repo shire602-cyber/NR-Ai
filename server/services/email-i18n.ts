@@ -246,6 +246,7 @@ export const DOCUMENT_LABEL: Record<string, Localized> = {
   journal_entry: { en: "journal entry", ar: "قيد اليومية" },
   journal: { en: "journal entry", ar: "قيد اليومية" },
   manual_journal: { en: "manual journal", ar: "قيد اليومية اليدوي" },
+  final_settlement: { en: "final settlement", ar: "التسوية النهائية" },
 };
 
 export const OUTCOME_LABEL: Record<string, Localized> = {

@@ -43,6 +43,7 @@ const UNDO_HINTS: Record<string, string> = {
   bank_reconciliation: "Undo the bank reconciliation match or adjustment.",
   bank_rule: "Undo the bank rule posting from the bank transaction (Unmatch), which also removes its receipt.",
   payroll_payment: "Payroll payments are recorded on the payroll run; correct the payment there.",
+  payroll_catchup: "A prior-service catch-up is booked from the payroll run; ask an accountant to correct it with a journal if it was wrong.",
   employee_loan: "Cancel the loan (only while nothing has been deducted) on the employee loans screen.",
   employee_loan_cancel: "Create the loan again from the employee loans screen.",
   employee_loan_repayment: "Correct the loan on the employee loans screen.",

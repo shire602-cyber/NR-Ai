@@ -75,8 +75,14 @@ export function calculateGratuityForEmployee(opts: {
   basicSalary: number;
   totalWage: number; // basic + housing + transport + other
   isGccNational: boolean;
+  /**
+   * Approved unpaid-leave days in the service period. Unpaid absence is not counted as service (Decree-Law 33/2021),
+   * so service starts that many days later.
+   */
+  unpaidDays?: number;
 }) {
-  const { joinDate, endDate, basicSalary, totalWage, isGccNational } = opts;
+  const { endDate, basicSalary, totalWage, isGccNational } = opts;
+  const joinDate = opts.unpaidDays && opts.unpaidDays > 0 ? new Date(opts.joinDate.getTime() + Math.round(opts.unpaidDays) * 24 * 60 * 60 * 1000) : opts.joinDate;
 
   if (isGccNational) {
     return {

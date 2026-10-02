@@ -294,6 +294,12 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(validated.password);
 
+      // The TRN is optional at sign-up; one that is typed must be 15 digits and is saved on the company.
+      const typedTrn = typeof req.body?.trn === "string" ? req.body.trn.trim() : "";
+      if (typedTrn && !/^\d{15}$/u.test(typedTrn)) {
+        return res.status(400).json({ message: "TRN must be exactly 15 digits", field: "trn" });
+      }
+
       // Check if user exists
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
@@ -324,6 +330,7 @@ export function registerAuthRoutes(app: Express): void {
         baseCurrency: "AED",
         locale: "en",
         companyType: "customer", // Self-signup companies are customer type (not managed by NR)
+        ...(typedTrn ? { trnVatNumber: typedTrn } : {}),
       });
 
       // Associate user with company as owner

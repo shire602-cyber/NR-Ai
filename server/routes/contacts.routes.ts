@@ -1,3 +1,4 @@
+import { parseEmirateInput } from "../utils/emirate";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -162,6 +163,11 @@ export function registerContactRoutes(app: Express) {
         contactData.trnNumber = trn;
       }
 
+      {
+        const em = parseEmirateInput(contactData.emirate);
+        if (!em.ok) return res.status(422).json({ message: em.message, code: em.code });
+        if (em.value !== undefined) contactData.emirate = em.value;
+      }
       if (contactData.contactType !== undefined && !CONTACT_TYPES.includes(contactData.contactType)) {
         return res.status(400).json({ message: "contactType must be customer, vendor or both", code: "INVALID_CONTACT_TYPE" });
       }
@@ -423,6 +429,12 @@ export function registerContactRoutes(app: Express) {
       const updateData = pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]);
       const listCheck = await checkPriceListsForCompany(companyId, [updateData.priceListId as string | null | undefined]);
       if (!listCheck.ok) return res.status(422).json({ message: listCheck.message, code: listCheck.code });
+      {
+        const em = parseEmirateInput((updateData as any).emirate);
+        if (!em.ok) return res.status(422).json({ message: em.message, code: em.code });
+        if (em.value === undefined) delete (updateData as any).emirate;
+        else (updateData as any).emirate = em.value;
+      }
       if (updateData.contactType !== undefined) {
         if (!CONTACT_TYPES.includes(updateData.contactType as ContactType)) {
           return res.status(400).json({ message: "contactType must be customer, vendor or both", code: "INVALID_CONTACT_TYPE" });

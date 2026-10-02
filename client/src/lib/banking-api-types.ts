@@ -13,6 +13,8 @@ export interface BankAccount {
   currency: string;
   glAccountId: string | null;
   reconcileFrom?: string | null;
+  /** "credit_card" accounts are liabilities in the books; "bank" (and missing) are assets. */
+  accountKind?: "bank" | "credit_card";
   isActive: boolean;
 }
 
@@ -423,12 +425,17 @@ export interface AssetRegisterRow {
   nbv: number;
   status: string;
   onLedger: boolean;
+  /** Tied to the bill or journal that bought it. Falls back to `onLedger` when the server does not send it. */
+  linked?: boolean;
+  linkedDocument?: { type: "bill" | "journal"; id: string; number: string | null } | null;
 }
 
 export interface AssetRegister {
   asOf: string;
   rows: AssetRegisterRow[];
   totals: { cost: number; accumulated: number; nbv: number };
+  /** Assets that are on the register but not tied to the books yet: outside `totals`. */
+  unlinked?: { count?: number; cost: number; accumulated?: number; nbv?: number };
   glTie: {
     gl1290: number;
     gl1240: number;
@@ -448,6 +455,35 @@ export interface DepreciationScheduleRow {
   nbv: number;
   projected: boolean;
   journalEntryId: string | null;
+}
+
+// ─── Bank balance revaluation ──────────────────────────────────────────────
+
+export interface RevaluationPreview {
+  bankAccountId: string;
+  bankAccountName: string;
+  currency: string;
+  asOf: string;
+  closingRate: number;
+  /** The balance in the account's own currency. */
+  foreignBalance: number;
+  /** What the books carry that balance at (AED). */
+  carryingAed: number;
+  /** What it is worth at the closing rate (AED). */
+  targetAed: number;
+  /** target - carrying; positive is an unrealised gain. */
+  adjustmentAed: number;
+  /** An entry for this account and date already exists. */
+  alreadyPosted: boolean;
+  existingEntry: { journalEntryId: string; entryNumber: string } | null;
+}
+
+export interface RevaluationResult extends RevaluationPreview {
+  posted: boolean;
+  journalEntryId: string | null;
+  reversalEntryId: string | null;
+  reversalDate: string | null;
+  reason?: string;
 }
 
 // ─── Errors ────────────────────────────────────────────────────────────────

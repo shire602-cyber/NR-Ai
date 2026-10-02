@@ -1,4 +1,5 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryFunction } from "@tanstack/react-query";
+import { reportRoleRequired } from "./role-blocked";
 import { getAuthHeaders, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { stringifyBody } from "./calendar-date";
@@ -208,6 +209,8 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 // Mutations still call queryClient.invalidateQueries to force-refresh after
 // writes, so freshness guarantees don't depend on the timer alone.
 export const queryClient = new QueryClient({
+  // A 403 ROLE_REQUIRED on a page load becomes one standard notice in the shell, not an error on every screen.
+  queryCache: new QueryCache({ onError: (error, query) => reportRoleRequired(error, query.queryKey) }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

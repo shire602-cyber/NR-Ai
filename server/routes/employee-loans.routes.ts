@@ -66,7 +66,7 @@ export function registerEmployeeLoanRoutes(app: Express) {
   /** A loan of a company the caller can use; a stranger's loan is a plain 404. */
   async function loanFor(req: Request, res: Response, write: boolean) {
     const loan = await getLoan(req.params.id);
-    if (!loan || !(await storage.hasCompanyAccess(req.user!.id, loan.companyId))) {
+    if (!loan || !(await storage.hasCompanyAccess(req.user!.id, loan.companyId, { employeeSelfService: true }))) {
       res.status(404).json({ message: "Loan not found" });
       return null;
     }

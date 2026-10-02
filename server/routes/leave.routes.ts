@@ -23,7 +23,7 @@ import {
   updateLeaveType,
 } from "../services/leave.service";
 import { toCalendarYmd } from "../utils/date";
-import { employeeFilterFor, hrCompanyAccess, hrReadScope } from "./hr-access";
+import { employeeFilterFor, hrCompanyAccess, hrOwnRecordWrite, hrReadScope } from "./hr-access";
 import { storage } from "../storage";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").refine((v) => new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v, "Not a real date");
@@ -119,7 +119,7 @@ export function registerLeaveRoutes(app: Express) {
   );
 
   app.post("/api/companies/:companyId/leave-requests", ...base, validate({ body: requestSchema }), asyncHandler(async (req: Request, res: Response) => {
-    if (!(await hrCompanyAccess(req, res, req.params.companyId, { write: true }))) return;
+    if (!(await hrOwnRecordWrite(req, res, req.params.companyId, req.body.employeeId))) return;
     const created = await createLeaveRequest(req.params.companyId, req.user!.id, req.body);
     await recordAudit({ userId: req.user!.id, companyId: req.params.companyId, action: "leave.request", entityType: "leave_request", entityId: created.id, after: created, req });
     res.status(201).json(created);
@@ -128,8 +128,10 @@ export function registerLeaveRoutes(app: Express) {
   for (const decision of ["approve", "reject", "cancel"] as const) {
     app.post(`/api/leave-requests/:id/${decision}`, ...base, asyncHandler(async (req: Request, res: Response) => {
       const found = await getLeaveRequest(req.params.id);
-      if (!found || !(await storage.hasCompanyAccess(req.user!.id, found.companyId))) return res.status(404).json({ message: "Leave request not found" });
-      if (!(await hrCompanyAccess(req, res, found.companyId, { write: true }))) return;
+      if (!found || !(await storage.hasCompanyAccess(req.user!.id, found.companyId, { employeeSelfService: true }))) return res.status(404).json({ message: "Leave request not found" });
+      // An employee may cancel their own request; approving and rejecting stay with accountant and above.
+      const allowed = decision === "cancel" ? await hrOwnRecordWrite(req, res, found.companyId, found.employeeId) : await hrCompanyAccess(req, res, found.companyId, { write: true });
+      if (!allowed) return;
       const updated = await decideLeaveRequest(found.id, req.user!.id, decision);
       await recordAudit({ userId: req.user!.id, companyId: found.companyId, action: `leave.${decision}`, entityType: "leave_request", entityId: found.id, before: { status: found.status }, after: { status: updated.status }, req });
       res.json(updated);

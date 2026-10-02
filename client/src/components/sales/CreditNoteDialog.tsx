@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { todayYmd, uaeDayOf } from "@/lib/calendar-date";
 import { formatCurrency } from "@/lib/format";
+import { aedEquivalent } from "@/lib/fx";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   creditNoteBody,
@@ -20,6 +21,7 @@ import {
   type CreditLineChoice,
   type CreditableInvoice,
 } from "@/lib/credit-note";
+import { useEmirateLabel } from "./EmirateSelect";
 import { messages } from "./SalesShared.i18n";
 
 interface Props {
@@ -85,6 +87,8 @@ export function CreditNoteDialog({ companyId, invoiceId, onClose }: Props) {
   });
 
   const money = (n: number) => formatCurrency(n, inv?.currency || "AED", locale);
+  const emirateLabel = useEmirateLabel();
+  const rateToAed = Number(inv?.exchangeRate ?? 1);
 
   return (
     <Dialog open={invoiceId !== null} onOpenChange={(o) => !o && onClose()}>
@@ -104,6 +108,22 @@ export function CreditNoteDialog({ companyId, invoiceId, onClose }: Props) {
                 {tr("invoiceTotalCredited", { total: money(Number(inv.total)), credited: money(Number(inv.creditedAmount ?? 0)) })}
               </span>
             </div>
+
+            {/* A credit note takes the currency, rate and emirate of the invoice it credits: shown, not editable. */}
+            <dl className="grid grid-cols-2 gap-2 rounded-md border p-3 text-sm" data-testid="credit-inherited">
+              <div>
+                <dt className="text-xs text-muted-foreground">{tr("currencyLabel")}</dt>
+                <dd className="font-mono" dir="ltr">
+                  {inv.currency || "AED"}
+                  {inv.currency && inv.currency !== "AED" && rateToAed > 0 ? ` @ ${rateToAed}` : ""}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">{tr("emirateOfSupply")}</dt>
+                <dd data-testid="credit-emirate">{emirateLabel(inv.emirate) || tr("emirateSameAsCompany")}</dd>
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">{tr("creditInheritsHelp")}</p>
+            </dl>
 
             {advanceBlocks && (
               <p role="alert" className="text-sm text-warning" data-testid="credit-advance-note">{tr("errAdvancePartialCredit")}</p>
@@ -164,6 +184,9 @@ export function CreditNoteDialog({ companyId, invoiceId, onClose }: Props) {
                 <div className="flex justify-between"><span className="text-muted-foreground">{tr("subtotal")}</span><span className="font-mono" dir="ltr">{money(picked.subtotal)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">{tr("vat")}</span><span className="font-mono" dir="ltr">{money(picked.vat)}</span></div>
                 <div className="flex justify-between font-semibold"><span>{tr("thisCreditNote")}</span><span className="font-mono" dir="ltr" data-testid="credit-this-total">{money(picked.total)}</span></div>
+                {inv.currency && inv.currency !== "AED" && rateToAed > 0 && (
+                  <div className="flex justify-between text-xs text-muted-foreground" data-testid="credit-aed-equivalent"><span>{tr("aedEquivalent")}</span><span className="font-mono" dir="ltr">{formatCurrency(aedEquivalent(picked.total, rateToAed), "AED", locale)}</span></div>
+                )}
               </div>
             )}
             {over && <p role="alert" className="text-sm text-destructive" data-testid="credit-over">{tr("creditOverRemaining")}</p>}

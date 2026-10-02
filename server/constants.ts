@@ -53,7 +53,7 @@ export const ACCOUNT_CODES = {
   REVENUE: "4010",
   /** Service Revenue (alternate revenue account some firms use). */
   REVENUE_ALT: "4020",
-  /** Deferred Revenue / customer advances (holds invoice overpayments). */
+  /** 2050 Customer Credit (holds invoice overpayments until applied or refunded). */
   DEFERRED_REVENUE: "2050",
   /** Customer Advances (liability): advance tax invoices and deposits until applied or refunded; created on demand. */
   CUSTOMER_ADVANCES: "2055",

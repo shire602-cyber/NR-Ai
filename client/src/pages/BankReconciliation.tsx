@@ -16,6 +16,7 @@ import { BankFeedsPanel } from "@/components/banking/BankFeedsPanel";
 import { ReconciliationTab } from "@/components/banking/ReconciliationTab";
 import { BankAccountsPanel } from "@/components/banking/BankAccountsPanel";
 import { BankAccountDialog } from "@/components/banking/BankAccountDialog";
+import { RevalueDialog } from "@/components/banking/RevalueDialog";
 import { messages as pageMessages } from "./BankReconciliation.i18n";
 
 type TabKey = "transactions" | "import" | "feeds" | "reconciliation" | "accounts";
@@ -29,6 +30,7 @@ export default function BankReconciliation() {
   const [resumeId, setResumeId] = useState<string | null>(null);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
+  const [revalueAccount, setRevalueAccount] = useState<BankAccount | null>(null);
 
   const { data: bankAccounts = [], isLoading: isLoadingAccounts } = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
@@ -113,7 +115,7 @@ export default function BankReconciliation() {
           <ReconciliationTab companyId={companyId} bankAccounts={bankAccounts} />
         </TabsContent>
         <TabsContent value="accounts" className="mt-4">
-          <BankAccountsPanel companyId={companyId} bankAccounts={bankAccounts} onAdd={() => openAccountDialog()} onEdit={(a) => openAccountDialog(a)} />
+          <BankAccountsPanel companyId={companyId} bankAccounts={bankAccounts} onAdd={() => openAccountDialog()} onEdit={(a) => openAccountDialog(a)} onRevalue={setRevalueAccount} />
         </TabsContent>
       </Tabs>
 
@@ -131,6 +133,7 @@ export default function BankReconciliation() {
           openAccountDialog();
         }}
       />
+      <RevalueDialog open={!!revalueAccount} onOpenChange={(o) => !o && setRevalueAccount(null)} companyId={companyId} account={revalueAccount} />
       <BankAccountDialog open={accountDialogOpen} onOpenChange={setAccountDialogOpen} companyId={companyId} account={editingAccount} accounts={ledgerAccounts} />
     </div>
   );

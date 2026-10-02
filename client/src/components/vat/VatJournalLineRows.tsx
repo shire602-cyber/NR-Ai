@@ -24,11 +24,14 @@ export interface VatReturnJournalLine {
   blocked?: boolean;
 }
 
-const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (n: number) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** The lines that affect any of the given box columns. */
-export const journalLinesForBoxes = (lines: VatReturnJournalLine[] | null | undefined, boxes: string[]) =>
-  (lines ?? []).filter((l) => boxes.includes(l.box));
+export const journalLinesForBoxes = (
+  lines: VatReturnJournalLine[] | null | undefined,
+  boxes: string[]
+) => (lines ?? []).filter((l) => boxes.includes(l.box));
 
 /** Rows (inside a table body) listing the journals behind the given box columns. Renders nothing when there are none. */
 export default function VatJournalLineRows({
@@ -45,8 +48,22 @@ export default function VatJournalLineRows({
     <Fragment>
       {own.map((l) => {
         const sale = l.kind === "journal_sale" || l.kind === "journal_purchase";
-        const badge = l.kind === "journal_sale" ? tr("saleBadge") : l.kind === "journal_purchase" ? (l.blocked ? tr("blockedPurchaseBadge") : tr("purchaseBadge")) : tr("adjustmentBadge");
-        const hint = l.kind === "journal_sale" ? tr("saleHint") : l.kind === "journal_purchase" ? (l.blocked ? tr("blockedPurchaseHint") : tr("purchaseHint")) : tr("adjustmentHint");
+        const badge =
+          l.kind === "journal_sale"
+            ? tr("saleBadge")
+            : l.kind === "journal_purchase"
+              ? l.blocked
+                ? tr("blockedPurchaseBadge")
+                : tr("purchaseBadge")
+              : tr("adjustmentBadge");
+        const hint =
+          l.kind === "journal_sale"
+            ? tr("saleHint")
+            : l.kind === "journal_purchase"
+              ? l.blocked
+                ? tr("blockedPurchaseHint")
+                : tr("purchaseHint")
+              : tr("adjustmentHint");
         return (
           <TableRow
             key={`${l.entryId}:${l.box}`}
@@ -60,10 +77,14 @@ export default function VatJournalLineRows({
                 {badge}
               </Badge>
               <br />
-              <span className="text-muted-foreground">{l.description?.trim() || tr("noDescription")}</span>
+              <span className="text-muted-foreground">
+                {l.description?.trim() || tr("noDescription")}
+              </span>
             </TableCell>
             <TableCell className="text-end tabular-nums">{sale ? fmt(l.amount) : ""}</TableCell>
-            <TableCell className="text-end tabular-nums">{sale ? fmt(l.blocked ? 0 : (l.vat ?? 0)) : ""}</TableCell>
+            <TableCell className="text-end tabular-nums">
+              {sale ? fmt(l.blocked ? 0 : (l.vat ?? 0)) : ""}
+            </TableCell>
             <TableCell className="text-end tabular-nums">{sale ? "" : fmt(l.amount)}</TableCell>
           </TableRow>
         );

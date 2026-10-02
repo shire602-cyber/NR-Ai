@@ -403,7 +403,10 @@ async function signoffSection() {
   r = await S.post(`/api/fixed-assets/${lap.id}/depreciate`, { month: m4.getUTCMonth() + 1, year: m4.getUTCFullYear() });
   ok("sign-off 1: the earlier month is already posted (409), nothing is re-priced", r.status === 409, { s: r.status });
   r = await S.post(`/api/fixed-assets/${lap.id}/dispose`, { disposalDate: today, disposalAmount: 3000, proceedsAccountId: bank.id });
-  ok("sign-off 1: disposal catch-up charges the same 116.67 for each remaining month", r.status === 200 && r.json?.catchUpDepreciation?.length === 2 && r.json.catchUpDepreciation.every((x) => close(x.amount, 116.67)) && close(4200 - r.json.netBookValueAtDisposal, 4 * 116.67), { s: r.status, j: r.json });
+  // Teardown 7 F4: depreciation runs to the disposal date: the 4 whole months, then the disposal month pro rata by days
+  const dimNow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+  const partMonth = Math.round(116.67 * (now.getUTCDate() / dimNow) * 100) / 100;
+  ok("sign-off 1: disposal catch-up charges the same 116.67 for each remaining month, then the disposal month by days", r.status === 200 && r.json?.catchUpDepreciation?.length === 2 && r.json.catchUpDepreciation.every((x) => close(x.amount, 116.67)) && close(4200 - r.json.netBookValueAtDisposal, 4 * 116.67 + partMonth, 0.03), { s: r.status, nbv: r.json?.netBookValueAtDisposal, expected: 4 * 116.67 + partMonth, j: r.json?.catchUpDepreciation });
   const bal = await S.balances();
   const reg2 = (await S.get(`/api/companies/${S.cid}/fixed-assets/register?asOf=${today}`)).json;
   ok("sign-off 1: the register still ties to the ledger after disposal", close(reg2?.glTie?.difference, 0), { tie: reg2?.glTie, bal1240: bal["1240"] });
@@ -519,7 +522,7 @@ async function rulesSection() {
   const empToken = emp.json?.token;
   await db.query(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee') ON CONFLICT DO NOTHING`, [R.cid, emp.json?.user?.id]);
   r = await api("POST", `/api/companies/${R.cid}/bank-statements/${dewa.id}/apply-rule`, { token: empToken, body: { ruleId } });
-  ok("roles: an employee cannot post from the bank screen (403 ROLE_NOT_ALLOWED)", r.status === 403 && r.json?.code === "ROLE_NOT_ALLOWED", { s: r.status, j: r.json });
+  ok("roles: an employee cannot post from the bank screen (403 ROLE_REQUIRED; the employee role is refused before the bank check)", r.status === 403 && (r.json?.code === "ROLE_NOT_ALLOWED" || r.json?.code === "ROLE_REQUIRED"), { s: r.status, j: r.json });
 }
 
 // ─────────────────────────── D3-7 reconciliation ───────────────────────────
@@ -1129,6 +1132,11 @@ async function uiChecks(browser) {
   ok("D3-9 UI: the disposal offers bank and cash accounts and not a revenue account", (await page.getByRole("option", { name: /1022/ }).count()) === 1 && (await page.getByRole("option", { name: /5000/ }).count()) === 0);
   await page.getByRole("option", { name: /1022/ }).click();
   await page.locator('input[type=number][step="0.01"]').fill("1000");
+  // a VAT-registered company starts at the standard rate (an invoice to a buyer); this check is the plain no-VAT disposal
+  if (await page.locator("[data-testid=select-disposal-vat]").count()) {
+    await page.locator("[data-testid=select-disposal-vat]").click();
+    await page.getByRole("option", { name: /No VAT/ }).click();
+  }
   await page.getByRole("button", { name: "Dispose Asset" }).last().click();
   await page.waitForTimeout(1500);
   const disposed = (await db.query(`SELECT disposal_account_id, disposal_journal_id FROM fixed_assets WHERE id = $1`, [vanId])).rows[0];

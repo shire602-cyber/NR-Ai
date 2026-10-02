@@ -20,7 +20,7 @@ Under the boxes you will see **adjustment rows**: credit notes, bad-debt relief 
 
 ## Input VAT that cannot be reclaimed
 
-Some input VAT is blocked by law, for example **entertainment** (hospitality for clients and staff). Choose the blocked category when you record the expense or bill: the VAT is added to the cost and kept out of box 10 and the recoverable total.
+Some input VAT is blocked by law, for example **entertainment** (hospitality for clients and staff). Choose the blocked category when you record the expense or bill: the VAT is added to the cost and kept out of **box 9** (standard-rated expenses and their recoverable VAT), as Article 53 requires. Box 10 is only for reverse-charge purchases.
 
 ## Review and finalise
 

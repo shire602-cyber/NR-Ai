@@ -12,6 +12,7 @@ import { useTranslation } from "@/lib/i18n";
 import { CALENDAR_DATE_SHORT_FORMAT, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { TimeEntry } from "@/lib/purchasing-hr";
+import { useConfirmAction } from "@/components/ConfirmDialog";
 import { messages } from "@/pages/ProjectDetail.i18n";
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
 
 export function ProjectTimeTab({ companyId, projectId, adding, onCloseAdd }: Props) {
   const tr = messages.useT();
+  const [askConfirm, confirmDialog] = useConfirmAction();
   const { locale } = useTranslation();
   const { toast } = useToast();
   const [editing, setEditing] = useState<TimeEntry | null>(null);
@@ -47,6 +49,7 @@ export function ProjectTimeTab({ companyId, projectId, adding, onCloseAdd }: Pro
 
   return (
     <>
+      {confirmDialog}
       {entries.length === 0 ? (
         <EmptyState icon={Clock} title={tr("timeEmpty")} compact testId="empty-time" />
       ) : (
@@ -92,7 +95,7 @@ export function ProjectTimeTab({ companyId, projectId, adding, onCloseAdd }: Pro
                           size="icon"
                           variant="ghost"
                           aria-label={tr("deleteEntry")}
-                          onClick={() => window.confirm(tr("deleteEntryConfirm")) && remove.mutate(e.id)}
+                          onClick={() => askConfirm(tr("deleteEntryConfirm"), () => remove.mutate(e.id), { destructive: true })}
                           data-testid={`button-delete-time-${e.id}`}
                         >
                           <Trash2 className="h-4 w-4" />

@@ -138,7 +138,7 @@ async function depreciationSection() {
   const emp = await api("POST", "/api/auth/register", { body: { name: "emp", email: `emp_${rnd}@example.com`, password: "Password123!" } });
   await db.query(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee') ON CONFLICT DO NOTHING`, [O.cid, emp.json?.user?.id]);
   r = await api("POST", `/api/companies/${O.cid}/year-end/reopen`, { token: emp.json?.token, body: { yearStart: `${Y - 2}-01-01`, reason: "Disposal of an asset needs it" } });
-  ok("t4-4: a member who is not the owner cannot reopen (403 REOPEN_FORBIDDEN)", r.status === 403 && r.json?.code === "REOPEN_FORBIDDEN", { s: r.status, j: r.json });
+  ok("t4-4: a member who is not the owner cannot reopen (403; an employee-role member is refused earlier with ROLE_REQUIRED)", r.status === 403 && (r.json?.code === "REOPEN_FORBIDDEN" || r.json?.code === "ROLE_REQUIRED"), { s: r.status, j: r.json });
   r = await O.post(`/api/companies/${O.cid}/year-end/reopen`, { yearStart: `${Y - 2}-01-01`, reason: "short" });
   ok("t4-4: the owner needs a reason (400)", r.status === 400, { s: r.status, j: r.json });
   r = await O.post(`/api/companies/${O.cid}/year-end/reopen`, { yearStart: `${Y - 2}-01-01`, reason: "Disposal of an asset needs it" });

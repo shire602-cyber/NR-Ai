@@ -14,7 +14,7 @@ import { toCalendarYmd } from "../utils/date";
 import { LOCK_NS, withDocumentLock } from "./document-lock";
 import { calculateGratuityForEmployee, isUaeOrGccNational } from "./gratuity";
 import { assertCashOrBankAccount, ensureEmployeeLoansAccount, postHrJournal, reverseHrJournal, type HrJournalLine } from "./hr-journal";
-import { annualLeaveAvailable } from "./leave.service";
+import { annualLeaveAvailable, unpaidServiceDays } from "./leave.service";
 import { ensureLeaveProvisionAccounts, leaveProvisionBalances } from "./leave-provision.service";
 import { remainingBalance } from "./loan-math";
 import { computeSettlement } from "./settlement-math";
@@ -55,10 +55,12 @@ async function facts(companyId: string, req: SettlementRequest) {
   const warnings: string[] = [];
   let gratuity = { totalGratuity: 0, yearsOfService: 0, eligible: false, reason: null as string | null };
   if (employee.joinYmd) {
-    const g = calculateGratuityForEmployee({ joinDate: utc(employee.joinYmd), endDate: utc(req.terminationDate), basicSalary: employee.basic, totalWage: employee.wage, isGccNational: isGcc });
+    // Unpaid leave is not service: those days are taken out of the service period.
+    const unpaidDays = await unpaidServiceDays(companyId, req.employeeId, employee.joinYmd, req.terminationDate);
+    const g = calculateGratuityForEmployee({ joinDate: utc(employee.joinYmd), endDate: utc(req.terminationDate), basicSalary: employee.basic, totalWage: employee.wage, isGccNational: isGcc, unpaidDays });
     // Years of service are shown for everyone; only the gratuity is zero for a GCC national (pension instead).
     const years = isGcc
-      ? calculateGratuityForEmployee({ joinDate: utc(employee.joinYmd), endDate: utc(req.terminationDate), basicSalary: employee.basic, totalWage: employee.wage, isGccNational: false }).yearsOfService
+      ? calculateGratuityForEmployee({ joinDate: utc(employee.joinYmd), endDate: utc(req.terminationDate), basicSalary: employee.basic, totalWage: employee.wage, isGccNational: false, unpaidDays }).yearsOfService
       : g.yearsOfService;
     gratuity = { totalGratuity: g.totalGratuity, yearsOfService: years, eligible: g.eligible, reason: g.reason };
   } else {
@@ -143,8 +145,51 @@ const COLUMNS = `s.id::text AS id, s.employee_id::text AS "employeeId", e.full_n
   s.loan_recovered::float8 AS "loanRecovered", s.other_deductions::float8 AS "otherDeductions", s.net_payable::float8 AS "netPayable",
   s.status, s.notes, s.payment_account_id::text AS "paymentAccountId", to_char(s.paid_date, 'YYYY-MM-DD') AS "paidDate",
   s.journal_entry_id::text AS "journalEntryId", s.payment_journal_entry_id::text AS "paymentJournalEntryId", s.void_journal_entry_id::text AS "voidJournalEntryId",
-  s.created_at AS "createdAt"`;
+  s.created_at AS "createdAt", s.calculated_at AS "calculatedAt"`;
 const FROM = `FROM employee_final_settlements s JOIN employees e ON e.id = s.employee_id`;
+
+/**
+ * A draft settlement is current on every read: the gratuity, the provision, the loan still owed and the net are worked
+ * out again from today's books (an approved September run changes the loan and the provision), and `calculatedAt` says
+ * when. The saved leave days and other deductions stay as they were entered. A draft that cannot be recalculated now
+ * (the employee left some other way) is returned as saved.
+ */
+export async function refreshDraftSettlement<T extends { id: string; status: string; companyId?: string }>(row: T): Promise<T> {
+  if (row.status !== "draft") return row;
+  const s: any = (row as any).companyId ? row : await getSettlement(row.id);
+  if (!s) return row;
+  try {
+    const f = await facts(s.companyId, {
+      employeeId: s.employeeId,
+      terminationDate: s.terminationDate,
+      reason: s.reason,
+      provisionUsed: s.provisionOverridden ? s.provisionUsed : null,
+      leaveDays: s.leaveDays,
+      otherDeductions: s.otherDeductions,
+    });
+    if (f.employee.status !== "active") return row;
+    const r = computeSettlement({
+      gratuityAmount: f.gratuity.totalGratuity,
+      provisionDefault: f.provisionDefault,
+      provisionBalance: f.provisionBalance,
+      provisionOverride: s.provisionOverridden ? s.provisionUsed : null,
+      basic: f.employee.basic,
+      leaveDays: s.leaveDays,
+      loanOutstanding: f.loanOutstanding,
+      otherDeductions: s.otherDeductions,
+    });
+    if (!r.ok) return row;
+    await pool.query(
+      `UPDATE employee_final_settlements SET basic_salary = $2, total_wage = $3, years_of_service = $4, gratuity_amount = $5, provision_used = $6,
+              gratuity_true_up = $7, leave_encashment = $8, loan_recovered = $9, net_payable = $10, calculated_at = NOW()
+        WHERE id = $1 AND status = 'draft'`,
+      [s.id, f.employee.basic, f.employee.wage, Math.round(f.gratuity.yearsOfService * 10000) / 10000, r.gratuityAmount, r.provisionUsed, r.gratuityTrueUp, r.leaveEncashment, r.loanRecovered, r.netPayable]
+    );
+    return ((await getSettlement(s.id)) ?? row) as T;
+  } catch {
+    return row;
+  }
+}
 
 export async function listSettlements(companyId: string, f: { status?: string; employeeId?: string; limit: number; offset: number }) {
   const params: unknown[] = [companyId];
@@ -152,7 +197,8 @@ export async function listSettlements(companyId: string, f: { status?: string; e
   if (f.status && f.status !== "all") { params.push(f.status); where += ` AND s.status = $${params.length}`; }
   if (f.employeeId) { params.push(f.employeeId); where += ` AND s.employee_id = $${params.length}`; }
   params.push(f.limit, f.offset);
-  return (await pool.query(`SELECT ${COLUMNS} ${FROM} WHERE ${where} ORDER BY s.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+  const rows = (await pool.query(`SELECT ${COLUMNS}, s.company_id::text AS "companyId" ${FROM} WHERE ${where} ORDER BY s.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+  return await Promise.all(rows.map((row: any) => refreshDraftSettlement(row)));
 }
 
 export async function getSettlement(settlementId: string) {
@@ -170,8 +216,8 @@ export async function createSettlement(companyId: string, userId: string, req: S
     const ins = await pool.query(
       `INSERT INTO employee_final_settlements (company_id, employee_id, termination_date, reason, basic_salary, total_wage, is_gcc_national, years_of_service,
           gratuity_amount, provision_used, gratuity_true_up, leave_days, leave_encashment, loan_recovered, other_deductions, net_payable, notes, created_by,
-          provision_overridden)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id::text`,
+          provision_overridden, calculated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, NOW()) RETURNING id::text`,
       [
         companyId, req.employeeId, req.terminationDate, req.reason ?? "resignation", f.employee.basic, f.employee.wage, f.isGcc,
         Math.round(f.gratuity.yearsOfService * 10000) / 10000, r.gratuityAmount, r.provisionUsed, r.gratuityTrueUp, f.leaveDays, r.leaveEncashment,
@@ -336,6 +382,8 @@ export async function voidSettlement(settlementId: string, userId: string) {
     if (s.status === "void") throw err(409, "ALREADY_VOID", "This settlement is already void.");
     if (s.status === "draft") {
       await pool.query(`UPDATE employee_final_settlements SET status = 'void', updated_at = NOW() WHERE id = $1`, [settlementId]);
+      // A voided draft takes its approval request with it.
+      await pool.query(`UPDATE approval_requests SET status = 'cancelled', decided_at = NOW() WHERE document_type = 'final_settlement' AND document_id = $1 AND status = 'pending'`, [settlementId]);
       return await getSettlement(settlementId);
     }
     const reversal = await reverseHrJournal({

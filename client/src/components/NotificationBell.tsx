@@ -10,11 +10,20 @@ import {
 import { useNotifications, type AppNotification } from "@/hooks/useNotifications";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { messages as pageMessages } from "./NotificationBell.i18n";
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, locale = "en"): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
+  if (locale === "ar") {
+    const rtf = new Intl.RelativeTimeFormat("ar-AE-u-nu-latn", { numeric: "auto" });
+    if (mins < 1) return rtf.format(0, "second");
+    if (mins < 60) return rtf.format(-mins, "minute");
+    const hours = Math.floor(mins / 60);
+    return hours < 24 ? rtf.format(-hours, "hour") : rtf.format(-Math.floor(hours / 24), "day");
+  }
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -30,6 +39,7 @@ function priorityDot(priority: string) {
 
 export function NotificationBell() {
   const tr = pageMessages.useT();
+  const { locale } = useTranslation();
 
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [, navigate] = useLocation();
@@ -108,11 +118,11 @@ export function NotificationBell() {
                   )}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium leading-snug truncate">{n.title}</p>
+                  <p className="text-sm font-medium leading-snug truncate">{localizeJournalText(n.title, locale)}</p>
                   <p className="text-xs text-muted-foreground leading-snug line-clamp-2 mt-0.5">
-                    {n.message}
+                    {localizeJournalText(n.message, locale)}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">{timeAgo(n.createdAt)}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{timeAgo(n.createdAt, locale)}</p>
                 </div>
                 {!n.isRead && (
                   <Button

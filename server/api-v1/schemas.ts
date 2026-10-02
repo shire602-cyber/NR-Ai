@@ -48,6 +48,8 @@ const rate = z
   .transform((v) => Number(v))
   .refine((v) => Number.isFinite(v) && v > 0 && v < 1_000_000, "Rate must be positive");
 const text = (max: number) => z.string().trim().max(max);
+// Place of supply / establishment (VAT 201 box 1): the companies.emirate value set.
+const emirateEnum = z.enum(["abu_dhabi", "dubai", "sharjah", "ajman", "umm_al_quwain", "ras_al_khaimah", "fujairah"]);
 
 // ───────────────────────── Contacts ─────────────────────────
 const contactFields = {
@@ -59,6 +61,7 @@ const contactFields = {
   trn: z.string().regex(/^\d{15}$/, "A UAE TRN is exactly 15 digits").nullable(),
   address: text(500).nullable(),
   city: text(100).nullable(),
+  emirate: emirateEnum.nullable(),
   country: text(100).nullable(),
   contactPerson: text(255).nullable(),
   paymentTermsDays: z.number().int().min(0).max(365),
@@ -74,6 +77,7 @@ export const contactCreate = z.strictObject({
   trn: contactFields.trn.optional(),
   address: contactFields.address.optional(),
   city: contactFields.city.optional(),
+  emirate: contactFields.emirate.optional(),
   country: contactFields.country.optional(),
   contactPerson: contactFields.contactPerson.optional(),
   paymentTermsDays: contactFields.paymentTermsDays.optional(),
@@ -89,6 +93,7 @@ export const contactUpdate = z
     trn: contactFields.trn.optional(),
     address: contactFields.address.optional(),
     city: contactFields.city.optional(),
+    emirate: contactFields.emirate.optional(),
     country: contactFields.country.optional(),
     contactPerson: contactFields.contactPerson.optional(),
     paymentTermsDays: contactFields.paymentTermsDays.optional(),
@@ -131,6 +136,8 @@ export const invoiceCreate = z.strictObject({
   customerName: text(255).min(1).optional(),
   customerTrn: z.string().regex(/^\d{15}$/, "A UAE TRN is exactly 15 digits").nullable().optional(),
   customerAddress: text(500).nullable().optional(),
+  // Place of supply for the VAT return; default: the contact's emirate, else the company's.
+  emirate: emirateEnum.nullable().optional(),
   date: isoDate,
   dueDate: isoDate.nullable().optional(),
   paymentTerms: z.enum(["due_on_receipt", "net7", "net15", "net30", "net45", "net60", "net90"]).optional(),
@@ -222,6 +229,7 @@ export const contactResponse = z.object({
   trn: nullableStr,
   address: nullableStr,
   city: nullableStr,
+  emirate: emirateEnum.nullable(),
   country: nullableStr,
   contactPerson: nullableStr,
   paymentTermsDays: z.number().nullable(),
@@ -277,6 +285,7 @@ export const invoiceResponse = z.object({
   contactId: uuid.nullable(),
   customerName: z.string(),
   customerTrn: nullableStr,
+  emirate: emirateEnum.nullable(),
   date: isoDate,
   dueDate: isoDate.nullable(),
   currency: currency,

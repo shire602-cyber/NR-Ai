@@ -72,6 +72,7 @@ import {
 } from "lucide-react";
 import type { Company } from "@shared/schema";
 import { messages as pageMessages } from "./Onboarding.i18n";
+import { withoutBlankTrn } from "@/lib/onboarding-payload";
 
 // The bank name is stored as the English value (it is data); only the label shown is translated.
 // Exactly the names the server accepts for a bank account (BANKS in the banking dialog; tests/unit/sales-ui.test.ts keeps it equal to
@@ -220,7 +221,7 @@ function CustomerOnboarding() {
 
   const saveCompanyMutation = useMutation({
     mutationFn: (data: Partial<typeof companyForm>) =>
-      apiRequest("PATCH", `/api/companies/${company!.id}`, data),
+      apiRequest("PATCH", `/api/companies/${company!.id}`, withoutBlankTrn(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       setCompanyFieldErrors({});
@@ -388,7 +389,8 @@ function CustomerOnboarding() {
   async function handleExpressSetup(data: { name: string; emirate: string; trnVatNumber: string }) {
     setExpressSaving(true);
     try {
-      const payload = { ...companyForm, ...data };
+      // A blank TRN field never replaces the TRN saved at sign-up (the update drops it; a new company has none).
+      const payload = { ...companyForm, ...data, trnVatNumber: data.trnVatNumber || companyForm.trnVatNumber };
       let target = company;
       if (target) {
         await saveCompanyMutation.mutateAsync(payload);
@@ -517,6 +519,7 @@ function CustomerOnboarding() {
               {currentStep === "welcome" && (
                 <WelcomeStep
                   companyName={company?.name}
+                  savedTrn={company?.trnVatNumber ?? undefined}
                   onNext={goNext}
                   onExpress={handleExpressSetup}
                   expressSaving={expressSaving}
@@ -592,8 +595,10 @@ function WelcomeStep({
   onNext,
   onExpress,
   expressSaving,
+  savedTrn,
 }: {
   companyName?: string;
+  savedTrn?: string;
   onNext: () => void;
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
   expressSaving: boolean;
@@ -604,8 +609,12 @@ function WelcomeStep({
   const tr = t as Record<string, string>;
   const [name, setName] = useState(companyName ?? "");
   const [emirate, setEmirate] = useState("dubai");
-  const [trn, setTrn] = useState("");
+  const [trn, setTrn] = useState(savedTrn ?? "");
   const [error, setError] = useState<string | null>(null);
+  // the company can arrive after this step first renders: pre-fill the TRN saved at sign-up unless the user already typed one
+  useEffect(() => {
+    if (savedTrn) setTrn((current) => current || savedTrn);
+  }, [savedTrn]);
 
   async function handleExpress() {
     const trimmed = name.trim();

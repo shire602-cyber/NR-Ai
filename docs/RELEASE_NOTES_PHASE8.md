@@ -156,5 +156,72 @@ server messages; 22 help articles rewritten in both languages.
 ## Still for the owner or an accountant
 WPS SIF field widths and the bank routing code were written from the MOHRE layout as known, not verified against a
 bank's file check; manual payroll deductions post to 2034 (a payroll-deductions payable) and need a policy; the gratuity
-cap and unpaid-leave effect on service years are unchanged; recurring-invoice generation still posts its journal after
+cap is unchanged (unpaid leave no longer counts as service, see below); recurring-invoice generation still posts its journal after
 the invoice insert.
+
+## Teardown 7 payroll and trader fixes
+- **Unpaid leave is not service** (Decree-Law 33/2021): approved unpaid days come out of the gratuity service period
+  (calculator and final settlement), take their share off the month's gratuity accrual, and reduce annual-leave
+  accrual by 30/360 of a day each. Known: half-pay sick days still count as service.
+- **Prior service**: gratuity (2036) and leave pay (2037) accrue month by month from the first payroll period. What an
+  employee earned before is entered per employee (opening gratuity provision, opening leave days, opening leave-pay
+  provision, as-of date) or booked once with "Book prior-service catch-up journal" (its own journal, Dr 3020, dated the
+  run). The first run no longer books a year-to-date leave catch-up, and says which employees have no opening provisions.
+- **Mid-month joiner**: inclusive calendar days over a 30-day month (15-31 Aug = 17/30), rounded once per line; the SIF row
+  reports the same days.
+- **Payslips** exist for calculated, pending, approved and paid runs; before approval they say "DRAFT - not yet approved".
+- **Register**: employer cost columns (employer pension, gratuity, leave accrual) and a tie-out block to 5020, 2030,
+  5025, 5028 and 5029 with the difference.
+- **Final settlement**: a draft is recalculated on every read (it shows when) and "final settlement" is a document type in
+  approval rules.
+- **Opening stock** posts with the opening date inside the opening entry and as a stock movement dated that day.
+
+## Teardown 7 (blind re-verification) and fixes
+
+Three fresh accountants re-ran the trader, payroll and banking scenarios blind against the Phase 9 build
+(`docs/superpowers/plans/2026-10-02-teardown7-v1.md`, `-v3.md`, `-v4.md`). All three confirmed the Phase 9
+fixes held (COGS, advances, blocked VAT, box 9, AED reconciliation, duplicate statement detection, depreciation
+catch-up, period locks; trial balances tied to their own ledgers). Trader and payroll would still not sign; banking
+would sign the VAT return but not the close. Every money, VAT, compliance and access finding was fixed with a
+failing test first. Migrations 0128-0130.
+
+**Access (critical).** An employee-role member could read the whole journal, chart of accounts, bank reconciliation,
+team list and activity log, and post a manual journal. Company access now refuses employee-role membership at the
+single choke point (`storage.hasCompanyAccess`) unless a route opts into employee self-service (own payslips and pay
+lines, own leave requests, own loans and settlements, own expense claims, notifications, company list). Everything else
+returns 403 `ROLE_REQUIRED`. The client shows employees only My payroll, Leave, Loans, Expense claims, My account and
+Help, and redirects finance routes with a notice; `tests/e2e/mobile-audit.mjs --employee` covers it.
+
+**Sales and VAT.** A refund of a customer's credit balance is a payment-side event (never a second tax credit note),
+refunds are voidable, and the customer credit endpoint, ageing and statement all show the same balance. Contacts and
+documents carry an emirate (place of supply, company emirate by default); box 1 is split by emirate in the return,
+VAT 201, Autopilot, audit rows and workpaper, and printed on the invoice PDF. Preparing or computing a return never
+hits the period lock; filing posts its clearing journal on the filing date under a labelled `vat_filing` bypass; locking
+a month with the VAT item open needs an explicit, audit-logged override; owners can unlock a single month with a
+reason. The VAT page defaults to the last ended unfiled period, Autopilot lists no period before the VAT start, and the
+ledger tie uses the return's own days. Journal reversals take a date. Invoice numbers are assigned in sequence; the
+status dropdown no longer offers Paid/Partial; invoices take a currency and rate on the form; the credit-note reason
+prints on the PDF.
+
+**Inventory.** Opening stock posts on the opening date into 1070 with a movement; sale stock-outs take the invoice
+date and restocks the credit-note date; vendor credits with a product move stock out (420 → 410).
+
+**Payroll.** Payslips serve paid and posted runs (DRAFT banner on unapproved ones) and employees have a Payslips tab.
+Leave accrues monthly; prior service is captured by per-employee opening provisions (gratuity, leave days, leave
+provision, as-of date) and an explicit, separately labelled catch-up journal replaces the silent year-to-date catch-up.
+Mid-month joiners are prorated on inclusive days over 30 (15–31 Aug = 17/30) and the SIF days match. The register has
+employer-cost columns, split deductions and a tie-out block against 5020/2030/5025/5028/5029. Draft settlements
+recalculate on every read and `final_settlement` is an approval document type. Unpaid leave is excluded from service for
+gratuity and from annual-leave accrual. Record payment and Payroll register work inside the run detail view.
+
+**Banking and fixed assets.** Foreign-currency receipts book at the receipt-date rate with realised FX gain/loss, so a
+USD bank ledger equals its statement; bank balances can be revalued at a closing rate (one entry per account and date,
+auto-reversed, treated as a rate difference by the reconciliation). Assets link to their bill or journal line and the
+register ties to 1290 less 1240, with unlinked assets listed apart. Disposal depreciation runs to the disposal date
+(pro rata by days in the disposal month) and disposals carry proceeds, buyer and VAT treatment, reaching box 1 by
+emirate without counting as revenue. Assets acquired in a closed year register with a warning instead of failing
+silently. Every bank account has a ledger account (1021+), credit cards are liability accounts, the sign-up TRN is
+saved and onboarding never blanks it.
+
+**Gate (fresh DB, full tree):** `npm run check` pass; vitest 3,504; 42 integration suites; crawl 77 routes / 0
+failures; build pass; 130 migrations.

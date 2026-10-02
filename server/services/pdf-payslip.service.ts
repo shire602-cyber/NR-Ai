@@ -20,6 +20,8 @@ export interface PayslipInput {
   periodMonth: number;
   periodYear: number;
   payDate?: Date | string | null;
+  /** The run is not approved yet: the slip is marked "DRAFT - not yet approved" (English and Arabic). */
+  draft?: boolean;
   item: {
     basicSalary: number | string;
     housingAllowance: number | string;
@@ -117,8 +119,16 @@ export async function generatePayslipPDF(input: PayslipInput): Promise<Buffer> {
       doc.fontSize(12).fillColor("#DBEAFE").font("Helvetica");
       doc.text("قسيمة الراتب", MARGIN, 57, { width: CONTENT_WIDTH, align: "right" });
 
+      // --- Draft banner: a slip of a run that is not approved yet is never mistaken for the issued one ---
+      if (input.draft) {
+        doc.rect(0, 100, PAGE_WIDTH, 22).fill("#B91C1C");
+        doc.fontSize(10).fillColor("#FFFFFF").font("Helvetica-Bold");
+        doc.text("DRAFT - not yet approved", MARGIN, 106, { width: CONTENT_WIDTH * 0.55, align: "left", lineBreak: false });
+        doc.fontSize(10).text("مسودة - لم تُعتمد بعد", MARGIN + CONTENT_WIDTH * 0.45, 105, { width: CONTENT_WIDTH * 0.55, align: "right", lineBreak: false });
+      }
+
       // --- Company details ---
-      let y = 112;
+      let y = input.draft ? 130 : 112;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
       if (company.trnVatNumber) {
         doc.text(`TRN: ${company.trnVatNumber}`, MARGIN, y);

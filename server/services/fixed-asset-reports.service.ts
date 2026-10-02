@@ -19,25 +19,37 @@ export interface RegisterRow {
   accumulated: number;
   nbv: number;
   status: string;
+  /** In the books: tied to the bill / journal that bought it (or capitalized by an entry of its own). Only these are in `totals`. */
   onLedger: boolean;
+  linked: boolean;
+  linkedDocument: { type: "bill" | "journal"; id: string; number: string | null } | null;
 }
 
 export interface AssetRegister {
   asOf: string;
   rows: RegisterRow[];
   totals: { cost: number; accumulated: number; nbv: number };
+  /** Assets on the register that are not recorded in the books yet: shown apart, outside `totals`. */
+  unlinked: { count: number; cost: number; accumulated: number; nbv: number };
+  warnings: string[];
   glTie: { gl1290: number; gl1240: number; difference: number; needsCapitalization: Array<{ assetId: string; number: string | null; name: string; cost: number }> };
 }
 
 export async function assetRegister(companyId: string, asOf: string): Promise<AssetRegister> {
   const assets = await pool.query(
     `SELECT fa.id, fa.asset_number, fa.asset_name, fa.category, ${dubaiDayTextSql("fa.purchase_date")} AS purchase_day, fa.purchase_cost::float8 AS cost, fa.status,
-            fa.disposal_date, fa.needs_capitalization_je,
+            fa.disposal_date, fa.needs_capitalization_je, fa.source_bill_id, fa.source_journal_entry_id,
+            vb.bill_number AS source_bill_number, sje.entry_number AS source_entry_number,
+            cap.id AS cap_entry_id, cap.entry_number AS cap_entry_number,
             COALESCE((SELECT SUM(ds.amount) FROM depreciation_schedules ds
                        LEFT JOIN journal_entries dje ON dje.id = ds.journal_entry_id
                        WHERE ds.asset_id = fa.id
                          AND COALESCE(${dubaiDaySql("dje.date")}, (make_date(ds.period_year, ds.period_month, 1) + interval '1 month - 1 day')::date) <= $2::date), 0)::float8 AS accumulated
        FROM fixed_assets fa
+       LEFT JOIN vendor_bills vb ON vb.id = fa.source_bill_id
+       LEFT JOIN journal_entries sje ON sje.id = fa.source_journal_entry_id
+       LEFT JOIN LATERAL (SELECT ce.id, ce.entry_number FROM journal_entries ce WHERE ce.company_id = fa.company_id AND ce.source = 'system' AND ce.source_id = fa.id
+                             AND ce.status = 'posted' AND ce.memo LIKE 'Capitalization:%' ORDER BY ce.date LIMIT 1) cap ON true
       WHERE fa.company_id = $1 AND ${dubaiDaySql("fa.purchase_date")} <= $3::date
         AND (fa.status IS DISTINCT FROM 'disposed' OR fa.disposal_date IS NULL OR ${dubaiDaySql("fa.disposal_date")} > $3::date)
       ORDER BY fa.purchase_date, fa.asset_number NULLS LAST, fa.asset_name`,
@@ -58,9 +70,27 @@ export async function assetRegister(companyId: string, asOf: string): Promise<As
       nbv: round2(cost - accumulated),
       status: disposedLater ? "active" : (a.status ?? "active"),
       onLedger: a.needs_capitalization_je !== true,
+      linked: a.needs_capitalization_je !== true,
+      linkedDocument:
+        a.needs_capitalization_je === true
+          ? null
+          : a.source_bill_id
+            ? { type: "bill" as const, id: a.source_bill_id, number: a.source_bill_number ?? null }
+            : a.source_journal_entry_id
+              ? { type: "journal" as const, id: a.source_journal_entry_id, number: a.source_entry_number ?? null }
+              : a.cap_entry_id
+                ? { type: "journal" as const, id: a.cap_entry_id, number: a.cap_entry_number ?? null }
+                : null,
     };
   });
   const onLedger = rows.filter((r) => r.onLedger);
+  const apart = rows.filter((r) => !r.onLedger);
+  const unlinked = {
+    count: apart.length,
+    cost: round2(apart.reduce((s, r) => s + r.cost, 0)),
+    accumulated: round2(apart.reduce((s, r) => s + r.accumulated, 0)),
+    nbv: round2(apart.reduce((s, r) => s + r.nbv, 0)),
+  };
   const totals = {
     cost: round2(onLedger.reduce((s, r) => s + r.cost, 0)),
     accumulated: round2(onLedger.reduce((s, r) => s + r.accumulated, 0)),
@@ -83,6 +113,8 @@ export async function assetRegister(companyId: string, asOf: string): Promise<As
     asOf,
     rows,
     totals,
+    unlinked,
+    warnings: apart.length > 0 ? ["ASSETS_NOT_RECORDED_IN_BOOKS"] : [],
     glTie: {
       gl1290,
       gl1240,

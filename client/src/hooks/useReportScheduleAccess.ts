@@ -22,6 +22,9 @@ export function useReportScheduleAccess(companyId: string | undefined) {
     members,
     isLoadingMembers: team.isLoading,
     canManage: canManageSchedules(me, myRole),
+    /** The signed-in person's role in this company (null for firm staff without one) and their account. */
+    myRole,
+    user: me ?? null,
     userId: (me?.id as string | undefined) ?? null,
   };
 }

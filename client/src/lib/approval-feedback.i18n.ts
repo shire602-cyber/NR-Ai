@@ -4,7 +4,7 @@ export const messages = defineMessages(
   "approvalFeedback",
   {
     requiredTitle: "More approval needed",
-    requiredBody: "Step {step} of {total} needs approval from a {role} or higher.",
+    requiredBody: "Step {step} of {total} needs approval from the {role} role or higher.",
     blockedTitle: "Approval not possible",
     alreadySignedBody: "You have already signed this document. A different person must give the next approval.",
     selfBody: "You cannot approve a document you created or submitted.",

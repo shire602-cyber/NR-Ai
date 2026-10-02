@@ -351,8 +351,25 @@ export function registerReportRoutes(app: Express) {
           };
         });
 
+      // A customer's unrefunded credit (an overpayment held in 2050) is a negative receivable line, so the ageing
+      // equals AR 1040 less the customer credit in 2050.
+      const { customerCreditsAsOf } = await import("../services/customer-credit-refund.service");
+      const credits = (await customerCreditsAsOf(companyId, agingAsOf.ymd)).map((c) => ({
+        id: `receivable:credit:${c.name}`,
+        name: `${c.name} (credit)`,
+        type: "receivable" as const,
+        current: -c.amount,
+        days30: 0,
+        days60: 0,
+        days90: 0,
+        over90: 0,
+        total: -c.amount,
+        currency: "AED",
+      }));
+
       res.json([
         ...mapAgingRows(receivableResult.rows, "receivable"),
+        ...credits,
         ...mapAgingRows(payableResult.rows, "payable"),
       ]);
     })

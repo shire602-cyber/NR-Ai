@@ -18,6 +18,11 @@ import { useTranslation } from "@/lib/i18n";
 import { CALENDAR_DATE_SHORT_FORMAT, formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import type { FinalSettlement, SettlementPreview, SettlementStatus } from "@/lib/purchasing-hr";
+import { useConfirmAction } from "@/components/ConfirmDialog";
+import { approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages } from "./FinalSettlementTab.i18n";
 
 interface Props {
@@ -30,6 +35,7 @@ const TONES: Record<SettlementStatus, StatusTone> = { draft: "neutral", posted: 
 
 export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
   const tr = messages.useT();
+  const [askConfirm, confirmDialog] = useConfirmAction();
   const { locale } = useTranslation();
   const { toast } = useToast();
   const [dialog, setDialog] = useState(false);
@@ -93,12 +99,27 @@ export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
     onError: (error: unknown) => toast({ variant: "destructive", title: tr("createFailed"), description: codeMessage(error) }),
   });
   const post = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/final-settlements/${id}/post`, {}),
-    onSuccess: () => {
-      toast({ title: tr("posted") });
+    mutationFn: ({ id, ack }: { id: string; ack?: boolean }) => apiRequest("POST", `/api/final-settlements/${id}/post`, ack ? { acknowledgeSoleApprover: true } : {}),
+    onSuccess: (body: unknown) => {
       refresh();
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
+      }
+      toast({ title: tr("posted") });
     },
-    onError: (error: unknown) => toast({ variant: "destructive", title: tr("postFailed"), description: codeMessage(error) }),
+    onError: (error: unknown, vars) => {
+      // The preparer is the only person who can give this approval: say so and let them confirm it explicitly.
+      if (error instanceof ApiError && error.code === "NO_ELIGIBLE_APPROVER") {
+        askConfirm(tr("soleApproverConfirm"), () => post.mutate({ id: vars.id, ack: true }));
+        return;
+      }
+      toast(failureToast(error, tr("postFailed")));
+    },
   });
   const voidIt = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/final-settlements/${id}/void`, {}),
@@ -136,6 +157,7 @@ export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
 
   return (
     <div className="space-y-4" data-testid="tab-settlement">
+      {confirmDialog}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="text-sm text-muted-foreground max-w-2xl">{tr("intro")}</p>
         {canWrite ? (
@@ -171,7 +193,14 @@ export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
                 <TableRow key={s.id} data-testid={`row-settlement-${s.id}`}>
                   <TableCell className="font-medium">{s.employeeName}</TableCell>
                   <TableCell>{formatDate(s.terminationDate, locale, CALENDAR_DATE_SHORT_FORMAT)}</TableCell>
-                  <TableCell className="text-end tabular-nums font-semibold">{money(s.netPayable)}</TableCell>
+                  <TableCell className="text-end tabular-nums font-semibold">
+                    {money(s.netPayable)}
+                    {s.status === "draft" && s.calculatedAt && (
+                      <div className="text-xs font-normal text-muted-foreground" data-testid={`text-draft-calculated-${s.id}`}>
+                        {tr("draftCalculatedAt", { time: formatDate(s.calculatedAt, locale, { dateStyle: "medium", timeStyle: "short" }) })}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge tone={TONES[s.status]}>{statusLabel(s.status)}</StatusBadge>
                   </TableCell>
@@ -179,7 +208,7 @@ export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
                     <TableCell className="text-end">
                       <div className="flex justify-end gap-1 flex-wrap">
                         {s.status === "draft" && (
-                          <Button size="sm" onClick={() => window.confirm(tr("postConfirm")) && post.mutate(s.id)} disabled={post.isPending} data-testid={`button-post-settlement-${s.id}`}>
+                          <Button size="sm" onClick={() => askConfirm(tr("postConfirm"), () => post.mutate({ id: s.id }))} disabled={post.isPending} data-testid={`button-post-settlement-${s.id}`}>
                             {tr("post")}
                           </Button>
                         )}
@@ -188,7 +217,7 @@ export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
                             <Button size="sm" onClick={() => { setPayAccount(""); setPayDate(today()); setPaying(s); }} data-testid={`button-pay-settlement-${s.id}`}>
                               {tr("pay")}
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => window.confirm(tr("voidConfirm")) && voidIt.mutate(s.id)} disabled={voidIt.isPending}>
+                            <Button size="sm" variant="outline" onClick={() => askConfirm(tr("voidConfirm"), () => voidIt.mutate(s.id), { destructive: true })} disabled={voidIt.isPending}>
                               {tr("voidIt")}
                             </Button>
                           </>

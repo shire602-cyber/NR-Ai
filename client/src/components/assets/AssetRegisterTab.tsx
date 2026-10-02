@@ -17,6 +17,7 @@ import { formatCalendarDate } from "@/lib/calendar-date";
 import { messages as common } from "@/components/banking/BankingCommon.i18n";
 import { bankingErrorText } from "@/components/banking/banking-common";
 import type { AssetRegister } from "@/lib/banking-api-types";
+import { LinkAssetDialog } from "./LinkAssetDialog";
 import { messages } from "./AssetRegisterTab.i18n";
 
 
@@ -27,6 +28,7 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
   const locale = useI18n((s) => s.locale);
   const { toast } = useToast();
   const [asOf, setAsOf] = useState(todayIso());
+  const [linking, setLinking] = useState<{ assetId: string; name: string; cost: number } | null>(null);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(asOf);
   const path = `/api/companies/${companyId}/fixed-assets/register?asOf=${asOf}`;
 
@@ -41,6 +43,7 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
 
   return (
     <div className="space-y-4" data-testid="asset-register">
+      <LinkAssetDialog open={!!linking} onOpenChange={(o) => !o && setLinking(null)} companyId={companyId} asset={linking} />
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -80,6 +83,7 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
                     <TableHead className="text-end">{tr("colAccumulated")}</TableHead>
                     <TableHead className="text-end">{tr("colNbv")}</TableHead>
                     <TableHead>{tr("colStatus")}</TableHead>
+                    <TableHead>{tr("colBooks")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -103,8 +107,21 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
                       <TableCell>
                         <div className="flex flex-col gap-1 items-start">
                           {statusBadge(r.status)}
-                          {!r.onLedger && <span className="text-[11px] text-[hsl(var(--chart-4))]">{tr("notOnLedger")}</span>}
                         </div>
+                      </TableCell>
+                      <TableCell className="text-xs" data-testid={`register-link-${r.assetId}`} data-linked={(r.linked ?? r.onLedger) ? "true" : "false"}>
+                        {(r.linked ?? r.onLedger) ? (
+                          <span className="text-[hsl(var(--chart-5))]" dir="auto">
+                            {r.linkedDocument ? tr(r.linkedDocument.type === "bill" ? "linkedBill" : "linkedJournal", { number: r.linkedDocument.number ?? "" }) : tr("linked")}
+                          </span>
+                        ) : (
+                          <div className="space-y-1">
+                            <span className="block text-[hsl(var(--chart-4))]">{tr("notLinked")}</span>
+                            <Button size="sm" variant="outline" className="h-7" onClick={() => setLinking({ assetId: r.assetId, name: r.name, cost: r.cost })} data-testid={`button-link-asset-${r.assetId}`}>
+                              {tr("linkAction")}
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -123,6 +140,7 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
                     <TableCell dir="ltr" className="text-end font-mono font-semibold" data-testid="register-total-nbv">
                       {money(data.totals.nbv)}
                     </TableCell>
+                    <TableCell />
                     <TableCell />
                   </TableRow>
                 </TableFooter>
@@ -154,6 +172,12 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
               </p>
               <p className="text-xs">{Math.abs(data.glTie.difference) < 0.005 ? tr("tieOk") : tr("tieBad", { difference: money(data.glTie.difference) })}</p>
             </div>
+          )}
+
+          {data && (data.unlinked?.cost ?? 0) > 0.004 && (
+            <p className="text-sm rounded-md border border-[hsl(var(--chart-4)/0.4)] p-3" data-testid="register-unlinked-note">
+              {tr("unlinkedNote", { count: data.unlinked?.count ?? data.rows.filter((r) => !(r.linked ?? r.onLedger)).length, cost: money(data.unlinked?.cost ?? 0) })}
+            </p>
           )}
 
           {data && data.glTie.needsCapitalization.length > 0 && (

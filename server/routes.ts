@@ -17,6 +17,7 @@ import { registerAuthRoutes } from "./routes/auth.routes";
 import { registerTwoFactorRoutes } from "./routes/two-factor.routes";
 import { registerApiV1 } from "./api-v1";
 import { refusedActionAudit } from "./middleware/refused-action-audit";
+import { employeeDenialContext } from "./middleware/employee-denial";
 import { registerCompanyLifecycleRoutes } from "./routes/company-lifecycle.routes";
 import { registerImportJobRoutes } from "./routes/import-jobs.routes";
 import { registerCompanyRoutes } from "./routes/companies.routes";
@@ -125,6 +126,8 @@ const log = createLogger("routes");
 export async function registerRoutes(app: Express): Promise<Server> {
   log.info("Registering route modules...");
 
+  // An employee-role member is limited to their own HR records: a refusal of that role answers 403 ROLE_REQUIRED everywhere.
+  app.use("/api", employeeDenialContext);
   // ─── Public API v1 (mounted first: it hands writes to the routes below) ───
   registerApiV1(app);
   // Refused attempts on money routes go to the audit trail (after v1, which logs its own requests).

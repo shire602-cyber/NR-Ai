@@ -32,6 +32,8 @@ export function documentTypeLabel(tr: Tr, type: ApprovalDocumentType): string {
       return tr("typePayrollRun");
     case "manual_journal":
       return tr("typeManualJournal");
+    case "final_settlement":
+      return tr("typeFinalSettlement");
   }
 }
 

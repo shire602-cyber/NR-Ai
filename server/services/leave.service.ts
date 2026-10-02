@@ -121,6 +121,36 @@ interface EmployeeRef {
   fullName: string;
   joinYmd: string | null;
   status: string;
+  /** Prior service (employees.opening_leave_days / opening_provisions_as_of): null when none was entered. */
+  openingDays: number | null;
+  openingAsOf: string | null;
+}
+
+/** Leave types whose days are unpaid absence: not service for gratuity or annual-leave accrual. */
+async function unpaidTypeIds(companyId: string): Promise<Set<string>> {
+  const r = await pool.query(`SELECT id::text AS id FROM leave_types WHERE company_id = $1 AND pay_policy = 'unpaid'`, [companyId]);
+  return new Set(r.rows.map((x: any) => x.id as string));
+}
+
+/** Approved unpaid-leave days of one employee between two dates (inclusive): the part of service that does not count. */
+export async function unpaidServiceDays(companyId: string, employeeId: string, fromYmd: string, toYmd: string): Promise<number> {
+  const unpaid = await unpaidTypeIds(companyId);
+  if (unpaid.size === 0) return 0;
+  const rows = (await loadRequests(companyId, [employeeId], ["approved"])).filter((r) => unpaid.has(r.leaveTypeId));
+  return rows.reduce((s, r) => s + daysInRange(r, fromYmd, toYmd), 0);
+}
+
+/** Approved annual-leave days taken in a period per employee (the leave-pay provision falls by what was taken). */
+export async function annualLeaveTakenInRange(companyId: string, employeeIds: string[], fromYmd: string, toYmd: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (employeeIds.length === 0) return out;
+  const types = await pool.query(`SELECT id::text AS id FROM leave_types WHERE company_id = $1 AND accrual = 'monthly_service'`, [companyId]);
+  const annual = new Set(types.rows.map((x: any) => x.id as string));
+  for (const r of await loadRequests(companyId, employeeIds, ["approved"])) {
+    if (!annual.has(r.leaveTypeId)) continue;
+    out.set(r.employeeId, (out.get(r.employeeId) ?? 0) + daysInRange(r, fromYmd, toYmd));
+  }
+  return out;
 }
 
 async function loadEmployees(companyId: string, employeeId?: string): Promise<EmployeeRef[]> {
@@ -134,6 +164,8 @@ async function loadEmployees(companyId: string, employeeId?: string): Promise<Em
   }
   const r = await pool.query(
     `SELECT id::text AS id, full_name AS "fullName", to_char(join_date, 'YYYY-MM-DD') AS "joinYmd", status,
+            CASE WHEN opening_leave_days > 0 OR opening_provisions_as_of IS NOT NULL THEN opening_leave_days::float8 END AS "openingDays",
+            to_char(opening_provisions_as_of, 'YYYY-MM-DD') AS "openingAsOf",
             (SELECT EXTRACT(year FROM created_at)::int FROM companies WHERE id = employees.company_id) AS "trackingYear"
        FROM employees WHERE ${where} ORDER BY full_name`,
     params
@@ -208,18 +240,20 @@ export async function getLeaveBalances(companyId: string, args: { asOfYmd: strin
   const approved = await loadRequests(companyId, ids, ["approved"]);
   const pending = await loadRequests(companyId, ids, ["pending"]);
   const overrides = await loadOverrides(companyId, ids);
+  const ctx = { unpaidTypeIds: await unpaidTypeIds(companyId) };
   const rows: BalanceRow[] = [];
   for (const employee of employees) {
     if (!employee.joinYmd) continue;
     for (const type of types) {
-      rows.push(balanceRow(employee, type, args.asOfYmd, approved, pending, overrides));
+      rows.push(balanceRow(employee, type, args.asOfYmd, approved, pending, overrides, ctx));
     }
   }
   return rows;
 }
 
-function balanceRow(employee: EmployeeRef, type: any, asOfYmd: string, approved: RequestRow[], pending: RequestRow[], overrides: Map<string, Map<number, YearOverride>>): BalanceRow {
+function balanceRow(employee: EmployeeRef, type: any, asOfYmd: string, approved: RequestRow[], pending: RequestRow[], overrides: Map<string, Map<number, YearOverride>>, ctx?: { unpaidTypeIds: Set<string> }): BalanceRow {
   const mine = approved.filter((r) => r.employeeId === employee.id && r.leaveTypeId === type.id);
+  const unpaidMine = ctx ? approved.filter((r) => r.employeeId === employee.id && ctx.unpaidTypeIds.has(r.leaveTypeId)) : [];
   const waiting = pending.filter((r) => r.employeeId === employee.id && r.leaveTypeId === type.id);
   const b: LeaveBalanceResult = leaveBalance({
     type: toMath(type),
@@ -228,6 +262,11 @@ function balanceRow(employee: EmployeeRef, type: any, asOfYmd: string, approved:
     takenInYear: (y) => takenIn(mine, y),
     overrides: overrides.get(`${employee.id}|${type.id}`) ?? new Map(),
     trackingStartYear: employee.trackingYear,
+    ...(employee.openingDays !== null && employee.openingDays !== undefined
+      ? { openingDays: employee.openingDays, openingAsOfYmd: employee.openingAsOf ?? `${employee.trackingYear - 1}-12-31` }
+      : {}),
+    takenBetween: (from, to) => mine.reduce((s, r) => s + daysInRange(r, from, to), 0),
+    unpaidDaysBetween: (from, to) => unpaidMine.reduce((s, r) => s + daysInRange(r, from, to), 0),
   });
   const pendingDays = takenIn(waiting, b.year);
   return {
@@ -323,6 +362,7 @@ async function assertBalance(companyId: string, employee: EmployeeRef, type: any
   const approved = (await loadRequests(companyId, [employee.id], ["approved"])).filter((r) => r.id !== exceptRequestId);
   const pending = (await loadRequests(companyId, [employee.id], ["pending"])).filter((r) => r.id !== exceptRequestId);
   const overrides = await loadOverrides(companyId, [employee.id]);
+  const ctx = { unpaidTypeIds: await unpaidTypeIds(companyId) };
   const firstYear = Number(req.startYmd.slice(0, 4));
   const lastYear = Number(req.endYmd.slice(0, 4));
   for (let y = firstYear; y <= lastYear; y++) {
@@ -330,7 +370,7 @@ async function assertBalance(companyId: string, employee: EmployeeRef, type: any
     const inYear = daysInRange({ startYmd: req.startYmd, endYmd: req.endYmd, days: req.days }, from, to);
     if (inYear <= 0) continue;
     const asOf = y === firstYear ? req.startYmd : from;
-    const row = balanceRow(employee, type, asOf, approved, pending, overrides);
+    const row = balanceRow(employee, type, asOf, approved, pending, overrides, ctx);
     if (inYear > row.available + 0.005) {
       throw err(422, "LEAVE_INSUFFICIENT_BALANCE", `Only ${row.available} ${type.code} leave day(s) are available in ${y}; ${inYear} requested.`, { available: row.available, requested: inYear, year: y });
     }

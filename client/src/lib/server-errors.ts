@@ -70,7 +70,8 @@ export const SERVER_ERRORS_AR: Record<string, string> = {
   CREDIT_NOTE_NOT_FOUND: "لم يُعثر على الإشعار الدائن.",
   EXCEEDS_CREDIT_BALANCE: "المبلغ أكبر من رصيد العميل المتاح.",
   INVALID_AMOUNT: "يجب أن يكون المبلغ أكبر من صفر.",
-  CUSTOMER_NOT_FOUND: "لم يُعثر على العميل."
+  CUSTOMER_NOT_FOUND: "لم يُعثر على العميل.",
+  CREDIT_NOTE_HAS_REFUNDS: "هذا الإشعار الدائن عليه مبالغ مردودة. ألغِ الرد أولاً ثم ألغِ الإشعار الدائن.",
 };
 
 /** The message to show for a failed call: ours in Arabic for a known code, otherwise the server's sentence. */
@@ -78,6 +79,10 @@ export function localizeServerError(code: string | undefined | null, serverMessa
   if (!code) return serverMessage;
   const key = salesErrorKey(code);
   if (key) return shared.t(key);
+  if (locale === "ar" && code === "PERIOD_LOCKED") {
+    const period = serverMessage.match(/\((\d{2}\/\d{4})\)/)?.[1];
+    return period ? `الفترة (${period}) مقفلة. لا يمكن الترحيل فيها. افتح الفترة أولاً.` : SERVER_ERRORS_AR[code];
+  }
   if (locale === "ar") return SERVER_ERRORS_AR[code] ?? serverMessage;
   return serverMessage;
 }

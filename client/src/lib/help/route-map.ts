@@ -53,6 +53,7 @@ const EXACT: Record<string, string> = {
   "/evidence-center": "documents-evidence",
   "/compliance-calendar": "compliance-calendar",
   "/payroll": "payroll",
+  "/help": "getting-started",
   "/reports": "reports",
   "/financial-statements": "reports",
   "/advanced-reports": "reports",

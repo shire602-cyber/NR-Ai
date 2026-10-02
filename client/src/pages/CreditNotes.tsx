@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Badge, statusText } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -684,7 +684,7 @@ export default function CreditNotes() {
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge className={cn("capitalize", getStatusBadgeColor(creditNote.status))}>
-                          {creditNote.status}
+                          {statusText(creditNote.status)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">

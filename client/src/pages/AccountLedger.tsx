@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
@@ -528,7 +529,7 @@ export default function AccountLedger() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className="truncate max-w-[300px]">
-                              {entry.description || entry.memo || "-"}
+                              {localizeJournalText(entry.description || entry.memo || "-", locale)}
                             </span>
                             <Badge variant="outline" className="shrink-0 text-xs">
                               {entry.source}

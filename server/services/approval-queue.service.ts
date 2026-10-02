@@ -46,6 +46,7 @@ export const WAITING_STATUS: Record<ApprovalDocumentType, string> = {
   purchase_order: "sent",
   payroll_run: "calculated",
   manual_journal: "draft",
+  final_settlement: "draft",
 };
 
 /** Statuses an approve call is accepted in (waiting, or already in progress). */
@@ -55,6 +56,7 @@ export const APPROVABLE_STATUSES: Record<ApprovalDocumentType, string[]> = {
   purchase_order: ["draft", "sent", "pending_approval"],
   payroll_run: ["calculated", "pending_approval"],
   manual_journal: ["draft"],
+  final_settlement: ["draft"],
 };
 
 export function isApprovalDocumentType(value: unknown): value is ApprovalDocumentType {
@@ -149,6 +151,27 @@ export async function loadApprovalDocument(documentType: ApprovalDocumentType, d
         creatorId: row.created_by ?? null,
         reference: `Payroll ${String(row.period_month).padStart(2, "0")}/${row.period_year}`,
         counterparty: "",
+      };
+    }
+    case "final_settlement": {
+      const r = await pool.query(
+        `SELECT s.id::text, s.company_id::text, s.status, s.net_payable, s.gratuity_amount, s.created_by::text, e.full_name
+           FROM employee_final_settlements s JOIN employees e ON e.id = s.employee_id WHERE s.id = $1`,
+        [documentId]
+      );
+      const row = r.rows[0];
+      if (!row) return null;
+      return {
+        documentType,
+        documentId,
+        companyId: row.company_id,
+        status: row.status,
+        // What the company pays out (the gratuity if a loan eats the whole net).
+        amountAed: round2(Math.max(num(row.net_payable), num(row.gratuity_amount))),
+        rateMissing: false,
+        creatorId: row.created_by ?? null,
+        reference: `Final settlement ${row.full_name}`,
+        counterparty: row.full_name,
       };
     }
     case "manual_journal": {
@@ -276,6 +299,8 @@ async function waitingDocuments(companyId: string, documentType: ApprovalDocumen
       return (await pool.query(`SELECT id::text FROM payroll_runs WHERE company_id = $1 AND status = $2`, [companyId, waiting])).rows.map((r: any) => r.id);
     case "manual_journal":
       return (await pool.query(`SELECT id::text FROM journal_entries WHERE company_id = $1 AND status = 'draft' AND source = 'manual'`, [companyId])).rows.map((r: any) => r.id);
+    case "final_settlement":
+      return (await pool.query(`SELECT id::text FROM employee_final_settlements WHERE company_id = $1 AND status = 'draft'`, [companyId])).rows.map((r: any) => r.id);
   }
 }
 

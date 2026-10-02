@@ -192,7 +192,14 @@ export function registerCompanyRoutes(app: Express) {
         firmRole,
         (req as any).user?.isAdmin === true
       );
-      res.json(companies.map((company) => withNrClientVatGroup(company)));
+      // The shell needs the caller's own role per company (an employee gets a self-service shell). Firm staff
+      // and admins without a membership row get null.
+      const roles = new Map<string, string>();
+      for (const company of companies) {
+        const membership = await storage.getUserRole(company.id, userId);
+        if (membership?.role) roles.set(company.id, membership.role);
+      }
+      res.json(companies.map((company) => ({ ...withNrClientVatGroup(company), myRole: roles.get(company.id) ?? null })));
     })
   );
 
@@ -266,7 +273,7 @@ export function registerCompanyRoutes(app: Express) {
       const { id: userId, firmRole } = (req as any).user;
 
       // Check if user has access to this company (or via firm role)
-      const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
+      const hasAccess = await storage.hasCompanyAccess(userId, id, { employeeSelfService: true, firmRole });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }

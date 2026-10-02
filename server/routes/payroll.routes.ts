@@ -18,7 +18,7 @@ import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { calculateGratuityForEmployee, completedYearsBetween, isUaeOrGccNational, round2 } from "../services/gratuity";
-import { leaveDeductionsForMonth } from "../services/leave.service";
+import { leaveDeductionsForMonth, unpaidServiceDays } from "../services/leave.service";
 import { markRunInstalmentsDeducted, releaseRunInstalments, reserveInstalmentsForItem } from "../services/employee-loan.service";
 import { ensureEmployeeLoansAccount } from "../services/hr-journal";
 import { buildPayrollRegister, registerToCsv } from "../services/payroll-register.service";
@@ -26,7 +26,8 @@ import { ROLE_RANK } from "../services/approval-rules";
 import { allowEmployee, hrCompanyAccess, hrFullAccess, hrReadScope } from "./hr-access";
 import { LOCK_NS, withDocumentLock } from "../services/document-lock";
 import { localWallDateToUtcMidnight } from "../utils/date";
-import { prorate, prorateMonth, type Proration } from "../services/payroll-proration";
+import { prorateComponents, prorateMonth, type Proration } from "../services/payroll-proration";
+import { bookPriorServiceCatchup, priorServiceMissing, priorServiceWarning } from "../services/prior-service.service";
 import { ensureLeaveProvisionAccounts, leaveProvisionDeltas, leaveProvisionEnabled, recordRunProvisions } from "../services/leave-provision.service";
 import { loadApprovalDocument } from "../services/approval-queue.service";
 import {
@@ -116,6 +117,10 @@ const employeeCreateSchema = z.object({
   molPersonId: z.string().trim().regex(/^\d{14}$/, "The MOHRE person code is 14 digits").nullable().optional().or(z.literal("").transform(() => null)),
   // End-of-service provision already held for the employee when they came on to the system (part of the opening 2036 balance).
   openingGratuityProvision: z.coerce.number().nonnegative().max(100_000_000).optional(),
+  // Prior service (0128): the leave days and leave-pay provision the company already held, as of a date.
+  openingLeaveDays: z.coerce.number().nonnegative().max(1000).optional(),
+  openingLeaveProvision: z.coerce.number().nonnegative().max(100_000_000).optional(),
+  openingProvisionsAsOf: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional()),
 });
 
 /** 422 body when `userId` is not a member of the company; null when it is fine (or absent / cleared). */
@@ -127,6 +132,12 @@ async function employeeUserLinkProblem(companyId: string, userId: unknown): Prom
 }
 
 const isUniqueViolation = (err: any) => err?.code === "23505" || err?.cause?.code === "23505";
+
+/** Share of a month's service left once unpaid-leave days are taken out (paid days = the days the month pays for). */
+function serviceFactorOf(unpaidDays: number, paidDays: number): number {
+  if (!(unpaidDays > 0) || !(paidDays > 0)) return 1;
+  return Math.max(0, (paidDays - unpaidDays) / paidDays);
+}
 
 interface PayrollLineCalc {
   basic: number;
@@ -160,6 +171,8 @@ function calculatePayrollLine(input: {
   // gratuity 21-day vs 30-day tier (Art. 51). Defaults to 0 — i.e. the
   // 21-day rate — when the caller can't determine tenure.
   tenureYears?: number;
+  // Share of the month that counts as service (1 = all of it): unpaid leave days are not service (Decree-Law 33/2021).
+  serviceFactor?: number;
 }): PayrollLineCalc {
   const basic = input.basic || 0;
   const housing = input.housing || 0;
@@ -183,7 +196,7 @@ function calculatePayrollLine(input: {
   const annualGratuityDays = tenureYears < 5 ? 21 : 30;
   const gratuityAccrual = input.isGccNational
     ? 0
-    : round2((annualGratuityDays * basic) / DAYS_PER_YEAR_30D);
+    : round2(((annualGratuityDays * basic) / DAYS_PER_YEAR_30D) * Math.min(1, Math.max(0, input.serviceFactor ?? 1)));
 
   const grossPay = round2(basic + housing + transport + other + overtime);
   const netSalary = round2(grossPay - pensionEmployee - generalDeductions);
@@ -246,7 +259,7 @@ export function registerPayrollRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -277,7 +290,7 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(404).json({ message: "Employee not found" });
       }
 
-      const hasAccess = await storage.hasCompanyAccess(userId, employee.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, employee.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -345,10 +358,11 @@ export function registerPayrollRoutes(app: Express) {
         bank_name, bank_account_number, iban, routing_code,
         department, designation, join_date,
         basic_salary, housing_allowance, transport_allowance, other_allowance,
-        total_salary, status, user_id, mol_person_id, opening_gratuity_provision
+        total_salary, status, user_id, mol_person_id, opening_gratuity_provision,
+        opening_leave_days, opening_leave_provision, opening_provisions_as_of
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
       ) RETURNING *`,
         [
           companyId,
@@ -375,6 +389,9 @@ export function registerPayrollRoutes(app: Express) {
           data.userId ?? null,
           data.molPersonId ?? null,
           data.openingGratuityProvision ?? 0,
+          data.openingLeaveDays ?? 0,
+          data.openingLeaveProvision ?? 0,
+          data.openingProvisionsAsOf ?? null,
         ]
       ).catch((err) => {
         if (isUniqueViolation(err)) throw new AppError({ message: "That user is already linked to another employee.", statusCode: 409, code: "USER_ALREADY_LINKED" });
@@ -438,6 +455,17 @@ export function registerPayrollRoutes(app: Express) {
         req.body.openingGratuityProvision = opening;
       }
 
+      for (const key of ["openingLeaveDays", "openingLeaveProvision"] as const) {
+        if (req.body[key] === undefined) continue;
+        const v = Number(req.body[key]);
+        if (!Number.isFinite(v) || v < 0) return res.status(400).json({ message: "Opening provisions must be zero or more", code: "INVALID_OPENING_PROVISION" });
+        req.body[key] = v;
+      }
+      if (req.body.openingProvisionsAsOf === "") req.body.openingProvisionsAsOf = null;
+      if (req.body.openingProvisionsAsOf && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.openingProvisionsAsOf))) {
+        return res.status(400).json({ message: "The as-of date is YYYY-MM-DD", code: "INVALID_AS_OF" });
+      }
+
       // Build dynamic SET clause from provided fields
       const allowedFields: Record<string, string> = {
         employeeNumber: "employee_number",
@@ -461,6 +489,9 @@ export function registerPayrollRoutes(app: Express) {
         status: "status",
         molPersonId: "mol_person_id",
         openingGratuityProvision: "opening_gratuity_provision",
+        openingLeaveDays: "opening_leave_days",
+        openingLeaveProvision: "opening_leave_provision",
+        openingProvisionsAsOf: "opening_provisions_as_of",
       };
 
       const setClauses: string[] = [];
@@ -569,7 +600,7 @@ export function registerPayrollRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -599,7 +630,7 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(404).json({ message: "Payroll run not found" });
       }
 
-      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -647,6 +678,7 @@ export function registerPayrollRoutes(app: Express) {
         [companyId, periodMonth, periodYear, userId]
       );
 
+      await recordAudit({ userId, companyId, action: "payroll_run.create", entityType: "payroll_run", entityId: run.id, after: { periodMonth, periodYear }, req });
       log.info({ payrollRunId: run.id, companyId, periodMonth, periodYear }, "Payroll run created");
       res.json(run);
     })
@@ -761,7 +793,7 @@ export function registerPayrollRoutes(app: Express) {
       let preservedItems: any[] = [];
       let warnings: any = [];
       // The same pro-rata facts as structured notes, so the screen can word them in the reader's language.
-      const proRataNotes: Array<{ code: string; name: string; days: number; date: string | null }> = [];
+      const proRataNotes: Array<{ code: string; name: string; days: number; basis: number; date: string | null }> = [];
       let otherWarnings: string[] = [];
       let employeeCount = 0;
       let updated: any;
@@ -804,7 +836,7 @@ export function registerPayrollRoutes(app: Express) {
           const left = e.termination_date ? (localWallDateToUtcMidnight(new Date(e.termination_date)) as Date).toISOString().slice(0, 10) : null;
           const p = prorateMonth({ joinYmd: join, terminationYmd: left, year: run.period_year, month: run.period_month });
           if (p.daysWorked === 0) {
-            proRataNotes.push({ code: p.reason === "not_yet_joined" ? "not_yet_joined" : "left_before", name: e.full_name, days: 0, date: p.reason === "not_yet_joined" ? join : left });
+            proRataNotes.push({ code: p.reason === "not_yet_joined" ? "not_yet_joined" : "left_before", name: e.full_name, days: 0, basis: p.basis, date: p.reason === "not_yet_joined" ? join : left });
             warnings.push(
               p.reason === "not_yet_joined"
                 ? `${e.full_name} is not paid: the join date (${join}) is after this month.`
@@ -812,10 +844,10 @@ export function registerPayrollRoutes(app: Express) {
             );
             return false;
           }
-          if (p.daysWorked < 30) {
-            proRataNotes.push({ code: p.reason === "joined" ? "joined" : "left", name: e.full_name, days: p.daysWorked, date: p.reason === "joined" ? join : left });
+          if (p.factor < 1) {
+            proRataNotes.push({ code: p.reason === "joined" ? "joined" : "left", name: e.full_name, days: p.daysWorked, basis: p.basis, date: p.reason === "joined" ? join : left });
             warnings.push(
-              `${e.full_name} is pro-rated: ${p.daysWorked}/30 days (${p.reason === "joined" ? `joined ${join}` : `last day ${left}`}).`
+              `${e.full_name} is pro-rated: ${p.daysWorked}/${p.basis} days (${p.reason === "joined" ? `joined ${join}` : `last day ${left}`}).`
             );
           }
           prorations.set(e.id, p);
@@ -914,18 +946,27 @@ export function registerPayrollRoutes(app: Express) {
             : 0;
 
           const proration = prorations.get(emp.id)!;
+          // The month's pay is rounded once as a line; the parts add up to it exactly.
+          const part = prorateComponents(
+            {
+              basic: parseFloat(emp.basic_salary) || 0,
+              housing: parseFloat(emp.housing_allowance) || 0,
+              transport: parseFloat(emp.transport_allowance) || 0,
+              other: parseFloat(emp.other_allowance) || 0,
+            },
+            proration.factor
+          );
+          const rawLeave = leaveByEmployee.get(emp.id) ?? { unpaidDays: 0, halfDays: 0, deduction: 0 };
           const calc = calculatePayrollLine({
-            basic: prorate(parseFloat(emp.basic_salary) || 0, proration.factor),
-            housing: prorate(parseFloat(emp.housing_allowance) || 0, proration.factor),
-            transport: prorate(parseFloat(emp.transport_allowance) || 0, proration.factor),
-            other: prorate(parseFloat(emp.other_allowance) || 0, proration.factor),
+            ...part,
             overtime: 0,
             generalDeductions: 0,
             isGccNational: isUaeOrGccNational(emp.nationality),
             tenureYears,
+            // Unpaid absence is not service: it takes its share off the month's gratuity accrual.
+            serviceFactor: serviceFactorOf(rawLeave.unpaidDays, proration.partial ? Math.min(30, proration.daysWorked) : 30),
           });
 
-          const rawLeave = leaveByEmployee.get(emp.id) ?? { unpaidDays: 0, halfDays: 0, deduction: 0 };
           // Whatever the leave, a month never deducts more than the pay of the days worked.
           const leave = { ...rawLeave, deduction: Math.min(rawLeave.deduction, round2(calc.basic + calc.housing + calc.transport + calc.other)) };
           if (round2(calc.netSalary - leave.deduction) < 0) {
@@ -962,7 +1003,7 @@ export function registerPayrollRoutes(app: Express) {
               leave.deduction,
               leave.unpaidDays,
               leave.halfDays,
-              proration.daysWorked < 30 ? proration.daysWorked : null,
+              proration.partial ? proration.daysWorked : null,
             ]
           );
 
@@ -1040,7 +1081,23 @@ export function registerPayrollRoutes(app: Express) {
         },
         "Payroll calculated"
       );
-      res.json({ ...updated, warnings, proRataNotes, otherWarnings });
+      // Employees with prior service and no opening provisions are named, never silently caught up.
+      const priorService = { missing: await priorServiceMissing(run.company_id) };
+      const priorWarning = priorServiceWarning(priorService.missing);
+      if (priorWarning) {
+        warnings.push(priorWarning);
+        otherWarnings.push(priorWarning);
+      }
+      await recordAudit({
+        userId,
+        companyId: run.company_id,
+        action: "payroll_run.calculate",
+        entityType: "payroll_run",
+        entityId: id,
+        after: { employeeCount, totalNet: updated?.total_net, preserved: preservedItems.length },
+        req,
+      });
+      res.json({ ...updated, warnings, proRataNotes, otherWarnings, priorServiceMissing: priorService.missing });
     })
   );
 
@@ -1082,7 +1139,7 @@ export function registerPayrollRoutes(app: Express) {
       // Approving a payroll run posts wage/salary journal entries for the
       // period — block if that period is locked. Use the last day of the
       // payroll period as the JE date.
-      const periodEndDate = new Date(run.period_year, run.period_month, 0);
+      const periodEndDate = new Date(Date.UTC(run.period_year, run.period_month, 0));
       await assertPeriodNotLocked(run.company_id, periodEndDate);
 
       // Aggregate the post-able amounts from the items themselves so the JE
@@ -1115,6 +1172,8 @@ export function registerPayrollRoutes(app: Express) {
         const request = await recordApprovalStep(tx, approvalStep, approvalActor);
         const waiting = await queryOne("UPDATE payroll_runs SET status = 'pending_approval' WHERE id = $1 RETURNING *", [id]);
         await auditApprovalStep({ req, actor: approvalActor, doc: approvalDoc!, request, stepNumber: approvalStep.stepNumber, decision: "approved" });
+        // The first signature on a run under approval rules is its submission: the trail names who submitted it.
+        await recordAudit({ userId, companyId: run.company_id, action: "payroll_run.submit", entityType: "payroll_run", entityId: id, after: { step: approvalStep.stepNumber, requiredSteps: approvalStep.requiredSteps }, req });
         void notifyApprovalProgress({ doc: approvalDoc!, request, actor: approvalActor, outcome: "needs_next_step" });
         return res.json({ ...waiting, ...pendingApprovalBody(approvalStep) });
       }
@@ -1275,12 +1334,13 @@ export function registerPayrollRoutes(app: Express) {
         });
       }
 
-      // Leave-pay provision: the earned, untaken annual leave at the daily wage is topped up with every approved run.
+      // Leave-pay provision: this month's accrual (2.5 days x daily wage, less unpaid absence, less annual leave taken)
+      // is booked with the run. What an employee brought with them is NOT: it is an opening provision or an explicit catch-up.
       const existingJeBeforeProvision = (await storage.getJournalEntriesBySource(run.company_id, "system", id)).find((e) => e.status === "posted");
       let provisionDeltas: Awaited<ReturnType<typeof leaveProvisionDeltas>> = [];
       if (!existingJeBeforeProvision && (await leaveProvisionEnabled(run.company_id))) {
-        const itemRows = await query("SELECT employee_id FROM payroll_items WHERE payroll_run_id = $1", [id]);
-        provisionDeltas = await leaveProvisionDeltas(run.company_id, new Date(Date.UTC(run.period_year, run.period_month, 0)).toISOString().slice(0, 10), itemRows.map((r: any) => r.employee_id));
+        const periodStartYmd = `${run.period_year}-${String(run.period_month).padStart(2, "0")}-01`;
+        provisionDeltas = await leaveProvisionDeltas(run.company_id, id, periodStartYmd, new Date(Date.UTC(run.period_year, run.period_month, 0)).toISOString().slice(0, 10));
         const net = round2(provisionDeltas.reduce((s, d) => s + d.delta, 0));
         if (net !== 0) {
           const accountsForProvision = await ensureLeaveProvisionAccounts(run.company_id);
@@ -1429,6 +1489,34 @@ export function registerPayrollRoutes(app: Express) {
         return { status: 200, body: { ...updated, paymentJournalEntryId: je.id } };
       });
       res.status(result.status).json(result.body);
+    })
+  );
+
+  // "Book prior-service catch-up journal": what employees with prior service earned before the first payroll period,
+  // booked as its own journal (never inside a run's journal). Accountant or above; once per employee.
+  app.post(
+    "/api/payroll-runs/:id/book-prior-service-catchup",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const run = /^[0-9a-f-]{36}$/i.test(id) ? await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]) : undefined;
+      if (!run || !(await storage.hasCompanyAccess(userId, run.company_id))) {
+        return res.status(404).json({ message: "Payroll run not found" });
+      }
+      if (!(await hrCompanyAccess(req, res, run.company_id, { write: true }))) return;
+      const result = await withDocumentLock(run.company_id, LOCK_NS.APPROVAL, () => bookPriorServiceCatchup({ companyId: run.company_id, runId: id, userId }));
+      await recordAudit({
+        userId,
+        companyId: run.company_id,
+        action: "payroll_run.prior_service_catchup",
+        entityType: "payroll_run",
+        entityId: id,
+        after: { journalEntryId: result.journalEntryId, total: result.total, employees: result.employees.length },
+        req,
+      });
+      res.json(result);
     })
   );
 
@@ -1586,7 +1674,7 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(404).json({ message: "Payroll run not found" });
       }
 
-      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -1622,12 +1710,14 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(404).json({ message: "Payroll run not found" });
       }
 
-      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (run.status !== "calculated" && run.status !== "pending_approval" && run.status !== "approved") {
+      // Every stage after the calculation has a slip. Before approval it carries a "DRAFT - not yet approved" banner;
+      // an approved or paid run's slip is the issued one.
+      if (!["calculated", "pending_approval", "approved", "paid", "posted"].includes(run.status)) {
         return res.status(409).json({
           message: "Payslips are available once the payroll run has been calculated.",
           code: "PAYROLL_RUN_NOT_CALCULATED",
@@ -1665,6 +1755,7 @@ export function registerPayrollRoutes(app: Express) {
         periodMonth: run.period_month,
         periodYear: run.period_year,
         payDate: run.approved_at ?? null,
+        draft: run.status === "calculated" || run.status === "pending_approval",
         item: {
           basicSalary: row.basic_salary,
           housingAllowance: row.housing_allowance,
@@ -1785,6 +1876,7 @@ export function registerPayrollRoutes(app: Express) {
         generalDeductions,
         isGccNational: isGcc,
         tenureYears,
+        serviceFactor: serviceFactorOf(parseFloat(item.unpaid_leave_days) || 0, item.days_worked != null ? Math.min(30, parseFloat(item.days_worked)) : 30),
       });
 
       // Leave and loan deductions are set by the calculation; an edit keeps them and recomputes the net around them.
@@ -1877,7 +1969,7 @@ export function registerPayrollRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -1914,12 +2006,15 @@ export function registerPayrollRoutes(app: Express) {
       const totalWage = basicSalary + housing + transport + other;
       const isGcc = isUaeOrGccNational(employee.nationality);
 
+      // Unpaid leave is not service: approved unpaid days in the service period come off it.
+      const unpaidDays = await unpaidServiceDays(companyId, employee.id, joinDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
       const result = calculateGratuityForEmployee({
         joinDate,
         endDate,
         basicSalary,
         totalWage,
         isGccNational: isGcc,
+        unpaidDays,
       });
 
       if (!result.eligible) {

@@ -398,7 +398,7 @@ function arabicCoverage() {
   ok("i18n: check-i18n (strict) passes", gate.status === 0, (gate.stdout + gate.stderr).slice(-400));
   const allow = JSON.parse(readFileSync(path.join(root, "scripts", "i18n-allowlist.json"), "utf8"));
   ok("i18n: nothing is allow-listed as untranslated", Object.keys(allow.todo ?? {}).length === 0, allow.todo);
-  ok("i18n: the only reserved page left is the VAT filing page", JSON.stringify(allow.reserved) === JSON.stringify(["client/src/pages/VATFiling.tsx"]), allow.reserved);
+  ok("i18n: no reserved pages are left", (allow.reserved ?? []).length === 0, allow.reserved);
   for (const page of ["CorporateTax", "EvidenceCenter", "MonthEndClose", "Onboarding", "TaxReturnArchive", "VATAutopilot"]) {
     const table = path.join(root, "client", "src", "pages", `${page}.i18n.ts`);
     ok(`i18n: ${page} has a message table with Arabic`, existsSync(table) && /[\u0600-\u06FF]/.test(readFileSync(table, "utf8")), table);

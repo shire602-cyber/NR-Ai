@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslation } from "@/lib/i18n";
+import { localizeEnumCell } from "@/lib/enum-labels";
 import { cn } from "@/lib/utils";
 import { drillHref, type DrillContext } from "@/lib/report-drill";
 import {
@@ -52,7 +53,9 @@ function CellValue({
   if ((value === null || value === undefined) && column.type === "percent") {
     return <span className="text-muted-foreground">{tr("notAvailable")}</span>;
   }
-  const text = formatCell(value, column.type, locale);
+  // Status-like and emirate columns come as slugs ("sharjah", "draft"): show them in the reader's language.
+  const shown = column.type === "text" ? localizeEnumCell(column.key, value, locale) : value;
+  const text = formatCell(shown, column.type, locale);
   if (!isNumericColumn(column.type)) return <>{text}</>;
   // Numbers read left to right in both languages; the cell itself aligns to the end edge.
   return (

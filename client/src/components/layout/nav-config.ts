@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Landmark,
   MoreHorizontal,
+  UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -202,6 +203,26 @@ export const ADMIN_GROUP: NavGroup = {
     { titleKey: "systemSettings", url: "/admin" },
   ],
 };
+
+/**
+ * The menu of a plain employee: their own payslips, leave and loans, account settings and help. Every other
+ * screen is refused by the server for this role (403 ROLE_REQUIRED), so it is not offered.
+ */
+export const EMPLOYEE_GROUPS: NavGroup[] = [
+  {
+    key: "my-work",
+    titleKey: "navMyWork",
+    icon: UserRound,
+    items: [
+      { titleKey: "navMyPayroll", url: "/payroll" },
+      { titleKey: "navMyLeave", url: "/payroll?tab=leave" },
+      { titleKey: "navMyLoans", url: "/payroll?tab=loans" },
+      { titleKey: "navMyExpenses", url: "/expense-claims" },
+      { titleKey: "navMyAccount", url: "/settings/security" },
+      { titleKey: "navHelp", url: "/help" },
+    ],
+  },
+];
 
 /** The always-visible Dashboard entry above the groups. */
 export const DASHBOARD_URL = "/dashboard";

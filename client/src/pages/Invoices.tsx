@@ -105,6 +105,9 @@ import type { Invoice, Company, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
 import { downloadPdf } from "@/lib/download-pdf";
+import { FxRateField } from "@/components/banking/FxRateField";
+import { parseRate as parseFxRate } from "@/components/banking/fx-preview";
+import { paymentAccountChoices } from "@/components/banking/payment-accounts";
 import { messages as pageMessages } from "./Invoices.i18n";
 import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 import { InvoiceTypeBadge } from "@/components/sales/SalesShared";
@@ -119,7 +122,13 @@ import { CustomFieldsEditor } from "@/components/sales/CustomFieldsEditor";
 import { useCustomFieldDraft } from "@/components/sales/useCustomFieldDraft";
 import { useSalesAdjustments } from "@/components/sales/useSalesAdjustments";
 import { ApplyAdvanceDialog } from "@/components/sales/ApplyAdvanceDialog";
+import { Label } from "@/components/ui/label";
 import { ContactPicker, usePriceListResolution } from "@/components/sales/ContactPicker";
+import { CustomerCreditDialog, CreditRefundList } from "@/components/sales/CustomerCreditDialog";
+import { EmirateSelect } from "@/components/sales/EmirateSelect";
+import { CurrencyRateFields } from "@/components/sales/CurrencyRateFields";
+import { defaultInvoiceEmirate } from "@/lib/emirates";
+import { currencyPayload, parseRate, BASE_CURRENCY } from "@/lib/fx";
 import { AvailabilityBadge, useProductAvailability } from "@/components/sales/AvailabilityBadge";
 import {
   advanceDeductionsFrom,
@@ -165,7 +174,9 @@ const MANUAL_LINE = "__manual__";
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
-  number: z.string().min(1, pageMessages.marker("invoiceNumberIsRequired")),
+  // Assigned by the server in sequence; the form shows the next number read-only.
+  number: z.string(),
+  emirate: z.string().nullable().optional(),
   customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
   contactId: z.string().nullable().optional(),
@@ -211,6 +222,8 @@ export default function Invoices() {
   const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
   const [creditInvoiceId, setCreditInvoiceId] = useState<string | null>(null);
   const [refundPaidAmount, setRefundPaidAmount] = useState<number | null>(null);
+  const [creditBalanceContact, setCreditBalanceContact] = useState<{ id: string; name: string } | null>(null);
+  const [rateText, setRateText] = useState("");
   const canManageFinance = useCanManageFinance(selectedCompanyId);
   const [similarInvoices, setSimilarInvoices] = useState<any[]>([]);
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
@@ -238,7 +251,14 @@ export default function Invoices() {
   const [paymentNotes, setPaymentNotes] = useState("");
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
   const [paymentDateForAdd, setPaymentDateForAdd] = useState<Date>(() => new Date());
+  // foreign-currency invoices: the rate on the receipt day (AED per unit), defaulted from the rates on file
+  const [paymentRateText, setPaymentRateText] = useState("");
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
+  // What the payments dialog needs to know about the invoice: its credit notes decide which refund path is offered.
+  const { data: invoiceDetail } = useQuery<{ invoiceType?: string; creditedAmount?: number | string | null; contactId?: string | null; customerName: string }>({
+    queryKey: ["/api/invoices", invoiceForPaymentDetail?.id],
+    enabled: viewPaymentsDialogOpen && !!invoiceForPaymentDetail,
+  });
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -264,13 +284,15 @@ export default function Invoices() {
     adjustments.reset();
     setAdvanceApplications([]);
     customFieldDraft.reset();
+    setRateText("");
   };
 
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
-      number: `INV-${Date.now()}`,
+      number: "",
+      emirate: null,
       customerName: "",
       customerTrn: "",
       date: parseYmd(todayYmd()),
@@ -285,6 +307,20 @@ export default function Invoices() {
       form.setValue("companyId", selectedCompanyId);
     }
   }, [selectedCompanyId, form]);
+
+  // A new invoice shows the number it will get (read-only): the server assigns it in sequence when the invoice is saved.
+  useEffect(() => {
+    if (!dialogOpen || editingInvoice || !selectedCompanyId) return;
+    let cancelled = false;
+    apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices/next-number?docType=invoice`)
+      .then((r: { number?: string }) => {
+        if (!cancelled && r?.number) form.setValue("number", r.number);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [dialogOpen, editingInvoice, selectedCompanyId, form]);
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -320,7 +356,8 @@ export default function Invoices() {
       resetSalesExtras();
       form.reset({
         companyId: selectedCompanyId,
-        number: `INV-${Date.now()}`,
+        number: "",
+      emirate: null,
         customerName: "",
         customerTrn: "",
         date: parseYmd(todayYmd()),
@@ -356,7 +393,8 @@ export default function Invoices() {
       resetSalesExtras();
       form.reset({
         companyId: selectedCompanyId,
-        number: `INV-${Date.now()}`,
+        number: "",
+      emirate: null,
         customerName: "",
         customerTrn: "",
         date: parseYmd(todayYmd()),
@@ -557,7 +595,13 @@ export default function Invoices() {
 
   // Get cash and bank accounts for payment selection
   // Includes 1025 Payment Gateway Clearing (a card payment settles there first).
-  const paymentAccounts = accounts.filter((acc) => isCashOrBankAccount(acc));
+  // The company's own bank accounts are offered by name (1021, 1022 ...), never the "Bank Accounts" header above them.
+  const { data: bankAccountList = [] } = useQuery<Array<{ glAccountId: string | null; isActive: boolean }>>({
+    queryKey: ["/api/companies", selectedCompanyId, "bank-accounts"],
+    enabled: !!selectedCompanyId,
+  });
+  const payChoiceIds = new Set(paymentAccountChoices(accounts as any, bankAccountList).options.map((o) => o.id));
+  const paymentAccounts = accounts.filter((acc) => payChoiceIds.has(acc.id) || (isCashOrBankAccount(acc) && payChoiceIds.size === 0));
 
   // Shared by the table row and the phone card.
   const openAddPayment = (invoice: Invoice) => {
@@ -568,6 +612,7 @@ export default function Invoices() {
     setPaymentReference("");
     setPaymentNotes("");
     setPaymentDateForAdd(new Date());
+    setPaymentRateText("");
     setAddPaymentDialogOpen(true);
   };
 
@@ -595,11 +640,13 @@ export default function Invoices() {
         date: (pickerDate(fullInvoice.date) as Date),
         dueDate: fullInvoice.dueDate ? pickerDate(fullInvoice.dueDate) ?? null : null,
         currency: fullInvoice.currency,
+        emirate: fullInvoice.emirate ?? null,
         lines: splitStoredLines(fullInvoice.lines).items.length
           ? splitStoredLines(fullInvoice.lines).items.map(itemFormFromRow) as InvoiceFormData["lines"]
           : [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
       adjustments.loadFrom(fullInvoice);
+      setRateText(fullInvoice.currency && fullInvoice.currency !== BASE_CURRENCY && Number(fullInvoice.exchangeRate) > 0 ? String(Number(fullInvoice.exchangeRate)) : "");
       setAdvanceApplications(fullInvoice.advanceApplications ?? []);
       customFieldDraft.reset();
       setDialogOpen(true);
@@ -615,7 +662,8 @@ export default function Invoices() {
   const resetForm = () => {
     form.reset({
       companyId: selectedCompanyId,
-      number: `INV-${Date.now()}`,
+      number: "",
+      emirate: null,
       customerName: "",
       customerTrn: "",
       date: parseYmd(todayYmd()),
@@ -636,8 +684,15 @@ export default function Invoices() {
         discountType: adjustments.discountType,
         discountValue: adjustments.discountValue,
       });
+      if (data.currency !== BASE_CURRENCY && !parseRate(rateText)) {
+        toast({ variant: "destructive", title: tr("error"), description: salesTr("rateMissing", { currency: data.currency }) });
+        return;
+      }
       const invoiceData = {
         ...data,
+        number: data.number || "PENDING",
+        emirate: data.emirate ?? null,
+        ...currencyPayload(data.currency, rateText),
         companyId: selectedCompanyId!,
         contactId: data.contactId || null,
         dueDate: data.dueDate ?? addDays(data.date, DEFAULT_PAYMENT_TERMS_DAYS),
@@ -920,7 +975,8 @@ export default function Invoices() {
                   resetSalesExtras();
                   form.reset({
                     companyId: selectedCompanyId,
-                    number: `INV-${Date.now()}`,
+                    number: "",
+      emirate: null,
                     customerName: "",
                     customerTrn: "",
                     date: parseYmd(todayYmd()),
@@ -957,10 +1013,13 @@ export default function Invoices() {
                             <FormControl>
                               <Input
                                 {...field}
-                                className="font-mono"
+                                readOnly
+                                dir="ltr"
+                                className="font-mono bg-muted/40"
                                 data-testid="input-invoice-number"
                               />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">{salesTr("invoiceNumberAuto")}</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1044,6 +1103,8 @@ export default function Invoices() {
                         if (contact) {
                           form.setValue("customerName", contact.name);
                           form.setValue("customerTrn", contact.trnNumber ?? "");
+                          // The invoice starts with the customer's emirate; it stays editable until the invoice is issued.
+                          form.setValue("emirate", defaultInvoiceEmirate(contact as { emirate?: string | null }));
                         }
                       }}
                     />
@@ -1052,6 +1113,31 @@ export default function Invoices() {
                         {salesTr("priceListApplied")}
                       </p>
                     )}
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="invoice-emirate">{salesTr("emirateOfSupply")}</Label>
+                      <EmirateSelect
+                        id="invoice-emirate"
+                        value={form.watch("emirate")}
+                        onChange={(v) => form.setValue("emirate", v)}
+                        companyEmirate={(company as { emirate?: string | null } | null | undefined)?.emirate}
+                        disabled={!!editingInvoice && editingInvoice.status !== "draft"}
+                        testId="select-invoice-emirate"
+                      />
+                      <p className="text-xs text-muted-foreground">{salesTr("emirateOfSupplyHelp")}</p>
+                    </div>
+
+                    <CurrencyRateFields
+                      companyId={selectedCompanyId}
+                      currency={form.watch("currency") || BASE_CURRENCY}
+                      onCurrencyChange={(c) => form.setValue("currency", c)}
+                      rateText={rateText}
+                      onRateTextChange={setRateText}
+                      dateYmd={form.watch("date") ? toYmd(form.watch("date")) : todayYmd()}
+                      disabled={!!editingInvoice && editingInvoice.status !== "draft"}
+                      rateIsStored={!!editingInvoice}
+                      docKey={editingInvoice?.id ?? "new"}
+                    />
 
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
@@ -1409,7 +1495,8 @@ export default function Invoices() {
                       )}
                       <SalesTotalsSummary
                         preview={preview}
-                        currency="AED"
+                        currency={form.watch("currency") || BASE_CURRENCY}
+                        exchangeRate={parseRate(rateText)}
                         advances={advanceApplications.filter((a) => a.kind === "application" && a.status === "active")}
                       />
                     </div>
@@ -1484,8 +1571,12 @@ export default function Invoices() {
                           <SelectContent>
                             <SelectItem value="draft">{t.draft}</SelectItem>
                             <SelectItem value="sent">{t.sent}</SelectItem>
-                            <SelectItem value="paid">{t.paid}</SelectItem>
-                            <SelectItem value="partial">{tr("partial")}</SelectItem>
+                            {/* Paid and Partial follow from payments: shown for an invoice that is in that state, never selectable. */}
+                            {(invoice.status === "paid" || invoice.status === "partial") && (
+                              <SelectItem value={invoice.status} disabled>
+                                {invoice.status === "paid" ? t.paid : tr("partial")}
+                              </SelectItem>
+                            )}
                             {/* Derived from credit notes: shown, never selectable. */}
                             <SelectItem value="credited" disabled>
                               {t.credited}
@@ -1610,18 +1701,16 @@ export default function Invoices() {
                                 >
                                   {t.sent}
                                 </SelectItem>
-                                <SelectItem
-                                  value="paid"
-                                  data-testid={`status-option-paid-${invoice.id}`}
-                                >
-                                  {t.paid}
-                                </SelectItem>
-                                <SelectItem
-                                  value="partial"
-                                  data-testid={`status-option-partial-${invoice.id}`}
-                                >
-                                  {tr("partial")}
-                                </SelectItem>
+                                {/* Paid and Partial follow from payments: shown for an invoice that is in that state, never selectable. */}
+                                {(invoice.status === "paid" || invoice.status === "partial") && (
+                                  <SelectItem
+                                    value={invoice.status}
+                                    disabled
+                                    data-testid={`status-option-${invoice.status}-${invoice.id}`}
+                                  >
+                                    {invoice.status === "paid" ? t.paid : tr("partial")}
+                                  </SelectItem>
+                                )}
                                 {/* Derived from credit notes: shown, never selectable. */}
                                 <SelectItem
                                   value="credited"
@@ -1736,7 +1825,8 @@ export default function Invoices() {
                               >
                                 <FileCode className="w-4 h-4 text-info" />
                               </Button>
-                              <Button
+                              {(invoice as any).invoiceType !== "credit_note" && (
+<Button
                                 variant="ghost"
                                 size="sm"
                                 title={tr("addPayment")}
@@ -1746,6 +1836,7 @@ export default function Invoices() {
                               >
                                 <DollarSign className="w-4 h-4 text-success" />
                               </Button>
+)}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1756,7 +1847,8 @@ export default function Invoices() {
                               >
                                 <FileText className="w-4 h-4 text-info" />
                               </Button>
-                              <Button
+                              {(invoice as any).invoiceType !== "credit_note" && (
+<Button
                                 variant="ghost"
                                 size="sm"
                                 title={tr("setRecurring")}
@@ -1779,6 +1871,7 @@ export default function Invoices() {
                                   className={`w-4 h-4 ${(invoice as any).isRecurring ? "text-chart-5" : "text-muted-foreground"}`}
                                 />
                               </Button>
+)}
                               {(invoice as any).invoiceType !== "credit_note" && (
                                 <Button
                                   variant="ghost"
@@ -2123,6 +2216,10 @@ export default function Invoices() {
       </Tabs>
 
       {/* Similar Invoices Warning Dialog */}
+      {selectedCompanyId && (
+        <CustomerCreditDialog companyId={selectedCompanyId} contact={creditBalanceContact} onClose={() => setCreditBalanceContact(null)} />
+      )}
+
       {selectedCompanyId && invoiceForPaymentDetail && (
         <RefundPaymentDialog
           companyId={selectedCompanyId}
@@ -2411,6 +2508,20 @@ export default function Invoices() {
               testId="button-add-payment-date"
             />
 
+            {invoiceForPaymentDetail && (
+              <FxRateField
+                companyId={selectedCompanyId ?? ""}
+                currency={invoiceForPaymentDetail.currency ?? "AED"}
+                date={toDateOnly(paymentDateForAdd)}
+                amount={parseFloat(paymentAmount) || 0}
+                bookRate={Number((invoiceForPaymentDetail as any).exchangeRate) || 1}
+                kind="receipt"
+                value={paymentRateText}
+                onChange={setPaymentRateText}
+                testId="invoice-payment-fx"
+              />
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium">{tr("referenceOptional")}</label>
               <Input
@@ -2449,10 +2560,11 @@ export default function Invoices() {
                     reference: paymentReference || undefined,
                     notes: paymentNotes || undefined,
                     date: toDateOnly(paymentDateForAdd),
+                    ...(parseFxRate(paymentRateText) && (invoiceForPaymentDetail.currency ?? "AED") !== "AED" ? { exchangeRate: parseFxRate(paymentRateText) } : {}),
                   },
                 });
               }}
-              disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd}
+              disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd || ((invoiceForPaymentDetail?.currency ?? "AED") !== "AED" && !parseFxRate(paymentRateText))}
               className="flex-1"
             >
               {addPaymentMutation.isPending ? tr("recording") : tr("recordPayment")}
@@ -2490,7 +2602,7 @@ export default function Invoices() {
                     {invoicePayments.map((p: InvoicePayment) => (
                       <TableRow key={p.id}>
                         <TableCell>{formatDate(p.date, locale)}</TableCell>
-                        <TableCell className="capitalize">{p.method}</TableCell>
+                        <TableCell>{p.method === "bank" ? tr("bankTransfer") : p.method === "cash" ? tr("cash") : p.method === "cheque" ? tr("cheque") : p.method === "online" || p.method === "gateway" || p.method === "card" ? tr("onlinePayment") : p.method}</TableCell>
                         <TableCell className="text-muted-foreground">
                           {p.reference || "—"}
                         </TableCell>
@@ -2518,16 +2630,37 @@ export default function Invoices() {
               </>
             )}
           </div>
-          {canManageFinance && invoicePayments.length > 0 && (invoiceForPaymentDetail as { invoiceType?: string } | null)?.invoiceType !== "advance" && (
-            <Button
-              variant="outline"
-              className="w-full mt-2"
-              onClick={() => setRefundPaidAmount(invoicePayments.reduce((sum: number, p: InvoicePayment) => sum + Number(p.amount), 0))}
-              data-testid="button-refund-payment"
-            >
-              {salesTr("refundPayment")}
-            </Button>
+          {canManageFinance && invoicePayments.length > 0 && invoiceDetail?.invoiceType !== "advance" && invoiceDetail && (
+            // An invoice that already has a credit note owes its customer a credit balance: that is paid back from the
+            // customer's credit, never by issuing a second credit note.
+            Number(invoiceDetail.creditedAmount ?? 0) > 0 ? (
+              invoiceDetail.contactId ? (
+                <Button
+                  variant="outline"
+                  className="w-full mt-2"
+                  onClick={() => {
+                    setViewPaymentsDialogOpen(false);
+                    setCreditBalanceContact({ id: invoiceDetail.contactId!, name: invoiceDetail.customerName });
+                  }}
+                  data-testid="button-refund-credit-balance"
+                >
+                  {salesTr("creditRefundButtonBalance")}
+                </Button>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="refund-needs-contact">{salesTr("refundNeedsContact")}</p>
+              )
+            ) : (
+              <Button
+                variant="outline"
+                className="w-full mt-2"
+                onClick={() => setRefundPaidAmount(invoicePayments.reduce((sum: number, p: InvoicePayment) => sum + Number(p.amount), 0))}
+                data-testid="button-refund-payment"
+              >
+                {salesTr("refundPayment")}
+              </Button>
+            )
           )}
+          {selectedCompanyId && invoiceDetail?.contactId && <CreditRefundList companyId={selectedCompanyId} contactId={invoiceDetail.contactId} />}
           <Button
             variant="outline"
             onClick={() => setViewPaymentsDialogOpen(false)}

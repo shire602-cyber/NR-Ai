@@ -17,6 +17,7 @@ export const INVOICE_WRITABLE_FIELDS = [
   "exchangeRate",
   "contactId",
   "reverseCharge",
+  "emirate",
 ] as const;
 
 /** Header fields a client may set on a quote. */

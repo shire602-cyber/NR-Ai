@@ -9,6 +9,7 @@ import {
   type ReportLaunchDeliveryPreview,
 } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -4327,7 +4328,7 @@ function CustomerDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13.5px] font-medium tracking-tight text-foreground truncate">
-                          {entry.memo || tr("journalEntry2")}
+                          {entry.memo ? localizeJournalText(entry.memo, locale) : tr("journalEntry2")}
                         </div>
                         <div
                           dir="ltr"

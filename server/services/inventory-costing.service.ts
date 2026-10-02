@@ -84,7 +84,7 @@ import {
 // Account resolution (5200 is created on demand for charts that predate it)
 // ---------------------------------------------------------------------------
 
-async function findAccount(tx: Tx, companyId: string, code: string, type: string) {
+export async function findAccount(tx: Tx, companyId: string, code: string, type: string) {
   const [row] = await tx
     .select({ id: accounts.id })
     .from(accounts)
@@ -547,6 +547,8 @@ export async function postCogsForInvoiceInTx(tx: Tx, invoice: InvoiceRef, userId
       totalCost: item.amount,
       reference: `Invoice ${invoice.number}`,
       sourceInvoiceId: invoice.id,
+      // The stock leaves on the invoice's date (what the COGS entry is dated), not the day the status changed.
+      movementDate: uaeCalendarDate(invoice.date instanceof Date ? invoice.date : new Date(invoice.date)),
     });
     const product = locked.get(item.productId)!;
     const after = removeStock(stateOf(product), item.quantity, item.amount);
@@ -662,6 +664,8 @@ export async function restockInvoiceInTx(
       reference: `${reason} ${invoice.number}`,
       notes: movementNotes ?? null,
       sourceInvoiceId: invoice.id,
+      // A restock is dated like its reversal entry (the credit note's date, or the void day).
+      movementDate: reversalDate,
     });
     const after = addStock(stateOf(product), item.quantity, amount);
     await tx
@@ -808,6 +812,7 @@ export async function undoCreditNoteRestockInTx(
       reference: `Void credit note ${creditNote.number}`,
       notes: `void_${creditNoteRestockTag(creditNote.id)}`,
       sourceInvoiceId: creditNote.originalInvoiceId,
+      movementDate: reversalDate,
     });
     const after = removeStock(stateOf(product), b.quantity, b.value);
     await tx

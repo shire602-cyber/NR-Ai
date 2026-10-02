@@ -203,7 +203,11 @@ class RtlPdfDocument extends PDFDocument {
         if (unit.text.trim() !== "") {
           const unitAscent = (font.ascender / 1000) * size;
           this._font = font;
+          // Arabic glyphs are contextual forms (initial/medial/final) that several letters share, so a font's own glyph-to-text
+          // map cannot recover them ("فترة" copies out as "قيرة"). Marked content carries the real text for search and copy.
+          if (unit.arabic) this.markContent("Span", { actual: unit.text });
           super.text(unit.text, cursor, top + baseAscent - unitAscent, { lineBreak: false });
+          if (unit.arabic) this.endMarkedContent();
         }
         cursor += unitWidth;
       }

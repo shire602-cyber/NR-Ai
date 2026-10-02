@@ -62,6 +62,7 @@ import {
 import { deriveSalesLines } from "../../shared/sales-line-math";
 import { AppError } from "../errors";
 import { parseCalendarDay } from "../utils/date";
+import { parseEmirateInput } from "../utils/emirate";
 import { checkPriceListsForCompany } from "../services/price-list.service";
 import { projectsBelongToCompany } from "../services/project.service";
 import { loadAdvanceApplicationsForInvoice } from "../services/customer-advance.service";
@@ -323,6 +324,18 @@ export function registerInvoiceRoutes(app: Express) {
           const parts = [contactRow.address, contactRow.city, contactRow.country].map((x) => (x ?? "").trim()).filter(Boolean);
           if (!invoiceData.customerAddress && parts.length) invoiceData.customerAddress = parts.join(", ");
         }
+      }
+
+      // Place of supply (VAT 201 box 1): the body's emirate, else the contact's; none = the company's own emirate.
+      {
+        const em = parseEmirateInput(invoiceData.emirate);
+        if (!em.ok) return res.status(422).json({ message: em.message, code: em.code });
+        let emirate = em.value ?? null;
+        if (emirate === null && em.value === undefined && invoiceData.contactId) {
+          const contactRow = await storage.getCustomerContact(invoiceData.contactId);
+          if (contactRow && contactRow.companyId === companyId) emirate = (contactRow as any).emirate ?? null;
+        }
+        invoiceData.emirate = emirate;
       }
 
       // Chosen revenue accounts must be income accounts of THIS company.
@@ -603,6 +616,21 @@ export function registerInvoiceRoutes(app: Express) {
           message: "This invoice was entered as an opening balance and cannot be edited. Reverse the opening balances to change it.",
           code: "OPENING_BALANCE_INVOICE",
         });
+      }
+      // The emirate of the supply is editable until the invoice is issued (it decides the VAT return box).
+      {
+        const em = parseEmirateInput(invoiceData.emirate);
+        if (!em.ok) return res.status(422).json({ message: em.message, code: em.code });
+        if (em.value === undefined) {
+          delete invoiceData.emirate;
+        } else if (invoice.status !== "draft") {
+          if (em.value !== ((invoice as any).emirate ?? null)) {
+            return res.status(409).json({ message: "The emirate of an issued invoice cannot be changed.", code: "EMIRATE_LOCKED" });
+          }
+          delete invoiceData.emirate;
+        } else {
+          invoiceData.emirate = em.value;
+        }
       }
 
       if (isTerminal(invoice.status) || invoice.status === "credited") {
