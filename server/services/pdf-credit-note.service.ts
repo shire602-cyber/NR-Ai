@@ -1,5 +1,6 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
+import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
 import type { CreditNote, CreditNoteLine, Company, Invoice } from "../../shared/schema";
 
 /**
@@ -23,6 +24,8 @@ export async function generateCreditNotePDF(
         },
       });
 
+      preparePdfDocument(doc);
+
       const chunks: Buffer[] = [];
       doc.on("data", (chunk: Buffer) => chunks.push(chunk));
       doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -31,6 +34,8 @@ export async function generateCreditNotePDF(
       const pageWidth = 595.28; // A4 width in points
       const margin = 50;
       const contentWidth = pageWidth - 2 * margin;
+      const locale = pdfLocale(company);
+      const L = (en: string, ar: string) => bilingual(locale, en, ar);
 
       // --- Header: Blue background bar ---
       doc.rect(0, 0, pageWidth, 100).fill("#1E40AF");
@@ -41,7 +46,7 @@ export async function generateCreditNotePDF(
 
       // Credit Note Label
       doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("CREDIT NOTE", margin, 35, {
+      doc.text(L("CREDIT NOTE", "إشعار دائن"), margin, 35, {
         width: contentWidth,
         align: "right",
       });
@@ -54,46 +59,54 @@ export async function generateCreditNotePDF(
       doc.rect(margin, y, contentWidth, detailBoxHeight).fill("#F9FAFB").stroke("#E5E7EB");
 
       doc.fontSize(10).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text("Credit Note #:", margin + 10, y + 12);
-      doc.font("Helvetica").text(creditNote.number, margin + 95, y + 12);
+      doc.text(`${L("Credit Note #", "رقم الإشعار")}`, margin + 10, y + 12);
+      doc.font("Helvetica").text(creditNote.number, margin + 150, y + 12);
 
-      doc.font("Helvetica-Bold").text("Date:", margin + 10, y + 30);
+      doc.font("Helvetica-Bold").text(`${L("Date", "التاريخ")}`, margin + 10, y + 30);
       doc.font("Helvetica").text(
         new Date(creditNote.date).toLocaleDateString("en-AE", {
           year: "numeric",
           month: "short",
           day: "numeric",
         }),
-        margin + 95,
+        margin + 150,
         y + 30
       );
 
       let detailY = y + 48;
 
       if (hasOriginalInvoice && originalInvoice) {
-        doc.font("Helvetica-Bold").text("Ref. Invoice:", margin + 10, detailY);
-        doc.font("Helvetica").text(originalInvoice.number, margin + 95, detailY);
+        doc
+          .font("Helvetica-Bold")
+          .text(`${L("Ref. Invoice", "الفاتورة المرجعية")}`, margin + 10, detailY);
+        doc.font("Helvetica").text(originalInvoice.number, margin + 150, detailY);
         detailY += 18;
       }
 
       if (hasReason && creditNote.reason) {
-        doc.font("Helvetica-Bold").text("Reason:", margin + 10, detailY);
-        doc.font("Helvetica").text(creditNote.reason, margin + 95, detailY, { width: 200 });
+        doc.font("Helvetica-Bold").text(`${L("Reason", "السبب")}`, margin + 10, detailY);
+        doc
+          .font("Helvetica")
+          .text(creditNote.reason, margin + 150, detailY, { width: 200, align: "left" });
       }
 
       // TRN on right side
       const isVATRegistered = !!company.trnVatNumber;
       if (isVATRegistered && company.trnVatNumber) {
-        doc.font("Helvetica-Bold").text("TRN:", margin + contentWidth - 170, y + 12);
-        doc.font("Helvetica").text(company.trnVatNumber, margin + contentWidth - 135, y + 12);
+        doc
+          .font("Helvetica-Bold")
+          .text(`${L("TRN", "الرقم الضريبي")}`, margin + contentWidth - 250, y + 12);
+        doc.font("Helvetica").text(company.trnVatNumber, margin + contentWidth - 140, y + 12);
       }
 
       // Status on right side
       if (creditNote.status) {
-        doc.font("Helvetica-Bold").text("Status:", margin + contentWidth - 170, y + 30);
+        doc
+          .font("Helvetica-Bold")
+          .text(`${L("Status", "الحالة")}`, margin + contentWidth - 250, y + 30);
         doc
           .font("Helvetica")
-          .text(creditNote.status.toUpperCase(), margin + contentWidth - 125, y + 30);
+          .text(creditNote.status.toUpperCase(), margin + contentWidth - 140, y + 30);
       }
 
       // --- Company Details ---
@@ -104,11 +117,11 @@ export async function generateCreditNotePDF(
         y += 12;
       }
       if (company.contactPhone) {
-        doc.text(`Phone: ${company.contactPhone}`, margin, y);
+        doc.text(`${L("Phone", "هاتف")}: ${company.contactPhone}`, margin, y);
         y += 10;
       }
       if (company.contactEmail) {
-        doc.text(`Email: ${company.contactEmail}`, margin, y);
+        doc.text(`${L("Email", "البريد")}: ${company.contactEmail}`, margin, y);
         y += 10;
       }
 
@@ -116,7 +129,7 @@ export async function generateCreditNotePDF(
 
       // --- Bill To Section ---
       doc.fontSize(12).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text("BILL TO:", margin, y);
+      doc.text(`${L("BILL TO", "إلى")}`, margin, y);
       y += 18;
 
       doc.fontSize(11).fillColor("#1F2937").font("Helvetica-Bold");
@@ -125,7 +138,7 @@ export async function generateCreditNotePDF(
 
       if (creditNote.customerTrn) {
         doc.fontSize(9).fillColor("#6B7280").font("Helvetica");
-        doc.text(`TRN: ${creditNote.customerTrn}`, margin, y);
+        doc.text(`${L("TRN", "الرقم الضريبي")}: ${creditNote.customerTrn}`, margin, y);
         y += 14;
       }
 
@@ -144,12 +157,15 @@ export async function generateCreditNotePDF(
 
       // Table Header
       doc.rect(margin, tableTop, contentWidth, rowHeight).fill("#1E40AF");
-      doc.fontSize(9).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("Description", colX.description, tableTop + 8);
-      doc.text("Qty", colX.qty, tableTop + 8, { width: 50, align: "center" });
-      doc.text("Price", colX.price, tableTop + 8, { width: 60, align: "center" });
-      doc.text("VAT", colX.vat, tableTop + 8, { width: 40, align: "center" });
-      doc.text("Amount", colX.amount - 60, tableTop + 8, { width: 60, align: "right" });
+      doc.fontSize(7.5).fillColor("#FFFFFF").font("Helvetica-Bold");
+      doc.text(L("Description", "الوصف"), colX.description, tableTop + 5, { width: 230 });
+      doc.text(L("Qty", "الكمية"), colX.qty, tableTop + 5, { width: 50, align: "center" });
+      doc.text(L("Price", "السعر"), colX.price, tableTop + 5, { width: 60, align: "center" });
+      doc.text(L("VAT", "الضريبة"), colX.vat, tableTop + 5, { width: 50, align: "center" });
+      doc.text(L("Amount", "المبلغ"), colX.amount - 60, tableTop + 5, {
+        width: 60,
+        align: "right",
+      });
 
       y = tableTop + rowHeight;
 
@@ -184,18 +200,18 @@ export async function generateCreditNotePDF(
       y += 15;
 
       // --- Totals ---
-      const totalsX = margin + contentWidth - 170;
+      const totalsX = margin + contentWidth - 215;
       const totalsValueX = margin + contentWidth - 10;
 
       doc.fontSize(10).fillColor("#1F2937").font("Helvetica");
-      doc.text("Subtotal:", totalsX, y);
+      doc.text(`${L("Subtotal", "المجموع")}`, totalsX, y);
       doc.text(formatAmount(creditNote.subtotal, creditNote.currency), totalsValueX - 80, y, {
         width: 80,
         align: "right",
       });
       y += 18;
 
-      doc.text("VAT:", totalsX, y);
+      doc.text(`${L("VAT", "الضريبة")}`, totalsX, y);
       doc.text(formatAmount(creditNote.vatAmount, creditNote.currency), totalsValueX - 80, y, {
         width: 80,
         align: "right",
@@ -203,9 +219,9 @@ export async function generateCreditNotePDF(
       y += 22;
 
       // Total with blue background
-      doc.rect(totalsX - 10, y - 7, 180, 28).fill("#1E40AF");
-      doc.fontSize(13).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("TOTAL CREDIT:", totalsX, y);
+      doc.rect(totalsX - 10, y - 7, 225, 28).fill("#1E40AF");
+      doc.fontSize(11).fillColor("#FFFFFF").font("Helvetica-Bold");
+      doc.text(`${L("TOTAL CREDIT", "إجمالي الدائن")}`, totalsX, y, { width: 135 });
       doc.text(formatAmount(creditNote.total, creditNote.currency), totalsValueX - 80, y, {
         width: 80,
         align: "right",
@@ -215,7 +231,10 @@ export async function generateCreditNotePDF(
       const footerY = 770;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
       doc.text(
-        "This credit note reduces the amount owed on the referenced invoice.",
+        L(
+          "This credit note reduces the amount owed on the referenced invoice.",
+          "يخفض هذا الإشعار المبلغ المستحق على الفاتورة المرجعية."
+        ),
         margin,
         footerY,
         {
@@ -226,10 +245,18 @@ export async function generateCreditNotePDF(
 
       if (isVATRegistered) {
         doc.fontSize(7);
-        doc.text("This is a tax credit note - Please keep for your records", margin, footerY + 12, {
-          width: contentWidth,
-          align: "center",
-        });
+        doc.text(
+          L(
+            "This is a tax credit note - Please keep for your records",
+            "هذا إشعار دائن ضريبي - يرجى الاحتفاظ به لسجلاتكم"
+          ),
+          margin,
+          footerY + 12,
+          {
+            width: contentWidth,
+            align: "center",
+          }
+        );
       }
 
       doc.end();

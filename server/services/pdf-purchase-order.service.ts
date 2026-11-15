@@ -1,5 +1,6 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
+import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
 import type { PurchaseOrder, PurchaseOrderLine, Company } from "../../shared/schema";
 
 /**
@@ -22,6 +23,8 @@ export async function generatePurchaseOrderPDF(
         },
       });
 
+      preparePdfDocument(doc);
+
       const chunks: Buffer[] = [];
       doc.on("data", (chunk: Buffer) => chunks.push(chunk));
       doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -30,6 +33,8 @@ export async function generatePurchaseOrderPDF(
       const pageWidth = 595.28; // A4 width in points
       const margin = 50;
       const contentWidth = pageWidth - 2 * margin;
+      const locale = pdfLocale(company);
+      const L = (en: string, ar: string) => bilingual(locale, en, ar);
 
       // --- Header: Blue background bar ---
       doc.rect(0, 0, pageWidth, 100).fill("#1E40AF");
@@ -40,7 +45,7 @@ export async function generatePurchaseOrderPDF(
 
       // Purchase Order Label
       doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("PURCHASE ORDER", margin, 35, {
+      doc.text(L("PURCHASE ORDER", "أمر شراء"), margin, 35, {
         width: contentWidth,
         align: "right",
       });
@@ -52,29 +57,29 @@ export async function generatePurchaseOrderPDF(
       doc.rect(margin, y, contentWidth, detailBoxHeight).fill("#F9FAFB").stroke("#E5E7EB");
 
       doc.fontSize(10).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text("PO #:", margin + 10, y + 12);
-      doc.font("Helvetica").text(po.number, margin + 75, y + 12);
+      doc.text(`${L("PO #", "رقم أمر الشراء")}`, margin + 10, y + 12);
+      doc.font("Helvetica").text(po.number, margin + 125, y + 12);
 
-      doc.font("Helvetica-Bold").text("Date:", margin + 10, y + 30);
+      doc.font("Helvetica-Bold").text(`${L("Date", "التاريخ")}`, margin + 10, y + 30);
       doc.font("Helvetica").text(
         new Date(po.date).toLocaleDateString("en-AE", {
           year: "numeric",
           month: "short",
           day: "numeric",
         }),
-        margin + 75,
+        margin + 125,
         y + 30
       );
 
       if (hasDeliveryDate && po.expectedDeliveryDate) {
-        doc.font("Helvetica-Bold").text("Delivery By:", margin + 10, y + 48);
+        doc.font("Helvetica-Bold").text(`${L("Delivery By", "موعد التسليم")}`, margin + 10, y + 48);
         doc.font("Helvetica").text(
           new Date(po.expectedDeliveryDate).toLocaleDateString("en-AE", {
             year: "numeric",
             month: "short",
             day: "numeric",
           }),
-          margin + 80,
+          margin + 125,
           y + 48
         );
       }
@@ -82,14 +87,18 @@ export async function generatePurchaseOrderPDF(
       // TRN on right side
       const isVATRegistered = !!company.trnVatNumber;
       if (isVATRegistered && company.trnVatNumber) {
-        doc.font("Helvetica-Bold").text("TRN:", margin + contentWidth - 170, y + 12);
-        doc.font("Helvetica").text(company.trnVatNumber, margin + contentWidth - 135, y + 12);
+        doc
+          .font("Helvetica-Bold")
+          .text(`${L("TRN", "الرقم الضريبي")}`, margin + contentWidth - 250, y + 12);
+        doc.font("Helvetica").text(company.trnVatNumber, margin + contentWidth - 140, y + 12);
       }
 
       // Status on right side
       if (po.status) {
-        doc.font("Helvetica-Bold").text("Status:", margin + contentWidth - 170, y + 30);
-        doc.font("Helvetica").text(po.status.toUpperCase(), margin + contentWidth - 125, y + 30);
+        doc
+          .font("Helvetica-Bold")
+          .text(`${L("Status", "الحالة")}`, margin + contentWidth - 250, y + 30);
+        doc.font("Helvetica").text(po.status.toUpperCase(), margin + contentWidth - 140, y + 30);
       }
 
       // --- Company Details ---
@@ -100,11 +109,11 @@ export async function generatePurchaseOrderPDF(
         y += 12;
       }
       if (company.contactPhone) {
-        doc.text(`Phone: ${company.contactPhone}`, margin, y);
+        doc.text(`${L("Phone", "هاتف")}: ${company.contactPhone}`, margin, y);
         y += 10;
       }
       if (company.contactEmail) {
-        doc.text(`Email: ${company.contactEmail}`, margin, y);
+        doc.text(`${L("Email", "البريد")}: ${company.contactEmail}`, margin, y);
         y += 10;
       }
 
@@ -112,7 +121,7 @@ export async function generatePurchaseOrderPDF(
 
       // --- Vendor Section ---
       doc.fontSize(12).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text("VENDOR:", margin, y);
+      doc.text(`${L("VENDOR", "المورّد")}`, margin, y);
       y += 18;
 
       doc.fontSize(11).fillColor("#1F2937").font("Helvetica-Bold");
@@ -121,7 +130,7 @@ export async function generatePurchaseOrderPDF(
 
       if (po.vendorTrn) {
         doc.fontSize(9).fillColor("#6B7280").font("Helvetica");
-        doc.text(`TRN: ${po.vendorTrn}`, margin, y);
+        doc.text(`${L("TRN", "الرقم الضريبي")}: ${po.vendorTrn}`, margin, y);
         y += 14;
       }
 
@@ -140,12 +149,15 @@ export async function generatePurchaseOrderPDF(
 
       // Table Header
       doc.rect(margin, tableTop, contentWidth, rowHeight).fill("#1E40AF");
-      doc.fontSize(9).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("Description", colX.description, tableTop + 8);
-      doc.text("Qty", colX.qty, tableTop + 8, { width: 50, align: "center" });
-      doc.text("Price", colX.price, tableTop + 8, { width: 60, align: "center" });
-      doc.text("VAT", colX.vat, tableTop + 8, { width: 40, align: "center" });
-      doc.text("Amount", colX.amount - 60, tableTop + 8, { width: 60, align: "right" });
+      doc.fontSize(7.5).fillColor("#FFFFFF").font("Helvetica-Bold");
+      doc.text(L("Description", "الوصف"), colX.description, tableTop + 5, { width: 230 });
+      doc.text(L("Qty", "الكمية"), colX.qty, tableTop + 5, { width: 50, align: "center" });
+      doc.text(L("Price", "السعر"), colX.price, tableTop + 5, { width: 60, align: "center" });
+      doc.text(L("VAT", "الضريبة"), colX.vat, tableTop + 5, { width: 50, align: "center" });
+      doc.text(L("Amount", "المبلغ"), colX.amount - 60, tableTop + 5, {
+        width: 60,
+        align: "right",
+      });
 
       y = tableTop + rowHeight;
 
@@ -180,18 +192,18 @@ export async function generatePurchaseOrderPDF(
       y += 15;
 
       // --- Totals ---
-      const totalsX = margin + contentWidth - 170;
+      const totalsX = margin + contentWidth - 215;
       const totalsValueX = margin + contentWidth - 10;
 
       doc.fontSize(10).fillColor("#1F2937").font("Helvetica");
-      doc.text("Subtotal:", totalsX, y);
+      doc.text(`${L("Subtotal", "المجموع")}`, totalsX, y);
       doc.text(formatAmount(po.subtotal, po.currency), totalsValueX - 80, y, {
         width: 80,
         align: "right",
       });
       y += 18;
 
-      doc.text("VAT:", totalsX, y);
+      doc.text(`${L("VAT", "الضريبة")}`, totalsX, y);
       doc.text(formatAmount(po.vatAmount, po.currency), totalsValueX - 80, y, {
         width: 80,
         align: "right",
@@ -199,9 +211,9 @@ export async function generatePurchaseOrderPDF(
       y += 22;
 
       // Total with blue background
-      doc.rect(totalsX - 10, y - 7, 180, 28).fill("#1E40AF");
-      doc.fontSize(13).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("TOTAL:", totalsX, y);
+      doc.rect(totalsX - 10, y - 7, 225, 28).fill("#1E40AF");
+      doc.fontSize(11).fillColor("#FFFFFF").font("Helvetica-Bold");
+      doc.text(`${L("TOTAL", "الإجمالي")}`, totalsX, y, { width: 135 });
       doc.text(formatAmount(po.total, po.currency), totalsValueX - 80, y, {
         width: 80,
         align: "right",
@@ -211,7 +223,7 @@ export async function generatePurchaseOrderPDF(
       if (po.notes) {
         y += 45;
         doc.fontSize(9).fillColor("#6B7280").font("Helvetica-Bold");
-        doc.text("Notes:", margin, y);
+        doc.text(`${L("Notes", "ملاحظات")}`, margin, y);
         y += 14;
         doc.font("Helvetica").fontSize(8);
         doc.text(po.notes, margin, y, { width: contentWidth });
@@ -220,17 +232,30 @@ export async function generatePurchaseOrderPDF(
       // --- Footer ---
       const footerY = 770;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      doc.text("Please confirm receipt of this purchase order.", margin, footerY, {
-        width: contentWidth,
-        align: "center",
-      });
+      doc.text(
+        L("Please confirm receipt of this purchase order.", "يرجى تأكيد استلام أمر الشراء هذا."),
+        margin,
+        footerY,
+        {
+          width: contentWidth,
+          align: "center",
+        }
+      );
 
       if (isVATRegistered) {
         doc.fontSize(7);
-        doc.text("All amounts are inclusive of applicable VAT where stated", margin, footerY + 12, {
-          width: contentWidth,
-          align: "center",
-        });
+        doc.text(
+          L(
+            "All amounts are inclusive of applicable VAT where stated",
+            "جميع المبالغ شاملة ضريبة القيمة المضافة حيثما ذُكر"
+          ),
+          margin,
+          footerY + 12,
+          {
+            width: contentWidth,
+            align: "center",
+          }
+        );
       }
 
       doc.end();
