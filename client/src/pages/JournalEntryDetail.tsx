@@ -1,6 +1,7 @@
 import { T } from "@/components/layout/T";
+import { useState } from "react";
 import { useParams, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,8 +15,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   ArrowLeft,
   BookMarked,
@@ -24,14 +40,15 @@ import {
   Clock,
   FileText,
   RotateCcw,
+  Ban,
 } from "lucide-react";
 
 interface JournalLine {
   id: string;
-  journalEntryId: string;
+  entryId: string;
   accountId: string;
-  debit: string;
-  credit: string;
+  debit: string | number;
+  credit: string | number;
   account?: {
     id: string;
     code: string;
@@ -47,17 +64,33 @@ interface JournalEntry {
   entryNumber: string;
   date: string;
   memo: string | null;
-  status: "draft" | "posted" | "reversed";
-  sourceType: string | null;
+  // Ledger-effect status. A reversed/voided original stays "posted".
+  status: "draft" | "posted" | "void";
+  // Derived by the API from reversedByEntryId + reversalKind.
+  lifecycleStatus: "draft" | "posted" | "reversed" | "voided" | "void";
+  source: string | null;
   sourceId: string | null;
-  reversedEntryId: string | null;
+  entryKind: string;
+  approvalStatus: string | null;
+  reversedByEntryId: string | null;
+  reversalOf: string | null;
+  reversedByEntry: { id: string; entryNumber: string; date: string } | null;
+  reversalOfEntry: { id: string; entryNumber: string; date: string } | null;
   createdAt: string;
   lines: JournalLine[];
+}
+
+/** Integer fils from an API amount (number or decimal string). */
+function fils(v: string | number | null | undefined): number {
+  return Math.round(Number(v || 0) * 100);
 }
 
 export default function JournalEntryDetail() {
   const { id } = useParams<{ id: string }>();
   const { t, locale } = useTranslation();
+  const { toast } = useToast();
+  const [reverseDate, setReverseDate] = useState("");
+  const [reason, setReason] = useState("");
 
   const {
     data: entry,
@@ -68,49 +101,105 @@ export default function JournalEntryDetail() {
     enabled: !!id,
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/journal/${id}`] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+  };
+  const onError = (error: { message?: string }) =>
+    toast({
+      variant: "destructive",
+      title: t["journal.actionFailed"],
+      description: error?.message,
+    });
+
+  const reverseMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/journal/${id}/reverse`, {
+        reason: reason || null,
+        date: reverseDate || null,
+      }),
+    onSuccess: (data: { reversalNumber?: string }) => {
+      invalidate();
+      toast({
+        title: t["journal.reversedToast"],
+        description: formatMessage(t["journal.reversedToastBody"], {
+          number: data?.reversalNumber ?? "",
+        }),
+      });
+    },
+    onError,
+  });
+  const voidMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/journal/${id}/void`, { reason: reason || null }),
+    onSuccess: () => {
+      invalidate();
+      toast({ title: t["journal.voidedToast"] });
+    },
+    onError,
+  });
+  const approveMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/journal/${id}/approve`, {}),
+    onSuccess: () => {
+      invalidate();
+      toast({ title: t["journal.approvedToast"] });
+    },
+    onError,
+  });
+
+  const getStatusBadge = (entry: JournalEntry) => {
+    switch (entry.lifecycleStatus ?? entry.status) {
       case "posted":
         return (
           <Badge className="bg-success-subtle text-success-subtle-foreground ">
             <CheckCircle2 className="w-3 h-3 mr-1" />
-            <T k="pages.posted" />
+            {t["journal.statusPosted"]}
           </Badge>
         );
       case "draft":
         return (
           <Badge variant="secondary">
             <Clock className="w-3 h-3 mr-1" />
-            <T k="pages.draft" />
+            {entry.approvalStatus === "pending"
+              ? t["journal.statusPendingApproval"]
+              : t["journal.statusDraft"]}
           </Badge>
         );
       case "reversed":
         return (
           <Badge variant="destructive">
             <RotateCcw className="w-3 h-3 mr-1" />
-            Reversed
+            {t["journal.statusReversed"]}
           </Badge>
         );
+      case "voided":
+        return (
+          <Badge variant="destructive">
+            <Ban className="w-3 h-3 mr-1" />
+            {t["journal.statusVoided"]}
+          </Badge>
+        );
+      case "void":
+        return <Badge variant="outline">{t["journal.statusVoid"]}</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline">{entry.status}</Badge>;
     }
   };
 
-  const getSourceTypeBadge = (sourceType: string | null) => {
-    if (!sourceType) return null;
-
+  const getSourceBadge = (source: string | null) => {
+    if (!source) return null;
     const sourceLabels: Record<string, string> = {
-      invoice: "Invoice",
-      receipt: "Receipt/Expense",
-      manual: "Manual Entry",
-      payment: "Payment",
-      adjustment: "Adjustment",
+      invoice: t["journal.sourceInvoice"],
+      receipt: t["journal.sourceReceipt"],
+      manual: t["journal.sourceManual"],
+      payment: t["journal.sourcePayment"],
+      reversal: t["journal.sourceReversal"],
+      journal_template: t["journal.sourceTemplate"],
     };
 
     return (
       <Badge variant="outline" className="ml-2">
         <FileText className="w-3 h-3 mr-1" />
-        {sourceLabels[sourceType] || sourceType}
+        {sourceLabels[source] || source}
       </Badge>
     );
   };
@@ -163,8 +252,14 @@ export default function JournalEntryDetail() {
     );
   }
 
-  const totalDebit = entry.lines.reduce((sum, line) => sum + parseFloat(line.debit || "0"), 0);
-  const totalCredit = entry.lines.reduce((sum, line) => sum + parseFloat(line.credit || "0"), 0);
+  // Exact comparison in integer fils (no 0.01 tolerance).
+  const totalDebitFils = entry.lines.reduce((sum, line) => sum + fils(line.debit), 0);
+  const totalCreditFils = entry.lines.reduce((sum, line) => sum + fils(line.credit), 0);
+  const totalDebit = totalDebitFils / 100;
+  const totalCredit = totalCreditFils / 100;
+  const isBalanced = totalDebitFils === totalCreditFils;
+  const canReverse = entry.lifecycleStatus === "posted" && entry.entryKind !== "reversal";
+  const canApprove = entry.status === "draft" && entry.approvalStatus === "pending";
 
   return (
     <div className="space-y-6 p-6">
@@ -181,17 +276,102 @@ export default function JournalEntryDetail() {
               <h1 className="text-2xl font-bold" data-testid="text-journal-entry-number">
                 Journal Entry #{entry.entryNumber}
               </h1>
-              {getStatusBadge(entry.status)}
-              {getSourceTypeBadge(entry.sourceType)}
+              {getStatusBadge(entry)}
+              {getSourceBadge(entry.source)}
             </div>
             <p className="text-muted-foreground">{format(new Date(entry.date), "MMMM d, yyyy")}</p>
           </div>
         </div>
-        <Link href="/journal">
-          <Button variant="outline" data-testid="button-view-all-entries">
-            View All Entries
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          {canApprove && (
+            <Button
+              onClick={() => approveMutation.mutate()}
+              disabled={approveMutation.isPending}
+              data-testid="button-approve-entry"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              {t["journal.approve"]}
+            </Button>
+          )}
+          {canReverse && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" data-testid="button-reverse-entry">
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  {t["journal.reverse"]}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t["journal.reverseTitle"]}</AlertDialogTitle>
+                  <AlertDialogDescription>{t["journal.reverseDescription"]}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="reversal-date">{t["journal.reversalDate"]}</Label>
+                    <Input
+                      id="reversal-date"
+                      type="date"
+                      value={reverseDate}
+                      onChange={(e) => setReverseDate(e.target.value)}
+                      data-testid="input-reversal-date"
+                    />
+                    <p className="text-xs text-muted-foreground">{t["journal.reversalDateHint"]}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="reversal-reason">{t["journal.reason"]}</Label>
+                    <Input
+                      id="reversal-reason"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      data-testid="input-reversal-reason"
+                    />
+                  </div>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>
+                    <T k="pages.cancel" />
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={() => reverseMutation.mutate()}>
+                    {t["journal.confirmReverse"]}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {canReverse && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" data-testid="button-void-entry">
+                  <Ban className="w-4 h-4 mr-2" />
+                  {t["journal.void"]}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t["journal.voidTitle"]}</AlertDialogTitle>
+                  <AlertDialogDescription>{t["journal.voidDescription"]}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>
+                    <T k="pages.cancel" />
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => voidMutation.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {t["journal.confirmVoid"]}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Link href="/journal">
+            <Button variant="outline" data-testid="button-view-all-entries">
+              View All Entries
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -223,12 +403,12 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? "text-success" : "text-destructive"}`}
+              className={`text-2xl font-bold ${isBalanced ? "text-success" : "text-destructive"}`}
               data-testid="text-balance"
             >
-              {Math.abs(totalDebit - totalCredit) < 0.01
-                ? "Balanced"
-                : formatCurrency(Math.abs(totalDebit - totalCredit), "AED", locale)}
+              {isBalanced
+                ? t.balanced
+                : formatCurrency(Math.abs(totalDebitFils - totalCreditFils) / 100, "AED", locale)}
             </div>
           </CardContent>
         </Card>
@@ -280,13 +460,13 @@ export default function JournalEntryDetail() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    {parseFloat(line.debit) > 0
-                      ? formatCurrency(parseFloat(line.debit), "AED", locale)
+                    {fils(line.debit) > 0
+                      ? formatCurrency(fils(line.debit) / 100, "AED", locale)
                       : "-"}
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    {parseFloat(line.credit) > 0
-                      ? formatCurrency(parseFloat(line.credit), "AED", locale)
+                    {fils(line.credit) > 0
+                      ? formatCurrency(fils(line.credit) / 100, "AED", locale)
                       : "-"}
                   </TableCell>
                 </TableRow>
@@ -307,24 +487,53 @@ export default function JournalEntryDetail() {
         </CardContent>
       </Card>
 
-      {entry.reversedEntryId && (
-        <Card className="border-warning/30 ">
+      {(entry.reversedByEntryId || entry.reversalOf) && (
+        <Card className="border-warning/30" data-testid="card-reversal-information">
           <CardHeader>
-            <CardTitle className="text-lg text-warning">Reversal Information</CardTitle>
+            <CardTitle className="text-lg text-warning">
+              {t["journal.reversalInformation"]}
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">
-              This entry has been reversed.{" "}
-              <Link href={`/journal/${entry.reversedEntryId}`}>
-                <Button
-                  variant="ghost"
-                  className="text-primary p-0 h-auto"
-                  data-testid="link-reversal-entry"
-                >
-                  View reversal entry
-                </Button>
-              </Link>
-            </p>
+          <CardContent className="space-y-2">
+            {entry.reversedByEntryId && (
+              <p className="text-muted-foreground" data-testid="text-reversed-by">
+                {entry.lifecycleStatus === "voided"
+                  ? t["journal.thisEntryVoided"]
+                  : t["journal.thisEntryReversed"]}{" "}
+                {formatMessage(
+                  entry.lifecycleStatus === "voided"
+                    ? t["journal.voidedBy"]
+                    : t["journal.reversedBy"],
+                  { number: entry.reversedByEntry?.entryNumber ?? "" }
+                )}{" "}
+                <Link href={`/journal/${entry.reversedByEntryId}`}>
+                  <Button
+                    variant="ghost"
+                    className="text-primary p-0 h-auto"
+                    data-testid="link-reversal-entry"
+                  >
+                    {t["journal.viewReversalEntry"]}
+                  </Button>
+                </Link>
+              </p>
+            )}
+            {entry.reversalOf && (
+              <p className="text-muted-foreground" data-testid="text-reversal-of">
+                {t["journal.thisEntryIsReversal"]}{" "}
+                {formatMessage(t["journal.reversalOf"], {
+                  number: entry.reversalOfEntry?.entryNumber ?? "",
+                })}{" "}
+                <Link href={`/journal/${entry.reversalOf}`}>
+                  <Button
+                    variant="ghost"
+                    className="text-primary p-0 h-auto"
+                    data-testid="link-original-entry"
+                  >
+                    {t["journal.viewOriginalEntry"]}
+                  </Button>
+                </Link>
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -347,10 +556,10 @@ export default function JournalEntryDetail() {
                 {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
               </span>
             </div>
-            {entry.sourceType && (
+            {entry.source && (
               <div>
-                <span className="text-muted-foreground">Source Type:</span>
-                <span className="ml-2 capitalize">{entry.sourceType}</span>
+                <span className="text-muted-foreground">{t["journal.source"]}:</span>
+                <span className="ml-2 capitalize">{entry.source}</span>
               </div>
             )}
             {entry.sourceId && (

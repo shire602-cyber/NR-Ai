@@ -273,6 +273,9 @@ import { ACCOUNT_CODES } from "./constants";
 import { allocatePayment, buildPaymentJournalLines } from "./services/invoice-lifecycle";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
+import { createJournalEntryCompat, legacyLinesToInput } from "./ledger/legacy";
+import { previewEntryNumber } from "./ledger/numbering";
+import { DomainError } from "./errors";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
@@ -280,7 +283,7 @@ import { decryptSecret, encryptSecret } from "./services/secret-vault";
 const DEFAULT_LIST_LIMIT = 1000;
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
-// Postgres advisory locks accept (int4, int4); pg_advisory_lock(bigint) would
+// Postgres advisory locks accept (int4, int4); the single-bigint form would
 // also work but the two-int form makes the namespace more obvious.
 function hashStringToInt(s: string): number {
   let h = 0;
@@ -290,15 +293,19 @@ function hashStringToInt(s: string): number {
   return h;
 }
 
-// Tolerance for float-rounding drift. Anything beyond this is a real imbalance.
-const JOURNAL_BALANCE_TOLERANCE = 0.01;
-
+// R02-01/R02-18: journal balance is exact in integer fils (no tolerance).
+// Legacy float amounts are rounded per line half-up to 2dp (the numeric(15,2)
+// rule) by the ledger adapter before the exact comparison.
 function assertBalanced(lines: Array<{ debit?: number | null; credit?: number | null }>): void {
-  const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
-  const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
-  if (Math.abs(totalDebit - totalCredit) > JOURNAL_BALANCE_TOLERANCE) {
-    throw new Error(
-      `Journal entry is unbalanced: debits ${totalDebit.toFixed(2)} ≠ credits ${totalCredit.toFixed(2)}`
+  const normalized = legacyLinesToInput(lines as Array<Omit<InsertJournalLine, "entryId">>);
+  const debit = normalized.reduce((sum, l) => sum + (l.debitFils ?? 0), 0);
+  const credit = normalized.reduce((sum, l) => sum + (l.creditFils ?? 0), 0);
+  if (debit !== credit) {
+    throw new DomainError(
+      "ENTRY_UNBALANCED",
+      422,
+      { debitFils: debit, creditFils: credit },
+      `Journal entry is unbalanced: debits ${(debit / 100).toFixed(2)} ≠ credits ${(credit / 100).toFixed(2)}`
     );
   }
 }
@@ -461,7 +468,7 @@ export interface IStorage {
   getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(
     companyId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; before?: { date: Date; id: string } }
   ): Promise<JournalEntry[]>;
   getPostedJournalEntriesWithLines(
     companyId: string
@@ -1809,16 +1816,26 @@ export class DatabaseStorage implements IStorage {
 
   async getJournalEntriesByCompanyId(
     companyId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; before?: { date: Date; id: string } }
   ): Promise<JournalEntry[]> {
     // S3: optional pagination. Default (no opts) returns all rows — the many
     // internal callers (financial statements, reports, CT) rely on the full set;
-    // the list endpoint passes {limit, offset} to cap the payload.
+    // the list endpoint passes {limit, offset} or a keyset cursor `before`
+    // (date desc, id desc) to cap the payload.
+    const where = opts?.before
+      ? and(
+          eq(journalEntries.companyId, companyId),
+          or(
+            lt(journalEntries.date, opts.before.date),
+            and(eq(journalEntries.date, opts.before.date), lt(journalEntries.id, opts.before.id))
+          )
+        )
+      : eq(journalEntries.companyId, companyId);
     let q: any = db
       .select()
       .from(journalEntries)
-      .where(eq(journalEntries.companyId, companyId))
-      .orderBy(desc(journalEntries.date));
+      .where(where)
+      .orderBy(desc(journalEntries.date), desc(journalEntries.id));
     if (opts?.limit != null) q = q.limit(opts.limit);
     if (opts?.offset != null) q = q.offset(opts.offset);
     return await q;
@@ -1854,82 +1871,11 @@ export class DatabaseStorage implements IStorage {
     insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
     lines: Array<Omit<InsertJournalLine, "entryId">>
   ): Promise<JournalEntry> {
-    if (!Array.isArray(lines) || lines.length === 0) {
-      throw new Error("Journal entry must have at least one line");
-    }
-    assertBalanced(lines);
-
-    // Concurrency-safe numbering. generateEntryNumber releases its advisory
-    // lock before this insert runs, so two concurrent callers can compute the
-    // same entry_number. The unique (company_id, entry_number) constraint
-    // rejects the loser with 23505; we catch it, regenerate against the now-
-    // committed winner, and retry. Result: gap-free, collision-free numbers
-    // under parallel load without holding a lock across the whole insert.
-    const MAX_ATTEMPTS = 8;
-    let attempt = 0;
-    // Re-derive date for regeneration. The caller always supplies a Date.
-    const entryDate =
-      insertEntry.date instanceof Date ? insertEntry.date : new Date(insertEntry.date as any);
-
-    // Precompute the per-(company, date) advisory-lock keys + sequence prefix.
-    const dateStr = entryDate.toISOString().slice(0, 10).replace(/-/g, "");
-    const prefix = `JE-${dateStr}`;
-    const counterStart = prefix.length + 2; // 1-based SUBSTRING pos of the NNN counter
-    const lockKey1 = insertEntry.companyId ? hashStringToInt(insertEntry.companyId) : 0;
-    const lockKey2 = hashStringToInt(prefix);
-
-    while (true) {
-      try {
-        return await db.transaction(async (tx: typeof db) => {
-          // Serialize numbering for the lifetime of THIS transaction. The
-          // xact-scoped advisory lock is held until commit, so two concurrent
-          // creators can't compute the same MAX+1 (the flaw in generating the
-          // number before the insert in a separate session-scoped lock).
-          if (insertEntry.companyId) {
-            await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
-            const res: any = await tx.execute(sql`
-              SELECT COALESCE(
-                MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
-                0
-              ) AS max_seq
-              FROM journal_entries
-              WHERE company_id = ${insertEntry.companyId}
-                AND entry_number LIKE ${prefix + "-%"}
-                AND entry_number ~ ${"^" + prefix + "-[0-9]+$"}
-            `);
-            const rows = (res.rows ?? res) as Array<{ max_seq: number | string | null }>;
-            const next = Number(rows[0]?.max_seq ?? 0) + 1;
-            insertEntry.entryNumber = `${prefix}-${String(next).padStart(3, "0")}`;
-          }
-          const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
-          for (const line of lines) {
-            await tx.insert(journalLines).values({ ...line, entryId: entry.id });
-          }
-          return entry;
-        });
-      } catch (err: any) {
-        // Drizzle wraps the pg error — the SQLSTATE 23505 and constraint name
-        // live on err.cause. Walk the cause chain to find them.
-        let pgErr: any = err;
-        const seen = new Set();
-        while (pgErr && !seen.has(pgErr)) {
-          seen.add(pgErr);
-          if (pgErr.code === "23505") break;
-          pgErr = pgErr.cause;
-        }
-        const dupText = String(
-          pgErr?.constraint || pgErr?.detail || err?.message || ""
-        ).toLowerCase();
-        const isDup =
-          pgErr?.code === "23505" &&
-          (dupText.includes("entry_number") || dupText.includes("company_entry"));
-        if (!isDup || attempt >= MAX_ATTEMPTS || !insertEntry.companyId) throw err;
-        attempt++;
-        // Small jittered backoff so racers don't lock-step onto the same number.
-        await new Promise((r) => setTimeout(r, 10 * attempt + Math.floor(attempt * 7)));
-        insertEntry.entryNumber = await this.generateEntryNumber(insertEntry.companyId, entryDate);
-      }
-    }
+    // W2-A: thin wrapper over the ledger kernel (server/ledger). Exact fils
+    // balance, account/cost-centre/period guards and in-transaction numbering
+    // (pg_advisory_xact_lock) for every existing caller. Any caller-supplied
+    // entryNumber is ignored; the number is allocated at insert time.
+    return createJournalEntryCompat(insertEntry, lines);
   }
 
   async updateJournalEntry(
@@ -1983,48 +1929,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
-    const prefix = `JE-${dateStr}`;
-    const likePattern = prefix + "-%";
-    // Trim 'JE-' (3) + 'YYYYMMDD' (8) + '-' (1) → 12, so the counter starts at
-    // SUBSTRING position 13 (1-based) per Postgres semantics.
-    const counterStart = prefix.length + 2;
-
-    // NOTE: the ::int cast on the position parameter is load-bearing. Bound
-    // parameters arrive as text, and SUBSTRING(x FROM <text>) is the REGEX
-    // form — it returned NULL for every row, so MAX was always 0 and every
-    // entry was numbered -001 (the second entry of a day then failed the
-    // unique constraint).
-    // Atomic next-number generation. Two-pronged defence:
-    // 1) Per-(company, date) advisory lock serialises concurrent generators in
-    //    the same Postgres session pool, so they don't both compute MAX+1.
-    // 2) The unique constraint (company_id, entry_number) is the final safety
-    //    net. If we still collide (different DB instances / restored backups /
-    //    bug), the insert will fail and the caller can retry.
-    //
-    // The advisory lock is session-scoped here (not _xact_) because the caller
-    // typically generates the number, then runs createJournalEntry which opens
-    // its own transaction. We release at function exit.
-    const lockKey1 = hashStringToInt(companyId);
-    const lockKey2 = hashStringToInt(prefix);
-    await db.execute(sql`SELECT pg_advisory_lock(${lockKey1}, ${lockKey2})`);
-    try {
-      const result: any = await db.execute(sql`
-        SELECT COALESCE(
-          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
-          0
-        ) AS max_seq
-        FROM journal_entries
-        WHERE company_id = ${companyId}
-          AND entry_number LIKE ${likePattern}
-      `);
-      const rows = (result.rows ?? result) as Array<{ max_seq: number | string | null }>;
-      const maxSeq = Number(rows[0]?.max_seq ?? 0);
-      const nextNumber = maxSeq + 1;
-      return `${prefix}-${String(nextNumber).padStart(3, "0")}`;
-    } finally {
-      await db.execute(sql`SELECT pg_advisory_unlock(${lockKey1}, ${lockKey2})`).catch(() => {});
-    }
+    // R14-06: lock-free preview only. The old session-level advisory lock
+    // (lock and unlock could run on different pooled connections) leaked and
+    // blocked every later posting for that company/day. The real number is
+    // allocated inside the posting transaction by server/ledger/numbering.ts.
+    return previewEntryNumber(db, companyId, date);
   }
 
   // Journal Lines
@@ -4954,9 +4863,9 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      // Generate JE number — uses session advisory lock so concurrent calls
-      // serialise. The session is the same as this transaction's connection,
-      // so the lock will be released at commit.
+      // Generate JE number under a transaction-scoped advisory lock (same keys as
+      // server/ledger/numbering.ts) so concurrent calls serialise; released at
+      // commit or rollback, never left on a pooled connection.
       const dateStr = input.date.toISOString().slice(0, 10).replace(/-/g, "");
       const prefix = `JE-${dateStr}`;
       const lockKey1 = hashStringToInt(input.companyId);
