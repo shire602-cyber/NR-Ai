@@ -260,12 +260,27 @@ import {
   products,
   inventoryMovements,
   invoicePayments,
+  customerCredits,
   paymentChases,
   chaseTemplates,
   chaseConfigs,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } from "drizzle-orm";
+import {
+  eq,
+  and,
+  desc,
+  lt,
+  lte,
+  gt,
+  gte,
+  isNull,
+  isNotNull,
+  or,
+  sql,
+  inArray,
+  getTableColumns,
+} from "drizzle-orm";
 import { DomainError } from "./errors";
 import Decimal from "decimal.js";
 import {
@@ -293,17 +308,6 @@ export function normalizeEmail(email: string): string {
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
 // truly need the full dataset (PDF export, GL ledger) pass an explicit limit.
 const DEFAULT_LIST_LIMIT = 1000;
-
-// Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
-// Postgres advisory locks accept (int4, int4); the single-bigint form would
-// also work but the two-int form makes the namespace more obvious.
-function hashStringToInt(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  }
-  return h;
-}
 
 // R02-01/R02-18: journal balance is exact in integer fils (no tolerance).
 // Legacy float amounts are rounded per line half-up to 2dp (the numeric(15,2)
@@ -2180,6 +2184,60 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(invoices.date))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * R20-05: keyset (cursor) page of a company's invoices, newest first, by
+   * (created_at, id) — backed by idx_invoices_company_created_id. The cursor
+   * is opaque to clients: base64url("<created_at ISO>|<id>").
+   */
+  async getInvoicesPage(
+    companyId: string,
+    opts: { limit: number; cursor?: string | null; status?: string; type?: string }
+  ): Promise<{
+    items: Omit<Invoice, "einvoiceXml" | "einvoiceHash">[];
+    nextCursor: string | null;
+  }> {
+    const conds = [eq(invoices.companyId, companyId)];
+    if (opts.status) conds.push(eq(invoices.status, opts.status));
+    if (opts.type) conds.push(eq(invoices.invoiceType, opts.type));
+    if (opts.cursor) {
+      let createdAt: Date | null = null;
+      let cursorTs = "";
+      let id = "";
+      try {
+        const raw = Buffer.from(opts.cursor, "base64url").toString("utf8");
+        const [ts, rid] = raw.split("|");
+        createdAt = /^\d{4}-\d{2}-\d{2}[ T][\d:.]+$/.test(ts ?? "") ? new Date(`${ts}Z`) : null;
+        cursorTs = ts ?? "";
+        id = rid ?? "";
+      } catch {
+        createdAt = null;
+      }
+      if (!createdAt || Number.isNaN(createdAt.getTime()) || !/^[0-9a-f-]{36}$/i.test(id)) {
+        throw new DomainError("INVALID_CURSOR", 400);
+      }
+      conds.push(
+        sql`(${invoices.createdAt}, ${invoices.id}) < (${cursorTs}::timestamp, ${id}::uuid)`
+      );
+    }
+    const { einvoiceXml: _x, einvoiceHash: _h, ...cols } = getTableColumns(invoices);
+    const rows = await db
+      .select({ ...cols, cursorTs: sql<string>`${invoices.createdAt}::text` })
+      .from(invoices)
+      .where(and(...conds))
+      .orderBy(desc(invoices.createdAt), desc(invoices.id))
+      .limit(opts.limit + 1);
+    const page = rows.slice(0, opts.limit);
+    const last = page[page.length - 1];
+    const nextCursor =
+      rows.length > opts.limit && last
+        ? Buffer.from(`${last.cursorTs}|${last.id}`, "utf8").toString("base64url")
+        : null;
+    const items = page.map(
+      ({ cursorTs: _c, ...rest }: { cursorTs: string } & Record<string, unknown>) => rest
+    ) as Omit<Invoice, "einvoiceXml" | "einvoiceHash">[];
+    return { items, nextCursor };
   }
 
   async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
@@ -5118,27 +5176,34 @@ export class DatabaseStorage implements IStorage {
     // cron tick. Without this, a period-locked or errored template stays
     // "earliest due" and the scheduler would re-fetch it on every loop
     // iteration, starving later due templates.
-    const result: any =
+    // W3-A: the excluded ids are bound one parameter each (a JS array bound
+    // to `::uuid[]` failed, and the scheduler then spun on the same error),
+    // and the locked row is re-read through Drizzle so the template comes
+    // back camelCased (raw SELECT * rows are snake_case: linesJson was
+    // undefined and every template was disabled as "invalid").
+    const exclude =
       excludeIds.length === 0
-        ? await tx.execute(sql`
-          SELECT * FROM recurring_invoices
-          WHERE is_active = true
-            AND next_run_date <= now()
-          ORDER BY next_run_date ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `)
-        : await tx.execute(sql`
-          SELECT * FROM recurring_invoices
-          WHERE is_active = true
-            AND next_run_date <= now()
-            AND id <> ALL(${excludeIds}::uuid[])
-          ORDER BY next_run_date ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `);
-    const rows = (result.rows ?? result) as RecurringInvoice[];
-    return rows[0];
+        ? sql``
+        : sql`AND id NOT IN (${sql.join(
+            excludeIds.map((id) => sql`${id}::uuid`),
+            sql`, `
+          )})`;
+    const result: any = await tx.execute(sql`
+      SELECT id FROM recurring_invoices
+      WHERE is_active = true
+        AND next_run_date <= now()
+        ${exclude}
+      ORDER BY next_run_date ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    `);
+    const rows = (result.rows ?? result) as Array<{ id: string }>;
+    if (!rows[0]) return undefined;
+    const [template] = await tx
+      .select()
+      .from(recurringInvoices)
+      .where(eq(recurringInvoices.id, rows[0].id));
+    return template;
   }
 
   async createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice> {
@@ -5280,20 +5345,30 @@ export class DatabaseStorage implements IStorage {
         throw e;
       }
 
-      // Sum existing payments INSIDE the lock so we see the canonical figure.
+      // Sum existing settlements INSIDE the lock so we see the canonical figure:
+      // payments, issued credit notes and applied customer credits (W3-A).
       const sumResult: any = await tx.execute(sql`
-        SELECT COALESCE(SUM(amount), 0) AS paid
-        FROM invoice_payments
-        WHERE invoice_id = ${input.invoiceId}
+        SELECT
+          (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = ${input.invoiceId}) AS paid,
+          (SELECT COALESCE(SUM(-total), 0) FROM invoices
+             WHERE original_invoice_id = ${input.invoiceId} AND invoice_type = 'credit_note'
+               AND status NOT IN ('void', 'cancelled', 'draft')) AS credited,
+          (SELECT COALESCE(SUM(amount), 0) FROM customer_credit_allocations
+             WHERE invoice_id = ${input.invoiceId} AND kind = 'apply') AS applied
       `);
-      const sumRows = (sumResult.rows ?? sumResult) as Array<{ paid: number | string }>;
+      const sumRows = (sumResult.rows ?? sumResult) as Array<{
+        paid: number | string;
+        credited: number | string;
+        applied: number | string;
+      }>;
 
       // Decimal.js comparison so summing many payments cannot drift past
       // the invoice total via binary-float error and silently overpay.
       const totalD = new Decimal(lockedInvoice.total);
       const previouslyPaidD = new Decimal(sumRows[0]?.paid ?? 0);
+      const creditedD = new Decimal(sumRows[0]?.credited ?? 0).plus(sumRows[0]?.applied ?? 0);
       const amountD = new Decimal(input.amount);
-      const remainingD = totalD.minus(previouslyPaidD);
+      const remainingD = totalD.minus(previouslyPaidD).minus(creditedD);
 
       // A-B12: split the payment into the part that clears the receivable and
       // any excess that becomes a customer credit (a liability), rather than
@@ -5341,44 +5416,6 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      // Generate JE number under a transaction-scoped advisory lock (same keys as
-      // server/ledger/numbering.ts) so concurrent calls serialise; released at
-      // commit or rollback, never left on a pooled connection.
-      const dateStr = input.date.toISOString().slice(0, 10).replace(/-/g, "");
-      const prefix = `JE-${dateStr}`;
-      const lockKey1 = hashStringToInt(input.companyId);
-      const lockKey2 = hashStringToInt(prefix);
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
-      const counterStart = prefix.length + 2;
-      const numResult: any = await tx.execute(sql`
-        SELECT COALESCE(
-          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
-          0
-        ) AS max_seq
-        FROM journal_entries
-        WHERE company_id = ${input.companyId}
-          AND entry_number LIKE ${prefix + "-%"}
-      `);
-      const numRows = (numResult.rows ?? numResult) as Array<{ max_seq: number | string | null }>;
-      const nextNumber = Number(numRows[0]?.max_seq ?? 0) + 1;
-      const entryNumber = `${prefix}-${String(nextNumber).padStart(3, "0")}`;
-
-      // Insert journal entry + balanced lines.
-      const [entry] = await tx
-        .insert(journalEntries)
-        .values({
-          companyId: input.companyId,
-          date: input.date,
-          memo: `Payment received for Invoice ${lockedInvoice.number || input.invoiceId} - ${input.method}`,
-          entryNumber,
-          status: "posted",
-          source: "payment",
-          sourceId: input.invoiceId,
-          createdBy: input.createdBy,
-          postedBy: input.createdBy,
-          postedAt: input.date,
-        })
-        .returning();
       // A-B5/A-B12: compute the balanced legs via the tested pure builder. AR
       // clears at the invoice rate; cash at the payment-date rate (when one is
       // supplied — else the invoice rate, i.e. no FX, identical to before).
@@ -5402,7 +5439,50 @@ export class DatabaseStorage implements IStorage {
         fxGainAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
         fxLossAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
       }
+      // W3-A (R03-22): a payment that settles the invoice in full clears the
+      // exact A/R residual on the ledger (foreign invoices: rounding on earlier
+      // credit notes / part payments would otherwise leave a fils behind).
+      let receivableCreditAedOverride: number | null = null;
+      const settlesInFull = remainingD.minus(allocation.appliedToReceivable).abs().lte(0.005);
+      const isForeignInvoice =
+        !!lockedInvoice.currency && lockedInvoice.currency.toUpperCase() !== "AED";
+      if (settlesInFull && isForeignInvoice) {
+        const residual: any = await tx.execute(sql`
+          WITH docs AS (
+            SELECT je.id FROM journal_entries je
+             WHERE je.company_id = ${input.companyId} AND je.status = 'posted' AND (
+                   (je.source = 'invoice' AND je.source_id = ${input.invoiceId})
+                OR (je.source = 'invoice' AND je.source_id IN (
+                      SELECT id FROM invoices WHERE original_invoice_id = ${input.invoiceId}
+                         AND invoice_type = 'credit_note'))
+                OR (je.source = 'payment' AND je.source_id = ${input.invoiceId})
+                OR (je.source = 'customer_credit' AND je.source_id IN (
+                      SELECT id FROM customer_credit_allocations WHERE invoice_id = ${input.invoiceId})))
+          )
+          SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::text AS residual
+            FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+           WHERE jl.account_id = ${input.receivableAccountId} AND je.status = 'posted'
+             AND (je.id IN (SELECT id FROM docs)
+                  OR (je.source = 'reversal' AND je.source_id IN (SELECT id FROM docs)))
+        `);
+        const r = Number(((residual.rows ?? residual) as Array<{ residual: string }>)[0]?.residual);
+        if (Number.isFinite(r) && r > 0) receivableCreditAedOverride = r;
+      }
+      if (receivableCreditAedOverride !== null && !fxGainAccountId && !fxLossAccountId) {
+        const fxRows = await tx
+          .select()
+          .from(accounts)
+          .where(
+            and(
+              eq(accounts.companyId, input.companyId),
+              inArray(accounts.code, [ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS])
+            )
+          );
+        fxGainAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
+        fxLossAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
+      }
       const built = buildPaymentJournalLines({
+        receivableCreditAedOverride,
         appliedToReceivable: allocation.appliedToReceivable,
         customerCredit: allocation.customerCredit,
         invoiceRate: invRate,
@@ -5419,9 +5499,42 @@ export class DatabaseStorage implements IStorage {
         e.code = built.code;
         throw e;
       }
-      for (const line of built.lines) {
-        await tx.insert(journalLines).values({ entryId: entry.id, ...line });
-      }
+
+      // W3-A: posted through the ledger kernel inside this transaction (exact
+      // fils balance, account/period guards, in-transaction numbering). The
+      // payment date is the journal date (R03-13).
+      const foreignCur =
+        lockedInvoice.currency && lockedInvoice.currency.toUpperCase() !== "AED"
+          ? lockedInvoice.currency.toUpperCase()
+          : null;
+      const { entry } = await postJournal(
+        {
+          companyId: input.companyId,
+          date: input.date.toISOString().slice(0, 10),
+          memo: `Payment received for Invoice ${lockedInvoice.number || input.invoiceId} - ${input.method}`,
+          status: "posted",
+          source: "payment",
+          sourceId: input.invoiceId,
+          allowFutureDate: true,
+          lines: built.lines.map((l) => {
+            const isAr = l.accountId === input.receivableAccountId && l.credit > 0;
+            return {
+              accountId: l.accountId,
+              debit: l.debit > 0 ? l.debit.toFixed(2) : undefined,
+              credit: l.credit > 0 ? l.credit.toFixed(2) : undefined,
+              description: l.description,
+              ...(foreignCur && isAr
+                ? {
+                    foreignCurrency: foreignCur,
+                    foreignCredit: new Decimal(allocation.appliedToReceivable).toFixed(2),
+                    exchangeRate: String(invRate),
+                  }
+                : {}),
+            };
+          }),
+        },
+        { actorId: input.createdBy, tx }
+      );
 
       // Record the payment row.
       const [payment] = await tx
@@ -5441,12 +5554,33 @@ export class DatabaseStorage implements IStorage {
         })
         .returning();
 
-      // Recompute status from the canonical paid total (post-insert).
+      // W3-A: an overpayment is a customer credit that can be applied to a
+      // later invoice or refunded (customer_credits, liability 2050).
+      if (allocation.customerCredit > 0 && customerCreditAccountId) {
+        const [inv] = await tx.select().from(invoices).where(eq(invoices.id, input.invoiceId));
+        await tx.insert(customerCredits).values({
+          companyId: input.companyId,
+          contactId: inv?.contactId ?? null,
+          customerName: inv?.customerName ?? "",
+          sourceType: "overpayment",
+          sourceId: payment.id,
+          invoiceId: input.invoiceId,
+          currency: lockedInvoice.currency || "AED",
+          exchangeRate: payRate,
+          liabilityAccountId: customerCreditAccountId,
+          amount: allocation.customerCredit,
+          remaining: allocation.customerCredit,
+          status: "open",
+          createdBy: input.createdBy,
+        });
+      }
+
+      // Recompute status from the canonical settled total (post-insert).
       const newTotalPaid = previouslyPaidD.plus(amountD).toNumber();
       const newStatus = statusFromPayments(
         lockedInvoice.status as InvoiceStatus,
         Number(lockedInvoice.total),
-        newTotalPaid
+        new Decimal(newTotalPaid).plus(creditedD).toNumber()
       );
       const [updatedInvoice] = await tx
         .update(invoices)

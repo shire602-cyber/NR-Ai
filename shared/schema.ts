@@ -1224,10 +1224,27 @@ export const invoices = pgTable(
     contactId: uuid("contact_id").references((): any => customerContacts.id, {
       onDelete: "set null",
     }),
+    // W3-A (migration 0095): place of supply drives VAT 201 Box 1 emirate
+    // attribution; supply date is the tax point when it differs from the
+    // invoice date; discounts are stored, never silently dropped (R03-07).
+    placeOfSupplyEmirate: text("place_of_supply_emirate"),
+    supplyDate: timestamp("supply_date"),
+    notes: text("notes"),
+    discountType: text("discount_type"), // amount | percent | null (document-level)
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0), // line + document discounts
+    sourceQuoteId: uuid("source_quote_id"),
+    templateId: uuid("template_id"),
+    issuedAt: timestamp("issued_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
     companyNumberUnique: unique("invoices_company_number_unique").on(table.companyId, table.number),
+    companyCreatedIdx: index("idx_invoices_company_created_id").on(
+      table.companyId,
+      table.createdAt,
+      table.id
+    ),
     companyIdIdx: index("idx_invoices_company_id").on(table.companyId),
     companyDateIdx: index("idx_invoices_company_date").on(table.companyId, table.date),
     companyStatusIdx: index("idx_invoices_company_status").on(table.companyId, table.status),
@@ -1262,7 +1279,18 @@ export const invoiceLines = pgTable(
     quantity: real("quantity").notNull(),
     unitPrice: money("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE standard 5%
-    vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
+    vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope | reverse_charge
+    // W3-A (migration 0095): discounts, net amount after all discounts, and
+    // optional product / cost-centre links (used by the inventory worker).
+    discountType: text("discount_type"), // amount | percent | null
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0), // line discount only
+    netAmount: money("net_amount"), // after line + allocated document discount
+    productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
+    costCenterId: uuid("cost_center_id").references((): any => costCenters.id, {
+      onDelete: "set null",
+    }),
+    quoteLineId: uuid("quote_line_id"),
   },
   (table) => ({
     invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
@@ -1303,6 +1331,13 @@ export const quotes = pgTable(
     status: text("status").notNull().default("draft"), // draft | sent | accepted | declined | expired | converted
     convertedInvoiceId: uuid("converted_invoice_id"),
     notes: text("notes"),
+    // W3-A (migration 0095)
+    customerAddress: text("customer_address"),
+    paymentTerms: text("payment_terms"),
+    placeOfSupplyEmirate: text("place_of_supply_emirate"),
+    discountType: text("discount_type"),
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1336,6 +1371,13 @@ export const quoteLines = pgTable(
     unitPrice: money("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     vatSupplyType: text("vat_supply_type").default("standard_rated"),
+    // W3-A (migration 0095): discounts + progress billing (quantity already invoiced).
+    discountType: text("discount_type"),
+    discountValue: rate("discount_value"),
+    discountAmount: money("discount_amount").notNull().default(0),
+    billedQuantity: real("billed_quantity").notNull().default(0),
+    productId: uuid("product_id"),
+    costCenterId: uuid("cost_center_id"),
   },
   (table) => ({
     quoteIdIdx: index("idx_quote_lines_quote_id").on(table.quoteId),
@@ -1591,6 +1633,10 @@ export const invoiceTemplates = pgTable(
     showLogo: boolean("show_logo").notNull().default(true),
     showStamp: boolean("show_stamp").notNull().default(false),
     isDefault: boolean("is_default").notNull().default(false),
+    // W3-A (migration 0095): branding applied to the invoice PDF.
+    logoUrl: text("logo_url"),
+    termsText: text("terms_text"),
+    bankDetails: text("bank_details"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1893,6 +1939,78 @@ export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
 
 // ===========================
+// Customer credits (W3-A, migration 0095): a credit note on a paid invoice or
+// an overpayment leaves money owed TO the customer. It is a liability that is
+// either applied to another invoice or refunded through a cash/bank account.
+// ===========================
+export const customerCredits = pgTable(
+  "customer_credits",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id"),
+    customerName: text("customer_name").notNull(),
+    sourceType: text("source_type").notNull(), // credit_note | overpayment
+    sourceId: uuid("source_id").notNull(),
+    invoiceId: uuid("invoice_id"), // the invoice the credit arose on
+    currency: text("currency").notNull().default("AED"),
+    exchangeRate: rate("exchange_rate").notNull().default(1),
+    liabilityAccountId: uuid("liability_account_id")
+      .notNull()
+      .references(() => accounts.id),
+    amount: money("amount").notNull(),
+    remaining: money("remaining").notNull(),
+    status: text("status").notNull().default("open"), // open | closed | void
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_customer_credits_company").on(table.companyId, table.status),
+    sourceUnique: unique("customer_credits_source_unique").on(
+      table.companyId,
+      table.sourceType,
+      table.sourceId
+    ),
+  })
+);
+export type CustomerCredit = typeof customerCredits.$inferSelect;
+
+export const customerCreditAllocations = pgTable(
+  "customer_credit_allocations",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    creditId: uuid("credit_id")
+      .notNull()
+      .references(() => customerCredits.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // apply | refund
+    invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    paymentAccountId: uuid("payment_account_id").references(() => accounts.id),
+    amount: money("amount").notNull(),
+    date: timestamp("date").notNull(),
+    exchangeRate: rate("exchange_rate"),
+    reference: text("reference"),
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    creditIdx: index("idx_customer_credit_allocations_credit").on(table.creditId),
+    invoiceIdx: index("idx_customer_credit_allocations_invoice").on(table.invoiceId),
+  })
+);
+export type CustomerCreditAllocation = typeof customerCreditAllocations.$inferSelect;
+
+// ===========================
 // Recurring Invoices
 // ===========================
 export const recurringInvoices = pgTable(
@@ -1915,6 +2033,18 @@ export const recurringInvoices = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     lastGeneratedInvoiceId: uuid("last_generated_invoice_id"),
     totalGenerated: integer("total_generated").notNull().default(0),
+    // W3-A (migration 0095): draft vs auto-issue, optional auto-send, contact
+    // link and the outcome of the last run (honest: "no email provider").
+    contactId: uuid("contact_id"),
+    customerAddress: text("customer_address"),
+    paymentTerms: text("payment_terms"),
+    placeOfSupplyEmirate: text("place_of_supply_emirate"),
+    autoIssue: boolean("auto_issue").notNull().default(true),
+    autoSend: boolean("auto_send").notNull().default(false),
+    sendToEmail: text("send_to_email"),
+    lastRunStatus: text("last_run_status"),
+    lastRunMessage: text("last_run_message"),
+    lastRunAt: timestamp("last_run_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -2098,6 +2228,7 @@ export const customerContacts = pgTable(
     address: text("address"),
     city: text("city"),
     country: text("country").default("UAE"),
+    emirate: text("emirate"), // W3-A (0095): default place of supply
     contactPerson: text("contact_person"),
     paymentTerms: integer("payment_terms").default(30),
     notes: text("notes"),

@@ -92,6 +92,10 @@ const recurringInvoiceSchema = z.object({
   startDate: z.date(),
   endDate: z.date().optional().nullable(),
   lines: z.array(lineItemSchema).min(1, "At least one line item is required"),
+  // R03-23: draft vs auto-issue, optional auto-send through the email provider.
+  autoIssue: z.boolean().default(true),
+  autoSend: z.boolean().default(false),
+  sendToEmail: z.string().email().optional().or(z.literal("")),
 });
 
 type RecurringInvoiceFormData = z.infer<typeof recurringInvoiceSchema>;
@@ -133,6 +137,9 @@ export default function RecurringInvoices() {
       startDate: new Date(),
       endDate: null,
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      autoIssue: true,
+      autoSend: false,
+      sendToEmail: "",
     },
   });
 
@@ -148,9 +155,18 @@ export default function RecurringInvoices() {
         customerTrn: data.customerTrn || null,
         currency: data.currency,
         frequency: data.frequency,
-        startDate: data.startDate.toISOString(),
-        endDate: data.endDate ? data.endDate.toISOString() : null,
-        linesJson: JSON.stringify(data.lines),
+        startDate: format(data.startDate, "yyyy-MM-dd"),
+        endDate: data.endDate ? format(data.endDate, "yyyy-MM-dd") : null,
+        lines: data.lines.map((l) => ({
+          description: l.description,
+          quantity: Number(l.quantity),
+          unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
+          vatRate: Number(l.vatRate) > 0 ? 0.05 : 0,
+          vatSupplyType: Number(l.vatRate) > 0 ? "standard_rated" : "zero_rated",
+        })),
+        autoIssue: data.autoIssue,
+        autoSend: data.autoSend,
+        sendToEmail: data.autoSend && data.sendToEmail ? data.sendToEmail : null,
       });
     },
     onSuccess: () => {
@@ -176,10 +192,19 @@ export default function RecurringInvoices() {
         customerTrn: data.customerTrn || null,
         currency: data.currency,
         frequency: data.frequency,
-        startDate: data.startDate.toISOString(),
-        nextRunDate: data.startDate.toISOString(),
-        endDate: data.endDate ? data.endDate.toISOString() : null,
-        linesJson: JSON.stringify(data.lines),
+        startDate: format(data.startDate, "yyyy-MM-dd"),
+        nextRunDate: format(data.startDate, "yyyy-MM-dd"),
+        endDate: data.endDate ? format(data.endDate, "yyyy-MM-dd") : null,
+        lines: data.lines.map((l) => ({
+          description: l.description,
+          quantity: Number(l.quantity),
+          unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
+          vatRate: Number(l.vatRate) > 0 ? 0.05 : 0,
+          vatSupplyType: Number(l.vatRate) > 0 ? "standard_rated" : "zero_rated",
+        })),
+        autoIssue: data.autoIssue,
+        autoSend: data.autoSend,
+        sendToEmail: data.autoSend && data.sendToEmail ? data.sendToEmail : null,
       });
     },
     onSuccess: () => {
@@ -257,7 +282,15 @@ export default function RecurringInvoices() {
       frequency: item.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
       startDate: new Date(item.startDate),
       endDate: item.endDate ? new Date(item.endDate) : null,
-      lines: parsedLines,
+      lines: parsedLines.map((l) => ({
+        description: l.description,
+        quantity: Number(l.quantity),
+        unitPrice: Number(l.unitPrice),
+        vatRate: Number(l.vatRate),
+      })),
+      autoIssue: (item as RecurringInvoice & { autoIssue?: boolean }).autoIssue ?? true,
+      autoSend: (item as RecurringInvoice & { autoSend?: boolean }).autoSend ?? false,
+      sendToEmail: (item as RecurringInvoice & { sendToEmail?: string | null }).sendToEmail ?? "",
     });
     setDialogOpen(true);
   };
@@ -485,6 +518,61 @@ export default function RecurringInvoices() {
                             />
                           </PopoverContent>
                         </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="autoIssue"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center gap-2">
+                        <FormControl>
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            data-testid="checkbox-recurring-auto-issue"
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0">{t["invoices.autoIssue"]}</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="autoSend"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center gap-2">
+                        <FormControl>
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            data-testid="checkbox-recurring-auto-send"
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0">{t["invoices.autoSend"]}</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sendToEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            placeholder={t["invoices.sendToEmail"]}
+                            aria-label={t["invoices.sendToEmail"]}
+                            {...field}
+                            data-testid="input-recurring-send-to"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

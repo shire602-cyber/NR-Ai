@@ -5,7 +5,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
-import { sanitizePlainText, zText } from "../../shared/validators/primitives";
+import { sanitizePlainText, zEmirate, zText } from "../../shared/validators/primitives";
+import { emitDomainEvent } from "../platform/domain-events";
 
 const log = createLogger("contacts");
 
@@ -33,6 +34,8 @@ const contactFields = {
   country: optText(100),
   contactPerson: optText(200),
   paymentTerms: z.number().int().min(0).max(365).optional().nullable(),
+  // W3-A (R03-10): default place of supply for invoices to this contact.
+  emirate: zEmirate.optional().nullable(),
   notes: optText(2000),
   isActive: z.boolean().optional(),
 };
@@ -165,6 +168,12 @@ export function registerContactRoutes(app: Express) {
       }
 
       const contact = await storage.createCustomerContact(contactData as any);
+      emitDomainEvent("contact.created", {
+        companyId,
+        entityId: contact.id,
+        kind: "customer",
+        actorUserId: userId,
+      });
       res.json(contact);
     })
   );

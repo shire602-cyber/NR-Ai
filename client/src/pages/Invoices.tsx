@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -102,12 +102,44 @@ import type { Invoice, Company, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { downloadInvoicePDF } from "@/lib/pdf-invoice";
 
+// R07-01: each line carries an explicit UAE supply type; the VAT rate follows
+// from it (5% standard, 0% for zero-rated / exempt / out of scope).
+const SUPPLY_TYPE_OPTIONS = ["standard_rated", "zero_rated", "exempt", "out_of_scope"] as const;
+type SupplyTypeOption = (typeof SUPPLY_TYPE_OPTIONS)[number];
+const EMIRATE_OPTIONS = [
+  "abu_dhabi",
+  "dubai",
+  "sharjah",
+  "ajman",
+  "umm_al_quwain",
+  "ras_al_khaimah",
+  "fujairah",
+] as const;
+
 const invoiceLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
   quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
   unitPrice: z.coerce.number().min(0.01, "Price must be greater than 0"),
   vatRate: z.coerce.number().default(0.05),
+  vatSupplyType: z.enum(SUPPLY_TYPE_OPTIONS).default("standard_rated"),
+  // R03-07: line discount in percent (0 = none). Sent as discountType/discountValue.
+  discountPercent: z.coerce.number().min(0).max(100).default(0),
 });
+
+const EMPTY_LINE = {
+  description: "",
+  quantity: 1,
+  unitPrice: 0,
+  vatRate: 0.05,
+  vatSupplyType: "standard_rated" as SupplyTypeOption,
+  discountPercent: 0,
+};
+
+const lineVatRate = (supply: SupplyTypeOption) => (supply === "standard_rated" ? 0.05 : 0);
+const lineNet = (line: { quantity: number; unitPrice: number; discountPercent?: number }) =>
+  (Number(line.quantity) || 0) *
+  (Number(line.unitPrice) || 0) *
+  (1 - (Number(line.discountPercent) || 0) / 100);
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
@@ -116,6 +148,8 @@ const invoiceSchema = z.object({
   number: z.string(),
   customerName: z.string().min(1, "Customer name is required"),
   customerTrn: z.string().optional(),
+  contactId: z.string().optional(),
+  placeOfSupplyEmirate: z.string().optional(),
   date: z.date(),
   currency: z.string().default("AED"),
   lines: z.array(invoiceLineSchema).min(1, "At least one line item is required"),
@@ -180,8 +214,49 @@ export default function Invoices() {
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
 
-  const { data: invoices, isLoading } = useQuery<Invoice[]>({
-    queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+  // R20-05: cursor-paginated list (50 per page) with infinite scroll; exports
+  // fetch the full list explicitly with all=true.
+  const invoicePages = useInfiniteQuery<{ items: Invoice[]; nextCursor: string | null }>({
+    queryKey: ["/api/companies", selectedCompanyId, "invoices", "paged"],
+    queryFn: ({ pageParam }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/invoices?limit=50${
+          pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""
+        }`
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: !!selectedCompanyId,
+  });
+  const invoices = useMemo<Invoice[]>(
+    () => invoicePages.data?.pages.flatMap((p) => p.items) ?? [],
+    [invoicePages.data]
+  );
+  const isLoading = invoicePages.isLoading;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (
+        entries[0]?.isIntersecting &&
+        invoicePages.hasNextPage &&
+        !invoicePages.isFetchingNextPage
+      ) {
+        invoicePages.fetchNextPage();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [invoicePages]);
+  const fetchAllInvoices = async (): Promise<Invoice[]> =>
+    apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`);
+
+  const { data: contacts = [] } = useQuery<
+    Array<{ id: string; name: string; trnNumber?: string | null; emirate?: string | null }>
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
     enabled: !!selectedCompanyId,
   });
 
@@ -199,7 +274,7 @@ export default function Invoices() {
       customerTrn: "",
       date: new Date(),
       currency: "AED",
-      lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      lines: [{ ...EMPTY_LINE }],
     },
   });
 
@@ -262,7 +337,7 @@ export default function Invoices() {
         customerTrn: "",
         date: new Date(),
         currency: "AED",
-        lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: [{ ...EMPTY_LINE }],
       });
     },
     onError: (error: any) => {
@@ -294,7 +369,7 @@ export default function Invoices() {
         customerTrn: "",
         date: new Date(),
         currency: "AED",
-        lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: [{ ...EMPTY_LINE }],
       });
     },
     onError: (error: any) => {
@@ -307,15 +382,8 @@ export default function Invoices() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({
-      id,
-      status,
-      paymentAccountId,
-    }: {
-      id: string;
-      status: string;
-      paymentAccountId?: string;
-    }) => apiRequest("PATCH", `/api/invoices/${id}/status`, { status, paymentAccountId }),
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest("PATCH", `/api/invoices/${id}/status`, { status }),
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -486,36 +554,43 @@ export default function Invoices() {
     }
   };
 
-  const handleConfirmPayment = () => {
+  // R03-13: "mark as paid" records a payment of the amount due against the
+  // chosen cash/bank account (the status endpoint no longer accepts "paid").
+  const handleConfirmPayment = async () => {
     if (!selectedPaymentAccount || !invoiceForPayment) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Please select a payment account.",
+        title: t["invoices.error"],
+        description: t["invoices.selectPaymentAccount"],
       });
       return;
     }
-    updateStatusMutation.mutate({
-      id: invoiceForPayment.id,
-      status: "paid",
-      paymentAccountId: selectedPaymentAccount,
-    });
+    const detail = await apiRequest("GET", `/api/invoices/${invoiceForPayment.id}`);
+    const due = Number(detail?.settlement?.amountDue ?? invoiceForPayment.total);
+    addPaymentMutation.mutate(
+      {
+        invoiceId: invoiceForPayment.id,
+        data: {
+          amount: due.toFixed(2),
+          date: format(new Date(), "yyyy-MM-dd"),
+          method: "bank",
+          paymentAccountId: selectedPaymentAccount,
+        },
+      },
+      {
+        onSuccess: () => {
+          setPaymentDialogOpen(false);
+          setInvoiceForPayment(null);
+          setSelectedPaymentAccount("");
+        },
+      }
+    );
   };
 
-  // Get cash and bank accounts for payment selection
-  const paymentAccounts = accounts.filter((acc) => {
-    const name = (acc.nameEn || "").toLowerCase();
-    const nameAr = (acc.nameAr || "").toLowerCase();
-    return (
-      acc.type === "asset" &&
-      (name.includes("bank") ||
-        name.includes("cash") ||
-        name.includes("cheque") ||
-        nameAr.includes("بنك") ||
-        nameAr.includes("نقد") ||
-        nameAr.includes("شيك"))
-    );
-  });
+  // R03-05: only cash and bank accounts (sub-type cash | bank) can receive payments.
+  const paymentAccounts = accounts.filter(
+    (acc) => acc.type === "asset" && (acc.subType === "cash" || acc.subType === "bank")
+  );
 
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
@@ -526,9 +601,36 @@ export default function Invoices() {
         number: fullInvoice.number,
         customerName: fullInvoice.customerName,
         customerTrn: fullInvoice.customerTrn || "",
+        contactId: fullInvoice.contactId || undefined,
+        placeOfSupplyEmirate: fullInvoice.placeOfSupplyEmirate || undefined,
         date: new Date(fullInvoice.date),
         currency: fullInvoice.currency,
-        lines: fullInvoice.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: fullInvoice.lines?.length
+          ? fullInvoice.lines.map(
+              (l: {
+                description: string;
+                quantity: number;
+                unitPrice: number;
+                vatRate: number;
+                vatSupplyType?: string | null;
+                discountType?: string | null;
+                discountValue?: number | null;
+              }) => ({
+                description: l.description,
+                quantity: Number(l.quantity),
+                unitPrice: Number(l.unitPrice),
+                vatRate: Number(l.vatRate),
+                vatSupplyType: (SUPPLY_TYPE_OPTIONS as readonly string[]).includes(
+                  String(l.vatSupplyType)
+                )
+                  ? (l.vatSupplyType as SupplyTypeOption)
+                  : Number(l.vatRate) > 0
+                    ? "standard_rated"
+                    : "zero_rated",
+                discountPercent: l.discountType === "percent" ? Number(l.discountValue) || 0 : 0,
+              })
+            )
+          : [{ ...EMPTY_LINE }],
       });
       setDialogOpen(true);
     } catch (error: any) {
@@ -548,23 +650,30 @@ export default function Invoices() {
       customerTrn: "",
       date: new Date(),
       currency: "AED",
-      lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      lines: [{ ...EMPTY_LINE }],
     });
     setEditingInvoice(null);
   };
 
   const onSubmit = async (data: InvoiceFormData) => {
     try {
-      const { number: formNumber, ...rest } = data;
+      // Strict contract (R03-02): no number, status, totals or companyId.
       const invoiceData = {
-        ...rest,
-        ...(editingInvoice ? { number: formNumber } : {}),
-        companyId: selectedCompanyId!,
+        customerName: data.customerName,
+        customerTrn: data.customerTrn || null,
+        ...(data.contactId ? { contactId: data.contactId } : {}),
+        ...(data.placeOfSupplyEmirate ? { placeOfSupplyEmirate: data.placeOfSupplyEmirate } : {}),
+        date: format(data.date, "yyyy-MM-dd"),
+        currency: data.currency,
         lines: data.lines.map((line) => ({
           description: line.description,
           quantity: Number(line.quantity),
-          unitPrice: Number(line.unitPrice),
-          vatRate: Number(line.vatRate),
+          unitPrice: Math.round(Number(line.unitPrice) * 100) / 100,
+          vatRate: lineVatRate(line.vatSupplyType),
+          vatSupplyType: line.vatSupplyType,
+          ...(Number(line.discountPercent) > 0
+            ? { discountType: "percent", discountValue: Number(line.discountPercent) }
+            : {}),
         })),
       };
 
@@ -603,9 +712,9 @@ export default function Invoices() {
 
   // Calculate totals for preview
   const watchLines = form.watch("lines");
-  const subtotal = watchLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+  const subtotal = watchLines.reduce((sum, line) => sum + lineNet(line), 0);
   const vatAmount = watchLines.reduce(
-    (sum, line) => sum + line.quantity * line.unitPrice * line.vatRate,
+    (sum, line) => sum + lineNet(line) * lineVatRate(line.vatSupplyType ?? "standard_rated"),
     0
   );
   const total = subtotal + vatAmount;
@@ -704,6 +813,11 @@ export default function Invoices() {
         : "";
 
     exportToExcel([prepareInvoicesForExport(filteredInvoices, locale)], `invoices${dateRangeStr}`);
+    if (invoicePages.hasNextPage) {
+      void fetchAllInvoices().then((all) =>
+        exportToExcel([prepareInvoicesForExport(all, locale)], `invoices-all${dateRangeStr}`)
+      );
+    }
     toast({
       title: "Export successful",
       description: `${filteredInvoices.length} invoices exported to Excel`,
@@ -878,7 +992,7 @@ export default function Invoices() {
                     customerTrn: "",
                     date: new Date(),
                     currency: "AED",
-                    lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+                    lines: [{ ...EMPTY_LINE }],
                   });
                 }
               }}
@@ -999,6 +1113,69 @@ export default function Invoices() {
                       />
                     </div>
 
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="contactId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t["invoices.contact"]}</FormLabel>
+                            <Select
+                              value={field.value || "none"}
+                              onValueChange={(val) => {
+                                const id = val === "none" ? undefined : val;
+                                field.onChange(id);
+                                const c = contacts.find((x) => x.id === id);
+                                if (c) {
+                                  form.setValue("customerName", c.name);
+                                  form.setValue("customerTrn", c.trnNumber || "");
+                                  if (c.emirate) form.setValue("placeOfSupplyEmirate", c.emirate);
+                                }
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-invoice-contact">
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">{t["invoices.noContact"]}</SelectItem>
+                                {contacts.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>{t["invoices.contactHint"]}</FormDescription>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="placeOfSupplyEmirate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t["invoices.placeOfSupply"]}</FormLabel>
+                            <Select value={field.value || ""} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-place-of-supply">
+                                  <SelectValue placeholder={t["invoices.placeOfSupplyDefault"]} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {EMIRATE_OPTIONS.map((e) => (
+                                  <SelectItem key={e} value={e}>
+                                    {t[`invoices.emirate.${e}`]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <h3 className="font-medium">
@@ -1008,9 +1185,7 @@ export default function Invoices() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
-                          }
+                          onClick={() => append({ ...EMPTY_LINE })}
                           data-testid="button-add-line"
                         >
                           <Plus className="w-4 h-4 mr-2" />
@@ -1023,7 +1198,7 @@ export default function Invoices() {
                           key={field.id}
                           className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
                         >
-                          <div className="col-span-4">
+                          <div className="col-span-3">
                             <FormField
                               control={form.control}
                               name={`lines.${index}.description`}
@@ -1095,26 +1270,62 @@ export default function Invoices() {
                           <div className="col-span-1.5">
                             <FormField
                               control={form.control}
-                              name={`lines.${index}.vatRate`}
+                              name={`lines.${index}.vatSupplyType`}
                               render={({ field }) => (
                                 <FormItem>
                                   <FormControl>
                                     <Select
-                                      value={String(field.value * 100)}
-                                      onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                                      value={field.value}
+                                      onValueChange={(val) => {
+                                        field.onChange(val);
+                                        form.setValue(
+                                          `lines.${index}.vatRate`,
+                                          lineVatRate(val as SupplyTypeOption)
+                                        );
+                                      }}
                                     >
                                       <SelectTrigger
-                                        className="font-mono"
+                                        aria-label={t["invoices.supplyType"]}
                                         data-testid={`select-line-vat-${index}`}
                                       >
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="0">0%</SelectItem>
-                                        <SelectItem value="5">5%</SelectItem>
-                                        <SelectItem value="10">10%</SelectItem>
+                                        {SUPPLY_TYPE_OPTIONS.map((st) => (
+                                          <SelectItem key={st} value={st}>
+                                            {t[`invoices.supply.${st}`]}
+                                          </SelectItem>
+                                        ))}
                                       </SelectContent>
                                     </Select>
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                          <div className="col-span-1">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.discountPercent`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      max={100}
+                                      placeholder={t["invoices.discountPercent"]}
+                                      aria-label={t["invoices.discountPercent"]}
+                                      className="font-mono"
+                                      value={field.value ?? ""}
+                                      onChange={(e) =>
+                                        field.onChange(
+                                          e.target.value ? parseFloat(e.target.value) : 0
+                                        )
+                                      }
+                                      data-testid={`input-line-discount-${index}`}
+                                    />
                                   </FormControl>
                                 </FormItem>
                               )}
@@ -1123,9 +1334,11 @@ export default function Invoices() {
                           <div className="col-span-2">
                             <div className="h-10 flex items-center justify-end font-mono text-sm">
                               {formatCurrency(
-                                (watchLines[index]?.quantity || 0) *
-                                  (watchLines[index]?.unitPrice || 0) *
-                                  (1 + (watchLines[index]?.vatRate || 0)),
+                                lineNet(watchLines[index] ?? EMPTY_LINE) *
+                                  (1 +
+                                    lineVatRate(
+                                      watchLines[index]?.vatSupplyType ?? "standard_rated"
+                                    )),
                                 "AED",
                                 locale
                               )}
@@ -1158,8 +1371,8 @@ export default function Invoices() {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">
                           {t.vat} (
-                          {watchLines.some((line) => line.vatRate !== 0)
-                            ? `avg ${Math.round((watchLines.reduce((sum, line) => sum + line.vatRate, 0) / Math.max(1, watchLines.filter((l) => l.vatRate > 0).length)) * 100)}%`
+                          {watchLines.some((line) => line.vatSupplyType === "standard_rated")
+                            ? "5%"
                             : "0%"}
                           )
                         </span>
@@ -1658,6 +1871,24 @@ export default function Invoices() {
                   </Table>
                 </div>
               </Card>
+              <div
+                ref={loadMoreRef}
+                className="flex justify-center py-3"
+                data-testid="invoices-load-more"
+              >
+                {invoicePages.hasNextPage ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={invoicePages.isFetchingNextPage}
+                    onClick={() => invoicePages.fetchNextPage()}
+                  >
+                    {invoicePages.isFetchingNextPage
+                      ? t["invoices.loading"]
+                      : t["invoices.loadMore"]}
+                  </Button>
+                ) : null}
+              </div>
             </>
           )}
         </TabsContent>
@@ -2382,11 +2613,13 @@ export default function Invoices() {
             </Button>
             <Button
               onClick={handleConfirmPayment}
-              disabled={!selectedPaymentAccount || updateStatusMutation.isPending}
+              disabled={!selectedPaymentAccount || addPaymentMutation.isPending}
               className="flex-1"
               data-testid="button-confirm-payment"
             >
-              {updateStatusMutation.isPending ? "Processing..." : "Mark as Paid"}
+              {addPaymentMutation.isPending
+                ? t["invoices.processing"]
+                : t["invoices.recordFullPayment"]}
             </Button>
           </div>
         </DialogContent>

@@ -1,6 +1,6 @@
 {
   "description": "Hard-coded English JSX strings under client/src/pages (scripts/i18n-scan.mjs). Ratchet: may only decrease.",
-  "maxHardcoded": 2001,
+  "maxHardcoded": 2000,
   "justified": 0,
   "pagesImportingTranslation": 102,
   "pages": 113

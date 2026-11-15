@@ -9,7 +9,14 @@ import {
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
-import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
+import { salesLinesSchema, type SalesLineInput } from "../../shared/validators/invoices";
+import { dueDateFromTerms, prepareSalesLines, termsFromDays } from "./invoice-lifecycle";
+import { issueInvoice, resolveCustomerHeader } from "./invoice-posting.service";
+import { getRate } from "./fx/rates";
+import { fromFils, mulRate } from "../../shared/money";
+import { isCapabilityLive } from "../../shared/capabilities";
+import { generateInvoicePDF } from "./pdf-invoice.service";
+import { sendInvoiceEmail } from "./email.service";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
@@ -502,22 +509,23 @@ function advanceByInterval(date: Date, interval: string): Date {
  * subsystem that the recurring-invoices.routes.ts API never wrote to, so
  * recurring schedules created through the UI were never picked up.
  */
-async function generateDueRecurringInvoices() {
+export async function generateDueRecurringInvoices(): Promise<number> {
   // Process one template at a time, holding a row lock per iteration so
-  // concurrent cron runners can't pick the same template. SELECT ... FOR
-  // UPDATE SKIP LOCKED naturally distributes templates across runners.
+  // concurrent cron runners can't pick the same template (SELECT ... FOR
+  // UPDATE SKIP LOCKED). With SKIP LOCKED only one runner ever processes a
+  // template, so the FTA sequential allocator can be used safely.
   //
-  // The previous design inserted a throwaway invoice, attempted a CAS claim,
-  // and deleted the invoice on CAS-loss. That pattern is incompatible with
-  // sequential FTA numbering: a deleted invoice's number leaves a permanent
-  // gap in the per-(company, year) sequence. With SKIP LOCKED, only one
-  // runner ever processes a template at a time, so we can safely use
-  // `allocateInvoiceNumber` and never need to delete anything.
+  // `seen` prevents infinite loops: a skipped template (period lock, missing
+  // rate, invalid lines disabled, ...) leaves next_run_date untouched, so the
+  // SELECT would re-pick the same row in this tick.
   //
-  // `seen` prevents infinite loops: a "skipped" template (period-lock
-  // failure, invalid lines disabled, etc.) leaves next_run_date untouched,
-  // so the SELECT would re-pick the same row in this same cron tick. Once
-  // a template id is in `seen`, we exit the loop when we'd revisit it.
+  // W3-A (R03-12, R03-23): lines are re-validated with the invoice line
+  // contract, totals come from document-totals (fils, discounts, supply
+  // types), the invoice carries the FX rate at generation (fx.getRate for the
+  // company), and the revenue entry is posted through invoice-posting
+  // (supply-type split, ledger kernel) — never with custom JE code. Each
+  // template chooses draft vs auto-issue and optional auto-send; the outcome
+  // is recorded honestly on the template (last_run_status / message).
   let processed = 0;
   const seen = new Set<string>();
 
@@ -529,260 +537,263 @@ async function generateDueRecurringInvoices() {
           skipped: false;
           template: typeof recurringInvoicesTable.$inferSelect;
           invoice: typeof invoicesTable.$inferSelect;
-          subtotal: number;
-          vatAmount: number;
-          total: number;
-          invoiceDate: Date;
-          advancedNextRunDate: Date;
         };
 
     let result: ProcessResult;
+    let claimed = false;
     try {
       result = await db.transaction(async (tx: typeof db) => {
-        // Pass seen ids so the SQL skips templates we've already visited.
-        // Without this, a period-locked or errored template stays "earliest
-        // due" and starves later templates.
         const template = await storage.fetchAndLockNextDueRecurringInvoice(tx, Array.from(seen));
         if (!template) return null;
-        // Add to seen BEFORE any risky work — even if the tx rolls back, the
-        // seen set persists in the outer scope, so the SQL skips this id on
-        // the next iteration.
         seen.add(template.id);
-
-        const today = new Date();
-
-        if (template.endDate && new Date(template.endDate) < today) {
+        claimed = true;
+        const now = new Date();
+        const note = async (status: string, message: string, disable = false) => {
           await tx
             .update(recurringInvoicesTable)
-            .set({ isActive: false } as any)
+            .set({
+              lastRunStatus: status,
+              lastRunMessage: message,
+              lastRunAt: now,
+              ...(disable ? { isActive: false } : {}),
+            })
             .where(eq(recurringInvoicesTable.id, template.id));
+          return { skipped: true as const };
+        };
+
+        if (template.endDate && new Date(template.endDate) < now) {
           log.info({ templateId: template.id }, "Recurring template past endDate — disabled");
-          return { skipped: true };
+          return note("ended", "End date reached; template disabled", true);
         }
 
-        let templateLines: Array<{
-          description: string;
-          quantity: number;
-          unitPrice: number;
-          vatRate?: number;
-          vatSupplyType?: string;
-        }>;
+        let parsedLines: SalesLineInput[];
         try {
-          templateLines = JSON.parse(template.linesJson);
+          parsedLines = salesLinesSchema.parse(JSON.parse(template.linesJson));
         } catch (err) {
           log.error(
             { err, templateId: template.id },
-            "Recurring template has invalid linesJson — disabling"
+            "Recurring template has invalid lines — disabling"
           );
-          await tx
-            .update(recurringInvoicesTable)
-            .set({ isActive: false } as any)
-            .where(eq(recurringInvoicesTable.id, template.id));
-          return { skipped: true };
+          return note("invalid", "Template lines are invalid; template disabled", true);
         }
-        if (!Array.isArray(templateLines) || templateLines.length === 0) {
-          log.warn({ templateId: template.id }, "Recurring template has no lines — disabling");
-          await tx
-            .update(recurringInvoicesTable)
-            .set({ isActive: false } as any)
-            .where(eq(recurringInvoicesTable.id, template.id));
-          return { skipped: true };
+        let prepared: ReturnType<typeof prepareSalesLines>;
+        try {
+          prepared = prepareSalesLines(
+            parsedLines.map((l) => ({
+              description: l.description,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+              vatRate: l.vatRate,
+              vatSupplyType: l.vatSupplyType ?? null,
+              discountType: l.discountType ?? null,
+              discountValue: l.discountValue ?? null,
+              productId: l.productId ?? null,
+              costCenterId: l.costCenterId ?? null,
+            }))
+          );
+        } catch (err) {
+          return note("invalid", `Template lines are invalid: ${(err as Error)?.message}`, true);
         }
 
-        let subtotal = 0;
-        let vatAmount = 0;
-        for (const line of templateLines) {
-          const lineTotal = line.quantity * line.unitPrice;
-          subtotal += lineTotal;
-          vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
-        }
-        const total = subtotal + vatAmount;
-
-        const invoiceDate = new Date();
-        const expectedNextRunDate = new Date(template.nextRunDate);
-        const advancedNextRunDate = advanceByInterval(expectedNextRunDate, template.frequency);
-
+        const dateIso = now.toISOString().slice(0, 10);
+        const invoiceDate = new Date(`${dateIso}T00:00:00.000Z`);
         try {
           await assertPeriodNotLocked(template.companyId, invoiceDate);
-        } catch (err: any) {
-          // Period locked: leave next_run_date untouched, release lock,
-          // retry on next cron tick after the period reopens.
+        } catch (err) {
           log.warn(
-            { err: err?.message, templateId: template.id, companyId: template.companyId },
+            { err: (err as Error)?.message, templateId: template.id },
             "Skipping recurring invoice generation — target period is locked"
           );
-          return { skipped: true };
+          return note("period_locked", "Target period is locked; will retry");
         }
 
-        // FTA Article 78 sequential allocator. Safe to use here because SKIP
-        // LOCKED guarantees no other runner can pick this template, so the
-        // allocated number cannot be wasted by a CAS-loss + delete.
+        const currency = (template.currency || "AED").toUpperCase();
+        let rate = 1;
+        if (currency !== "AED") {
+          try {
+            rate = (await getRate(template.companyId, currency, "AED", dateIso)).rate;
+          } catch (err) {
+            return note(
+              "no_exchange_rate",
+              `No ${currency}→AED rate for ${dateIso}: ${(err as Error)?.message ?? "missing"}; will retry`
+            );
+          }
+        }
+
+        let header;
+        try {
+          header = await resolveCustomerHeader(
+            template.companyId,
+            {
+              contactId: template.contactId,
+              customerName: template.customerName,
+              customerTrn: template.customerTrn,
+              customerAddress: template.customerAddress,
+              paymentTerms: template.paymentTerms,
+              placeOfSupplyEmirate: template.placeOfSupplyEmirate,
+              date: dateIso,
+            },
+            { dueDateFromTerms, termsFromDays }
+          );
+        } catch {
+          return note("invalid", "Template contact no longer exists; template disabled", true);
+        }
+
+        const { rows, totals } = prepared;
         const newNumber = await allocateInvoiceNumber(
           template.companyId,
           "invoice",
           invoiceDate,
           tx
         );
-
+        const baseFils =
+          totals.totalFils === 0
+            ? 0
+            : currency === "AED"
+              ? totals.totalFils
+              : mulRate(totals.totalFils, rate);
         const [insertedInvoice] = await tx
           .insert(invoicesTable)
           .values({
             companyId: template.companyId,
             number: newNumber,
-            customerName: template.customerName,
-            customerTrn: template.customerTrn || undefined,
+            customerName: header.customerName,
+            customerTrn: header.customerTrn,
+            customerAddress: header.customerAddress,
+            contactId: header.contactId,
+            paymentTerms: header.paymentTerms,
+            dueDate: header.dueDate ? new Date(`${header.dueDate}T00:00:00.000Z`) : null,
+            placeOfSupplyEmirate: header.placeOfSupplyEmirate,
             date: invoiceDate,
-            currency: template.currency,
-            subtotal,
-            vatAmount,
-            total,
-            status: "sent",
+            currency,
+            exchangeRate: rate,
+            baseCurrencyAmount: Number(fromFils(baseFils)),
+            subtotal: Number(fromFils(totals.subtotalFils)),
+            vatAmount: Number(fromFils(totals.vatFils)),
+            total: Number(fromFils(totals.totalFils)),
+            discountAmount: Number(fromFils(totals.discountFils)),
+            status: "draft",
             invoiceType: "invoice",
-          } as any)
+          })
           .returning();
-
-        for (const line of templateLines) {
+        for (const r of rows) {
           await tx.insert(invoiceLinesTable).values({
             invoiceId: insertedInvoice.id,
-            description: line.description,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            vatRate: line.vatRate ?? UAE_VAT_RATE,
-            vatSupplyType: line.vatSupplyType || undefined,
-          } as any);
+            description: r.description,
+            quantity: r.quantity,
+            unitPrice: r.unitPrice,
+            vatRate: r.vatRate,
+            vatSupplyType: r.vatSupplyType,
+            discountType: r.discountType,
+            discountValue: r.discountValue,
+            discountAmount: r.discountAmount,
+            netAmount: r.netAmount,
+            productId: r.productId,
+            costCenterId: r.costCenterId,
+          });
         }
 
-        // Advance the template inside the same tx — atomic with the invoice
-        // insert because we still hold the row lock.
+        const advancedNextRunDate = advanceByInterval(
+          new Date(template.nextRunDate),
+          template.frequency
+        );
         await tx
           .update(recurringInvoicesTable)
           .set({
             nextRunDate: advancedNextRunDate,
             lastGeneratedInvoiceId: insertedInvoice.id,
             totalGenerated: sql`${recurringInvoicesTable.totalGenerated} + 1`,
-          } as any)
+            lastRunStatus: "generated",
+            lastRunMessage: `Generated ${newNumber} as draft`,
+            lastRunAt: now,
+          })
           .where(eq(recurringInvoicesTable.id, template.id));
 
-        return {
-          skipped: false,
-          template,
-          invoice: insertedInvoice,
-          subtotal,
-          vatAmount,
-          total,
-          invoiceDate,
-          advancedNextRunDate,
-        };
+        return { skipped: false as const, template, invoice: insertedInvoice };
       });
     } catch (err) {
-      // Per-template error boundary: a single template's failure (insert
-      // race, allocator error, period-lock state mid-tx, etc.) must not
-      // crash the entire cron tick and starve other due templates. The
-      // failed template's row lock is released by tx rollback; `seen`
-      // already contains its id so we won't loop on it. Surfaces in logs
-      // for follow-up.
+      // Per-template error boundary: one failure must not starve the others.
+      // A failure before a template was claimed (the queue query itself) would
+      // repeat forever, so stop the tick instead.
       log.error({ err }, "Recurring invoice tx failed for one template — continuing with others");
+      if (!claimed) break;
       continue;
     }
 
-    if (result === null) break; // queue empty (or all locked elsewhere)
-    if (result.skipped) {
-      processed++;
-      continue;
-    }
+    if (result === null) break;
     processed++;
+    if (result.skipped) continue;
 
-    // After commit (lock released): post the JE in a separate tx.
-    // Same atomicity profile as user-driven invoice creation — if JE fails,
-    // the invoice exists but is unposted and an admin must post manually.
-    const { template, invoice, total, subtotal, vatAmount, invoiceDate, advancedNextRunDate } =
-      result;
-    try {
-      const owners = await storage.getCompanyUsersByCompanyId(template.companyId);
-      const owner = owners.find((u: any) => u.role === "owner") ?? owners[0];
-      if (!owner) {
-        log.warn(
-          { templateId: template.id, invoiceId: invoice.id },
-          "Recurring invoice generated but no company user found for GL attribution — manual posting needed"
-        );
-      } else {
-        const accounts = await storage.getAccountsByCompanyId(template.companyId);
-        const accountsReceivable = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-        );
-        const salesRevenue = accounts.find(
-          (a) =>
-            a.isSystemAccount &&
-            a.type === "income" &&
-            (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-        );
-        const vatPayable = accounts.find(
-          (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
-        );
-
-        if (accountsReceivable && salesRevenue) {
-          const entryNumber = await storage.generateEntryNumber(template.companyId, invoiceDate);
-          const lines: Array<{
-            accountId: string;
-            debit: number;
-            credit: number;
-            description: string;
-          }> = [
-            {
-              accountId: accountsReceivable.id,
-              debit: total,
-              credit: 0,
-              description: `Recurring invoice ${invoice.number}`,
-            },
-            {
-              accountId: salesRevenue.id,
-              debit: 0,
-              credit: subtotal,
-              description: `Recurring revenue ${invoice.number}`,
-            },
-          ];
-          if (vatAmount > 0 && vatPayable) {
-            lines.push({
-              accountId: vatPayable.id,
-              debit: 0,
-              credit: vatAmount,
-              description: `Recurring VAT ${invoice.number}`,
-            });
-          }
-          await storage.createJournalEntry(
-            {
-              companyId: template.companyId,
-              date: invoiceDate,
-              memo: `Recurring sales invoice ${invoice.number} - ${template.customerName}`,
-              entryNumber,
-              status: "posted",
-              source: "invoice",
-              sourceId: invoice.id,
-              createdBy: owner.userId,
-              postedBy: owner.userId,
-              postedAt: invoiceDate,
-            } as any,
-            lines as any
-          );
-        } else {
-          log.warn(
-            { templateId: template.id, invoiceId: invoice.id },
-            "Recurring invoice generated but GL accounts missing — manual posting needed"
-          );
-        }
-      }
-    } catch (jeErr) {
-      log.error(
-        { jeErr, templateId: template.id, invoiceId: invoice.id },
-        "Recurring invoice created but failed to post GL — manual intervention required"
-      );
-    }
-
+    const { template, invoice } = result;
+    const outcome = await finishGeneratedInvoice(template, invoice);
+    await db
+      .update(recurringInvoicesTable)
+      .set({ lastRunStatus: outcome.status, lastRunMessage: outcome.message })
+      .where(eq(recurringInvoicesTable.id, template.id));
     log.info(
-      { templateId: template.id, newInvoiceId: invoice.id, nextDate: advancedNextRunDate },
+      { templateId: template.id, newInvoiceId: invoice.id, outcome: outcome.status },
       "Generated recurring invoice from template"
     );
   }
 
   log.info({ processed }, "Recurring invoice generation cycle complete");
+  return processed;
+}
+
+/**
+ * After the draft is committed: issue it when the template auto-issues (posts
+ * revenue through invoice-posting with the supply-type split), then email it
+ * when auto-send is on. Every outcome is reported honestly — an issued invoice
+ * with no email provider is "issued_not_sent", never "sent".
+ */
+async function finishGeneratedInvoice(
+  template: typeof recurringInvoicesTable.$inferSelect,
+  invoice: typeof invoicesTable.$inferSelect
+): Promise<{ status: string; message: string }> {
+  if (!template.autoIssue) {
+    return { status: "generated", message: `Generated ${invoice.number} as a draft for review` };
+  }
+  const owners = await storage.getCompanyUsersByCompanyId(template.companyId);
+  const owner = owners.find((u: { role?: string }) => u.role === "owner") ?? owners[0];
+  if (!owner) {
+    return {
+      status: "issue_failed",
+      message: `Generated ${invoice.number} as a draft: no company user to attribute the posting to`,
+    };
+  }
+  try {
+    await issueInvoice(invoice.id, template.companyId, owner.userId, "sent");
+  } catch (err) {
+    log.error({ err, invoiceId: invoice.id }, "Recurring invoice could not be issued");
+    return {
+      status: "issue_failed",
+      message: `Generated ${invoice.number} as a draft; issuing failed: ${(err as Error)?.message}`,
+    };
+  }
+  if (!template.autoSend) {
+    return { status: "issued", message: `Issued ${invoice.number}` };
+  }
+  if (!template.sendToEmail || !isCapabilityLive("email")) {
+    return {
+      status: "issued_not_sent",
+      message: `Issued ${invoice.number}; not emailed: no email provider is configured`,
+    };
+  }
+  try {
+    const company = await storage.getCompany(template.companyId);
+    const fresh = await storage.getInvoice(invoice.id, template.companyId);
+    const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
+    if (!company || !fresh) throw new Error("invoice or company missing");
+    const pdf = await generateInvoicePDF(fresh, lines, company);
+    await sendInvoiceEmail(template.sendToEmail, fresh, company, pdf);
+    return {
+      status: "sent",
+      message: `Issued ${invoice.number} and emailed ${template.sendToEmail}`,
+    };
+  } catch (err) {
+    return {
+      status: "issued_not_sent",
+      message: `Issued ${invoice.number}; email failed: ${(err as Error)?.message}`,
+    };
+  }
 }

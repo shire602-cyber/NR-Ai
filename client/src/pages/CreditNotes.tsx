@@ -157,8 +157,24 @@ export default function CreditNotes() {
   });
 
   const createMutation = useMutation({
+    // R03-21: standalone credit notes are created as drafts against an issued
+    // invoice (strict contract: no number / companyId / customer fields).
     mutationFn: (data: CreditNoteFormData) =>
-      apiRequest("POST", `/api/companies/${selectedCompanyId}/credit-notes`, data),
+      apiRequest("POST", `/api/companies/${selectedCompanyId}/credit-notes`, {
+        invoiceId: data.invoiceId,
+        reason: data.reason,
+        date: data.date.toISOString().slice(0, 10),
+        lines: data.lines.map((l) => {
+          const vat = Number(l.vatRate) > 0 ? 0.05 : 0;
+          return {
+            description: l.description,
+            quantity: Number(l.quantity),
+            unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
+            vatRate: vat,
+            vatSupplyType: vat > 0 ? "standard_rated" : "zero_rated",
+          };
+        }),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
@@ -204,12 +220,25 @@ export default function CreditNotes() {
     },
   });
 
-  // The delete / issue / void mutations that used to live here targeted the
-  // retired standalone credit-note endpoints (the server answers 410 — credit
-  // notes are created from the original invoice so VAT, FX and journal entries
-  // stay unified). Their UI triggers were permanently disabled and have been
-  // removed, so the mutations had no callers left. Removed rather than kept as
-  // dead code that reads like working functionality.
+  // R03-21: issue posts the mirrored reversal through the ledger kernel; void
+  // reverses it and restores the invoice balance; drafts can be deleted.
+  const lifecycleMutation = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "issue" | "void" | "delete" }) =>
+      action === "delete"
+        ? apiRequest("DELETE", `/api/credit-notes/${id}`)
+        : apiRequest("POST", `/api/credit-notes/${id}/${action}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+      });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: t["invoices.error"], description: error?.message });
+    },
+  });
 
   const resetForm = () => {
     form.reset({
@@ -712,13 +741,38 @@ export default function CreditNotes() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {/* Edit / Issue / Void / Delete were permanently
-                                disabled: standalone credit-note writes are
-                                retired (the server answers 410). Credit notes
-                                are created from the original invoice so VAT,
-                                FX and journal entries stay unified. Showing
-                                four un-clickable items was pure noise, so they
-                                are removed rather than left greyed out. */}
+                            {creditNote.status === "draft" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  lifecycleMutation.mutate({ id: creditNote.id, action: "issue" })
+                                }
+                                data-testid={`button-issue-credit-note-${creditNote.id}`}
+                              >
+                                <FileText className="w-4 h-4 mr-2" />
+                                {t["invoices.issueCreditNote"]}
+                              </DropdownMenuItem>
+                            )}
+                            {creditNote.status === "issued" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  lifecycleMutation.mutate({ id: creditNote.id, action: "void" })
+                                }
+                                data-testid={`button-void-credit-note-${creditNote.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                {t["invoices.voidCreditNote"]}
+                              </DropdownMenuItem>
+                            )}
+                            {creditNote.status === "draft" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  lifecycleMutation.mutate({ id: creditNote.id, action: "delete" })
+                                }
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                <T k="pages.delete" />
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() =>
                                 window.open(`/api/credit-notes/${creditNote.id}/pdf`, "_blank")

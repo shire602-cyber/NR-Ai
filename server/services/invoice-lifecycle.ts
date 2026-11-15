@@ -10,6 +10,15 @@
 // Fixes: A-1 (void of a paid invoice), A-B2 (unbalanced reversal when a VAT
 // account is missing), A-B3 (credit-note dedup / cap).
 
+import { DomainError } from "../errors";
+import { fromFils } from "../../shared/money";
+import type { SupplyType } from "../../shared/vat-classification";
+import {
+  computeSalesDocument,
+  DocumentTotalsError,
+  type SalesDocumentTotals,
+} from "./document-totals.service";
+
 export type JournalLine = {
   accountId: string;
   debit: number;
@@ -29,9 +38,7 @@ export type ReversalAmounts = {
   total: number;
 };
 
-export type Decision =
-  | { ok: true }
-  | { ok: false; status: number; code: string; message: string };
+export type Decision = { ok: true } | { ok: false; status: number; code: string; message: string };
 
 /** Round to 2 decimals, guarding against binary-float drift. */
 export function round2(n: number): number {
@@ -44,10 +51,7 @@ export function round2(n: number): number {
  * cash already received unmatched (orphaned bank balance + abnormal credit AR).
  * The correct path is a credit note plus a refund.
  */
-export function evaluateVoidRequest(args: {
-  targetStatus: string;
-  paidTotal: number;
-}): Decision {
+export function evaluateVoidRequest(args: { targetStatus: string; paidTotal: number }): Decision {
   const { targetStatus, paidTotal } = args;
   if (targetStatus !== "void" && targetStatus !== "cancelled") return { ok: true };
   if (round2(paidTotal) > 0) {
@@ -93,8 +97,7 @@ export function evaluateCreditNoteRequest(args: {
       message: "This invoice has already been fully credited.",
     };
   }
-  const requested =
-    args.requestedAmount == null ? remaining : round2(args.requestedAmount);
+  const requested = args.requestedAmount == null ? remaining : round2(args.requestedAmount);
   if (requested <= 0) {
     return {
       ok: false,
@@ -122,11 +125,10 @@ export function evaluateCreditNoteRequest(args: {
  * `excess` within `tolerance` (legitimate 2dp rounding) is absorbed into the
  * receivable rather than creating a sub-cent liability.
  */
-export function allocatePayment(args: {
-  amount: number;
-  remaining: number;
-  tolerance?: number;
-}): { appliedToReceivable: number; customerCredit: number } {
+export function allocatePayment(args: { amount: number; remaining: number; tolerance?: number }): {
+  appliedToReceivable: number;
+  customerCredit: number;
+} {
   const tol = args.tolerance ?? 0.005;
   const amount = args.amount;
   const remaining = Math.max(0, args.remaining);
@@ -177,44 +179,92 @@ export function buildPaymentJournalLines(args: {
   fxGainAccountId?: string | null;
   fxLossAccountId?: string | null;
   label?: string;
+  /** W3-A: AED to clear from A/R when this payment settles the invoice in
+   *  full — the exact residual on the ledger, so rate rounding on earlier
+   *  credits / part-payments never leaves a fils on A/R (goes to FX). */
+  receivableCreditAedOverride?: number | null;
 }):
   | { ok: true; lines: JournalLine[]; realisedFx: number }
   | { ok: false; code: string; message: string } {
   const invRate = args.invoiceRate > 0 ? args.invoiceRate : 1;
   const payRate = args.paymentRate > 0 ? args.paymentRate : invRate;
   const label = args.label ?? "Invoice payment";
-  const arCreditAed = round2(args.appliedToReceivable * invRate);
+  const arCreditAed =
+    args.receivableCreditAedOverride != null && args.receivableCreditAedOverride > 0
+      ? round2(args.receivableCreditAedOverride)
+      : round2(args.appliedToReceivable * invRate);
   const custCreditAed = round2(args.customerCredit * payRate);
   const bankDebitAed = round2((args.appliedToReceivable + args.customerCredit) * payRate);
   const realisedFx = round2(bankDebitAed - arCreditAed - custCreditAed);
 
   if (custCreditAed > 0 && !args.customerCreditAccountId) {
-    return { ok: false, code: "CUSTOMER_CREDIT_ACCOUNT_MISSING", message: "Customer-credit account is required for the overpayment." };
+    return {
+      ok: false,
+      code: "CUSTOMER_CREDIT_ACCOUNT_MISSING",
+      message: "Customer-credit account is required for the overpayment.",
+    };
   }
   if (realisedFx > 0 && !args.fxGainAccountId) {
-    return { ok: false, code: "REALISED_FX_ACCOUNT_MISSING", message: "FX Gain account is required for realised FX." };
+    return {
+      ok: false,
+      code: "REALISED_FX_ACCOUNT_MISSING",
+      message: "FX Gain account is required for realised FX.",
+    };
   }
   if (realisedFx < 0 && !args.fxLossAccountId) {
-    return { ok: false, code: "REALISED_FX_ACCOUNT_MISSING", message: "FX Loss account is required for realised FX." };
+    return {
+      ok: false,
+      code: "REALISED_FX_ACCOUNT_MISSING",
+      message: "FX Loss account is required for realised FX.",
+    };
   }
 
   const lines: JournalLine[] = [
-    { accountId: args.paymentAccountId, debit: bankDebitAed, credit: 0, description: `${label} — cash received` },
-    { accountId: args.receivableAccountId, debit: 0, credit: arCreditAed, description: `${label} — clear A/R` },
+    {
+      accountId: args.paymentAccountId,
+      debit: bankDebitAed,
+      credit: 0,
+      description: `${label} — cash received`,
+    },
+    {
+      accountId: args.receivableAccountId,
+      debit: 0,
+      credit: arCreditAed,
+      description: `${label} — clear A/R`,
+    },
   ];
   if (custCreditAed > 0 && args.customerCreditAccountId) {
-    lines.push({ accountId: args.customerCreditAccountId, debit: 0, credit: custCreditAed, description: `${label} — customer credit (overpayment)` });
+    lines.push({
+      accountId: args.customerCreditAccountId,
+      debit: 0,
+      credit: custCreditAed,
+      description: `${label} — customer credit (overpayment)`,
+    });
   }
   if (realisedFx > 0 && args.fxGainAccountId) {
-    lines.push({ accountId: args.fxGainAccountId, debit: 0, credit: realisedFx, description: `${label} — realised FX gain` });
+    lines.push({
+      accountId: args.fxGainAccountId,
+      debit: 0,
+      credit: realisedFx,
+      description: `${label} — realised FX gain`,
+    });
   } else if (realisedFx < 0 && args.fxLossAccountId) {
-    lines.push({ accountId: args.fxLossAccountId, debit: -realisedFx, credit: 0, description: `${label} — realised FX loss` });
+    lines.push({
+      accountId: args.fxLossAccountId,
+      debit: -realisedFx,
+      credit: 0,
+      description: `${label} — realised FX loss`,
+    });
   }
 
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0));
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0));
   if (Math.abs(dr - cr) > 0.01) {
-    return { ok: false, code: "UNBALANCED_PAYMENT", message: `Payment entry unbalanced (${dr} vs ${cr}).` };
+    return {
+      ok: false,
+      code: "UNBALANCED_PAYMENT",
+      message: `Payment entry unbalanced (${dr} vs ${cr}).`,
+    };
   }
   return { ok: true, lines, realisedFx };
 }
@@ -264,9 +314,19 @@ export function buildReversalLines(args: {
     { accountId: accounts.salesRevenueId, debit: subtotal, credit: 0, description: labels.revenue },
   ];
   if (vatAmount > 0 && accounts.vatPayableId) {
-    lines.push({ accountId: accounts.vatPayableId, debit: vatAmount, credit: 0, description: labels.vat });
+    lines.push({
+      accountId: accounts.vatPayableId,
+      debit: vatAmount,
+      credit: 0,
+      description: labels.vat,
+    });
   }
-  lines.push({ accountId: accounts.accountsReceivableId, debit: 0, credit: total, description: labels.ar });
+  lines.push({
+    accountId: accounts.accountsReceivableId,
+    debit: 0,
+    credit: total,
+    description: labels.ar,
+  });
 
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0));
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0));
@@ -279,4 +339,117 @@ export function buildReversalLines(args: {
     };
   }
   return { ok: true, lines };
+}
+
+// ─── W3-A: shared sales-document preparation (pure) ─────────────────────────
+
+/** Validated line as accepted by shared/validators/invoices.ts (unit price in fils). */
+export interface SalesLineDraft {
+  description: string;
+  quantity: number;
+  unitPrice: number; // fils
+  vatRate?: number;
+  vatSupplyType?: SupplyType | null;
+  discountType?: "amount" | "percent" | null;
+  discountValue?: number | null;
+  productId?: string | null;
+  costCenterId?: string | null;
+}
+
+export interface PreparedSalesLine {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  unitPriceFils: number;
+  vatRate: number;
+  vatSupplyType: SupplyType;
+  discountType: string | null;
+  discountValue: number | null;
+  discountAmount: number;
+  netAmount: number;
+  productId: string | null;
+  costCenterId: string | null;
+}
+
+/**
+ * Resolve supply types (0% needs an explicit type — 400 SUPPLY_TYPE_REQUIRED),
+ * apply discounts and compute totals in fils. The rows are ready for
+ * invoice_lines / quote_lines.
+ */
+export function prepareSalesLines(
+  lines: SalesLineDraft[],
+  opts: {
+    discountType?: string | null;
+    discountValue?: number | null;
+    reverseCharge?: boolean | null;
+  } = {}
+): { rows: PreparedSalesLine[]; totals: SalesDocumentTotals } {
+  let totals: SalesDocumentTotals;
+  try {
+    totals = computeSalesDocument(
+      lines.map((l) => ({
+        quantity: l.quantity,
+        unitPriceFils: l.unitPrice,
+        vatRate: l.vatRate ?? 0.05,
+        vatSupplyType: l.vatSupplyType ?? null,
+        discountType: l.discountType ?? null,
+        discountValue: l.discountValue ?? null,
+      })),
+      { ...opts, resolve: true }
+    );
+  } catch (err) {
+    if (err instanceof DocumentTotalsError) {
+      const field =
+        err.lineIndex === undefined
+          ? "discountValue"
+          : `lines.${err.lineIndex}.${err.code.startsWith("SUPPLY") || err.code === "INVALID_VAT_RATE" ? "vatSupplyType" : "discountValue"}`;
+      throw new DomainError(err.code, 400, { fields: { [field]: [err.message] } }, err.message);
+    }
+    throw err;
+  }
+  if (totals.totalFils > 900_000_000_000_000) {
+    throw new DomainError(
+      "AMOUNT_OUT_OF_RANGE",
+      422,
+      undefined,
+      "Document total is too large to record."
+    );
+  }
+  const rows = lines.map((l, i) => {
+    const t = totals.lines[i];
+    return {
+      description: l.description,
+      quantity: l.quantity,
+      unitPrice: Number(fromFils(l.unitPrice)),
+      unitPriceFils: l.unitPrice,
+      vatRate: t.vatRate,
+      vatSupplyType: t.classification.supplyType,
+      discountType: l.discountType ?? null,
+      discountValue: l.discountType ? Number(l.discountValue) : null,
+      discountAmount: Number(fromFils(t.lineDiscountFils)),
+      netAmount: Number(fromFils(t.netFils)),
+      productId: l.productId ?? null,
+      costCenterId: l.costCenterId ?? null,
+    };
+  });
+  return { rows, totals };
+}
+
+/** Due date implied by payment terms ("net30" → +30 days; due_on_receipt → same day). */
+export function dueDateFromTerms(dateIso: string, terms: string | null | undefined): string | null {
+  if (!terms) return null;
+  let days: number | null = null;
+  if (terms === "due_on_receipt") days = 0;
+  const m = /^net(\d{1,3})$/.exec(terms);
+  if (m) days = Number(m[1]);
+  if (days === null) return null;
+  const d = new Date(`${dateIso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Contact payment terms are stored in days (integer). */
+export function termsFromDays(days: number | null | undefined): string | null {
+  if (days === null || days === undefined || !Number.isFinite(days) || days < 0) return null;
+  return days === 0 ? "due_on_receipt" : `net${Math.round(days)}`;
 }
