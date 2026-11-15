@@ -11,6 +11,8 @@ import {
   index,
   customType,
   jsonb,
+  date as pgDate,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1073,17 +1075,48 @@ export type JournalAttachment = typeof journalAttachments.$inferSelect;
 // ===========================
 // Exchange Rates
 // ===========================
-export const exchangeRates = pgTable("exchange_rates", {
-  id: uuid("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  baseCurrency: text("base_currency").notNull().default("AED"),
-  targetCurrency: text("target_currency").notNull(),
-  rate: rate("rate").notNull(), // How many units of targetCurrency per 1 baseCurrency
-  date: timestamp("date").notNull().defaultNow(),
-  source: text("source").notNull().default("manual"), // manual | api
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const EXCHANGE_RATE_TYPES = ["spot", "closing", "average"] as const;
+export type ExchangeRateType = (typeof EXCHANGE_RATE_TYPES)[number];
+
+/**
+ * One row = "1 unit of base_currency is worth `rate` units of target_currency".
+ * Canonical form for a company rate (W2-E, R14-02): base_currency = the foreign
+ * currency, target_currency = the company's base currency, so AED per USD =
+ * (USD, AED, 3.6725). Inverse pairs are derived at lookup time
+ * (server/services/fx/rates.ts).
+ *
+ * Tenancy (R14-01): company_id NULL = system row (platform admins only, e.g.
+ * FTA-published rates). legacy_unscoped rows (pre-0094 rows whose owner could
+ * not be determined) are ignored by every lookup.
+ */
+export const exchangeRates = pgTable(
+  "exchange_rates",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+    baseCurrency: text("base_currency").notNull().default("AED"),
+    targetCurrency: text("target_currency").notNull(),
+    rate: rate("rate").notNull(), // units of targetCurrency per 1 baseCurrency
+    rateType: text("rate_type").notNull().default("spot"), // spot | closing | average
+    date: timestamp("date").notNull().defaultNow(),
+    source: text("source").notNull().default("manual"), // manual | api | fta
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    legacyUnscoped: boolean("legacy_unscoped").notNull().default(false),
+    legacyInverted: boolean("legacy_inverted").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyPairDateIdx: index("idx_exchange_rates_company_pair_date").on(
+      table.companyId,
+      table.baseCurrency,
+      table.targetCurrency,
+      table.rateType,
+      table.date
+    ),
+  })
+);
 
 export const insertExchangeRateSchema = createInsertSchema(exchangeRates).omit({
   id: true,
@@ -1092,6 +1125,45 @@ export const insertExchangeRateSchema = createInsertSchema(exchangeRates).omit({
 
 export type InsertExchangeRate = z.infer<typeof insertExchangeRateSchema>;
 export type ExchangeRate = typeof exchangeRates.$inferSelect;
+
+// ===========================
+// FX revaluations (W2-E, R14-03/R14-17/R11-18)
+// ===========================
+/**
+ * One unrealised FX revaluation run per (company, as_of) while not undone
+ * (partial unique index in migration 0094). journal_entry_id is the
+ * revaluation dated as_of; reversal_entry_id is its automatic reversal dated
+ * as_of + 1 day. Both journal entries carry source_id = this row's id.
+ */
+export const fxRevaluations = pgTable(
+  "fx_revaluations",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    asOf: pgDate("as_of", { mode: "string" }).notNull(),
+    status: text("status").notNull().default("pending"), // pending | posted | undone
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
+    reversalEntryId: uuid("reversal_entry_id").references(() => journalEntries.id),
+    netGainLoss: money("net_gain_loss").notNull().default(0), // base currency, + = gain
+    summary: jsonb("summary"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    undoneBy: uuid("undone_by").references(() => users.id, { onDelete: "set null" }),
+    undoneAt: timestamp("undone_at"),
+  },
+  (table) => ({
+    activeUnique: uniqueIndex("uniq_fx_revaluations_company_as_of_active")
+      .on(table.companyId, table.asOf)
+      .where(sql`status <> 'undone'`),
+    companyIdx: index("idx_fx_revaluations_company").on(table.companyId, table.asOf),
+  })
+);
+
+export type FxRevaluation = typeof fxRevaluations.$inferSelect;
 
 // ===========================
 // Invoices

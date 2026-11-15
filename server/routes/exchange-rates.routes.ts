@@ -1,20 +1,33 @@
 import type { Express, Request, Response } from "express";
-import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { z } from "zod";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { adminMiddleware, authMiddleware, requireCompanyAccess } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { strictBody } from "../http/strict-body";
+import { DomainError } from "../errors";
 import { db } from "../db";
-import { eq, and, desc, lte } from "drizzle-orm";
-import { exchangeRates, invoices, receipts } from "../../shared/schema";
-import { revalueForeignBalance, buildFxRevaluationLines } from "../services/financial-statements";
-import { ACCOUNT_CODES } from "../constants";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
-import type {
-  UnrealizedFxGainLoss,
-  FxGainsLossesReport,
-  ExchangeRate,
-  Invoice,
-  Receipt,
-} from "../../shared/schema";
+import { exchangeRates, EXCHANGE_RATE_TYPES } from "../../shared/schema";
+import type { ExchangeRate, ExchangeRateType } from "../../shared/schema";
+import { toFils, fromFils } from "../../shared/money";
 import { storage } from "../storage";
+import {
+  DEFAULT_MAX_RATE_AGE_DAYS,
+  convert,
+  computeFxExposure,
+  deleteCompanyRate,
+  getRate,
+  getSystemRate,
+  isRateType,
+  listRatesForCompany,
+  listRevaluations,
+  previewRevaluation,
+  registerFxServices,
+  runRevaluation,
+  saveRate,
+  toGainsLossesReport,
+  toIsoDate,
+  undoRevaluation,
+} from "../services/fx";
 
 export type ExchangeRateSource = "manual" | "api" | "fta";
 
@@ -25,57 +38,37 @@ export interface RateLookupResult {
 }
 
 /**
- * Retrieve the most recent exchange rate for a currency pair on or before a
- * given date. Returns null when no rate is found.
+ * Legacy lookup kept for callers without a company context (invoices today).
+ * R14-01: reads SYSTEM rows only (company_id IS NULL), so no tenant can poison
+ * another tenant's documents. FTA rows win a same-day tie. Inverse pairs are
+ * derived. Returns null when no rate exists.
  *
- * Per FTA: when an FTA-published rate exists it must be used for VAT-impacting
- * conversions. We therefore look for an FTA rate first; if none is available
- * for the period we fall back to manual / API entries. Callers can opt out of
- * the preference with `preferFta: false` when they need the literal newest rate.
+ * Document modules should move to the tenant-scoped `fx.getRate` service
+ * (server/services/fx/README.md).
  */
 export async function getLatestRateDetailed(
   baseCurrency: string,
   targetCurrency: string,
-  asOf?: Date,
-  options: { preferFta?: boolean } = {}
+  asOf?: Date
 ): Promise<RateLookupResult | null> {
   if (baseCurrency === targetCurrency) {
     return { rate: 1, source: "manual", date: asOf ?? new Date() };
   }
-
-  const preferFta = options.preferFta !== false;
-
-  const baseConditions = [
-    eq(exchangeRates.baseCurrency, baseCurrency),
-    eq(exchangeRates.targetCurrency, targetCurrency),
-  ];
-  if (asOf) baseConditions.push(lte(exchangeRates.date, asOf));
-
-  if (preferFta) {
-    const ftaRows = await db
-      .select()
-      .from(exchangeRates)
-      .where(and(...baseConditions, eq(exchangeRates.source, "fta")))
-      .orderBy(desc(exchangeRates.date))
-      .limit(1);
-    if (ftaRows.length > 0) {
-      return { rate: ftaRows[0].rate, source: "fta", date: ftaRows[0].date };
+  try {
+    const r = await getSystemRate(baseCurrency, targetCurrency, asOf, {
+      maxAgeDays: Number.MAX_SAFE_INTEGER,
+    });
+    return {
+      rate: r.rate,
+      source: (r.source as ExchangeRateSource) ?? "manual",
+      date: new Date(`${r.date}T00:00:00.000Z`),
+    };
+  } catch (err) {
+    if (err instanceof DomainError && ["NO_EXCHANGE_RATE", "INVALID_CURRENCY"].includes(err.code)) {
+      return null;
     }
+    throw err;
   }
-
-  const rows = await db
-    .select()
-    .from(exchangeRates)
-    .where(and(...baseConditions))
-    .orderBy(desc(exchangeRates.date))
-    .limit(1);
-
-  if (rows.length === 0) return null;
-  return {
-    rate: rows[0].rate,
-    source: (rows[0].source as ExchangeRateSource) ?? "manual",
-    date: rows[0].date,
-  };
 }
 
 export async function getLatestRate(
@@ -89,7 +82,6 @@ export async function getLatestRate(
 
 /**
  * Convert a foreign-currency amount to AED using the stored rate.
- * Falls back to 1:1 when no rate is available.
  */
 export function toBaseCurrency(
   foreignAmount: number,
@@ -100,584 +92,448 @@ export function toBaseCurrency(
   return foreignAmount * rateToBase;
 }
 
-function toCompanyRateResponse(row: ExchangeRate, companyId: string) {
+/**
+ * UI shape: the stored row reads "1 fromCurrency = rate toCurrency".
+ * R14-02: fromCurrency is the row's base_currency (no more swapping).
+ */
+function toCompanyRateResponse(row: ExchangeRate) {
   return {
-    ...row,
-    companyId,
-    fromCurrency: row.targetCurrency,
-    toCurrency: row.baseCurrency,
+    id: row.id,
+    companyId: row.companyId,
+    scope: row.companyId ? "company" : "system",
+    fromCurrency: row.baseCurrency,
+    toCurrency: row.targetCurrency,
+    baseCurrency: row.baseCurrency,
+    targetCurrency: row.targetCurrency,
+    rate: row.rate,
+    rateType: row.rateType,
     effectiveDate: row.date,
+    date: row.date,
+    source: row.source,
+    legacyInverted: row.legacyInverted,
+    createdAt: row.createdAt,
   };
 }
 
+const zIso = z.string().trim().toUpperCase().min(3).max(3);
+const zRateValue = z.union([z.number(), z.string().trim().min(1).max(32)]);
+const zRateType = z.enum(EXCHANGE_RATE_TYPES);
+const zDay = z.string().trim().max(32);
+
+const companyRateBody = z.object({
+  fromCurrency: zIso,
+  toCurrency: zIso.optional(),
+  rate: zRateValue,
+  effectiveDate: zDay.optional(),
+  rateType: zRateType.optional(),
+  confirmLargeMove: z.boolean().optional(),
+});
+
+const systemRateBody = z.object({
+  baseCurrency: zIso.optional(),
+  targetCurrency: zIso,
+  rate: zRateValue,
+  date: zDay.optional(),
+  source: z.enum(["manual", "api", "fta"]).optional(),
+  rateType: zRateType.optional(),
+  confirmLargeMove: z.boolean().optional(),
+});
+
+const ftaBulkBody = z.object({
+  baseCurrency: zIso.optional(),
+  rates: z
+    .array(
+      z.object({
+        targetCurrency: zIso,
+        rate: zRateValue,
+        date: zDay,
+        rateType: zRateType.optional(),
+      })
+    )
+    .min(1)
+    .max(500),
+  confirmLargeMove: z.boolean().optional(),
+});
+
+const revalueBody = z.object({
+  asOf: zDay.optional(),
+  acknowledgeStale: z.boolean().optional(),
+});
+
+const userIdOf = (req: Request): string => {
+  const id = req.user?.id;
+  if (!id) throw new DomainError("UNAUTHENTICATED", 401);
+  return id;
+};
+
+/** Viewers can read rates but not change them or post revaluations. */
+async function assertCanWrite(req: Request, companyId: string): Promise<void> {
+  if (req.user?.isAdmin) return;
+  const membership = await storage.getUserRole(companyId, userIdOf(req));
+  if (membership && membership.role === "viewer") {
+    throw new DomainError("FORBIDDEN_ROLE", 403, { role: membership.role });
+  }
+}
+
+const queryString = (v: unknown): string | undefined =>
+  typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+function queryRateType(v: unknown): ExchangeRateType | undefined {
+  const s = queryString(v);
+  if (s === undefined) return undefined;
+  if (!isRateType(s)) throw new DomainError("INVALID_RATE_TYPE", 400, { rateType: s });
+  return s;
+}
+
+function queryMaxAge(v: unknown): number {
+  const s = queryString(v);
+  if (s === undefined) return DEFAULT_MAX_RATE_AGE_DAYS;
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 0 || n > 3650) {
+    throw new DomainError("INVALID_MAX_AGE", 400, { maxAgeDays: s });
+  }
+  return n;
+}
+
 export function registerExchangeRateRoutes(app: Express) {
-  // Compatibility routes for the frontend multi-currency settings page. Rates
-  // are currently global reference data, but company access is still checked so
-  // only authenticated users tied to the company can manage them from the UI.
+  registerFxServices();
+  const companyAccess = requireCompanyAccess("params");
+
+  // ─── Company rates (tenant-scoped, R14-01) ──────────────────────────────
+
   app.get(
     "/api/companies/:companyId/exchange-rates",
     authMiddleware,
+    companyAccess,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const rows = await db.select().from(exchangeRates).orderBy(desc(exchangeRates.date));
-
-      res.json(rows.map((row: ExchangeRate) => toCompanyRateResponse(row, companyId)));
+      const rows = await listRatesForCompany(req.params.companyId);
+      res.json(rows.map(toCompanyRateResponse));
     })
   );
 
   app.post(
     "/api/companies/:companyId/exchange-rates",
     authMiddleware,
+    companyAccess,
+    strictBody(companyRateBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
       const { companyId } = req.params;
-      const { fromCurrency, toCurrency, rate, effectiveDate } = req.body as {
-        fromCurrency?: string;
-        toCurrency?: string;
-        rate?: number;
-        effectiveDate?: string;
-      };
+      await assertCanWrite(req, companyId);
+      const { fromCurrency, toCurrency, rate, effectiveDate, rateType, confirmLargeMove } =
+        req.body as z.output<typeof companyRateBody>;
+      const base = (await storage.getCompany(companyId))?.baseCurrency?.toUpperCase() || "AED";
+      const { row, replaced, changePct } = await saveRate(companyId, userIdOf(req), {
+        fromCurrency,
+        toCurrency: toCurrency ?? base,
+        rate,
+        effectiveDate,
+        rateType,
+        source: "manual",
+        confirmLargeMove,
+      });
+      res.status(replaced ? 200 : 201).json({ ...toCompanyRateResponse(row), replaced, changePct });
+    })
+  );
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      if (!fromCurrency || !toCurrency || rate === undefined || rate === null) {
-        return res.status(400).json({ message: "fromCurrency, toCurrency, and rate are required" });
-      }
-      if (fromCurrency === toCurrency) {
-        return res.status(400).json({ message: "Currencies must be different" });
-      }
-      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
-        return res.status(400).json({ message: "rate must be a positive number" });
-      }
+  app.delete(
+    "/api/companies/:companyId/exchange-rates/:rateId",
+    authMiddleware,
+    companyAccess,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, rateId } = req.params;
+      await assertCanWrite(req, companyId);
+      if (!/^[0-9a-f-]{36}$/i.test(rateId)) throw new DomainError("RATE_NOT_FOUND", 404);
+      const ok = await deleteCompanyRate(companyId, rateId);
+      if (!ok) throw new DomainError("RATE_NOT_FOUND", 404);
+      res.json({ deleted: true });
+    })
+  );
 
-      const [created] = await db
-        .insert(exchangeRates)
-        .values({
-          baseCurrency: toCurrency,
-          targetCurrency: fromCurrency,
-          rate,
-          date: effectiveDate ? new Date(effectiveDate) : new Date(),
-          source: "manual",
-        })
-        .returning();
-
-      res.status(201).json(toCompanyRateResponse(created, companyId));
+  app.get(
+    "/api/companies/:companyId/exchange-rates/lookup",
+    authMiddleware,
+    companyAccess,
+    asyncHandler(async (req: Request, res: Response) => {
+      const from = queryString(req.query.from ?? req.query.base);
+      const to = queryString(req.query.to ?? req.query.target);
+      if (!from || !to) throw new DomainError("CURRENCY_REQUIRED", 400);
+      const r = await getRate(req.params.companyId, from, to, queryString(req.query.date), {
+        rateType: queryRateType(req.query.rateType),
+        maxAgeDays: queryMaxAge(req.query.maxAgeDays),
+      });
+      res.json({ from: from.toUpperCase(), to: to.toUpperCase(), ...r });
     })
   );
 
   app.get(
     "/api/companies/:companyId/exchange-rates/convert",
     authMiddleware,
+    companyAccess,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.params;
-      const { from, to, amount } = req.query as {
-        from?: string;
-        to?: string;
-        amount?: string;
-      };
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+      const from = queryString(req.query.from);
+      const to = queryString(req.query.to);
+      const amount = queryString(req.query.amount);
       if (!from || !to || !amount) {
-        return res.status(400).json({ message: "from, to, and amount are required" });
+        throw new DomainError(
+          "CONVERT_PARAMS_REQUIRED",
+          400,
+          undefined,
+          "from, to, and amount are required"
+        );
       }
-
-      const numericAmount = Number(amount);
-      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-        return res.status(400).json({ message: "amount must be a positive number" });
-      }
-
-      if (from === to) {
-        return res.json({
-          from,
-          to,
-          amount: numericAmount,
-          convertedAmount: numericAmount,
-          rate: 1,
-          effectiveDate: new Date().toISOString(),
-        });
-      }
-
-      const direct = await getLatestRateDetailed(from, to, undefined, { preferFta: false });
-      if (direct) {
-        return res.json({
-          from,
-          to,
-          amount: numericAmount,
-          convertedAmount: numericAmount * direct.rate,
-          rate: direct.rate,
-          effectiveDate: direct.date,
-        });
-      }
-
-      const reverse = await getLatestRateDetailed(to, from, undefined, { preferFta: false });
-      if (reverse) {
-        return res.json({
-          from,
-          to,
-          amount: numericAmount,
-          convertedAmount: numericAmount / reverse.rate,
-          rate: 1 / reverse.rate,
-          effectiveDate: reverse.date,
-        });
-      }
-
-      return res.status(404).json({ message: `No exchange rate found for ${from}/${to}` });
+      const amountFils = toFils(amount, { rounding: "halfUp" });
+      if (amountFils <= 0) throw new DomainError("INVALID_AMOUNT", 400, { amount });
+      const r = await convert(
+        req.params.companyId,
+        amountFils,
+        from,
+        to,
+        queryString(req.query.date),
+        {
+          rateType: queryRateType(req.query.rateType),
+          maxAgeDays: queryMaxAge(req.query.maxAgeDays),
+        }
+      );
+      res.json({
+        from: from.toUpperCase(),
+        to: to.toUpperCase(),
+        amount: Number(fromFils(r.amountFils)),
+        convertedAmount: Number(fromFils(r.convertedFils)),
+        convertedAmountText: fromFils(r.convertedFils),
+        rate: r.rate,
+        rateText: r.rateText,
+        effectiveDate: r.date,
+        source: r.source,
+        scope: r.scope,
+        stale: r.stale,
+        warning: r.warning,
+      });
     })
   );
 
-  // ─────────────────────────────────────────────
-  // GET /api/exchange-rates
-  // Query: ?base=AED&target=USD&asOf=2025-01-01
-  // Returns the latest rate for the currency pair.
-  // ─────────────────────────────────────────────
+  // ─── System rates (platform admins only, R14-01) ────────────────────────
+
+  // GET /api/exchange-rates?base=USD&target=AED&asOf=2026-01-01 — system rows only.
   app.get(
     "/api/exchange-rates",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const {
-        base = "AED",
-        target,
-        asOf,
-      } = req.query as {
-        base?: string;
-        target?: string;
-        asOf?: string;
-      };
-
+      const base = (queryString(req.query.base) ?? "AED").toUpperCase();
+      const target = queryString(req.query.target);
       if (target) {
-        // Return a single rate for the pair
-        const asOfDate = asOf ? new Date(asOf) : undefined;
-        const rate = await getLatestRate(base, target, asOfDate);
+        const rate = await getLatestRate(
+          base,
+          target.toUpperCase(),
+          queryString(req.query.asOf) ? new Date(String(req.query.asOf)) : undefined
+        );
         if (rate === null) {
           return res.status(404).json({
+            code: "NO_EXCHANGE_RATE",
             message: `No exchange rate found for ${base}/${target}`,
           });
         }
-        return res.json({ baseCurrency: base, targetCurrency: target, rate });
+        return res.json({ baseCurrency: base, targetCurrency: target.toUpperCase(), rate });
       }
-
-      // Return all latest rates where base = AED (one per target currency)
-      const allRates = await db
+      const all = await db
         .select()
         .from(exchangeRates)
-        .where(eq(exchangeRates.baseCurrency, base))
-        .orderBy(desc(exchangeRates.date));
-
-      // Deduplicate: keep the latest rate per target currency
+        .where(
+          and(
+            isNull(exchangeRates.companyId),
+            eq(exchangeRates.legacyUnscoped, false),
+            eq(exchangeRates.baseCurrency, base)
+          )
+        )
+        .orderBy(desc(exchangeRates.date))
+        .limit(1000);
       const seen = new Set<string>();
-      const latest = allRates.filter((r: ExchangeRate) => {
-        if (seen.has(r.targetCurrency)) return false;
-        seen.add(r.targetCurrency);
-        return true;
-      });
-
-      res.json(latest);
+      res.json(
+        all.filter((r: ExchangeRate) => {
+          if (seen.has(r.targetCurrency)) return false;
+          seen.add(r.targetCurrency);
+          return true;
+        })
+      );
     })
   );
 
-  // ─────────────────────────────────────────────
-  // POST /api/exchange-rates
-  // Body: { baseCurrency, targetCurrency, rate, date?, source? }
-  // Manually record an exchange rate.
-  // ─────────────────────────────────────────────
+  // POST /api/exchange-rates — record a SYSTEM rate (admin only). "1 base = rate target".
   app.post(
     "/api/exchange-rates",
     authMiddleware,
+    adminMiddleware,
+    strictBody(systemRateBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { baseCurrency = "AED", targetCurrency, rate, date, source = "manual" } = req.body;
-
-      if (!targetCurrency || rate === undefined || rate === null) {
-        return res.status(400).json({
-          message: "targetCurrency and rate are required",
-        });
-      }
-      if (typeof rate !== "number" || rate <= 0) {
-        return res.status(400).json({ message: "rate must be a positive number" });
-      }
-      if (!["manual", "api", "fta"].includes(source)) {
-        return res.status(400).json({ message: "source must be 'manual', 'api', or 'fta'" });
-      }
-
-      const [created] = await db
-        .insert(exchangeRates)
-        .values({
-          baseCurrency,
-          targetCurrency,
-          rate,
-          date: date ? new Date(date) : new Date(),
-          source,
-        })
-        .returning();
-
-      res.status(201).json(created);
+      const { baseCurrency, targetCurrency, rate, date, source, rateType, confirmLargeMove } =
+        req.body as z.output<typeof systemRateBody>;
+      const { row } = await saveRate(null, userIdOf(req), {
+        fromCurrency: baseCurrency ?? "AED",
+        toCurrency: targetCurrency,
+        rate,
+        effectiveDate: date,
+        rateType,
+        source: source ?? "manual",
+        confirmLargeMove,
+      });
+      res.status(201).json(row);
     })
   );
 
-  // ─────────────────────────────────────────────
-  // POST /api/exchange-rates/fta/bulk
-  // Body: { baseCurrency?, rates: [{ targetCurrency, rate, date }] }
-  // Bulk-load FTA-published rates. The (base, target, date::date, source)
-  // unique index prevents duplicate entries on re-import.
-  // ─────────────────────────────────────────────
+  // POST /api/exchange-rates/fta/bulk — bulk-load FTA-published SYSTEM rates (admin only).
   app.post(
     "/api/exchange-rates/fta/bulk",
     authMiddleware,
+    adminMiddleware,
+    strictBody(ftaBulkBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { baseCurrency = "AED", rates } = req.body as {
-        baseCurrency?: string;
-        rates: Array<{ targetCurrency: string; rate: number; date: string }>;
-      };
-
-      if (!Array.isArray(rates) || rates.length === 0) {
-        return res.status(400).json({ message: "rates array is required" });
-      }
-
-      const inserted: (typeof exchangeRates.$inferSelect)[] = [];
+      const { baseCurrency, rates, confirmLargeMove } = req.body as z.output<typeof ftaBulkBody>;
+      const userId = userIdOf(req);
+      let inserted = 0;
       const skipped: Array<{ targetCurrency: string; date: string; reason: string }> = [];
-
       for (const r of rates) {
-        if (!r.targetCurrency || typeof r.rate !== "number" || r.rate <= 0 || !r.date) {
-          skipped.push({
-            targetCurrency: r.targetCurrency ?? "?",
-            date: r.date ?? "?",
-            reason: "invalid payload",
-          });
-          continue;
-        }
         try {
-          const [row] = await db
-            .insert(exchangeRates)
-            .values({
-              baseCurrency,
-              targetCurrency: r.targetCurrency,
-              rate: r.rate,
-              date: new Date(r.date),
-              source: "fta",
-            })
-            .returning();
-          if (row) inserted.push(row);
-        } catch (err: unknown) {
-          // Unique-index collision — already imported. Skip cleanly.
-          skipped.push({
-            targetCurrency: r.targetCurrency,
-            date: r.date,
-            reason: err instanceof Error ? err.message : "duplicate",
+          await saveRate(null, userId, {
+            fromCurrency: baseCurrency ?? "AED",
+            toCurrency: r.targetCurrency,
+            rate: r.rate,
+            effectiveDate: r.date,
+            rateType: r.rateType,
+            source: "fta",
+            confirmLargeMove,
           });
+          inserted++;
+        } catch (err) {
+          if (!(err instanceof DomainError)) throw err;
+          skipped.push({ targetCurrency: r.targetCurrency, date: r.date, reason: err.code });
         }
       }
-
-      res.status(201).json({
-        inserted: inserted.length,
-        skipped: skipped.length,
-        skippedDetails: skipped,
-      });
+      res.status(201).json({ inserted, skipped: skipped.length, skippedDetails: skipped });
     })
   );
 
-  // ─────────────────────────────────────────────
-  // GET /api/exchange-rates/lookup
-  // Query: ?base=AED&target=USD&asOf=2026-04-01
-  // Returns the rate including its source — required for FTA audit trail.
-  // ─────────────────────────────────────────────
+  // GET /api/exchange-rates/lookup?base=USD&target=AED&asOf=... — system rows only.
   app.get(
     "/api/exchange-rates/lookup",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const {
-        base = "AED",
-        target,
-        asOf,
-      } = req.query as {
-        base?: string;
-        target?: string;
-        asOf?: string;
-      };
-      if (!target) {
-        return res.status(400).json({ message: "target is required" });
-      }
-      const result = await getLatestRateDetailed(base, target, asOf ? new Date(asOf) : undefined);
+      const base = (queryString(req.query.base) ?? "AED").toUpperCase();
+      const target = queryString(req.query.target);
+      if (!target) throw new DomainError("TARGET_REQUIRED", 400, undefined, "target is required");
+      const asOf = queryString(req.query.asOf);
+      const result = await getLatestRateDetailed(
+        base,
+        target.toUpperCase(),
+        asOf ? new Date(toIsoDate(asOf, "asOf")) : undefined
+      );
       if (result === null) {
-        return res.status(404).json({ message: `No exchange rate found for ${base}/${target}` });
+        return res.status(404).json({
+          code: "NO_EXCHANGE_RATE",
+          message: `No exchange rate found for ${base}/${target}`,
+        });
       }
       res.json({
         baseCurrency: base,
-        targetCurrency: target,
+        targetCurrency: target.toUpperCase(),
         rate: result.rate,
         source: result.source,
         date: result.date,
+        scope: "system",
       });
     })
   );
 
-  // ─────────────────────────────────────────────
-  // GET /api/companies/:companyId/reports/fx-gains-losses
-  // Returns unrealized FX gains/losses on open
-  // receivables (unpaid invoices in foreign currency)
-  // and open payables (unposted receipts in foreign currency).
-  // ─────────────────────────────────────────────
+  // ─── Unrealised FX (R14-03, R14-04, R14-17, R11-18) ─────────────────────
+
+  // Same exposure function as the revaluation run: posted documents, outstanding balances.
   app.get(
     "/api/companies/:companyId/reports/fx-gains-losses",
     authMiddleware,
+    companyAccess,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const asOf = new Date();
-
-      // ── Open foreign-currency receivables (invoices) ──
-      const openInvoices = await db
-        .select()
-        .from(invoices)
-        .where(and(eq(invoices.companyId, companyId)));
-
-      const foreignInvoices = openInvoices.filter(
-        (inv: Invoice) => inv.currency !== "AED" && inv.status !== "paid" && inv.status !== "void"
-      );
-
-      const receivables: UnrealizedFxGainLoss[] = [];
-      for (const inv of foreignInvoices) {
-        // A-B4: canonical convention is AED per 1 unit of foreign currency, so
-        // request foreign->AED (NOT AED->foreign) and MULTIPLY, matching the
-        // invoice booking path (baseCurrencyAmount = total * exchangeRate).
-        const currentRate = await getLatestRate(inv.currency, "AED", asOf);
-        if (currentRate === null) continue;
-
-        const txRate = inv.exchangeRate > 0 ? inv.exchangeRate : 1;
-        const foreignTotal = inv.total;
-
-        const { bookValueAed, currentValueAed, unrealizedGainLoss } = revalueForeignBalance({
-          foreignAmount: foreignTotal,
-          bookRateAedPerUnit: txRate,
-          currentRateAedPerUnit: currentRate,
-          kind: "receivable",
-        });
-
-        receivables.push({
-          entityType: "invoice",
-          entityId: inv.id,
-          entityNumber: inv.number,
-          counterparty: inv.customerName,
-          currency: inv.currency,
-          foreignAmount: foreignTotal,
-          transactionRate: txRate,
-          currentRate,
-          bookValueAed,
-          currentValueAed,
-          unrealizedGainLoss,
-        });
-      }
-
-      // ── Open foreign-currency payables (unposted receipts) ──
-      const allReceipts = await db.select().from(receipts).where(eq(receipts.companyId, companyId));
-
-      const foreignReceipts = allReceipts.filter(
-        (r: Receipt) => r.currency && r.currency !== "AED" && !r.posted
-      );
-
-      const payables: UnrealizedFxGainLoss[] = [];
-      for (const rec of foreignReceipts) {
-        const currency = rec.currency!;
-        // A-B4: foreign->AED, MULTIPLY (AED per unit of foreign currency).
-        const currentRate = await getLatestRate(currency, "AED", asOf);
-        if (currentRate === null) continue;
-
-        const txRate = rec.exchangeRate > 0 ? rec.exchangeRate : 1;
-        const foreignAmount = rec.amount ?? 0;
-
-        const { bookValueAed, currentValueAed, unrealizedGainLoss } = revalueForeignBalance({
-          foreignAmount,
-          bookRateAedPerUnit: txRate,
-          currentRateAedPerUnit: currentRate,
-          kind: "payable",
-        });
-
-        payables.push({
-          entityType: "payable",
-          entityId: rec.id,
-          entityNumber: `RCP-${rec.id.slice(0, 8)}`,
-          counterparty: rec.merchant ?? "Unknown",
-          currency,
-          foreignAmount,
-          transactionRate: txRate,
-          currentRate,
-          bookValueAed,
-          currentValueAed,
-          unrealizedGainLoss,
-        });
-      }
-
-      const allItems = [...receivables, ...payables];
-      const totalUnrealizedGain = allItems
-        .filter((i) => i.unrealizedGainLoss > 0)
-        .reduce((s, i) => s + i.unrealizedGainLoss, 0);
-      const totalUnrealizedLoss = allItems
-        .filter((i) => i.unrealizedGainLoss < 0)
-        .reduce((s, i) => s + i.unrealizedGainLoss, 0);
-
-      const report: FxGainsLossesReport = {
-        asOf: asOf.toISOString(),
-        baseCurrency: "AED",
-        receivables,
-        payables,
-        totalUnrealizedGain,
-        totalUnrealizedLoss,
-        netUnrealizedGainLoss: totalUnrealizedGain + totalUnrealizedLoss,
-      };
-
-      res.json(report);
+      const asOf = toIsoDate(queryString(req.query.asOf), "asOf");
+      const exposure = await computeFxExposure(req.params.companyId, asOf, {
+        rateType: queryRateType(req.query.rateType),
+      });
+      res.json(toGainsLossesReport(exposure));
     })
   );
 
-  // A-B8: post an unrealised FX revaluation of open foreign A/R and A/P as of a
-  // date, with an automatic reversing entry the next day (standard period-end
-  // practice — the realised result is recognised on settlement instead).
+  app.get(
+    "/api/companies/:companyId/exchange-rates/revalue/preview",
+    authMiddleware,
+    companyAccess,
+    asyncHandler(async (req: Request, res: Response) => {
+      res.json(await previewRevaluation(req.params.companyId, queryString(req.query.asOf)));
+    })
+  );
+
   app.post(
     "/api/companies/:companyId/exchange-rates/revalue",
     authMiddleware,
-    requireCustomer,
+    companyAccess,
+    strictBody(revalueBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const asOf = req.body?.asOf ? new Date(req.body.asOf) : new Date();
-      if (Number.isNaN(asOf.getTime())) {
-        return res.status(400).json({ message: "Invalid asOf date" });
-      }
-
-      // Net AED revaluation across open foreign receivables (unpaid invoices)…
-      let receivableRevalAed = 0;
-      const openInvoices = await db.select().from(invoices).where(eq(invoices.companyId, companyId));
-      for (const inv of openInvoices) {
-        if (inv.currency === "AED" || inv.status === "paid" || inv.status === "void") continue;
-        const currentRate = await getLatestRate(inv.currency, "AED", asOf);
-        if (currentRate === null) continue;
-        receivableRevalAed += revalueForeignBalance({
-          foreignAmount: inv.total,
-          bookRateAedPerUnit: inv.exchangeRate > 0 ? inv.exchangeRate : 1,
-          currentRateAedPerUnit: currentRate,
-          kind: "receivable",
-        }).unrealizedGainLoss;
-      }
-      // …and open foreign payables (unposted receipts).
-      let payableRevalAed = 0;
-      const openReceipts = await db.select().from(receipts).where(eq(receipts.companyId, companyId));
-      for (const rec of openReceipts) {
-        if (!rec.currency || rec.currency === "AED" || rec.posted) continue;
-        const currentRate = await getLatestRate(rec.currency, "AED", asOf);
-        if (currentRate === null) continue;
-        payableRevalAed += revalueForeignBalance({
-          foreignAmount: rec.amount ?? 0,
-          bookRateAedPerUnit: rec.exchangeRate > 0 ? rec.exchangeRate : 1,
-          currentRateAedPerUnit: currentRate,
-          kind: "payable",
-        }).unrealizedGainLoss;
-      }
-
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      const byCode = (code: string) => accounts.find((a) => a.code === code)?.id ?? null;
-      const built = buildFxRevaluationLines({
-        receivableRevalAed,
-        payableRevalAed,
-        accounts: {
-          arId: byCode(ACCOUNT_CODES.AR),
-          apId: byCode(ACCOUNT_CODES.AP),
-          fxGainId: byCode(ACCOUNT_CODES.FX_GAIN),
-          fxLossId: byCode(ACCOUNT_CODES.FX_LOSS),
-        },
+      await assertCanWrite(req, companyId);
+      const { asOf, acknowledgeStale } = req.body as z.output<typeof revalueBody>;
+      const userId = userIdOf(req);
+      const result = await runRevaluation(companyId, asOf, userId, {
+        acknowledgeStale,
       });
-      if (!built.ok) {
-        if (built.code === "NO_REVALUATION") {
-          return res.json({ posted: false, message: "No open foreign-currency balances to revalue." });
-        }
-        return res.status(422).json({ message: built.message, code: built.code });
-      }
-
-      await assertPeriodNotLocked(companyId, asOf);
-      const sourceId = asOf.toISOString().slice(0, 10); // one revaluation per as-of date
-      const existing = await storage.getJournalEntriesBySource(companyId, "fx_revaluation", sourceId);
-      if (existing.some((e) => e.status === "posted")) {
-        return res.json({ posted: false, message: `Revaluation already posted for ${sourceId}.` });
-      }
-
-      const revNumber = await storage.generateEntryNumber(companyId, asOf);
-      await storage.createJournalEntry(
-        {
+      if (result.posted) {
+        const { recordAudit } = await import("../services/audit.service");
+        await recordAudit({
+          userId,
           companyId,
-          date: asOf,
-          memo: `Unrealised FX revaluation ${sourceId}`,
-          entryNumber: revNumber,
-          status: "posted",
-          source: "fx_revaluation",
-          sourceId,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: asOf,
-        } as any,
-        built.lines
-      );
+          action: "fx.revaluation",
+          entityType: "fx_revaluation",
+          entityId: result.revaluation.id,
+          after: {
+            asOf: result.revaluation.asOf,
+            netGainLoss: result.netGainLoss,
+            journalEntryId: result.journalEntryId,
+            reversalEntryId: result.reversalEntryId,
+          },
+          req,
+        });
+      }
+      res.status(result.posted ? 201 : 200).json(result);
+    })
+  );
 
-      const reversalDate = new Date(asOf.getTime() + 24 * 60 * 60 * 1000);
-      await assertPeriodNotLocked(companyId, reversalDate);
-      const reversalNumber = await storage.generateEntryNumber(companyId, reversalDate);
-      await storage.createJournalEntry(
-        {
-          companyId,
-          date: reversalDate,
-          memo: `Reversal of unrealised FX revaluation ${sourceId}`,
-          entryNumber: reversalNumber,
-          status: "posted",
-          source: "fx_revaluation_reversal",
-          sourceId,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: reversalDate,
-        } as any,
-        built.lines.map((l) => ({
-          accountId: l.accountId,
-          debit: l.credit,
-          credit: l.debit,
-          description: `Reversal — ${l.description}`,
-        }))
-      );
+  app.get(
+    "/api/companies/:companyId/fx-revaluations",
+    authMiddleware,
+    companyAccess,
+    asyncHandler(async (req: Request, res: Response) => {
+      res.json(await listRevaluations(req.params.companyId));
+    })
+  );
 
+  app.post(
+    "/api/companies/:companyId/fx-revaluations/:revaluationId/undo",
+    authMiddleware,
+    companyAccess,
+    strictBody(z.object({})),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, revaluationId } = req.params;
+      await assertCanWrite(req, companyId);
+      if (!/^[0-9a-f-]{36}$/i.test(revaluationId)) {
+        throw new DomainError("REVALUATION_NOT_FOUND", 404);
+      }
+      const userId = userIdOf(req);
+      const result = await undoRevaluation(companyId, revaluationId, userId);
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
         userId,
         companyId,
-        action: "fx.revaluation",
-        entityType: "journal_entry",
-        entityId: sourceId,
-        after: { receivableRevalAed, payableRevalAed },
+        action: "fx.revaluation.undo",
+        entityType: "fx_revaluation",
+        entityId: revaluationId,
+        after: { undoEntryIds: result.undoEntryIds },
         req,
       });
-
-      res.json({
-        posted: true,
-        asOf: sourceId,
-        receivableRevalAed: Math.round(receivableRevalAed * 100) / 100,
-        payableRevalAed: Math.round(payableRevalAed * 100) / 100,
-        netGainLoss: Math.round((receivableRevalAed + payableRevalAed) * 100) / 100,
-      });
+      res.json(result);
     })
   );
 }
