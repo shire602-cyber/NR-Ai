@@ -1,7 +1,7 @@
 /**
  * R07-04 / R07-05: generated PINT AE XML for the fixture documents passes the
  * UBL 2.1 XSD, the official OpenPeppol PINT AE schematron (2026.5, vendored
- * under tests/fixtures/pint-ae/) and the TypeScript rule list, with the right
+ * under server/assets/einvoice/) and the TypeScript rule list, with the right
  * tax categories and exemption reasons per line.
  */
 import { describe, expect, it } from "vitest";

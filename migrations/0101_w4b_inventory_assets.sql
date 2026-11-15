@@ -165,6 +165,8 @@ ALTER TABLE "fixed_assets" ADD COLUMN IF NOT EXISTS "capitalization_entry_id" uu
 ALTER TABLE "fixed_assets" ADD COLUMN IF NOT EXISTS "disposal_entry_id" uuid;
 ALTER TABLE "fixed_assets" ADD COLUMN IF NOT EXISTS "buyer_name" text;
 ALTER TABLE "fixed_assets" ADD COLUMN IF NOT EXISTS "disposal_vat" numeric(15,2);
+-- Integration W4: the VAT engine (computeVat201) reports disposals by this treatment.
+ALTER TABLE "fixed_assets" ADD COLUMN IF NOT EXISTS "disposal_vat_treatment" text;
 UPDATE "fixed_assets" SET "is_depreciable" = false
   WHERE lower(trim("category")) = 'land' AND "is_depreciable";
 UPDATE "fixed_assets" SET "depreciation_method" = 'straight_line'

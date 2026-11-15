@@ -25,6 +25,8 @@ export function categoryForSource(source: string | null | undefined): ReconCateg
       return "receipts";
     case "vat_bad_debt_relief":
       return "bad_debt_relief";
+    case "fixed_asset":
+      return "fixed_asset_disposals";
     default:
       return `journal:${source || "manual"}`;
   }
@@ -67,6 +69,7 @@ const LABELS: Record<string, string> = {
   purchases: "Vendor bills and debit notes",
   receipts: "Posted receipts",
   bad_debt_relief: "Bad-debt relief claims",
+  fixed_asset_disposals: "Fixed-asset disposals",
   partial_exemption: "Partial-exemption apportionment (not posted)",
   return_adjustments: "Return adjustments: tourist refunds, imports, corrections (not posted)",
 };

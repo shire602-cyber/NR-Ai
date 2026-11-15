@@ -6,7 +6,7 @@
  *                            2026.5 rules (pre-compiled SEF)
  *   3. PINT AE rule list     server/services/einvoice/pint-ae-rules.ts
  *
- * Layers 1-2 need the vendored artefacts (tests/fixtures/pint-ae/ or
+ * Layers 1-2 need the vendored artefacts (server/assets/einvoice/ or
  * EINVOICE_ARTEFACTS_DIR). When they are missing the result says so —
  * `available: false` — instead of pretending the document passed.
  */
@@ -37,7 +37,7 @@ const SCHEMATRON_FILES = [
 ];
 
 export function artefactsDir(env: NodeJS.ProcessEnv = process.env): string {
-  return env.EINVOICE_ARTEFACTS_DIR || path.resolve(process.cwd(), "tests", "fixtures", "pint-ae");
+  return env.EINVOICE_ARTEFACTS_DIR || path.resolve(process.cwd(), "server", "assets", "einvoice");
 }
 
 function rootName(xml: string): "Invoice" | "CreditNote" | "unknown" {
@@ -188,6 +188,27 @@ export async function runPintAeSchematron(
 }
 
 /** Which official artefacts are present in this deployment. */
+/**
+ * Cheap existence check used at startup: confirms the vendored XSD and
+ * schematron files are on disk (without parsing them) so a production image
+ * that forgot to ship server/assets/einvoice is logged loudly.
+ */
+export function artefactFilesPresent(dir: string = artefactsDir()): {
+  dir: string;
+  xsd: boolean;
+  schematron: boolean;
+} {
+  const base = path.join(dir, "xsd", "ubl-2.1");
+  const xsd =
+    fs.existsSync(path.join(base, "maindoc", "UBL-Invoice-2.1.xsd")) &&
+    fs.existsSync(path.join(base, "maindoc", "UBL-CreditNote-2.1.xsd")) &&
+    fs.existsSync(path.join(base, "common"));
+  const schematron = SCHEMATRON_FILES.every((f) =>
+    fs.existsSync(path.join(dir, "schematron", PINT_AE_SCHEMATRON_VERSION, f))
+  );
+  return { dir, xsd, schematron };
+}
+
 export function artefactStatus(dir: string = artefactsDir()) {
   return {
     xsd: loadXsd(dir) !== null,

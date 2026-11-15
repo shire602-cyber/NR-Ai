@@ -263,6 +263,87 @@ describe("W4-E VAT engine: report 07 scenario", () => {
     expect(recon.body.ledgerOutputVatFils).toBe(5_000);
   });
 
+  it("[R10-08][R07-03] a fixed-asset disposal's output VAT reaches Box 1 of the company emirate and reconciles to 2020", async () => {
+    const t = await vatTenant();
+    const bank = await accountByCode(t, "1020");
+    const asset = async (name: string) => {
+      const r = await t.as.post(`/api/companies/${t.company.id}/fixed-assets`, {
+        assetName: name,
+        category: "Computer Equipment",
+        purchaseDate: "2026-01-15",
+        purchaseCost: 12000,
+        usefulLifeYears: 5,
+        paymentAccountId: bank.id,
+      });
+      expect(r.status, r.text).toBe(201);
+      return r.body.id as string;
+    };
+    const standard = await asset("Laptop");
+    const d = await t.as.post(`/api/fixed-assets/${standard}/dispose`, {
+      disposalDate: "2026-08-10",
+      disposalAmount: 9000,
+      proceedsAccountId: bank.id,
+      buyerName: "Second Hand LLC",
+    });
+    expect(d.status, d.text).toBe(200);
+    expect(d.body.vatAmount).toBe(450);
+    // Zero-rated (export) disposal → Box 4; out-of-scope → no box.
+    const exported = await asset("Server");
+    const z = await t.as.post(`/api/fixed-assets/${exported}/dispose`, {
+      disposalDate: "2026-08-20",
+      disposalAmount: 2000,
+      proceedsAccountId: bank.id,
+      vatTreatment: "zero_rated",
+    });
+    expect(z.status, z.text).toBe(200);
+    const abroad = await asset("Drone");
+    const o = await t.as.post(`/api/fixed-assets/${abroad}/dispose`, {
+      disposalDate: "2026-08-25",
+      disposalAmount: 700,
+      proceedsAccountId: bank.id,
+      vatTreatment: "out_of_scope",
+    });
+    expect(o.status, o.text).toBe(200);
+    // Disposals outside the period are not reported.
+    const later = await asset("Phone");
+    const l = await t.as.post(`/api/fixed-assets/${later}/dispose`, {
+      disposalDate: "2026-10-05",
+      disposalAmount: 300,
+      proceedsAccountId: bank.id,
+    });
+    expect(l.status, l.text).toBe(200);
+
+    const rep = await t.as.get(
+      `/api/companies/${t.company.id}/reports/vat-return?from=2026-07-01&to=2026-09-30`
+    );
+    expect(rep.status, rep.text).toBe(200);
+    expect(rep.body.boxes.box1cSharjahAmount).toBe(9000);
+    expect(rep.body.boxes.box1cSharjahVat).toBe(450);
+    expect(rep.body.boxes.box1cSharjahAdj).toBe(0);
+    expect(rep.body.boxes.box4ZeroRatedAmount).toBe(2000);
+    expect(rep.body.box5_outputVat).toBe(450);
+    expect(rep.body.reconciliation.hasUnexplainedDifference).toBe(false);
+    const row = rep.body.reconciliation.byCategory.find(
+      (r: { category: string }) => r.category === "fixed_asset_disposals"
+    );
+    expect(row).toMatchObject({
+      engineOutputFils: 45_000,
+      ledgerOutputFils: 45_000,
+      outputDifferenceFils: 0,
+    });
+    // Not double counted as a manual journal adjustment.
+    expect(
+      rep.body.reconciliation.byCategory.some(
+        (r: { category: string }) => r.category === "journal:fixed_asset"
+      )
+    ).toBe(false);
+
+    // generate uses the same engine.
+    const gen = await t.as.post(`/api/companies/${t.company.id}/vat-returns/generate`, Q3);
+    expect(gen.status, gen.text).toBe(201);
+    expect(gen.body._metadata.reconciliation.hasUnexplainedDifference).toBe(false);
+  });
+
   it("[R12-03] an unexplained VAT-to-GL difference blocks ready/submit unless overridden with an audited reason", async () => {
     const t = await vatTenant();
     const inv = await issuedInvoice(t, [

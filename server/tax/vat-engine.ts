@@ -63,6 +63,7 @@ export type VatSourceType =
   | "bill"
   | "vendor_debit_note"
   | "receipt"
+  | "fixed_asset_disposal"
   | "bad_debt_relief"
   | "bad_debt_relief_reversal"
   | "return_adjustment"
@@ -210,6 +211,7 @@ const DOC_SOURCES = new Set([
   "receipt",
   "vendor_debit_note",
   "vat_bad_debt_relief",
+  "fixed_asset",
 ]);
 
 // ─── main ────────────────────────────────────────────────────────────────
@@ -268,6 +270,7 @@ async function computeSingle(
     bills: 0,
     vendorDebitNotes: 0,
     receipts: 0,
+    fixedAssetDisposals: 0,
     badDebtRelief: 0,
     returnAdjustments: 0,
     journalAdjustments: 0,
@@ -281,6 +284,7 @@ async function computeSingle(
   await collectBills(companyId, from, to, eliminateTrns, push, excluded, counts);
   await collectVendorDebitNotes(companyId, from, to, push, counts);
   await collectReceipts(companyId, from, to, eliminateTrns, push, counts);
+  await collectFixedAssetDisposals(companyId, from, to, company, push, issues, counts);
   await collectBadDebtRelief(companyId, from, to, push, counts);
   await collectReturnAdjustments(companyId, from, to, company, push, issues, counts);
   const vatAccounts = await loadVatAccounts(companyId);
@@ -735,6 +739,79 @@ async function collectReceipts(
       boxes: purchaseDelta(kind, netBase, vatBase, recoverable),
       category: "receipts",
       inLedger: true,
+    });
+  }
+}
+
+// ─── Fixed-asset disposals (W4-B dispose → source 'fixed_asset') ─────────
+
+/**
+ * A disposal for consideration is a supply by the business (W4-B disposeAsset posts Cr 2020
+ * output VAT with journal source 'fixed_asset'). Reported at the disposal's recorded treatment:
+ * standard-rated in the company's own emirate (the asset is supplied from its establishment),
+ * zero-rated in Box 4, exempt in Box 5, out-of-scope nowhere. Disposals whose journal was
+ * reversed are skipped; the GL side of 'fixed_asset' entries is reconciled under
+ * "fixed_asset_disposals" (depreciation/capitalisation lines never touch VAT accounts).
+ */
+async function collectFixedAssetDisposals(
+  companyId: string,
+  from: string,
+  to: string,
+  company: VatCompanyConfig,
+  push: (c: VatContribution) => void,
+  issues: VatIssue[],
+  counts: Record<string, number>
+) {
+  const { rows } = await pool.query(
+    `SELECT fa.id, fa.asset_name, fa.asset_number, fa.buyer_name,
+            to_char(fa.disposal_date, 'YYYY-MM-DD') AS d, fa.disposal_amount, fa.disposal_vat,
+            fa.disposal_vat_treatment, fa.disposal_entry_id
+       FROM fixed_assets fa
+       JOIN journal_entries je ON je.id = fa.disposal_entry_id AND je.company_id = fa.company_id
+      WHERE fa.company_id = $1 AND fa.status = 'disposed'
+        AND fa.disposal_date >= $2::date AND fa.disposal_date <= $3::date
+        AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL`,
+    [companyId, from, to]
+  );
+  for (const r of rows) {
+    const netFils = fils(r.disposal_amount);
+    const vatFils = fils(r.disposal_vat);
+    if (netFils === 0 && vatFils === 0) continue;
+    const treatment: string = r.disposal_vat_treatment ?? (vatFils > 0 ? "standard" : "");
+    const family: Vat201Family | null =
+      treatment === "standard"
+        ? "standard"
+        : treatment === "zero_rated"
+          ? "zero_rated"
+          : treatment === "exempt"
+            ? "exempt"
+            : null;
+    if (!family) continue; // out of scope (or legacy row without a treatment and no VAT)
+    if (familyNeedsEmirate(family) && !company.emirate) {
+      issues.push({
+        code: "COMPANY_EMIRATE_MISSING",
+        message:
+          "Set the company's emirate: fixed-asset disposals are reported in the Box 1 row of the emirate the asset is supplied from.",
+        documentType: "fixed_asset_disposal",
+        documentId: r.id,
+        reference: r.asset_number ?? r.asset_name ?? null,
+      });
+      continue;
+    }
+    counts.fixedAssetDisposals += 1;
+    push({
+      sourceType: "fixed_asset_disposal",
+      sourceId: r.id,
+      reference: r.asset_number ?? r.asset_name ?? null,
+      date: r.d,
+      counterparty: r.buyer_name ?? null,
+      counterpartyTrn: null,
+      emirate: familyNeedsEmirate(family) ? company.emirate : null,
+      family,
+      boxes: salesDelta(family, company.emirate, netFils, family === "standard" ? vatFils : 0),
+      category: "fixed_asset_disposals",
+      inLedger: true,
+      ledgerSource: "fixed_asset",
     });
   }
 }

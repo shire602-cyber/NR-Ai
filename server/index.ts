@@ -35,6 +35,7 @@ import { createHealthHandler } from "./routes/admin-health.routes";
 import { installGracefulShutdown } from "./shutdown";
 import { captureException } from "./services/monitoring";
 import { assessStorageDurability } from "./services/fileStorage";
+import { artefactFilesPresent } from "./services/einvoice/validate";
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -320,6 +321,18 @@ async function bootstrap() {
     log.info(`✓ Database: ${env.DATABASE_URL ? "Connected" : "Not configured"}`);
     log.info(`✓ AI: ${env.OPENAI_API_KEY ? "Configured" : "Not configured"}`);
     logBillingEnforcementStatus();
+    // W4-C: e-invoice XSD + PINT AE schematron ship in server/assets/einvoice
+    // (copied into the image with server/assets). Without them validation
+    // reports `available: false` for those layers, so say so at boot.
+    const einvoiceArtefacts = artefactFilesPresent();
+    if (einvoiceArtefacts.xsd && einvoiceArtefacts.schematron) {
+      log.info(`✓ E-invoice artefacts: XSD + schematron found in ${einvoiceArtefacts.dir}`);
+    } else {
+      log.warn(
+        einvoiceArtefacts,
+        "E-invoice validation artefacts missing: UBL XSD and/or PINT AE schematron layers will report unavailable"
+      );
+    }
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

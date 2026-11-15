@@ -1,7 +1,7 @@
 /**
  * PINT AE code lists and identifiers used by the UBL generator, the rule list
  * and the settings page. Values are taken from the OpenPeppol PINT AE
- * schematron (release 2026.5, vendored under tests/fixtures/pint-ae/) — the
+ * schematron (release 2026.5, vendored under server/assets/einvoice/) — the
  * rule id that checks each list is noted next to it.
  */
 

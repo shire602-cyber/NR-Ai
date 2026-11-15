@@ -6,12 +6,12 @@
 //   node scripts/validate-ubl.mjs --compile           rebuild the schematron SEF from the XSLT
 //
 // Layers (same as server/services/einvoice/validate.ts):
-//   1. UBL 2.1 XSD            xmllint-wasm, tests/fixtures/pint-ae/xsd/ubl-2.1
-//   2. PINT AE schematron     saxon-js, tests/fixtures/pint-ae/schematron/2026.5/*.sef.json
+//   1. UBL 2.1 XSD            xmllint-wasm, server/assets/einvoice/xsd/ubl-2.1
+//   2. PINT AE schematron     saxon-js, server/assets/einvoice/schematron/2026.5/*.sef.json
 //                             (skipped with a notice when the files are absent)
 //   3. PINT AE rule list      server/services/einvoice/pint-ae-rules.ts (via tsx)
 //
-// Artefact provenance (tests/fixtures/pint-ae/README.md): OASIS UBL 2.1 schemas
+// Artefact provenance (server/assets/einvoice/NOTICE): OASIS UBL 2.1 schemas
 // (via phax/ph-ubl, imports restored), OpenPeppol PINT AE 2026.5 schematron
 // (Apache-2.0, via phax/phive-rules), compiled to SEF with Saxonica xslt3.
 // Exit code 1 when any document has an error.
@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const artefacts =
-  process.env.EINVOICE_ARTEFACTS_DIR || path.join(root, "tests", "fixtures", "pint-ae");
+  process.env.EINVOICE_ARTEFACTS_DIR || path.join(root, "server", "assets", "einvoice");
 const xsdDir = path.join(artefacts, "xsd", "ubl-2.1");
 const schDir = path.join(artefacts, "schematron", "2026.5");
 const SCH = ["PINT-UBL-validation-preprocessed", "PINT-jurisdiction-aligned-rules"];

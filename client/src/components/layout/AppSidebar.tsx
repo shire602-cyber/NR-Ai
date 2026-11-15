@@ -162,6 +162,12 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "companyProfile", url: "/company-profile" },
       { titleKey: "teamManagement", url: "/team" },
       { titleKey: "integrations", url: "/integrations-hub" },
+      {
+        titleKey: "einvoicing.navEInvoicing",
+        url: "/settings/einvoicing",
+        testId: "einvoicing-settings",
+      },
+      { titleKey: "einvoicing.navZatca", url: "/settings/zatca", testId: "zatca-settings" },
       { titleKey: "developerSettings", url: "/developer-settings" },
       { titleKey: "notificationPreferences", url: "/notification-preferences" },
       { titleKey: "subscription", url: "/subscription" },

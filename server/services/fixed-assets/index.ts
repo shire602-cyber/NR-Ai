@@ -705,7 +705,9 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
       sql`UPDATE fixed_assets SET status = 'disposed', disposal_date = ${input.disposalDate},
                  disposal_amount = ${fromFils(input.proceedsFils)}, net_book_value = 0,
                  disposal_entry_id = ${entryId}, buyer_name = ${input.buyerName ?? null},
-                 disposal_vat = ${fromFils(split.vatFils)}, notes = COALESCE(${input.notes ?? null}, notes)
+                 disposal_vat = ${fromFils(split.vatFils)},
+                 disposal_vat_treatment = ${input.proceedsFils > 0 ? (input.vatTreatment ?? "standard") : null},
+                 notes = COALESCE(${input.notes ?? null}, notes)
            WHERE id = ${a.id}`
     );
     await recordEvent(tx, a, {
@@ -715,6 +717,7 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
       journalEntryId: entryId,
       details: {
         vat: fromFils(split.vatFils),
+        vatTreatment: input.proceedsFils > 0 ? (input.vatTreatment ?? "standard") : null,
         gainLoss: fromFils(split.gainLossFils),
         buyerName: input.buyerName ?? null,
         onCredit: input.onCredit === true,
