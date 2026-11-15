@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -181,7 +182,7 @@ export default function PublicInvoiceView() {
                 <p className="font-semibold">{formatDate(invoice.date)}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Status</p>
+                <p className="text-sm text-muted-foreground"><T k="pages.status" /></p>
                 <Badge className={getStatusColor(invoice.status)}>
                   {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                 </Badge>
@@ -202,13 +203,13 @@ export default function PublicInvoiceView() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-info hover:bg-info">
-                    <TableHead className="text-white font-semibold">Description</TableHead>
+                    <TableHead className="text-white font-semibold"><T k="pages.description" /></TableHead>
                     <TableHead className="text-white font-semibold text-center">Qty</TableHead>
                     <TableHead className="text-white font-semibold text-center">
-                      Unit Price
+                      <T k="pages.unitPrice" />
                     </TableHead>
                     <TableHead className="text-white font-semibold text-center">VAT</TableHead>
-                    <TableHead className="text-white font-semibold text-right">Amount</TableHead>
+                    <TableHead className="text-white font-semibold text-right"><T k="pages.amount" /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -237,7 +238,7 @@ export default function PublicInvoiceView() {
             <div className="flex justify-end">
               <div className="w-64 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground"><T k="pages.subtotal" /></span>
                   <span>{formatCurrency(invoice.subtotal, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -245,7 +246,7 @@ export default function PublicInvoiceView() {
                   <span>{formatCurrency(invoice.vatAmount, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg pt-2 border-t bg-info text-white -mx-3 px-3 py-2 rounded-lg">
-                  <span>Total</span>
+                  <span><T k="pages.total2" /></span>
                   <span>{formatCurrency(invoice.total, invoice.currency)}</span>
                 </div>
               </div>
@@ -259,7 +260,7 @@ export default function PublicInvoiceView() {
                 size="lg"
               >
                 <Download className="w-5 h-5 mr-2" />
-                Download PDF
+                <T k="pages.downloadPdf" />
               </Button>
             </div>
           </CardContent>

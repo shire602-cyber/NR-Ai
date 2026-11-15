@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
 import { useState, useCallback } from "react";
+import { useTranslation } from "@/lib/i18n";
 import {
   readyReportCatalog,
   reportAutomationTriggerRuleHref,
@@ -30,6 +31,8 @@ import {
 
 interface NavItem {
   label: string;
+  /** i18n key in the shell namespace; `label` is the English fallback */
+  labelKey?: string;
   icon: React.ComponentType<{ className?: string }>;
   href: string;
   /** If true, this item opens the "more" sheet instead of navigating */
@@ -39,16 +42,17 @@ interface NavItem {
 interface MoreLink {
   key?: string;
   label: string;
+  labelKey?: string;
   href: string;
   description?: string;
 }
 
 const navItems: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Invoices", icon: FileText, href: "/invoices" },
-  { label: "Receipts", icon: Camera, href: "/receipts" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
-  { label: "More", icon: MoreHorizontal, href: "#", isMore: true },
+  { label: "Dashboard", labelKey: "shell.navDashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Invoices", labelKey: "shell.navInvoices", icon: FileText, href: "/invoices" },
+  { label: "Receipts", labelKey: "shell.navReceipts", icon: Camera, href: "/receipts" },
+  { label: "Reports", labelKey: "shell.navReports", icon: BarChart3, href: "/reports" },
+  { label: "More", labelKey: "shell.navMore", icon: MoreHorizontal, href: "#", isMore: true },
 ];
 
 const MOBILE_REPORTS_PER_PERSONA = 6;
@@ -200,16 +204,20 @@ const moreLinks: MoreLink[] = [
   ...mobileAutomationStarterLinks,
   ...mobilePackTemplateLinks,
   ...mobileComparisonPresetLinks,
-  { label: "Accounts", href: "/chart-of-accounts" },
-  { label: "Journal", href: "/journal" },
-  { label: "Contacts", href: "/contacts" },
-  { label: "Inventory", href: "/inventory" },
-  { label: "VAT Filing", href: "/vat-filing" },
-  { label: "Corporate Tax", href: "/corporate-tax" },
-  { label: "Bank Reconciliation", href: "/bank-reconciliation" },
-  { label: "AI CFO", href: "/ai-cfo" },
-  { label: "Document Vault", href: "/document-vault" },
-  { label: "Settings", href: "/company-profile" },
+  { label: "Accounts", labelKey: "shell.moreAccounts", href: "/chart-of-accounts" },
+  { label: "Journal", labelKey: "shell.moreJournal", href: "/journal" },
+  { label: "Contacts", labelKey: "shell.moreContacts", href: "/contacts" },
+  { label: "Inventory", labelKey: "shell.moreInventory", href: "/inventory" },
+  { label: "VAT Filing", labelKey: "shell.moreVatFiling", href: "/vat-filing" },
+  { label: "Corporate Tax", labelKey: "shell.moreCorporateTax", href: "/corporate-tax" },
+  {
+    label: "Bank Reconciliation",
+    labelKey: "shell.moreBankReconciliation",
+    href: "/bank-reconciliation",
+  },
+  { label: "AI hub", labelKey: "shell.moreAi", href: "/ai" },
+  { label: "Document Vault", labelKey: "shell.moreDocumentVault", href: "/document-vault" },
+  { label: "Settings", labelKey: "shell.moreSettings", href: "/company-profile" },
 ];
 
 /**
@@ -222,6 +230,9 @@ const moreLinks: MoreLink[] = [
 export function MobileNav() {
   const [location, setLocation] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const { t } = useTranslation();
+  const text = (item: { label: string; labelKey?: string }) =>
+    item.labelKey ? t[item.labelKey] || item.label : item.label;
 
   const handleNavClick = useCallback(
     (item: NavItem) => {
@@ -279,9 +290,9 @@ export function MobileNav() {
                 className={`mobile-nav-more-item ${
                   location === link.href ? "mobile-nav-more-item--active" : ""
                 }`}
-                aria-label={link.description ? `${link.label}: ${link.description}` : link.label}
+                aria-label={link.description ? `${text(link)}: ${link.description}` : text(link)}
               >
-                <span className="mobile-nav-more-label">{link.label}</span>
+                <span className="mobile-nav-more-label">{text(link)}</span>
                 {link.description ? (
                   <span className="mobile-nav-more-description">{link.description}</span>
                 ) : null}
@@ -292,7 +303,7 @@ export function MobileNav() {
       )}
 
       {/* Bottom tab bar */}
-      <nav className="mobile-nav" role="navigation" aria-label="Main navigation">
+      <nav className="mobile-nav" role="navigation" aria-label={t["shell.mainNavigation"]}>
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
@@ -303,7 +314,7 @@ export function MobileNav() {
               onClick={() => handleNavClick(item)}
               className={`mobile-nav-tab ${active ? "mobile-nav-tab--active" : ""}`}
               aria-current={active ? "page" : undefined}
-              aria-label={item.label}
+              aria-label={text(item)}
             >
               <div className="mobile-nav-tab-icon">
                 <Icon className="h-5 w-5" />
@@ -315,7 +326,7 @@ export function MobileNav() {
                   />
                 )}
               </div>
-              <span className="mobile-nav-tab-label">{item.label}</span>
+              <span className="mobile-nav-tab-label">{text(item)}</span>
             </button>
           );
         })}

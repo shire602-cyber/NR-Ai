@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -270,7 +271,7 @@ export default function ClientProfile() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Loading client profile...
+        <T k="pages.loadingClientProfile" />
       </div>
     );
   }
@@ -291,7 +292,7 @@ export default function ClientProfile() {
               : "The link may be outdated, or the client was removed."}
         </p>
         <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
-          Back to portfolio
+          <T k="pages.backToPortfolio" />
         </Button>
       </div>
     );
@@ -334,7 +335,7 @@ export default function ClientProfile() {
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate("/firm/clients")}>
           <ArrowLeft className="w-4 h-4 mr-1" />
-          NRA Client Portfolio
+          <T k="pages.nraClientPortfolio" />
         </Button>
         <span className="text-muted-foreground">/</span>
         <span className="text-sm font-medium">{company.name}</span>
@@ -359,7 +360,7 @@ export default function ClientProfile() {
             <>
               <Button variant="outline" onClick={handleCancel}>
                 <X className="w-4 h-4 mr-1" />
-                Cancel
+                <T k="pages.cancel" />
               </Button>
               <Button onClick={handleSave} disabled={updateMutation.isPending}>
                 <Save className="w-4 h-4 mr-1" />
@@ -390,20 +391,26 @@ export default function ClientProfile() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Outstanding AR</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.outstandingAr" />
+            </p>
             <p className="text-xl font-bold mt-0.5">{formatAed(stats.outstandingAr)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Total Invoices</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.totalInvoices" />
+            </p>
             <p className="text-xl font-bold mt-0.5">{stats.invoiceCount}</p>
             <p className="text-xs text-muted-foreground">{formatAed(stats.invoiceTotal)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Last Receipt</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.lastReceipt2" />
+            </p>
             <p className="text-sm font-semibold mt-0.5">
               {stats.lastReceiptDate
                 ? format(new Date(stats.lastReceiptDate), "MMM d, yyyy")
@@ -413,7 +420,9 @@ export default function ClientProfile() {
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">VAT Status</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.vatStatus" />
+            </p>
             {stats.vatStatus ? (
               <div className="mt-0.5">
                 <Badge
@@ -430,7 +439,9 @@ export default function ClientProfile() {
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground mt-0.5">No returns</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                <T k="pages.noReturns" />
+              </p>
             )}
           </CardContent>
         </Card>
@@ -440,7 +451,7 @@ export default function ClientProfile() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary" />
-            NR Service Scope
+            <T k="pages.nrServiceScope" />
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -490,7 +501,9 @@ export default function ClientProfile() {
         {/* Company Info */}
         <Card className="md:col-span-2">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Company Information</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pages.companyInformation" />
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
             <EditableField label="Company Name" {...field("name")} />
@@ -513,7 +526,9 @@ export default function ClientProfile() {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Contact</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.contact" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <EditableField label="Email" {...field("contactEmail")} type="email" />
@@ -524,11 +539,15 @@ export default function ClientProfile() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Tax & Compliance</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.taxCompliance" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT Filing</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  <T k="pages.vatFiling" />
+                </p>
                 {editing ? (
                   <Select
                     value={current.vatFilingFrequency || "quarterly"}
@@ -538,8 +557,12 @@ export default function ClientProfile() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="monthly">
+                        <T k="pages.monthly" />
+                      </SelectItem>
+                      <SelectItem value="quarterly">
+                        <T k="pages.quarterly" />
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
@@ -550,7 +573,7 @@ export default function ClientProfile() {
               </div>
               <div className="grid gap-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  VAT Close Group
+                  <T k="pages.vatCloseGroup" />
                 </p>
                 {editing ? (
                   <Select
@@ -578,7 +601,7 @@ export default function ClientProfile() {
               </div>
               <div className="grid gap-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Financial Year Start
+                  <T k="pages.financialYearStart" />
                 </p>
                 {editing ? (
                   <Select
@@ -612,17 +635,21 @@ export default function ClientProfile() {
       {/* Assigned Staff */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Assigned NRA Staff</CardTitle>
+          <CardTitle className="text-base">
+            <T k="pages.assignedNraStaff" />
+          </CardTitle>
           <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
             <UserPlus className="w-4 h-4 mr-1.5" />
-            Assign Staff
+            <T k="pages.assignStaff" />
           </Button>
         </CardHeader>
         <CardContent>
           {stats.assignedStaff.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground">
               <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">No staff assigned to this client yet</p>
+              <p className="text-sm">
+                <T k="pages.noStaffAssignedToThisClientYet" />
+              </p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -667,7 +694,9 @@ export default function ClientProfile() {
       {summary.recentInvoices.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Recent Invoices</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pages.recentInvoices" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
@@ -708,11 +737,13 @@ export default function ClientProfile() {
           <div className="py-3 space-y-3">
             {unassignedStaff.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
-                All firm staff are already assigned to this client.
+                <T k="pages.allFirmStaffAreAlreadyAssignedToThisClient" />
               </p>
             ) : (
               <>
-                <Label>Select staff member</Label>
+                <Label>
+                  <T k="pages.selectStaffMember" />
+                </Label>
                 <Select value={selectedStaff} onValueChange={setSelectedStaff}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a staff member..." />
@@ -736,7 +767,7 @@ export default function ClientProfile() {
                 setSelectedStaff("");
               }}
             >
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>

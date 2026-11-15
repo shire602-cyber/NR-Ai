@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -352,7 +353,7 @@ export default function CostCenters() {
               disabled={isLoadingProfitability || !profitabilityReport}
             >
               <Download className="mr-2 h-4 w-4" />
-              Export
+              <T k="pages.export" />
             </Button>
             <Button onClick={handleOpenCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
@@ -394,7 +395,7 @@ export default function CostCenters() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Income
+                    <T k="pages.income" />
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-success">
                     {formatCurrency(profitabilityTotals.totalIncome, "AED", locale)}
@@ -402,7 +403,7 @@ export default function CostCenters() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Expenses
+                    <T k="pages.expenses" />
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-destructive">
                     {formatCurrency(profitabilityTotals.totalExpenses, "AED", locale)}
@@ -428,10 +429,10 @@ export default function CostCenters() {
                     <TableRow>
                       <TableHead>Code</TableHead>
                       <TableHead>Cost Center</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Income</TableHead>
-                      <TableHead className="text-right">Expenses</TableHead>
-                      <TableHead className="text-right">Net Income</TableHead>
+                      <TableHead><T k="pages.status" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.income" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.expenses" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.netIncome" /></TableHead>
                       <TableHead className="text-right">Lines</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -490,7 +491,7 @@ export default function CostCenters() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <CardTitle className="text-sm font-medium"><T k="pages.active" /></CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success">{activeCount}</div>
@@ -498,7 +499,7 @@ export default function CostCenters() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inactive</CardTitle>
+            <CardTitle className="text-sm font-medium"><T k="pages.inactive" /></CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-muted-foreground">{inactiveCount}</div>
@@ -527,10 +528,10 @@ export default function CostCenters() {
               <TableRow>
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead><T k="pages.description" /></TableHead>
                 <TableHead>Parent</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead><T k="pages.status" /></TableHead>
+                <TableHead className="text-right"><T k="pages.actions" /></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -564,11 +565,11 @@ export default function CostCenters() {
                     <TableCell>
                       {cc.isActive ? (
                         <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
-                          Active
+                          <T k="pages.active" />
                         </Badge>
                       ) : (
                         <Badge className="bg-muted text-foreground hover:bg-muted">
-                          Inactive
+                          <T k="pages.inactive" />
                         </Badge>
                       )}
                     </TableCell>
@@ -621,7 +622,7 @@ export default function CostCenters() {
               <div className="grid gap-4 md:grid-cols-3">
                 <Card className="bg-success-subtle border-success/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-success">Income</CardTitle>
+                    <CardTitle className="text-sm font-medium text-success"><T k="pages.income" /></CardTitle>
                     <TrendingUp className="h-4 w-4 text-success" />
                   </CardHeader>
                   <CardContent>
@@ -632,7 +633,7 @@ export default function CostCenters() {
                 </Card>
                 <Card className="bg-danger-subtle border-destructive/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-destructive">Expenses</CardTitle>
+                    <CardTitle className="text-sm font-medium text-destructive"><T k="pages.expenses" /></CardTitle>
                     <TrendingDown className="h-4 w-4 text-destructive" />
                   </CardHeader>
                   <CardContent>
@@ -724,7 +725,7 @@ export default function CostCenters() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel><T k="pages.description" /></FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Optional description for this cost center"
@@ -773,7 +774,7 @@ export default function CostCenters() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <FormLabel>Active</FormLabel>
+                      <FormLabel><T k="pages.active" /></FormLabel>
                       <p className="text-sm text-muted-foreground">
                         Inactive cost centers cannot receive new transactions
                       </p>
@@ -787,7 +788,7 @@ export default function CostCenters() {
 
               <div className="flex justify-end gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button
                   type="submit"

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -190,19 +191,19 @@ function getStatusBadge(status: string) {
     case "pending":
       return (
         <Badge variant="outline" className="bg-muted text-foreground ">
-          Pending
+          <T k="pages.pending" />
         </Badge>
       );
     case "approved":
       return (
         <Badge variant="outline" className="bg-info-subtle text-info ">
-          Approved
+          <T k="pages.approved" />
         </Badge>
       );
     case "partial":
       return (
         <Badge variant="outline" className="bg-warning-subtle text-warning ">
-          Partial
+          <T k="pages.partial" />
         </Badge>
       );
     case "paid":
@@ -214,7 +215,7 @@ function getStatusBadge(status: string) {
     case "overdue":
       return (
         <Badge variant="outline" className="bg-danger-subtle text-destructive ">
-          Overdue
+          <T k="pages.overdue" />
         </Badge>
       );
     default:
@@ -604,10 +605,14 @@ export default function BillPay() {
   if (!companyId) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-semibold">Bill Pay</h1>
+        <h1 className="text-3xl font-semibold">
+          <T k="pages.billPay" />
+        </h1>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Please create a company first to manage bills.</p>
+            <p className="text-muted-foreground">
+              <T k="pages.pleaseCreateACompanyFirstToManageBills" />
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -630,15 +635,15 @@ export default function BillPay() {
         <TabsList>
           <TabsTrigger value="bills">
             <FileText className="w-4 h-4 mr-2" />
-            Bills
+            <T k="pages.bills" />
           </TabsTrigger>
           <TabsTrigger value="payments">
             <CreditCard className="w-4 h-4 mr-2" />
-            Payments
+            <T k="pages.payments" />
           </TabsTrigger>
           <TabsTrigger value="summary">
             <BarChart3 className="w-4 h-4 mr-2" />
-            Summary
+            <T k="pages.summary" />
           </TabsTrigger>
         </TabsList>
 
@@ -662,12 +667,22 @@ export default function BillPay() {
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
+                      <SelectItem value="all">
+                        <T k="pages.allStatuses" />
+                      </SelectItem>
+                      <SelectItem value="pending">
+                        <T k="pages.pending" />
+                      </SelectItem>
+                      <SelectItem value="approved">
+                        <T k="pages.approved" />
+                      </SelectItem>
+                      <SelectItem value="partial">
+                        <T k="pages.partial" />
+                      </SelectItem>
                       <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="overdue">Overdue</SelectItem>
+                      <SelectItem value="overdue">
+                        <T k="pages.overdue" />
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -681,7 +696,7 @@ export default function BillPay() {
                   <DialogTrigger asChild>
                     <Button>
                       <Plus className="w-4 h-4 mr-2" />
-                      New Bill
+                      <T k="pages.newBill" />
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -702,7 +717,9 @@ export default function BillPay() {
                             name="vendor_name"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Vendor Name</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.vendorName" />
+                                </FormLabel>
                                 <FormControl>
                                   <Input {...field} placeholder="Vendor company name" />
                                 </FormControl>
@@ -715,7 +732,9 @@ export default function BillPay() {
                             name="vendor_trn"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Vendor TRN</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.vendorTrn" />
+                                </FormLabel>
                                 <FormControl>
                                   <Input
                                     {...field}
@@ -736,7 +755,9 @@ export default function BillPay() {
                             name="bill_number"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Bill Number</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.billNumber" />
+                                </FormLabel>
                                 <FormControl>
                                   <Input
                                     {...field}
@@ -753,7 +774,9 @@ export default function BillPay() {
                             name="bill_date"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Bill Date</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.billDate" />
+                                </FormLabel>
                                 <Popover>
                                   <PopoverTrigger asChild>
                                     <FormControl>
@@ -787,7 +810,9 @@ export default function BillPay() {
                             name="due_date"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Due Date</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.dueDate" />
+                                </FormLabel>
                                 <Popover>
                                   <PopoverTrigger asChild>
                                     <FormControl>
@@ -825,7 +850,9 @@ export default function BillPay() {
                             name="category"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Category</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.category" />
+                                </FormLabel>
                                 <Select value={field.value || ""} onValueChange={field.onChange}>
                                   <FormControl>
                                     <SelectTrigger>
@@ -833,15 +860,31 @@ export default function BillPay() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="utilities">Utilities</SelectItem>
+                                    <SelectItem value="utilities">
+                                      <T k="pages.utilities" />
+                                    </SelectItem>
                                     <SelectItem value="rent">Rent</SelectItem>
-                                    <SelectItem value="supplies">Supplies</SelectItem>
-                                    <SelectItem value="services">Professional Services</SelectItem>
-                                    <SelectItem value="equipment">Equipment</SelectItem>
-                                    <SelectItem value="travel">Travel</SelectItem>
-                                    <SelectItem value="insurance">Insurance</SelectItem>
-                                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                                    <SelectItem value="other">Other</SelectItem>
+                                    <SelectItem value="supplies">
+                                      <T k="pages.supplies" />
+                                    </SelectItem>
+                                    <SelectItem value="services">
+                                      <T k="pages.professionalServices" />
+                                    </SelectItem>
+                                    <SelectItem value="equipment">
+                                      <T k="pages.equipment" />
+                                    </SelectItem>
+                                    <SelectItem value="travel">
+                                      <T k="pages.travel" />
+                                    </SelectItem>
+                                    <SelectItem value="insurance">
+                                      <T k="pages.insurance" />
+                                    </SelectItem>
+                                    <SelectItem value="maintenance">
+                                      <T k="pages.maintenance" />
+                                    </SelectItem>
+                                    <SelectItem value="other">
+                                      <T k="pages.other" />
+                                    </SelectItem>
                                   </SelectContent>
                                 </Select>
                                 <FormMessage />
@@ -853,7 +896,9 @@ export default function BillPay() {
                             name="currency"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Currency</FormLabel>
+                                <FormLabel>
+                                  <T k="pages.currency" />
+                                </FormLabel>
                                 <Select value={field.value} onValueChange={field.onChange}>
                                   <FormControl>
                                     <SelectTrigger>
@@ -877,7 +922,9 @@ export default function BillPay() {
                         {/* Line Items */}
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
-                            <h3 className="font-medium">Line Items</h3>
+                            <h3 className="font-medium">
+                              <T k="pages.lineItems" />
+                            </h3>
                             <Button
                               type="button"
                               variant="outline"
@@ -893,7 +940,7 @@ export default function BillPay() {
                               }
                             >
                               <Plus className="w-4 h-4 mr-2" />
-                              Add Line
+                              <T k="pages.addLine" />
                             </Button>
                           </div>
 
@@ -1044,7 +1091,9 @@ export default function BillPay() {
                           name="notes"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Notes</FormLabel>
+                              <FormLabel>
+                                <T k="pages.notes" />
+                              </FormLabel>
                               <FormControl>
                                 <Textarea
                                   {...field}
@@ -1066,7 +1115,7 @@ export default function BillPay() {
                               resetBillForm();
                             }}
                           >
-                            Cancel
+                            <T k="pages.cancel" />
                           </Button>
                           <Button
                             type="submit"
@@ -1099,7 +1148,9 @@ export default function BillPay() {
               ) : filteredBills.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-1">No bills found</h3>
+                  <h3 className="text-lg font-medium mb-1">
+                    <T k="pages.noBillsFound" />
+                  </h3>
                   <p className="text-muted-foreground">
                     {bills.length === 0
                       ? "Create your first vendor bill to get started."
@@ -1111,14 +1162,24 @@ export default function BillPay() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Vendor</TableHead>
+                        <TableHead>
+                          <T k="pages.vendor" />
+                        </TableHead>
                         <TableHead>Bill #</TableHead>
                         <TableHead>Date</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>
+                          <T k="pages.dueDate" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.amount" />
+                        </TableHead>
                         <TableHead className="text-right">Paid</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>
+                          <T k="pages.status" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.actions" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1156,13 +1217,13 @@ export default function BillPay() {
                                       onClick={() => approveBillMutation.mutate(bill.id)}
                                     >
                                       <CheckCircle className="w-4 h-4 mr-2" />
-                                      Approve
+                                      <T k="pages.approve" />
                                     </DropdownMenuItem>
                                   )}
                                   {bill.status !== "paid" && (
                                     <DropdownMenuItem onClick={() => handlePayBill(bill)}>
                                       <DollarSign className="w-4 h-4 mr-2" />
-                                      Record Payment
+                                      <T k="pages.recordPayment" />
                                     </DropdownMenuItem>
                                   )}
                                   <DropdownMenuSeparator />
@@ -1175,7 +1236,7 @@ export default function BillPay() {
                                     }}
                                   >
                                     <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
+                                    <T k="pages.delete" />
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -1197,16 +1258,22 @@ export default function BillPay() {
         <TabsContent value="payments" className="space-y-6 mt-0">
           <Card>
             <CardHeader>
-              <CardTitle>Payment History</CardTitle>
-              <CardDescription>All payments recorded against vendor bills</CardDescription>
+              <CardTitle>
+                <T k="pages.paymentHistory" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pages.allPaymentsRecordedAgainstVendorBills" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {paymentsData.length === 0 ? (
                 <div className="text-center py-12">
                   <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-1">No payments yet</h3>
+                  <h3 className="text-lg font-medium mb-1">
+                    <T k="pages.noPaymentsYet" />
+                  </h3>
                   <p className="text-muted-foreground">
-                    Payments will appear here when you record them against bills.
+                    <T k="pages.paymentsWillAppearHereWhenYouRecordThemAgainstBi" />
                   </p>
                 </div>
               ) : (
@@ -1214,11 +1281,19 @@ export default function BillPay() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
-                      <TableHead>Vendor</TableHead>
+                      <TableHead>
+                        <T k="pages.vendor" />
+                      </TableHead>
                       <TableHead>Bill #</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.amount" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="pages.method" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="pages.reference" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1259,7 +1334,9 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Pending</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pages.pending" />
+                    </p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.pending.total || 0, "AED")}
                     </p>
@@ -1275,7 +1352,9 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Approved</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pages.approved" />
+                    </p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.approved.total || 0, "AED")}
                     </p>
@@ -1291,7 +1370,9 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Partially Paid</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pages.partiallyPaid" />
+                    </p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.partial.total || 0, "AED")}
                     </p>
@@ -1323,7 +1404,9 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Overdue</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pages.overdue" />
+                    </p>
                     <p className="text-2xl font-bold text-destructive">
                       {formatCurrency(summary?.overdue.total || 0, "AED")}
                     </p>
@@ -1340,17 +1423,27 @@ export default function BillPay() {
           {/* Aging Report */}
           <Card>
             <CardHeader>
-              <CardTitle>Aging Report</CardTitle>
-              <CardDescription>Outstanding payables by age of due date</CardDescription>
+              <CardTitle>
+                <T k="pages.agingReport" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pages.outstandingPayablesByAgeOfDueDate" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {aging ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Period</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Bills</TableHead>
+                      <TableHead>
+                        <T k="pages.period" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.amount" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.bills" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1392,7 +1485,9 @@ export default function BillPay() {
                       </TableCell>
                     </TableRow>
                     <TableRow className="border-t-2 font-bold">
-                      <TableCell>Total Outstanding</TableCell>
+                      <TableCell>
+                        <T k="pages.totalOutstanding" />
+                      </TableCell>
                       <TableCell className="text-right">
                         {formatCurrency(
                           aging.current.amount +
@@ -1440,11 +1535,13 @@ export default function BillPay() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle>
+              <T k="pages.recordPayment" />
+            </DialogTitle>
             <DialogDescription>
               {payingBill && (
                 <>
-                  Bill from <strong>{payingBill.vendor_name}</strong>
+                  <T k="pages.billFrom" /> <strong>{payingBill.vendor_name}</strong>
                   {payingBill.bill_number && <> ({payingBill.bill_number})</>}
                   <br />
                   Total:{" "}
@@ -1466,7 +1563,9 @@ export default function BillPay() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Amount</FormLabel>
+                    <FormLabel>
+                      <T k="pages.amount" />
+                    </FormLabel>
                     <FormControl>
                       <Input {...field} type="number" step="0.01" placeholder="Payment amount" />
                     </FormControl>
@@ -1479,7 +1578,9 @@ export default function BillPay() {
                 name="payment_date"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Date</FormLabel>
+                    <FormLabel>
+                      <T k="pages.paymentDate" />
+                    </FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
@@ -1513,7 +1614,9 @@ export default function BillPay() {
                 name="payment_method"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Method</FormLabel>
+                    <FormLabel>
+                      <T k="pages.paymentMethod" />
+                    </FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
@@ -1521,9 +1624,13 @@ export default function BillPay() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="bank_transfer">
+                          <T k="pages.bankTransfer" />
+                        </SelectItem>
                         <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="cheque">Cheque</SelectItem>
+                        <SelectItem value="cheque">
+                          <T k="pages.cheque" />
+                        </SelectItem>
                         <SelectItem value="card">Card</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1536,7 +1643,9 @@ export default function BillPay() {
                 name="reference"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reference</FormLabel>
+                    <FormLabel>
+                      <T k="pages.reference" />
+                    </FormLabel>
                     <FormControl>
                       <Input {...field} placeholder="Payment reference (optional)" />
                     </FormControl>
@@ -1549,7 +1658,9 @@ export default function BillPay() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>
+                      <T k="pages.notes" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea {...field} placeholder="Optional notes" rows={2} />
                     </FormControl>
@@ -1566,7 +1677,7 @@ export default function BillPay() {
                     setPayingBill(null);
                   }}
                 >
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button type="submit" disabled={recordPaymentMutation.isPending}>
                   {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}

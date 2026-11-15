@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -67,7 +68,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -110,7 +111,9 @@ const invoiceLineSchema = z.object({
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
-  number: z.string().min(1, "Invoice number is required"),
+  // R18-06: the server allocates the gap-free FTA number on save, so new
+  // invoices carry no client-side number.
+  number: z.string(),
   customerName: z.string().min(1, "Customer name is required"),
   customerTrn: z.string().optional(),
   date: z.date(),
@@ -143,6 +146,8 @@ export default function Invoices() {
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  // R18-07: a freshly saved invoice is a draft; offer to issue it right away.
+  const [draftNudge, setDraftNudge] = useState<{ id: string; number: string } | null>(null);
   const [activeTab, setActiveTab] = useState("invoices");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [invoiceForPayment, setInvoiceForPayment] = useState<Invoice | null>(null);
@@ -189,7 +194,7 @@ export default function Invoices() {
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
-      number: `INV-${Date.now()}`,
+      number: "",
       customerName: "",
       customerTrn: "",
       date: new Date(),
@@ -197,6 +202,30 @@ export default function Invoices() {
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
   });
+
+  // R18-12: the dashboard's guided first-invoice entry point links to
+  // /invoices?new=1, which opens the New Invoice dialog straight away. The
+  // param is stripped when the dialog closes: rewriting the URL while the dialog
+  // is open would change the router location key and remount the page.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("new") === "1") {
+      setDialogOpen(true);
+    }
+  }, []);
+
+  const stripNewInvoiceParam = () => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    params.delete("new");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      window.location.pathname + (query ? `?${query}` : "") + window.location.hash
+    );
+  };
 
   // Update form's companyId when selectedCompanyId changes
   useEffect(() => {
@@ -213,7 +242,7 @@ export default function Invoices() {
   const createMutation = useMutation({
     mutationFn: (data: InvoiceFormData) =>
       apiRequest("POST", `/api/companies/${selectedCompanyId}/invoices`, data),
-    onSuccess: () => {
+    onSuccess: (created: any) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
@@ -221,11 +250,14 @@ export default function Invoices() {
         title: "Invoice created",
         description: "Your invoice has been created with VAT calculation.",
       });
+      if (created?.id && (created.status ?? "draft") === "draft") {
+        setDraftNudge({ id: created.id, number: created.number ?? "" });
+      }
       setDialogOpen(false);
       setEditingInvoice(null);
       form.reset({
         companyId: selectedCompanyId,
-        number: `INV-${Date.now()}`,
+        number: "",
         customerName: "",
         customerTrn: "",
         date: new Date(),
@@ -257,7 +289,7 @@ export default function Invoices() {
       setEditingInvoice(null);
       form.reset({
         companyId: selectedCompanyId,
-        number: `INV-${Date.now()}`,
+        number: "",
         customerName: "",
         customerTrn: "",
         date: new Date(),
@@ -511,7 +543,7 @@ export default function Invoices() {
   const resetForm = () => {
     form.reset({
       companyId: selectedCompanyId,
-      number: `INV-${Date.now()}`,
+      number: "",
       customerName: "",
       customerTrn: "",
       date: new Date(),
@@ -523,8 +555,10 @@ export default function Invoices() {
 
   const onSubmit = async (data: InvoiceFormData) => {
     try {
+      const { number: formNumber, ...rest } = data;
       const invoiceData = {
-        ...data,
+        ...rest,
+        ...(editingInvoice ? { number: formNumber } : {}),
         companyId: selectedCompanyId!,
         lines: data.lines.map((line) => ({
           description: line.description,
@@ -721,6 +755,58 @@ export default function Invoices() {
         description={(t as any).manageInvoices ?? "Manage invoices and customize their appearance"}
       />
 
+      <AlertDialog
+        open={draftNudge !== null}
+        onOpenChange={(open) => {
+          if (!open) setDraftNudge(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-invoice-draft-nudge">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t["invoices.nudgeTitle"]}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {formatMessage(t["invoices.nudgeBody"], { number: draftNudge?.number ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-keep-draft">
+              {t["invoices.nudgeKeepDraft"]}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-issue-now"
+              disabled={updateStatusMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!draftNudge) return;
+                const target = draftNudge;
+                updateStatusMutation.mutate(
+                  { id: target.id, status: "sent" },
+                  {
+                    onSuccess: () => {
+                      setDraftNudge(null);
+                      toast({
+                        title: t["invoices.nudgeIssued"],
+                        description: formatMessage(t["invoices.nudgeIssuedBody"], {
+                          number: target.number,
+                        }),
+                      });
+                    },
+                    onError: () => {
+                      toast({
+                        variant: "destructive",
+                        title: t["invoices.nudgeIssueFailed"],
+                      });
+                    },
+                  }
+                );
+              }}
+            >
+              {t["invoices.nudgeIssueNow"]}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="invoices" data-testid="tab-invoices">
@@ -783,10 +869,11 @@ export default function Invoices() {
               onOpenChange={(open) => {
                 setDialogOpen(open);
                 if (!open) {
+                  stripNewInvoiceParam();
                   setEditingInvoice(null);
                   form.reset({
                     companyId: selectedCompanyId,
-                    number: `INV-${Date.now()}`,
+                    number: "",
                     customerName: "",
                     customerTrn: "",
                     date: new Date(),
@@ -825,6 +912,10 @@ export default function Invoices() {
                                 {...field}
                                 className="font-mono"
                                 data-testid="input-invoice-number"
+                                readOnly={!editingInvoice}
+                                placeholder={
+                                  editingInvoice ? undefined : t["invoices.numberAssignedOnSave"]
+                                }
                               />
                             </FormControl>
                             <FormMessage />
@@ -852,7 +943,9 @@ export default function Invoices() {
                                     {field.value ? (
                                       format(field.value, "PPP")
                                     ) : (
-                                      <span>Pick a date</span>
+                                      <span>
+                                        <T k="pages.pickADate" />
+                                      </span>
                                     )}
                                   </Button>
                                 </FormControl>
@@ -908,7 +1001,9 @@ export default function Invoices() {
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-medium">Line Items</h3>
+                        <h3 className="font-medium">
+                          <T k="pages.lineItems" />
+                        </h3>
                         <Button
                           type="button"
                           variant="outline"
@@ -1501,7 +1596,9 @@ export default function Invoices() {
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogCancel>
+                                      <T k="pages.cancel" />
+                                    </AlertDialogCancel>
                                     <AlertDialogAction
                                       onClick={() => deleteMutation.mutate(invoice.id)}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -1604,7 +1701,9 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Company Logo</FormLabel>
+                              <FormLabel className="text-base">
+                                <T k="pages.showCompanyLogo" />
+                              </FormLabel>
                               <FormDescription>
                                 Display your company logo at the top of invoices
                                 {!company.logoUrl && (
@@ -1860,7 +1959,7 @@ export default function Invoices() {
                 }}
                 className="flex-1"
               >
-                Cancel
+                <T k="pages.cancel" />
               </Button>
               <Button
                 onClick={async () => {
@@ -1984,7 +2083,7 @@ export default function Invoices() {
               onClick={() => setRecurringDialogOpen(false)}
               className="flex-1"
             >
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => {
@@ -2017,7 +2116,7 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-success" />
-              Record Payment
+              <T k="pages.recordPayment" />
             </DialogTitle>
             <DialogDescription>
               Record a payment received for Invoice {invoiceForPaymentDetail?.number} (Total:{" "}
@@ -2045,15 +2144,21 @@ export default function Invoices() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Method</label>
+              <label className="text-sm font-medium">
+                <T k="pages.paymentMethod" />
+              </label>
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="bank">Bank Transfer</SelectItem>
+                  <SelectItem value="bank">
+                    <T k="pages.bankTransfer" />
+                  </SelectItem>
                   <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
+                  <SelectItem value="cheque">
+                    <T k="pages.cheque" />
+                  </SelectItem>
                   <SelectItem value="online">Online Payment</SelectItem>
                 </SelectContent>
               </Select>
@@ -2108,7 +2213,7 @@ export default function Invoices() {
               onClick={() => setAddPaymentDialogOpen(false)}
               className="flex-1"
             >
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => {
@@ -2175,7 +2280,9 @@ export default function Invoices() {
                   </TableBody>
                 </Table>
                 <div className="flex justify-between pt-2 border-t font-semibold">
-                  <span>Total Paid</span>
+                  <span>
+                    <T k="pages.totalPaid" />
+                  </span>
                   <span className="font-mono">
                     {formatCurrency(
                       invoicePayments.reduce((s: number, p: InvoicePayment) => s + p.amount, 0),
@@ -2271,7 +2378,7 @@ export default function Invoices() {
               className="flex-1"
               data-testid="button-cancel-payment"
             >
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={handleConfirmPayment}

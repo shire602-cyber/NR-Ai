@@ -1,0 +1,10 @@
+{
+  "invoices.nudgeBody": "{number} is a draft. Drafts are not counted as revenue until you issue the invoice.",
+  "invoices.nudgeIssueFailed": "Could not issue invoice",
+  "invoices.nudgeIssueNow": "Issue now",
+  "invoices.nudgeIssued": "Invoice issued",
+  "invoices.nudgeIssuedBody": "{number} is now counted in your revenue.",
+  "invoices.nudgeKeepDraft": "Keep as draft",
+  "invoices.nudgeTitle": "Invoice saved as draft",
+  "invoices.numberAssignedOnSave": "Assigned on save"
+}

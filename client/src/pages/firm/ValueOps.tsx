@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -344,7 +345,7 @@ export default function ValueOps() {
     return (
       <div className="flex min-h-[320px] items-center justify-center text-muted-foreground">
         <Sparkles className="mr-2 h-5 w-5 animate-pulse" />
-        Loading value operations...
+        <T k="pages.loadingValueOperations" />
       </div>
     );
   }
@@ -352,7 +353,7 @@ export default function ValueOps() {
   if (dashboardQuery.isError || !data) {
     return (
       <div className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm text-danger-subtle-foreground">
-        Value operations could not be loaded.
+        <T k="pages.valueOperationsCouldNotBeLoaded" />
       </div>
     );
   }
@@ -366,7 +367,7 @@ export default function ValueOps() {
         actions={
           <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
             <Gauge className="mr-2 h-4 w-4" />
-            Refresh
+            <T k="pages.refresh" />
           </Button>
         }
       />
@@ -396,10 +397,18 @@ export default function ValueOps() {
 
       <Tabs defaultValue="board" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="board">Board</TabsTrigger>
-          <TabsTrigger value="review">AI review</TabsTrigger>
-          <TabsTrigger value="actions">Actions</TabsTrigger>
-          <TabsTrigger value="clients">Clients</TabsTrigger>
+          <TabsTrigger value="board">
+            <T k="pages.board" />
+          </TabsTrigger>
+          <TabsTrigger value="review">
+            <T k="pages.aiReview" />
+          </TabsTrigger>
+          <TabsTrigger value="actions">
+            <T k="pages.actions" />
+          </TabsTrigger>
+          <TabsTrigger value="clients">
+            <T k="pages.clients" />
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="board" className="space-y-4">
@@ -433,18 +442,30 @@ export default function ValueOps() {
         <TabsContent value="review">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">AI Reviewer Queue</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.aiReviewerQueue" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>
+                      <T k="pages.priority" />
+                    </TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Why it needs review</TableHead>
-                    <TableHead className="text-right">Confidence</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.whyItNeedsReview" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.confidence" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.amount" />
+                    </TableHead>
                     <TableHead>Due</TableHead>
                     <TableHead />
                   </TableRow>
@@ -481,7 +502,7 @@ export default function ValueOps() {
                         <TableCell>{formatDate(item.dueDate)}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
-                            Review <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                            <T k="pages.review" /> <ArrowRight className="ml-1 h-3.5 w-3.5" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -490,7 +511,7 @@ export default function ValueOps() {
                   {(reviewQueueQuery.data ?? []).length === 0 && !reviewQueueQuery.isLoading && (
                     <TableRow>
                       <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                        No reviewer exceptions right now.
+                        <T k="pages.noReviewerExceptionsRightNow" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -503,17 +524,27 @@ export default function ValueOps() {
         <TabsContent value="actions">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Priority Actions</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.priorityActions" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>
+                      <T k="pages.priority" />
+                    </TableHead>
                     <TableHead>Lane</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead className="text-right">AED impact</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.action" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.aedImpact" />
+                    </TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -532,7 +563,8 @@ export default function ValueOps() {
                       <TableCell className="text-right">{formatAed(action.impactAed)}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={() => navigate(action.href)}>
-                          Open <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                          <T k="pages.open" />
+                          <ArrowRight className="ml-1 h-3.5 w-3.5" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -540,7 +572,7 @@ export default function ValueOps() {
                   {data.actions.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                        No priority actions.
+                        <T k="pages.noPriorityActions" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -553,18 +585,30 @@ export default function ValueOps() {
         <TabsContent value="clients">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Client Value Scorecards</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.clientValueScorecards" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Audit</TableHead>
-                    <TableHead>Close</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.audit" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.close" />
+                    </TableHead>
                     <TableHead>Risk</TableHead>
-                    <TableHead className="text-right">Overdue AR</TableHead>
-                    <TableHead className="text-right">Review items</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.overdueAr" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.reviewItems" />
+                    </TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -602,7 +646,7 @@ export default function ValueOps() {
                             }
                           >
                             <FileArchive className="mr-1 h-4 w-4" />
-                            Audit
+                            <T k="pages.audit" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -621,7 +665,7 @@ export default function ValueOps() {
                   {data.clients.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                        No managed clients.
+                        <T k="pages.noManagedClients" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -655,23 +699,37 @@ export default function ValueOps() {
 
 function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boolean }) {
   if (loading)
-    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.loadingPack" />
+      </div>
+    );
   if (!pack)
-    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.noPackAvailable" />
+      </div>
+    );
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">VAT status</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.vatStatus" />
+          </div>
           <div className="font-medium">{pack.vatReturn?.status ?? "No return"}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Due date</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.dueDate2" />
+          </div>
           <div className="font-medium">{formatDate(pack.vatReturn?.dueDate)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Payable tax</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.payableTax" />
+          </div>
           <div className="font-medium">{formatAed(pack.vatReturn?.payableTax ?? 0)}</div>
         </div>
       </div>
@@ -695,7 +753,9 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 
       {pack.reviewerNotes.length > 0 && (
         <div className="rounded-md border border-warning/30 bg-warning-subtle p-3">
-          <div className="mb-2 font-medium text-warning-subtle-foreground">Reviewer notes</div>
+          <div className="mb-2 font-medium text-warning-subtle-foreground">
+            <T k="pages.reviewerNotes" />
+          </div>
           <ul className="space-y-1 text-sm text-warning-subtle-foreground">
             {pack.reviewerNotes.map((note) => (
               <li key={note}>{note}</li>
@@ -706,7 +766,7 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
       {pack.reviewerNotes.length === 0 && (
         <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success-subtle p-3 text-sm text-success-subtle-foreground">
           <CheckCircle2 className="h-4 w-4" />
-          Evidence pack is ready for reviewer sign-off.
+          <T k="pages.evidencePackIsReadyForReviewerSignOff" />
         </div>
       )}
     </div>
@@ -715,19 +775,31 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 
 function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean }) {
   if (loading)
-    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.loadingPack" />
+      </div>
+    );
   if (!pack)
-    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.noPackAvailable" />
+      </div>
+    );
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Revenue</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.revenue" />
+          </div>
           <div className="font-medium">{formatAed(pack.metrics.revenue)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Expenses</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.expenses" />
+          </div>
           <div className="font-medium">{formatAed(pack.metrics.expenses)}</div>
         </div>
         <div className="rounded-md border p-3">
@@ -735,15 +807,21 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
           <div className="font-medium">{formatAed(pack.metrics.net)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Open AR</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.openAr" />
+          </div>
           <div className="font-medium">{formatAed(pack.metrics.openAr)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Overdue AR</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.overdueAr" />
+          </div>
           <div className="font-medium">{formatAed(pack.metrics.overdueAr)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">VAT payable</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.vatPayable2" />
+          </div>
           <div className="font-medium">{formatAed(pack.metrics.vatPayable)}</div>
         </div>
       </div>
@@ -751,7 +829,7 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
       <div className="rounded-md border p-3">
         <div className="mb-2 flex items-center gap-2 font-medium">
           <TrendingUp className="h-4 w-4" />
-          Narrative
+          <T k="pages.narrative" />
         </div>
         <ul className="space-y-2 text-sm text-muted-foreground">
           {pack.narrative.map((line) => (
@@ -761,7 +839,9 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
       </div>
 
       <div className="rounded-md border p-3">
-        <div className="mb-2 font-medium">Next actions</div>
+        <div className="mb-2 font-medium">
+          <T k="pages.nextActions" />
+        </div>
         {pack.nextActions.length > 0 ? (
           <ul className="space-y-2 text-sm text-muted-foreground">
             {pack.nextActions.map((line) => (
@@ -769,7 +849,9 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
             ))}
           </ul>
         ) : (
-          <div className="text-sm text-muted-foreground">No immediate actions.</div>
+          <div className="text-sm text-muted-foreground">
+            <T k="pages.noImmediateActions" />
+          </div>
         )}
       </div>
     </div>

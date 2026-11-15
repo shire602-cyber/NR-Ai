@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -863,7 +864,9 @@ export default function Landing() {
                     }}
                   >
                     <Zap className="w-4 h-4 text-white" />
-                    <span className="text-white text-sm font-medium">Review queue ready</span>
+                    <span className="text-white text-sm font-medium">
+                      <T k="pages.reviewQueueReady" />
+                    </span>
                   </motion.div>
                 </Floating>
               </div>
@@ -1257,11 +1260,11 @@ export default function Landing() {
                 </Badge>
                 <Badge variant="outline" className="gap-1.5">
                   <Lock className="w-3 h-3" />
-                  Secure Transport
+                  <T k="pages.secureTransport" />
                 </Badge>
                 <Badge variant="outline" className="gap-1.5">
                   <Award className="w-3 h-3" />
-                  VAT Ready
+                  <T k="pages.vatReady" />
                 </Badge>
               </div>
             </div>

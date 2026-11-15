@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -253,7 +254,7 @@ export default function AutoReconcile() {
           <Card className="border-success/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-success" /> High Confidence
+                <CheckCircle2 className="h-3 w-3 text-success" /> <T k="pages.highConfidence" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -291,13 +292,13 @@ export default function AutoReconcile() {
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Button variant="outline" size="sm" onClick={selectHighConf}>
-                  High Confidence
+                  <T k="pages.highConfidence" />
                 </Button>
                 <Button variant="outline" size="sm" onClick={selectAll}>
                   Select All
                 </Button>
                 <Button variant="outline" size="sm" onClick={deselectAll}>
-                  Clear
+                  <T k="pages.clear" />
                 </Button>
                 <Button
                   onClick={() => applyMutation.mutate()}
@@ -324,8 +325,12 @@ export default function AutoReconcile() {
                       <ChevronRight className="h-4 w-4 mx-auto text-muted-foreground" />
                     </TableHead>
                     <TableHead>Matched With</TableHead>
-                    <TableHead className="w-48">Confidence</TableHead>
-                    <TableHead>Reason</TableHead>
+                    <TableHead className="w-48">
+                      <T k="pages.confidence" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.reason" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

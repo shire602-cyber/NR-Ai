@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -163,7 +164,9 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Company Logo</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pages.showCompanyLogo" />
+                      </FormLabel>
                       <FormDescription>
                         Display your company logo at the top of invoices
                         {!company.logoUrl && (

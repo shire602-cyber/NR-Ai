@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -104,7 +105,7 @@ const statusBadge = (status: string) => {
       return (
         <Badge variant="default" className="bg-info hover:bg-info">
           <CheckCircle2 className="w-3 h-3 mr-1" />
-          Filed
+          <T k="pages.filed" />
         </Badge>
       );
     case "paid":
@@ -118,7 +119,7 @@ const statusBadge = (status: string) => {
       return (
         <Badge variant="secondary">
           <Clock className="w-3 h-3 mr-1" />
-          Draft
+          <T k="pages.draft" />
         </Badge>
       );
   }
@@ -443,7 +444,9 @@ export default function CorporateTax() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="workpaperPeriodStart">Period Start</Label>
+              <Label htmlFor="workpaperPeriodStart">
+                <T k="pages.periodStart" />
+              </Label>
               <Input
                 id="workpaperPeriodStart"
                 type="date"
@@ -452,7 +455,9 @@ export default function CorporateTax() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="workpaperPeriodEnd">Period End</Label>
+              <Label htmlFor="workpaperPeriodEnd">
+                <T k="pages.periodEnd" />
+              </Label>
               <Input
                 id="workpaperPeriodEnd"
                 type="date"
@@ -472,7 +477,7 @@ export default function CorporateTax() {
                 variant="ghost"
                 onClick={() => setWorkpaperRows(defaultWorkpaperRows())}
               >
-                <RotateCcw className="w-4 h-4 mr-2" /> Reset
+                <RotateCcw className="w-4 h-4 mr-2" /> <T k="pages.reset" />
               </Button>
             </div>
           </div>
@@ -485,12 +490,14 @@ export default function CorporateTax() {
                     Year {new Date(periodEnd || periodStart).getFullYear() || currentYear}
                   </TableHead>
                   <TableHead className="min-w-[180px] text-right text-base font-bold">
-                    Expense
+                    <T k="pages.expense" />
                   </TableHead>
                   <TableHead className="min-w-[180px] text-right text-base font-bold">
-                    Revenue
+                    <T k="pages.revenue" />
                   </TableHead>
-                  <TableHead className="min-w-[220px]">Notes</TableHead>
+                  <TableHead className="min-w-[220px]">
+                    <T k="pages.notes" />
+                  </TableHead>
                   <TableHead className="w-[56px]" />
                 </TableRow>
               </TableHeader>
@@ -502,6 +509,7 @@ export default function CorporateTax() {
                         value={row.label}
                         onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
                         className="font-medium"
+                        aria-label={`Workpaper line description: ${row.label}`}
                       />
                     </TableCell>
                     <TableCell>
@@ -515,6 +523,7 @@ export default function CorporateTax() {
                           onChange={(e) =>
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
+                          aria-label={`${row.label} amount`}
                           className="text-right"
                           placeholder="0.00"
                         />
@@ -533,6 +542,7 @@ export default function CorporateTax() {
                           onChange={(e) =>
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
+                          aria-label={`${row.label} amount`}
                           className="text-right"
                           placeholder="0.00"
                         />
@@ -545,6 +555,7 @@ export default function CorporateTax() {
                         value={row.notes ?? ""}
                         onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
                         placeholder="Evidence or adjustment note"
+                        aria-label={`${row.label} note`}
                       />
                     </TableCell>
                     <TableCell className="text-right">
@@ -563,7 +574,9 @@ export default function CorporateTax() {
                   </TableRow>
                 ))}
                 <TableRow className="bg-muted/40">
-                  <TableCell className="font-bold">Totals</TableCell>
+                  <TableCell className="font-bold">
+                    <T k="pages.totals" />
+                  </TableCell>
                   <TableCell className="text-right font-bold text-destructive">
                     {formatCurrency(workpaperTotals.totalExpenses, "AED", locale)}
                   </TableCell>
@@ -610,7 +623,9 @@ export default function CorporateTax() {
           {/* Period Selector */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="periodStart">Period Start</Label>
+              <Label htmlFor="periodStart">
+                <T k="pages.periodStart" />
+              </Label>
               <Input
                 id="periodStart"
                 type="date"
@@ -619,7 +634,9 @@ export default function CorporateTax() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="periodEnd">Period End</Label>
+              <Label htmlFor="periodEnd">
+                <T k="pages.periodEnd" />
+              </Label>
               <Input
                 id="periodEnd"
                 type="date"
@@ -653,13 +670,17 @@ export default function CorporateTax() {
                     Income Summary
                   </h3>
                   <div className="flex justify-between">
-                    <span>Total Revenue</span>
+                    <span>
+                      <T k="pages.totalRevenue" />
+                    </span>
                     <span className="font-medium">
                       {formatCurrency(adjustedCalculation.totalRevenue, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Total Expenses</span>
+                    <span>
+                      <T k="pages.totalExpenses" />
+                    </span>
                     <span className="font-medium text-destructive">
                       ({formatCurrency(adjustedCalculation.totalExpenses, "AED", locale)})
                     </span>
@@ -681,7 +702,9 @@ export default function CorporateTax() {
                     Tax Calculation
                   </h3>
                   <div className="flex justify-between items-center">
-                    <span>Deductions</span>
+                    <span>
+                      <T k="pages.deductions" />
+                    </span>
                     <Input
                       type="number"
                       className="w-40 text-right"
@@ -692,13 +715,17 @@ export default function CorporateTax() {
                     />
                   </div>
                   <div className="flex justify-between">
-                    <span>Taxable Income</span>
+                    <span>
+                      <T k="pages.taxableIncome" />
+                    </span>
                     <span className="font-medium">
                       {formatCurrency(adjustedCalculation.taxableIncome, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Exemption Threshold</span>
+                    <span>
+                      <T k="pages.exemptionThreshold" />
+                    </span>
                     <span>
                       {formatCurrency(adjustedCalculation.exemptionThreshold, "AED", locale)}
                     </span>
@@ -710,11 +737,15 @@ export default function CorporateTax() {
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Tax Rate</span>
+                    <span>
+                      <T k="pages.taxRate" />
+                    </span>
                     <span>9%</span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
-                    <span className="text-lg font-bold">Tax Payable</span>
+                    <span className="text-lg font-bold">
+                      <T k="pages.taxPayable" />
+                    </span>
                     <span className="text-lg font-bold text-primary">
                       {formatCurrency(adjustedCalculation.taxPayable, "AED", locale)}
                     </span>
@@ -782,12 +813,24 @@ export default function CorporateTax() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Taxable Income</TableHead>
-                    <TableHead className="text-right">Tax Payable</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>
+                      <T k="pages.period" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.revenue" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.taxableIncome" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.taxPayable" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.actions" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -915,35 +958,49 @@ export default function CorporateTax() {
           {viewReturn && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
-                <span className="text-muted-foreground">Total Revenue</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.totalRevenue" />
+                </span>
                 <span className="text-right font-medium">
                   {formatCurrency(viewReturn.totalRevenue, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Total Expenses</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.totalExpenses" />
+                </span>
                 <span className="text-right font-medium">
                   {formatCurrency(viewReturn.totalExpenses, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Deductions</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.deductions" />
+                </span>
                 <span className="text-right font-medium">
                   {formatCurrency(viewReturn.totalDeductions, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Taxable Income</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.taxableIncome" />
+                </span>
                 <span className="text-right font-medium">
                   {formatCurrency(viewReturn.taxableIncome, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Exemption Threshold</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.exemptionThreshold" />
+                </span>
                 <span className="text-right">
                   {formatCurrency(viewReturn.exemptionThreshold, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Tax Rate</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.taxRate" />
+                </span>
                 <span className="text-right">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
 
-                <span className="font-semibold border-t pt-2">Tax Payable</span>
+                <span className="font-semibold border-t pt-2">
+                  <T k="pages.taxPayable" />
+                </span>
                 <span className="text-right font-bold text-primary border-t pt-2">
                   {formatCurrency(viewReturn.taxPayable, "AED", locale)}
                 </span>
@@ -975,8 +1032,12 @@ export default function CorporateTax() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Line</TableHead>
-                          <TableHead className="text-right">Expense</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
+                          <TableHead className="text-right">
+                            <T k="pages.expense" />
+                          </TableHead>
+                          <TableHead className="text-right">
+                            <T k="pages.revenue" />
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1004,7 +1065,7 @@ export default function CorporateTax() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-              Close
+              <T k="pages.close" />
             </Button>
           </DialogFooter>
         </DialogContent>

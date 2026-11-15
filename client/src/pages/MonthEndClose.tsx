@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -351,7 +352,7 @@ export default function MonthEndClose() {
               disabled={isLoadingChecklist}
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingChecklist ? "animate-spin" : ""}`} />
-              Refresh
+              <T k="pages.refresh" />
             </Button>
           </div>
         </CardContent>
@@ -510,7 +511,7 @@ export default function MonthEndClose() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
               <AlertDialogAction onClick={() => closingEntriesMutation.mutate()}>
                 Generate & Post
               </AlertDialogAction>
@@ -535,7 +536,7 @@ export default function MonthEndClose() {
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Lock Period</AlertDialogTitle>
+              <AlertDialogTitle><T k="pages.lockPeriod" /></AlertDialogTitle>
               <AlertDialogDescription>
                 Locking {formatPeriodLabel(period)} will prevent any modifications to transactions
                 in this period. This is typically done after all closing entries are posted and the
@@ -543,12 +544,12 @@ export default function MonthEndClose() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => lockPeriodMutation.mutate()}
                 className="bg-destructive hover:bg-destructive"
               >
-                Lock Period
+                <T k="pages.lockPeriod" />
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -571,7 +572,7 @@ export default function MonthEndClose() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Account</TableHead>
+                  <TableHead><T k="pages.account" /></TableHead>
                   <TableHead className="text-right">Debit (AED)</TableHead>
                   <TableHead className="text-right">Credit (AED)</TableHead>
                 </TableRow>
@@ -596,7 +597,7 @@ export default function MonthEndClose() {
                   </TableRow>
                 ))}
                 <TableRow className="font-bold border-t-2">
-                  <TableCell>Total</TableCell>
+                  <TableCell><T k="pages.total2" /></TableCell>
                   <TableCell className="text-right">
                     {closingEntriesMutation.data.totalDebits.toLocaleString("en-AE", {
                       minimumFractionDigits: 2,
@@ -636,8 +637,8 @@ export default function MonthEndClose() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead><T k="pages.period" /></TableHead>
+                  <TableHead><T k="pages.status" /></TableHead>
                   <TableHead>Closed By</TableHead>
                   <TableHead>Closed At</TableHead>
                 </TableRow>

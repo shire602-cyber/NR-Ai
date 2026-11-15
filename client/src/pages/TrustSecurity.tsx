@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { Link } from "wouter";
 import {
   ArrowRight,
@@ -274,7 +275,9 @@ export default function TrustSecurity() {
               <Button variant="outline">Migration Guides</Button>
             </Link>
             <Link href="/privacy">
-              <Button variant="outline">Privacy Policy</Button>
+              <Button variant="outline">
+                <T k="pages.privacyPolicy" />
+              </Button>
             </Link>
           </div>
         </section>

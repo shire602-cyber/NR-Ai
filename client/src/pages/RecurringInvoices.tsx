@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -737,14 +738,18 @@ export default function RecurringInvoices() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Recurring Invoice?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pages.deleteRecurringInvoice" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this recurring invoice schedule. This action cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (itemToDelete) {
@@ -754,7 +759,7 @@ export default function RecurringInvoices() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

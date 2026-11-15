@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -91,7 +92,7 @@ export default function AdminDashboard() {
             <Link href="/admin/clients">
               <Button variant="outline" data-testid="button-view-clients">
                 <Building2 className="w-4 h-4 mr-2" />
-                View All Clients
+                <T k="pages.viewAllClients" />
               </Button>
             </Link>
             <Link href="/admin/invitations">
@@ -107,7 +108,7 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
+            <CardTitle className="text-sm font-medium"><T k="pages.totalClients" /></CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -154,7 +155,7 @@ export default function AdminDashboard() {
           <CardContent>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-success" />
-              <span className="text-lg font-medium">Active</span>
+              <span className="text-lg font-medium"><T k="pages.active" /></span>
             </div>
             <p className="text-xs text-muted-foreground">All AI features operational</p>
           </CardContent>
@@ -214,7 +215,7 @@ export default function AdminDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              Recent Activity
+              <T k="pages.recentActivity" />
             </CardTitle>
             <CardDescription>Latest actions in the system</CardDescription>
           </CardHeader>
@@ -367,7 +368,7 @@ export default function AdminDashboard() {
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Last activity</span>
+                          <span><T k="pages.lastActivity" /></span>
                           <span className="font-medium text-foreground">
                             {client.lastActivity
                               ? format(new Date(client.lastActivity), "MMM d, yyyy")
@@ -420,11 +421,11 @@ export default function AdminDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-3 pr-4 font-medium">Client</th>
+                    <th className="pb-3 pr-4 font-medium"><T k="pages.client" /></th>
                     <th className="pb-3 pr-4 font-medium">Deadline Type</th>
-                    <th className="pb-3 pr-4 font-medium">Due Date</th>
+                    <th className="pb-3 pr-4 font-medium"><T k="pages.dueDate" /></th>
                     <th className="pb-3 pr-4 font-medium text-right">Days Remaining</th>
-                    <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium"><T k="pages.status" /></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -514,9 +515,9 @@ export default function AdminDashboard() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="pb-3 pr-4 font-medium">Staff Name</th>
-                    <th className="pb-3 pr-4 font-medium">Email</th>
+                    <th className="pb-3 pr-4 font-medium"><T k="pages.email" /></th>
                     <th className="pb-3 pr-4 font-medium text-right">Assigned Clients</th>
-                    <th className="pb-3 font-medium">Recent Activity</th>
+                    <th className="pb-3 font-medium"><T k="pages.recentActivity" /></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -538,7 +539,7 @@ export default function AdminDashboard() {
                             variant="outline"
                             className="text-xs bg-success-subtle text-success border-success/30"
                           >
-                            Active
+                            <T k="pages.active" />
                           </Badge>
                         </td>
                       </tr>

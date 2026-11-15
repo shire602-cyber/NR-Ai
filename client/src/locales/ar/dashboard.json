@@ -1,0 +1,20 @@
+{
+  "dashboard.actionFileVat": "تقديم إقرار VAT 201",
+  "dashboard.actionPostEntry": "ترحيل قيد",
+  "dashboard.actionRunBackup": "إجراء نسخ احتياطي",
+  "dashboard.actionSetupAccounts": "إعداد الحسابات",
+  "dashboard.actionSetupRecon": "إعداد التسوية",
+  "dashboard.checkNoBackups": "لا توجد نسخ احتياطية مكتملة للبيانات",
+  "dashboard.checkNoChartOfAccounts": "لم يتم إعداد دليل الحسابات",
+  "dashboard.checkNoJournalEntries": "لا توجد قيود يومية خلال آخر 90 يومًا",
+  "dashboard.checkNoReconRules": "لم يتم إعداد قواعد للتسوية البنكية",
+  "dashboard.checkNoVatReturns": "لا توجد إقرارات ضريبة قيمة مضافة مقدَّمة",
+  "dashboard.checkReconNotSetUp": "لم يتم إعداد التسوية البنكية",
+  "dashboard.draftNotRevenueBody": "هناك {count} فاتورة مسودة بانتظار الإصدار. أصدرها لترى الإيرادات والأرباح هنا.",
+  "dashboard.draftNotRevenueCta": "مراجعة المسودات",
+  "dashboard.draftNotRevenueTitle": "الفواتير المسودة لا تُحتسب إيرادًا بعد",
+  "dashboard.emptyRevenueHint": "تظهر الإيرادات بعد إصدار فاتورة. المسودات لا تُحتسب.",
+  "dashboard.firstInvoiceBody": "اختر العميل وأضف بندًا واحدًا ثم احفظ. نخصّص رقم الفاتورة ونطبّق ضريبة القيمة المضافة 5% عنك.",
+  "dashboard.firstInvoiceCta": "إنشاء أول فاتورة",
+  "dashboard.firstInvoiceTitle": "أنشئ أول فاتورة لك"
+}

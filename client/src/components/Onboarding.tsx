@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     description: "Review and customize your UAE-focused chart of accounts",
     icon: BookOpen,
     action: "View Accounts",
-    path: "/accounts",
+    path: "/chart-of-accounts",
   },
   {
     key: "invoice",
@@ -100,7 +101,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     description: "Get insights and recommendations from your AI financial advisor",
     icon: Bot,
     action: "Explore AI Features",
-    path: "/ai-cfo",
+    path: "/ai",
   },
   {
     key: "reminders",
@@ -113,8 +114,30 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   },
 ];
 
+const TOUR_DISMISSED_KEY = (userId: string) => `muhasib_tour_dismissed:${userId}`;
+
+/** localStorage fallback used when the server column is unavailable (R18-03). */
+function readLocalTourDismissed(userId: string | undefined): boolean {
+  if (!userId) return false;
+  try {
+    return localStorage.getItem(TOUR_DISMISSED_KEY(userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalTourDismissed(userId: string | undefined): void {
+  if (!userId) return;
+  try {
+    localStorage.setItem(TOUR_DISMISSED_KEY(userId), "1");
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 export function OnboardingWizard() {
-  const [, setLocation] = useLocation();
+  const { t } = useTranslation();
+  const [location, setLocation] = useLocation();
   const [showWizard, setShowWizard] = useState(false);
   // The /api/onboarding query refetches on focus and after unrelated
   // mutations. Auto-open must fire at most once per mount or the wizard
@@ -172,31 +195,50 @@ export function OnboardingWizard() {
   });
 
   const skipMutation = useMutation({
-    mutationFn: () => apiRequest("PATCH", "/api/onboarding", { showTour: false }),
+    // R18-03: persist "tour shown / dismissed" server-side once per user
+    // (user_onboarding.tour_dismissed_at) so it never re-appears on later
+    // pages, sessions or devices. localStorage is only a fallback.
+    mutationFn: () => apiRequest("PATCH", "/api/onboarding", { tourDismissed: true }),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ["/api/onboarding"] });
       const previousOnboarding = queryClient.getQueryData<UserOnboarding>(["/api/onboarding"]);
+      writeLocalTourDismissed(previousOnboarding?.userId);
       if (previousOnboarding) {
-        queryClient.setQueryData(["/api/onboarding"], { ...previousOnboarding, showTour: false });
+        queryClient.setQueryData(["/api/onboarding"], {
+          ...previousOnboarding,
+          showTour: false,
+          tourDismissedAt: new Date(),
+        });
       }
       return { previousOnboarding };
     },
-    onError: (_err, _vars, context) => {
-      if (context?.previousOnboarding) {
-        queryClient.setQueryData(["/api/onboarding"], context.previousOnboarding);
-      }
-    },
+    // On error the local fallback flag stays set, so the tour is not re-shown.
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/onboarding"] });
     },
   });
 
+  const tourDismissed =
+    Boolean(onboarding?.tourDismissedAt) || readLocalTourDismissed(onboarding?.userId);
+  const onOnboardingPage = location.split("?")[0] === "/onboarding";
+
   useEffect(() => {
-    if (!hasAutoShown && onboarding && !onboarding.isOnboardingComplete && onboarding.showTour) {
+    if (
+      !hasAutoShown &&
+      onboarding &&
+      !onboarding.isOnboardingComplete &&
+      onboarding.showTour &&
+      !tourDismissed &&
+      !onOnboardingPage
+    ) {
       setShowWizard(true);
       setHasAutoShown(true);
+      // Showing the tour counts as the user's one tour: record it immediately
+      // so a reload or the next page never shows it again.
+      writeLocalTourDismissed(onboarding.userId);
+      skipMutation.mutate();
     }
-  }, [onboarding, hasAutoShown]);
+  }, [onboarding, hasAutoShown, tourDismissed, onOnboardingPage, skipMutation]);
 
   const handleStepAction = (step: OnboardingStep) => {
     completeMutation.mutate(step.key);
@@ -209,7 +251,10 @@ export function OnboardingWizard() {
     skipMutation.mutate();
   };
 
-  if (isLoading || !onboarding || onboarding.isOnboardingComplete || !onboarding.showTour) {
+  if (isLoading || !onboarding || onboarding.isOnboardingComplete || onOnboardingPage) {
+    return null;
+  }
+  if (!showWizard) {
     return null;
   }
 
@@ -238,23 +283,33 @@ export function OnboardingWizard() {
         <DialogHeader>
           <div className="flex items-center">
             <Badge variant="secondary">
-              Step {currentStep + 1} of {totalSteps}
+              {formatMessage(t["onboarding.stepBadge"], {
+                current: Math.min(currentStep + 1, totalSteps),
+                total: totalSteps,
+              })}
             </Badge>
           </div>
           <div className="pt-4">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <Icon className="w-8 h-8 text-primary" />
             </div>
-            <DialogTitle className="text-center text-xl">{nextStep.title}</DialogTitle>
-            <DialogDescription className="text-center">{nextStep.description}</DialogDescription>
+            <DialogTitle className="text-center text-xl">
+              {t[`onboarding.step.${nextStep.key}.title`] || nextStep.title}
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              {t[`onboarding.step.${nextStep.key}.description`] || nextStep.description}
+            </DialogDescription>
           </div>
         </DialogHeader>
 
         <div className="py-4">
           <div className="flex justify-between text-sm text-muted-foreground mb-2">
-            <span>Progress</span>
+            <span>{t["onboarding.progress"]}</span>
             <span>
-              {currentStep}/{totalSteps} completed
+              {formatMessage(t["onboarding.completedCount"], {
+                done: currentStep,
+                total: totalSteps,
+              })}
             </span>
           </div>
           <Progress value={progress} className="h-2" />
@@ -262,14 +317,14 @@ export function OnboardingWizard() {
 
         <div className="flex gap-3 justify-center">
           <Button variant="outline" onClick={handleSkip} data-testid="button-skip-onboarding">
-            Skip for now
+            {t["onboarding.skip"]}
           </Button>
           <Button
             onClick={() => handleStepAction(nextStep)}
             data-testid="button-continue-onboarding"
           >
-            {nextStep.action}
-            <ArrowRight className="w-4 h-4 ml-2" />
+            {t[`onboarding.step.${nextStep.key}.action`] || nextStep.action}
+            <ArrowRight className="w-4 h-4 ms-2 rtl:rotate-180" />
           </Button>
         </div>
       </DialogContent>
@@ -279,6 +334,7 @@ export function OnboardingWizard() {
 
 export function OnboardingProgress() {
   const [, setLocation] = useLocation();
+  const { t } = useTranslation();
 
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
     queryKey: ["/api/onboarding"],
@@ -343,10 +399,13 @@ export function OnboardingProgress() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <span className="font-medium">Getting Started</span>
+            <span className="font-medium">{t["onboarding.gettingStarted"]}</span>
           </div>
           <Badge variant="outline">
-            {currentStep}/{totalSteps} completed
+            {formatMessage(t["onboarding.completedCount"], {
+              done: currentStep,
+              total: totalSteps,
+            })}
           </Badge>
         </div>
 
@@ -375,7 +434,9 @@ export function OnboardingProgress() {
                 ) : (
                   <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                 )}
-                <span className="truncate">{step.title.split(" ").slice(-2).join(" ")}</span>
+                <span className="truncate">
+                  {t[`onboarding.step.${step.key}.title`] || step.title}
+                </span>
               </button>
             );
           })}
@@ -386,6 +447,7 @@ export function OnboardingProgress() {
 }
 
 export function HelpTip({ tipKey, children }: { tipKey: string; children: React.ReactNode }) {
+  const { t } = useTranslation();
   const { data: onboarding } = useQuery<UserOnboarding>({
     queryKey: ["/api/onboarding"],
   });
@@ -412,7 +474,8 @@ export function HelpTip({ tipKey, children }: { tipKey: string; children: React.
       <Button
         variant="ghost"
         size="sm"
-        className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -top-2 -end-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        aria-label={t["common.close"]}
         onClick={() => dismissMutation.mutate(tipKey)}
       >
         <X className="w-3 h-3" />

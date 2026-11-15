@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -287,11 +288,11 @@ export default function AdvancedAnalytics() {
         <TabsList className="grid w-full grid-cols-4 lg:w-fit">
           <TabsTrigger value="forecasts" className="gap-2" data-testid="tab-forecasts">
             <TrendingUp className="w-4 h-4" />
-            <span className="hidden sm:inline">Cash Flow</span>
+            <span className="hidden sm:inline"><T k="pages.cashFlow" /></span>
           </TabsTrigger>
           <TabsTrigger value="budget" className="gap-2" data-testid="tab-budget">
             <Target className="w-4 h-4" />
-            <span className="hidden sm:inline">Budget</span>
+            <span className="hidden sm:inline"><T k="pages.budget" /></span>
           </TabsTrigger>
           <TabsTrigger value="kpis" className="gap-2" data-testid="tab-kpis">
             <Activity className="w-4 h-4" />
@@ -299,7 +300,7 @@ export default function AdvancedAnalytics() {
           </TabsTrigger>
           <TabsTrigger value="insights" className="gap-2" data-testid="tab-insights">
             <Brain className="w-4 h-4" />
-            <span className="hidden sm:inline">AI Insights</span>
+            <span className="hidden sm:inline"><T k="pages.aiInsights" /></span>
           </TabsTrigger>
         </TabsList>
 
@@ -381,7 +382,7 @@ export default function AdvancedAnalytics() {
           {/* Forecast Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Cash Flow Forecast</CardTitle>
+              <CardTitle className="text-base"><T k="pages.cashFlowForecast" /></CardTitle>
               <CardDescription>
                 AI-predicted inflows and outflows with confidence bands
               </CardDescription>
@@ -513,7 +514,7 @@ export default function AdvancedAnalytics() {
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Actual</CardTitle>
+                <CardTitle className="text-sm font-medium"><T k="pages.totalActual" /></CardTitle>
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -641,7 +642,7 @@ export default function AdvancedAnalytics() {
             </p>
             <Button variant="outline" size="sm" data-testid="button-refresh-kpis">
               <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
+              <T k="pages.refresh" />
             </Button>
           </div>
 

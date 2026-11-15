@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -319,7 +320,7 @@ export default function IntegrationsHub() {
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2" data-testid="tab-settings">
             <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline">Settings</span>
+            <span className="hidden sm:inline"><T k="pages.settings" /></span>
           </TabsTrigger>
         </TabsList>
 
@@ -329,7 +330,7 @@ export default function IntegrationsHub() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Connected</CardTitle>
+                <CardTitle className="text-sm font-medium"><T k="pages.connected" /></CardTitle>
                 <Link2 className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
@@ -358,13 +359,13 @@ export default function IntegrationsHub() {
                 <div className="text-2xl font-bold font-mono">
                   {formatCurrency(monthlyTransactionValue, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">This month</p>
+                <p className="text-xs text-muted-foreground mt-1"><T k="pages.thisMonth" /></p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Reconciled</CardTitle>
+                <CardTitle className="text-sm font-medium"><T k="pages.reconciled" /></CardTitle>
                 <Check className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
@@ -385,18 +386,18 @@ export default function IntegrationsHub() {
               return (
                 <Card
                   key={platform.id}
-                  className={`hover-elevate relative overflow-hidden ${isComingSoon ? "opacity-60" : ""}`}
+                  className={`hover-elevate relative overflow-hidden ${isComingSoon ? "bg-muted/30" : ""}`}
                 >
                   {isComingSoon && (
                     <div className="absolute top-3 right-3">
-                      <Badge variant="secondary">Coming Soon</Badge>
+                      <Badge variant="secondary"><T k="pages.comingSoon" /></Badge>
                     </div>
                   )}
 
                   <CardHeader>
                     <div className="flex items-start gap-4">
                       <div className={`p-3 rounded-lg ${platform.bgColor}`}>
-                        <Icon className={`w-8 h-8 ${platform.color}`} />
+                        <Icon aria-hidden="true" className={`w-8 h-8 ${platform.color}`} />
                       </div>
                       <div className="flex-1">
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -407,11 +408,11 @@ export default function IntegrationsHub() {
                               className="bg-success-subtle text-success "
                             >
                               <Check className="w-3 h-3 mr-1" />
-                              Connected
+                              <T k="pages.connected" />
                             </Badge>
                           )}
                         </CardTitle>
-                        <CardDescription className="mt-1">{platform.description}</CardDescription>
+                        <CardDescription className="mt-1 text-muted-foreground">{platform.description}</CardDescription>
                       </div>
                     </div>
                   </CardHeader>
@@ -490,7 +491,7 @@ export default function IntegrationsHub() {
                     )}
                     {isComingSoon && (
                       <Button variant="outline" className="w-full" disabled>
-                        Coming Soon
+                        <T k="pages.comingSoon" />
                       </Button>
                     )}
                   </CardFooter>
@@ -555,7 +556,7 @@ export default function IntegrationsHub() {
             </p>
             <Button variant="outline" size="sm" data-testid="button-export-transactions">
               <FileText className="w-4 h-4 mr-2" />
-              Export
+              <T k="pages.export" />
             </Button>
           </div>
 
@@ -625,7 +626,7 @@ export default function IntegrationsHub() {
                                     className="bg-success-subtle text-success text-xs"
                                   >
                                     <Check className="w-3 h-3 mr-1" />
-                                    Reconciled
+                                    <T k="pages.reconciled" />
                                   </Badge>
                                 ) : (
                                   <Badge
@@ -633,7 +634,7 @@ export default function IntegrationsHub() {
                                     className="bg-warning-subtle text-warning text-xs"
                                   >
                                     <Clock className="w-3 h-3 mr-1" />
-                                    Pending
+                                    <T k="pages.pending" />
                                   </Badge>
                                 )}
                               </div>
@@ -667,7 +668,7 @@ export default function IntegrationsHub() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-success ">156</div>
-                <p className="text-xs text-muted-foreground mt-1">This month</p>
+                <p className="text-xs text-muted-foreground mt-1"><T k="pages.thisMonth" /></p>
               </CardContent>
             </Card>
             <Card>
@@ -833,7 +834,7 @@ export default function IntegrationsHub() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setConnectDialogOpen(false)}>
-                Cancel
+                <T k="pages.cancel" />
               </Button>
               <Button type="submit" disabled={connectMutation.isPending}>
                 {connectMutation.isPending ? (

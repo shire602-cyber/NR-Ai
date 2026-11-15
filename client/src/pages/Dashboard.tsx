@@ -8,7 +8,7 @@ import {
   ReportLaunchPicker,
   type ReportLaunchDeliveryPreview,
 } from "@/components/reports/ReportLaunchPicker";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -339,25 +339,58 @@ function FilingStatusBadge({
  * where the user can resolve them. Strings must match the server exactly
  * (server/routes/compliance-dashboard.routes.ts).
  */
-const ISSUE_ACTIONS: Record<string, { href: string; cta: string }> = {
-  "No VAT returns filed": { href: "/vat-filing", cta: "File VAT 201" },
-  "No chart of accounts configured": { href: "/chart-of-accounts", cta: "Set up accounts" },
-  "No journal entries in the last 90 days": { href: "/journal", cta: "Post an entry" },
+const ISSUE_ACTIONS: Record<
+  string,
+  { href: string; cta: string; issueKey: string; ctaKey: string }
+> = {
+  "No VAT returns filed": {
+    href: "/vat-filing",
+    cta: "File VAT 201",
+    issueKey: "dashboard.checkNoVatReturns",
+    ctaKey: "dashboard.actionFileVat",
+  },
+  "No chart of accounts configured": {
+    href: "/chart-of-accounts",
+    cta: "Set up accounts",
+    issueKey: "dashboard.checkNoChartOfAccounts",
+    ctaKey: "dashboard.actionSetupAccounts",
+  },
+  "No journal entries in the last 90 days": {
+    href: "/journal",
+    cta: "Post an entry",
+    issueKey: "dashboard.checkNoJournalEntries",
+    ctaKey: "dashboard.actionPostEntry",
+  },
   "No bank reconciliation rules configured": {
     href: "/bank-reconciliation",
     cta: "Set up reconciliation",
+    issueKey: "dashboard.checkNoReconRules",
+    ctaKey: "dashboard.actionSetupRecon",
   },
-  "Bank reconciliation not set up": { href: "/bank-reconciliation", cta: "Set up reconciliation" },
-  "No completed data backups": { href: "/backup-restore", cta: "Run a backup" },
+  "Bank reconciliation not set up": {
+    href: "/bank-reconciliation",
+    cta: "Set up reconciliation",
+    issueKey: "dashboard.checkReconNotSetUp",
+    ctaKey: "dashboard.actionSetupRecon",
+  },
+  "No completed data backups": {
+    href: "/backup-restore",
+    cta: "Run a backup",
+    issueKey: "dashboard.checkNoBackups",
+    ctaKey: "dashboard.actionRunBackup",
+  },
 };
 
 function FixItRow({ issue }: { issue: string }) {
+  const { t } = useTranslation();
   const action = ISSUE_ACTIONS[issue];
   return (
     <div className="flex items-center justify-between gap-3 px-5 py-2.5">
       <div className="flex items-center gap-2.5 min-w-0">
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
-        <span className="text-[13px] text-foreground/80 truncate">{issue}</span>
+        <span className="text-[13px] text-foreground/80 truncate">
+          {(action && t[action.issueKey]) || issue}
+        </span>
       </div>
       {action && (
         <Link href={action.href}>
@@ -366,7 +399,7 @@ function FixItRow({ issue }: { issue: string }) {
             size="sm"
             className="gap-1 text-accent hover:text-accent shrink-0 -me-2"
           >
-            {action.cta} <ArrowRight className="w-3.5 h-3.5" />
+            {t[action.ctaKey] || action.cta} <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
           </Button>
         </Link>
       )}
@@ -691,7 +724,7 @@ function SectionHeader({
     <div className="flex items-end justify-between gap-4 mb-4">
       <div>
         {eyebrow && (
-          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-muted-foreground/80">
+          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-muted-foreground">
             {eyebrow}
           </div>
         )}
@@ -1995,6 +2028,56 @@ function CustomerDashboard() {
         </div>
       </motion.section>
 
+      {/* ── First-invoice guide / draft explainer (R18-07, R18-12, R18-13) ──── */}
+      {!invoicesLoading && (recentInvoices?.length ?? 0) === 0 && (
+        <section
+          className="rounded-2xl border border-accent/30 bg-accent/5 p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+          data-testid="card-first-invoice-guide"
+        >
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-foreground">
+              {t["dashboard.firstInvoiceTitle"]}
+            </h2>
+            <p className="mt-1 text-[13px] text-muted-foreground max-w-2xl">
+              {t["dashboard.firstInvoiceBody"]}
+            </p>
+          </div>
+          <Link href="/invoices?new=1">
+            <Button size="sm" data-testid="button-first-invoice">
+              <FileText className="w-3.5 h-3.5" />
+              {t["dashboard.firstInvoiceCta"]}
+            </Button>
+          </Link>
+        </section>
+      )}
+      {!invoicesLoading &&
+        (() => {
+          const draftCount = (recentInvoices ?? []).filter(
+            (invoice: any) => invoice.status === "draft"
+          ).length;
+          if (draftCount === 0 || (stats?.revenue ?? 0) > 0) return null;
+          return (
+            <section
+              className="rounded-2xl border border-warning/30 bg-warning/5 p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+              data-testid="card-draft-not-revenue"
+            >
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold text-foreground">
+                  {t["dashboard.draftNotRevenueTitle"]}
+                </h2>
+                <p className="mt-1 text-[13px] text-muted-foreground max-w-2xl">
+                  {formatMessage(t["dashboard.draftNotRevenueBody"], { count: draftCount })}
+                </p>
+              </div>
+              <Link href="/invoices">
+                <Button size="sm" variant="outline" data-testid="button-review-drafts">
+                  {t["dashboard.draftNotRevenueCta"]}
+                </Button>
+              </Link>
+            </section>
+          );
+        })()}
+
       {/* ── KPI strip ─────────────────────────────────────────────────────── */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
@@ -2153,7 +2236,7 @@ function CustomerDashboard() {
             {/* Fix-it list — each open item links to the screen that resolves it */}
             {(compliance.auditReadiness?.issues?.length ?? 0) > 0 && (
               <div className="border-t border-border/60">
-                <div className="px-5 pt-3 pb-1 text-[10.5px] uppercase tracking-[0.14em] font-semibold text-muted-foreground/80">
+                <div className="px-5 pt-3 pb-1 text-[10.5px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
                   {(t as any).raiseYourScore ?? "Raise your score"}
                 </div>
                 <div className="divide-y divide-border/40 pb-1.5">
@@ -2228,7 +2311,7 @@ function CustomerDashboard() {
                         </>
                       )}
                     </p>
-                    <Link href="/ai-cfo">
+                    <Link href="/ai?tab=cfo">
                       <Button
                         size="sm"
                         variant="ghost"

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -494,11 +495,11 @@ export default function Budgets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return <Badge variant="secondary">Draft</Badge>;
+        return <Badge variant="secondary"><T k="pages.draft" /></Badge>;
       case "approved":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle"><T k="pages.approved" /></Badge>;
       case "closed":
-        return <Badge className="bg-muted text-foreground hover:bg-muted">Closed</Badge>;
+        return <Badge className="bg-muted text-foreground hover:bg-muted"><T k="pages.closed" /></Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -541,7 +542,7 @@ export default function Budgets() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <div className="text-muted-foreground"><T k="pages.pleaseCreateACompanyFirst" /></div>
       </div>
     );
   }
@@ -574,7 +575,7 @@ export default function Budgets() {
         {!selectedBudget && (
           <Button onClick={handleOpenCreateBudget} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            New Budget
+            <T k="pages.newBudget" />
           </Button>
         )}
       </div>
@@ -583,17 +584,17 @@ export default function Budgets() {
         <TabsList>
           <TabsTrigger value="budgets" className="flex items-center gap-2">
             <Wallet className="w-4 h-4" />
-            Budgets
+            <T k="pages.budgets" />
           </TabsTrigger>
           {selectedBudget && (
             <>
               <TabsTrigger value="detail" className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4" />
-                Budget Detail
+                <T k="pages.budgetDetail" />
               </TabsTrigger>
               <TabsTrigger value="variance" className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4" />
-                Variance
+                <T k="pages.variance" />
               </TabsTrigger>
             </>
           )}
@@ -603,7 +604,7 @@ export default function Budgets() {
         <TabsContent value="budgets">
           <Card>
             <CardHeader>
-              <CardTitle>Budget Plans</CardTitle>
+              <CardTitle><T k="pages.budgetPlans" /></CardTitle>
               <CardDescription>
                 {budgetPlans.length} budget plan{budgetPlans.length !== 1 ? "s" : ""}
               </CardDescription>
@@ -615,7 +616,7 @@ export default function Budgets() {
                 </div>
               ) : budgetPlans.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  No budget plans yet. Create your first budget to get started.
+                  <T k="pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte" />
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -624,9 +625,9 @@ export default function Budgets() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Year</TableHead>
-                        <TableHead>Period</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Total Budget</TableHead>
+                        <TableHead><T k="pages.period" /></TableHead>
+                        <TableHead><T k="pages.status" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.totalBudget" /></TableHead>
                         <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -704,12 +705,12 @@ export default function Budgets() {
                   <div>
                     <CardTitle>Budget Lines - {selectedBudget.name}</CardTitle>
                     <CardDescription>
-                      Monthly budget allocation by category. Click a row to edit.
+                      <T k="pages.monthlyBudgetAllocationByCategoryClickARowToEdit" />
                     </CardDescription>
                   </div>
                   <Button onClick={handleOpenAddLine} className="flex items-center gap-2">
                     <Plus className="w-4 h-4" />
-                    Add Line
+                    <T k="pages.addLine" />
                   </Button>
                 </div>
               </CardHeader>
@@ -720,7 +721,7 @@ export default function Budgets() {
                   </div>
                 ) : budgetLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No budget lines yet. Add categories and monthly allocations.
+                    <T k="pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio" />
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -728,7 +729,7 @@ export default function Budgets() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                            Category
+                            <T k="pages.category" />
                           </TableHead>
                           {MONTH_LABELS.map((label) => (
                             <TableHead key={label} className="text-right min-w-[90px]">
@@ -736,7 +737,7 @@ export default function Budgets() {
                             </TableHead>
                           ))}
                           <TableHead className="text-right min-w-[110px] font-bold">
-                            Annual Total
+                            <T k="pages.annualTotal" />
                           </TableHead>
                           <TableHead className="text-right min-w-[80px]">
                             {t.actions || "Actions"}
@@ -787,7 +788,7 @@ export default function Budgets() {
                         ))}
                         {/* Totals Row */}
                         <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="sticky left-0 bg-muted/50 z-10">TOTAL</TableCell>
+                          <TableCell className="sticky left-0 bg-muted/50 z-10"><T k="pages.total" /></TableCell>
                           {MONTH_KEYS.map((key) => (
                             <TableCell key={key} className="text-right font-mono text-sm">
                               {formatCurrency(lineTotals()[key], "AED", locale)}
@@ -834,23 +835,23 @@ export default function Budgets() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                            Category
+                            <T k="pages.category" />
                           </TableHead>
                           {MONTH_LABELS.map((label) => (
                             <TableHead key={label} className="text-center min-w-[200px]">
                               <div>{label}</div>
                               <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-right pr-1">Budget</span>
-                                <span className="flex-1 text-right pr-1">Actual</span>
+                                <span className="flex-1 text-right pr-1"><T k="pages.budget" /></span>
+                                <span className="flex-1 text-right pr-1"><T k="pages.actual" /></span>
                                 <span className="flex-1 text-right">Var</span>
                               </div>
                             </TableHead>
                           ))}
                           <TableHead className="text-center min-w-[200px]">
-                            <div>Annual</div>
+                            <div><T k="pages.annual" /></div>
                             <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-right pr-1">Budget</span>
-                              <span className="flex-1 text-right pr-1">Actual</span>
+                              <span className="flex-1 text-right pr-1"><T k="pages.budget" /></span>
+                              <span className="flex-1 text-right pr-1"><T k="pages.actual" /></span>
                               <span className="flex-1 text-right">Var %</span>
                             </div>
                           </TableHead>
@@ -918,7 +919,7 @@ export default function Budgets() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Budget</CardTitle>
+                        <CardTitle className="text-sm font-medium"><T k="pages.totalBudget" /></CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -932,7 +933,7 @@ export default function Budgets() {
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Actual</CardTitle>
+                        <CardTitle className="text-sm font-medium"><T k="pages.totalActual" /></CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -946,7 +947,7 @@ export default function Budgets() {
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Variance</CardTitle>
+                        <CardTitle className="text-sm font-medium"><T k="pages.totalVariance" /></CardTitle>
                       </CardHeader>
                       <CardContent>
                         {(() => {
@@ -1055,7 +1056,7 @@ export default function Budgets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel><T k="pages.notes" /></FormLabel>
                     <FormControl>
                       <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
                     </FormControl>
@@ -1129,7 +1130,7 @@ export default function Budgets() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
+                      <FormLabel><T k="pages.description" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Optional detail" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1200,14 +1201,14 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Budget Plan?</AlertDialogTitle>
+            <AlertDialogTitle><T k="pages.deleteBudgetPlan" /></AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this budget plan and all its lines. This action cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (budgetToDelete) {
@@ -1217,7 +1218,7 @@ export default function Budgets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1231,13 +1232,13 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Budget Line?</AlertDialogTitle>
+            <AlertDialogTitle><T k="pages.deleteBudgetLine" /></AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this budget line. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (lineToDelete) {
@@ -1247,7 +1248,7 @@ export default function Budgets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

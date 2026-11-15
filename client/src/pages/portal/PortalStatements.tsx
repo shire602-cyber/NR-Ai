@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,7 +105,7 @@ export default function PortalStatements() {
           <CardContent>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                Revenue
+                <T k="pages.revenue" />
               </p>
               {revenueItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground/70 py-1">No revenue recorded</p>
@@ -117,7 +118,7 @@ export default function PortalStatements() {
 
               <div className="pt-3">
                 <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                  Expenses
+                  <T k="pages.expenses" />
                 </p>
                 {expenseItems.length === 0 ? (
                   <p className="text-xs text-muted-foreground/70 py-1">No expenses recorded</p>
@@ -141,13 +142,13 @@ export default function PortalStatements() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Minus className="w-4 h-4 text-info" />
-              Balance Sheet
+              <T k="pages.balanceSheet" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                Assets
+                <T k="pages.assets" />
               </p>
               {assetItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground/70 py-1">No assets recorded</p>
@@ -160,7 +161,7 @@ export default function PortalStatements() {
 
               <div className="pt-3">
                 <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                  Liabilities
+                  <T k="pages.liabilities" />
                 </p>
                 {liabilityItems.length === 0 ? (
                   <p className="text-xs text-muted-foreground/70 py-1">No liabilities recorded</p>
@@ -174,7 +175,7 @@ export default function PortalStatements() {
 
               <div className="pt-3">
                 <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                  Equity
+                  <T k="pages.equity" />
                 </p>
                 {equityItems.length === 0 ? (
                   <p className="text-xs text-muted-foreground/70 py-1">No equity recorded</p>

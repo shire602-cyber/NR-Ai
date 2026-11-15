@@ -23,13 +23,14 @@ export function cspNonce(_req: Request, res: Response, next: NextFunction): void
  * Development: relaxed CSP — Vite needs inline scripts and HMR over ws://, so we
  * keep the directives but allow 'unsafe-inline' and 'unsafe-eval' for scripts.
  */
+// helmet hands raw http types to its directive callback, not express types.
+const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
+  const expressRes = res as unknown as Response;
+  return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
+};
+
 export function buildCspDirectives() {
   const prod = isProduction();
-  // helmet hands raw http types to its directive callback, not express types.
-  const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
-    const expressRes = res as unknown as Response;
-    return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
-  };
 
   return {
     directives: {
@@ -87,10 +88,19 @@ export function buildCspReportOnlyDirectives() {
   const prod = isProduction();
   return {
     reportOnly: true,
+    // R17-18 / R18-05: never merge helmet's default directives. They add
+    // `upgrade-insecure-requests` (ignored, and logged as a console error, in a
+    // report-only policy) and a script-src without the per-request nonce, which
+    // made this policy differ from the enforced one. Everything is listed
+    // explicitly instead.
+    useDefaults: false,
     directives: {
       // Only the style directives differ; everything else mirrors the enforced
       // policy so a violation here unambiguously means "the style split broke".
       defaultSrc: ["'self'"],
+      // Same script policy as the enforced header: report-only must not be more
+      // permissive than what is actually enforced.
+      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       // The -elem / -attr pair is what we are actually testing. `styleSrc` is
       // only the fallback for browsers without CSP3 support; pin it to today's
       // enforced value (rather than letting helmet merge its looser

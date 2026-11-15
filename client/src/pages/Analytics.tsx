@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -99,53 +100,69 @@ export default function Analytics() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Page Views</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.pageViews" />
+            </CardTitle>
             <Eye className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-page-views">
               {analytics?.summary?.totalPageViews || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Total page views</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.totalPageViews" />
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Feature Uses</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.featureUses" />
+            </CardTitle>
             <MousePointer className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-feature-uses">
               {analytics?.summary?.totalFeatureUses || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Feature interactions</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.featureInteractions" />
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Errors</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.errors" />
+            </CardTitle>
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-errors">
               {analytics?.summary?.totalErrors || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Error events</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.errorEvents" />
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Events</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.totalEvents" />
+            </CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-total-events">
               {analytics?.summary?.totalEvents || 0}
             </div>
-            <p className="text-xs text-muted-foreground">All tracked events</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.allTrackedEvents" />
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -154,15 +171,15 @@ export default function Analytics() {
         <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview">
             <BarChart3 className="w-4 h-4 mr-2" />
-            Overview
+            <T k="pages.overview" />
           </TabsTrigger>
           <TabsTrigger value="pages" data-testid="tab-pages">
             <Eye className="w-4 h-4 mr-2" />
-            Pages
+            <T k="pages.pages" />
           </TabsTrigger>
           <TabsTrigger value="events" data-testid="tab-events">
             <Activity className="w-4 h-4 mr-2" />
-            Events
+            <T k="pages.events" />
           </TabsTrigger>
         </TabsList>
 
@@ -172,15 +189,19 @@ export default function Analytics() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="w-5 h-5" />
-                  Top Events
+                  <T k="pages.topEvents" />
                 </CardTitle>
-                <CardDescription>Most frequent user actions</CardDescription>
+                <CardDescription>
+                  <T k="pages.mostFrequentUserActions" />
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {eventChartData.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                     <BarChart3 className="w-12 h-12 mb-4 opacity-50" />
-                    <p>No event data yet</p>
+                    <p>
+                      <T k="pages.noEventDataYet" />
+                    </p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -200,15 +221,19 @@ export default function Analytics() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <PieChartIcon className="w-5 h-5" />
-                  Event Distribution
+                  <T k="pages.eventDistribution" />
                 </CardTitle>
-                <CardDescription>Breakdown of event types</CardDescription>
+                <CardDescription>
+                  <T k="pages.breakdownOfEventTypes" />
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {pieData.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                     <PieChartIcon className="w-12 h-12 mb-4 opacity-50" />
-                    <p>No data to display</p>
+                    <p>
+                      <T k="pages.noDataToDisplay" />
+                    </p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -241,15 +266,19 @@ export default function Analytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Eye className="w-5 h-5" />
-                Page Views
+                <T k="pages.pageViews" />
               </CardTitle>
-              <CardDescription>Most visited pages</CardDescription>
+              <CardDescription>
+                <T k="pages.mostVisitedPages" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {pageChartData.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                   <Eye className="w-12 h-12 mb-4 opacity-50" />
-                  <p>No page view data yet</p>
+                  <p>
+                    <T k="pages.noPageViewDataYet" />
+                  </p>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={400}>
@@ -271,15 +300,19 @@ export default function Analytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="w-5 h-5" />
-                Recent Events
+                <T k="pages.recentEvents" />
               </CardTitle>
-              <CardDescription>Latest user activity</CardDescription>
+              <CardDescription>
+                <T k="pages.latestUserActivity" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {!analytics?.recentEvents?.length ? (
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                   <Activity className="w-12 h-12 mb-4 opacity-50" />
-                  <p>No events recorded yet</p>
+                  <p>
+                    <T k="pages.noEventsRecordedYet" />
+                  </p>
                 </div>
               ) : (
                 <ScrollArea className="h-[500px]">

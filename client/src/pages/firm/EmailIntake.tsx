@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
@@ -103,7 +104,7 @@ export default function EmailIntake() {
       {featureOff && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Pilot disabled</AlertTitle>
+          <AlertTitle><T k="pages.pilotDisabled" /></AlertTitle>
           <AlertDescription>
             Set <code>EMAIL_INTAKE_ENABLED=true</code> on the server to turn the intake pilot on. You
             can still configure sender mappings below; nothing is ingested until it's enabled.
@@ -113,7 +114,7 @@ export default function EmailIntake() {
       {mailboxOff && (
         <Alert>
           <Mail className="h-4 w-4" />
-          <AlertTitle>No mailbox connected</AlertTitle>
+          <AlertTitle><T k="pages.noMailboxConnected" /></AlertTitle>
           <AlertDescription>
             The pilot is enabled but no mailbox is wired (<code>EMAIL_INTAKE_PROVIDER</code>). Sender
             mappings are saved and ready; ingestion starts once a mailbox is connected.
@@ -124,10 +125,10 @@ export default function EmailIntake() {
       <Tabs defaultValue="senders">
         <TabsList>
           <TabsTrigger value="senders" data-testid="tab-senders">
-            Sender mappings
+            <T k="pages.senderMappings" />
           </TabsTrigger>
           <TabsTrigger value="completeness" data-testid="tab-completeness">
-            Completeness check
+            <T k="pages.completenessCheck" />
           </TabsTrigger>
         </TabsList>
 
@@ -202,12 +203,12 @@ function SendersTab({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Link a sender to a client</CardTitle>
+          <CardTitle className="text-base"><T k="pages.linkASenderToAClient" /></CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label>Client</Label>
+              <Label><T k="pages.client" /></Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-client">
                   <SelectValue placeholder="Select client" />
@@ -222,7 +223,7 @@ function SendersTab({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Sender email</Label>
+              <Label><T k="pages.senderEmail" /></Label>
               <Input
                 type="email"
                 placeholder="billing@client.ae"
@@ -239,7 +240,7 @@ function SendersTab({
               <div className="flex items-center gap-2">
                 <Switch checked={requireDkim} onCheckedChange={setRequireDkim} id="dkim" />
                 <Label htmlFor="dkim" className="cursor-pointer">
-                  Require DKIM
+                  <T k="pages.requireDkim" />
                 </Label>
               </div>
             </div>
@@ -250,7 +251,7 @@ function SendersTab({
               disabled={!canAdd || createMutation.isPending}
               data-testid="button-add-sender"
             >
-              <Plus className="h-4 w-4 mr-1" /> Link sender
+              <Plus className="h-4 w-4 mr-1" /> <T k="pages.linkSender" />
             </Button>
           </div>
         </CardContent>
@@ -262,17 +263,17 @@ function SendersTab({
         </CardHeader>
         <CardContent>
           {sources.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No senders linked yet.</p>
+            <p className="text-sm text-muted-foreground"><T k="pages.noSendersLinkedYet" /></p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Sender</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Label</TableHead>
+                  <TableHead><T k="pages.sender" /></TableHead>
+                  <TableHead><T k="pages.client" /></TableHead>
+                  <TableHead><T k="pages.label" /></TableHead>
                   <TableHead>DKIM</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead><T k="pages.status" /></TableHead>
+                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -354,12 +355,12 @@ function CompletenessTab({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Check a period for missing documents</CardTitle>
+          <CardTitle className="text-base"><T k="pages.checkAPeriodForMissingDocuments" /></CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label>Client</Label>
+              <Label><T k="pages.client" /></Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-completeness-client">
                   <SelectValue placeholder="Select client" />
@@ -374,16 +375,16 @@ function CompletenessTab({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Period start</Label>
+              <Label><T k="pages.periodStart2" /></Label>
               <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Period end</Label>
+              <Label><T k="pages.periodEnd2" /></Label>
               <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
             </div>
             <div className="flex items-end">
               <Button onClick={() => runMutation.mutate()} disabled={!canRun || runMutation.isPending}>
-                Run check
+                <T k="pages.runCheck" />
               </Button>
             </div>
           </div>
@@ -404,7 +405,7 @@ function CompletenessTab({
             </CardTitle>
             {result.summary.gapCount > 0 && (
               <Button onClick={() => chaseMutation.mutate()} disabled={chaseMutation.isPending} data-testid="button-chase">
-                Create chase requests
+                <T k="pages.createChaseRequests" />
               </Button>
             )}
           </CardHeader>
@@ -425,9 +426,9 @@ function CompletenessTab({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead><T k="pages.description" /></TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right"><T k="pages.amount" /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

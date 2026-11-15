@@ -44,6 +44,12 @@
     sans-serif;
 }
 
+/* Letter-spacing breaks Arabic joining (letters render disconnected), so the
+   uppercase/tracking-wide label styles used across the shell are neutralised. */
+[dir="rtl"] [class*="tracking-"] {
+  letter-spacing: normal;
+}
+
 /* Slightly larger line-height for Arabic readability */
 [dir="rtl"] p,
 [dir="rtl"] span,
@@ -364,6 +370,20 @@
   border-left: 1px solid hsl(var(--sidebar-border));
 }
 
+/* R18-01: the shadcn sidebar chooses left/right itself from its `side` prop
+   (AppSidebar passes side="right" in RTL). The generic physical `.left-0` /
+   `.right-0` swaps above would flip it a second time and park the fixed
+   container back on the left edge, over the content, leaving a dead strip on
+   the right. Restore the container's own physical anchor. */
+[dir="rtl"] [data-slot="sidebar-container"].right-0 {
+  right: 0;
+  left: auto;
+}
+[dir="rtl"] [data-slot="sidebar-container"].left-0 {
+  left: 0;
+  right: auto;
+}
+
 /* Sidebar active indicator — flip to right edge */
 [dir="rtl"] [data-sidebar="sidebar"] .absolute.left-0 {
   left: auto;
@@ -679,9 +699,12 @@
    10. SCROLLBAR POSITIONING
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Move scrollbar to the left in RTL */
+/* R18-01: do NOT reserve a root scrollbar gutter in RTL. `scrollbar-gutter:
+   stable` on <html> shrank the fixed sidebar's containing block by the 10px
+   scrollbar width and left a dead strip beside the right-anchored sidebar.
+   Browsers already place the native scrollbar on the correct side in RTL. */
 [dir="rtl"] {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 
 [dir="rtl"] ::-webkit-scrollbar {

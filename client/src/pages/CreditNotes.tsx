@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -327,7 +328,7 @@ export default function CreditNotes() {
           <DialogTrigger asChild>
             <Button disabled title="Create credit notes from the original invoice actions.">
               <Plus className="w-4 h-4 mr-2" />
-              Create from invoice
+              <T k="pages.createFromInvoice" />
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -349,7 +350,9 @@ export default function CreditNotes() {
                     name="number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Credit Note Number</FormLabel>
+                        <FormLabel>
+                          <T k="pages.creditNoteNumber" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} className="font-mono" />
                         </FormControl>
@@ -362,7 +365,9 @@ export default function CreditNotes() {
                     name="invoiceId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Related Invoice</FormLabel>
+                        <FormLabel>
+                          <T k="pages.relatedInvoice" />
+                        </FormLabel>
                         <Select onValueChange={field.onChange} value={field.value || ""}>
                           <FormControl>
                             <SelectTrigger>
@@ -389,7 +394,9 @@ export default function CreditNotes() {
                     name="customerName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Customer Name</FormLabel>
+                        <FormLabel>
+                          <T k="pages.customerName" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -402,7 +409,9 @@ export default function CreditNotes() {
                     name="customerTrn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Customer TRN</FormLabel>
+                        <FormLabel>
+                          <T k="pages.customerTrn" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} placeholder="Optional" className="font-mono" />
                         </FormControl>
@@ -433,7 +442,9 @@ export default function CreditNotes() {
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>
+                                    <T k="pages.pickADate" />
+                                  </span>
                                 )}
                               </Button>
                             </FormControl>
@@ -456,7 +467,9 @@ export default function CreditNotes() {
                     name="reason"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Reason</FormLabel>
+                        <FormLabel>
+                          <T k="pages.reason" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} placeholder="Reason for credit note" />
                         </FormControl>
@@ -468,7 +481,9 @@ export default function CreditNotes() {
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">Line Items</h3>
+                    <h3 className="font-medium">
+                      <T k="pages.lineItems" />
+                    </h3>
                     <Button
                       type="button"
                       variant="outline"
@@ -478,7 +493,7 @@ export default function CreditNotes() {
                       }
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Line
+                      <T k="pages.addLine" />
                     </Button>
                   </div>
 
@@ -598,7 +613,9 @@ export default function CreditNotes() {
 
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-muted-foreground">
+                      <T k="pages.subtotal" />
+                    </span>
                     <span className="font-mono font-medium">
                       {formatCurrency(subtotal, "AED", locale)}
                     </span>
@@ -610,7 +627,9 @@ export default function CreditNotes() {
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>Total</span>
+                    <span>
+                      <T k="pages.total2" />
+                    </span>
                     <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
                   </div>
                 </div>
@@ -622,7 +641,7 @@ export default function CreditNotes() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    <T k="pages.cancel" />
                   </Button>
                   <Button
                     type="submit"
@@ -646,13 +665,23 @@ export default function CreditNotes() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold">Number</TableHead>
-                  <TableHead className="font-semibold">Customer</TableHead>
+                  <TableHead className="font-semibold">
+                    <T k="pages.number" />
+                  </TableHead>
+                  <TableHead className="font-semibold">
+                    <T k="pages.customer" />
+                  </TableHead>
                   <TableHead className="font-semibold">Invoice #</TableHead>
                   <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="font-semibold text-right">Total</TableHead>
-                  <TableHead className="font-semibold text-center">Status</TableHead>
-                  <TableHead className="font-semibold text-center">Actions</TableHead>
+                  <TableHead className="font-semibold text-right">
+                    <T k="pages.total2" />
+                  </TableHead>
+                  <TableHead className="font-semibold text-center">
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead className="font-semibold text-center">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -696,7 +725,7 @@ export default function CreditNotes() {
                               }
                             >
                               <Download className="w-4 h-4 mr-2" />
-                              Download PDF
+                              <T k="pages.downloadPdf" />
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

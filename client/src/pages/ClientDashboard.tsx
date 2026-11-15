@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -195,7 +196,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Recent Activity
+              <T k="pages.recentActivity" />
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-chart-5/10 flex items-center justify-center">
               <Activity className="w-4 h-4 text-chart-5 " />
@@ -222,7 +223,9 @@ export default function ClientDashboard() {
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
               <Upload className="w-7 h-7 text-info" />
-              <span className="font-medium">Upload Document</span>
+              <span className="font-medium">
+                <T k="pages.uploadDocument" />
+              </span>
             </Button>
           </Link>
           <Link href="/reports">

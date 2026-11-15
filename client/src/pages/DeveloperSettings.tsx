@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -134,7 +135,7 @@ export default function DeveloperSettings() {
         <TabsList className="mb-6">
           <TabsTrigger value="api-keys" className="gap-2">
             <Key className="h-4 w-4" />
-            API Keys
+            <T k="pages.apiKeys" />
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
@@ -246,7 +247,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>API Keys</CardTitle>
+            <CardTitle><T k="pages.apiKeys" /></CardTitle>
             <CardDescription>
               Create and manage API keys for programmatic access to Muhasib.ai.
             </CardDescription>
@@ -258,7 +259,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center">Loading...</p>
+            <p className="text-muted-foreground py-8 text-center"><T k="pages.loading" /></p>
           ) : !apiKeys?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               No API keys created yet. Create one to get started.
@@ -269,10 +270,10 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Key</TableHead>
-                  <TableHead>Scopes</TableHead>
+                  <TableHead><T k="pages.scopes" /></TableHead>
                   <TableHead>Last Used</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead><T k="pages.status" /></TableHead>
+                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -333,7 +334,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Scopes</Label>
+              <Label><T k="pages.scopes" /></Label>
               <div className="flex flex-col gap-2">
                 {API_KEY_SCOPES.map((scope) => (
                   <div key={scope} className="flex items-center gap-2">
@@ -355,7 +356,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>
@@ -430,7 +431,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -576,7 +577,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center">Loading...</p>
+            <p className="text-muted-foreground py-8 text-center"><T k="pages.loading" /></p>
           ) : !webhooks?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               No webhook endpoints configured. Add one to start receiving events.
@@ -586,11 +587,11 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>URL</TableHead>
-                  <TableHead>Events</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead><T k="pages.events" /></TableHead>
+                  <TableHead><T k="pages.status" /></TableHead>
                   <TableHead>Failures</TableHead>
                   <TableHead>Last Triggered</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -692,7 +693,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Events</Label>
+              <Label><T k="pages.events" /></Label>
               <div className="grid grid-cols-2 gap-2">
                 {WEBHOOK_EVENTS.map((event) => (
                   <div key={event} className="flex items-center gap-2">
@@ -711,7 +712,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>
@@ -797,7 +798,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Event</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead><T k="pages.status" /></TableHead>
                     <TableHead>Response</TableHead>
                     <TableHead>Time</TableHead>
                   </TableRow>
@@ -814,7 +815,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                             Success
                           </Badge>
                         ) : (
-                          <Badge variant="destructive">Failed</Badge>
+                          <Badge variant="destructive"><T k="pages.failed" /></Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -845,7 +846,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

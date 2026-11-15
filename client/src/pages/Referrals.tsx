@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -103,7 +104,7 @@ export default function Referrals() {
         return (
           <Badge variant="secondary">
             <Clock className="w-3 h-3 mr-1" />
-            Pending
+            <T k="pages.pending" />
           </Badge>
         );
       default:
@@ -158,7 +159,9 @@ export default function Referrals() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pending</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.pending" />
+                </CardTitle>
                 <Clock className="h-4 w-4 text-warning" />
               </CardHeader>
               <CardContent>

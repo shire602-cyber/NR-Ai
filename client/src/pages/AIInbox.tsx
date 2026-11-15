@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -454,7 +455,7 @@ export default function AIInbox() {
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1">
             <ArrowUpDown className="h-4 w-4" />
-            History
+            <T k="pages.history" />
           </TabsTrigger>
         </TabsList>
 
@@ -484,7 +485,9 @@ export default function AIInbox() {
               <CardContent className="pt-6">
                 <div className="text-center py-12 space-y-4">
                   <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
-                  <h3 className="text-lg font-semibold">All Clear</h3>
+                  <h3 className="text-lg font-semibold">
+                    <T k="pages.allClear" />
+                  </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     No transactions pending review. Click "Run Scan" to check for new unreconciled
                     bank transactions.
@@ -500,12 +503,20 @@ export default function AIInbox() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>
+                          <T k="pages.description" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.amount" />
+                        </TableHead>
                         <TableHead>Suggested Account</TableHead>
-                        <TableHead>Confidence</TableHead>
+                        <TableHead>
+                          <T k="pages.confidence" />
+                        </TableHead>
                         <TableHead>AI Reason</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.actions" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -623,10 +634,18 @@ export default function AIInbox() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Account</TableHead>
-                        <TableHead>Confidence</TableHead>
+                        <TableHead>
+                          <T k="pages.description" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.amount" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.account" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.confidence" />
+                        </TableHead>
                         <TableHead>Journal Entry</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -712,12 +731,24 @@ export default function AIInbox() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Account</TableHead>
-                        <TableHead>Confidence</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Reviewed</TableHead>
+                        <TableHead>
+                          <T k="pages.description" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.amount" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.account" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.confidence" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.status" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.reviewed" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -824,7 +855,7 @@ export default function AIInbox() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setCorrectDialogOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => {

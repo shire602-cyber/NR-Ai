@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -242,25 +243,25 @@ export default function LandingPage() {
                 href="#features"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Features
+                <T k="pages.features" />
               </a>
               <a
                 href="#how-it-works"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                How it works
+                <T k="pages.howItWorks" />
               </a>
               <a
                 href="#pricing"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Pricing
+                <T k="pages.pricing" />
               </a>
               <a
                 href="#contact"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Contact
+                <T k="pages.contact" />
               </a>
             </nav>
 
@@ -281,12 +282,12 @@ export default function LandingPage() {
               </Button>
               <Link href="/login">
                 <Button variant="ghost" size="sm">
-                  Sign In
+                  <T k="pages.signIn" />
                 </Button>
               </Link>
               <Link href="/register">
                 <Button size="sm" className="bg-primary hover:bg-primary/90">
-                  Start Free Trial
+                  <T k="pages.startFreeTrial" />
                 </Button>
               </Link>
             </div>
@@ -317,28 +318,28 @@ export default function LandingPage() {
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  Features
+                  <T k="pages.features" />
                 </a>
                 <a
                   href="#how-it-works"
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  How it works
+                  <T k="pages.howItWorks" />
                 </a>
                 <a
                   href="#pricing"
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  Pricing
+                  <T k="pages.pricing" />
                 </a>
                 <a
                   href="#contact"
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  Contact
+                  <T k="pages.contact" />
                 </a>
                 <Separator />
                 <Button
@@ -355,12 +356,12 @@ export default function LandingPage() {
                 </Button>
                 <Link href="/login">
                   <Button variant="outline" className="w-full" onClick={() => setMenuOpen(false)}>
-                    Sign In
+                    <T k="pages.signIn" />
                   </Button>
                 </Link>
                 <Link href="/register">
                   <Button className="w-full bg-primary" onClick={() => setMenuOpen(false)}>
-                    Start Free Trial
+                    <T k="pages.startFreeTrial" />
                   </Button>
                 </Link>
               </div>
@@ -410,7 +411,7 @@ export default function LandingPage() {
                     size="lg"
                     className="bg-primary hover:bg-primary/90 px-8 text-base h-12 shadow-lg shadow-primary/25"
                   >
-                    Start Free Trial
+                    <T k="pages.startFreeTrial" />
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </motion.div>
@@ -418,7 +419,7 @@ export default function LandingPage() {
               <a href="mailto:hello@muhasib.ai">
                 <motion.div whileHover={hoverLift}>
                   <Button size="lg" variant="outline" className="px-8 text-base h-12">
-                    Book a Demo
+                    <T k="pages.bookADemo" />
                     <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </motion.div>
@@ -588,7 +589,9 @@ export default function LandingPage() {
                       <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
                       <div className="mt-4 flex items-baseline gap-1">
                         {plan.price === "Custom" ? (
-                          <span className="text-3xl font-bold">Custom</span>
+                          <span className="text-3xl font-bold">
+                            <T k="pages.custom" />
+                          </span>
                         ) : (
                           <>
                             <span className="text-sm font-medium text-muted-foreground">AED</span>
@@ -699,7 +702,7 @@ export default function LandingPage() {
                   variant="secondary"
                   className="px-10 h-12 text-base font-semibold shadow-lg"
                 >
-                  Start Free Trial
+                  <T k="pages.startFreeTrial" />
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
@@ -709,7 +712,7 @@ export default function LandingPage() {
                   variant="outline"
                   className="px-10 h-12 text-base border-white/40 text-white hover:bg-card/10 hover:text-white"
                 >
-                  Book a Demo
+                  <T k="pages.bookADemo" />
                 </Button>
               </a>
             </div>
@@ -739,7 +742,9 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <Mail className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="font-semibold text-base mb-1">Email</h3>
+                <h3 className="font-semibold text-base mb-1">
+                  <T k="pages.email" />
+                </h3>
                 <a
                   href="mailto:hello@muhasib.ai"
                   className="text-sm text-primary hover:underline"
@@ -756,7 +761,9 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <Phone className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="font-semibold text-base mb-1">Phone</h3>
+                <h3 className="font-semibold text-base mb-1">
+                  <T k="pages.phone" />
+                </h3>
                 <a
                   href="tel:+97141234567"
                   className="text-sm text-primary hover:underline"
@@ -801,21 +808,23 @@ export default function LandingPage() {
 
             {/* Product */}
             <div>
-              <h4 className="font-semibold text-sm mb-3">Product</h4>
+              <h4 className="font-semibold text-sm mb-3">
+                <T k="pages.product" />
+              </h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
                   <a href="#features" className="hover:text-foreground transition-colors">
-                    Features
+                    <T k="pages.features" />
                   </a>
                 </li>
                 <li>
                   <a href="#pricing" className="hover:text-foreground transition-colors">
-                    Pricing
+                    <T k="pages.pricing" />
                   </a>
                 </li>
                 <li>
                   <Link href="/login" className="hover:text-foreground transition-colors">
-                    Sign In
+                    <T k="pages.signIn" />
                   </Link>
                 </li>
                 <li>
@@ -840,17 +849,17 @@ export default function LandingPage() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
                   <Link href="/privacy" className="hover:text-foreground transition-colors">
-                    Privacy Policy
+                    <T k="pages.privacyPolicy" />
                   </Link>
                 </li>
                 <li>
                   <Link href="/terms" className="hover:text-foreground transition-colors">
-                    Terms of Service
+                    <T k="pages.termsOfService" />
                   </Link>
                 </li>
                 <li>
                   <Link href="/cookies" className="hover:text-foreground transition-colors">
-                    Cookie Policy
+                    <T k="pages.cookiePolicy" />
                   </Link>
                 </li>
               </ul>
@@ -917,21 +926,21 @@ export default function LandingPage() {
                 className="hover:text-foreground transition-colors"
                 data-testid="link-footer-privacy"
               >
-                Privacy Policy
+                <T k="pages.privacyPolicy" />
               </Link>
               <Link
                 href="/terms"
                 className="hover:text-foreground transition-colors"
                 data-testid="link-footer-terms"
               >
-                Terms of Service
+                <T k="pages.termsOfService" />
               </Link>
               <Link
                 href="/cookies"
                 className="hover:text-foreground transition-colors"
                 data-testid="link-footer-cookies"
               >
-                Cookie Policy
+                <T k="pages.cookiePolicy" />
               </Link>
             </div>
           </div>

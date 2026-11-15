@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -405,7 +406,11 @@ export default function FixedAssets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <StatusBadge tone="success">Active</StatusBadge>;
+        return (
+          <StatusBadge tone="success">
+            <T k="pages.active" />
+          </StatusBadge>
+        );
       case "disposed":
         return <StatusBadge tone="danger">Disposed</StatusBadge>;
       case "fully_depreciated":
@@ -461,7 +466,7 @@ export default function FixedAssets() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Building2 className="w-8 h-8" />
-            Fixed Assets
+            <T k="pages.fixedAssets" />
           </h1>
           <p className="text-muted-foreground mt-1">
             Manage fixed assets, depreciation, and disposals
@@ -488,7 +493,9 @@ export default function FixedAssets() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                <T k="pages.totalCost" />
+              </CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -518,7 +525,9 @@ export default function FixedAssets() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Net Book Value</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                <T k="pages.netBookValue" />
+              </CardTitle>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -542,11 +551,17 @@ export default function FixedAssets() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Category</TableHead>
+                    <TableHead>
+                      <T k="pages.category" />
+                    </TableHead>
                     <TableHead className="text-right">Count</TableHead>
-                    <TableHead className="text-right">Total Cost</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.totalCost" />
+                    </TableHead>
                     <TableHead className="text-right">Accum. Depreciation</TableHead>
-                    <TableHead className="text-right">Net Book Value</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.netBookValue" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -577,7 +592,9 @@ export default function FixedAssets() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Fixed Assets</CardTitle>
+              <CardTitle>
+                <T k="pages.fixedAssets" />
+              </CardTitle>
               <CardDescription>
                 {assets.length} asset{assets.length !== 1 ? "s" : ""} registered
               </CardDescription>
@@ -623,12 +640,16 @@ export default function FixedAssets() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Asset Name</TableHead>
-                    <TableHead>Category</TableHead>
+                    <TableHead>
+                      <T k="pages.category" />
+                    </TableHead>
                     <TableHead>Purchase Date</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Accum. Dep.</TableHead>
                     <TableHead className="text-right">NBV</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
                     <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -935,7 +956,9 @@ export default function FixedAssets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>
+                      <T k="pages.notes" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Optional notes about this asset"
@@ -1015,7 +1038,9 @@ export default function FixedAssets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>
+                      <T k="pages.notes" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Reason for disposal"
@@ -1070,18 +1095,36 @@ export default function FixedAssets() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="1">January</SelectItem>
-                          <SelectItem value="2">February</SelectItem>
-                          <SelectItem value="3">March</SelectItem>
-                          <SelectItem value="4">April</SelectItem>
+                          <SelectItem value="1">
+                            <T k="pages.january" />
+                          </SelectItem>
+                          <SelectItem value="2">
+                            <T k="pages.february" />
+                          </SelectItem>
+                          <SelectItem value="3">
+                            <T k="pages.march" />
+                          </SelectItem>
+                          <SelectItem value="4">
+                            <T k="pages.april" />
+                          </SelectItem>
                           <SelectItem value="5">May</SelectItem>
                           <SelectItem value="6">June</SelectItem>
                           <SelectItem value="7">July</SelectItem>
-                          <SelectItem value="8">August</SelectItem>
-                          <SelectItem value="9">September</SelectItem>
-                          <SelectItem value="10">October</SelectItem>
-                          <SelectItem value="11">November</SelectItem>
-                          <SelectItem value="12">December</SelectItem>
+                          <SelectItem value="8">
+                            <T k="pages.august" />
+                          </SelectItem>
+                          <SelectItem value="9">
+                            <T k="pages.september" />
+                          </SelectItem>
+                          <SelectItem value="10">
+                            <T k="pages.october" />
+                          </SelectItem>
+                          <SelectItem value="11">
+                            <T k="pages.november" />
+                          </SelectItem>
+                          <SelectItem value="12">
+                            <T k="pages.december" />
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1133,7 +1176,9 @@ export default function FixedAssets() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (assetToDelete) {
@@ -1143,7 +1188,7 @@ export default function FixedAssets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

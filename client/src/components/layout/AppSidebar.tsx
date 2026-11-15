@@ -18,6 +18,7 @@ import {
   ListTodo,
   Newspaper,
   ClipboardList,
+  Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -124,6 +125,13 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     items: [],
   },
   {
+    key: "ai",
+    titleKey: "ai.hubTitle",
+    icon: Sparkles,
+    url: "/ai",
+    items: [],
+  },
+  {
     key: "payroll",
     titleKey: "hrPayroll",
     icon: Banknote,
@@ -150,7 +158,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "companySettings", url: "/settings/company" },
       { titleKey: "companyProfile", url: "/company-profile" },
       { titleKey: "teamManagement", url: "/team" },
-      { titleKey: "integrations", url: "/integrations" },
+      { titleKey: "integrations", url: "/integrations-hub" },
       { titleKey: "developerSettings", url: "/developer-settings" },
       { titleKey: "notificationPreferences", url: "/notification-preferences" },
       { titleKey: "subscription", url: "/subscription" },
@@ -182,13 +190,11 @@ const ADMIN_GROUP: NavGroup = {
   icon: Shield,
   items: [
     { titleKey: "adminDashboard", url: "/admin/dashboard" },
-    { titleKey: "clientManagement", url: "/admin/clients" },
     { titleKey: "clientDocuments", url: "/admin/documents" },
     { titleKey: "userInvitations", url: "/admin/invitations" },
     { titleKey: "clientImport", url: "/admin/import" },
     { titleKey: "userManagement", url: "/admin/users" },
     { titleKey: "activityLogs", url: "/admin/activity-logs" },
-    { titleKey: "systemSettings", url: "/admin" },
   ],
 };
 
@@ -347,7 +353,7 @@ export function AppSidebar() {
       <SidebarMenuItem key={group.key}>
         <SidebarMenuButton
           onClick={() => toggleGroup(group.key)}
-          className={cn(hasActive && "text-primary font-medium")}
+          className={cn(hasActive && "text-sidebar-primary font-medium")}
           data-testid={`group-${group.key}`}
         >
           <Icon className="w-4 h-4" />
@@ -374,7 +380,7 @@ export function AppSidebar() {
               <SidebarMenuSub
                 className={cn(
                   group.key === "reports" &&
-                    "max-h-[min(34rem,calc(100vh-18rem))] overflow-y-auto pr-1"
+                    "max-h-[min(34rem,calc(100vh-18rem))] overflow-y-auto pe-1"
                 )}
               >
                 {group.items.map((item) => {
@@ -388,7 +394,7 @@ export function AppSidebar() {
                         asChild
                         isActive={isActive}
                         className={cn(
-                          "w-full justify-start text-left",
+                          "w-full justify-start text-start",
                           description ? "h-auto min-h-10 py-1.5" : undefined
                         )}
                         data-testid={`link-${item.testId ?? item.titleKey}`}
@@ -397,7 +403,7 @@ export function AppSidebar() {
                           <span className="min-w-0 flex-1 overflow-hidden">
                             <span className="block truncate">{label}</span>
                             {description ? (
-                              <span className="block truncate text-[10.5px] font-normal leading-tight text-sidebar-foreground/45">
+                              <span className="block truncate text-[10.5px] font-normal leading-tight text-sidebar-foreground/70">
                                 {description}
                               </span>
                             ) : null}
@@ -448,14 +454,14 @@ export function AppSidebar() {
               <BrandMark size="md" />
               <span
                 aria-hidden
-                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot"
+                className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot"
               />
             </div>
             <div className="min-w-0">
               <div className="font-semibold text-[13px] tracking-tight text-sidebar-foreground leading-tight">
                 Muhasib<span className="text-sidebar-primary">.ai</span>
               </div>
-              <div className="text-[10.5px] text-sidebar-foreground/55 uppercase tracking-[0.12em] leading-tight font-medium">
+              <div className="text-[10.5px] text-sidebar-foreground/70 uppercase tracking-[0.12em] leading-tight font-medium">
                 {t.smartAccounting ?? "Smart Accounting"}
               </div>
             </div>
@@ -468,8 +474,8 @@ export function AppSidebar() {
         {/* ── Client portal — simplified flat view ── */}
         {userType === "client" && (
           <>
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Workspace
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+              {t["shell.sidebarWorkspace"]}
             </div>
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
@@ -484,22 +490,22 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Documents
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+              {t["shell.sidebarDocuments"]}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_DOCUMENT_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
               {t.compliance ?? "Compliance"}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Insights
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+              {t["shell.sidebarInsights"]}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_INSIGHT_ITEMS.map(renderClientPortalItem)}
@@ -522,8 +528,8 @@ export function AppSidebar() {
             userType must never strand the owner with an empty sidebar. */}
         {userType !== "client" && (
           <>
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Overview
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+              {t["shell.sidebarOverview"]}
             </div>
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
@@ -538,8 +544,8 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Operations
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+              {t["shell.sidebarOperations"]}
             </div>
             <SidebarMenu className="px-1.5 pb-4">{allGroups.map(renderNavGroup)}</SidebarMenu>
           </>
@@ -555,7 +561,7 @@ export function AppSidebar() {
         >
           <Languages className="w-4 h-4 opacity-70" />
           <span className="text-[13px]">{locale === "en" ? "العربية" : "English"}</span>
-          <span className="ms-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/45 font-medium">
+          <span className="ms-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/70 font-medium">
             {locale === "en" ? "AR" : "EN"}
           </span>
         </button>

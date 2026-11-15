@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { currentUserQueryKey } from "@/hooks/useCurrentUser";
-import { fetchCurrentUser } from "@/lib/auth";
+import { probeCurrentUser } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -30,7 +30,7 @@ export default function AuthCallback() {
       try {
         const params = new URLSearchParams(window.location.search);
         const requestedNext = safeNextPath(params.get("next"));
-        const user = await fetchCurrentUser();
+        const user = await probeCurrentUser();
         if (!user) throw new Error("Session was not established");
 
         queryClient.setQueryData(currentUserQueryKey, user);

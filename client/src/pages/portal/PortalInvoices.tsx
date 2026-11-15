@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
 import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,7 +48,7 @@ export default function PortalInvoices() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Invoices</h2>
+        <h2 className="text-xl font-semibold text-foreground"><T k="pages.invoices" /></h2>
         <p className="text-sm text-muted-foreground mt-1">
           View and download invoices issued by NR Accounting.
         </p>
@@ -68,9 +69,9 @@ export default function PortalInvoices() {
                   <tr className="border-b border-border bg-muted">
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Invoice #</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Due Date</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Amount</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground"><T k="pages.dueDate" /></th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground"><T k="pages.amount" /></th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground"><T k="pages.status" /></th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>

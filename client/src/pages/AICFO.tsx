@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -259,11 +260,15 @@ export default function AICFO() {
         <TabsList className="grid w-full grid-cols-4 lg:w-fit">
           <TabsTrigger value="overview" className="gap-2">
             <Eye className="w-4 h-4" />
-            <span className="hidden sm:inline">Overview</span>
+            <span className="hidden sm:inline">
+              <T k="pages.overview" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="analytics" className="gap-2">
             <BarChart3 className="w-4 h-4" />
-            <span className="hidden sm:inline">Analytics</span>
+            <span className="hidden sm:inline">
+              <T k="pages.analytics" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="insights" className="gap-2">
             <Zap className="w-4 h-4" />
@@ -308,7 +313,9 @@ export default function AICFO() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.totalRevenue" />
+                </CardTitle>
                 <TrendingUp className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
@@ -324,14 +331,18 @@ export default function AICFO() {
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="pages.noData" />
+                  </p>
                 )}
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.totalExpenses" />
+                </CardTitle>
                 <ArrowDown className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
@@ -347,7 +358,9 @@ export default function AICFO() {
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="pages.noData" />
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -378,7 +391,9 @@ export default function AICFO() {
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="pages.noData" />
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -410,7 +425,9 @@ export default function AICFO() {
                     </Button>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="pages.noData" />
+                  </p>
                 )}
               </div>
             </CardContent>

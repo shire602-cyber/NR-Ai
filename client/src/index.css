@@ -49,7 +49,7 @@
   --secondary-foreground: 220 30% 20%;
   --muted: 220 14% 95%;
   --muted-foreground: 220 14% 42%;
-  --accent: 158 52% 38%; /* emerald — finance positive */
+  --accent: 158 62% 29%; /* emerald — finance positive (AA on light surfaces) */
   --accent-foreground: 0 0% 100%;
   --destructive: 0 65% 48%;
   --destructive-foreground: 0 0% 100%;
@@ -57,12 +57,12 @@
   --ring: 222 47% 30%;
 
   /* Semantic status colors (also used by Badge variants) */
-  --success: 158 52% 38%;
+  --success: 158 62% 29%;
   --success-foreground: 0 0% 100%;
   --success-subtle: 158 50% 94%;
   --success-subtle-foreground: 158 60% 22%;
 
-  --warning: 32 92% 48%;
+  --warning: 32 100% 32%; /* AA text colour on light surfaces */
   --warning-foreground: 0 0% 100%;
   --warning-subtle: 36 95% 94%;
   --warning-subtle-foreground: 28 75% 28%;

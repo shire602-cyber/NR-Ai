@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -141,8 +142,12 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: 
       <TableHeader>
         <TableRow>
           <TableHead>Code</TableHead>
-          <TableHead>Account</TableHead>
-          <TableHead className="text-right">Amount</TableHead>
+          <TableHead>
+            <T k="pages.account" />
+          </TableHead>
+          <TableHead className="text-right">
+            <T k="pages.amount" />
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -187,16 +192,20 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>
+                <T k="pages.startDate" />
+              </Label>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>
+                <T k="pages.endDate" />
+              </Label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 mr-2" />
-              Generate
+              <T k="pages.generate" />
             </Button>
           </div>
         </CardContent>
@@ -223,7 +232,9 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Revenue</CardDescription>
+                <CardDescription>
+                  <T k="pages.totalRevenue" />
+                </CardDescription>
                 <CardTitle className="text-2xl text-success flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
                   {formatCurrency(data.revenue, "AED", locale)}
@@ -232,7 +243,9 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Expenses</CardDescription>
+                <CardDescription>
+                  <T k="pages.totalExpenses" />
+                </CardDescription>
                 <CardTitle className="text-2xl text-destructive flex items-center gap-2">
                   <TrendingDown className="h-5 w-5" />
                   {formatCurrency(data.expenses, "AED", locale)}
@@ -241,7 +254,9 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Net Income</CardDescription>
+                <CardDescription>
+                  <T k="pages.netIncome" />
+                </CardDescription>
                 <CardTitle
                   className={`text-2xl flex items-center gap-2 ${data.netIncome >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -255,7 +270,9 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           {/* Revenue Breakdown */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Revenue</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pages.revenue" />
+              </CardTitle>
               <CardDescription>
                 {formatDate(data.startDate, locale)} - {formatDate(data.endDate, locale)}
               </CardDescription>
@@ -264,7 +281,9 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
               <BreakdownTable items={data.breakdown.revenue} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Revenue</span>
+                <span>
+                  <T k="pages.totalRevenue" />
+                </span>
                 <span className="font-mono">{formatCurrency(data.revenue, "AED", locale)}</span>
               </div>
             </CardContent>
@@ -273,13 +292,17 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           {/* Expense Breakdown */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Expenses</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pages.expenses" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.breakdown.expenses} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Expenses</span>
+                <span>
+                  <T k="pages.totalExpenses" />
+                </span>
                 <span className="font-mono">{formatCurrency(data.expenses, "AED", locale)}</span>
               </div>
             </CardContent>
@@ -321,7 +344,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 mr-2" />
-              Generate
+              <T k="pages.generate" />
             </Button>
           </div>
         </CardContent>
@@ -366,7 +389,9 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Assets</CardDescription>
+                <CardDescription>
+                  <T k="pages.totalAssets" />
+                </CardDescription>
                 <CardTitle className="text-2xl">
                   {formatCurrency(data.assets.total, "AED", locale)}
                 </CardTitle>
@@ -374,7 +399,9 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Liabilities</CardDescription>
+                <CardDescription>
+                  <T k="pages.totalLiabilities" />
+                </CardDescription>
                 <CardTitle className="text-2xl">
                   {formatCurrency(data.liabilities.total, "AED", locale)}
                 </CardTitle>
@@ -382,7 +409,9 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Equity</CardDescription>
+                <CardDescription>
+                  <T k="pages.totalEquity" />
+                </CardDescription>
                 <CardTitle className="text-2xl">
                   {formatCurrency(data.equity.total, "AED", locale)}
                 </CardTitle>
@@ -393,13 +422,17 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Assets */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Assets</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pages.assets" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.assets.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Assets</span>
+                <span>
+                  <T k="pages.totalAssets" />
+                </span>
                 <span className="font-mono">
                   {formatCurrency(data.assets.total, "AED", locale)}
                 </span>
@@ -410,13 +443,17 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Liabilities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Liabilities</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pages.liabilities" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.liabilities.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Liabilities</span>
+                <span>
+                  <T k="pages.totalLiabilities" />
+                </span>
                 <span className="font-mono">
                   {formatCurrency(data.liabilities.total, "AED", locale)}
                 </span>
@@ -427,13 +464,17 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Equity */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Equity</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pages.equity" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.equity.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Equity</span>
+                <span>
+                  <T k="pages.totalEquity" />
+                </span>
                 <span className="font-mono">
                   {formatCurrency(data.equity.total, "AED", locale)}
                 </span>
@@ -446,7 +487,9 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             <CardContent className="pt-6">
               <div className="flex items-center justify-between text-lg">
                 <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Assets</p>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="pages.assets" />
+                  </p>
                   <p className="font-bold">{formatCurrency(data.assets.total, "AED", locale)}</p>
                 </div>
                 <Scale className="h-6 w-6 text-muted-foreground" />
@@ -514,20 +557,24 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-4 items-end">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>
+                <T k="pages.startDate" />
+              </Label>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>
+                <T k="pages.endDate" />
+              </Label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 mr-2" />
-              Generate
+              <T k="pages.generate" />
             </Button>
             <Button variant="outline" onClick={() => void handleExport()} disabled={!data}>
               <Download className="h-4 w-4 mr-2" />
-              Export
+              <T k="pages.export" />
             </Button>
           </div>
         </CardContent>
@@ -696,7 +743,9 @@ export default function FinancialStatements() {
   if (!companyId) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">No company found. Please create a company first.</p>
+        <p className="text-muted-foreground">
+          <T k="pages.noCompanyFoundPleaseCreateACompanyFirst" />
+        </p>
       </div>
     );
   }
@@ -719,11 +768,11 @@ export default function FinancialStatements() {
           </TabsTrigger>
           <TabsTrigger value="balance-sheet" className="flex items-center gap-2">
             <Scale className="h-4 w-4" />
-            Balance Sheet
+            <T k="pages.balanceSheet" />
           </TabsTrigger>
           <TabsTrigger value="cash-flow" className="flex items-center gap-2">
             <Banknote className="h-4 w-4" />
-            Cash Flow
+            <T k="pages.cashFlow" />
           </TabsTrigger>
         </TabsList>
 

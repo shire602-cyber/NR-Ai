@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -184,7 +185,7 @@ export default function Reminders() {
           You need a company before you can configure reminders.
         </p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
-          Create your company
+          <T k="pages.createYourCompany" />
         </Button>
       </div>
     );

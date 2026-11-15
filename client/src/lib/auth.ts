@@ -5,6 +5,37 @@ import { clearAllCaches, clearPwaSessionMarker, rotatePwaSessionMarker } from ".
 const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";
 const ACTIVE_COMPANY_KEY = "muhasib_active_company_id";
+// Non-secret hint that this browser has signed in. The real session lives in an
+// httpOnly cookie we cannot read, so without a hint every anonymous page view
+// probed /api/auth/me, /api/companies and /api/auth/refresh and logged 401/400s
+// to the console (R18-04). The hint only gates *probing*; the server still
+// authorises every request.
+const AUTH_HINT_KEY = "muhasib_auth_hint";
+
+export function hasAuthHint(): boolean {
+  try {
+    return localStorage.getItem(AUTH_HINT_KEY) === "1";
+  } catch {
+    // Storage blocked: fall back to probing so sign-in is never broken.
+    return true;
+  }
+}
+
+export function setAuthHint(): void {
+  try {
+    localStorage.setItem(AUTH_HINT_KEY, "1");
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function clearAuthHint(): void {
+  try {
+    localStorage.removeItem(AUTH_HINT_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export function getToken(): string | null {
   return null;
@@ -17,6 +48,7 @@ export function setToken(token: string): void {
 }
 
 export function removeToken(): void {
+  clearAuthHint();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(ACTIVE_COMPANY_KEY);
@@ -34,6 +66,7 @@ export function getStoredUser(): any {
 
 export function setStoredUser(user: any): void {
   void user;
+  setAuthHint();
   rotatePwaSessionMarker();
   window.dispatchEvent(new Event("auth:user-updated"));
 }
@@ -49,6 +82,7 @@ export function getAuthHeaders(): Record<string, string> {
 let refreshInFlight: Promise<boolean> | null = null;
 
 export async function refreshSession(): Promise<boolean> {
+  if (!hasAuthHint()) return false;
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
@@ -77,6 +111,25 @@ export async function refreshSession(): Promise<boolean> {
 }
 
 export async function fetchCurrentUser(): Promise<any | null> {
+  // No sign-in hint: this is an anonymous visitor, so do not hit the API.
+  if (!hasAuthHint()) return null;
+  return loadCurrentUser();
+}
+
+/** Unconditional session probe, used by the OAuth callback where the cookie
+ * was just set but no hint exists yet. */
+export async function probeCurrentUser(): Promise<any | null> {
+  return loadCurrentUser();
+}
+
+async function loadCurrentUser(): Promise<any | null> {
+  const user = await requestCurrentUser();
+  if (user) setAuthHint();
+  else clearAuthHint();
+  return user;
+}
+
+async function requestCurrentUser(): Promise<any | null> {
   const res = await fetch(apiUrl("/api/auth/me"), {
     credentials: "include",
   });

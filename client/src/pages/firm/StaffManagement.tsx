@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -147,7 +148,7 @@ export default function StaffManagement() {
   if (loadingStaff) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Loading staff...
+        <T k="pages.loadingStaff" />
       </div>
     );
   }
@@ -165,7 +166,7 @@ export default function StaffManagement() {
                 {pendingChanges.size} pending change{pendingChanges.size !== 1 ? "s" : ""}
               </span>
               <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
-                Discard
+                <T k="pages.discard" />
               </Button>
               <Button size="sm" onClick={saveChanges} disabled={saving}>
                 {saving ? "Saving..." : "Save Changes"}
@@ -190,19 +191,25 @@ export default function StaffManagement() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Total Staff</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.totalStaff" />
+            </p>
             <p className="text-2xl font-bold mt-0.5">{staff.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Client Companies</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.clientCompanies" />
+            </p>
             <p className="text-2xl font-bold mt-0.5">{clients.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Unassigned Clients</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pages.unassignedClients" />
+            </p>
             <p className="text-2xl font-bold mt-0.5">
               {clients.filter((c) => c.assignedStaff?.length === 0).length}
             </p>
@@ -214,7 +221,9 @@ export default function StaffManagement() {
       {filteredStaff.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Users className="w-12 h-12 text-muted-foreground mb-4" />
-          <h3 className="font-semibold">No staff members found</h3>
+          <h3 className="font-semibold">
+            <T k="pages.noStaffMembersFound" />
+          </h3>
           <p className="text-muted-foreground text-sm mt-1">
             {search ? "Try adjusting your search." : "No admin users exist yet."}
           </p>
@@ -278,10 +287,12 @@ export default function StaffManagement() {
                   <div className="border-t bg-muted/20">
                     <div className="p-4">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                        Client Assignments
+                        <T k="pages.clientAssignments" />
                       </p>
                       {clients.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No client companies yet.</p>
+                        <p className="text-sm text-muted-foreground">
+                          <T k="pages.noClientCompaniesYet" />
+                        </p>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                           {clients.map((client) => {

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -362,7 +363,7 @@ export default function VATFiling() {
         return (
           <Badge variant="default" className="bg-success-subtle text-success-subtle-foreground">
             <CheckCircle2 className="w-3 h-3 mr-1" />
-            Filed
+            <T k="pages.filed" />
           </Badge>
         );
       default:

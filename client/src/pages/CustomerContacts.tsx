@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -214,7 +215,7 @@ function ContactForm({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
-          Cancel
+          <T k="pages.cancel" />
         </Button>
         <Button
           onClick={() => onSubmit(formData)}
@@ -806,7 +807,7 @@ export default function CustomerContacts() {
                         onClick={resetImport}
                         data-testid="button-cancel-import"
                       >
-                        Cancel
+                        <T k="pages.cancel" />
                       </Button>
                       <Button
                         onClick={handleImport}
@@ -1021,7 +1022,9 @@ export default function CustomerContacts() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-clear-all">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-clear-all">
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
@@ -1059,7 +1062,9 @@ export default function CustomerContacts() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (contactToDelete) {

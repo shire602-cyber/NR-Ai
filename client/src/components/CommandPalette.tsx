@@ -1116,7 +1116,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       icon: Building2,
       href: "/corporate-tax",
     },
-    { id: "nav-aichat", label: "AI Chat", group: "Navigate", icon: Sparkles, href: "/ai-chat" },
+    {
+      id: "nav-aichat",
+      label: "AI Chat",
+      group: "Navigate",
+      icon: Sparkles,
+      href: "/ai?tab=chat",
+    },
     {
       id: "create-invoice",
       label: "New Invoice",
@@ -1209,7 +1215,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     onSelect={() => handleSelect(item)}
                     data-testid={`command-item-${item.id}`}
                   >
-                    <Icon className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <Icon className="me-2 h-4 w-4 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{item.label}</span>
                       {item.description ? (

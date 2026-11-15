@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -115,7 +116,7 @@ function HealthBadge({ status }: { status: HealthStatus }) {
     return (
       <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30 gap-1">
         <CheckCircle2 className="w-3 h-3" />
-        Healthy
+        <T k="pages.healthy" />
       </Badge>
     );
   }
@@ -123,14 +124,14 @@ function HealthBadge({ status }: { status: HealthStatus }) {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30 gap-1">
         <AlertTriangle className="w-3 h-3" />
-        Attention
+        <T k="pages.attention" />
       </Badge>
     );
   }
   return (
     <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30 gap-1">
       <XCircle className="w-3 h-3" />
-      Critical
+      <T k="pages.critical" />
     </Badge>
   );
 }
