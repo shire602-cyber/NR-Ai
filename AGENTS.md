@@ -426,6 +426,26 @@ Scope: this file applies to the whole repository.
   `npx prettier --check <changed-files>` plus `npx prettier --write <changed-files>` over
   repo-wide formatting unless a format-only cleanup is intentional.
 
+- `npm run test:db` runs `tests/db/**/*.test.ts` against the real app and a freshly migrated
+  Postgres database per test file (`useHarness()` in `tests/db/harness.ts`; only `harness_*`
+  databases are created/dropped, PGlite fallback when `CREATE DATABASE` is not allowed). Use it
+  for any persistence, posting, tenancy, or concurrency regression; name tests after issue ids.
+  `tests/db/route-matrix.test.ts` is the cross-tenant route matrix; known gaps live as per-issue
+  files in `tests/db/route-matrix-allow/`.
+- `npm run check` ends with `scripts/run-guards.mjs`: `check-raw-body.mjs` (raw `req.body` in
+  write routes), `check-ledger-writes.mjs` (direct journal writes outside the ledger service), and
+  `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
+  only move down (`--update` after real progress).
+- Write routes should validate with `strictBody` (`server/http/strict-body.ts`, see its README)
+  and shared primitives in `shared/validators/`; money math uses integer fils via
+  `shared/money.ts`. Cross-workstream calls go through `server/platform/` (service registry,
+  domain events, job registry).
+- UI copy goes into namespaced catalogs `client/src/locales/{en,ar}/*.json` (used via `<T k>` /
+  `t["ns.key"]`); use logical CSS properties for RTL. `node tests/e2e/a11y-crawl.mjs [--rtl]` runs
+  the axe/keyboard crawl.
+- After a merged build, refresh the bundle baseline with
+  `node scripts/check-bundle-budget.mjs --update`.
+
 ## Database And Migrations
 
 - Drizzle config reads `shared/schema.ts`, writes migrations to `migrations/`, and requires
@@ -437,6 +457,14 @@ Scope: this file applies to the whole repository.
   setups.
 - Before committing migration or auth/test-account changes, run `npm run check:migrations`. It
   blocks bcrypt hash literals and `INSERT INTO users` seed patterns outside the explicit allowlist.
+
+- Migrations `0089_platform_foundation` (W1 platform: AI usage metering, receipt file metadata,
+  `user_onboarding.tour_dismissed_at`, test-credential revocation) through `0109` are reserved,
+  one file per remediation workstream (the filename names the owner, e.g. `0090_w2a_ledger_kernel`).
+  A workstream replaces only its own placeholder with idempotent SQL; never edit
+  `migrations/meta/_journal.json` or add new numbers. Because placeholders change content, gates
+  run on freshly created databases. New tables in `shared/schema.ts` go directly below their
+  owning block, and every Drizzle column must be created by some migration.
 
 ## Testing And Runtime Notes
 

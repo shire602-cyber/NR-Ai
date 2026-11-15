@@ -55,6 +55,13 @@ for (const file of serverRouteFiles) {
   for (const match of directRoutes) {
     serverPatterns.push({ method: match[1].toUpperCase(), path: normalizeApiPath(match[2]), file });
   }
+  // app.post(["/api/a", "/api/b"], ...) registers every path in the array.
+  const arrayRoutes = [...source.matchAll(/\bapp\.(get|post|put|patch|delete)\(\s*\[([^\]]+)\]/g)];
+  for (const match of arrayRoutes) {
+    for (const p of match[2].matchAll(/['"`]([^'"`]+)['"`]/g)) {
+      serverPatterns.push({ method: match[1].toUpperCase(), path: normalizeApiPath(p[1]), file });
+    }
+  }
 
   const routerRoutes = [...source.matchAll(/\brouter\.(get|post|put|patch|delete)\(\s*['"`]([^'"`]+)['"`]/g)];
   const mounts = [...source.matchAll(/\bapp\.use\(\s*['"`]([^'"`]+)['"`]\s*,\s*router(?:\s+as\s+any)?/g)].map(

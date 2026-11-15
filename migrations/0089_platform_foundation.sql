@@ -2,16 +2,17 @@
 -- Idempotent: every statement is safe to re-run.
 
 -- (a) AI usage metering --------------------------------------------------
+-- Matches shared/schema.ts aiUsageEvents / aiUsageLimits (W1-D) exactly.
 CREATE TABLE IF NOT EXISTS "ai_usage_events" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
-  "user_id" uuid,
+  "company_id" uuid REFERENCES "companies"("id") ON DELETE CASCADE,
+  "user_id" uuid REFERENCES "users"("id") ON DELETE SET NULL,
   "task" text NOT NULL,
-  "provider" text,
-  "model" text,
+  "provider" text NOT NULL,
+  "model" text NOT NULL,
   "input_tokens" integer NOT NULL DEFAULT 0,
   "output_tokens" integer NOT NULL DEFAULT 0,
-  "cost_usd" numeric(12,6) NOT NULL DEFAULT 0,
+  "cost_usd" real NOT NULL DEFAULT 0,
   "created_at" timestamp NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "idx_ai_usage_events_company_created"
@@ -19,8 +20,8 @@ CREATE INDEX IF NOT EXISTS "idx_ai_usage_events_company_created"
 
 CREATE TABLE IF NOT EXISTS "ai_usage_limits" (
   "company_id" uuid PRIMARY KEY REFERENCES "companies"("id") ON DELETE CASCADE,
-  "monthly_token_cap" bigint,
-  "monthly_cost_cap_usd" numeric(12,2),
+  "monthly_token_cap" integer,
+  "monthly_cost_cap_usd" real,
   "updated_at" timestamp NOT NULL DEFAULT now()
 );
 

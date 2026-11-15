@@ -15,7 +15,6 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-// @ts-expect-error - bidi-js ships no type declarations
 import bidiFactory from "bidi-js";
 
 export type PdfDoc = any;
