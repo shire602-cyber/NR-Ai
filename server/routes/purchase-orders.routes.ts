@@ -395,9 +395,24 @@ export function registerPurchaseOrderRoutes(app: Express) {
           `${message ? `${message}\n\n` : ""}Purchase order ${po.number} from ${company?.name ?? ""}\n` +
           lines.map((l) => `- ${l.description}: ${l.quantity} × ${l.unitPrice}`).join("\n") +
           `\nTotal: ${po.currency} ${po.total}`;
+        // W4-D: the outbox carries attachments, so the PO PDF goes with the email.
+        const pdf = company ? await generatePurchaseOrderPDF(po, lines, company) : null;
         email = await sendEmail(to, `Purchase order ${po.number}`, text, {
           fromName: company?.name,
           html: `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`,
+          companyId: po.companyId,
+          category: "purchase_order",
+          relatedEntityType: "purchase_order",
+          relatedEntityId: po.id,
+          attachments: pdf
+            ? [
+                {
+                  filename: `purchase-order-${po.number}.pdf`,
+                  content: pdf,
+                  contentType: "application/pdf",
+                },
+              ]
+            : [],
         });
         if (!email.sent) {
           throw new DomainError(
@@ -765,13 +780,11 @@ export function registerPurchaseOrderRoutes(app: Express) {
         });
       });
       const after = await linesOf(po.id);
-      res
-        .status(201)
-        .json({
-          bill: { ...out.bill, line_items: out.lines },
-          match: matchOf(after),
-          warnings: out.warnings,
-        });
+      res.status(201).json({
+        bill: { ...out.bill, line_items: out.lines },
+        match: matchOf(after),
+        warnings: out.warnings,
+      });
     })
   );
 

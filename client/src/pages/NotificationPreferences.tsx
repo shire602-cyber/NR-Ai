@@ -29,9 +29,13 @@ const preferencesSchema = z.object({
   vatDeadlines: z.boolean().default(true),
   paymentReceived: z.boolean().default(true),
   weeklyDigest: z.boolean().default(false),
+  inAppEnabled: z.boolean().default(true),
+  dailyDigest: z.boolean().default(false),
 });
 
 type PreferencesFormData = z.infer<typeof preferencesSchema>;
+
+type ChannelPrefs = { inApp?: boolean; email?: boolean; push?: boolean };
 
 interface NotificationPrefs {
   pushEnabled: boolean;
@@ -40,11 +44,21 @@ interface NotificationPrefs {
   vatDeadlines: boolean;
   paymentReceived: boolean;
   weeklyDigest: boolean;
+  // W4-D (R16-18)
+  inAppEnabled?: boolean;
+  digestFrequency?: "none" | "daily";
+  typePreferences?: Record<string, ChannelPrefs>;
+  eventTypes?: string[];
+  channels?: {
+    push: { status: string; externalAction: { en: string; ar: string } };
+    email: { status: string; externalAction: { en: string; ar: string } };
+  };
 }
 
 export default function NotificationPreferences() {
   const { toast } = useToast();
   const [pushActive, setPushActive] = useState(false);
+  const [typePrefsDraft, setTypePrefs] = useState<Record<string, ChannelPrefs> | null>(null);
 
   useEffect(() => {
     isPushSubscribed().then(setPushActive);
@@ -64,6 +78,8 @@ export default function NotificationPreferences() {
       vatDeadlines: true,
       paymentReceived: true,
       weeklyDigest: false,
+      inAppEnabled: true,
+      dailyDigest: false,
     },
   });
 
@@ -76,13 +92,21 @@ export default function NotificationPreferences() {
         vatDeadlines: preferences.vatDeadlines ?? true,
         paymentReceived: preferences.paymentReceived ?? true,
         weeklyDigest: preferences.weeklyDigest ?? false,
+        inAppEnabled: preferences.inAppEnabled ?? true,
+        dailyDigest: preferences.digestFrequency === "daily",
       });
     }
   }, [preferences, form]);
 
+  const typePrefs = typePrefsDraft ?? preferences?.typePreferences ?? {};
+
   const updateMutation = useMutation({
-    mutationFn: (data: PreferencesFormData) =>
-      apiRequest("PUT", "/api/notification-preferences", data),
+    mutationFn: ({ dailyDigest, ...data }: PreferencesFormData) =>
+      apiRequest("PUT", "/api/notification-preferences", {
+        ...data,
+        digestFrequency: dailyDigest ? "daily" : "none",
+        typePreferences: typePrefs,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
       toast({
@@ -102,6 +126,12 @@ export default function NotificationPreferences() {
   const onSubmit = (data: PreferencesFormData) => {
     updateMutation.mutate(data);
   };
+
+  const pushStatus = preferences?.channels?.push.status ?? "disabled";
+  const emailStatus = preferences?.channels?.email.status ?? "disabled";
+  const pushUnavailable = pushStatus !== "live" && pushStatus !== "sandbox";
+  const setTypePref = (type: string, channel: keyof ChannelPrefs, value: boolean) =>
+    setTypePrefs({ ...typePrefs, [type]: { ...(typePrefs[type] ?? {}), [channel]: value } });
 
   const handleEnablePush = async () => {
     if (pushActive) {
@@ -171,7 +201,15 @@ export default function NotificationPreferences() {
                       </FormDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      {!pushActive && (
+                      {pushUnavailable && (
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid="push-unavailable"
+                        >
+                          <T k="portal.pushNotConfigured" />
+                        </span>
+                      )}
+                      {!pushActive && !pushUnavailable && (
                         <Button
                           type="button"
                           variant="outline"
@@ -184,6 +222,7 @@ export default function NotificationPreferences() {
                       <FormControl>
                         <Switch
                           checked={field.value}
+                          disabled={pushUnavailable}
                           onCheckedChange={(checked) => {
                             if (checked && !pushActive) {
                               handleEnablePush();
@@ -212,6 +251,11 @@ export default function NotificationPreferences() {
                       </FormLabel>
                       <FormDescription>
                         <T k="pages.receiveNotificationsViaEmail" />
+                        {emailStatus === "disabled" && (
+                          <span className="block text-warning" data-testid="email-not-configured">
+                            <T k="portal.emailNotConfigured" />
+                          </span>
+                        )}
                       </FormDescription>
                     </div>
                     <FormControl>
@@ -317,6 +361,80 @@ export default function NotificationPreferences() {
                   </FormItem>
                 )}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <T k="portal.notificationTypes" />
+              </CardTitle>
+              <CardDescription>
+                <T k="portal.notificationTypesHelp" />
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FormField
+                control={form.control}
+                name="inAppEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormLabel className="text-base">
+                      <T k="portal.inAppNotifications" />
+                    </FormLabel>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="dailyDigest"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">
+                        <T k="portal.dailyDigest" />
+                      </FormLabel>
+                      <FormDescription>
+                        <T k="portal.dailyDigestHelp" />
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <div className="divide-y rounded-lg border">
+                <div className="grid grid-cols-3 gap-2 p-3 text-sm font-medium">
+                  <span />
+                  <span>
+                    <T k="portal.channelInApp" />
+                  </span>
+                  <span>
+                    <T k="portal.channelEmail" />
+                  </span>
+                </div>
+                {(preferences?.eventTypes ?? []).map((type) => (
+                  <div key={type} className="grid grid-cols-3 gap-2 p-3 items-center text-sm">
+                    <span>
+                      <T k={`portal.eventType.${type}`} />
+                    </span>
+                    <Switch
+                      aria-label={`${type} in-app`}
+                      checked={typePrefs[type]?.inApp !== false}
+                      onCheckedChange={(v) => setTypePref(type, "inApp", v)}
+                    />
+                    <Switch
+                      aria-label={`${type} email`}
+                      checked={typePrefs[type]?.email ?? false}
+                      onCheckedChange={(v) => setTypePref(type, "email", v)}
+                    />
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
 

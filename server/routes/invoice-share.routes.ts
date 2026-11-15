@@ -6,11 +6,66 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import {
-  hasSmtpConfig,
+  hasEmailProvider,
   sendInvoiceEmail,
   sendPaymentReminderEmail,
+  type SendEmailResult,
 } from "../services/email.service";
 import { findInvoiceForUser, invoicePdfOptions } from "./invoices.routes";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { zEmail, zText } from "../../shared/validators/primitives";
+import { DomainError } from "../errors";
+import { notePortalFailure, portalGuard } from "./portal.public.routes";
+import { paymentsAvailability, publicBaseUrl } from "../services/payments";
+import { logPortalAccess } from "../services/portal-access.service";
+import { db } from "../db";
+import { invoiceOpenFils } from "../services/invoice-posting.service";
+
+const sendEmailBody = z.object({
+  to: zEmail,
+  subject: zText(300).optional(),
+  message: zText(5000).optional(),
+  language: z.enum(["en", "ar", "bilingual"]).optional(),
+});
+const sendReminderBody = z.object({ to: zEmail });
+
+/** Honest API answer for an outbox result (R16-08): never "sent" unless it was. */
+function emailOutcome(result: SendEmailResult, what: string, to: string) {
+  const message = result.sent
+    ? `${what} sent to ${to}`
+    : result.status === "blocked_no_provider"
+      ? `Email not configured — ${what.toLowerCase()} is queued, not sent.`
+      : `${what} is queued for delivery (${result.status}).`;
+  return {
+    message,
+    sent: result.sent,
+    queued: result.queued,
+    status: result.status,
+    outboxId: result.id ?? null,
+    emailConfigured: hasEmailProvider(),
+    ...(result.error ? { error: result.error } : {}),
+  };
+}
+
+/** Make sure the invoice has a live share link and return its public URL. */
+async function ensureShareUrl(invoice: {
+  id: string;
+  shareToken: string | null;
+  shareTokenExpiresAt: Date | null;
+}) {
+  let token = invoice.shareToken;
+  if (
+    !token ||
+    (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date())
+  ) {
+    token = crypto.randomBytes(16).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 90);
+    await storage.setInvoiceShareToken(invoice.id, token, expiresAt);
+  }
+  return `${publicBaseUrl()}/view/invoice/${token}`;
+}
 
 // Share-link, PDF and send-email endpoints moved verbatim from
 // invoices.routes.ts (W3-A structure split, no behaviour change).
@@ -31,6 +86,15 @@ export function registerInvoiceShareRoutes(app: Express) {
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+      // W4-D (R16-04): a draft or cancelled document is never shared with a customer.
+      if (invoice.status === "draft" || invoice.status === "cancelled") {
+        throw new DomainError(
+          "INVOICE_NOT_ISSUED",
+          409,
+          { status: invoice.status },
+          "Issue the invoice before sharing it"
+        );
       }
 
       // Generate a random token
@@ -87,19 +151,25 @@ export function registerInvoiceShareRoutes(app: Express) {
   // Public: View invoice by share token (NO auth required)
   app.get(
     "/api/public/invoices/:token",
+    portalGuard("share"),
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
 
-      const invoice = await storage.getInvoiceByShareToken(token);
-      if (!invoice) {
+      const invoice = /^[0-9a-f]{32}$/i.test(token)
+        ? await storage.getInvoiceByShareToken(token)
+        : undefined;
+      if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
+        notePortalFailure(req);
         return res.status(404).json({ message: "Invoice not found or link is invalid" });
       }
 
       // Check expiry
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
+        notePortalFailure(req);
         return res.status(410).json({ message: "This invoice link has expired" });
       }
 
+      void logPortalAccess({ req, outcome: "share_ok", companyId: invoice.companyId });
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
       if (!company) {
@@ -107,8 +177,20 @@ export function registerInvoiceShareRoutes(app: Express) {
       }
 
       const pdfOpts = await invoicePdfOptions(invoice);
+      const payments = paymentsAvailability();
+      const openFils =
+        invoice.invoiceType === "credit_note" ? 0 : await invoiceOpenFils(db, invoice);
       // Return sanitized data (no internal IDs exposed except what's needed)
       res.json({
+        // R16-14: "Pay now" only when a gateway is live/sandbox and something is owed.
+        onlinePayment: {
+          available: payments.available && openFils > 0 && invoice.status !== "void",
+          status: payments.status,
+          provider: payments.available ? payments.provider : null,
+        },
+        einvoice: invoice.einvoiceStatus
+          ? { status: invoice.einvoiceStatus, uuid: invoice.einvoiceUuid ?? null }
+          : null,
         invoice: {
           number: invoice.number,
           customerName: invoice.customerName,
@@ -166,18 +248,24 @@ export function registerInvoiceShareRoutes(app: Express) {
   // Public: Download PDF by share token (NO auth required)
   app.get(
     "/api/public/invoices/:token/pdf",
+    portalGuard("share"),
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
 
-      const invoice = await storage.getInvoiceByShareToken(token);
-      if (!invoice) {
+      const invoice = /^[0-9a-f]{32}$/i.test(token)
+        ? await storage.getInvoiceByShareToken(token)
+        : undefined;
+      if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
+        notePortalFailure(req);
         return res.status(404).json({ message: "Invoice not found or link is invalid" });
       }
 
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
+        notePortalFailure(req);
         return res.status(410).json({ message: "This invoice link has expired" });
       }
 
+      void logPortalAccess({ req, outcome: "share_ok", companyId: invoice.companyId });
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
       if (!company) {
@@ -205,30 +293,11 @@ export function registerInvoiceShareRoutes(app: Express) {
     "/api/companies/:companyId/invoices/:invoiceId/send-email",
     authMiddleware,
     requireCustomer,
+    strictBody(sendEmailBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, invoiceId } = req.params;
       const userId = (req as any).user.id;
-
-      const bodySchema = z.object({
-        to: z.string().email("Invalid email address"),
-        subject: z.string().optional(),
-        message: z.string().optional(),
-      });
-      const parsed = bodySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ message: parsed.error.errors[0]?.message || "Invalid request" });
-      }
-      const { to, subject, message } = parsed.data;
-
-      if (!hasSmtpConfig()) {
-        return res.status(503).json({
-          message:
-            "Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.",
-          code: "SMTP_NOT_CONFIGURED",
-        });
-      }
+      const { to, subject, message, language } = parsedBody<z.output<typeof sendEmailBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -253,7 +322,16 @@ export function registerInvoiceShareRoutes(app: Express) {
         await invoicePdfOptions(invoice)
       );
 
-      await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message);
+      const shareUrl =
+        invoice.status === "draft" || invoice.status === "cancelled"
+          ? null
+          : await ensureShareUrl(invoice);
+      const result = await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message, {
+        throwOnFailure: false,
+        language: language ?? "bilingual",
+        portalUrl: shareUrl,
+        payUrl: shareUrl && paymentsAvailability().available ? shareUrl : null,
+      });
 
       await storage.createActivityLog({
         userId,
@@ -261,11 +339,20 @@ export function registerInvoiceShareRoutes(app: Express) {
         action: "send",
         entityType: "invoice",
         entityId: invoiceId,
-        description: `Invoice ${invoice.number} sent by email to ${to}`,
-        metadata: JSON.stringify({ to, invoiceNumber: invoice.number }),
+        description: result.sent
+          ? `Invoice ${invoice.number} sent by email to ${to}`
+          : `Invoice ${invoice.number} email to ${to} queued (${result.status})`,
+        metadata: JSON.stringify({
+          to,
+          invoiceNumber: invoice.number,
+          outbox: result.id,
+          status: result.status,
+        }),
       });
 
-      res.json({ message: `Invoice ${invoice.number} sent to ${to}` });
+      res
+        .status(result.sent ? 200 : 202)
+        .json(emailOutcome(result, `Invoice ${invoice.number}`, to));
     })
   );
 
@@ -274,28 +361,12 @@ export function registerInvoiceShareRoutes(app: Express) {
     "/api/companies/:companyId/invoices/:invoiceId/send-reminder",
     authMiddleware,
     requireCustomer,
+    strictBody(sendReminderBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, invoiceId } = req.params;
       const userId = (req as any).user.id;
 
-      const bodySchema = z.object({
-        to: z.string().email("Invalid email address"),
-      });
-      const parsed = bodySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ message: parsed.error.errors[0]?.message || "Invalid request" });
-      }
-      const { to } = parsed.data;
-
-      if (!hasSmtpConfig()) {
-        return res.status(503).json({
-          message:
-            "Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.",
-          code: "SMTP_NOT_CONFIGURED",
-        });
-      }
+      const { to } = parsedBody<z.output<typeof sendReminderBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -307,10 +378,15 @@ export function registerInvoiceShareRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      if (invoice.status === "paid" || invoice.status === "void") {
-        return res
-          .status(400)
-          .json({ message: `Cannot send reminder for a ${invoice.status} invoice` });
+      // W4-D (R16-03): only issued, unpaid invoices are chased.
+      if (
+        !["sent", "posted", "partial"].includes(invoice.status) ||
+        invoice.invoiceType === "credit_note"
+      ) {
+        return res.status(400).json({
+          code: "INVOICE_NOT_CHASEABLE",
+          message: `Cannot send reminder for a ${invoice.status} invoice`,
+        });
       }
 
       const company = await storage.getCompany(companyId);
@@ -327,7 +403,15 @@ export function registerInvoiceShareRoutes(app: Express) {
         await invoicePdfOptions(invoice)
       );
 
-      await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount);
+      const shareUrl = await ensureShareUrl(invoice);
+      const result = await sendPaymentReminderEmail(
+        to,
+        invoice,
+        company,
+        pdfBuffer,
+        newReminderCount,
+        { openFils: await invoiceOpenFils(db, invoice), payUrl: shareUrl, throwOnFailure: false }
+      );
 
       await storage.updateInvoice(invoiceId, companyId, {
         reminderCount: newReminderCount,
@@ -340,7 +424,9 @@ export function registerInvoiceShareRoutes(app: Express) {
         action: "send",
         entityType: "invoice",
         entityId: invoiceId,
-        description: `Payment reminder #${newReminderCount} sent for invoice ${invoice.number} to ${to}`,
+        description: result.sent
+          ? `Payment reminder #${newReminderCount} sent for invoice ${invoice.number} to ${to}`
+          : `Payment reminder #${newReminderCount} for invoice ${invoice.number} queued (${result.status})`,
         metadata: JSON.stringify({
           to,
           reminderCount: newReminderCount,
@@ -348,8 +434,8 @@ export function registerInvoiceShareRoutes(app: Express) {
         }),
       });
 
-      res.json({
-        message: `Payment reminder #${newReminderCount} sent to ${to}`,
+      res.status(result.sent ? 200 : 202).json({
+        ...emailOutcome(result, `Payment reminder #${newReminderCount}`, to),
         reminderCount: newReminderCount,
       });
     })

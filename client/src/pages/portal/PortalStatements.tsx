@@ -1,66 +1,66 @@
 import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/api";
 
-function formatAed(n: number) {
+/**
+ * W4-D (R16-15): the customer's statement of account — opening balance, invoices, credit
+ * notes and payments with a running balance, closing balance and ageing — not the supplier's
+ * profit and loss or balance sheet.
+ */
+interface StatementSection {
+  currency: string;
+  openingBalance: number;
+  closingBalance: number;
+  totals: { debit: number; credit: number };
+  lines: Array<{
+    date: string;
+    type: string;
+    reference: string;
+    description: string;
+    debit: number;
+    credit: number;
+    balance: number;
+  }>;
+  aging: {
+    current: number;
+    days30: number;
+    days60: number;
+    days90: number;
+    over90: number;
+    total: number;
+    unappliedCredits: number;
+  };
+}
+
+interface Statement {
+  asOf: string;
+  party: { name: string };
+  company: { name: string };
+  sections: StatementSection[];
+}
+
+function money(n: number, currency: string) {
   return new Intl.NumberFormat("en-AE", {
     style: "currency",
-    currency: "AED",
-    maximumFractionDigits: 0,
+    currency,
+    minimumFractionDigits: 2,
   }).format(n);
 }
 
-function StatRow({
-  label,
-  amount,
-  indent = false,
-}: {
-  label: string;
-  amount: number;
-  indent?: boolean;
-}) {
-  return (
-    <div className={["flex justify-between items-center py-1.5", indent ? "pl-4" : ""].join(" ")}>
-      <span className={["text-sm", indent ? "text-muted-foreground" : "text-foreground"].join(" ")}>
-        {label}
-      </span>
-      <span
-        className={[
-          "text-sm tabular-nums",
-          indent ? "text-muted-foreground" : "font-medium text-foreground",
-        ].join(" ")}
-      >
-        {formatAed(amount)}
-      </span>
-    </div>
-  );
-}
-
-function SectionTotal({
-  label,
-  amount,
-  positive,
-}: {
-  label: string;
-  amount: number;
-  positive?: boolean;
-}) {
-  const color =
-    positive === undefined ? "text-foreground" : amount >= 0 ? "text-success" : "text-destructive";
-  return (
-    <div className="flex justify-between items-center py-2 border-t border-border mt-1">
-      <span className="text-sm font-semibold text-foreground">{label}</span>
-      <span className={["text-sm font-bold tabular-nums", color].join(" ")}>
-        {formatAed(amount)}
-      </span>
-    </div>
-  );
-}
-
 export default function PortalStatements() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<Statement>({
     queryKey: ["portal-statements"],
     queryFn: () => apiRequest("GET", "/api/client-portal/statements"),
   });
@@ -73,123 +73,113 @@ export default function PortalStatements() {
     );
   }
 
-  const pnl = data?.profitAndLoss ?? { revenue: 0, expenses: 0, netProfit: 0, items: [] };
-  const bs = data?.balanceSheet ?? { assets: 0, liabilities: 0, equity: 0, items: [] };
-
-  const revenueItems = pnl.items?.filter((i: any) => i.type === "income") ?? [];
-  const expenseItems = pnl.items?.filter((i: any) => i.type === "expense") ?? [];
-  const assetItems = bs.items?.filter((i: any) => i.type === "asset") ?? [];
-  const liabilityItems = bs.items?.filter((i: any) => i.type === "liability") ?? [];
-  const equityItems = bs.items?.filter((i: any) => i.type === "equity") ?? [];
-
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">Financial Statements</h2>
-        <p className="text-sm text-muted-foreground mt-1">Read-only view of your company's financials.</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">
+            <T k="portal.statementOfAccount" />
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            <T k="portal.asOf" /> {data?.asOf}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => window.open(apiUrl("/api/client-portal/statements?format=pdf"), "_blank")}
+        >
+          <Download className="w-4 h-4 me-1" />
+          PDF
+        </Button>
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Profit & Loss */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              {pnl.netProfit >= 0 ? (
-                <TrendingUp className="w-4 h-4 text-success" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-destructive" />
-              )}
-              Profit & Loss
-            </CardTitle>
+      {(data?.sections ?? []).length === 0 && (
+        <p className="text-muted-foreground">
+          <T k="portal.noInvoices" />
+        </p>
+      )}
+      {(data?.sections ?? []).map((s) => (
+        <Card key={s.currency}>
+          <CardHeader>
+            <CardTitle>{s.currency}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                <T k="pages.revenue" />
-              </p>
-              {revenueItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground/70 py-1">No revenue recorded</p>
-              ) : (
-                revenueItems.map((i: any) => (
-                  <StatRow key={i.name} label={i.name} amount={i.balance} indent />
-                ))
-              )}
-              <SectionTotal label="Total Revenue" amount={pnl.revenue} />
-
-              <div className="pt-3">
-                <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                  <T k="pages.expenses" />
-                </p>
-                {expenseItems.length === 0 ? (
-                  <p className="text-xs text-muted-foreground/70 py-1">No expenses recorded</p>
-                ) : (
-                  expenseItems.map((i: any) => (
-                    <StatRow key={i.name} label={i.name} amount={i.balance} indent />
-                  ))
-                )}
-                <SectionTotal label="Total Expenses" amount={pnl.expenses} />
-              </div>
-
-              <div className="pt-1">
-                <SectionTotal label="Net Profit / (Loss)" amount={pnl.netProfit} positive />
-              </div>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between text-sm">
+              <span>
+                <T k="portal.openingBalance" />
+              </span>
+              <span className="tabular-nums">{money(s.openingBalance, s.currency)}</span>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <T k="portal.date" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="portal.reference" />
+                  </TableHead>
+                  <TableHead className="text-end">
+                    <T k="portal.debit" />
+                  </TableHead>
+                  <TableHead className="text-end">
+                    <T k="portal.credit" />
+                  </TableHead>
+                  <TableHead className="text-end">
+                    <T k="portal.balance" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {s.lines.map((l, i) => (
+                  <TableRow key={`${l.reference}-${i}`}>
+                    <TableCell>{l.date}</TableCell>
+                    <TableCell>
+                      {l.reference}{" "}
+                      <span className="text-muted-foreground">
+                        · <T k={`portal.lineType.${l.type}`} />
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-end tabular-nums">
+                      {l.debit ? money(l.debit, s.currency) : ""}
+                    </TableCell>
+                    <TableCell className="text-end tabular-nums">
+                      {l.credit ? money(l.credit, s.currency) : ""}
+                    </TableCell>
+                    <TableCell className="text-end tabular-nums">
+                      {money(l.balance, s.currency)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="flex justify-between font-semibold">
+              <span>
+                <T k="portal.closingBalance" />
+              </span>
+              <span className="tabular-nums">{money(s.closingBalance, s.currency)}</span>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-sm">
+              {(
+                [
+                  ["portal.agingCurrent", s.aging.current],
+                  ["portal.aging30", s.aging.days30],
+                  ["portal.aging60", s.aging.days60],
+                  ["portal.aging90", s.aging.days90],
+                  ["portal.agingOver90", s.aging.over90],
+                  ["portal.agingTotal", s.aging.total],
+                ] as const
+              ).map(([k, v]) => (
+                <div key={k} className="rounded bg-muted p-2">
+                  <p className="text-muted-foreground">
+                    <T k={k} />
+                  </p>
+                  <p className="font-medium tabular-nums">{money(v, s.currency)}</p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
-
-        {/* Balance Sheet */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Minus className="w-4 h-4 text-info" />
-              <T k="pages.balanceSheet" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                <T k="pages.assets" />
-              </p>
-              {assetItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground/70 py-1">No assets recorded</p>
-              ) : (
-                assetItems.map((i: any) => (
-                  <StatRow key={i.name} label={i.name} amount={i.balance} indent />
-                ))
-              )}
-              <SectionTotal label="Total Assets" amount={bs.assets} />
-
-              <div className="pt-3">
-                <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                  <T k="pages.liabilities" />
-                </p>
-                {liabilityItems.length === 0 ? (
-                  <p className="text-xs text-muted-foreground/70 py-1">No liabilities recorded</p>
-                ) : (
-                  liabilityItems.map((i: any) => (
-                    <StatRow key={i.name} label={i.name} amount={i.balance} indent />
-                  ))
-                )}
-                <SectionTotal label="Total Liabilities" amount={bs.liabilities} />
-              </div>
-
-              <div className="pt-3">
-                <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
-                  <T k="pages.equity" />
-                </p>
-                {equityItems.length === 0 ? (
-                  <p className="text-xs text-muted-foreground/70 py-1">No equity recorded</p>
-                ) : (
-                  equityItems.map((i: any) => (
-                    <StatRow key={i.name} label={i.name} amount={i.balance} indent />
-                  ))
-                )}
-                <SectionTotal label="Total Equity" amount={bs.equity} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      ))}
     </div>
   );
 }

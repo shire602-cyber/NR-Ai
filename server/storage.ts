@@ -2754,12 +2754,12 @@ export class DatabaseStorage implements IStorage {
     return row?.count ?? 0;
   }
 
+  // W4-D (R16-07): portal tokens are stored hashed in portal_access_tokens
+  // (server/services/portal-access.service.ts); the plaintext column stays NULL.
   async getCustomerContactByPortalToken(token: string): Promise<CustomerContact | undefined> {
-    const [contact] = await db
-      .select()
-      .from(customerContacts)
-      .where(eq(customerContacts.portalAccessToken, token));
-    return contact || undefined;
+    const { resolvePortalToken } = await import("./services/portal-access.service");
+    const resolved = await resolvePortalToken(token);
+    return resolved.status === "ok" ? resolved.contact : undefined;
   }
 
   async setPortalAccessToken(
@@ -2768,11 +2768,15 @@ export class DatabaseStorage implements IStorage {
     expiresAt: Date
   ): Promise<CustomerContact> {
     const [contact] = await db
-      .update(customerContacts)
-      .set({ portalAccessToken: token, portalAccessExpiresAt: expiresAt, updatedAt: new Date() })
-      .where(eq(customerContacts.id, contactId))
-      .returning();
+      .select()
+      .from(customerContacts)
+      .where(eq(customerContacts.id, contactId));
     if (!contact) throw new Error("Customer contact not found");
+    const { hashPortalToken } = await import("./services/portal-access.service");
+    await db.execute(sql`
+      INSERT INTO portal_access_tokens (company_id, contact_id, token_hash, kind, expires_at)
+      VALUES (${contact.companyId}, ${contact.id}, ${hashPortalToken(token)}, 'link', ${expiresAt})
+      ON CONFLICT DO NOTHING`);
     return contact;
   }
 
@@ -3290,8 +3294,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Push subscriptions + notification preferences
+  // W4-D (R16-11): one row per (user, endpoint); re-subscribing refreshes the keys.
   async createPushSubscription(data: InsertPushSubscription): Promise<PushSubscription> {
-    const [sub] = await db.insert(pushSubscriptions).values(data).returning();
+    const [sub] = await db
+      .insert(pushSubscriptions)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [pushSubscriptions.userId, pushSubscriptions.endpoint],
+        set: { p256dhKey: data.p256dhKey, authKey: data.authKey, isActive: true },
+      })
+      .returning();
     return sub;
   }
 
@@ -3302,8 +3314,22 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.isActive, true)));
   }
 
-  async deactivatePushSubscription(id: string): Promise<void> {
-    await db.update(pushSubscriptions).set({ isActive: false }).where(eq(pushSubscriptions.id, id));
+  /** W4-D (R16-11): always scoped to the owning user. */
+  async deactivatePushSubscription(id: string, userId: string): Promise<void> {
+    await db
+      .update(pushSubscriptions)
+      .set({ isActive: false })
+      .where(and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.userId, userId)));
+  }
+
+  /** W4-D (R16-11): unsubscribe by endpoint, only the caller's own subscription. */
+  async deactivatePushSubscriptionByEndpoint(userId: string, endpoint: string): Promise<number> {
+    const rows = await db
+      .update(pushSubscriptions)
+      .set({ isActive: false })
+      .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, endpoint)))
+      .returning({ id: pushSubscriptions.id });
+    return rows.length;
   }
 
   async getNotificationPreferences(userId: string): Promise<NotificationPreferences | undefined> {

@@ -1902,6 +1902,13 @@ export const documentVersions = pgTable(
       table.documentType,
       table.documentId
     ),
+    // W4-D (0103, R16-10): one number per version of a document.
+    versionUnique: uniqueIndex("uq_document_versions_number").on(
+      table.companyId,
+      table.documentType,
+      table.documentId,
+      table.version
+    ),
   })
 );
 
@@ -2026,6 +2033,11 @@ export const pushSubscriptions = pgTable(
   },
   (table) => ({
     userIdIdx: index("idx_push_subscriptions_user_id").on(table.userId),
+    // W4-D (0103, R16-11): one row per (user, endpoint).
+    userEndpointUnique: uniqueIndex("uq_push_subscriptions_user_endpoint").on(
+      table.userId,
+      table.endpoint
+    ),
   })
 );
 
@@ -2050,6 +2062,12 @@ export const notificationPreferences = pgTable("notification_preferences", {
   paymentReceived: boolean("payment_received").notNull().default(true),
   vatDeadlines: boolean("vat_deadlines").notNull().default(true),
   weeklyDigest: boolean("weekly_digest").notNull().default(false),
+  // W4-D (0103, R16-18): in-app channel switch, per-event-type channel overrides (JSON
+  // `{ "<type>": { "inApp"?: bool, "email"?: bool, "push"?: bool } }`) and a daily digest.
+  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+  typePreferences: text("type_preferences").notNull().default("{}"),
+  digestFrequency: text("digest_frequency").notNull().default("none"), // none | daily
+  lastDigestAt: timestamp("last_digest_at"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -2410,8 +2428,13 @@ export const customerContacts = pgTable(
     paymentTerms: integer("payment_terms").default(30),
     notes: text("notes"),
     isActive: boolean("is_active").default(true).notNull(),
+    // Legacy plaintext portal token: always NULL since W4-D (0103) — portal links are stored
+    // hashed in portal_access_tokens.
     portalAccessToken: text("portal_access_token").unique(),
     portalAccessExpiresAt: timestamp("portal_access_expires_at"),
+    // W4-D (0103): dunning opt-out and preferred language for customer emails (en | ar).
+    doNotChase: boolean("do_not_chase").notNull().default(false),
+    preferredLanguage: text("preferred_language"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at"),
   },
@@ -2430,6 +2453,236 @@ export const insertCustomerContactSchema = createInsertSchema(customerContacts).
 
 export type InsertCustomerContact = z.infer<typeof insertCustomerContactSchema>;
 export type CustomerContact = typeof customerContacts.$inferSelect;
+
+// ===========================
+// W4-D (0103): customer portal identity, access log, quote responses, online payment
+// ===========================
+
+/** int8 column read as a JS number (fils amounts stay far below 2^53). */
+const w4dBigint = customType<{ data: number; driverData: string | number }>({
+  dataType() {
+    return "bigint";
+  },
+  fromDriver(value: string | number): number {
+    return Number(value);
+  },
+  toDriver(value: number) {
+    return String(Math.trunc(value));
+  },
+});
+
+/** Hashed, revocable portal credentials: share links (`link`) and OTP sessions (`session`). */
+export const portalAccessTokens = pgTable(
+  "portal_access_tokens",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => customerContacts.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    kind: text("kind").notNull().default("link"), // link | session
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex("uq_portal_access_tokens_hash").on(table.tokenHash),
+    contactIdx: index("idx_portal_access_tokens_contact").on(table.contactId),
+  })
+);
+export type PortalAccessToken = typeof portalAccessTokens.$inferSelect;
+
+export const portalLoginCodes = pgTable(
+  "portal_login_codes",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => customerContacts.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: timestamp("consumed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    emailIdx: index("idx_portal_login_codes_email").on(table.email, table.createdAt),
+  })
+);
+export type PortalLoginCode = typeof portalLoginCodes.$inferSelect;
+
+export const portalAccessLog = pgTable(
+  "portal_access_log",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+    tokenId: uuid("token_id").references(() => portalAccessTokens.id, { onDelete: "set null" }),
+    ip: text("ip"),
+    method: text("method"),
+    path: text("path"),
+    outcome: text("outcome").notNull(), // ok | invalid | expired | revoked | throttled | denied
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_portal_access_log_company").on(table.companyId, table.createdAt),
+    ipIdx: index("idx_portal_access_log_ip").on(table.ip, table.createdAt),
+  })
+);
+export type PortalAccessLogRow = typeof portalAccessLog.$inferSelect;
+
+/** Binds an authenticated client_portal user to the one customer contact they act for. */
+export const customerPortalAccounts = pgTable(
+  "customer_portal_accounts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => customerContacts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => ({
+    activeUserUnique: uniqueIndex("uq_customer_portal_accounts_user")
+      .on(table.companyId, table.userId)
+      .where(sql`revoked_at IS NULL`),
+  })
+);
+export type CustomerPortalAccount = typeof customerPortalAccounts.$inferSelect;
+
+export const portalQuoteResponses = pgTable(
+  "portal_quote_responses",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    quoteId: uuid("quote_id")
+      .notNull()
+      .references(() => quotes.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+    decision: text("decision").notNull(), // accepted | declined
+    signerName: text("signer_name"),
+    comment: text("comment"),
+    ip: text("ip"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    quoteUnique: uniqueIndex("uq_portal_quote_responses_quote").on(table.quoteId),
+  })
+);
+export type PortalQuoteResponse = typeof portalQuoteResponses.$inferSelect;
+
+/** Migration 0103 findings: documents whose customer name matched more than one contact. */
+export const portalContactBackfillFindings = pgTable(
+  "portal_contact_backfill_findings",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    documentType: text("document_type").notNull(),
+    documentId: uuid("document_id").notNull(),
+    customerName: text("customer_name"),
+    candidateCount: integer("candidate_count").notNull(),
+    candidateContactIds: text("candidate_contact_ids"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    docUnique: uniqueIndex("uq_portal_contact_backfill_findings_doc").on(
+      table.documentType,
+      table.documentId
+    ),
+  })
+);
+
+/** A payable link for one invoice through an online gateway (amount = open balance, fils). */
+export const paymentLinks = pgTable(
+  "payment_links",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(), // stripe | telr | ngenius
+    tokenHash: text("token_hash").notNull(),
+    amountFils: w4dBigint("amount_fils").notNull(),
+    currency: text("currency").notNull(),
+    status: text("status").notNull().default("active"), // active | processing | paid | expired | cancelled
+    expiresAt: timestamp("expires_at").notNull(),
+    providerSessionId: text("provider_session_id"),
+    providerUrl: text("provider_url"),
+    depositAccountId: uuid("deposit_account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    invoicePaymentId: uuid("invoice_payment_id"),
+    paidAmountFils: w4dBigint("paid_amount_fils"),
+    feeFils: w4dBigint("fee_fils"),
+    feeJournalEntryId: uuid("fee_journal_entry_id"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    paidAt: timestamp("paid_at"),
+  },
+  (table) => ({
+    tokenUnique: uniqueIndex("uq_payment_links_token").on(table.tokenHash),
+    invoiceIdx: index("idx_payment_links_invoice").on(table.invoiceId, table.status),
+  })
+);
+export type PaymentLink = typeof paymentLinks.$inferSelect;
+
+/** Webhook idempotency: one row per (provider, provider event id). */
+export const paymentGatewayEvents = pgTable(
+  "payment_gateway_events",
+  {
+    provider: text("provider").notNull(),
+    eventId: text("event_id").notNull(),
+    type: text("type").notNull(),
+    paymentLinkId: uuid("payment_link_id").references(() => paymentLinks.id, {
+      onDelete: "set null",
+    }),
+    outcome: text("outcome").notNull().default("received"),
+    detail: text("detail"),
+    receivedAt: timestamp("received_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: uniqueIndex("payment_gateway_events_pkey").on(table.provider, table.eventId),
+  })
+);
+export type PaymentGatewayEvent = typeof paymentGatewayEvents.$inferSelect;
 
 // ===========================
 // Additional Types for Frontend
@@ -3344,9 +3597,16 @@ export const notifications = pgTable(
     isDismissed: boolean("is_dismissed").notNull().default(false),
     scheduledFor: timestamp("scheduled_for"), // For future notifications
     expiresAt: timestamp("expires_at"), // Auto-dismiss after this date
+    // W4-D (0103): idempotency key for event-driven notifications (`<event>:<entity>`) and the
+    // time the row was included in a daily digest email.
+    eventKey: text("event_key"),
+    digestedAt: timestamp("digested_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
+    eventKeyUnique: uniqueIndex("uq_notifications_event_key")
+      .on(table.userId, table.eventKey)
+      .where(sql`event_key IS NOT NULL`),
     userIdIdx: index("idx_notifications_user_id").on(table.userId),
     userUnreadIdx: index("idx_notifications_user_unread").on(table.userId, table.isRead),
     companyIdIdx: index("idx_notifications_company_id").on(table.companyId),
@@ -3422,6 +3682,10 @@ export const reminderSettings = pgTable(
     emailTemplate: text("email_template"),
     smsTemplate: text("sms_template"),
     whatsappTemplate: text("whatsapp_template"),
+    // W4-D (0103): customer email language (en | ar | bilingual), invoice PDF + pay link.
+    language: text("language").notNull().default("bilingual"),
+    attachPdf: boolean("attach_pdf").notNull().default(true),
+    includePayLink: boolean("include_pay_link").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -3464,9 +3728,17 @@ export const reminderLogs = pgTable(
     sentAt: timestamp("sent_at"),
     deliveredAt: timestamp("delivered_at"),
     openedAt: timestamp("opened_at"),
+    // W4-D (0103): dunning level (1..maxReminders), the outbox row that carries the email, and
+    // the contact the reminder went to. (setting, invoice, channel, level) is unique.
+    level: integer("level"),
+    outboxId: uuid("outbox_id"),
+    contactId: uuid("contact_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
+    dunningLevelUnique: uniqueIndex("uq_reminder_logs_dunning_level")
+      .on(table.reminderSettingId, table.relatedEntityId, table.channel, table.level)
+      .where(sql`reminder_setting_id IS NOT NULL AND level IS NOT NULL`),
     companyIdIdx: index("idx_reminder_logs_company_id").on(table.companyId),
     relatedEntityIdx: index("idx_reminder_logs_related_entity").on(
       table.relatedEntityType,
@@ -3482,6 +3754,116 @@ export const insertReminderLogSchema = createInsertSchema(reminderLogs).omit({
 
 export type InsertReminderLog = z.infer<typeof insertReminderLogSchema>;
 export type ReminderLog = typeof reminderLogs.$inferSelect;
+
+// ===========================
+// W4-D (0103): durable email outbox (server/outbox)
+// ===========================
+
+/** bytea column carried as a Buffer. */
+const w4dBytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+export const EMAIL_OUTBOX_STATUSES = [
+  "queued",
+  "sending",
+  "retrying",
+  "sent",
+  "delivered",
+  "bounced",
+  "complained",
+  "dead",
+  "blocked_no_provider",
+  "cancelled",
+] as const;
+export type EmailOutboxStatus = (typeof EMAIL_OUTBOX_STATUSES)[number];
+
+export const emailOutbox = pgTable(
+  "email_outbox",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+    toAddress: text("to_address").notNull(),
+    cc: text("cc"),
+    replyTo: text("reply_to"),
+    fromName: text("from_name"),
+    subject: text("subject").notNull(),
+    html: text("html"),
+    textBody: text("text_body"),
+    category: text("category").notNull().default("generic"),
+    relatedEntityType: text("related_entity_type"),
+    relatedEntityId: uuid("related_entity_id"),
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(6),
+    nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+    lockedUntil: timestamp("locked_until"),
+    lastError: text("last_error"),
+    provider: text("provider"),
+    providerMessageId: text("provider_message_id"),
+    sensitive: boolean("sensitive").notNull().default(false),
+    idempotencyKey: text("idempotency_key"),
+    sentAt: timestamp("sent_at"),
+    deliveredAt: timestamp("delivered_at"),
+    bouncedAt: timestamp("bounced_at"),
+    complainedAt: timestamp("complained_at"),
+    deadAt: timestamp("dead_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idempotencyUnique: uniqueIndex("uq_email_outbox_idempotency")
+      .on(table.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
+    dueIdx: index("idx_email_outbox_due").on(table.status, table.nextAttemptAt),
+    companyIdx: index("idx_email_outbox_company").on(table.companyId, table.createdAt),
+  })
+);
+export type EmailOutboxRow = typeof emailOutbox.$inferSelect;
+
+export const emailOutboxAttachments = pgTable(
+  "email_outbox_attachments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    outboxId: uuid("outbox_id")
+      .notNull()
+      .references(() => emailOutbox.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull().default("application/octet-stream"),
+    content: w4dBytea("content").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    outboxIdx: index("idx_email_outbox_attachments_outbox").on(table.outboxId),
+  })
+);
+export type EmailOutboxAttachment = typeof emailOutboxAttachments.$inferSelect;
+
+export const emailDeliveryEvents = pgTable(
+  "email_delivery_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    outboxId: uuid("outbox_id").references(() => emailOutbox.id, { onDelete: "cascade" }),
+    provider: text("provider"),
+    providerMessageId: text("provider_message_id"),
+    eventType: text("event_type").notNull(),
+    detail: text("detail"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    outboxIdx: index("idx_email_delivery_events_outbox").on(table.outboxId),
+  })
+);
+export type EmailDeliveryEvent = typeof emailDeliveryEvents.$inferSelect;
 
 // ===========================
 // User Onboarding Progress
@@ -4299,6 +4681,15 @@ export const documents = pgTable(
     tags: text("tags"), // JSON array of tags for search
     isArchived: boolean("is_archived").default(false),
     uploadedBy: uuid("uploaded_by").references(() => users.id),
+    // W4-D (0103, R16-09): bytes live in file storage under storage_key (never a client URL);
+    // every upload is a numbered row in document_file_versions; delete is soft.
+    storageKey: text("storage_key"),
+    sha256: text("sha256"),
+    currentVersion: integer("current_version").notNull().default(1),
+    deletedAt: timestamp("deleted_at"),
+    deletedBy: uuid("deleted_by"),
+    contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+    source: text("source").notNull().default("staff"), // staff | customer_portal | external_link
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -4306,6 +4697,34 @@ export const documents = pgTable(
     companyIdIdx: index("idx_documents_company_id").on(table.companyId),
   })
 );
+
+export const documentFileVersions = pgTable(
+  "document_file_versions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    storageKey: text("storage_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    fileSize: integer("file_size").notNull(),
+    sha256: text("sha256").notNull(),
+    note: text("note"),
+    uploadedBy: uuid("uploaded_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    versionUnique: unique("uq_document_file_versions").on(table.documentId, table.version),
+  })
+);
+export type DocumentFileVersion = typeof documentFileVersions.$inferSelect;
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
@@ -4432,6 +4851,10 @@ export const messages = pgTable(
     attachmentName: text("attachment_name"),
     messageType: text("message_type").default("general"), // general | inquiry | update | urgent | system
     isArchived: boolean("is_archived").default(false),
+    // W4-D (0103, R16-05): a thread with a contact is customer-visible; everything else is an
+    // internal staff thread that portal users never see.
+    contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+    visibility: text("visibility").notNull().default("internal"), // internal | customer
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({

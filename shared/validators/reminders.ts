@@ -27,6 +27,10 @@ const reminderFields = {
   emailTemplate: zText(5000).nullable(),
   smsTemplate: zText(5000).nullable(),
   whatsappTemplate: zText(5000).nullable(),
+  // W4-D: customer email language and attachments.
+  language: z.enum(["en", "ar", "bilingual"]),
+  attachPdf: z.boolean(),
+  includePayLink: z.boolean(),
 };
 
 export const createReminderSettingBody = z.object({
@@ -44,6 +48,9 @@ export const createReminderSettingBody = z.object({
   emailTemplate: reminderFields.emailTemplate.optional(),
   smsTemplate: reminderFields.smsTemplate.optional(),
   whatsappTemplate: reminderFields.whatsappTemplate.optional(),
+  language: reminderFields.language.optional(),
+  attachPdf: reminderFields.attachPdf.optional(),
+  includePayLink: reminderFields.includePayLink.optional(),
 });
 export type CreateReminderSettingBody = z.output<typeof createReminderSettingBody>;
 
