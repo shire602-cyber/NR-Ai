@@ -2,15 +2,20 @@
 //
 // The app never talks to a specific Accredited Service Provider (ASP) directly.
 // It depends only on the EInvoiceProvider interface below; a concrete adapter is
-// written per ASP and selected at runtime. This keeps the first ASP choice from
-// being load-bearing, lets the whole submit→status→webhook flow be tested with a
-// mock (no ASP account needed), and means switching/ adding a provider later is
-// a new adapter class, not a rewrite.
+// selected at runtime. The generic HTTP adapter (einvoice-provider-http.ts) is
+// configuration-driven: base URL, auth scheme and a field-mapping file describe
+// the ASP's API, so onboarding an ASP is configuration plus a recorded contract
+// test, not a rewrite.
 //
-// To add a real ASP (e.g. ClearTax / Complyance / Storecove / Pagero): implement
-// EInvoiceProvider against their REST API and register it in getEInvoiceProvider.
+// EXTERNAL: no ASP is contracted yet. Until EINVOICE_ASP_BASE_URL/API_KEY are
+// issued by an MoF-accredited provider, production answers 503
+// EINVOICE_PROVIDER_NOT_CONFIGURED and the mock is refused.
 
-import type { EInvoiceStatus } from "./einvoice-status";
+import {
+  isEInvoiceStatus,
+  type EInvoiceRejectionReason,
+  type EInvoiceStatus,
+} from "./einvoice-status";
 import { HttpEInvoiceProvider } from "./einvoice-provider-http";
 
 export interface EInvoiceSubmission {
@@ -18,6 +23,7 @@ export interface EInvoiceSubmission {
   invoiceNumber: string;
   uuid: string;
   xml: string;
+  documentType?: string;
 }
 
 export interface EInvoiceProviderResult {
@@ -26,32 +32,92 @@ export interface EInvoiceProviderResult {
   status: EInvoiceStatus;
   /** Provider-specific detail (rejection reasons, etc.) for the audit trail. */
   detail?: string | null;
+  reasons?: EInvoiceRejectionReason[];
   raw?: unknown;
 }
 
+/** A supplier e-invoice the ASP received for us (Peppol corner 3). */
+export interface InboundEInvoice {
+  providerMessageId: string;
+  xml: string;
+  receivedAt?: string | null;
+}
+
+export interface EInvoiceProviderCapabilities {
+  submit: boolean;
+  getStatus: boolean;
+  receive: boolean;
+  cancel: boolean;
+}
+
+export type EInvoiceProviderEnvironment = "mock" | "sandbox" | "production";
+
 export interface EInvoiceProvider {
   readonly name: string;
-  /** Send a generated PINT-AE document to the ASP for clearance/transmission. */
+  readonly environment: EInvoiceProviderEnvironment;
+  readonly capabilities: EInvoiceProviderCapabilities;
+  /** Send a generated PINT-AE document to the ASP for validation/transmission. */
   submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult>;
-  /** Poll the ASP for the current clearance status of a submitted document. */
+  /** Poll the ASP for the current status of a submitted document. */
   getStatus(providerMessageId: string): Promise<EInvoiceProviderResult>;
-  /** Map an inbound ASP webhook payload to a normalised status update. */
-  parseWebhook(payload: unknown): { providerMessageId: string; status: EInvoiceStatus; detail?: string | null } | null;
+  /** Pull supplier documents the ASP received since `since`. */
+  receive(since?: Date | null): Promise<InboundEInvoice[]>;
+  /** Withdraw a document before clearance. */
+  cancel(providerMessageId: string, reason: string): Promise<EInvoiceProviderResult>;
+  /** Map an inbound ASP status webhook payload to a normalised status update. */
+  parseWebhook(
+    payload: unknown
+  ): { providerMessageId: string; status: EInvoiceStatus; detail?: string | null } | null;
 }
+
+export class EInvoiceProviderError extends Error {
+  constructor(
+    public readonly code: "EINVOICE_PROVIDER_NOT_CONFIGURED" | "EINVOICE_CAPABILITY_UNSUPPORTED",
+    message: string,
+    public readonly status = 503
+  ) {
+    super(message);
+    this.name = "EInvoiceProviderError";
+  }
+}
+
+const MOCK_STATUS: Record<string, EInvoiceStatus> = {
+  submitted: "submitted",
+  accepted: "accepted",
+  delivered: "accepted",
+  cleared: "cleared",
+  reported: "cleared",
+  rejected: "rejected",
+  failed: "failed",
+  cancelled: "cancelled",
+};
 
 /**
  * Deterministic mock ASP for local dev and tests. submit() always accepts the
- * hand-off (returns "submitted"); the eventual clearance outcome is
- * configurable so tests can exercise accepted/rejected paths.
+ * hand-off (returns "submitted"); the eventual outcome is configurable so tests
+ * can exercise cleared/rejected paths. Never available in production.
  */
 export class MockEInvoiceProvider implements EInvoiceProvider {
   readonly name = "mock";
+  readonly environment = "mock" as const;
+  readonly capabilities = { submit: true, getStatus: true, receive: true, cancel: true };
   private readonly outcome: EInvoiceStatus;
   private readonly detail: string | null;
+  private readonly reasons: EInvoiceRejectionReason[];
+  private readonly inbox: InboundEInvoice[];
 
-  constructor(opts: { outcome?: EInvoiceStatus; detail?: string | null } = {}) {
-    this.outcome = opts.outcome ?? "accepted";
+  constructor(
+    opts: {
+      outcome?: EInvoiceStatus;
+      detail?: string | null;
+      reasons?: EInvoiceRejectionReason[];
+      inbox?: InboundEInvoice[];
+    } = {}
+  ) {
+    this.outcome = opts.outcome ?? "cleared";
     this.detail = opts.detail ?? null;
+    this.reasons = opts.reasons ?? [];
+    this.inbox = opts.inbox ?? [];
   }
 
   async submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult> {
@@ -59,7 +125,20 @@ export class MockEInvoiceProvider implements EInvoiceProvider {
   }
 
   async getStatus(providerMessageId: string): Promise<EInvoiceProviderResult> {
-    return { providerMessageId, status: this.outcome, detail: this.detail };
+    return {
+      providerMessageId,
+      status: this.outcome,
+      detail: this.detail,
+      reasons: this.outcome === "rejected" ? this.reasons : [],
+    };
+  }
+
+  async receive(): Promise<InboundEInvoice[]> {
+    return [...this.inbox];
+  }
+
+  async cancel(providerMessageId: string): Promise<EInvoiceProviderResult> {
+    return { providerMessageId, status: "cancelled", detail: null };
   }
 
   parseWebhook(
@@ -69,36 +148,41 @@ export class MockEInvoiceProvider implements EInvoiceProvider {
     const id = p?.messageId ?? p?.providerMessageId;
     const status = p?.status;
     if (typeof id !== "string" || typeof status !== "string") return null;
-    const normalised: Record<string, EInvoiceStatus> = {
-      submitted: "submitted",
-      accepted: "accepted",
-      cleared: "accepted",
-      rejected: "rejected",
-      failed: "failed",
-    };
-    const mapped = normalised[status.toLowerCase()];
+    const key = status.toLowerCase();
+    const mapped = MOCK_STATUS[key] ?? (isEInvoiceStatus(key) ? key : undefined);
     if (!mapped) return null;
-    return { providerMessageId: id, status: mapped, detail: (p?.detail as string) ?? null };
+    return {
+      providerMessageId: id,
+      status: mapped,
+      detail: typeof p?.detail === "string" ? p.detail : null,
+    };
   }
 }
 
-/**
- * Select the active provider. Defaults to the mock so nothing in dev/test
- * depends on a real ASP. Register real adapters here as they are implemented.
- */
-export function getEInvoiceProvider(env: NodeJS.ProcessEnv = process.env): EInvoiceProvider {
-  const name = (env.EINVOICE_PROVIDER || "mock").toLowerCase();
+/** True when an ASP base URL + key are configured (new or legacy variable names). */
+export function aspConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const base = env.EINVOICE_ASP_BASE_URL || env.EINVOICE_API_BASE_URL;
+  const key = env.EINVOICE_ASP_API_KEY || env.EINVOICE_API_KEY;
+  return !!base && !!key;
+}
 
-  // H2/H3 — the mock provider fabricates an "accepted" acknowledgement. That is
-  // fine in dev and tests, and catastrophic in production: a UAE business would
-  // believe its invoices had been transmitted to the FTA via an Accredited
-  // Service Provider when nothing left the building, and is fined per
-  // untransmitted invoice. Refuse to serve the mock in production.
+/**
+ * Select the active provider. EINVOICE_PROVIDER = mock | http; when unset,
+ * "http" if an ASP is configured, else "mock" outside production. Production
+ * never gets the mock: it would fabricate acceptance responses.
+ */
+export function getEInvoiceProvider(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: { fetch?: typeof fetch } = {}
+): EInvoiceProvider {
+  const name = (env.EINVOICE_PROVIDER || (aspConfigured(env) ? "http" : "mock")).toLowerCase();
+
   if (name === "mock" && env.NODE_ENV === "production") {
-    throw new Error(
+    throw new EInvoiceProviderError(
+      "EINVOICE_PROVIDER_NOT_CONFIGURED",
       "E-invoicing is not configured. The mock provider cannot be used in production because it " +
-        "fabricates acceptance responses. Set EINVOICE_PROVIDER to a real, MoF-accredited service " +
-        "provider adapter before enabling e-invoicing."
+        "fabricates acceptance responses. Contract an MoF-accredited service provider and set " +
+        "EINVOICE_ASP_BASE_URL and EINVOICE_ASP_API_KEY."
     );
   }
 
@@ -106,13 +190,18 @@ export function getEInvoiceProvider(env: NodeJS.ProcessEnv = process.env): EInvo
     case "mock":
       return new MockEInvoiceProvider();
     case "http":
-      // Generic REST adapter for an MoF-accredited service provider. Going live
-      // is configuration, not code: set EINVOICE_API_BASE_URL + EINVOICE_API_KEY
-      // and flip EINVOICE_PROVIDER to "http". See einvoice-provider-http.ts.
-      return new HttpEInvoiceProvider(env);
+      if (!aspConfigured(env)) {
+        throw new EInvoiceProviderError(
+          "EINVOICE_PROVIDER_NOT_CONFIGURED",
+          "E-invoicing HTTP provider requires EINVOICE_ASP_BASE_URL and EINVOICE_ASP_API_KEY, " +
+            "issued by your accredited service provider."
+        );
+      }
+      return new HttpEInvoiceProvider(env, deps);
     default:
-      throw new Error(
-        `Unknown EINVOICE_PROVIDER "${name}". Implement an EInvoiceProvider adapter and register it in getEInvoiceProvider.`
+      throw new EInvoiceProviderError(
+        "EINVOICE_PROVIDER_NOT_CONFIGURED",
+        `Unknown EINVOICE_PROVIDER "${name}". Use "http" with an ASP mapping file.`
       );
   }
 }

@@ -5,10 +5,22 @@ import {
   refreshEInvoiceStatus,
 } from "../../server/services/einvoice-submit.service";
 import { MockEInvoiceProvider } from "../../server/services/einvoice-provider";
+import {
+  applyProviderOutcome,
+  cancelEInvoice,
+} from "../../server/services/einvoice-submit.service";
+import { fixtureCompany, uaeBuyer } from "../fixtures/pint-ae/fixtures";
 
-const company = { name: "Pearl Trading LLC", trnVatNumber: "100123456700003", businessAddress: "Dubai" } as any;
+const company = fixtureCompany as any;
+const ctx = { customer: uaeBuyer };
 const lines = [
-  { description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 0.05, vatSupplyType: "standard_rated" },
+  {
+    description: "Consulting",
+    quantity: 2,
+    unitPrice: 500,
+    vatRate: 0.05,
+    vatSupplyType: "standard_rated",
+  },
 ] as any[];
 const baseInvoice = (o: Record<string, unknown> = {}) =>
   ({
@@ -17,6 +29,7 @@ const baseInvoice = (o: Record<string, unknown> = {}) =>
     customerName: "Acme LLC",
     customerTrn: "100765432100003",
     date: new Date("2026-06-01"),
+    dueDate: new Date("2026-07-01"),
     currency: "AED",
     subtotal: 1000,
     vatAmount: 50,
@@ -44,9 +57,15 @@ describe("submitEInvoice (with mock ASP)", () => {
       lines,
       company,
       provider: new MockEInvoiceProvider(),
+      ctx,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
+      // R07-13: the document passed XSD + schematron + rules before hand-off.
+      expect(r.document.validation?.valid).toBe(true);
+      expect(r.document.validation?.schematron.available).toBe(true);
+      expect(r.handedOver).toBe(true);
+      expect(r.document.attempts).toBe(1);
       expect(r.update.einvoiceStatus).toBe("submitted");
       expect(r.update.einvoiceProvider).toBe("mock");
       expect(r.providerMessageId).toMatch(/^mock-/);
@@ -54,7 +73,17 @@ describe("submitEInvoice (with mock ASP)", () => {
     }
   });
 
-  it("blocks resubmitting an already-accepted invoice", async () => {
+  it("blocks resubmitting an in-flight or accepted invoice", async () => {
+    for (const status of ["submitted"]) {
+      const r = await submitEInvoice({
+        invoice: baseInvoice({ einvoiceStatus: status }),
+        lines,
+        company,
+        provider: new MockEInvoiceProvider(),
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.code).toBe("EINVOICE_ALREADY_SUBMITTED");
+    }
     const r = await submitEInvoice({
       invoice: baseInvoice({ einvoiceStatus: "accepted" }),
       lines,
@@ -78,6 +107,18 @@ describe("submitEInvoice (with mock ASP)", () => {
 });
 
 describe("refreshEInvoiceStatus (with mock ASP)", () => {
+  it("advances submitted → cleared (R07-13)", async () => {
+    const r = await refreshEInvoiceStatus({
+      invoice: baseInvoice({ einvoiceStatus: "submitted", einvoiceProviderMessageId: "mock-u1" }),
+      provider: new MockEInvoiceProvider(),
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.update.einvoiceStatus).toBe("cleared");
+      expect(r.document.clearedAt).toBeInstanceOf(Date);
+    }
+  });
+
   it("advances submitted → accepted", async () => {
     const r = await refreshEInvoiceStatus({
       invoice: baseInvoice({ einvoiceStatus: "submitted", einvoiceProviderMessageId: "mock-u1" }),
@@ -90,12 +131,19 @@ describe("refreshEInvoiceStatus (with mock ASP)", () => {
   it("records a rejection with detail", async () => {
     const r = await refreshEInvoiceStatus({
       invoice: baseInvoice({ einvoiceStatus: "submitted", einvoiceProviderMessageId: "mock-u1" }),
-      provider: new MockEInvoiceProvider({ outcome: "rejected", detail: "Buyer TRN invalid" }),
+      provider: new MockEInvoiceProvider({
+        outcome: "rejected",
+        detail: "Buyer TRN invalid",
+        reasons: [{ code: "ibr-132-ae", message: "Buyer TRN invalid", field: "IBT-048" }],
+      }),
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.update.einvoiceStatus).toBe("rejected");
       expect(r.update.einvoiceStatusDetail).toBe("Buyer TRN invalid");
+      expect(r.document.rejectionReasons).toEqual([
+        { code: "ibr-132-ae", message: "Buyer TRN invalid", field: "IBT-048" },
+      ]);
     }
   });
 
@@ -106,5 +154,49 @@ describe("refreshEInvoiceStatus (with mock ASP)", () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("EINVOICE_NOT_SUBMITTED");
+  });
+});
+
+describe("R07-13 retries with backoff and cancellation", () => {
+  it("schedules exponential retries for transport failures and stops after the budget", () => {
+    const now = new Date("2027-01-15T10:00:00Z");
+    const fail = { providerMessageId: "", status: "failed" as const, detail: "timeout" };
+    const first = applyProviderOutcome(fail, 0, now);
+    expect(first.attempts).toBe(1);
+    expect(first.nextRetryAt?.toISOString()).toBe("2027-01-15T10:01:00.000Z");
+    expect(applyProviderOutcome(fail, 2, now).nextRetryAt?.toISOString()).toBe(
+      "2027-01-15T10:04:00.000Z"
+    );
+    expect(applyProviderOutcome(fail, 5, now).nextRetryAt).toBeNull();
+  });
+
+  it("never retries a business rejection", () => {
+    const r = applyProviderOutcome(
+      { providerMessageId: "m1", status: "rejected", detail: "BR-CO-15" },
+      0,
+      new Date()
+    );
+    expect(r.nextRetryAt).toBeNull();
+    expect(r.rejectionReasons).toEqual([{ code: "ASP", message: "BR-CO-15" }]);
+  });
+
+  it("refuses to cancel a cleared invoice (credit note required)", async () => {
+    const r = await cancelEInvoice({
+      invoice: baseInvoice({ einvoiceStatus: "cleared", einvoiceProviderMessageId: "m1" }),
+      provider: new MockEInvoiceProvider(),
+      reason: "duplicate",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("EINVOICE_CREDIT_NOTE_REQUIRED");
+  });
+
+  it("cancels a submitted document through the provider", async () => {
+    const r = await cancelEInvoice({
+      invoice: baseInvoice({ einvoiceStatus: "submitted", einvoiceProviderMessageId: "m1" }),
+      provider: new MockEInvoiceProvider(),
+      reason: "issued in error",
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.update.einvoiceStatus).toBe("cancelled");
   });
 });

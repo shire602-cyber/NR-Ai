@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mapProviderStatus, HttpEInvoiceProvider } from "../../server/services/einvoice-provider-http";
+import {
+  mapProviderStatus,
+  HttpEInvoiceProvider,
+} from "../../server/services/einvoice-provider-http";
 import { getEInvoiceProvider } from "../../server/services/einvoice-provider";
 
 describe("ASP status mapping", () => {
@@ -9,9 +12,15 @@ describe("ASP status mapping", () => {
     }
   });
 
-  it("maps clearance vocabularies to accepted", () => {
-    for (const s of ["accepted", "cleared", "delivered", "SUCCESS", "completed"]) {
+  it("maps ASP acceptance vocabularies to accepted", () => {
+    for (const s of ["accepted", "delivered", "transmitted", "validated"]) {
       expect(mapProviderStatus(s), s).toBe("accepted");
+    }
+  });
+
+  it("maps FTA-reported vocabularies to cleared (R07-13)", () => {
+    for (const s of ["cleared", "reported", "SUCCESS", "completed"]) {
+      expect(mapProviderStatus(s), s).toBe("cleared");
     }
   });
 
@@ -31,7 +40,7 @@ describe("ASP status mapping", () => {
   // treated as cleared: the business would believe it had transmitted and is
   // fined AED 100 per untransmitted invoice.
   it("never treats an unknown status as accepted", () => {
-    for (const s of ["", "banana", undefined, null, 42, "weird_provider_state"]) {
+    for (const s of ["", "banana", undefined, null, 42, "weird_provider_state", "generated"]) {
       expect(mapProviderStatus(s as unknown), String(s)).toBe("failed");
     }
   });
@@ -40,7 +49,7 @@ describe("ASP status mapping", () => {
 describe("HTTP provider configuration", () => {
   it("refuses to construct without credentials", () => {
     expect(() => new HttpEInvoiceProvider({} as NodeJS.ProcessEnv)).toThrow(
-      /EINVOICE_API_BASE_URL and EINVOICE_API_KEY/
+      /EINVOICE_ASP_BASE_URL and EINVOICE_ASP_API_KEY/
     );
   });
 
@@ -59,7 +68,7 @@ describe("HTTP provider configuration", () => {
     } as unknown as NodeJS.ProcessEnv);
     expect(p.parseWebhook({ id: "doc-1", status: "cleared" })).toEqual({
       providerMessageId: "doc-1",
-      status: "accepted",
+      status: "cleared",
       detail: null,
     });
     expect(p.parseWebhook({ nothing: true })).toBeNull();
@@ -71,6 +80,15 @@ describe("provider selection safety", () => {
     expect(() =>
       getEInvoiceProvider({ NODE_ENV: "production" } as unknown as NodeJS.ProcessEnv)
     ).toThrow(/mock provider cannot be used in production/i);
+  });
+
+  it("answers not-configured in production with no ASP at all", () => {
+    try {
+      getEInvoiceProvider({ NODE_ENV: "production" } as unknown as NodeJS.ProcessEnv);
+      throw new Error("expected refusal");
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
+    }
   });
 
   it("allows the mock outside production", () => {

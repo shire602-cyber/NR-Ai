@@ -72,6 +72,8 @@ const Receipts = lazyWithReload(() => import("@/pages/Receipts"));
 const ReceiptAutopilot = lazyWithReload(() => import("@/pages/ReceiptAutopilot"));
 const CompanyProfile = lazyWithReload(() => import("@/pages/CompanyProfile"));
 const CompanySettings = lazyWithReload(() => import("@/pages/CompanySettings"));
+const EInvoicingSettings = lazyWithReload(() => import("@/pages/EInvoicingSettings"));
+const ZatcaSettings = lazyWithReload(() => import("@/pages/ZatcaSettings"));
 
 // Lazy-loaded pages (large or infrequently visited)
 const Admin = lazyWithReload(() => import("@/pages/Admin"));
@@ -604,6 +606,8 @@ function Router() {
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/company-profile" component={CompanyProfile} />
             <Route path="/settings/company" component={CompanySettings} />
+            <Route path="/settings/einvoicing" component={EInvoicingSettings} />
+            <Route path="/settings/zatca" component={ZatcaSettings} />
             {/* Consolidated routes (R18-09, R20-08, R15-09): legacy URLs redirect */}
             <Route path="/accounts">
               <RedirectTo to="/chart-of-accounts" />

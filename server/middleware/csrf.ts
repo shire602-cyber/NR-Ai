@@ -21,6 +21,7 @@ const CSRF_BEARER_EXEMPT = [
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,
   /^\/api\/webhooks\/stripe$/,
+  /^\/api\/webhooks\/einvoice\/[^/]+\/inbound$/, // W4-C: HMAC-signed ASP delivery
   // Client-side error telemetry sink: a fire-and-forget endpoint that returns
   // 204 and takes no state-changing action. It MUST accept reports even when
   // the app is broken (e.g. a chunk failed to load before a CSRF token was
