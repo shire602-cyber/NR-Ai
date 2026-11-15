@@ -1,9 +1,7 @@
 import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { pool } from "../db";
-import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import {
   getDashboardStats,
   getExpenseBreakdown,
@@ -208,99 +206,7 @@ export function registerDashboardRoutes(app: Express) {
     })
   );
 
-  app.get(
-    "/api/companies/:companyId/reports/vat-summary",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.params;
-      const { startDate, endDate } = req.query;
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-      let invoices = await storage.getInvoicesByCompanyId(companyId);
-      let receipts = await storage.getReceiptsByCompanyId(companyId);
-
-      if (startDate || endDate) {
-        const start = startDate ? uaeDayStart(startDate as string) : null;
-        const end = endDate ? uaeDayEnd(endDate as string) : null;
-
-        invoices = invoices.filter((invoice) => {
-          const invoiceDate = new Date(invoice.date);
-          if (start && invoiceDate < start) return false;
-          if (end && invoiceDate > end) return false;
-          return true;
-        });
-
-        receipts = receipts.filter((receipt) => {
-          if (!receipt.date) return true;
-          const receiptDate = new Date(receipt.date);
-          if (start && receiptDate < start) return false;
-          if (end && receiptDate > end) return false;
-          return true;
-        });
-      }
-
-      let salesSubtotal = 0;
-      let salesVAT = 0;
-      for (const invoice of invoices) {
-        // Drafts must be excluded — they have not been issued to customers
-        // and so cannot give rise to a VAT obligation under UAE FTA rules.
-        if (
-          invoice.status !== "void" &&
-          invoice.status !== "draft" &&
-          invoice.status !== "cancelled"
-        ) {
-          const rate = invoice.exchangeRate ?? 1;
-          salesSubtotal += invoice.subtotal * rate;
-          salesVAT += invoice.vatAmount * rate;
-        }
-      }
-
-      let purchasesSubtotal = 0;
-      let purchasesVAT = 0;
-      for (const receipt of receipts) {
-        if (receipt.posted) {
-          const rate = receipt.exchangeRate ?? 1;
-          purchasesSubtotal += (receipt.amount || 0) * rate;
-          purchasesVAT += (receipt.vatAmount || 0) * rate;
-        }
-      }
-
-      const billVatParams: string[] = [companyId];
-      const billVatFilters: string[] = [];
-      if (startDate) {
-        billVatParams.push(startDate as string);
-        billVatFilters.push(`bill_date >= $${billVatParams.length}::date`);
-      }
-      if (endDate) {
-        billVatParams.push(endDate as string);
-        billVatFilters.push(`bill_date <= $${billVatParams.length}::date`);
-      }
-      const billVatRes = await pool.query(
-        `SELECT
-           COALESCE(SUM(subtotal * COALESCE(exchange_rate, 1)), 0) AS subtotal,
-           COALESCE(SUM(vat_amount * COALESCE(exchange_rate, 1)), 0) AS vat
-         FROM vendor_bills
-         WHERE company_id = $1
-           AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
-           AND COALESCE(reverse_charge, false) = false
-           ${billVatFilters.length ? `AND ${billVatFilters.join(" AND ")}` : ""}`,
-        billVatParams
-      );
-      purchasesSubtotal += Number(billVatRes.rows[0]?.subtotal || 0);
-      purchasesVAT += Number(billVatRes.rows[0]?.vat || 0);
-
-      res.json({
-        reportCurrency: "AED",
-        period: "Current Period",
-        salesSubtotal,
-        salesVAT,
-        purchasesSubtotal,
-        purchasesVAT,
-        netVATPayable: salesVAT - purchasesVAT,
-      });
-    })
-  );
+  // VAT summary moved to reports.routes.ts onto the VAT engine (W4-E, W2-B carry-over).
 
   // =====================================
   // Legacy / Global Dashboard Routes

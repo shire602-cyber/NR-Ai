@@ -162,6 +162,9 @@ function calculationPath(companyId: string, period: VatPeriodSummary): string {
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
+const RECON_OVERRIDE_PROMPT =
+  "The return does not agree with the VAT control accounts. Give a reason to mark it ready anyway (recorded in the audit log). / الإقرار غير مطابق لحسابات الضريبة. اذكر سبب المتابعة.";
+
 export default function VATAutopilot() {
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
@@ -278,14 +281,38 @@ export default function VATAutopilot() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ periodId, status }: { periodId: string; status: VatPeriodStatus }) =>
-      apiRequest("PATCH", `/api/vat/autopilot/periods/${periodId}/status`, { status, companyId }),
+    mutationFn: ({
+      periodId,
+      status,
+      overrideReason,
+    }: {
+      periodId: string;
+      status: VatPeriodStatus;
+      overrideReason?: string;
+    }) =>
+      apiRequest("PATCH", `/api/vat/autopilot/periods/${periodId}/status`, {
+        status,
+        companyId,
+        ...(overrideReason ? { overrideReason } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
       toast({ title: "Status updated" });
     },
-    onError: (err: any) => {
+    onError: (err: Error, vars) => {
+      // W4-E (R12-03): an unexplained VAT-to-GL difference needs an audited override reason.
+      if (
+        vars.status === "ready" &&
+        !vars.overrideReason &&
+        /VAT control accounts/.test(err?.message || "")
+      ) {
+        const reason = window.prompt(RECON_OVERRIDE_PROMPT);
+        if (reason && reason.trim()) {
+          statusMutation.mutate({ ...vars, overrideReason: reason.trim() });
+          return;
+        }
+      }
       toast({ title: "Status update failed", description: err?.message, variant: "destructive" });
     },
   });

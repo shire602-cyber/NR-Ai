@@ -23,6 +23,9 @@ import {
   type UpdateReceiptBody,
 } from "../../shared/validators/receipts";
 import { postReceipt, reviseReceipt } from "../services/receipt-posting.service";
+import { resolve } from "../platform/service-registry";
+import type { FxGetRate } from "../services/fx";
+import { zSupplyType } from "../../shared/validators/primitives";
 import { insertInvoiceSchema, type Receipt } from "../../shared/schema";
 import {
   saveReceiptFile,
@@ -879,18 +882,28 @@ export function registerReceiptRoutes(app: Express) {
   );
 
   // Customer-only: Post receipt to journal entry (once: the claim is a conditional UPDATE).
+  // W4-E (R05-28): the post body may name the purchase's supply type (receipt-level or per split
+  // line). Blocked / partly recoverable input VAT is applied by receipt-posting.service.
+  const postReceiptVatBody = postReceiptBody
+    .extend({
+      vatSupplyType: zSupplyType.optional().nullable(),
+      lineSupplyTypes: z.array(zSupplyType.nullable()).max(50).optional().nullable(),
+    })
+    .strict();
+  type PostReceiptVatBody = PostReceiptBody & z.output<typeof postReceiptVatBody>;
+
   app.post(
     "/api/receipts/:id/post",
     authMiddleware,
     requireCustomer,
-    strictBody(postReceiptBody),
+    strictBody(postReceiptVatBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const body = parsedBody<PostReceiptBody>(req);
+      const body = parsedBody<PostReceiptVatBody>(req);
 
       // Get receipt — findReceiptForUser also enforces tenant access.
-      const receipt = await findReceiptForUser(userId, id);
+      let receipt = await findReceiptForUser(userId, id);
       if (!receipt) {
         return res.status(404).json({ message: "Receipt not found" });
       }
@@ -901,9 +914,31 @@ export function registerReceiptRoutes(app: Express) {
           .json({ message: "Expense account and payment account are required" });
       }
 
+      // W4-E: a foreign-currency receipt with no stated rate (stored default 1) takes the
+      // company's rate for the receipt date from fx.getRate (company row, then system row).
+      const currency = (receipt.currency || "AED").toUpperCase();
+      const storedRate = Number(receipt.exchangeRate);
+      if (currency !== "AED" && !receipt.posted && (!(storedRate > 0) || storedRate === 1)) {
+        const getRate = resolve<FxGetRate>("fx.getRate");
+        const dateIso = new Date(receipt.date ?? receipt.createdAt).toISOString().slice(0, 10);
+        const fx = await getRate(receipt.companyId, currency, "AED", dateIso);
+        receipt = await storage.updateReceipt(receipt.id, receipt.companyId, {
+          exchangeRate: fx.rate,
+          baseCurrencyAmount: baseCurrencyAmountOf(
+            Number(receipt.amount ?? 0),
+            Number(receipt.vatAmount ?? 0),
+            fx.rate
+          ),
+        });
+      }
+
       const result = await postReceipt(receipt, userId, {
         accountId: body.accountId ?? null,
         paymentAccountId: body.paymentAccountId,
+        vat: {
+          vatSupplyType: body.vatSupplyType ?? null,
+          lineSupplyTypes: body.lineSupplyTypes ?? null,
+        },
       });
       log.info({ id, journalEntryId: result.entryId }, "Receipt posted successfully");
       res.json(result.receipt);

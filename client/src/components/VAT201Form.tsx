@@ -138,8 +138,12 @@ export default function VAT201Form({
     return data.box9ExpensesVat + data.box10ReverseChargeVat;
   };
 
+  // Box 12 = Box 8 VAT + Box 8 adjustments; Box 13 = Box 11 VAT + Box 11 adjustments (W4-E).
+  const calculateDueTax = () => calculateTotalSalesVat() + calculateTotalSalesAdj();
+  const calculateRecoverableTax = () => calculateTotalInputVat() + (data.box9ExpensesAdj || 0);
+
   const calculateNetVat = () => {
-    return calculateTotalSalesVat() - calculateTotalInputVat();
+    return calculateDueTax() - calculateRecoverableTax();
   };
 
   return (
@@ -666,7 +670,7 @@ export default function VAT201Form({
                   </span>
                 </TableCell>
                 <TableCell className="text-right text-lg font-bold">
-                  {formatNumber(calculateTotalSalesVat())}
+                  {formatNumber(calculateDueTax())}
                 </TableCell>
               </TableRow>
               <TableRow>
@@ -679,7 +683,7 @@ export default function VAT201Form({
                   </span>
                 </TableCell>
                 <TableCell className="text-right text-lg font-bold">
-                  {formatNumber(calculateTotalInputVat())}
+                  {formatNumber(calculateRecoverableTax())}
                 </TableCell>
               </TableRow>
               <TableRow className="bg-success-subtle ">

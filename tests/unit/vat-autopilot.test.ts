@@ -426,9 +426,8 @@ describe("buildVat201Boxes", () => {
     expect(b.box1bDubaiAmount).toBe(0);
   });
 
-  it("falls back to Dubai for unknown emirates", () => {
-    const b = buildVat201Boxes(baseComponents, "unknown_emirate");
-    expect(b.box1bDubaiAmount).toBe(1000);
+  it("[R07-02] never falls back to Dubai for unknown emirates", () => {
+    expect(() => buildVat201Boxes(baseComponents, "unknown_emirate")).toThrow(/emirate/i);
   });
 
   it("computes Box 8/11/12/13/14 totals consistently", () => {
