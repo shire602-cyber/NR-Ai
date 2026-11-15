@@ -1,0 +1,43 @@
+{
+  "description": "Recording for example-asp-mapping.json: an ASP with different paths, raw-XML submission, header API-key auth and its own status vocabulary. Demonstrates that onboarding an ASP is a mapping file plus a recording.",
+  "interactions": [
+    {
+      "name": "submit",
+      "request": { "method": "POST", "path": "/api/v2/documents" },
+      "response": {
+        "status": 201,
+        "body": { "submission": { "reference": "EX-778899", "state": "in_review" } }
+      }
+    },
+    {
+      "name": "state-acknowledged",
+      "request": { "method": "GET", "path": "/api/v2/documents/EX-778899/state" },
+      "response": {
+        "status": 200,
+        "body": {
+          "submission": {
+            "reference": "EX-778899",
+            "state": "fta_acknowledged",
+            "note": "TDD accepted"
+          }
+        }
+      }
+    },
+    {
+      "name": "state-refused",
+      "request": { "method": "GET", "path": "/api/v2/documents/EX-000001/state" },
+      "response": {
+        "status": 200,
+        "body": {
+          "submission": {
+            "reference": "EX-000001",
+            "state": "refused",
+            "findings": [
+              { "rule": "ibr-127-ae", "text": "Due date missing", "xpath": "/Invoice/cbc:DueDate" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
