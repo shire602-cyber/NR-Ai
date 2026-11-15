@@ -20,7 +20,17 @@ export default defineConfig({
       "shared/**/*.test.ts",
       "shared/**/*.spec.ts",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "backend", "frontend", ".claude/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "backend",
+      "frontend",
+      ".claude/**",
+      "sites/**",
+      // Real-Postgres suites run under `npm run test:db` (tests/db/vitest.config.ts).
+      "tests/db/**",
+      "tests/integration/credit-note-consolidation.test.ts",
+    ],
     coverage: {
       provider: "v8",
       include: ["server/**/*.ts", "shared/**/*.ts"],
