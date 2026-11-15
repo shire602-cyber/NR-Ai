@@ -12,11 +12,11 @@
 
 import { createLogger } from "../config/logger";
 import type { OcrReceipt } from "./receipt-autopilot.service";
-import {
-  createOcrClients,
-  formatProviderFailures,
-  summarizeOcrProviderError,
-} from "./ocr-provider-clients";
+import { createOcrClients, summarizeOcrProviderError } from "./ocr-provider-clients";
+import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
+import { deriveConfidenceBand } from "../../shared/receipt-confidence";
+import { extractReceipt, RECEIPT_EXTRACTION_PROMPT } from "./ai/receipt-extraction";
+import { normalizeModelConfidence } from "./ai/structured-output";
 
 const log = createLogger("ocr-extraction");
 
@@ -35,9 +35,7 @@ export const VALID_OCR_CATEGORIES = [
   "Other",
 ] as const;
 
-export const RECEIPT_EXTRACTION_PROMPT = `You are an expert accountant specialising in UAE business receipt and invoice processing. Extract financial data with high precision and respond ONLY with valid JSON of this shape:
-{"merchant":"string","date":"YYYY-MM-DD","invoiceNumber":"string|null","subtotal":number,"vatPercentage":number,"vatAmount":number,"total":number,"currency":"string","category":"string","lineItems":[{"description":"string","quantity":number,"unitPrice":number,"total":number}],"confidence":number}
-Rules: "total" is the grand total INCLUDING VAT. If only one amount is present treat it as total and compute subtotal = total / 1.05 for UAE. If subtotal+vatAmount present but no total, total = subtotal + vatAmount. Default VAT 5% for UAE; explicit 0 means zero-rated. Parse thousands separators. Category must be one of: ${VALID_OCR_CATEGORIES.join(", ")}.`;
+export { RECEIPT_EXTRACTION_PROMPT };
 
 function parseNonNegative(val: unknown): number {
   if (val === null || val === undefined) return 0;
@@ -52,7 +50,13 @@ function parseNonNegative(val: unknown): number {
  */
 export function normalizeOcrJson(
   raw: any,
-  opts: { rawText?: string | null; imageData?: string | null; today?: string } = {}
+  opts: {
+    rawText?: string | null;
+    imageData?: string | null;
+    today?: string;
+    /** Number of validation issues found upstream (any issue forces human review). */
+    issueCount?: number;
+  } = {}
 ): OcrReceipt {
   const sIn = parseNonNegative(raw?.subtotal);
   const vIn = parseNonNegative(raw?.vatAmount);
@@ -100,8 +104,16 @@ export function normalizeOcrJson(
     ? raw.lineItems.map((li: any) => ({ description: String(li?.description || "").slice(0, 500) }))
     : [];
 
+  const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
+  // A missing model confidence is LOW (R05-15); the band decides whether intake may auto-post.
+  const extractionConfidence = normalizeModelConfidence(raw?.confidence);
+  const band = deriveConfidenceBand({ extractionConfidence });
+
   return {
     merchant: raw?.merchant ? String(raw.merchant).slice(0, 200) : "Unknown Merchant",
+    supplierTrn: trn.trn,
+    extractionConfidence,
+    needsReview: band.band !== "high" || (opts.issueCount ?? 0) > 0,
     amount: derivedSubtotal, // net (subtotal) — runAutopilot's contract
     vatAmount: derivedVat,
     total: derivedTotal,
@@ -114,115 +126,46 @@ export function normalizeOcrJson(
   };
 }
 
-function extractJson(rawText: string): any {
-  const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return JSON.parse(fenced ? fenced[1].trim() : rawText.trim());
-}
-
 /** Whether any AI provider is configured (extraction is possible). */
 export function isOcrExtractionConfigured(): boolean {
   const { anthropic, openai } = createOcrClients();
   return Boolean(anthropic || openai);
 }
 
-const ANTHROPIC_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
 /**
  * Extract an OcrReceipt from a document's bytes. Returns null when no AI provider
- * is configured (caller then leaves the doc pending). PDFs go through Anthropic's
- * document block; images through the vision block (Anthropic preferred, OpenAI
- * fallback for images).
+ * is configured or every provider fails (caller then leaves the doc pending).
+ * PDFs need Anthropic's document block; images use Anthropic (preferred) then OpenAI.
+ * Extraction is metered against the company's monthly AI cap; a quota error propagates
+ * so the caller can leave the document pending rather than silently dropping it.
  */
 export async function extractReceiptToOcr(args: {
   content: Buffer;
   mimeType: string;
   rawText?: string | null;
+  companyId?: string | null;
 }): Promise<OcrReceipt | null> {
-  const { anthropic, openai } = createOcrClients();
-  if (!anthropic && !openai) return null;
+  const clients = createOcrClients();
+  if (!clients.anthropic && !clients.openai) return null;
 
   const base64 = args.content.toString("base64");
-  const isPdf = /pdf$/i.test(args.mimeType);
-  const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [];
-
-  if (anthropic) {
-    try {
-      const block = isPdf
-        ? {
-            type: "document" as const,
-            source: {
-              type: "base64" as const,
-              media_type: "application/pdf" as const,
-              data: base64,
-            },
-          }
-        : {
-            type: "image" as const,
-            source: {
-              type: "base64" as const,
-              media_type: (ANTHROPIC_IMAGE_TYPES.has(args.mimeType)
-                ? args.mimeType
-                : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-              data: base64,
-            },
-          };
-      const resp = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        messages: [
-          { role: "user", content: [block, { type: "text", text: RECEIPT_EXTRACTION_PROMPT }] },
-        ],
-      });
-      const first = resp.content[0];
-      if (!first || first.type !== "text") throw new Error("Unexpected Anthropic response");
-      return normalizeOcrJson(extractJson(first.text), {
-        rawText: args.rawText,
-        imageData: base64,
-      });
-    } catch (err) {
-      failures.push({ provider: "Anthropic", error: err });
-      if (openai && !isPdf) {
-        log.warn(
-          { err: summarizeOcrProviderError(err), mimeType: args.mimeType },
-          "Anthropic OCR extraction failed; trying OpenAI"
-        );
-      }
-    }
-  }
-
-  // OpenAI fallback — images only.
-  if (openai && !isPdf) {
-    try {
-      const resp = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: `data:${args.mimeType};base64,${base64}`, detail: "high" },
-              },
-              { type: "text", text: RECEIPT_EXTRACTION_PROMPT },
-            ],
-          },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 1500,
-      });
-      const raw = resp.choices[0]?.message?.content;
-      if (!raw) throw new Error("Empty OpenAI response");
-      return normalizeOcrJson(JSON.parse(raw), { rawText: args.rawText, imageData: base64 });
-    } catch (err) {
-      failures.push({ provider: "OpenAI", error: err });
-    }
-  }
-
-  if (failures.length > 0) {
+  try {
+    const outcome = await extractReceipt({
+      clients,
+      input: { kind: "image", base64, mediaType: args.mimeType },
+      ctx: { companyId: args.companyId ?? null, task: "ocr" },
+    });
+    return normalizeOcrJson(outcome.data, {
+      rawText: args.rawText,
+      imageData: base64,
+      issueCount: outcome.issues.length,
+    });
+  } catch (err) {
+    if ((err as any)?.code === "AI_QUOTA_EXCEEDED") throw err;
     log.warn(
-      { err: formatProviderFailures(failures), mimeType: args.mimeType },
+      { err: summarizeOcrProviderError(err), mimeType: args.mimeType },
       "OCR extraction failed"
     );
+    return null; // PDF with only an OpenAI key, or all configured providers failed.
   }
-  return null; // PDF with only an OpenAI key, or all configured providers failed.
 }

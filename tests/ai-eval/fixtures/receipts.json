@@ -1,0 +1,1402 @@
+[
+ {
+  "id": "en-01",
+  "lang": "en",
+  "ocrText": "Spinneys LLC\nTax Invoice\nTRN 100000123456000\nDate 01/01/2026\nInvoice No INV-1000\nService 2 x 115.00 230.00\nSubtotal AED 230.00\nVAT 5% AED 11.50\nGrand Total AED 241.50",
+  "expected": {
+   "merchant": "Spinneys LLC",
+   "date": "2026-01-01",
+   "subtotal": 230.0,
+   "vatAmount": 11.5,
+   "total": 241.5,
+   "currency": "AED",
+   "supplierTrn": "100000123456000",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "Spinneys LLC",
+   "date": "2026-01-01",
+   "subtotal": 230.0,
+   "vatAmount": 11.5,
+   "total": 241.5,
+   "currency": "AED",
+   "supplierTrn": "100000123456000",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-02",
+  "lang": "en",
+  "ocrText": "Lulu Hypermarket\nTax Invoice\nTRN 100000123456037\nDate 2026-02-02\nInvoice No INV-1001\nTotal AED 17.98",
+  "expected": {
+   "merchant": "Lulu Hypermarket",
+   "date": "2026-02-02",
+   "subtotal": 17.12,
+   "vatAmount": 0.86,
+   "total": 17.98,
+   "currency": "AED",
+   "supplierTrn": "100000123456037",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "Lulu Hypermarket",
+   "date": "2026-02-02",
+   "subtotal": 17.12,
+   "vatAmount": 0.86,
+   "total": 17.98,
+   "currency": "AED",
+   "supplierTrn": "100000123456037",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-03",
+  "lang": "en",
+  "ocrText": "DEWA\nTax Invoice\nTRN 100000123456074\nDate 3 Mar 2026\nInvoice No INV-1002\nSubtotal AED 5,916.87\nVAT 5% AED 295.84\nGrand Total AED 6,212.71",
+  "expected": {
+   "merchant": "DEWA",
+   "date": "2026-03-03",
+   "subtotal": 5916.87,
+   "vatAmount": 295.84,
+   "total": 6212.71,
+   "currency": "AED",
+   "supplierTrn": "100000123456074",
+   "isTaxInvoice": true,
+   "category": "Utilities"
+  },
+  "recorded": {
+   "merchant": "DEWA",
+   "date": "2026-03-03",
+   "subtotal": 5916.87,
+   "vatAmount": 295.84,
+   "total": 6212.71,
+   "currency": "AED",
+   "supplierTrn": "100000123456074",
+   "isTaxInvoice": true,
+   "category": "Utilities",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-04",
+  "lang": "en",
+  "ocrText": "Etisalat\nDate 04/04/2026\nInvoice No INV-1003\nSubtotal AED 19.00\nVAT 5% AED 0.95\nGrand Total AED 19.95",
+  "expected": {
+   "merchant": "Etisalat",
+   "date": "2026-04-04",
+   "subtotal": 19.0,
+   "vatAmount": 0.95,
+   "total": 19.95,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Communication"
+  },
+  "recorded": {
+   "merchant": "Etisalat Trading",
+   "date": "2026-04-04",
+   "subtotal": 19.0,
+   "vatAmount": 0.95,
+   "total": 19.95,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Communication",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-05",
+  "lang": "en",
+  "ocrText": "ADNOC Distribution\nTax Invoice\nTRN 100000123456148\nDate 2026-05-05\nInvoice No INV-1004\nSubtotal AED 109.60\nVAT 5% AED 5.48\nGrand Total AED 115.08",
+  "expected": {
+   "merchant": "ADNOC Distribution",
+   "date": "2026-05-05",
+   "subtotal": 109.6,
+   "vatAmount": 5.48,
+   "total": 115.08,
+   "currency": "AED",
+   "supplierTrn": "100000123456148",
+   "isTaxInvoice": true,
+   "category": "Travel"
+  },
+  "recorded": {
+   "merchant": "ADNOC Distribution",
+   "date": "2026-05-05",
+   "subtotal": 109.6,
+   "vatAmount": 5.48,
+   "total": 115.08,
+   "currency": "AED",
+   "supplierTrn": "100000123456148",
+   "isTaxInvoice": true,
+   "category": "Travel",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-06",
+  "lang": "en",
+  "ocrText": "Emirates Office Supplies LLC\nTax Invoice\nTRN 100000123456185\nDate 6 Jun 2026\nInvoice No INV-1005\nService 2 x 417.60 835.20\nSubtotal AED 835.20\nVAT 5% AED 41.76\nGrand Total AED 876.96",
+  "expected": {
+   "merchant": "Emirates Office Supplies LLC",
+   "date": "2026-06-06",
+   "subtotal": 835.2,
+   "vatAmount": 41.76,
+   "total": 876.96,
+   "currency": "AED",
+   "supplierTrn": "100000123456185",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "Emirates Office Supplies LLC",
+   "date": "2026-06-06",
+   "subtotal": 835.2,
+   "vatAmount": 41.76,
+   "total": 876.96,
+   "currency": "AED",
+   "supplierTrn": "100000123456185",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-07",
+  "lang": "en",
+  "ocrText": "Careem Rides\nTax Invoice\nTRN 100000123456222\nDate 07/07/2026\nInvoice No INV-1006\nSubtotal AED 80.00\nVAT 5% AED 4.00\nGrand Total AED 84.00",
+  "expected": {
+   "merchant": "Careem Rides",
+   "date": "2026-07-07",
+   "subtotal": 80.0,
+   "vatAmount": 4.0,
+   "total": 84.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456222",
+   "isTaxInvoice": true,
+   "category": "Travel"
+  },
+  "recorded": {
+   "merchant": "Careem Rides",
+   "date": "2026-07-07",
+   "subtotal": 80.0,
+   "vatAmount": 4.0,
+   "total": 84.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456222",
+   "isTaxInvoice": true,
+   "category": "Travel",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-08",
+  "lang": "en",
+  "ocrText": "Aster Pharmacy\nDate 2026-08-08\nInvoice No INV-1007\nTotal AED 4,891.62",
+  "expected": {
+   "merchant": "Aster Pharmacy",
+   "date": "2026-08-08",
+   "subtotal": 4658.69,
+   "vatAmount": 232.93,
+   "total": 4891.62,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Maintenance"
+  },
+  "recorded": {
+   "merchant": "Aster Pharmacy",
+   "date": "2026-08-08",
+   "subtotal": 4658.69,
+   "vatAmount": 232.93,
+   "total": 4891.62,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Maintenance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-09",
+  "lang": "en",
+  "ocrText": "Gulf Insurance Brokers\nTax Invoice\nTRN 100000123456296\nDate 9 Sep 2026\nInvoice No INV-1008\nSubtotal AED 174.00\nVAT 5% AED 8.70\nGrand Total AED 182.70",
+  "expected": {
+   "merchant": "Gulf Insurance Brokers",
+   "date": "2026-09-09",
+   "subtotal": 174.0,
+   "vatAmount": 8.7,
+   "total": 182.7,
+   "currency": "AED",
+   "supplierTrn": "100000123456296",
+   "isTaxInvoice": true,
+   "category": "Insurance"
+  },
+  "recorded": {
+   "merchant": "Gulf Insurance Brokers",
+   "date": "2026-09-09",
+   "subtotal": 174.0,
+   "vatAmount": 8.7,
+   "total": 182.7,
+   "currency": "AED",
+   "supplierTrn": "100000123456296",
+   "isTaxInvoice": true,
+   "category": "Insurance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-10",
+  "lang": "en",
+  "ocrText": "Marina Plaza Rent Office\nTax Invoice\nTRN 100000123456333\nDate 10/10/2026\nInvoice No INV-1009\nSubtotal AED 45.00\nVAT 5% AED 2.25\nGrand Total AED 47.25",
+  "expected": {
+   "merchant": "Marina Plaza Rent Office",
+   "date": "2026-10-10",
+   "subtotal": 45.0,
+   "vatAmount": 2.25,
+   "total": 47.25,
+   "currency": "AED",
+   "supplierTrn": "100000123456333",
+   "isTaxInvoice": true,
+   "category": "Rent"
+  },
+  "recorded": {
+   "merchant": "Marina Plaza Rent Office",
+   "date": "2026-10-10",
+   "subtotal": 45.0,
+   "vatAmount": 2.25,
+   "total": 47.25,
+   "currency": "AED",
+   "supplierTrn": "100000123456333",
+   "isTaxInvoice": true,
+   "category": "Rent",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-11",
+  "lang": "en",
+  "ocrText": "Digital Ads FZ-LLC\nTax Invoice\nTRN 100000123456370\nDate 2026-11-11\nInvoice No INV-1010\nService 2 x 8.56 17.12\nSubtotal AED 17.12\nVAT 5% AED 0.86\nGrand Total AED 17.98",
+  "expected": {
+   "merchant": "Digital Ads FZ-LLC",
+   "date": "2026-11-11",
+   "subtotal": 17.12,
+   "vatAmount": 0.86,
+   "total": 17.98,
+   "currency": "AED",
+   "supplierTrn": "100000123456370",
+   "isTaxInvoice": true,
+   "category": "Marketing"
+  },
+  "recorded": {
+   "merchant": "Digital Ads FZ-LLC",
+   "date": "2026-11-11",
+   "subtotal": 17.12,
+   "vatAmount": 0.86,
+   "total": 17.98,
+   "currency": "AED",
+   "supplierTrn": "100000123456370",
+   "isTaxInvoice": true,
+   "category": "Marketing",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-12",
+  "lang": "en",
+  "ocrText": "Tech Equipment Trading\nDate 12 Jan 2026\nInvoice No INV-1011\nSubtotal AED 174.00\nVAT 5% AED 8.70\nGrand Total AED 182.70",
+  "expected": {
+   "merchant": "Tech Equipment Trading",
+   "date": "2026-01-12",
+   "subtotal": 174.0,
+   "vatAmount": 8.7,
+   "total": 182.7,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Equipment"
+  },
+  "recorded": {
+   "merchant": "Tech Equipment Trading",
+   "date": "2026-01-12",
+   "subtotal": 174.0,
+   "vatAmount": 8.7,
+   "total": 182.7,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Equipment",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-13",
+  "lang": "en",
+  "ocrText": "Al Safa Legal Consultants\nTax Invoice\nTRN 100000123456444\nDate 13/02/2026\nInvoice No INV-1012\nSubtotal AED 72.38\nVAT 5% AED 3.62\nGrand Total AED 76.00",
+  "expected": {
+   "merchant": "Al Safa Legal Consultants",
+   "date": "2026-02-13",
+   "subtotal": 72.38,
+   "vatAmount": 3.62,
+   "total": 76.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456444",
+   "isTaxInvoice": true,
+   "category": "Professional Services"
+  },
+  "recorded": {
+   "merchant": "Al Safa Legal Consultants",
+   "date": "2026-02-13",
+   "subtotal": 72.38,
+   "vatAmount": 3.62,
+   "total": 76.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456444",
+   "isTaxInvoice": true,
+   "category": "Professional Services",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-14",
+  "lang": "en",
+  "ocrText": "Pizza Corner\nTax Invoice\nTRN 100000123456481\nDate 2026-03-14\nInvoice No INV-1013\nTotal AED 115.08",
+  "expected": {
+   "merchant": "Pizza Corner",
+   "date": "2026-03-14",
+   "subtotal": 109.6,
+   "vatAmount": 5.48,
+   "total": 115.08,
+   "currency": "AED",
+   "supplierTrn": "100000123456481",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "Pizza Corner",
+   "date": "2026-03-14",
+   "subtotal": 109.6,
+   "vatAmount": 5.48,
+   "total": 115.08,
+   "currency": "AED",
+   "supplierTrn": "100000123456481",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-15",
+  "lang": "en",
+  "ocrText": "du Telecom\nTax Invoice\nTRN 100000123456518\nDate 15 Apr 2026\nInvoice No INV-1014\nSubtotal AED 139.20\nVAT 5% AED 6.96\nGrand Total AED 146.16",
+  "expected": {
+   "merchant": "du Telecom",
+   "date": "2026-04-15",
+   "subtotal": 139.2,
+   "vatAmount": 6.96,
+   "total": 146.16,
+   "currency": "AED",
+   "supplierTrn": "100000123456518",
+   "isTaxInvoice": true,
+   "category": "Communication"
+  },
+  "recorded": {
+   "merchant": "du Telecom",
+   "date": "2026-04-15",
+   "subtotal": 139.2,
+   "vatAmount": 6.96,
+   "total": 146.16,
+   "currency": "AED",
+   "supplierTrn": "100000123456518",
+   "isTaxInvoice": true,
+   "category": "Communication",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-16",
+  "lang": "en",
+  "ocrText": "Spinneys LLC\nDate 16/05/2026\nInvoice No INV-1015\nService 2 x 22.50 45.00\nSubtotal AED 45.00\nVAT 5% AED 2.25\nGrand Total AED 47.25",
+  "expected": {
+   "merchant": "Spinneys LLC",
+   "date": "2026-05-16",
+   "subtotal": 45.0,
+   "vatAmount": 2.25,
+   "total": 47.25,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "Spinneys LLC",
+   "date": "2026-05-16",
+   "subtotal": 45.0,
+   "vatAmount": 2.25,
+   "total": 47.25,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-17",
+  "lang": "en",
+  "ocrText": "Lulu Hypermarket\nTax Invoice\nTRN 100000123456592\nDate 2026-06-17\nInvoice No INV-1016\nSubtotal AED 99.16\nVAT 5% AED 4.96\nGrand Total AED 104.12",
+  "expected": {
+   "merchant": "Lulu Hypermarket",
+   "date": "2026-06-17",
+   "subtotal": 99.16,
+   "vatAmount": 4.96,
+   "total": 104.12,
+   "currency": "AED",
+   "supplierTrn": "100000123456592",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "Lulu Hypermarket",
+   "date": "2026-06-17",
+   "subtotal": 99.16,
+   "vatAmount": 4.96,
+   "total": 104.12,
+   "currency": "AED",
+   "supplierTrn": "100000123456592",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-18",
+  "lang": "en",
+  "ocrText": "DEWA\nTax Invoice\nTRN 100000123456629\nDate 18 Jul 2026\nInvoice No INV-1017\nSubtotal AED 5,916.87\nVAT 5% AED 295.84\nGrand Total AED 6,212.71",
+  "expected": {
+   "merchant": "DEWA",
+   "date": "2026-07-18",
+   "subtotal": 5916.87,
+   "vatAmount": 295.84,
+   "total": 6212.71,
+   "currency": "AED",
+   "supplierTrn": "100000123456629",
+   "isTaxInvoice": true,
+   "category": "Utilities"
+  },
+  "recorded": {
+   "merchant": "DEWA",
+   "date": "2026-07-18",
+   "subtotal": 5916.87,
+   "vatAmount": 295.84,
+   "total": 6212.71,
+   "currency": "AED",
+   "supplierTrn": "100000123456629",
+   "isTaxInvoice": true,
+   "category": "Utilities",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-19",
+  "lang": "en",
+  "ocrText": "Etisalat\nTax Invoice\nTRN 100000123456666\nDate 19/08/2026\nInvoice No INV-1018\nSubtotal AED 80.00\nVAT 5% AED 4.00\nGrand Total AED 84.00",
+  "expected": {
+   "merchant": "Etisalat",
+   "date": "2026-08-19",
+   "subtotal": 80.0,
+   "vatAmount": 4.0,
+   "total": 84.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456666",
+   "isTaxInvoice": true,
+   "category": "Communication"
+  },
+  "recorded": {
+   "merchant": "Etisalat",
+   "date": "2026-08-19",
+   "subtotal": 80.0,
+   "vatAmount": 4.0,
+   "total": 84.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456666",
+   "isTaxInvoice": true,
+   "category": "Communication",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-20",
+  "lang": "en",
+  "ocrText": "ADNOC Distribution\nDate 2026-09-20\nInvoice No INV-1019\nTotal AED 104.12",
+  "expected": {
+   "merchant": "ADNOC Distribution",
+   "date": "2026-09-20",
+   "subtotal": 99.16,
+   "vatAmount": 4.96,
+   "total": 104.12,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Travel"
+  },
+  "recorded": {
+   "merchant": "ADNOC Distribution",
+   "date": "2026-09-20",
+   "subtotal": 99.16,
+   "vatAmount": 4.96,
+   "total": 104.12,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Travel",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-21",
+  "lang": "en",
+  "ocrText": "Emirates Office Supplies LLC\nTax Invoice\nTRN 100000123456740\nDate 21 Oct 2026\nInvoice No INV-1020\nService 2 x 417.60 835.20\nSubtotal AED 835.20\nVAT 5% AED 41.76\nGrand Total AED 876.96",
+  "expected": {
+   "merchant": "Emirates Office Supplies LLC",
+   "date": "2026-10-21",
+   "subtotal": 835.2,
+   "vatAmount": 41.76,
+   "total": 876.96,
+   "currency": "AED",
+   "supplierTrn": "100000123456740",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "Emirates Office Supplies LLC",
+   "date": "2026-10-21",
+   "subtotal": 835.2,
+   "vatAmount": 41.76,
+   "total": 876.96,
+   "currency": "AED",
+   "supplierTrn": "100000123456740",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-22",
+  "lang": "en",
+  "ocrText": "Careem Rides\nTax Invoice\nTRN 100000123456777\nDate 22/11/2026\nInvoice No INV-1021\nSubtotal AED 480.00\nVAT 5% AED 24.00\nGrand Total AED 504.00",
+  "expected": {
+   "merchant": "Careem Rides",
+   "date": "2026-11-22",
+   "subtotal": 480.0,
+   "vatAmount": 24.0,
+   "total": 504.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456777",
+   "isTaxInvoice": true,
+   "category": "Travel"
+  },
+  "recorded": {
+   "merchant": "Careem Rides",
+   "date": "2026-11-22",
+   "subtotal": 480.0,
+   "vatAmount": 24.0,
+   "total": 504.0,
+   "currency": "AED",
+   "supplierTrn": "100000123456777",
+   "isTaxInvoice": true,
+   "category": "Travel",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-23",
+  "lang": "en",
+  "ocrText": "Aster Pharmacy\nTax Invoice\nTRN 100000123456814\nDate 2026-01-23\nInvoice No INV-1022\nSubtotal AED 109.60\nVAT 5% AED 5.48\nGrand Total AED 115.08",
+  "expected": {
+   "merchant": "Aster Pharmacy",
+   "date": "2026-01-23",
+   "subtotal": 109.6,
+   "vatAmount": 5.48,
+   "total": 115.08,
+   "currency": "AED",
+   "supplierTrn": "100000123456814",
+   "isTaxInvoice": true,
+   "category": "Maintenance"
+  },
+  "recorded": {
+   "merchant": "Aster Pharmacy",
+   "date": "2026-01-23",
+   "subtotal": 109.6,
+   "vatAmount": 5.48,
+   "total": 115.08,
+   "currency": "AED",
+   "supplierTrn": "100000123456814",
+   "isTaxInvoice": true,
+   "category": "Maintenance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-24",
+  "lang": "en",
+  "ocrText": "Gulf Insurance Brokers\nDate 24 Feb 2026\nInvoice No INV-1023\nSubtotal AED 835.20\nVAT 5% AED 41.76\nGrand Total AED 876.96",
+  "expected": {
+   "merchant": "Gulf Insurance Brokers",
+   "date": "2026-02-24",
+   "subtotal": 835.2,
+   "vatAmount": 41.76,
+   "total": 876.96,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Insurance"
+  },
+  "recorded": {
+   "merchant": "Gulf Insurance Brokers",
+   "date": "2026-02-24",
+   "subtotal": 835.2,
+   "vatAmount": 41.76,
+   "total": 876.96,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Insurance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-25",
+  "lang": "en",
+  "ocrText": "Marina Plaza Rent Office\nTax Invoice\nTRN 100000123456888\nDate 25/03/2026\nInvoice No INV-1024\nSubtotal AED 3,400.50\nVAT 5% AED 170.03\nGrand Total AED 3,570.53",
+  "expected": {
+   "merchant": "Marina Plaza Rent Office",
+   "date": "2026-03-25",
+   "subtotal": 3400.5,
+   "vatAmount": 170.03,
+   "total": 3570.53,
+   "currency": "AED",
+   "supplierTrn": "100000123456888",
+   "isTaxInvoice": true,
+   "category": "Rent"
+  },
+  "recorded": {
+   "merchant": "Marina Plaza Rent Office",
+   "date": "2026-03-25",
+   "subtotal": 3400.5,
+   "vatAmount": 170.03,
+   "total": 3570.53,
+   "currency": "AED",
+   "supplierTrn": "100000123456888",
+   "isTaxInvoice": true,
+   "category": "Rent",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-26",
+  "lang": "en",
+  "ocrText": "Digital Ads FZ-LLC\nTax Invoice\nTRN 100000123456925\nDate 2026-04-26\nInvoice No INV-1025\nService 2 x 328.80 657.60\nTotal AED 690.48",
+  "expected": {
+   "merchant": "Digital Ads FZ-LLC",
+   "date": "2026-04-26",
+   "subtotal": 657.6,
+   "vatAmount": 32.88,
+   "total": 690.48,
+   "currency": "AED",
+   "supplierTrn": "100000123456925",
+   "isTaxInvoice": true,
+   "category": "Marketing"
+  },
+  "recorded": {
+   "merchant": "Digital Ads FZ-LLC",
+   "date": "2026-04-26",
+   "subtotal": 657.6,
+   "vatAmount": 32.88,
+   "total": 690.48,
+   "currency": "AED",
+   "supplierTrn": "100000123456925",
+   "isTaxInvoice": true,
+   "category": "Marketing",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-27",
+  "lang": "en",
+  "ocrText": "Tech Equipment Trading\nTax Invoice\nTRN 100000123456962\nDate 27 May 2026\nInvoice No INV-1026\nSubtotal AED 139.20\nVAT 5% AED 6.96\nGrand Total AED 146.16",
+  "expected": {
+   "merchant": "Tech Equipment Trading",
+   "date": "2026-05-27",
+   "subtotal": 139.2,
+   "vatAmount": 6.96,
+   "total": 146.16,
+   "currency": "AED",
+   "supplierTrn": "100000123456962",
+   "isTaxInvoice": true,
+   "category": "Equipment"
+  },
+  "recorded": {
+   "merchant": "Tech Equipment Trading",
+   "date": "2026-05-27",
+   "subtotal": 139.2,
+   "vatAmount": 6.96,
+   "total": 146.16,
+   "currency": "AED",
+   "supplierTrn": "100000123456962",
+   "isTaxInvoice": true,
+   "category": "Equipment",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-28",
+  "lang": "en",
+  "ocrText": "Al Safa Legal Consultants\nDate 01/06/2026\nInvoice No INV-1027\nSubtotal AED 72.38\nVAT 5% AED 3.62\nGrand Total AED 76.00",
+  "expected": {
+   "merchant": "Al Safa Legal Consultants",
+   "date": "2026-06-01",
+   "subtotal": 72.38,
+   "vatAmount": 3.62,
+   "total": 76.0,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Professional Services"
+  },
+  "recorded": {
+   "merchant": "Al Safa Legal Consultants",
+   "date": "2026-06-01",
+   "subtotal": 72.38,
+   "vatAmount": 3.62,
+   "total": 76.0,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Professional Services",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-29",
+  "lang": "en",
+  "ocrText": "Pizza Corner\nTax Invoice\nTRN 100000123457036\nDate 2026-07-02\nInvoice No INV-1028\nSubtotal AED 17.12\nVAT 5% AED 0.86\nGrand Total AED 17.98",
+  "expected": {
+   "merchant": "Pizza Corner",
+   "date": "2026-07-02",
+   "subtotal": 17.12,
+   "vatAmount": 0.86,
+   "total": 17.98,
+   "currency": "AED",
+   "supplierTrn": "100000123457036",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "Pizza Corner",
+   "date": "2026-07-02",
+   "subtotal": 17.12,
+   "vatAmount": 0.86,
+   "total": 17.98,
+   "currency": "AED",
+   "supplierTrn": "100000123457036",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "en-30",
+  "lang": "en",
+  "ocrText": "du Telecom\nTax Invoice\nTRN 100000123457073\nDate 3 Aug 2026\nInvoice No INV-1029\nSubtotal AED 33.06\nVAT 5% AED 1.65\nGrand Total AED 34.71",
+  "expected": {
+   "merchant": "du Telecom",
+   "date": "2026-08-03",
+   "subtotal": 33.06,
+   "vatAmount": 1.65,
+   "total": 34.71,
+   "currency": "AED",
+   "supplierTrn": "100000123457073",
+   "isTaxInvoice": true,
+   "category": "Communication"
+  },
+  "recorded": {
+   "merchant": "du Telecom",
+   "date": "2026-08-03",
+   "subtotal": 33.06,
+   "vatAmount": 1.65,
+   "total": 34.71,
+   "currency": "AED",
+   "supplierTrn": "100000123457073",
+   "isTaxInvoice": true,
+   "category": "Communication",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-31",
+  "lang": "ar",
+  "ocrText": "سبينيس ذ.م.م\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٥٩٧٠٠\nالتاريخ ٠١/٠١/٢٠٢٦\nالمجموع الفرعي ٢١٠٠٫٠٠\nضريبة القيمة المضافة 5% ١٠٥٫٠٠\nالإجمالي ٢٢٠٥٫٠٠ د.إ",
+  "expected": {
+   "merchant": "سبينيس ذ.م.م",
+   "date": "2026-01-01",
+   "subtotal": 2100.0,
+   "vatAmount": 105.0,
+   "total": 2205.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459700",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "سبينيس ذ.م.م",
+   "date": "2026-01-01",
+   "subtotal": 2100.0,
+   "vatAmount": 105.0,
+   "total": 2205.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459700",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-32",
+  "lang": "ar",
+  "ocrText": "لولو هايبر ماركت\nفاتورة ضريبية\nالرقم الضريبي 100000123459737\nالتاريخ 02/02/2026\nالمجموع الفرعي 22.50\nضريبة القيمة المضافة 5% 1.12\nالإجمالي 23.62 د.إ",
+  "expected": {
+   "merchant": "لولو هايبر ماركت",
+   "date": "2026-02-02",
+   "subtotal": 22.5,
+   "vatAmount": 1.12,
+   "total": 23.62,
+   "currency": "AED",
+   "supplierTrn": "100000123459737",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "لولو هايبر ماركت",
+   "date": "2026-02-02",
+   "subtotal": 22.5,
+   "vatAmount": 1.12,
+   "total": 23.62,
+   "currency": "AED",
+   "supplierTrn": "100000123459737",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-33",
+  "lang": "ar",
+  "ocrText": "هيئة كهرباء ومياه دبي\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٥٩٧٧٤\nالتاريخ ٠٣/٠٣/٢٠٢٦\nالمجموع الفرعي ٨٧٥٫٠٠\nضريبة القيمة المضافة 5% ٤٣٫٧٥\nالإجمالي ٩١٨٫٧٥ د.إ",
+  "expected": {
+   "merchant": "هيئة كهرباء ومياه دبي",
+   "date": "2026-03-03",
+   "subtotal": 875.0,
+   "vatAmount": 43.75,
+   "total": 918.75,
+   "currency": "AED",
+   "supplierTrn": "100000123459774",
+   "isTaxInvoice": true,
+   "category": "Utilities"
+  },
+  "recorded": {
+   "merchant": "هيئة كهرباء ومياه دبي",
+   "date": "2026-03-03",
+   "subtotal": 875.0,
+   "vatAmount": 43.75,
+   "total": 918.75,
+   "currency": "AED",
+   "supplierTrn": "100000123459774",
+   "isTaxInvoice": true,
+   "category": "Utilities",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-34",
+  "lang": "ar",
+  "ocrText": "اتصالات\nفاتورة ضريبية\nالرقم الضريبي 100000123459811\nالتاريخ 04/04/2026\nالمجموع الفرعي 480.00\nضريبة القيمة المضافة 5% 24.00\nالإجمالي 504.00 د.إ",
+  "expected": {
+   "merchant": "اتصالات",
+   "date": "2026-04-04",
+   "subtotal": 480.0,
+   "vatAmount": 24.0,
+   "total": 504.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459811",
+   "isTaxInvoice": true,
+   "category": "Communication"
+  },
+  "recorded": {
+   "merchant": "اتصالات",
+   "date": "2026-04-04",
+   "subtotal": 480.0,
+   "vatAmount": 24.0,
+   "total": 504.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459811",
+   "isTaxInvoice": true,
+   "category": "Communication",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-35",
+  "lang": "ar",
+  "ocrText": "أدنوك للتوزيع\nالتاريخ ٠٥/٠٥/٢٠٢٦\nالمجموع الفرعي ٨٧٥٫٠٠\nضريبة القيمة المضافة 5% ٤٣٫٧٥\nالإجمالي ٩١٨٫٧٥ د.إ",
+  "expected": {
+   "merchant": "أدنوك للتوزيع",
+   "date": "2026-05-05",
+   "subtotal": 875.0,
+   "vatAmount": 43.75,
+   "total": 918.75,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Travel"
+  },
+  "recorded": {
+   "merchant": "أدنوك للتوزيع",
+   "date": "2026-05-05",
+   "subtotal": 875.0,
+   "vatAmount": 43.75,
+   "total": 918.75,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Travel",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-36",
+  "lang": "ar",
+  "ocrText": "مطعم الشام\nفاتورة ضريبية\nالرقم الضريبي 100000123459885\nالتاريخ 06/06/2026\nالمجموع الفرعي 1312.50\nضريبة القيمة المضافة 5% 65.62\nالإجمالي 1378.12 د.إ",
+  "expected": {
+   "merchant": "مطعم الشام",
+   "date": "2026-06-06",
+   "subtotal": 1312.5,
+   "vatAmount": 65.62,
+   "total": 1378.12,
+   "currency": "AED",
+   "supplierTrn": "100000123459885",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "مطعم الشام",
+   "date": "2026-06-06",
+   "subtotal": 1312.5,
+   "vatAmount": 65.62,
+   "total": 1378.12,
+   "currency": "AED",
+   "supplierTrn": "100000123459885",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-37",
+  "lang": "ar",
+  "ocrText": "مكتبة جرير\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٥٩٩٢٢\nالتاريخ ٠٧/٠٧/٢٠٢٦\nالمجموع الفرعي ٢١٠٠٫٠٠\nضريبة القيمة المضافة 5% ١٠٥٫٠٠\nالإجمالي ٢٢٠٥٫٠٠ د.إ",
+  "expected": {
+   "merchant": "مكتبة جرير",
+   "date": "2026-07-07",
+   "subtotal": 2100.0,
+   "vatAmount": 105.0,
+   "total": 2205.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459922",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "مكتبة جرير",
+   "date": "2026-07-07",
+   "subtotal": 2100.0,
+   "vatAmount": 105.0,
+   "total": 2205.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459922",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-38",
+  "lang": "ar",
+  "ocrText": "شركة الإمارات للتأمين\nفاتورة ضريبية\nالرقم الضريبي 100000123459959\nالتاريخ 08/08/2026\nالمجموع الفرعي 1312.50\nضريبة القيمة المضافة 5% 65.62\nالإجمالي 1378.12 د.إ",
+  "expected": {
+   "merchant": "شركة الإمارات للتأمين",
+   "date": "2026-08-08",
+   "subtotal": 1312.5,
+   "vatAmount": 65.62,
+   "total": 1378.12,
+   "currency": "AED",
+   "supplierTrn": "100000123459959",
+   "isTaxInvoice": true,
+   "category": "Insurance"
+  },
+  "recorded": {
+   "merchant": "شركة الإمارات للتأمين",
+   "date": "2026-08-08",
+   "subtotal": 1312.5,
+   "vatAmount": 65.62,
+   "total": 1378.12,
+   "currency": "AED",
+   "supplierTrn": "100000123459959",
+   "isTaxInvoice": true,
+   "category": "Insurance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-39",
+  "lang": "ar",
+  "ocrText": "صيدلية أستر\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٥٩٩٩٦\nالتاريخ ٠٩/٠٩/٢٠٢٦\nالمجموع الفرعي ٦٠٫٠٠\nضريبة القيمة المضافة 5% ٣٫٠٠\nالإجمالي ٦٣٫٠٠ د.إ",
+  "expected": {
+   "merchant": "صيدلية أستر",
+   "date": "2026-09-09",
+   "subtotal": 60.0,
+   "vatAmount": 3.0,
+   "total": 63.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459996",
+   "isTaxInvoice": true,
+   "category": "Maintenance"
+  },
+  "recorded": {
+   "merchant": "صيدلية أستر",
+   "date": "2026-09-09",
+   "subtotal": 60.0,
+   "vatAmount": 3.0,
+   "total": 63.0,
+   "currency": "AED",
+   "supplierTrn": "100000123459996",
+   "isTaxInvoice": true,
+   "category": "Maintenance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-40",
+  "lang": "ar",
+  "ocrText": "مؤسسة النور للتسويق\nالتاريخ 10/10/2026\nالمجموع الفرعي 225.00\nضريبة القيمة المضافة 5% 11.25\nالإجمالي 236.25 د.إ",
+  "expected": {
+   "merchant": "مؤسسة النور للتسويق",
+   "date": "2026-10-10",
+   "subtotal": 225.0,
+   "vatAmount": 11.25,
+   "total": 236.25,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Marketing"
+  },
+  "recorded": {
+   "merchant": "مؤسسة النور للتسويق",
+   "date": "2026-10-10",
+   "subtotal": 225.0,
+   "vatAmount": 11.25,
+   "total": 236.25,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Marketing",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-41",
+  "lang": "ar",
+  "ocrText": "سبينيس ذ.م.م\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٦٠٠٧٠\nالتاريخ ١١/١١/٢٠٢٦\nالمجموع الفرعي ٦٠٫٠٠\nضريبة القيمة المضافة 5% ٣٫٠٠\nالإجمالي ٦٣٫٠٠ د.إ",
+  "expected": {
+   "merchant": "سبينيس ذ.م.م",
+   "date": "2026-11-11",
+   "subtotal": 60.0,
+   "vatAmount": 3.0,
+   "total": 63.0,
+   "currency": "AED",
+   "supplierTrn": "100000123460070",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "سبينيس ذ.م.م",
+   "date": "2026-11-11",
+   "subtotal": 60.0,
+   "vatAmount": 3.0,
+   "total": 63.0,
+   "currency": "AED",
+   "supplierTrn": "100000123460070",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-42",
+  "lang": "ar",
+  "ocrText": "لولو هايبر ماركت\nفاتورة ضريبية\nالرقم الضريبي 100000123460107\nالتاريخ 12/01/2026\nالمجموع الفرعي 22.50\nضريبة القيمة المضافة 5% 1.12\nالإجمالي 23.62 د.إ",
+  "expected": {
+   "merchant": "لولو هايبر ماركت",
+   "date": "2026-01-12",
+   "subtotal": 22.5,
+   "vatAmount": 1.12,
+   "total": 23.62,
+   "currency": "AED",
+   "supplierTrn": "100000123460107",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "لولو هايبر ماركت",
+   "date": "2026-01-12",
+   "subtotal": 22.5,
+   "vatAmount": 1.12,
+   "total": 23.62,
+   "currency": "AED",
+   "supplierTrn": "100000123460107",
+   "isTaxInvoice": true,
+   "category": "Other",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-43",
+  "lang": "ar",
+  "ocrText": "هيئة كهرباء ومياه دبي\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٦٠١٤٤\nالتاريخ ١٣/٠٢/٢٠٢٦\nالمجموع الفرعي ٢١٠٠٫٠٠\nضريبة القيمة المضافة 5% ١٠٥٫٠٠\nالإجمالي ٢٢٠٥٫٠٠ د.إ",
+  "expected": {
+   "merchant": "هيئة كهرباء ومياه دبي",
+   "date": "2026-02-13",
+   "subtotal": 2100.0,
+   "vatAmount": 105.0,
+   "total": 2205.0,
+   "currency": "AED",
+   "supplierTrn": "100000123460144",
+   "isTaxInvoice": true,
+   "category": "Utilities"
+  },
+  "recorded": {
+   "merchant": "هيئة كهرباء ومياه دبي",
+   "date": "2026-02-13",
+   "subtotal": 2100.0,
+   "vatAmount": 105.0,
+   "total": 2205.0,
+   "currency": "AED",
+   "supplierTrn": "100000123460144",
+   "isTaxInvoice": true,
+   "category": "Utilities",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-44",
+  "lang": "ar",
+  "ocrText": "اتصالات\nفاتورة ضريبية\nالرقم الضريبي 100000123460181\nالتاريخ 14/03/2026\nالمجموع الفرعي 90.00\nضريبة القيمة المضافة 5% 4.50\nالإجمالي 94.50 د.إ",
+  "expected": {
+   "merchant": "اتصالات",
+   "date": "2026-03-14",
+   "subtotal": 90.0,
+   "vatAmount": 4.5,
+   "total": 94.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460181",
+   "isTaxInvoice": true,
+   "category": "Communication"
+  },
+  "recorded": {
+   "merchant": "اتصالات",
+   "date": "2026-03-14",
+   "subtotal": 90.0,
+   "vatAmount": 4.5,
+   "total": 94.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460181",
+   "isTaxInvoice": true,
+   "category": "Communication",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-45",
+  "lang": "ar",
+  "ocrText": "أدنوك للتوزيع\nالتاريخ ١٥/٠٤/٢٠٢٦\nالمجموع الفرعي ٤٤٫٧٦\nضريبة القيمة المضافة 5% ٢٫٢٤\nالإجمالي ٤٧٫٠٠ د.إ",
+  "expected": {
+   "merchant": "أدنوك للتوزيع",
+   "date": "2026-04-15",
+   "subtotal": 44.76,
+   "vatAmount": 2.24,
+   "total": 47.0,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Travel"
+  },
+  "recorded": {
+   "merchant": "أدنوك للتوزيع",
+   "date": "2026-04-15",
+   "subtotal": 44.76,
+   "vatAmount": 2.24,
+   "total": 47.0,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Travel",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-46",
+  "lang": "ar",
+  "ocrText": "مطعم الشام\nفاتورة ضريبية\nالرقم الضريبي 100000123460255\nالتاريخ 16/05/2026\nالمجموع الفرعي 67.14\nضريبة القيمة المضافة 5% 3.36\nالإجمالي 70.50 د.إ",
+  "expected": {
+   "merchant": "مطعم الشام",
+   "date": "2026-05-16",
+   "subtotal": 67.14,
+   "vatAmount": 3.36,
+   "total": 70.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460255",
+   "isTaxInvoice": true,
+   "category": "Meals"
+  },
+  "recorded": {
+   "merchant": "مطعم الشام",
+   "date": "2026-05-16",
+   "subtotal": 67.14,
+   "vatAmount": 3.36,
+   "total": 70.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460255",
+   "isTaxInvoice": true,
+   "category": "Meals",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-47",
+  "lang": "ar",
+  "ocrText": "مكتبة جرير\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٦٠٢٩٢\nالتاريخ ١٧/٠٦/٢٠٢٦\nالمجموع الفرعي ٨٧٥٫٠٠\nضريبة القيمة المضافة 5% ٤٣٫٧٥\nالإجمالي ٩١٨٫٧٥ د.إ",
+  "expected": {
+   "merchant": "مكتبة جرير",
+   "date": "2026-06-17",
+   "subtotal": 875.0,
+   "vatAmount": 43.75,
+   "total": 918.75,
+   "currency": "AED",
+   "supplierTrn": "100000123460292",
+   "isTaxInvoice": true,
+   "category": "Office Supplies"
+  },
+  "recorded": {
+   "merchant": "مكتبة جرير",
+   "date": "2026-06-17",
+   "subtotal": 875.0,
+   "vatAmount": 43.75,
+   "total": 918.75,
+   "currency": "AED",
+   "supplierTrn": "100000123460292",
+   "isTaxInvoice": true,
+   "category": "Office Supplies",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-48",
+  "lang": "ar",
+  "ocrText": "شركة الإمارات للتأمين\nفاتورة ضريبية\nالرقم الضريبي 100000123460329\nالتاريخ 18/07/2026\nالمجموع الفرعي 90.00\nضريبة القيمة المضافة 5% 4.50\nالإجمالي 94.50 د.إ",
+  "expected": {
+   "merchant": "شركة الإمارات للتأمين",
+   "date": "2026-07-18",
+   "subtotal": 90.0,
+   "vatAmount": 4.5,
+   "total": 94.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460329",
+   "isTaxInvoice": true,
+   "category": "Insurance"
+  },
+  "recorded": {
+   "merchant": "شركة الإمارات للتأمين",
+   "date": "2026-07-18",
+   "subtotal": 90.0,
+   "vatAmount": 4.5,
+   "total": 94.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460329",
+   "isTaxInvoice": true,
+   "category": "Insurance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-49",
+  "lang": "ar",
+  "ocrText": "صيدلية أستر\nفاتورة ضريبية\nالرقم الضريبي ١٠٠٠٠٠١٢٣٤٦٠٣٦٦\nالتاريخ ١٩/٠٨/٢٠٢٦\nالمجموع الفرعي ١٥٠٫٠٠\nضريبة القيمة المضافة 5% ٧٫٥٠\nالإجمالي ١٥٧٫٥٠ د.إ",
+  "expected": {
+   "merchant": "صيدلية أستر",
+   "date": "2026-08-19",
+   "subtotal": 150.0,
+   "vatAmount": 7.5,
+   "total": 157.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460366",
+   "isTaxInvoice": true,
+   "category": "Maintenance"
+  },
+  "recorded": {
+   "merchant": "صيدلية أستر",
+   "date": "2026-08-19",
+   "subtotal": 150.0,
+   "vatAmount": 7.5,
+   "total": 157.5,
+   "currency": "AED",
+   "supplierTrn": "100000123460366",
+   "isTaxInvoice": true,
+   "category": "Maintenance",
+   "confidence": 0.93
+  }
+ },
+ {
+  "id": "ar-50",
+  "lang": "ar",
+  "ocrText": "مؤسسة النور للتسويق\nالتاريخ 20/09/2026\nالمجموع الفرعي 90.00\nضريبة القيمة المضافة 5% 4.50\nالإجمالي 94.50 د.إ",
+  "expected": {
+   "merchant": "مؤسسة النور للتسويق",
+   "date": "2026-09-20",
+   "subtotal": 90.0,
+   "vatAmount": 4.5,
+   "total": 94.5,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Marketing"
+  },
+  "recorded": {
+   "merchant": "مؤسسة النور للتسويق",
+   "date": "2026-09-20",
+   "subtotal": 90.0,
+   "vatAmount": 4.5,
+   "total": 94.5,
+   "currency": "AED",
+   "supplierTrn": null,
+   "isTaxInvoice": false,
+   "category": "Marketing",
+   "confidence": 0.93
+  }
+ }
+]

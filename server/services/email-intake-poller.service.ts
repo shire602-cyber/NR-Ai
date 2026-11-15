@@ -10,10 +10,7 @@
 
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
-import {
-  getEmailIntakeSource,
-  isEmailIntakeEnabled,
-} from "./email-intake-provider";
+import { getEmailIntakeSource, isEmailIntakeEnabled } from "./email-intake-provider";
 import {
   evaluateSenderGate,
   matchSenderToCompany,
@@ -55,7 +52,11 @@ const EMPTY: PollSummary = {
 
 /** Injectable seams so the orchestration is testable without a model or DB. */
 export interface PollDeps {
-  extract: (args: { content: Buffer; mimeType: string }) => Promise<OcrReceipt | null>;
+  extract: (args: {
+    content: Buffer;
+    mimeType: string;
+    companyId?: string;
+  }) => Promise<OcrReceipt | null>;
   autopilot: (companyId: string, uploadedBy: string, ocr: OcrReceipt) => Promise<AutopilotResult>;
 }
 
@@ -205,7 +206,11 @@ async function processAttachment(args: {
     return;
   }
   try {
-    const ocr = await deps.extract({ content: att.content, mimeType: att.mimeType });
+    const ocr = await deps.extract({
+      content: att.content,
+      mimeType: att.mimeType,
+      companyId,
+    });
     if (!ocr) {
       // No provider configured, or extraction declined — leave for retry/manual.
       await storage.updateEmailIntakeDocument(docId, { ocrStatus: "pending" });

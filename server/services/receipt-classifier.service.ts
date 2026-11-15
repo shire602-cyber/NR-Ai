@@ -17,6 +17,14 @@
 import type OpenAI from "openai";
 import type { ClassifierMethod } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { resolveModel } from "./ai/model-router";
+import { findTrnRule } from "./vendor-memory.service";
+import { DATA_BLOCK_INSTRUCTION, wrapUserData } from "./ai/data-blocks";
+import {
+  normalizeForLabelMatching,
+  normalizeMerchantKey,
+  tokenizeMerchantText,
+} from "../../shared/arabic-text";
 
 const log = createLogger("receipt-classifier");
 
@@ -103,13 +111,14 @@ const KEYWORD_RULES: KeywordRule[] = [
   // Utilities — UAE utility providers are highly distinctive.
   {
     category: "Utilities",
-    keywords: ["dewa", "sewa", "fewa", "addc", "aadc", "tawreed"],
+    keywords: ["dewa", "sewa", "fewa", "addc", "aadc", "tawreed", "كهرباء ومياه", "ديوا"],
     specificity: "high",
   },
   // Communication — telecom + meeting/SaaS comms providers.
   {
     category: "Communication",
     keywords: [
+      "اتصالات",
       "etisalat",
       " du ",
       "virgin mobile",
@@ -246,16 +255,7 @@ const KEYWORD_RULES: KeywordRule[] = [
 // =============================================
 
 export function normalizeMerchant(raw: string | null | undefined): string {
-  if (!raw) return "";
-  return raw
-    .toLowerCase()
-    .replace(
-      /\b(ltd|llc|inc|fzc|fzco|fz-llc|l\.l\.c\.?|trading|co\.?|company|corp(?:oration)?|gmbh|sa)\b/g,
-      ""
-    )
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeMerchantKey(raw);
 }
 
 export function isStandardCategory(value: unknown): value is StandardCategory {
@@ -316,7 +316,7 @@ interface KeywordHit {
 }
 
 function matchKeywords(merchant: string, lineItems: string[] = []): KeywordHit | null {
-  const inner = [merchant, ...lineItems].join(" ").toLowerCase();
+  const inner = normalizeForLabelMatching([merchant, ...lineItems].join(" ").toLowerCase());
   if (!inner.trim()) return null;
   // Pad with spaces so keywords that use leading/trailing spaces as a word
   // boundary (e.g. ' du ', 'hp ', 'meta ') match when the token sits at the
@@ -382,11 +382,7 @@ interface NaiveBayesModel {
 }
 
 function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length >= 2);
+  return tokenizeMerchantText(text);
 }
 
 function buildNaiveBayes(examples: TrainingExample[]): NaiveBayesModel {
@@ -480,7 +476,9 @@ export interface ClassifyReceiptParams {
   openai: OpenAI | null;
   /** Available expense account names for OpenAI grounding (kept short to control tokens). */
   expenseAccountNames?: string[];
-  /** Override the OpenAI model id (defaults to gpt-3.5-turbo per Phase 2 spec). */
+  /** Supplier TRN extracted from the document; enables vendor-to-account memory (R05-24). */
+  supplierTrn?: string | null;
+  /** Override the OpenAI model id (defaults to the AI_MODEL_CATEGORIZE router setting). */
   openaiModel?: string;
 }
 
@@ -500,6 +498,22 @@ export async function classifyReceipt(
   // OpenAI-only mode: skip internal pipeline.
   if (options.mode === "openai_only") {
     return await callOpenAIFallback(merchant, lineItems, openai, expenseAccountNames, openaiModel);
+  }
+
+  // Stage 0 — remembered vendor by supplier TRN (R05-24).
+  const trnRule = findTrnRule(params.supplierTrn, model.rules);
+  if (trnRule) {
+    const category: StandardCategory = isStandardCategory(trnRule.category)
+      ? trnRule.category
+      : "Other";
+    return {
+      category,
+      accountId: trnRule.accountId,
+      confidence: trnRule.confidence,
+      method: "rule",
+      reason: `Remembered vendor by TRN ${params.supplierTrn} - accepted ${trnRule.timesAccepted}x.`,
+      matchedRuleId: trnRule.id,
+    };
   }
 
   // Stage 1 + 2 — rule lookup.
@@ -599,20 +613,20 @@ async function callOpenAIFallback(
     };
   }
 
-  const itemsBlock =
-    lineItems.length > 0 ? `\nLine items: ${lineItems.slice(0, 5).join(", ")}` : "";
   const accountHint =
     expenseAccountNames && expenseAccountNames.length > 0
       ? `\n\nIf relevant, the company has these expense accounts (for the reason text only — do not invent IDs): ${expenseAccountNames.slice(0, 30).join(", ")}.`
       : "";
 
   const prompt = `Categorize this UAE business receipt into exactly one of: ${STANDARD_CATEGORIES.join(", ")}.
-Merchant: "${merchant}"${itemsBlock}${accountHint}
+${DATA_BLOCK_INSTRUCTION}
+
+${wrapUserData("merchant", merchant, 300)}${lineItems.length > 0 ? `\n${wrapUserData("line_items", lineItems.slice(0, 5).join(", "), 600)}` : ""}${accountHint}
 
 Respond with strict JSON: {"category":"<one of the categories>","confidence":<0..1>,"reason":"<short>"}`;
 
   const completion = await openai.chat.completions.create({
-    model: openaiModel || "gpt-3.5-turbo",
+    model: openaiModel || resolveModel("categorize"),
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
     temperature: 0.2,
@@ -630,8 +644,11 @@ Respond with strict JSON: {"category":"<one of the categories>","confidence":<0.
   const category: StandardCategory = isStandardCategory(parsed.category)
     ? parsed.category
     : "Other";
+  // A missing/invalid model confidence is never defaulted upward: it counts as low (R05-15).
   const confidence =
-    typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.7;
+    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+      ? Math.max(0, Math.min(1, parsed.confidence))
+      : 0;
 
   return {
     category,

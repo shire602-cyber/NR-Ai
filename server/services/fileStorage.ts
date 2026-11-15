@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { sniffFileType, extForMime, mimeForExt, UploadRejectedError } from "./upload-guard";
 import {
   S3Client,
   PutObjectCommand,
@@ -56,7 +57,14 @@ async function loadVercelBlob() {
 
 // Vercel Blob stores a full public-but-unguessable URL as the DB image_path.
 // Restrict reads to the Blob domain so a forged DB value can't trigger SSRF.
-const VERCEL_BLOB_URL = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com\//i;
+const VERCEL_BLOB_URL = /^https:\/\/[a-z0-9]+\.(?:public|private)\.blob\.vercel-storage\.com\//i;
+
+// Blob objects are PRIVATE by default (R05-06/R17-11): reads are proxied through the app with
+// the store token, so a leaked URL alone is not enough. BLOB_ACCESS=public restores the legacy
+// unguessable-URL behaviour for stores that cannot create private blobs.
+function blobAccess(): "public" | "private" {
+  return process.env.BLOB_ACCESS === "public" ? "public" : "private";
+}
 
 /** Whether durable object storage is configured (for /health + integration-status). */
 export function isObjectStorageConfigured(): boolean {
@@ -95,8 +103,7 @@ export function assessStorageDurability(uploadsDir: string): StorageDurability {
   if (volumeMount) {
     const resolvedMount = path.resolve(volumeMount);
     const onVolume =
-      resolvedUploads === resolvedMount ||
-      resolvedUploads.startsWith(resolvedMount + path.sep);
+      resolvedUploads === resolvedMount || resolvedUploads.startsWith(resolvedMount + path.sep);
     return onVolume
       ? { backend, durable: true, detail: `local disk on Railway volume (${resolvedMount})` }
       : {
@@ -122,11 +129,13 @@ export function assessStorageDurability(uploadsDir: string): StorageDurability {
 }
 
 function guessContentType(key: string): string {
-  const ext = path.extname(key).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".pdf") return "application/pdf";
-  return "image/jpeg";
+  const mime = mimeForExt(path.extname(key));
+  return mime ?? "application/octet-stream";
+}
+
+/** True content type: sniffed from the bytes, falling back to the stored/extension hint. */
+function trueContentType(buffer: Buffer, hint: string): string {
+  return sniffFileType(buffer)?.mime ?? hint;
 }
 
 async function streamToBuffer(body: any): Promise<Buffer> {
@@ -149,20 +158,24 @@ function assertSafeKey(imagePath: string): string {
 }
 
 /**
- * Save a base64-encoded image. Returns the relative key stored in the DB
- * (e.g. "receipts/abc123.jpg"). Uses object storage when configured, else disk.
+ * Persist already-validated bytes (see upload-guard `inspectUpload`). The key extension and
+ * stored content type come from the sniffed MIME type, never from the client. Returns the
+ * value stored in receipts.image_path.
  */
-export async function saveReceiptImage(base64Data: string, filename: string): Promise<string> {
-  const raw = base64Data.replace(/^data:[^;]+;base64,/, "");
-  const buffer = Buffer.from(raw, "base64");
-  const safeName = filename.replace(/[^a-z0-9_\-.]/gi, "_");
+export async function saveReceiptFile(
+  buffer: Buffer,
+  info: { mime: string; ext?: string; id?: string }
+): Promise<string> {
+  const { randomUUID } = await import("crypto");
+  const ext = info.ext ?? extForMime(info.mime);
+  const safeName = `${info.id ?? randomUUID()}.${ext}`.replace(/[^a-z0-9_\-.]/gi, "_");
   const key = `${receiptsPrefix}/${safeName}`;
 
   if (isVercelBlobConfigured()) {
     const { put } = await loadVercelBlob();
     const { url } = await put(key, buffer, {
-      access: "public",
-      contentType: guessContentType(key),
+      access: blobAccess(),
+      contentType: info.mime,
       addRandomSuffix: true, // unguessable URL
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });
@@ -171,12 +184,13 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
 
   const s3 = getS3();
   if (s3) {
+    // Objects stay private (no public ACL); reads are proxied through readReceiptImage.
     await s3.send(
       new PutObjectCommand({
         Bucket: process.env.S3_BUCKET!,
         Key: key,
         Body: buffer,
-        ContentType: guessContentType(key),
+        ContentType: info.mime,
       })
     );
     return key;
@@ -185,6 +199,27 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
   await fs.mkdir(localReceiptsDir, { recursive: true });
   await fs.writeFile(path.join(localReceiptsDir, safeName), buffer);
   return key;
+}
+
+/**
+ * Save a base64-encoded image/PDF. Returns the relative key stored in the DB
+ * (e.g. "receipts/abc123.png"). The file type is sniffed from the bytes; unknown content
+ * is rejected. Uses object storage when configured, else disk. `filename` is accepted for
+ * backward compatibility but its extension is ignored.
+ */
+export async function saveReceiptImage(base64Data: string, filename?: string): Promise<string> {
+  const raw = base64Data.replace(/^data:[^,]*;base64,/, "");
+  const buffer = Buffer.from(raw, "base64");
+  const sniffed = sniffFileType(buffer);
+  if (!sniffed) {
+    throw new UploadRejectedError(
+      "Unsupported file. Allowed: JPEG, PNG, WebP, GIF and PDF.",
+      400,
+      "UNSUPPORTED_FILE"
+    );
+  }
+  const id = filename ? path.basename(filename, path.extname(filename)) : undefined;
+  return saveReceiptFile(buffer, { mime: sniffed.mime, ext: sniffed.ext, id });
 }
 
 /**
@@ -200,11 +235,20 @@ export async function readReceiptImage(
       // `redirect: "error"` hardens against SSRF: the URL is allow-listed to the
       // Blob domain, but a 3xx from that host could otherwise bounce us to an
       // internal address. Refuse to follow redirects so the allow-list holds.
-      const res = await fetch(imagePath, { redirect: "error" });
+      const res = await fetch(imagePath, {
+        redirect: "error",
+        headers: process.env.BLOB_READ_WRITE_TOKEN
+          ? { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` }
+          : undefined,
+      });
       if (!res.ok) return null;
+      const buffer = Buffer.from(await res.arrayBuffer());
       return {
-        buffer: Buffer.from(await res.arrayBuffer()),
-        contentType: res.headers.get("content-type") || guessContentType(imagePath),
+        buffer,
+        contentType: trueContentType(
+          buffer,
+          res.headers.get("content-type") || guessContentType(imagePath)
+        ),
       };
     } catch {
       return null;
@@ -215,17 +259,19 @@ export async function readReceiptImage(
   const s3 = getS3();
   if (s3) {
     try {
-      const res = await s3.send(
-        new GetObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key })
-      );
-      return { buffer: await streamToBuffer(res.Body), contentType: res.ContentType || guessContentType(key) };
+      const res = await s3.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key }));
+      const buffer = await streamToBuffer(res.Body);
+      return {
+        buffer,
+        contentType: trueContentType(buffer, res.ContentType || guessContentType(key)),
+      };
     } catch {
       return null;
     }
   }
   try {
     const buffer = await fs.readFile(path.join(projectRoot, "uploads", key));
-    return { buffer, contentType: guessContentType(key) };
+    return { buffer, contentType: trueContentType(buffer, guessContentType(key)) };
   } catch {
     return null;
   }
@@ -263,4 +309,64 @@ export async function deleteReceiptImage(imagePath: string): Promise<void> {
   } catch {
     /* already gone */
   }
+}
+
+// ── Quota and boot-time safety ────────────────────────────────────────────────
+
+const DEFAULT_COMPANY_QUOTA_MB = 2048;
+
+export function companyStorageQuotaBytes(
+  env: Record<string, string | undefined> = process.env
+): number {
+  const mb = Number(env.COMPANY_STORAGE_QUOTA_MB);
+  return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_COMPANY_QUOTA_MB) * 1024 * 1024;
+}
+
+/** Bytes of receipt files stored for a company (receipts.file_size; legacy rows count as 0). */
+export async function getCompanyStorageUsage(companyId: string): Promise<number> {
+  const { pool } = await import("../db");
+  const r = await (pool as any).query(
+    `SELECT COALESCE(SUM(file_size),0)::float8 AS used FROM receipts WHERE company_id = $1`,
+    [companyId]
+  );
+  return Number(r.rows[0]?.used ?? 0);
+}
+
+/** Throws a 413 STORAGE_QUOTA_EXCEEDED rejection if adding `incomingBytes` exceeds the quota. */
+export async function assertWithinStorageQuota(
+  companyId: string,
+  incomingBytes: number,
+  usage: (companyId: string) => Promise<number> = getCompanyStorageUsage
+): Promise<void> {
+  const used = await usage(companyId);
+  const quota = companyStorageQuotaBytes();
+  if (used + incomingBytes > quota) {
+    throw new UploadRejectedError(
+      "Storage quota for this company has been reached. Delete old receipts or contact support.",
+      413,
+      "STORAGE_QUOTA_EXCEEDED"
+    );
+  }
+}
+
+/**
+ * Production must not silently write receipts to ephemeral local disk (R05-07).
+ * Throws unless object storage is configured, a persistent volume is declared, or
+ * ALLOW_LOCAL_STORAGE=true is set explicitly.
+ */
+export function assertStorageBootSafe(
+  env: Record<string, string | undefined> = process.env,
+  uploadsDir: string = path.join(projectRoot, "uploads")
+): void {
+  if (env.NODE_ENV !== "production") return;
+  if (env.ALLOW_LOCAL_STORAGE === "true") return;
+  if (isObjectStorageConfigured()) return;
+  const durability = assessStorageDurability(uploadsDir);
+  if (durability.durable) return;
+  throw new Error(
+    "Refusing to start: receipt storage is local disk in production (" +
+      durability.detail +
+      "). Configure S3_BUCKET/BLOB_READ_WRITE_TOKEN, mount a persistent volume, or set " +
+      "ALLOW_LOCAL_STORAGE=true to accept the risk."
+  );
 }

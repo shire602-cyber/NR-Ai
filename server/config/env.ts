@@ -32,7 +32,18 @@ const envSchema = z.object({
 
   // === AI / OpenAI ===
   OPENAI_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default("gpt-3.5-turbo"),
+  // Legacy single-model override. Prefer the per-task variables below (R05-21); when set it
+  // only applies to tasks that have no explicit AI_MODEL_<TASK> value.
+  AI_MODEL: z.string().optional(),
+  AI_MODEL_CATEGORIZE: z.string().optional(), // small/cheap model for categorisation
+  AI_MODEL_OCR: z.string().optional(), // vision model for receipt extraction
+  AI_MODEL_ADVISORY: z.string().optional(), // strong model for CFO advice / forecasting
+  AI_MODEL_NL: z.string().optional(), // natural-language assistant / gateway
+  // Default per-company monthly metering caps (R05-26); rows in ai_usage_limits override.
+  AI_MONTHLY_TOKEN_CAP: z.coerce.number().int().min(0).optional(),
+  AI_MONTHLY_COST_CAP_USD: z.coerce.number().min(0).optional(),
+  // Mask personal names, TRNs and IBANs before prompts leave the server (R17-26).
+  AI_REDACT_PII: z.enum(["true", "false"]).optional(),
 
   // === Support contact surfaced in AI prompts (optional) ===
   SUPPORT_CONTACT_NAME: z.string().optional(),
@@ -113,6 +124,13 @@ const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   // Vercel Blob (native to a Vercel stack). When set, used in preference to S3.
   BLOB_READ_WRITE_TOKEN: z.string().optional(),
+  // Production refuses to boot on local-disk receipt storage unless this is "true" (R05-07).
+  ALLOW_LOCAL_STORAGE: z.enum(["true", "false"]).optional(),
+  // Per-company receipt storage quota in MB (R05-20). Default 2048.
+  COMPANY_STORAGE_QUOTA_MB: z.coerce.number().int().min(1).optional(),
+  // Optional ClamAV daemon for upload scanning (R05-20). Unset => scanning reports requires_external.
+  CLAMAV_HOST: z.string().optional(),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).optional(),
 
   // === Session store ===
   // When set, Express sessions are persisted in Redis so they survive

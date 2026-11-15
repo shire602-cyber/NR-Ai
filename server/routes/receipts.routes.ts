@@ -5,7 +5,31 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { insertInvoiceSchema, type Account, type Receipt } from "../../shared/schema";
-import { saveReceiptImage, deleteReceiptImage, readReceiptImage } from "../services/fileStorage";
+import {
+  saveReceiptFile,
+  deleteReceiptImage,
+  readReceiptImage,
+  assertStorageBootSafe,
+  assertWithinStorageQuota,
+  companyStorageQuotaBytes,
+  getCompanyStorageUsage,
+} from "../services/fileStorage";
+import {
+  inspectUpload,
+  UploadRejectedError,
+  getUploadScanStatus,
+  generateThumbnail,
+  extForMime,
+  sniffFileType,
+  ALLOWED_UPLOAD_MIME,
+  MAX_UPLOAD_BYTES,
+} from "../services/upload-guard";
+import {
+  checkSimilar,
+  findFuzzyDuplicatesInDb,
+  findReceiptByContentHash,
+} from "../services/receipt-duplicates";
+import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
@@ -37,6 +61,9 @@ async function findReceiptForUser(userId: string, receiptId: string): Promise<Re
 }
 
 export function registerReceiptRoutes(app: Express) {
+  // Production must not run on ephemeral local-disk storage unless explicitly allowed (R05-07).
+  assertStorageBootSafe();
+
   // =====================================
   // Receipt Routes
   // =====================================
@@ -112,6 +139,32 @@ export function registerReceiptRoutes(app: Express) {
     })
   );
 
+  // Upload policy: limits, accepted types, antivirus status and storage quota (R05-07, R05-20)
+  app.get(
+    "/api/companies/:companyId/receipts/upload-policy",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      let usedBytes: number | null = null;
+      try {
+        usedBytes = await getCompanyStorageUsage(companyId);
+      } catch {
+        usedBytes = null;
+      }
+      res.json({
+        maxFileBytes: MAX_UPLOAD_BYTES,
+        allowedTypes: ALLOWED_UPLOAD_MIME,
+        virusScan: getUploadScanStatus(), // "enabled" | "requires_external"
+        storage: { usedBytes, quotaBytes: companyStorageQuotaBytes() },
+      });
+    })
+  );
+
   // Check for similar transactions
   // Customer-only: Check for similar receipts/transactions
   app.post(
@@ -121,7 +174,7 @@ export function registerReceiptRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { merchant, amount, date } = req.body;
+      const { merchant, amount, date } = req.body ?? {};
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -129,36 +182,15 @@ export function registerReceiptRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // merchant is optional (R05-18): similarity then relies on amount and date alone.
+      const probe = {
+        merchant: typeof merchant === "string" ? merchant : null,
+        amount: Number(amount) || 0,
+        date: typeof date === "string" || date instanceof Date ? date : null,
+      };
+
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-
-      // Find similar transactions
-      const similarTransactions = receipts.filter((receipt) => {
-        // Check if merchant name is similar (case-insensitive partial match)
-        const merchantMatch =
-          (merchant &&
-            receipt.merchant &&
-            receipt.merchant.toLowerCase().includes(merchant.toLowerCase())) ||
-          merchant.toLowerCase().includes(receipt.merchant?.toLowerCase() || "");
-
-        // Check if amount is within 10% range
-        const amountMatch =
-          amount && receipt.amount && Math.abs(receipt.amount - amount) / amount < 0.1;
-
-        // Check if date is within 7 days
-        let dateMatch = false;
-        if (date && receipt.date) {
-          const checkDate = new Date(date);
-          const receiptDate = new Date(receipt.date);
-          const daysDiff = Math.abs(
-            (checkDate.getTime() - receiptDate.getTime()) / (1000 * 60 * 60 * 24)
-          );
-          dateMatch = daysDiff <= 7;
-        }
-
-        // Return if at least 2 criteria match
-        const matchCount = [merchantMatch, amountMatch, dateMatch].filter(Boolean).length;
-        return matchCount >= 2;
-      });
+      const similarTransactions = checkSimilar(probe, receipts);
 
       res.json({
         hasSimilar: similarTransactions.length > 0,
@@ -193,6 +225,7 @@ export function registerReceiptRoutes(app: Express) {
         classifierMethod,
         classifierConfidence,
         classifierReason,
+        confirmDuplicate,
         ...receiptData
       } = req.body;
 
@@ -224,23 +257,83 @@ export function registerReceiptRoutes(app: Express) {
         "Creating receipt"
       );
 
-      // Save image to disk; store only the path in Postgres (not the base64 blob).
-      // Validate MIME type from the data URL — never trust the filename extension.
-      const ALLOWED_RECEIPT_MIME = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      // Validate the upload from its BYTES (magic-byte sniff, size/dimension caps, EXIF strip,
+      // optional antivirus) and store it with its true type; only the path goes to Postgres.
       let imagePath: string | undefined;
+      let fileMeta: { contentSha256: string; fileMime: string; fileSize: number } | null = null;
+      let duplicateWarnings: unknown[] = [];
+
+      if (receiptData.supplierTrn !== undefined && receiptData.supplierTrn !== null) {
+        const rawTrn = String(receiptData.supplierTrn).trim();
+        if (rawTrn === "") {
+          receiptData.supplierTrn = null;
+        } else {
+          const trn = validateUaeTrn(rawTrn);
+          if (!trn.valid) {
+            return res.status(400).json({
+              message: trn.issue || "Supplier TRN must be a 15-digit UAE TRN",
+              code: "INVALID_TRN",
+            });
+          }
+          receiptData.supplierTrn = trn.trn;
+        }
+      }
+
       if (imageData) {
         if (typeof imageData !== "string") {
-          return res.status(400).json({ message: "Invalid image data" });
+          return res.status(400).json({ message: "Invalid image data", code: "UNSUPPORTED_FILE" });
         }
-        const dataUrlMatch = imageData.match(/^data:([^;]+);base64,/);
-        const mimeType = dataUrlMatch ? dataUrlMatch[1].toLowerCase() : null;
-        if (!mimeType || !ALLOWED_RECEIPT_MIME.includes(mimeType)) {
-          return res.status(400).json({
-            message: "Invalid image MIME type. Allowed: JPEG, PNG, WebP, GIF.",
+        let inspected;
+        try {
+          inspected = await inspectUpload(imageData);
+          await assertWithinStorageQuota(companyId, inspected.size);
+        } catch (err) {
+          if (err instanceof UploadRejectedError) {
+            return res.status(err.status).json({ message: err.message, code: err.code });
+          }
+          throw err;
+        }
+
+        // Exact duplicate (same stored content) -> 409 with the matching receipt.
+        if (!confirmDuplicate) {
+          const exact = await findReceiptByContentHash(companyId, inspected.sha256);
+          if (exact) {
+            return res.status(409).json({
+              message: "This file has already been uploaded",
+              code: "DUPLICATE_RECEIPT",
+              duplicateOf: {
+                id: exact.id,
+                merchant: exact.merchant,
+                amount: exact.amount,
+                date: exact.date,
+              },
+            });
+          }
+        }
+
+        imagePath = await saveReceiptFile(inspected.buffer, {
+          mime: inspected.mime,
+          ext: inspected.ext,
+        });
+        fileMeta = {
+          contentSha256: inspected.sha256,
+          fileMime: inspected.mime,
+          fileSize: inspected.size,
+        };
+      }
+
+      // Fuzzy duplicate (similar merchant + same amount + nearby date) -> warning only.
+      if (receiptData.merchant && receiptData.date instanceof Date) {
+        try {
+          duplicateWarnings = await findFuzzyDuplicatesInDb(companyId, {
+            merchant: receiptData.merchant,
+            amount: Number(receiptData.amount) || 0,
+            vatAmount: Number(receiptData.vatAmount) || 0,
+            date: receiptData.date,
           });
+        } catch (err) {
+          log.warn({ err: (err as Error).message }, "Fuzzy duplicate check failed (non-fatal)");
         }
-        const { randomUUID } = await import("crypto");
-        imagePath = await saveReceiptImage(imageData, `${randomUUID()}.jpg`);
       }
 
       const receipt = await storage.createReceipt({
@@ -248,6 +341,7 @@ export function registerReceiptRoutes(app: Express) {
         companyId,
         uploadedBy: userId,
         imagePath: imagePath ?? null,
+        ...(fileMeta ?? {}),
         // imageData intentionally omitted — not stored in Postgres
       });
 
@@ -270,8 +364,7 @@ export function registerReceiptRoutes(app: Express) {
       let userKeptSuggestion = false;
       if (suggestedCategory && typeof suggestedCategory === "string") {
         try {
-          const gross =
-            (Number(receipt.amount) || 0) + (Number((receipt as any).vatAmount) || 0);
+          const gross = (Number(receipt.amount) || 0) + (Number((receipt as any).vatAmount) || 0);
           const { wasAccepted, method } = evaluateClassificationFeedback(
             suggestedCategory,
             receipt.category,
@@ -296,7 +389,8 @@ export function registerReceiptRoutes(app: Express) {
             companyId,
             classificationRow.id,
             wasAccepted,
-            (receipt as any).accountId ?? null
+            (receipt as any).accountId ?? null,
+            (receipt as any).supplierTrn ?? null
           );
         } catch (err) {
           log.warn(
@@ -351,7 +445,52 @@ export function registerReceiptRoutes(app: Express) {
         actionUrl: "/receipts",
       }).catch(() => {});
 
-      res.json(receipt);
+      res.json(duplicateWarnings.length > 0 ? { ...receipt, duplicateWarnings } : receipt);
+    })
+  );
+
+  // Record the human decision on an AI-extracted receipt for audit (R05-23).
+  app.post(
+    "/api/companies/:companyId/receipts/:id/review-decision",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, id } = req.params;
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const parsed = z
+        .object({
+          decision: z.enum(["accepted", "corrected", "rejected"]),
+          band: z.enum(["high", "review", "low"]),
+          note: z.string().max(500).optional(),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return res
+          .status(400)
+          .json({ message: "Invalid review decision", code: "VALIDATION_ERROR" });
+      }
+      const receipt = await storage.getReceipt(id, companyId);
+      if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+
+      await recordAudit({
+        userId,
+        companyId,
+        action: "receipt.ai_review",
+        entityType: "receipt",
+        entityId: id,
+        before: null,
+        after: {
+          reviewerId: userId,
+          decision: parsed.data.decision,
+          confidenceBand: parsed.data.band,
+          note: parsed.data.note ?? null,
+        },
+        req,
+      });
+      res.json({ ok: true, reviewerId: userId, ...parsed.data });
     })
   );
 
@@ -1001,16 +1140,34 @@ export function registerReceiptRoutes(app: Express) {
       // images as downloads rather than rendering them inline (defence against
       // a malicious upload being served back as active content).
       res.set("X-Content-Type-Options", "nosniff");
-      res.set("Content-Disposition", `attachment; filename="receipt-${id}.jpg"`);
+      res.set("Cache-Control", "private, max-age=300");
 
       if (receipt.imagePath) {
         const image = await readReceiptImage(receipt.imagePath);
         if (!image) {
           return res.status(404).json({ message: "No image available for this receipt" });
         }
-        res.set("Content-Type", image.contentType);
+        // Serve the TRUE type (sniffed from the stored bytes), with a matching extension.
+        const trueMime = sniffFileType(image.buffer)?.mime ?? receipt.fileMime ?? image.contentType;
+
+        if (req.query.size === "thumb") {
+          const thumb = await generateThumbnail(image.buffer, trueMime);
+          if (thumb) {
+            res.set("Content-Type", "image/jpeg");
+            res.set("Content-Disposition", `inline; filename="receipt-${id}-thumb.jpg"`);
+            return res.send(thumb);
+          }
+          res.set("X-Thumbnail", "unavailable");
+        }
+
+        res.set("Content-Type", trueMime);
+        res.set(
+          "Content-Disposition",
+          `attachment; filename="receipt-${id}.${extForMime(trueMime)}"`
+        );
         return res.send(image.buffer);
       }
+      res.set("Content-Disposition", `attachment; filename="receipt-${id}.jpg"`);
 
       // Backward compat: legacy records that have base64 imageData but no imagePath
       if (receipt.imageData) {
