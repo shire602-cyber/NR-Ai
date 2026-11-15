@@ -28,7 +28,7 @@ describe("R01-05 case-insensitive emails", () => {
       password: STRONG,
     });
     expect(first.status).toBe(200);
-    expect(first.body.token).toBeTruthy();
+    expect(first.body.token).toBeUndefined(); // W5-E: never a session from register
 
     const second = await register({
       name: "Agent Upper",
@@ -79,15 +79,20 @@ describe("R17-14 registration does not reveal existing emails", () => {
 
 describe("R01-07 registration honours companyName", () => {
   it("R01-07: the company is named after the supplied companyName", async () => {
+    const email = `co-${uniq()}@example.test`;
     const r = await register({
       name: "Owner",
-      email: `co-${uniq()}@example.test`,
+      email,
       password: STRONG,
       companyName: "A13 Trading LLC",
     });
     expect(r.status).toBe(200);
-    expect(r.body.company.name).toBe("A13 Trading LLC");
-    const rows = await h.sql(`SELECT name FROM companies WHERE id = $1`, [r.body.company.id]);
+    // W5-E: no session or company in the response (R17-14); read it from the database.
+    const rows = await h.sql(
+      `SELECT c.name FROM companies c JOIN company_users cu ON cu.company_id = c.id
+         JOIN users u ON u.id = cu.user_id WHERE u.email = $1`,
+      [email]
+    );
     expect(rows[0].name).toBe("A13 Trading LLC");
   });
 

@@ -6,22 +6,53 @@ import { randomBytes, createHash, randomUUID } from "crypto";
 import { z } from "zod";
 
 import { storage } from "../storage";
-import { getEnv } from "../config/env";
+import { getEnv, isProduction } from "../config/env";
 import {
   authMiddleware,
   clearAuthenticationCache,
+  generateMfaPendingToken,
   generateToken,
   generateRefreshToken,
+  verifyMfaPendingToken,
   verifyRefreshToken,
   verifySignedToken,
   REFRESH_TOKEN_TTL_MS,
 } from "../middleware/auth";
 import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  accessCookieName,
   clearAuthCookies,
   getAccessTokenFromRequest,
   getRefreshTokenFromRequest,
   setAuthCookies,
 } from "../services/auth-cookies.service";
+import { authCookieBaseOptions } from "../config/cookies";
+import {
+  beginEnrollment,
+  confirmEnrollment,
+  disableMfa,
+  isMfaEnabled,
+  mfaStatus,
+  regenerateRecoveryCodes,
+  verifySecondFactor,
+} from "../services/mfa.service";
+import { verifyCaptcha, captchaStatus } from "../services/security/captcha";
+import {
+  BREACHED_PASSWORD_MESSAGE,
+  breachedPasswordStatus,
+  checkBreachedPassword,
+} from "../services/security/breached-password";
+import {
+  consumeVerificationToken,
+  sendVerificationEmail,
+} from "../services/security/email-verification";
+import {
+  emailVerificationState,
+  getCompanyMfaPolicy,
+  policyCoversRole,
+} from "../services/security/policy";
+import { recordLoginSuccess, recordSecurityEvent } from "../services/security/security-events";
+import { normalizeCompanyRole } from "../../shared/permissions";
 import {
   blacklistToken,
   createRefreshSession,
@@ -68,7 +99,7 @@ import {
 
 const log = createLogger("auth");
 
-function publicUser(user: any) {
+function publicUser(user: Record<string, unknown>) {
   const {
     passwordHash: _passwordHash,
     password: _password,
@@ -76,6 +107,40 @@ function publicUser(user: any) {
     ...safeUser
   } = user;
   return safeUser;
+}
+
+/** httpOnly cookie carrying the MFA-pending token after a social sign-in. */
+function mfaPendingCookie(): string {
+  return isProduction() ? "__Host-muhasib-mfa" : "muhasib-mfa";
+}
+
+function readCookie(req: Request, name: string): string | null {
+  for (const part of (req.headers.cookie ?? "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === name && v.length) {
+      try {
+        return decodeURIComponent(v.join("="));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+/** Companies (id + policy) whose MFA policy covers this user's role while they lack MFA. */
+async function companiesRequiringMfa(userId: string): Promise<string[]> {
+  const companies = await storage.getCompaniesByUserId(userId);
+  const out: string[] = [];
+  for (const c of companies) {
+    const policy = await getCompanyMfaPolicy(c.id);
+    if (policy === "none") continue;
+    const membership = await storage.getUserRole(c.id, userId);
+    if (policyCoversRole(policy, membership ? normalizeCompanyRole(membership.role) : null)) {
+      out.push(c.id);
+    }
+  }
+  return out;
 }
 
 // =============================================
@@ -100,9 +165,15 @@ function sessionMeta(req: Request) {
  * a refresh token that both carry its id (`sid`) and the user's current
  * token version (`tv`).
  */
-export async function issueAuthTokens(req: Request, res: Response, user: TokenUser) {
+export async function issueAuthTokens(
+  req: Request,
+  res: Response,
+  user: TokenUser,
+  opts: { mfaAt?: number | null } = {}
+) {
   const sessionId = randomUUID();
-  const refreshToken = generateRefreshToken(user, sessionId);
+  const claims = { mfaAt: opts.mfaAt ?? null };
+  const refreshToken = generateRefreshToken(user, sessionId, claims);
   await createRefreshSession(
     user.id,
     refreshToken,
@@ -110,30 +181,38 @@ export async function issueAuthTokens(req: Request, res: Response, user: TokenUs
     sessionMeta(req),
     sessionId
   );
-  const token = generateToken(user, sessionId);
+  const token = generateToken(user, sessionId, claims);
   setAuthCookies(res, token, refreshToken);
   return { token, refreshToken, sessionId };
 }
 
+/** Account-level security event (tamper-evident audit chain; see security-events.ts). */
 async function auditSecurityEvent(
   req: Request,
   action: string,
   userId: string | null,
   details: Record<string, unknown>
 ): Promise<void> {
-  try {
-    await storage.createAuditLog({
-      userId,
-      action,
-      resourceType: "user",
-      resourceId: userId,
-      details: JSON.stringify(details),
-      ipAddress: clientIp(req),
-      userAgent: req.get("user-agent") ?? null,
-    });
-  } catch (err) {
-    log.warn({ err, action }, "Failed to write security audit log");
-  }
+  await recordSecurityEvent(req, { action, userId, resourceType: "user", details });
+}
+
+function captchaFailure(res: Response, reason: string) {
+  return res.status(400).json({
+    message: "Please complete the bot check and try again.",
+    code: "CAPTCHA_FAILED",
+    details: { reason },
+  });
+}
+
+async function refuseBreachedPassword(res: Response, password: string): Promise<boolean> {
+  const verdict = await checkBreachedPassword(password);
+  if (!verdict.breached) return false;
+  res.status(400).json({
+    message: BREACHED_PASSWORD_MESSAGE,
+    code: "PASSWORD_BREACHED",
+    details: { source: verdict.source },
+  });
+  return true;
 }
 
 async function createOAuthCustomer(req: Request, profile: OAuthIdentityProfile) {
@@ -278,12 +357,30 @@ const registerBodySchema = z.object({
     .regex(/^\d{15}$/, "TRN must be exactly 15 digits")
     .optional(),
   phone: zText(40).optional(),
+  /** Cloudflare Turnstile token; required only when TURNSTILE_SECRET_KEY is set. */
+  captchaToken: z.string().max(4096).optional(),
 });
 type RegisterBody = z.output<typeof registerBodySchema>;
 
 const loginBodySchema = z.object({
   email: z.string().max(320),
   password: z.string().max(1024),
+});
+
+const mfaCodeSchema = z.string().trim().min(6).max(32);
+const mfaVerifyLoginSchema = z.object({
+  /** Omitted after social sign-in: the pending token is then in the MFA cookie. */
+  mfaToken: z.string().min(1).max(4096).optional(),
+  code: mfaCodeSchema,
+});
+const mfaCodeBodySchema = z.object({ code: mfaCodeSchema });
+const mfaDisableSchema = z.object({
+  password: z.string().min(1).max(1024),
+  code: mfaCodeSchema,
+});
+const verifyEmailSchema = z.object({ token: z.string().min(1).max(256) });
+const loginHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
 const changePasswordBodySchema = z.object({
@@ -297,15 +394,19 @@ const acceptAdminInvitationSchema = z.object({
 });
 
 /**
- * R17-14: registration answers the same way whether or not the email is
- * already registered: 200 with this message. A NEW address additionally
- * gets a signed-in session (so login-after-register keeps working); an
- * existing address gets no session and its owner is told by email when a
- * provider is configured. The remaining signal (session present or not) is
- * a documented trade-off until email verification gates sessions.
+ * R17-14 / W5-E: registration answers byte-for-byte the same way whether or not the
+ * email is already registered: 200 with this body and no session. A new address gets a
+ * verification link; an existing address gets a "someone tried to register" notice. The
+ * client then signs in with the password it just chose (unverified accounts can sign in;
+ * see policy.ts for the grace-period gating), so the response itself is no oracle.
  */
 const GENERIC_REGISTER_MESSAGE =
-  "If this email can be used, your account is ready. Check your inbox if you already have an account.";
+  "Check your email to confirm your address. If you already have an account, sign in instead.";
+const GENERIC_REGISTER_BODY = Object.freeze({
+  message: GENERIC_REGISTER_MESSAGE,
+  verificationRequired: true,
+  next: "login",
+});
 
 function retryAfterBody(message: string, code: string, retryAfterMs: number) {
   return {
@@ -327,6 +428,41 @@ export function registerAuthRoutes(app: Express): void {
   const changePasswordLockout = new LockoutTracker(loginLockoutRules());
   const forgotPasswordBudget = new LockoutTracker(loginLockoutRules());
   const resetPasswordLockout = new LockoutTracker(loginLockoutRules());
+  const mfaLockout = new LockoutTracker(loginLockoutRules());
+
+  /** Body of a successful sign-in (password, or password + second factor). */
+  async function loginResponse(
+    user: { id: string; email: string; name: string; isAdmin: unknown; userType: string | null; emailVerified: boolean; createdAt: Date },
+    token: string,
+    refreshToken: string
+  ) {
+    const mfaRequiredBy = (await isMfaEnabled(user.id)) ? [] : await companiesRequiringMfa(user.id);
+    return {
+      token,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        isAdmin: user.isAdmin === true,
+        userType: user.userType || "customer",
+      },
+      mfaEnrollmentRequired: mfaRequiredBy.length > 0,
+      mfaRequiredByCompanies: mfaRequiredBy,
+      emailVerification: emailVerificationState(user),
+    };
+  }
+
+  /** Re-issue this session's access token with a fresh MFA time (step-up / enrolment). */
+  function refreshAccessWithMfa(req: Request, res: Response, user: TokenUser): string {
+    const token = generateToken(user, req.authSessionId ?? undefined, { mfaAt: Date.now() });
+    res.cookie(accessCookieName(), token, {
+      ...authCookieBaseOptions(),
+      maxAge: ACCESS_TOKEN_TTL_SECONDS * 1000,
+    });
+    clearAuthenticationCache(req);
+    return token;
+  }
 
   // Dummy bcrypt hash generated once at startup. Used when the email is
   // unknown so we still spend CPU on a comparison — this removes the
@@ -377,7 +513,11 @@ export function registerAuthRoutes(app: Express): void {
     "/auth/register",
     strictBody(registerBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { ...body } = req.body as RegisterBody;
+      const { captchaToken, ...body } = req.body as RegisterBody;
+      const captcha = await verifyCaptcha(captchaToken, clientIp(req));
+      if (!captcha.ok) return captchaFailure(res, captcha.reason);
+      // Checked before the account lookup so the answer never depends on the email.
+      if (await refuseBreachedPassword(res, body.password)) return;
       const existingUser = await storage.getUserByEmail(body.email);
       const claimable =
         !!existingUser &&
@@ -395,10 +535,11 @@ export function registerAuthRoutes(app: Express): void {
           void sendEmail(
             existingUser.email,
             "Someone tried to create an account with your email",
-            "Someone tried to register a new Muhasib account with this email address. You already have an account: sign in, or use 'Forgot password' if you cannot."
+            "Someone tried to register a new Muhasib account with this email address. You already have an account: sign in, or use 'Forgot password' if you cannot.",
+            { category: "security", sensitive: true }
           ).catch(() => undefined);
         }
-        return res.json({ message: GENERIC_REGISTER_MESSAGE });
+        return res.json(GENERIC_REGISTER_BODY);
       }
 
       // SECURITY: Force userType to 'customer' - never trust client-supplied userType.
@@ -415,10 +556,10 @@ export function registerAuthRoutes(app: Express): void {
             userType: "customer", // FORCED: Self-signup users are always customers
             isAdmin: false, // FORCED: Self-signup users cannot be admins
             passwordHash,
-          } as any);
+          } as Parameters<typeof storage.createUser>[0]);
         }
       } catch (err) {
-        if (isUniqueViolation(err)) return res.json({ message: GENERIC_REGISTER_MESSAGE });
+        if (isUniqueViolation(err)) return res.json(GENERIC_REGISTER_BODY);
         throw err;
       }
 
@@ -428,25 +569,14 @@ export function registerAuthRoutes(app: Express): void {
         trnVatNumber: body.trn,
       });
 
-      const fresh = (await storage.getUser(user.id)) ?? user;
-      const { token, refreshToken } = await issueAuthTokens(req, res, fresh);
-
-      res.json({
-        message: GENERIC_REGISTER_MESSAGE,
-        token,
-        refreshToken,
-        user: {
-          id: fresh.id,
-          email: fresh.email,
-          name: fresh.name,
-          isAdmin: false,
-          userType: "customer",
-        },
-        company: {
-          id: company.id,
-          name: company.name,
-        },
+      const mail = await sendVerificationEmail({ id: user.id, email: user.email, name: user.name });
+      await auditSecurityEvent(req, "auth.register", user.id, {
+        companyId: company.id,
+        verificationEmail: mail.status,
       });
+
+      // No session: identical to the existing-account answer (R17-14).
+      res.json(GENERIC_REGISTER_BODY);
     })
   );
 
@@ -482,6 +612,12 @@ export function registerAuthRoutes(app: Express): void {
 
       if (!user || !isValid) {
         const after = loginLockout.recordFailure(key);
+        if (user) {
+          await auditSecurityEvent(req, "auth.login_failure", user.id, {
+            reason: "invalid_password",
+            failures: after.failures,
+          });
+        }
         if (after.lockedNow) await onLockout(req, email.trim().toLowerCase(), user, after);
         return res
           .status(401)
@@ -489,22 +625,88 @@ export function registerAuthRoutes(app: Express): void {
       }
       loginLockout.reset(key);
 
-      // Ensure isAdmin is a proper boolean
-      const isAdminBoolean =
-        user.isAdmin === true || (user.isAdmin as any) === "true" || (user.isAdmin as any) === 1;
+      // W5-E: MFA accounts get a short-lived pending token, never a session, until the
+      // second factor is verified at /auth/mfa/verify-login.
+      if (await isMfaEnabled(user.id)) {
+        return res.json({
+          mfaRequired: true,
+          mfaToken: generateMfaPendingToken(user),
+          methods: ["totp", "recovery_code"],
+        });
+      }
 
       const { token, refreshToken } = await issueAuthTokens(req, res, user);
+      await recordLoginSuccess(req, user, { method: "password" });
+      res.json(await loginResponse(user, token, refreshToken));
+    })
+  );
 
+  // W5-E: second step of an MFA sign-in. Failed codes count toward a per-user lockout.
+  router.post(
+    "/auth/mfa/verify-login",
+    strictBody(mfaVerifyLoginSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const body = req.body as z.output<typeof mfaVerifyLoginSchema>;
+      const { code } = body;
+      const mfaToken = body.mfaToken ?? readCookie(req, mfaPendingCookie()) ?? "";
+      const pending = mfaToken ? verifyMfaPendingToken(mfaToken) : null;
+      if (!pending || (await isTokenBlacklisted(mfaToken))) {
+        return res.status(401).json({
+          message: "Your sign-in expired. Enter your password again.",
+          code: "MFA_TOKEN_INVALID",
+        });
+      }
+      const key = `mfa|${pending.userId}`;
+      const lock = mfaLockout.status(key);
+      if (lock.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(
+            retryAfterBody(
+              "Too many invalid codes. Please wait before trying again.",
+              "ACCOUNT_LOCKED",
+              lock.retryAfterMs
+            )
+          );
+      }
+      const user = await storage.getUser(pending.userId);
+      if (!user || (pending.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+        return res.status(401).json({
+          message: "Your sign-in expired. Enter your password again.",
+          code: "MFA_TOKEN_INVALID",
+        });
+      }
+      const verdict = await verifySecondFactor(user.id, code);
+      if (!verdict.ok) {
+        const after = mfaLockout.recordFailure(key);
+        await auditSecurityEvent(req, "auth.mfa_challenge_failed", user.id, {
+          reason: verdict.code,
+          failures: after.failures,
+        });
+        if (after.lockedNow) await onLockout(req, user.email, user, after);
+        return res.status(401).json({
+          message: "That code is not valid. Try the current code from your authenticator app.",
+          code: verdict.code === "MFA_CODE_REUSED" ? "MFA_CODE_REUSED" : "MFA_CODE_INVALID",
+        });
+      }
+      mfaLockout.reset(key);
+      await blacklistToken(mfaToken); // the pending token is single-use
+      res.clearCookie(mfaPendingCookie(), authCookieBaseOptions());
+      if (verdict.method === "recovery_code") {
+        await auditSecurityEvent(req, "mfa.recovery_code_used", user.id, {
+          remaining: verdict.recoveryCodesRemaining,
+        });
+      }
+      const { token, refreshToken } = await issueAuthTokens(req, res, user, {
+        mfaAt: Date.now(),
+      });
+      await recordLoginSuccess(req, user, { method: `password+${verdict.method}` });
       res.json({
-        token,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          isAdmin: isAdminBoolean,
-          userType: user.userType || "customer", // Include userType in response
-        },
+        ...(await loginResponse(user, token, refreshToken)),
+        ...(verdict.method === "recovery_code"
+          ? { recoveryCodesRemaining: verdict.recoveryCodesRemaining }
+          : {}),
       });
     })
   );
@@ -561,12 +763,22 @@ export function registerAuthRoutes(app: Express): void {
         );
         const { user, mode } = await resolveOAuthUser(req, profile);
 
+        // W5-E: social sign-in does not skip MFA. The pending token travels in a
+        // short-lived httpOnly cookie; the login page asks for the code.
+        if (await isMfaEnabled(user.id)) {
+          clearAuthCookies(res);
+          res.cookie(mfaPendingCookie(), generateMfaPendingToken(user), {
+            ...authCookieBaseOptions(),
+            maxAge: 5 * 60 * 1000,
+          });
+          return res.redirect(oauthCallbackFailureUrl().replace("oauth_error=1", "mfa=1"));
+        }
+
         await issueAuthTokens(req, res, user);
-        await auditSecurityEvent(req, "login", user.id, {
+        await recordLoginSuccess(req, user, {
           method: "oauth",
           provider: profile.provider,
           mode,
-          email: profile.email,
         });
         log.info({ provider, userId: user.id, mode }, "OAuth login completed");
 
@@ -596,7 +808,14 @@ export function registerAuthRoutes(app: Express): void {
     }
 
     if (await isTokenBlacklisted(refreshToken)) {
-      if (payload.sid) await revokeRefreshSession(payload.sid, { reuse: true });
+      if (payload.sid) {
+        const revoked = await revokeRefreshSession(payload.sid, { reuse: true });
+        if (revoked) {
+          await auditSecurityEvent(req, "auth.token_reuse_detected", payload.userId, {
+            sessionId: payload.sid,
+          });
+        }
+      }
       return res
         .status(401)
         .json({ message: "Refresh token has been revoked", code: "TOKEN_REVOKED" });
@@ -614,6 +833,8 @@ export function registerAuthRoutes(app: Express): void {
     }
 
     const meta = sessionMeta(req);
+    // W5-E: the session keeps its sign-in MFA time across rotations.
+    const mfaClaims = { mfaAt: typeof payload.mfa === "number" ? payload.mfa : null };
     let sessionId = payload.sid;
     if (sessionId) {
       const session = await getRefreshSession(sessionId);
@@ -626,6 +847,7 @@ export function registerAuthRoutes(app: Express): void {
       if (session.tokenHash !== presented) {
         if (session.replacedByTokenHash === presented) {
           await revokeRefreshSession(sessionId, { reuse: true });
+          await auditSecurityEvent(req, "auth.token_reuse_detected", user.id, { sessionId });
           log.warn({ userId: user.id, sessionId }, "Refresh token reuse detected; session revoked");
         }
         return res
@@ -639,7 +861,7 @@ export function registerAuthRoutes(app: Express): void {
     if (!sessionId) {
       // Legacy refresh token (issued before sessions): start a session now.
       sessionId = randomUUID();
-      const newRefresh = generateRefreshToken(user, sessionId);
+      const newRefresh = generateRefreshToken(user, sessionId, mfaClaims);
       await createRefreshSession(
         user.id,
         newRefresh,
@@ -647,11 +869,11 @@ export function registerAuthRoutes(app: Express): void {
         meta,
         sessionId
       );
-      const newToken = generateToken(user, sessionId);
+      const newToken = generateToken(user, sessionId, mfaClaims);
       setAuthCookies(res, newToken, newRefresh);
       return res.json({ token: newToken, refreshToken: newRefresh });
     }
-    const newRefreshToken = generateRefreshToken(user, sessionId);
+    const newRefreshToken = generateRefreshToken(user, sessionId, mfaClaims);
     await rotateRefreshSession(
       sessionId,
       refreshToken,
@@ -659,7 +881,7 @@ export function registerAuthRoutes(app: Express): void {
       new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
       meta
     );
-    const newToken = generateToken(user, sessionId);
+    const newToken = generateToken(user, sessionId, mfaClaims);
     setAuthCookies(res, newToken, newRefreshToken);
 
     res.json({
@@ -683,9 +905,11 @@ export function registerAuthRoutes(app: Express): void {
   // against an email+IP budget (5 per 15 minutes).
   router.post(
     "/auth/forgot-password",
-    validate({ body: forgotPasswordSchema }),
+    strictBody(forgotPasswordSchema.extend({ captchaToken: z.string().max(4096).optional() })),
     asyncHandler(async (req: Request, res: Response) => {
-      const { email } = req.body as { email: string };
+      const { email, captchaToken } = req.body as { email: string; captchaToken?: string };
+      const captcha = await verifyCaptcha(captchaToken, clientIp(req));
+      if (!captcha.ok) return captchaFailure(res, captcha.reason);
       const key = credentialKey(req, email);
       const budget = forgotPasswordBudget.status(key);
       if (budget.locked) {
@@ -717,6 +941,7 @@ export function registerAuthRoutes(app: Express): void {
 
       await storage.deletePasswordResetTokensForUser(user.id);
       await storage.createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
+      await auditSecurityEvent(req, "auth.password_reset_requested", user.id, {});
 
       const env = getEnv();
       // Canonical public URL: FRONTEND_URL first, AUTH_PUBLIC_URL as fallback
@@ -770,6 +995,7 @@ export function registerAuthRoutes(app: Express): void {
           );
       }
       passwordPolicySchema.parse(password);
+      if (await refuseBreachedPassword(res, password)) return;
 
       const tokenHash = hashResetToken(token);
       const record = await storage.findValidPasswordResetToken(tokenHash);
@@ -803,7 +1029,7 @@ export function registerAuthRoutes(app: Express): void {
   // token, then starts a fresh session for this device.
   router.post(
     "/auth/change-password",
-    authMiddleware as any,
+    authMiddleware,
     strictBody(changePasswordBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
@@ -842,6 +1068,7 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
       changePasswordLockout.reset(key);
+      if (await refuseBreachedPassword(res, newPassword)) return;
 
       await storage.updateUserPassword(userId, await bcrypt.hash(newPassword, 10));
       await revokeAllUserTokens(userId);
@@ -861,7 +1088,7 @@ export function registerAuthRoutes(app: Express): void {
   // R01-13: list and revoke device sessions.
   router.get(
     "/auth/sessions",
-    authMiddleware as any,
+    authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const sessions = await listActiveSessions(req.user!.id);
       res.json({
@@ -872,7 +1099,7 @@ export function registerAuthRoutes(app: Express): void {
 
   router.delete(
     "/auth/sessions/:sessionId",
-    authMiddleware as any,
+    authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = zUuid.safeParse(req.params.sessionId);
       if (!parsed.success) {
@@ -892,7 +1119,7 @@ export function registerAuthRoutes(app: Express): void {
 
   router.post(
     "/auth/logout-all",
-    authMiddleware as any,
+    authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       await revokeAllUserTokens(req.user!.id);
       await auditSecurityEvent(req, "auth.logout_all", req.user!.id, {});
@@ -903,14 +1130,250 @@ export function registerAuthRoutes(app: Express): void {
 
   router.get(
     "/auth/me",
-    authMiddleware as any,
+    authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
       res.json(publicUser(user));
+    })
+  );
+
+  // =====================================
+  // W5-E: MFA, email verification, security overview
+  // =====================================
+
+  // Public: which abuse controls are switched on (for the register/forgot pages).
+  router.get(
+    "/auth/security/config",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({
+        captcha: captchaStatus(),
+        breachedPassword: breachedPasswordStatus(),
+        mfa: { available: true, methods: ["totp", "recovery_code"] },
+      });
+    })
+  );
+
+  router.get(
+    "/auth/security/overview",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = await storage.getUser(req.user!.id);
+      if (!user) return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
+      const mfa = await mfaStatus(user.id);
+      res.json({
+        mfa,
+        mfaRequiredByCompanies: mfa.enabled ? [] : await companiesRequiringMfa(user.id),
+        emailVerification: emailVerificationState(user),
+        currentSessionMfaAt: req.authMfaAt ?? null,
+      });
+    })
+  );
+
+  router.get(
+    "/auth/mfa/status",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      res.json(await mfaStatus(req.user!.id));
+    })
+  );
+
+  // Start enrolment: a pending secret + QR code. Nothing changes until confirmed.
+  router.post(
+    "/auth/mfa/enroll",
+    authMiddleware,
+    strictBody(z.object({})),
+    asyncHandler(async (req: Request, res: Response) => {
+      if (await isMfaEnabled(req.user!.id)) {
+        return res
+          .status(409)
+          .json({ message: "Two-factor authentication is already on", code: "MFA_ALREADY_ENABLED" });
+      }
+      const start = await beginEnrollment(req.user!.id, req.user!.email);
+      res.json(start);
+    })
+  );
+
+  // Confirm enrolment with a code; returns the ten recovery codes exactly once.
+  router.post(
+    "/auth/mfa/enroll/confirm",
+    authMiddleware,
+    strictBody(mfaCodeBodySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { code } = req.body as z.output<typeof mfaCodeBodySchema>;
+      const result = await confirmEnrollment(req.user!.id, code);
+      if (!result.ok) {
+        const status = result.code === "MFA_ALREADY_ENABLED" ? 409 : 400;
+        return res.status(status).json({ message: "Could not turn on two-factor authentication", code: result.code });
+      }
+      await auditSecurityEvent(req, "mfa.enrolled", req.user!.id, {});
+      const user = (await storage.getUser(req.user!.id))!;
+      const token = refreshAccessWithMfa(req, res, user);
+      res.json({ enabled: true, recoveryCodes: result.recoveryCodes, token });
+    })
+  );
+
+  // Turning MFA off needs the password AND a current code (or a recovery code).
+  router.post(
+    "/auth/mfa/disable",
+    authMiddleware,
+    strictBody(mfaDisableSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { password, code } = req.body as z.output<typeof mfaDisableSchema>;
+      const user = await storage.getUser(req.user!.id);
+      if (!user) return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
+      const passwordOk =
+        !isPlaceholderPasswordHash(user.passwordHash) &&
+        (await bcrypt.compare(password, user.passwordHash));
+      if (!passwordOk) {
+        return res
+          .status(400)
+          .json({ message: "Current password is incorrect", code: "CURRENT_PASSWORD_INVALID" });
+      }
+      const required = await (async () => {
+        // A company that requires MFA for this user's role blocks turning it off.
+        const companies = await storage.getCompaniesByUserId(user.id);
+        for (const c of companies) {
+          const policy = await getCompanyMfaPolicy(c.id);
+          const m = await storage.getUserRole(c.id, user.id);
+          if (policyCoversRole(policy, m ? normalizeCompanyRole(m.role) : null)) return c.id;
+        }
+        return null;
+      })();
+      if (required) {
+        return res.status(409).json({
+          message: "A company you belong to requires two-factor authentication.",
+          code: "MFA_REQUIRED_BY_POLICY",
+          details: { companyId: required },
+        });
+      }
+      const verdict = await verifySecondFactor(user.id, code);
+      if (!verdict.ok) {
+        return res.status(400).json({ message: "That code is not valid", code: verdict.code });
+      }
+      await disableMfa(user.id);
+      await auditSecurityEvent(req, "mfa.disabled", user.id, { method: verdict.method });
+      res.json({ enabled: false });
+    })
+  );
+
+  router.post(
+    "/auth/mfa/recovery-codes",
+    authMiddleware,
+    strictBody(mfaCodeBodySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { code } = req.body as z.output<typeof mfaCodeBodySchema>;
+      const verdict = await verifySecondFactor(req.user!.id, code);
+      if (!verdict.ok) {
+        return res.status(400).json({ message: "That code is not valid", code: verdict.code });
+      }
+      const recoveryCodes = await regenerateRecoveryCodes(req.user!.id);
+      await auditSecurityEvent(req, "mfa.recovery_codes_regenerated", req.user!.id, {});
+      res.json({ recoveryCodes });
+    })
+  );
+
+  // Step-up: verify a code for a sensitive action; the access token is re-issued with a
+  // fresh MFA time (same session) and also returned for Bearer clients.
+  router.post(
+    "/auth/mfa/step-up",
+    authMiddleware,
+    strictBody(mfaCodeBodySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { code } = req.body as z.output<typeof mfaCodeBodySchema>;
+      const key = `mfa|${req.user!.id}`;
+      const lock = mfaLockout.status(key);
+      if (lock.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(retryAfterBody("Too many invalid codes.", "ACCOUNT_LOCKED", lock.retryAfterMs));
+      }
+      const verdict = await verifySecondFactor(req.user!.id, code);
+      if (!verdict.ok) {
+        mfaLockout.recordFailure(key);
+        await auditSecurityEvent(req, "auth.mfa_challenge_failed", req.user!.id, {
+          reason: verdict.code,
+          stepUp: true,
+        });
+        const status = verdict.code === "MFA_NOT_ENABLED" ? 409 : 400;
+        return res.status(status).json({ message: "That code is not valid", code: verdict.code });
+      }
+      mfaLockout.reset(key);
+      const user = (await storage.getUser(req.user!.id))!;
+      const token = refreshAccessWithMfa(req, res, user);
+      await auditSecurityEvent(req, "mfa.step_up", user.id, { method: verdict.method });
+      res.json({ token, mfaAt: Date.now() });
+    })
+  );
+
+  // Email verification: public consume, signed-in resend.
+  router.post(
+    "/auth/verify-email",
+    strictBody(verifyEmailSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { token } = req.body as z.output<typeof verifyEmailSchema>;
+      const result = await consumeVerificationToken(token);
+      if (!result.ok) {
+        return res.status(400).json({
+          message: "This verification link is invalid or has expired. Request a new one.",
+          code: result.code,
+        });
+      }
+      await auditSecurityEvent(req, "auth.email_verified", result.userId, {});
+      res.json({ verified: true });
+    })
+  );
+
+  router.post(
+    "/auth/verify-email/resend",
+    authMiddleware,
+    strictBody(z.object({})),
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = await storage.getUser(req.user!.id);
+      if (!user) return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
+      if (user.emailVerified) return res.json({ verified: true, sent: false });
+      const key = `verify|${user.id}`;
+      const budget = forgotPasswordBudget.status(key);
+      if (budget.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(retryAfterBody("Please wait before requesting another link.", "RATE_LIMITED", budget.retryAfterMs));
+      }
+      forgotPasswordBudget.recordFailure(key);
+      const mail = await sendVerificationEmail(user);
+      await auditSecurityEvent(req, "auth.email_verification_sent", user.id, { status: mail.status });
+      res.json({ verified: false, sent: mail.status === "sent", status: mail.status });
+    })
+  );
+
+  // Login history: this account's sign-in and security events (newest first).
+  router.get(
+    "/auth/login-history",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = loginHistoryQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid query", code: "VALIDATION_ERROR" });
+      }
+      const rows = await storage.getUserSecurityEvents(req.user!.id, {
+        limit: parsed.data.limit ?? 50,
+      });
+      res.json({
+        events: rows
+          .filter((r) => /^(auth|mfa)\./.test(r.action))
+          .map((r) => ({
+            id: r.id,
+            action: r.action,
+            at: r.createdAt,
+            ipAddress: r.ipAddress,
+            userAgent: r.userAgent,
+          })),
+      });
     })
   );
 

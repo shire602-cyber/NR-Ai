@@ -38,11 +38,14 @@ declare global {
       authSessionId?: string | null;
       /** Normalised company_users.role, set by companyRolePolicy on company-scoped routes. */
       companyRole?: string;
+      /** W5-E: epoch ms of the last MFA verification on this session (null = none). */
+      authMfaAt?: number | null;
     }
   }
 }
 
-export type TokenType = "access" | "refresh";
+/** "mfa_pending" (W5-E) is only accepted by POST /auth/mfa/verify-login. */
+export type TokenType = "access" | "refresh" | "mfa_pending";
 
 /**
  * JWT token payload shape.
@@ -57,6 +60,8 @@ export interface JwtPayload {
   /** users.token_version at issue time (R01-06). Missing means 0. */
   tv?: number;
   jti?: string;
+  /** W5-E: epoch ms when this session last passed an MFA check. */
+  mfa?: number;
   iat?: number;
   exp?: number;
 }
@@ -79,6 +84,7 @@ export interface AuthFailure {
 export interface AuthSuccess {
   user: Express.User;
   sessionId: string | null;
+  mfaAt?: number | null;
 }
 
 const AUTH_RESULT = Symbol.for("muhasib.authResult");
@@ -142,6 +148,7 @@ async function verifyAccessCredential(token: string): Promise<AuthSuccess | Auth
       firmRole: (user.firmRole as AuthUser["firmRole"]) ?? null,
     },
     sessionId: decoded.sid ?? null,
+    mfaAt: typeof decoded.mfa === "number" ? decoded.mfa : null,
   };
 }
 
@@ -200,6 +207,7 @@ export async function authMiddleware(
   // Use server-side data (prevents privilege escalation via JWT tampering)
   req.user = result.user;
   req.authSessionId = result.sessionId;
+  req.authMfaAt = result.mfaAt ?? null;
   next();
 }
 
@@ -325,7 +333,11 @@ interface TokenSubject {
 /**
  * Generate an access JWT (type "access") bound to a session and token version.
  */
-export function generateToken(user: TokenSubject, sessionId?: string): string {
+export function generateToken(
+  user: TokenSubject,
+  sessionId?: string,
+  claims: { mfaAt?: number | null } = {}
+): string {
   const env = getEnv();
   return jwt.sign(
     {
@@ -337,6 +349,7 @@ export function generateToken(user: TokenSubject, sessionId?: string): string {
       type: "access",
       tv: user.tokenVersion ?? 0,
       ...(sessionId ? { sid: sessionId } : {}),
+      ...(typeof claims.mfaAt === "number" ? { mfa: claims.mfaAt } : {}),
       jti: randomUUID(),
     },
     env.JWT_SECRET,
@@ -347,7 +360,11 @@ export function generateToken(user: TokenSubject, sessionId?: string): string {
 /**
  * Generate a refresh token (longer-lived). Only /auth/refresh accepts it.
  */
-export function generateRefreshToken(user: TokenSubject, sessionId?: string): string {
+export function generateRefreshToken(
+  user: TokenSubject,
+  sessionId?: string,
+  claims: { mfaAt?: number | null } = {}
+): string {
   const env = getEnv();
   return jwt.sign(
     {
@@ -356,6 +373,7 @@ export function generateRefreshToken(user: TokenSubject, sessionId?: string): st
       type: "refresh",
       tv: user.tokenVersion ?? 0,
       ...(sessionId ? { sid: sessionId } : {}),
+      ...(typeof claims.mfaAt === "number" ? { mfa: claims.mfaAt } : {}),
       jti: randomUUID(),
     },
     env.JWT_SECRET,
@@ -393,5 +411,34 @@ export function verifySignedToken(token: string): JwtPayload | null {
 export function verifyRefreshToken(token: string): JwtPayload | null {
   const decoded = verifySignedToken(token);
   if (!decoded || decoded.type !== "refresh") return null;
+  return decoded;
+}
+
+/** W5-E: lifetime of the short-lived token between password and MFA code. */
+export const MFA_PENDING_TTL = "5m";
+
+/**
+ * MFA-pending token: proves the password step only. Its type is "mfa_pending", so
+ * authMiddleware refuses it (TOKEN_TYPE_INVALID) and only /auth/mfa/verify-login accepts it.
+ */
+export function generateMfaPendingToken(user: TokenSubject): string {
+  return jwt.sign(
+    {
+      userId: user.id,
+      email: user.email,
+      type: "mfa_pending",
+      tv: user.tokenVersion ?? 0,
+      jti: randomUUID(),
+    },
+    getEnv().JWT_SECRET,
+    { expiresIn: MFA_PENDING_TTL }
+  );
+}
+
+export function verifyMfaPendingToken(token: string): JwtPayload | null {
+  const decoded = verifySignedToken(token);
+  if (!decoded || decoded.type !== "mfa_pending" || typeof decoded.userId !== "string") {
+    return null;
+  }
   return decoded;
 }

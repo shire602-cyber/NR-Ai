@@ -341,13 +341,13 @@ const DEFS: readonly CapabilityDef[] = [
     id: "captcha",
     label: { en: "Bot protection (CAPTCHA)", ar: "الحماية من الروبوتات (CAPTCHA)" },
     externalAction: {
-      en: "Create a Cloudflare Turnstile or hCaptcha site and set its secret key.",
-      ar: "أنشئ موقعاً في Cloudflare Turnstile أو hCaptcha واضبط المفتاح السري.",
+      en: "Create a Cloudflare Turnstile site and set TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY.",
+      ar: "أنشئ موقعاً في Cloudflare Turnstile واضبط المفتاحين TURNSTILE_SECRET_KEY وTURNSTILE_SITE_KEY.",
     },
-    envVars: ["TURNSTILE_SECRET_KEY", "HCAPTCHA_SECRET"],
-    whenUnconfigured: "disabled",
-    detect: (env) =>
-      set(env, "TURNSTILE_SECRET_KEY") || set(env, "HCAPTCHA_SECRET") ? "live" : null,
+    // W5-E: only Turnstile has a server-side verifier (server/services/security/captcha.ts).
+    envVars: ["TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY"],
+    whenUnconfigured: "requires_external",
+    detect: (env) => (set(env, "TURNSTILE_SECRET_KEY") ? "live" : null),
   },
   {
     id: "saml",

@@ -33,20 +33,19 @@ export async function recordAudit(params: AuditParams): Promise<void> {
       after: after ?? null,
       ...(extra ?? {}),
     });
-    const ipAddress =
-      (req?.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
-      req?.socket?.remoteAddress ||
-      null;
+    // req.ip honours TRUST_PROXY_HOPS; a raw X-Forwarded-For header is client-controlled.
+    const ipAddress = req?.ip || req?.socket?.remoteAddress || null;
     const userAgent = (req?.headers["user-agent"] as string | undefined) || null;
     await storage.createAuditLog({
       userId: userId || null,
+      companyId: companyId ?? null,
       action,
       resourceType: entityType,
       resourceId: entityId ?? null,
       details,
       ipAddress,
       userAgent,
-    } as any);
+    });
   } catch (err) {
     log.error({ err: (err as Error).message }, "failed to record audit log");
   }

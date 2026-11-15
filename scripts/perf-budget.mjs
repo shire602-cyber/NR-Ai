@@ -81,12 +81,17 @@ async function main() {
   const reg = await api("POST", "/api/auth/register", {
     body: { name: "Perf", email, password: "PerfBudget123!" },
   });
-  if (reg.status !== 200 || !reg.json?.token) {
-    console.error(`perf-budget: registration failed (${reg.status}) ${reg.text.slice(0, 200)}`);
+  // W5-E: registration returns no session (R17-14); sign in, then read the company.
+  const login =
+    reg.status === 200
+      ? await api("POST", "/api/auth/login", { body: { email, password: "PerfBudget123!" } })
+      : reg;
+  if (login.status !== 200 || !login.json?.token) {
+    console.error(`perf-budget: registration failed (${login.status}) ${login.text.slice(0, 200)}`);
     process.exit(1);
   }
-  const token = reg.json.token;
-  const cid = reg.json.company.id;
+  const token = login.json.token;
+  const cid = (await api("GET", "/api/companies", { token })).json[0].id;
   const today = new Date().toISOString().slice(0, 10);
 
   const seeded = await pool(INVOICES, 10, (i) =>

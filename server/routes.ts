@@ -15,6 +15,8 @@ import { companyRolePolicy } from "./middleware/companyRolePolicy";
 
 // ─── Route modules ──────────────────────────────────────────
 import { registerAuthRoutes } from "./routes/auth.routes";
+import { registerAuditRoutes } from "./routes/audit.routes";
+import { securityPolicyMiddleware } from "./services/security/policy";
 import { registerCompanyRoutes } from "./routes/companies.routes";
 import { registerAccountRoutes } from "./routes/accounts.routes";
 import { registerInvoiceRoutes } from "./routes/invoices.routes";
@@ -109,9 +111,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and the company the request acts on, then checks the caller's
   // company_users role. See server/middleware/companyRolePolicy.ts.
   app.use("/api", companyRolePolicy);
+  app.use("/api", securityPolicyMiddleware); // W5-E: MFA policy, step-up, email verification
 
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);
+  registerAuditRoutes(app); // W5-E: audit trail, chain verify/export, MFA policy
   registerCompanyRoutes(app);
   registerAccountRoutes(app);
   registerInvoiceRoutes(app);

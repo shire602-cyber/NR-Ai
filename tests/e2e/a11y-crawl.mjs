@@ -165,6 +165,10 @@ async function main() {
     if (reg.status() !== 200 && reg.status() !== 201) {
       throw new Error(`register failed: ${reg.status()} ${(await reg.text()).slice(0, 200)}`);
     }
+    // W5-E: registration returns no session; sign in (sets the auth cookies).
+    await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email, password: "Password123!" },
+    });
   }
 
   // Express onboarding so protected routes render instead of redirecting.

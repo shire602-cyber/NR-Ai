@@ -55,6 +55,7 @@ describe("domain events", () => {
       "task.due",
       "receipt.posted",
       "budget.variance_alert",
+      "security.suspicious_login",
     ]);
     expect(Object.isFrozen(DOMAIN_EVENT_TYPES)).toBe(true);
   });

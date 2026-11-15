@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import crypto from "crypto";
+import { recordAudit } from "../services/audit.service";
 
 export function registerApiKeyRoutes(app: Express) {
   // =====================================
@@ -70,6 +71,16 @@ export function registerApiKeyRoutes(app: Express) {
         scopes: scopes || "read",
         createdBy: userId,
         isActive: true,
+      });
+
+      await recordAudit({
+        userId,
+        companyId,
+        action: "api_key.create",
+        entityType: "api_key",
+        entityId: created.id,
+        after: { name: created.name, scopes: created.scopes, keyPrefix },
+        req,
       });
 
       // Return the full key ONLY on creation — it can never be retrieved again
@@ -143,11 +154,13 @@ export function registerApiKeyRoutes(app: Express) {
       // Verify access via the user's companies
       const allCompanies = await storage.getCompaniesByUserId(userId);
       let found = false;
+      let keyCompanyId: string | null = null;
 
       for (const company of allCompanies) {
         const companyKeys = await storage.getApiKeysByCompanyId(company.id);
         if (companyKeys.some((k) => k.id === id)) {
           found = true;
+          keyCompanyId = company.id;
           break;
         }
       }
@@ -157,6 +170,14 @@ export function registerApiKeyRoutes(app: Express) {
       }
 
       await storage.deleteApiKey(id);
+      await recordAudit({
+        userId,
+        companyId: keyCompanyId,
+        action: "api_key.revoke",
+        entityType: "api_key",
+        entityId: id,
+        req,
+      });
       res.json({ message: "API key revoked successfully" });
     })
   );

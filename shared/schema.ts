@@ -98,6 +98,13 @@ export const users = pgTable("users", {
   // 0092 adds a unique index on lower(email).
   tokenVersion: integer("token_version").notNull().default(0),
   passwordChangedAt: timestamp("password_changed_at"),
+  // W5-E (0109): TOTP MFA flags. The encrypted secrets (mfa_secret_enc,
+  // mfa_pending_secret_enc) and the replay guard (mfa_last_used_step) are deliberately NOT
+  // mapped here, so generic user reads (storage.getUser, admin lists) can never return
+  // them; only server/services/mfa.service.ts touches those columns.
+  mfaEnabled: boolean("mfa_enabled").notNull().default(false),
+  mfaEnrolledAt: timestamp("mfa_enrolled_at"),
+  emailVerifiedAt: timestamp("email_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -109,6 +116,9 @@ export const insertUserSchema = createInsertSchema(users)
     emailVerified: true,
     tokenVersion: true,
     passwordChangedAt: true,
+    mfaEnabled: true,
+    mfaEnrolledAt: true,
+    emailVerifiedAt: true,
   })
   .extend({
     password: z.string().min(8, "Password must be at least 8 characters"),
@@ -5353,6 +5363,12 @@ export type CorporateTaxReturn = typeof corporateTaxReturns.$inferSelect;
 // ===========================
 // System Audit Logs
 // ===========================
+// bigint chain sequence read as a JS number (chains stay far below 2^53).
+const auditSeq = customType<{ data: number; driverData: string | number }>({
+  dataType: () => "bigint",
+  fromDriver: (value) => Number(value),
+});
+
 export const auditLogs = pgTable(
   "audit_logs",
   {
@@ -5367,21 +5383,71 @@ export const auditLogs = pgTable(
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // W5-E (0109): tamper-evident chain, one per company ("global" when no company).
+    // chainKey/seq/prevHash/hash/legacy are set by the audit_logs_chain_insert trigger
+    // inside the inserting transaction; never write them from application code.
+    companyId: uuid("company_id"),
+    chainKey: text("chain_key"),
+    seq: auditSeq("seq"),
+    prevHash: text("prev_hash"),
+    hash: text("hash"),
+    legacy: boolean("legacy").notNull().default(false),
   },
   (table) => ({
     userIdIdx: index("idx_audit_logs_user_id").on(table.userId),
     resourceIdx: index("idx_audit_logs_resource").on(table.resourceType, table.resourceId),
     createdAtIdx: index("idx_audit_logs_created_at").on(table.createdAt),
+    companyCreatedIdx: index("idx_audit_logs_company_created").on(table.companyId, table.createdAt),
+    chainSeqIdx: uniqueIndex("uniq_audit_logs_chain_seq").on(table.chainKey, table.seq),
   })
 );
 
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   id: true,
   createdAt: true,
+  chainKey: true,
+  seq: true,
+  prevHash: true,
+  hash: true,
+  legacy: true,
 });
 
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// W5-E (0109): ten single-use MFA recovery codes per user, stored as SHA-256 digests.
+export const userMfaRecoveryCodes = pgTable(
+  "user_mfa_recovery_codes",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("idx_user_mfa_recovery_codes_user").on(table.userId),
+    hashUnique: uniqueIndex("uniq_user_mfa_recovery_codes_hash").on(table.userId, table.codeHash),
+  })
+);
+export type UserMfaRecoveryCode = typeof userMfaRecoveryCodes.$inferSelect;
+
+// W5-E (0109): per-company security policy (MFA requirement by role).
+export const COMPANY_MFA_POLICIES = ["none", "owners_admins", "all"] as const;
+export type CompanyMfaPolicy = (typeof COMPANY_MFA_POLICIES)[number];
+export const companySecurityPolicies = pgTable("company_security_policies", {
+  companyId: uuid("company_id")
+    .primaryKey()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  requireMfa: text("require_mfa").$type<CompanyMfaPolicy>().notNull().default("none"),
+  updatedBy: uuid("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type CompanySecurityPolicy = typeof companySecurityPolicies.$inferSelect;
 
 // ===========================
 // Document Vault (Trade licenses, contracts, tax certificates with expiry tracking)

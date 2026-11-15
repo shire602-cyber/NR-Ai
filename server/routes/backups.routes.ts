@@ -2,6 +2,8 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { decryptSecret, encryptSecret } from "../services/secret-vault";
+import { recordAudit } from "../services/audit.service";
 import crypto from "crypto";
 import { db } from "../db";
 import {
@@ -115,7 +117,7 @@ export function registerBackupRoutes(app: Express) {
         // Update backup with data
         backup = await storage.updateBackup(backup.id, {
           status: "completed",
-          dataSnapshot: snapshotJson,
+          dataSnapshot: encryptSecret(snapshotJson), // W5-E: AES-256-GCM at rest
           checksum,
           sizeBytes: Buffer.byteLength(snapshotJson, "utf8"),
           accountsCount: accounts.length,
@@ -211,7 +213,7 @@ export function registerBackupRoutes(app: Express) {
         "Content-Disposition",
         `attachment; filename="${backup.name.replace(/[^a-z0-9]/gi, "_")}_${backup.id.slice(0, 8)}.json"`
       );
-      res.send(backup.dataSnapshot);
+      res.send(decryptSecret(backup.dataSnapshot));
     })
   );
 
@@ -353,7 +355,7 @@ export function registerBackupRoutes(app: Express) {
 
         await storage.updateBackup(preRestoreBackup.id, {
           status: "completed",
-          dataSnapshot: preRestoreJson,
+          dataSnapshot: encryptSecret(preRestoreJson),
           checksum: preRestoreChecksum,
           sizeBytes: Buffer.byteLength(preRestoreJson, "utf8"),
           accountsCount: currentAccounts.length,
@@ -379,11 +381,12 @@ export function registerBackupRoutes(app: Express) {
         // longer exist (matched by primary key). Existing rows are never
         // touched and never deleted, so data created after the backup is safe
         // and foreign keys from tables outside the snapshot cannot break.
-        const snapshot = JSON.parse(backup.dataSnapshot ?? "{}");
+        const plainSnapshot = decryptSecret(backup.dataSnapshot) ?? "";
+        const snapshot = JSON.parse(plainSnapshot || "{}");
         if (backup.checksum) {
           const actual = crypto
             .createHash("sha256")
-            .update(backup.dataSnapshot ?? "")
+            .update(plainSnapshot)
             .digest("hex");
           if (actual !== backup.checksum) {
             return res
@@ -419,6 +422,16 @@ export function registerBackupRoutes(app: Express) {
         });
 
         const totalRestored = Object.values(restored).reduce((sum, n) => sum + n, 0);
+        await recordAudit({
+          userId,
+          companyId: backup.companyId,
+          action: "backup.restore",
+          entityType: "backup",
+          entityId: backup.id,
+          before: { preRestoreBackupId: preRestoreBackup.id },
+          after: { restored, totalRestored },
+          req,
+        });
         res.json({
           success: true,
           message:

@@ -366,10 +366,20 @@ export async function startHarness(): Promise<Harness> {
     const password = `Harness${randomBytes(4).toString("hex")}A1!`;
     const anon = makeClient(baseUrl, null);
     const reg = await anon.post("/api/auth/register", { name: `${label} ${seq}`, email, password });
-    if (reg.status !== 200 || !reg.body?.token) {
+    if (reg.status !== 200) {
       throw new Error(`createTenant: register failed ${reg.status} ${reg.text.slice(0, 300)}`);
     }
-    const { token, user, company } = reg.body;
+    // W5-E (R17-14): registration never returns a session; sign in like the client does.
+    const login = await anon.post("/api/auth/login", { email, password });
+    if (login.status !== 200 || !login.body?.token) {
+      throw new Error(`createTenant: login failed ${login.status} ${login.text.slice(0, 300)}`);
+    }
+    const { token, user } = login.body;
+    const [company] = await sql<{ id: string; name: string }>(
+      `SELECT c.id, c.name FROM companies c JOIN company_users cu ON cu.company_id = c.id
+        WHERE cu.user_id = $1 ORDER BY c.created_at LIMIT 1`,
+      [user.id]
+    );
     if (opts.role && opts.role !== "owner") {
       await sql(`UPDATE company_users SET role = $1 WHERE company_id = $2 AND user_id = $3`, [
         opts.role,

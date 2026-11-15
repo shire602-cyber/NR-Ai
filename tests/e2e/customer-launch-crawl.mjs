@@ -365,11 +365,18 @@ async function main() {
     });
     throw new Error(`register failed: ${reg.status()}`);
   }
-  const registration = await reg.json().catch(() => ({}));
+  // W5-E: registration returns no session (R17-14); sign in, then read the company.
+  const loginRes = await page.request.post(`${BASE}/api/auth/login`, {
+    data: { email, password },
+  });
+  const registration = await loginRes.json().catch(() => ({}));
+  const companiesRes = await page.request.get(`${BASE}/api/companies`);
+  const companies = await companiesRes.json().catch(() => []);
+  const firstCompany = Array.isArray(companies) ? companies[0] : null;
   runState.email = email;
   runState.userId = registration?.user?.id ?? null;
-  runState.companyId = registration?.company?.id ?? null;
-  runState.companyName = registration?.company?.name ?? null;
+  runState.companyId = firstCompany?.id ?? null;
+  runState.companyName = firstCompany?.name ?? null;
   await writeRunArtifact(runState);
 
   await page.goto(`${BASE}/dashboard`);

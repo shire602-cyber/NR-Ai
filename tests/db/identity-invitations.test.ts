@@ -86,7 +86,10 @@ describe("R01-04 invitations without placeholder users", () => {
       password: "Selfreg9Secret!",
     });
     expect(reg.status).toBe(200);
-    expect(reg.body.token).toBeTruthy();
+    // W5-E: registration answers generically; the new account can sign in.
+    const login = await h.anon.post("/api/auth/login", { email: to, password: "Selfreg9Secret!" });
+    expect(login.status, login.text).toBe(200);
+    expect(login.body.token).toBeTruthy();
   });
 });
 
