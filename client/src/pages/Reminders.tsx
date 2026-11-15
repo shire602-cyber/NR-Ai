@@ -82,6 +82,29 @@ export default function Reminders() {
     sendInApp: true,
     emailSubject: "",
     emailTemplate: "",
+    language: "bilingual" as "en" | "ar" | "bilingual",
+  });
+
+  // W4-D (R16-08): honest delivery state — no provider means "Email not configured".
+  const { data: emailStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["/api/companies", selectedCompanyId, "email-outbox", "status"],
+    enabled: !!selectedCompanyId,
+  });
+
+  const runNowMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/companies/${selectedCompanyId}/reminders/run`),
+    onSuccess: (r: { sent: number; queued: number; blocked: number; message: string | null }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "reminder-logs"],
+      });
+      toast({
+        title: `${r.sent} / ${r.queued + r.blocked}`,
+        description: r.message ?? undefined,
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
   });
 
   const { data: settings, isLoading: settingsLoading } = useQuery<ReminderSetting[]>({
@@ -122,6 +145,43 @@ export default function Reminders() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case "blocked_no_provider":
+        return (
+          <Badge variant="outline" className="border-warning text-warning">
+            <XCircle className="w-3 h-3 mr-1" />
+            <T k="portal.emailNotConfiguredShort" />
+          </Badge>
+        );
+      case "requires_external":
+        return (
+          <Badge variant="outline">
+            <T k="portal.requiresExternal" />
+          </Badge>
+        );
+      case "queued":
+      case "retrying":
+      case "sending":
+        return (
+          <Badge variant="secondary">
+            <Clock className="w-3 h-3 mr-1" />
+            <T k={`portal.outboxStatus.${status}`} />
+          </Badge>
+        );
+      case "skipped":
+        return (
+          <Badge variant="outline">
+            <T k="portal.outboxStatus.skipped" />
+          </Badge>
+        );
+      case "dead":
+      case "bounced":
+      case "complained":
+        return (
+          <Badge variant="destructive">
+            <XCircle className="w-3 h-3 mr-1" />
+            <T k={`portal.outboxStatus.${status}`} />
+          </Badge>
+        );
       case "sent":
         return (
           <Badge className="bg-success">
@@ -198,12 +258,31 @@ export default function Reminders() {
         title="Payment Reminders"
         description="Configure automated reminders for invoices and deadlines"
         actions={
-          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-reminder">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Reminder
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => runNowMutation.mutate()}
+              disabled={runNowMutation.isPending}
+              data-testid="button-run-reminders"
+            >
+              <T k="portal.runRemindersNow" />
+            </Button>
+            <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-reminder">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Reminder
+            </Button>
+          </div>
         }
       />
+      {emailStatus && !emailStatus.configured && (
+        <div
+          className="rounded-lg border border-warning bg-warning-subtle text-warning-subtle-foreground p-3 text-sm"
+          role="status"
+          data-testid="email-not-configured-banner"
+        >
+          <T k="portal.emailNotConfigured" />
+        </div>
+      )}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -329,9 +408,30 @@ export default function Reminders() {
             </div>
 
             <div className="space-y-2">
+              <Label>
+                <T k="portal.emailLanguage" />
+              </Label>
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={newSetting.language}
+                onChange={(e) =>
+                  setNewSetting({
+                    ...newSetting,
+                    language: e.target.value as "en" | "ar" | "bilingual",
+                  })
+                }
+                data-testid="select-reminder-language"
+              >
+                <option value="bilingual">English + العربية</option>
+                <option value="en">English</option>
+                <option value="ar">العربية</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
               <Label>Email Subject (optional)</Label>
               <Input
-                placeholder="Payment Reminder: Invoice {{invoice_number}}"
+                placeholder="Payment Reminder: Invoice {{invoiceNumber}}"
                 value={newSetting.emailSubject}
                 onChange={(e) => setNewSetting({ ...newSetting, emailSubject: e.target.value })}
                 data-testid="input-email-subject"
@@ -341,7 +441,7 @@ export default function Reminders() {
             <div className="space-y-2">
               <Label>Email Template (optional)</Label>
               <Textarea
-                placeholder="Dear {{customer_name}}, This is a reminder..."
+                placeholder="Dear {{customerName}}, invoice {{invoiceNumber}} for {{amountDue}} was due on {{dueDate}}. {{payLink}}"
                 value={newSetting.emailTemplate}
                 onChange={(e) => setNewSetting({ ...newSetting, emailTemplate: e.target.value })}
                 rows={4}
@@ -508,7 +608,7 @@ export default function Reminders() {
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-sm text-muted-foreground">
-                          Attempt {log.attemptNumber}
+                          <T k="portal.level" /> {log.level ?? log.attemptNumber}
                         </span>
                         {getStatusBadge(log.status)}
                         <span className="text-sm text-muted-foreground">

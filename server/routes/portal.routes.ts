@@ -8,6 +8,34 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { zDate, zMoney, zText, zUuid } from "../../shared/validators/primitives";
 import { recordAudit } from "../services/audit.service";
+import { assertNoServerOwned } from "../http/strict-body";
+import { resolve } from "../platform/service-registry";
+import {
+  addVaultVersion,
+  contentDisposition,
+  createVaultDocument,
+  isMultipart,
+  listVaultDocuments,
+  listVaultVersions,
+  readValidatedUpload,
+  readVaultFile,
+  restoreVaultVersion,
+  softDeleteVaultDocument,
+  undeleteVaultDocument,
+} from "../services/document-vault.service";
+import {
+  registerStatementServices,
+  renderStatementPdf,
+  type CustomerStatementService,
+  type Statement,
+  type SupplierStatementService,
+} from "../services/customer-statement.service";
+import {
+  emailStatementBody,
+  statementQuery,
+  type EmailStatementBody,
+} from "../../shared/validators/portal";
+import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
 
 // ─── Validators (W2-D: R08-10, R16-13, R17-09) ───────────────────────────────
 
@@ -170,6 +198,8 @@ const updateTaskBody = z.object({
 
 const createMessageBody = z.object({
   threadId: zUuid.optional().nullable(),
+  /** W4-D (R16-05): set to post in the customer-visible thread of this contact. */
+  contactId: zUuid.optional().nullable(),
   subject: optText(255),
   content: zText(10_000, { min: 1 }),
   recipientId: zUuid.optional().nullable(),
@@ -182,6 +212,8 @@ const toDate = (iso: string | null | undefined): Date | null =>
   iso ? new Date(`${iso}T00:00:00.000Z`) : null;
 
 export function registerPortalRoutes(app: Express) {
+  registerStatementServices();
+
   // =====================================
   // CUSTOMER ACTIVITY LOGS (History)
   // =====================================
@@ -205,10 +237,6 @@ export function registerPortalRoutes(app: Express) {
     })
   );
 
-  // =====================================
-  // CLIENT PORTAL - DOCUMENT VAULT
-  // =====================================
-
   // Allowed MIME types for document uploads — checked instead of trusting filename extensions.
   const ALLOWED_DOC_MIME_TYPES = [
     "application/pdf",
@@ -223,7 +251,22 @@ export function registerPortalRoutes(app: Express) {
     "text/csv",
   ];
 
-  // Get all documents for a company
+  // =====================================
+  // CLIENT PORTAL - DOCUMENT VAULT (W4-D: R16-09 real storage, versions, soft delete)
+  // =====================================
+
+  const vaultDocument = async (req: Request) => {
+    const userId = (req as any).user?.id;
+    const document = /^[0-9a-f-]{36}$/i.test(req.params.documentId)
+      ? await storage.getDocument(req.params.documentId)
+      : undefined;
+    if (!document || !(await storage.hasCompanyAccess(userId, document.companyId))) {
+      throw new DomainError("DOCUMENT_NOT_FOUND", 404, undefined, "Document not found");
+    }
+    return document;
+  };
+
+  // List documents (soft-deleted ones only with ?includeDeleted=true)
   app.get(
     "/api/companies/:companyId/documents",
     authMiddleware,
@@ -234,72 +277,313 @@ export function registerPortalRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
-      const documents = await storage.getDocuments(companyId);
-      res.json(documents);
+      const contactId =
+        typeof req.query.contactId === "string" && /^[0-9a-f-]{36}$/i.test(req.query.contactId)
+          ? req.query.contactId
+          : undefined;
+      res.json(
+        await listVaultDocuments(companyId, {
+          contactId,
+          includeDeleted: req.query.includeDeleted === "true",
+        })
+      );
     })
   );
 
-  // Upload document (stub - would need file upload middleware in production)
+  // Upload: multipart/form-data (`file` + metadata fields) or JSON with base64 `fileData`. A JSON
+  // body without a file may only reference an external https:// document (stored as a link,
+  // never fetched); internal storage keys can no longer be asserted by the client.
   app.post(
     "/api/companies/:companyId/documents",
     authMiddleware,
-    strictBody(documentBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const body = parsedBody<z.output<typeof documentBody>>(req);
-
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
-
-      // Validate MIME type — never trust the filename extension alone.
-      const mimeType = body.mimeType || "application/pdf";
-      if (!ALLOWED_DOC_MIME_TYPES.includes(mimeType)) {
-        return res.status(400).json({
-          message: "Invalid file type. Allowed: PDF, images, Word, Excel, and text files.",
+      const jsonBody = (req.body ?? {}) as Record<string, unknown>;
+      if (!isMultipart(req) && jsonBody.fileData === undefined) {
+        // External link documents (legacy JSON contract, R16-13 validation kept).
+        assertNoServerOwned(req.body);
+        const body = documentBody.strict().parse(req.body);
+        if (!body.fileUrl || !/^https:\/\//i.test(body.fileUrl)) {
+          throw new DomainError(
+            "UPLOAD_REQUIRED",
+            400,
+            { field: "fileUrl" },
+            "Upload the file (multipart `file` or `fileData`), or link an external https:// URL"
+          );
+        }
+        const mimeType = body.mimeType || "application/pdf";
+        if (!ALLOWED_DOC_MIME_TYPES.includes(mimeType)) {
+          return res.status(400).json({
+            message: "Invalid file type. Allowed: PDF, images, Word, Excel, and text files.",
+          });
+        }
+        const document = await storage.createDocument({
+          companyId,
+          name: body.name || "Linked Document",
+          nameAr: body.nameAr ?? null,
+          category: body.category || "other",
+          description: body.description ?? null,
+          fileUrl: body.fileUrl,
+          fileName: body.fileName || "document.pdf",
+          fileSize: body.fileSize || null,
+          mimeType,
+          expiryDate: toDate(body.expiryDate),
+          reminderDays: body.reminderDays ?? 30,
+          reminderSent: false,
+          tags: body.tags ?? null,
+          isArchived: false,
+          uploadedBy: userId,
+          source: "external_link",
         });
+        return res.status(201).json(document);
       }
-
-      const document = await storage.createDocument({
+      const { meta, file } = await readValidatedUpload(req);
+      const document = await createVaultDocument({
         companyId,
-        name: body.name || "Uploaded Document",
-        nameAr: body.nameAr ?? null,
-        category: body.category || "other",
-        description: body.description ?? null,
-        fileUrl: body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: body.fileName || "document.pdf",
-        fileSize: body.fileSize || null,
-        mimeType,
-        expiryDate: toDate(body.expiryDate),
-        reminderDays: body.reminderDays ?? 30,
-        reminderSent: false,
-        tags: body.tags ?? null,
-        isArchived: false,
         uploadedBy: userId,
+        file,
+        name: meta.name ?? null,
+        nameAr: meta.nameAr ?? null,
+        category: meta.category ?? null,
+        description: meta.description ?? null,
+        expiryDate: meta.expiryDate ?? null,
+        reminderDays: meta.reminderDays ?? null,
+        note: meta.note ?? null,
       });
       res.status(201).json(document);
     })
   );
 
-  // Delete document
+  app.get(
+    "/api/documents/:documentId/download",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const document = await vaultDocument(req);
+      const version = Number(req.query.version);
+      const file = await readVaultFile(
+        document.companyId,
+        document.id,
+        Number.isInteger(version) && version > 0 ? version : null
+      );
+      if (!file) throw new DomainError("FILE_NOT_FOUND", 404, undefined, "File not found");
+      res.set({
+        "Content-Type": file.mimeType,
+        "Content-Disposition": contentDisposition(file.fileName),
+        "Content-Length": String(file.buffer.length),
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.send(file.buffer);
+    })
+  );
+
+  app.get(
+    "/api/documents/:documentId/versions",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const document = await vaultDocument(req);
+      res.json(await listVaultVersions(document.companyId, document.id));
+    })
+  );
+
+  app.post(
+    "/api/documents/:documentId/versions",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const document = await vaultDocument(req);
+      const { meta, file } = await readValidatedUpload(req);
+      const version = await addVaultVersion({
+        companyId: document.companyId,
+        documentId: document.id,
+        file,
+        uploadedBy: (req as any).user.id,
+        note: meta.note ?? null,
+      });
+      res.status(201).json(version);
+    })
+  );
+
+  app.post(
+    "/api/documents/:documentId/versions/:version/restore",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const document = await vaultDocument(req);
+      const version = Number(req.params.version);
+      if (!Number.isInteger(version) || version < 1) {
+        throw new DomainError("VERSION_NOT_FOUND", 404);
+      }
+      res.status(201).json(
+        await restoreVaultVersion({
+          companyId: document.companyId,
+          documentId: document.id,
+          version,
+          userId: (req as any).user.id,
+        })
+      );
+    })
+  );
+
+  // Soft delete (history and bytes are kept; restore with POST /restore).
   app.delete(
     "/api/documents/:documentId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { documentId } = req.params;
-      const userId = (req as any).user?.id;
-      const document = await storage.getDocument(documentId);
-      if (!document) {
-        return res.status(404).json({ message: "Document not found" });
-      }
-      const hasAccess = await storage.hasCompanyAccess(userId, document.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      await storage.deleteDocument(documentId);
+      const document = await vaultDocument(req);
+      await softDeleteVaultDocument(document.companyId, document.id, (req as any).user.id);
+      res.json({ success: true, deleted: "soft" });
+    })
+  );
+
+  app.post(
+    "/api/documents/:documentId/restore",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const document = await vaultDocument(req);
+      await undeleteVaultDocument(document.companyId, document.id);
       res.json({ success: true });
+    })
+  );
+
+  // =====================================
+  // STATEMENTS OF ACCOUNT (W4-D: R16-15, R11-15 carry-over)
+  // =====================================
+
+  const statementAccess = async (req: Request) => {
+    const { companyId } = req.params;
+    const userId = (req as any).user?.id;
+    if (!(await storage.hasCompanyAccess(userId, companyId))) {
+      throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
+    }
+    return companyId;
+  };
+
+  const sendStatement = async (res: Response, st: Statement, format?: string) => {
+    if (format === "pdf") {
+      const pdf = await renderStatementPdf(st);
+      res.set({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="statement-${st.party.name.replace(/[^\w-]+/g, "_")}-${st.asOf}.pdf"`,
+      });
+      return res.send(pdf);
+    }
+    return res.json(st);
+  };
+
+  app.get(
+    "/api/companies/:companyId/customer-statements/:contactId",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const companyId = await statementAccess(req);
+      if (!/^[0-9a-f-]{36}$/i.test(req.params.contactId)) {
+        throw new DomainError("CONTACT_NOT_FOUND", 404);
+      }
+      const q = statementQuery.parse(req.query);
+      const st = await resolve<CustomerStatementService>("statements.customer")({
+        companyId,
+        contactId: req.params.contactId,
+        from: q.from,
+        asOf: q.asOf,
+      });
+      await sendStatement(res, st, q.format);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/customer-statements/:contactId/email",
+    authMiddleware,
+    requireCustomer,
+    strictBody(emailStatementBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const companyId = await statementAccess(req);
+      if (!/^[0-9a-f-]{36}$/i.test(req.params.contactId)) {
+        throw new DomainError("CONTACT_NOT_FOUND", 404);
+      }
+      const body = parsedBody<EmailStatementBody>(req);
+      const st = await resolve<CustomerStatementService>("statements.customer")({
+        companyId,
+        contactId: req.params.contactId,
+        from: body.from,
+        asOf: body.asOf,
+      });
+      const to = body.to ?? st.party.email;
+      if (!to) {
+        throw new DomainError(
+          "RECIPIENT_REQUIRED",
+          400,
+          { field: "to" },
+          "The customer has no email address"
+        );
+      }
+      const pdf = await renderStatementPdf(st);
+      const lines = st.sections.map((s) => `${s.currency} ${s.closingBalance.toFixed(2)}`);
+      const html = renderBilingualEmail(
+        {
+          brandName: st.company.name,
+          heading: { en: "Statement of account", ar: "كشف حساب" },
+          paragraphs: {
+            en: [
+              `Dear ${escapeHtml(st.party.name)},`,
+              `Please find attached your statement of account as of ${escapeHtml(st.asOf)}. Balance: <strong>${escapeHtml(lines.join(", "))}</strong>.`,
+              ...(body.message ? [escapeHtml(body.message)] : []),
+            ],
+            ar: [
+              `عزيزنا ${escapeHtml(st.party.name)}،`,
+              `تجدون مرفقاً كشف حسابكم حتى ${escapeHtml(st.asOf)}. الرصيد: <strong dir="ltr">${escapeHtml(lines.join(", "))}</strong>.`,
+            ],
+          },
+        },
+        body.language ?? "bilingual"
+      );
+      const result = await sendEmail(
+        to,
+        `Statement of account — ${st.company.name}`,
+        lines.join("\n"),
+        {
+          html,
+          companyId,
+          category: "statement",
+          relatedEntityType: "customer_contact",
+          relatedEntityId: st.party.id,
+          attachments: [
+            {
+              filename: `statement-${st.asOf}.pdf`,
+              content: pdf,
+              contentType: "application/pdf",
+            },
+          ],
+        }
+      );
+      res.status(result.sent ? 200 : 202).json({
+        ...result,
+        message: result.sent
+          ? `Statement sent to ${to}`
+          : result.status === "blocked_no_provider"
+            ? "Email not configured — the statement is queued, not sent."
+            : `Statement queued for delivery (${result.status}).`,
+      });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/supplier-statements/:vendorId",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const companyId = await statementAccess(req);
+      if (!/^[0-9a-f-]{36}$/i.test(req.params.vendorId)) {
+        throw new DomainError("VENDOR_NOT_FOUND", 404);
+      }
+      const q = statementQuery.parse(req.query);
+      const st = await resolve<SupplierStatementService>("statements.supplier")({
+        companyId,
+        vendorId: req.params.vendorId,
+        from: q.from,
+        asOf: q.asOf,
+      });
+      await sendStatement(res, st, q.format);
     })
   );
 
@@ -588,8 +872,9 @@ export function registerPortalRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
-      const messages = await storage.getMessages(companyId);
-      res.json(messages);
+      const all = await storage.getMessages(companyId);
+      const contactId = typeof req.query.contactId === "string" ? req.query.contactId : null;
+      res.json(contactId ? all.filter((m) => m.contactId === contactId) : all);
     })
   );
 
@@ -617,8 +902,21 @@ export function registerPortalRoutes(app: Express) {
         );
       }
 
+      if (body.contactId) {
+        const contact = await storage.getCustomerContact(body.contactId);
+        if (!contact || contact.companyId !== companyId) {
+          throw new DomainError(
+            "CONTACT_NOT_FOUND",
+            400,
+            { field: "contactId" },
+            "Customer contact not found"
+          );
+        }
+      }
       const message = await storage.createMessage({
         companyId,
+        contactId: body.contactId ?? null,
+        visibility: body.contactId ? "customer" : "internal",
         threadId: body.threadId ?? null,
         subject: body.subject ?? null,
         content: body.content,

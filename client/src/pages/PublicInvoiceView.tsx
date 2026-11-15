@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
 import { useParams } from "wouter";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, FileText, AlertCircle, Clock } from "lucide-react";
+import { Download, FileText, AlertCircle, Clock, CreditCard, CheckCircle2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
 interface PublicInvoiceData {
+  /** W4-D (R16-14): present only when a payment gateway is live or in sandbox. */
+  onlinePayment?: { available: boolean; status: string; provider: string | null };
+  einvoice?: { status: string; uuid: string | null } | null;
   invoice: {
     number: string;
     customerName: string;
@@ -104,6 +108,31 @@ export default function PublicInvoiceView() {
 
   const handleDownloadPDF = () => {
     window.open(apiUrl(`/api/public/invoices/${token}/pdf`), "_blank");
+  };
+
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  const paymentResult =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("payment")
+      : null;
+
+  const handlePay = async () => {
+    setPaying(true);
+    setPayError(null);
+    try {
+      const res = await fetch(apiUrl(`/api/portal/public-invoices/${token}/pay`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.url) throw new Error(body.message || "Payment could not be started");
+      window.location.assign(body.url);
+    } catch (err) {
+      setPayError(err instanceof Error ? err.message : "Payment could not be started");
+      setPaying(false);
+    }
   };
 
   // Loading state
@@ -331,13 +360,49 @@ export default function PublicInvoiceView() {
               </div>
             </div>
 
-            {/* Download PDF */}
-            <div className="flex justify-center pt-4 border-t">
+            {paymentResult === "success" && (
+              <div
+                className="flex items-center gap-2 rounded-lg bg-success-subtle text-success-subtle-foreground p-3"
+                data-testid="public-invoice-payment-success"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                <T k="portal.paymentProcessing" />
+              </div>
+            )}
+            {data.einvoice && (
+              <p className="text-sm text-muted-foreground" data-testid="public-invoice-einvoice">
+                <T k="portal.einvoiceStatus" />: {data.einvoice.status}
+              </p>
+            )}
+
+            {/* Download PDF / Pay now (only when a gateway is live) */}
+            <div className="flex flex-wrap justify-center gap-3 pt-4 border-t">
               <Button onClick={handleDownloadPDF} className="bg-info hover:bg-info" size="lg">
                 <Download className="w-5 h-5 mr-2" />
                 <T k="pages.downloadPdf" />
               </Button>
+              {data.onlinePayment?.available && (
+                <Button
+                  onClick={handlePay}
+                  disabled={paying}
+                  size="lg"
+                  data-testid="public-invoice-pay-now"
+                >
+                  <CreditCard className="w-5 h-5 mr-2" />
+                  <T k="portal.payNow" />
+                  {data.onlinePayment.status === "sandbox" && (
+                    <Badge variant="outline" className="ms-2">
+                      <T k="portal.testMode" />
+                    </Badge>
+                  )}
+                </Button>
+              )}
             </div>
+            {payError && (
+              <p className="text-sm text-destructive text-center" role="alert">
+                {payError}
+              </p>
+            )}
           </CardContent>
         </Card>
 

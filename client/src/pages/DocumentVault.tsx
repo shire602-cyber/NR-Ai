@@ -37,6 +37,40 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/api";
+import { getAuthHeaders } from "@/lib/auth";
+import { withCsrfHeader } from "@/lib/csrf";
+
+/** W4-D (R16-09): headers for a raw fetch (Bearer, or the CSRF token for cookie sessions). */
+async function vaultHeaders(method: string): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { ...getAuthHeaders() };
+  return headers.Authorization ? headers : withCsrfHeader(method, headers);
+}
+
+/** Open or download a vault file: stored files stream from the authenticated API. */
+async function openVaultFile(doc: { fileUrl: string; fileName: string }, download: boolean) {
+  if (/^https:\/\//i.test(doc.fileUrl)) {
+    window.open(doc.fileUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+  // Stored files are served by the authenticated download route (fileUrl is set by the server).
+  if (!/^\/api\/documents\/[0-9a-f-]{36}\/download$/i.test(doc.fileUrl)) return;
+  const res = await fetch(apiUrl(doc.fileUrl), {
+    headers: await vaultHeaders("GET"),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const url = URL.createObjectURL(await res.blob());
+  if (download) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = doc.fileName;
+    link.click();
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 import {
   Upload,
   FileText,
@@ -122,14 +156,26 @@ export default function DocumentVault() {
       description: string;
       expiryDate: string;
       reminderDays: number;
-      fileName: string;
-      fileSize: number;
-      mimeType: string;
+      file: File;
     }) => {
-      return apiRequest("POST", `/api/companies/${companyId}/documents`, {
-        ...data,
-        fileUrl: `/uploads/${data.fileName}`, // Placeholder - in production would be cloud storage URL
+      // Real multipart upload: the server checks the bytes and stores the file.
+      const form = new FormData();
+      form.append("name", data.name);
+      if (data.nameAr) form.append("nameAr", data.nameAr);
+      form.append("category", data.category);
+      if (data.description) form.append("description", data.description);
+      if (data.expiryDate) form.append("expiryDate", data.expiryDate);
+      form.append("reminderDays", String(data.reminderDays));
+      form.append("file", data.file, data.file.name);
+      const res = await fetch(apiUrl(`/api/companies/${companyId}/documents`), {
+        method: "POST",
+        headers: await vaultHeaders("POST"),
+        body: form,
+        credentials: "include",
       });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
+      return body;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
@@ -182,6 +228,14 @@ export default function DocumentVault() {
       return;
     }
 
+    if (!selectedFile) {
+      toast({
+        variant: "destructive",
+        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
+        description: locale === "ar" ? "يرجى اختيار ملف" : "Please choose a file",
+      });
+      return;
+    }
     setIsUploading(true);
     try {
       await uploadMutation.mutateAsync({
@@ -191,9 +245,7 @@ export default function DocumentVault() {
         description: newDocument.description,
         expiryDate: newDocument.expiryDate,
         reminderDays: newDocument.reminderDays,
-        fileName: selectedFile?.name || "document.pdf",
-        fileSize: selectedFile?.size || 0,
-        mimeType: selectedFile?.type || "application/pdf",
+        file: selectedFile,
       });
     } finally {
       setIsUploading(false);
@@ -450,7 +502,7 @@ export default function DocumentVault() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => window.open(doc.fileUrl, "_blank")}
+                              onClick={() => void openVaultFile(doc, false)}
                               data-testid={`button-view-${doc.id}`}
                             >
                               <Eye className="w-4 h-4" />
@@ -458,12 +510,7 @@ export default function DocumentVault() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => {
-                                const link = document.createElement("a");
-                                link.href = doc.fileUrl;
-                                link.download = doc.fileName;
-                                link.click();
-                              }}
+                              onClick={() => void openVaultFile(doc, true)}
                               data-testid={`button-download-${doc.id}`}
                             >
                               <Download className="w-4 h-4" />
@@ -601,7 +648,7 @@ export default function DocumentVault() {
               <Label>{locale === "ar" ? "الملف" : "File"}</Label>
               <Input
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 data-testid="input-document-file"
               />

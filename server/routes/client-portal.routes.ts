@@ -1,24 +1,50 @@
-import type { Express, Request, Response, NextFunction } from "express";
+/**
+ * Authenticated customer portal (W4-D: R16-05, R16-15, R16-16).
+ *
+ * A client_portal user acts for exactly one customer contact (customer_portal_accounts,
+ * bound by staff via POST /api/portal/contacts/:contactId/portal-users). Everything here is
+ * scoped to that contact: its issued invoices, its statement of account, documents it shared
+ * or that were shared with it, and its customer-visible message thread. Internal staff
+ * threads and other customers' data are never returned. An unbound user gets 403.
+ */
+import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
+import { db } from "../db";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
-import { db } from "../db";
-import { eq, and, or, desc } from "drizzle-orm";
+import { invoices, messages, type Company, type CustomerContact } from "../../shared/schema";
+import { portalAccountForUser } from "../services/portal-access.service";
+import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
 import {
-  journalEntries,
-  journalLines,
-  accounts,
-  companyUsers,
-  companies,
-} from "../../shared/schema";
+  createVaultDocument,
+  listVaultDocuments,
+  readValidatedUpload,
+} from "../services/document-vault.service";
+import {
+  portalMessageBody,
+  statementQuery,
+  type PortalMessageBody,
+} from "../../shared/validators/portal";
+import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
+import { paymentsAvailability } from "../services/payments";
 
-/**
- * Middleware: restrict to client_portal (and client) userType.
- * Also resolves and attaches the user's first company to req.
- */
+interface PortalScope {
+  companyId: string;
+  company: Company;
+  contact: CustomerContact;
+  userId: string;
+}
+
+const scopeOf = (req: Request): PortalScope => (req as Request & { portal: PortalScope }).portal;
+
+/** client_portal users only, bound to one active contact of a company they belong to. */
 async function requirePortalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const user = req.user as any;
+  const user = req.user as { id: string; userType?: string; isAdmin?: boolean } | undefined;
   if (!user) {
     res.status(401).json({ message: "Authentication required" });
     return;
@@ -27,104 +53,111 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     res.status(403).json({ message: "Client portal access required" });
     return;
   }
-  // Resolve user's company (portal users have exactly one)
-  const userCompanies = await storage.getCompaniesByUserId(user.id);
-  if (!userCompanies.length) {
-    res.status(403).json({ message: "No company associated with this account" });
+  const binding = await portalAccountForUser(user.id);
+  if (!binding || !(await storage.hasCompanyAccess(user.id, binding.companyId))) {
+    res.status(403).json({
+      code: "PORTAL_CONTACT_NOT_LINKED",
+      message: "This account is not linked to a customer yet. Ask your supplier to link it.",
+    });
     return;
   }
-  (req as any).portalCompanyId = userCompanies[0].id;
-  (req as any).portalCompany = userCompanies[0];
+  const [company, contact] = await Promise.all([
+    storage.getCompany(binding.companyId),
+    storage.getCustomerContact(binding.contactId),
+  ]);
+  if (!company || !contact || contact.companyId !== company.id || !contact.isActive) {
+    res.status(403).json({ code: "PORTAL_CONTACT_NOT_LINKED", message: "Customer not available" });
+    return;
+  }
+  (req as Request & { portal: PortalScope }).portal = {
+    companyId: company.id,
+    company,
+    contact,
+    userId: user.id,
+  };
   next();
 }
 
 export function registerClientPortalRoutes(app: Express): void {
-  const chain = [authMiddleware as any, requirePortalUser];
+  const chain: RequestHandler[] = [
+    authMiddleware as RequestHandler,
+    (req, res, next) => {
+      requirePortalUser(req, res, next).catch(next);
+    },
+  ];
 
-  // ─── Company Info ─────────────────────────────────────────────────────────
   app.get(
     "/api/client-portal/company",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      res.json((req as any).portalCompany);
-    })
-  );
-
-  // ─── Dashboard ────────────────────────────────────────────────────────────
-  app.get(
-    "/api/client-portal/dashboard",
-    ...chain,
-    asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-
-      const [allInvoices, vatReturns, documents] = await Promise.all([
-        storage.getInvoicesByCompanyId(companyId),
-        storage.getVatReturnsByCompanyId(companyId),
-        storage.getDocuments(companyId),
-      ]);
-
-      const outstanding = allInvoices.filter(
-        (inv) => inv.status === "sent" || inv.status === "partial"
-      );
-      const outstandingTotal = outstanding.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-
-      const paid = allInvoices.filter((inv) => inv.status === "paid");
-      const paidTotal = paid.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-
-      const latestVat =
-        vatReturns.sort((a, b) => {
-          const da = a.dueDate ? new Date(a.dueDate).getTime() : 0;
-          const db = b.dueDate ? new Date(b.dueDate).getTime() : 0;
-          return db - da;
-        })[0] ?? null;
-
-      const recentInvoices = [...allInvoices]
-        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
-        .slice(0, 5);
-
+      const { company, contact } = scopeOf(req);
       res.json({
-        invoices: {
-          total: allInvoices.length,
-          outstanding: outstanding.length,
-          outstandingTotal,
-          paid: paid.length,
-          paidTotal,
-        },
-        vatStatus: latestVat
-          ? { status: latestVat.status, dueDate: latestVat.dueDate, periodEnd: latestVat.periodEnd }
-          : null,
-        documents: { total: documents.length },
-        recentInvoices,
+        id: company.id,
+        name: company.name,
+        logoUrl: company.logoUrl ?? null,
+        contactEmail: company.contactEmail ?? null,
+        customer: { id: contact.id, name: contact.name, nameAr: contact.nameAr ?? null },
       });
     })
   );
 
-  // ─── Invoices (read-only list) ────────────────────────────────────────────
+  app.get(
+    "/api/client-portal/dashboard",
+    ...chain,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, contact } = scopeOf(req);
+      const rows = (await contactInvoices(companyId, contact.id)).filter(
+        (r) => r.invoiceType !== "credit_note"
+      );
+      const outstanding = rows.filter((r) => r.amountDue > 0);
+      const paid = rows.filter((r) => r.paymentStatus === "paid");
+      const docs = await listVaultDocuments(companyId, { contactId: contact.id });
+      res.json({
+        invoices: {
+          total: rows.length,
+          outstanding: outstanding.length,
+          outstandingTotal:
+            Math.round(outstanding.reduce((s, r) => s + r.amountDue, 0) * 100) / 100,
+          overdue: rows.filter((r) => r.paymentStatus === "overdue").length,
+          paid: paid.length,
+          paidTotal: Math.round(paid.reduce((s, r) => s + r.total, 0) * 100) / 100,
+        },
+        documents: { total: docs.length },
+        recentInvoices: rows.slice(0, 5),
+        onlinePayment: { available: paymentsAvailability().available },
+      });
+    })
+  );
+
   app.get(
     "/api/client-portal/invoices",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const sorted = [...invoices].sort(
-        (a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
-      );
-      res.json(sorted);
+      const { companyId, contact } = scopeOf(req);
+      res.json(await contactInvoices(companyId, contact.id));
     })
   );
 
-  // ─── Invoice PDF download ─────────────────────────────────────────────────
   app.get(
     "/api/client-portal/invoices/:id/pdf",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-      const invoice = await storage.getInvoice(req.params.id, companyId);
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
+      const { companyId, company, contact } = scopeOf(req);
+      const [invoice] = /^[0-9a-f-]{36}$/i.test(req.params.id)
+        ? await db
+            .select()
+            .from(invoices)
+            .where(
+              and(
+                eq(invoices.id, req.params.id),
+                eq(invoices.companyId, companyId),
+                eq(invoices.contactId, contact.id),
+                inArray(invoices.status, [...ISSUED_STATUSES])
+              )
+            )
+        : [];
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-      const company = (req as any).portalCompany;
       const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
       res.set({
         "Content-Type": "application/pdf",
@@ -135,14 +168,12 @@ export function registerClientPortalRoutes(app: Express): void {
     })
   );
 
-  // ─── Documents ────────────────────────────────────────────────────────────
   app.get(
     "/api/client-portal/documents",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-      const docs = await storage.getDocuments(companyId);
-      res.json(docs);
+      const { companyId, contact } = scopeOf(req);
+      res.json(await listVaultDocuments(companyId, { contactId: contact.id }));
     })
   );
 
@@ -150,155 +181,111 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/documents",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-      const userId = (req.user as any).id;
-
-      const ALLOWED_TYPES = [
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "text/plain",
-        "text/csv",
-      ];
-      const mimeType: string = req.body.mimeType || "application/pdf";
-      if (!ALLOWED_TYPES.includes(mimeType.toLowerCase())) {
-        return res.status(400).json({ message: "Invalid file type" });
-      }
-      const fileSize = Number(req.body.fileSize) || 0;
-      if (fileSize > 50 * 1024 * 1024) {
-        return res.status(400).json({ message: "File exceeds 50 MB limit" });
-      }
-
-      const doc = await storage.createDocument({
+      const { companyId, contact, userId } = scopeOf(req);
+      const { meta, file } = await readValidatedUpload(req);
+      const doc = await createVaultDocument({
         companyId,
-        name: req.body.name || "Uploaded Document",
-        nameAr: req.body.nameAr || null,
-        category: req.body.category || "other",
-        description: req.body.description || null,
-        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: req.body.fileName || "document.pdf",
-        fileSize: fileSize || null,
-        mimeType,
-        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-        reminderDays: req.body.reminderDays || 30,
-        reminderSent: false,
-        tags: req.body.tags || null,
-        isArchived: false,
         uploadedBy: userId,
+        file,
+        name: meta.name ?? file.fileName,
+        nameAr: meta.nameAr ?? null,
+        category: meta.category ?? "other",
+        description: meta.description ?? null,
+        expiryDate: meta.expiryDate ?? null,
+        contactId: contact.id,
+        source: "customer_portal",
+        note: meta.note ?? null,
       });
       res.status(201).json(doc);
     })
   );
 
-  // ─── Financial Statements (P&L + Balance Sheet summary) ──────────────────
+  // R16-15: the customer's statement of account (not the company's P&L / balance sheet).
   app.get(
     "/api/client-portal/statements",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-
-      const [allAccounts, allLines] = await Promise.all([
-        storage.getAccountsByCompanyId(companyId),
-        storage.getJournalLinesByCompanyId(companyId),
-      ]);
-
-      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
-
-      // Aggregate net balance per account (debit - credit for debit-normal; credit - debit for credit-normal)
-      const balances: Record<string, number> = {};
-      for (const line of allLines) {
-        const acct = accountMap.get(line.accountId);
-        if (!acct) continue;
-        const debitNormal = acct.type === "asset" || acct.type === "expense";
-        const net = debitNormal
-          ? (Number(line.debit) || 0) - (Number(line.credit) || 0)
-          : (Number(line.credit) || 0) - (Number(line.debit) || 0);
-        balances[line.accountId] = (balances[line.accountId] || 0) + net;
-      }
-
-      const pnlItems: { name: string; type: string; balance: number }[] = [];
-      const bsItems: { name: string; type: string; balance: number }[] = [];
-
-      for (const acct of allAccounts) {
-        const balance = balances[acct.id] || 0;
-        if (balance === 0) continue;
-        const item = { name: acct.nameEn, type: acct.type, balance };
-        if (acct.type === "income" || acct.type === "expense") {
-          pnlItems.push(item);
-        } else {
-          bsItems.push(item);
-        }
-      }
-
-      const revenue = pnlItems
-        .filter((i) => i.type === "income")
-        .reduce((s, i) => s + i.balance, 0);
-      const expenses = pnlItems
-        .filter((i) => i.type === "expense")
-        .reduce((s, i) => s + i.balance, 0);
-
-      const assets = bsItems.filter((i) => i.type === "asset").reduce((s, i) => s + i.balance, 0);
-      const liabilities = bsItems
-        .filter((i) => i.type === "liability")
-        .reduce((s, i) => s + i.balance, 0);
-      const equity = bsItems.filter((i) => i.type === "equity").reduce((s, i) => s + i.balance, 0);
-
-      res.json({
-        profitAndLoss: {
-          revenue,
-          expenses,
-          netProfit: revenue - expenses,
-          items: pnlItems,
-        },
-        balanceSheet: {
-          assets,
-          liabilities,
-          equity,
-          items: bsItems,
-        },
+      const { companyId, contact } = scopeOf(req);
+      const q = statementQuery.parse(req.query);
+      const st = await buildCustomerStatement({
+        companyId,
+        contactId: contact.id,
+        from: q.from,
+        asOf: q.asOf,
       });
+      if (q.format === "pdf") {
+        const pdf = await renderStatementPdf(st);
+        res.set({
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="statement-${st.asOf}.pdf"`,
+        });
+        return res.send(pdf);
+      }
+      res.json(st);
     })
   );
 
-  // ─── Messages ─────────────────────────────────────────────────────────────
   app.get(
     "/api/client-portal/messages",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-      const messages = await storage.getMessages(companyId);
-      res.json(messages);
+      const { companyId, contact } = scopeOf(req);
+      const rows = await db
+        .select()
+        .from(messages)
+        .where(
+          and(
+            eq(messages.companyId, companyId),
+            eq(messages.contactId, contact.id),
+            eq(messages.visibility, "customer")
+          )
+        )
+        .orderBy(asc(messages.createdAt));
+      res.json(rows);
     })
   );
 
   app.post(
     "/api/client-portal/messages",
     ...chain,
+    strictBody(portalMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const companyId: string = (req as any).portalCompanyId;
-      const userId = (req.user as any).id;
-      if (!req.body.content?.trim()) {
-        return res.status(400).json({ message: "Message content is required" });
+      const { companyId, contact, userId } = scopeOf(req);
+      const body = parsedBody<PortalMessageBody>(req);
+      if (body.threadId) {
+        const [thread] = await db
+          .select({ id: messages.id })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.companyId, companyId),
+              eq(messages.contactId, contact.id),
+              eq(messages.visibility, "customer"),
+              eq(messages.threadId, body.threadId)
+            )
+          )
+          .limit(1);
+        if (!thread) throw new DomainError("THREAD_NOT_FOUND", 404, undefined, "Thread not found");
       }
-      const message = await storage.createMessage({
-        companyId,
-        threadId: req.body.threadId || null,
-        subject: req.body.subject || null,
-        content: req.body.content,
-        senderId: userId,
-        recipientId: req.body.recipientId || null,
-        isRead: false,
-        readAt: null,
-        attachmentUrl: req.body.attachmentUrl || null,
-        attachmentName: req.body.attachmentName || null,
-        messageType: "general",
-        isArchived: false,
-      });
+      const [message] = await db
+        .insert(messages)
+        .values({
+          companyId,
+          threadId: body.threadId ?? null,
+          subject: body.subject ?? null,
+          content: body.content,
+          senderId: userId,
+          recipientId: null,
+          isRead: false,
+          readAt: null,
+          attachmentUrl: null,
+          attachmentName: null,
+          messageType: "general",
+          isArchived: false,
+          contactId: contact.id,
+          visibility: "customer",
+        })
+        .returning();
       res.status(201).json(message);
     })
   );

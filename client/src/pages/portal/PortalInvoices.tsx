@@ -19,10 +19,10 @@ function formatAed(n: number) {
 
 const STATUS_STYLES: Record<string, string> = {
   paid: "border-success/30 text-success bg-success-subtle",
-  sent: "border-info/30 text-info bg-info-subtle",
-  partial: "border-warning/30 text-warning bg-warning-subtle",
-  draft: "border-border text-muted-foreground",
-  void: "border-destructive/30 text-destructive bg-danger-subtle",
+  unpaid: "border-info/30 text-info bg-info-subtle",
+  partially_paid: "border-warning/30 text-warning bg-warning-subtle",
+  overdue: "border-destructive/30 text-destructive bg-danger-subtle",
+  credit: "border-border text-muted-foreground",
 };
 
 async function downloadPdf(invoiceId: string, invoiceNumber: string) {
@@ -48,7 +48,9 @@ export default function PortalInvoices() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-foreground"><T k="pages.invoices" /></h2>
+        <h2 className="text-xl font-semibold text-foreground">
+          <T k="pages.invoices" />
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">
           View and download invoices issued by NR Accounting.
         </p>
@@ -67,11 +69,19 @@ export default function PortalInvoices() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Invoice #</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                      Invoice #
+                    </th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground"><T k="pages.dueDate" /></th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground"><T k="pages.amount" /></th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground"><T k="pages.status" /></th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                      <T k="pages.dueDate" />
+                    </th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">
+                      <T k="portal.amountDue" />
+                    </th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                      <T k="pages.status" />
+                    </th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -86,14 +96,17 @@ export default function PortalInvoices() {
                         {inv.dueDate ? format(new Date(inv.dueDate), "MMM d, yyyy") : "—"}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-foreground">
-                        {formatAed(Number(inv.total) || 0)}
+                        {formatAed(Number(inv.amountDue) || 0)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge
                           variant="outline"
-                          className={STATUS_STYLES[inv.status] ?? "border-border text-muted-foreground"}
+                          className={
+                            STATUS_STYLES[inv.paymentStatus] ??
+                            "border-border text-muted-foreground"
+                          }
                         >
-                          {inv.status}
+                          <T k={`portal.payStatus.${inv.paymentStatus}`} />
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-right">

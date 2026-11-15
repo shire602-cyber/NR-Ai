@@ -91,6 +91,9 @@ import { registerFirmValueOpsRoutes } from "./routes/firm-value-ops.routes";
 import { registerFirmGrowthRoutes } from "./routes/firm-growth.routes";
 import { registerFirmVatWorkspaceRoutes } from "./routes/firm-vat-workspace.routes";
 import { registerClientPortalRoutes } from "./routes/client-portal.routes";
+import { registerPaymentLinkRoutes } from "./routes/payment-links.routes";
+import { registerPublicPaymentRoutes } from "./routes/public-payments.routes";
+import { registerOutboxRoutes } from "./outbox";
 import { registerDocumentChasingRoutes } from "./routes/document-chasing.routes";
 import { registerComplianceCalendarRoutes } from "./routes/compliance-calendar.routes";
 import { registerEvidenceCenterRoutes } from "./routes/evidence-center.routes";
@@ -196,6 +199,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPortalRoutes(app);
   registerPortalPublicRoutes(app);
   registerClientPortalRoutes(app);
+  registerPaymentLinkRoutes(app);
+  registerPublicPaymentRoutes(app);
+  registerOutboxRoutes(app);
 
   // ─── Admin Panel ────────────────────────────────────────
   registerAdminHealthRoutes(app);

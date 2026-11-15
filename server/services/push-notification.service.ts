@@ -5,6 +5,7 @@ import { createLogger } from "../config/logger";
 const log = createLogger("push-notification");
 
 let initialized = false;
+let warned = false;
 
 /**
  * Initialize web push with VAPID keys.
@@ -16,7 +17,8 @@ export function initWebPush(): boolean {
   const subject = process.env.VAPID_SUBJECT || "mailto:support@muhasib.ai";
 
   if (!publicKey || !privateKey) {
-    log.warn("Web push not configured — VAPID keys not set");
+    if (!warned) log.warn("Web push not configured — VAPID keys not set");
+    warned = true;
     return false;
   }
 
@@ -27,7 +29,7 @@ export function initWebPush(): boolean {
 }
 
 export function isWebPushConfigured(): boolean {
-  return initialized;
+  return initialized || (!!process.env.VAPID_PUBLIC_KEY && !!process.env.VAPID_PRIVATE_KEY);
 }
 
 export function getVapidPublicKey(): string | null {
@@ -51,8 +53,9 @@ export async function sendPushNotification(
   userId: string,
   payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
-  if (!initialized) {
-    log.warn("Web push not initialized, skipping notification");
+  // W4-D (R16-18): initialise lazily from VAPID env; without VAPID push is
+  // requires-external and this is a no-op (never an error).
+  if (!initialized && !initWebPush()) {
     return { sent: 0, failed: 0 };
   }
 
@@ -100,7 +103,7 @@ export async function sendPushNotification(
       // If subscription is expired/invalid, deactivate it
       if (error.statusCode === 404 || error.statusCode === 410) {
         log.info({ subscriptionId: sub.id }, "Push subscription expired, deactivating");
-        await storage.deactivatePushSubscription(sub.endpoint);
+        await storage.deactivatePushSubscription(sub.id, userId);
       } else {
         log.error(
           { error: error.message, subscriptionId: sub.id },

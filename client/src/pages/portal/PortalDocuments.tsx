@@ -6,6 +6,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/api";
+import { getAuthHeaders } from "@/lib/auth";
+import { withCsrfHeader } from "@/lib/csrf";
+
+/** W4-D (R16-09): real multipart upload; the server sniffs the bytes and stores them. */
+async function uploadDocument(file: File) {
+  const form = new FormData();
+  form.append("name", file.name.replace(/\.[^.]+$/, ""));
+  form.append("category", "other");
+  form.append("file", file, file.name);
+  let headers: Record<string, string> = { ...getAuthHeaders() };
+  if (!headers.Authorization) headers = await withCsrfHeader("POST", headers);
+  const res = await fetch(apiUrl("/api/client-portal/documents"), {
+    method: "POST",
+    headers,
+    body: form,
+    credentials: "include",
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
+  return body;
+}
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -45,7 +67,7 @@ export default function PortalDocuments() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest("POST", "/api/client-portal/documents", payload),
+    mutationFn: (file: File) => uploadDocument(file),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
       toast({ title: "Document uploaded", description: "NR Accounting can now see your file." });
@@ -59,15 +81,7 @@ export default function PortalDocuments() {
     if (!file) return;
     setUploading(true);
     try {
-      // In production this would upload to S3; here we send metadata only
-      await uploadMutation.mutateAsync({
-        name: file.name.replace(/\.[^.]+$/, ""),
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        fileSize: file.size,
-        category: "other",
-        fileUrl: `/uploads/${file.name}`,
-      });
+      await uploadMutation.mutateAsync(file);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -78,7 +92,9 @@ export default function PortalDocuments() {
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-foreground"><T k="pages.documents" /></h2>
+          <h2 className="text-xl font-semibold text-foreground">
+            <T k="pages.documents" />
+          </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Upload receipts and documents for NR Accounting to process.
           </p>
@@ -140,10 +156,7 @@ export default function PortalDocuments() {
                       {CATEGORY_LABELS[doc.category] ?? doc.category}
                     </Badge>
                     {doc.uploadedBy && (
-                      <CheckCircle2
-                        className="w-4 h-4 text-success"
-                        aria-label="Received by NRA"
-                      />
+                      <CheckCircle2 className="w-4 h-4 text-success" aria-label="Received by NRA" />
                     )}
                   </div>
                 </div>

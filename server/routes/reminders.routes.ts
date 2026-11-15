@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { pool } from "../db";
+import { hasEmailProvider } from "../services/email.service";
 import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
@@ -124,8 +126,47 @@ export function registerReminderRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const logs = await storage.getReminderLogsByCompanyId(companyId);
+      const { rows: logs } = await pool.query(
+        `SELECT l.id, l.company_id AS "companyId", l.reminder_setting_id AS "reminderSettingId",
+                l.reminder_type AS "reminderType", l.related_entity_type AS "relatedEntityType",
+                l.related_entity_id AS "relatedEntityId", l.recipient_email AS "recipientEmail",
+                l.recipient_phone AS "recipientPhone", l.channel, l.level,
+                coalesce(o.status, l.status) AS status, l.status AS "logStatus",
+                l.error_message AS "errorMessage", coalesce(o.last_error, l.error_message) AS "lastError",
+                l.sent_at AS "sentAt", o.delivered_at AS "deliveredAt", o.bounced_at AS "bouncedAt",
+                l.outbox_id AS "outboxId", l.created_at AS "createdAt", i.number AS "invoiceNumber"
+           FROM reminder_logs l
+           LEFT JOIN email_outbox o ON o.id = l.outbox_id
+           LEFT JOIN invoices i ON i.id = l.related_entity_id
+          WHERE l.company_id = $1
+          ORDER BY l.created_at DESC
+          LIMIT 500`,
+        [companyId]
+      );
       res.json(logs);
+    })
+  );
+
+  // Run the dunning engine for this company now (same idempotent rules as the hourly job).
+  app.post(
+    "/api/companies/:companyId/reminders/run",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user?.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const { runDunningScan } = await import("../services/scheduler.service");
+      const summary = await runDunningScan(new Date(), { companyId });
+      res.json({
+        ...summary,
+        emailConfigured: hasEmailProvider(),
+        message: hasEmailProvider()
+          ? null
+          : "Email not configured — customer reminders are queued, not sent.",
+      });
     })
   );
 
@@ -151,7 +192,6 @@ export function registerReminderRoutes(app: Express) {
       }
 
       const company = await storage.getCompany(companyId as string);
-      const invoices = await storage.getInvoicesByCompanyId(companyId as string);
 
       const deadlines: any[] = [];
       const today = new Date();
@@ -187,31 +227,53 @@ export function registerReminderRoutes(app: Express) {
         });
       }
 
-      // Unpaid invoice deadlines
-      const unpaidInvoices = invoices.filter((inv) => inv.status === "sent");
-      unpaidInvoices.forEach((inv) => {
-        const invoiceDate = new Date(inv.date);
-        const dueDate = new Date(invoiceDate);
-        dueDate.setDate(dueDate.getDate() + 30); // Assume 30-day payment terms
-
+      // Unpaid invoice deadlines (R16-12): the invoice's own due date, every issued unpaid
+      // status (sent / posted / partial), the remaining balance and the invoice currency.
+      const { rows: open } = await pool.query(
+        `SELECT i.id, i.number, i.customer_name, coalesce(i.currency, 'AED') AS currency,
+                coalesce(i.due_date, i.date) AS due,
+                GREATEST(i.total
+                  - coalesce((SELECT SUM(p.amount) FROM invoice_payments p WHERE p.invoice_id = i.id), 0)
+                  - coalesce((SELECT SUM(-cn.total) FROM invoices cn WHERE cn.original_invoice_id = i.id
+                               AND cn.invoice_type = 'credit_note'
+                               AND cn.status NOT IN ('void', 'cancelled', 'draft')), 0)
+                  - coalesce((SELECT SUM(a.amount) FROM customer_credit_allocations a
+                               WHERE a.invoice_id = i.id AND a.kind = 'apply'), 0), 0)::text AS remaining
+           FROM invoices i
+          WHERE i.company_id = $1 AND i.status IN ('sent', 'posted', 'partial')
+            AND i.invoice_type <> 'credit_note'`,
+        [companyId]
+      );
+      for (const inv of open as Array<{
+        id: string;
+        number: string;
+        customer_name: string;
+        currency: string;
+        due: string;
+        remaining: string;
+      }>) {
+        const remaining = Number(inv.remaining);
+        if (!(remaining > 0)) continue;
+        const dueDate = new Date(inv.due);
         const daysRemaining = Math.ceil(
           (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         );
         const isOverdue = daysRemaining < 0;
-
         deadlines.push({
           id: `invoice-${inv.id}`,
           type: isOverdue ? "invoice_overdue" : "invoice_due",
           title: isOverdue ? `Invoice ${inv.number} Overdue` : `Invoice ${inv.number} Due Soon`,
-          description: `${inv.customerName} - AED ${inv.total.toFixed(2)}`,
+          description: `${inv.customer_name} - ${inv.currency} ${remaining.toFixed(2)}`,
           dueDate: dueDate.toISOString(),
           daysRemaining,
+          amountDue: remaining,
+          currency: inv.currency,
           priority: isOverdue ? "urgent" : daysRemaining <= 7 ? "high" : "normal",
           actionUrl: `/invoices/${inv.id}`,
           relatedEntityType: "invoice",
           relatedEntityId: inv.id,
         });
-      });
+      }
 
       // Sort by priority and due date
       deadlines.sort((a, b) => {

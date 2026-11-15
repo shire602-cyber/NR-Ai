@@ -20,9 +20,18 @@ function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) 
   const due = new Date(vat.dueDate);
   const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
   if (vat.status === "filed" || vat.status === "submitted") {
-    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30"><T k="pages.filed" /></Badge>;
+    return (
+      <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">
+        <T k="pages.filed" />
+      </Badge>
+    );
   }
-  if (days < 0) return <Badge variant="destructive"><T k="pages.overdue" /></Badge>;
+  if (days < 0)
+    return (
+      <Badge variant="destructive">
+        <T k="pages.overdue" />
+      </Badge>
+    );
   if (days <= 14)
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
@@ -53,7 +62,9 @@ export default function PortalDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-foreground"><T k="pages.overview" /></h2>
+        <h2 className="text-xl font-semibold text-foreground">
+          <T k="pages.overview" />
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">Your account summary at a glance.</p>
       </div>
 
@@ -155,12 +166,12 @@ export default function PortalDashboard() {
                   <div>
                     <p className="text-sm font-medium text-foreground">{inv.number}</p>
                     <p className="text-xs text-muted-foreground/70">
-                      {inv.createdAt ? format(new Date(inv.createdAt), "MMM d, yyyy") : "—"}
+                      {inv.date ? format(new Date(inv.date), "MMM d, yyyy") : "—"}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-foreground">
-                      {formatAed(Number(inv.total) || 0)}
+                      {formatAed(Number(inv.amountDue ?? inv.total) || 0)}
                     </p>
                     <Badge
                       variant="outline"

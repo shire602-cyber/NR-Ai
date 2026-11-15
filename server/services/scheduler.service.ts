@@ -1,10 +1,12 @@
 import { sql, eq } from "drizzle-orm";
 import { storage } from "../storage";
-import { db } from "../db";
+import { db, pool } from "../db";
 import {
   invoices as invoicesTable,
   invoiceLines as invoiceLinesTable,
   recurringInvoices as recurringInvoicesTable,
+  type Company,
+  type ReminderSetting,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
@@ -16,7 +18,14 @@ import { getRate } from "./fx/rates";
 import { fromFils, mulRate } from "../../shared/money";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
-import { sendInvoiceEmail } from "./email.service";
+import {
+  buildReminderEmail,
+  sendEmail,
+  sendInvoiceEmail,
+  type EmailLanguage,
+} from "./email.service";
+import { registerOutboxJob, type OutgoingAttachment } from "../outbox";
+import { registerNotificationEngine } from "./notification-engine.service";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
@@ -24,153 +33,467 @@ import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-regi
 const log = createLogger("scheduler");
 
 /**
- * Background scheduler for the Client Engagement Automation Engine.
+ * Background scheduler. Every job goes through the job registry
+ * (server/platform/job-registry.ts): per-job try/catch and overlap protection.
  *
- * Scans for engagement triggers (overdue invoices, upcoming due dates)
- * and creates in-app notifications prompting the user to send WhatsApp
- * messages. No messages are sent automatically -- all WhatsApp sends
- * remain manual via wa.me links.
- *
- * 5-Level Escalation Engine:
- *   Level 1 (Day -3): Gentle reminder — normal priority
- *   Level 2 (Day  0): Due today alert — high priority
- *   Level 3 (Day +7): First follow-up — high priority
- *   Level 4 (Day +14): Second follow-up — urgent priority
- *   Level 5 (Day +30): Final notice — urgent priority
- *
- * UAE weekend skipping: If a trigger date falls on Friday or Saturday,
- * the reminder fires on the preceding Thursday instead.
+ * W4-D: the payment-reminder scan is the dunning engine below (runDunningScan): it reads the
+ * company's reminder_settings and contacts the CUSTOMER through the email outbox (and SMS when
+ * a provider is configured), idempotently and with catch-up after missed runs. Staff in-app
+ * reminders come from the notification engine (server/services/notification-engine.service.ts).
  */
 
 // ---------------------------------------------------------------------------
-// Escalation level definitions
+// Dunning (W4-D: R16-02, R16-03, R16-17)
 // ---------------------------------------------------------------------------
+//
+// The company's reminder_settings drive customer reminders:
+//
+//   invoice_due_soon   first level at dueDate − daysBeforeDue (default 3)
+//   invoice_overdue    first level at dueDate + daysAfterDue (default 1)
+//   payment_followup   first level at dueDate + daysAfterDue (default 7)
+//
+// Further levels follow every repeatIntervalDays, up to maxReminders (one level when no repeat
+// interval is set). A level is due once today (UAE calendar date) is on or after its trigger
+// date. Each run sends the HIGHEST due level not yet logged for (setting, invoice, channel) and
+// logs lower unlogged due levels as "skipped" — so a missed day (downtime, restart) catches up
+// with a single message instead of skipping or spamming. The log row is inserted first under a
+// unique (setting, invoice, channel, level) key, so concurrent runs can never send twice.
+//
+// Eligible: issued invoices (sent | posted | partial) with an open balance, not credit notes,
+// not doNotChase on the invoice or the contact. The customer is the invoice's contact (by id,
+// never by name). Channels: email (outbox; bilingual template; invoice PDF; pay/view link),
+// SMS (provider adapter; requires-external until a provider is configured), in-app (a note to
+// the company's staff through the notification engine). No WhatsApp to customers.
 
-interface EscalationLevel {
-  ruleType: string;
-  /** Positive = days before due, negative = days after due */
-  diffDays: number;
-  priority: "low" | "normal" | "high" | "urgent";
-  titleFn: (inv: InvoiceInfo, overdueDays: number) => string;
-  messageFn: (inv: InvoiceInfo, dueDate: Date) => string;
+type DunningChannel = "email" | "sms" | "in_app";
+
+export interface DunningLevelPlan {
+  level: number;
+  triggerDate: string; // YYYY-MM-DD (UAE)
 }
 
-interface InvoiceInfo {
+const DAY_MS = 86_400_000;
+const uaeDate = (d: Date) => new Date(d.getTime() + 4 * 3_600_000).toISOString().slice(0, 10);
+const addDays = (iso: string, n: number) =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
+
+/** Pure: the levels of one reminder setting for an invoice due on `dueIso`. */
+export function dunningLevels(
+  setting: Pick<
+    ReminderSetting,
+    "reminderType" | "daysBeforeDue" | "daysAfterDue" | "repeatIntervalDays" | "maxReminders"
+  >,
+  dueIso: string
+): DunningLevelPlan[] {
+  let first: number;
+  if (setting.reminderType === "invoice_due_soon") first = -(setting.daysBeforeDue ?? 3);
+  else if (setting.reminderType === "invoice_overdue") first = setting.daysAfterDue ?? 1;
+  else if (setting.reminderType === "payment_followup") first = setting.daysAfterDue ?? 7;
+  else return [];
+  const interval = setting.repeatIntervalDays ?? null;
+  const count = interval ? Math.max(1, setting.maxReminders ?? 3) : 1;
+  const levels: DunningLevelPlan[] = [];
+  for (let i = 0; i < count; i++) {
+    const offset = first + i * (interval ?? 0);
+    // "Due soon" reminders stop at the due date.
+    if (setting.reminderType === "invoice_due_soon" && offset > 0) break;
+    levels.push({ level: i + 1, triggerDate: addDays(dueIso, offset) });
+  }
+  return levels;
+}
+
+/** Pure: which level to send today and which earlier levels to mark skipped. */
+export function pickDunningLevel(
+  levels: DunningLevelPlan[],
+  todayIso: string,
+  logged: Set<number>,
+  opts: { dueIso: string; reminderType: string }
+): { send: number | null; skip: number[] } {
+  if (opts.reminderType === "invoice_due_soon" && todayIso > opts.dueIso) {
+    return { send: null, skip: [] };
+  }
+  const due = levels.filter((l) => l.triggerDate <= todayIso).map((l) => l.level);
+  if (!due.length) return { send: null, skip: [] };
+  const highest = Math.max(...due);
+  // Never go back: once a higher level was logged, lower ones are never sent.
+  const maxLogged = logged.size ? Math.max(...logged) : 0;
+  if (logged.has(highest) || highest <= maxLogged) return { send: null, skip: [] };
+  return { send: highest, skip: due.filter((l) => l < highest && !logged.has(l)) };
+}
+
+export interface DunningSummary {
+  companies: number;
+  considered: number;
+  sent: number;
+  queued: number;
+  blocked: number;
+  skipped: number;
+  failed: number;
+}
+
+interface EligibleInvoice {
   id: string;
+  company_id: string;
+  contact_id: string | null;
   number: string;
-  total: number;
-  customerName: string;
+  due: string;
+  open_fils: string;
 }
 
-const ESCALATION_LEVELS: EscalationLevel[] = [
-  {
-    ruleType: "due_in_3_days",
-    diffDays: 3, // due date is 3 days away
-    priority: "normal",
-    titleFn: (inv) => `Payment reminder: Invoice #${inv.number} due in 3 days`,
-    messageFn: (inv, dueDate) =>
-      `Friendly reminder: Invoice #${inv.number} for AED ${inv.total.toFixed(2)} is due on ${formatDate(dueDate)}.`,
-  },
-  {
-    ruleType: "due_today",
-    diffDays: 0,
-    priority: "high",
-    titleFn: (inv) => `Payment due today: Invoice #${inv.number}`,
-    messageFn: (inv, _dueDate) =>
-      `Invoice #${inv.number} for AED ${inv.total.toFixed(2)} is due today. Please arrange payment.`,
-  },
-  {
-    ruleType: "overdue_7_days",
-    diffDays: -7,
-    priority: "high",
-    titleFn: (inv) => `Overdue: Invoice #${inv.number} (7 days)`,
-    messageFn: (inv, _dueDate) =>
-      `Follow-up: Invoice #${inv.number} (AED ${inv.total.toFixed(2)}) is now 7 days overdue. Please process payment at your earliest convenience.`,
-  },
-  {
-    ruleType: "overdue_14_days",
-    diffDays: -14,
-    priority: "urgent",
-    titleFn: (inv) => `Overdue: Invoice #${inv.number} (14 days)`,
-    messageFn: (inv, _dueDate) =>
-      `Second notice: Invoice #${inv.number} (AED ${inv.total.toFixed(2)}) is 14 days overdue. Immediate attention required.`,
-  },
-  {
-    ruleType: "overdue_30_days",
-    diffDays: -30,
-    priority: "urgent",
-    titleFn: (inv) => `Final notice: Invoice #${inv.number} (30 days overdue)`,
-    messageFn: (inv, _dueDate) =>
-      `Final notice: Invoice #${inv.number} (AED ${inv.total.toFixed(2)}) is 30 days overdue. Please contact us immediately to resolve this outstanding balance.`,
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * If the given date falls on a UAE weekend (Friday = 5, Saturday = 6),
- * shift it back to the preceding Thursday (day 4).
- */
-function skipUAEWeekend(date: Date): Date {
-  const adjusted = new Date(date);
-  const day = adjusted.getDay();
-  if (day === 5) {
-    // Friday → shift back 1 day to Thursday
-    adjusted.setDate(adjusted.getDate() - 1);
-  } else if (day === 6) {
-    // Saturday → shift back 2 days to Thursday
-    adjusted.setDate(adjusted.getDate() - 2);
+/** SMS adapter boundary: a real provider only when configured; otherwise requires_external. */
+async function sendDunningSms(
+  to: string | null,
+  text: string
+): Promise<{ status: "sent" | "requires_external" | "failed"; error?: string }> {
+  if (!to) return { status: "failed", error: "Customer has no phone number" };
+  if (!isCapabilityLive("sms")) return { status: "requires_external" };
+  try {
+    const sid = process.env.TWILIO_ACCOUNT_SID!;
+    const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        To: to,
+        From: process.env.SMS_SENDER_ID || "",
+        Body: text.slice(0, 600),
+      }).toString(),
+    });
+    return res.ok ? { status: "sent" } : { status: "failed", error: `HTTP ${res.status}` };
+  } catch (err) {
+    return { status: "failed", error: (err as Error)?.message };
   }
-  return adjusted;
 }
 
-/**
- * Format a date for display in notification messages (en-AE locale).
- */
-function formatDate(date: Date): string {
-  return date.toLocaleDateString("en-AE");
+async function eligibleInvoices(companyId: string): Promise<EligibleInvoice[]> {
+  const { rows } = await pool.query(
+    `SELECT i.id, i.company_id, i.contact_id, i.number,
+            ((coalesce(i.due_date, i.date) + interval '4 hours')::date)::text AS due,
+            GREATEST(ROUND(i.total * 100)
+              - coalesce((SELECT ROUND(SUM(p.amount) * 100) FROM invoice_payments p WHERE p.invoice_id = i.id), 0)
+              - coalesce((SELECT ROUND(SUM(-cn.total) * 100) FROM invoices cn
+                           WHERE cn.original_invoice_id = i.id AND cn.invoice_type = 'credit_note'
+                             AND cn.status NOT IN ('void', 'cancelled', 'draft')), 0)
+              - coalesce((SELECT ROUND(SUM(a.amount) * 100) FROM customer_credit_allocations a
+                           WHERE a.invoice_id = i.id AND a.kind = 'apply'), 0), 0)::bigint::text AS open_fils
+       FROM invoices i
+       LEFT JOIN customer_contacts c ON c.id = i.contact_id
+      WHERE i.company_id = $1
+        AND i.status IN ('sent', 'posted', 'partial')
+        AND i.invoice_type <> 'credit_note'
+        AND i.do_not_chase = false
+        AND coalesce(c.do_not_chase, false) = false`,
+    [companyId]
+  );
+  return (rows as EligibleInvoice[]).filter((r) => Number(r.open_fils) > 0);
 }
 
-/**
- * Normalize a phone number for wa.me links. Mirrors the client-side
- * formatter in client/src/lib/whatsapp-templates.ts so links generated
- * server-side and client-side stay consistent.
- *
- * Rules:
- *   - 10 digits starting "05"  → strip leading 0, prefix "971" (UAE mobile)
- *   - 9 digits starting "5"    → prefix "971" (UAE mobile w/o 0)
- *   - leading "00"             → drop (international prefix)
- *   - leading "0"              → drop (national prefix)
- *   - result must be 8..15 digits (E.164); otherwise return ""
- */
-function normalizePhone(phone: string): string {
-  let cleaned = (phone || "").replace(/[^\d]/g, "");
-  if (!cleaned) return "";
-  if (cleaned.length === 10 && cleaned.startsWith("05")) {
-    cleaned = "971" + cleaned.substring(1);
-  } else if (cleaned.length === 9 && cleaned.startsWith("5")) {
-    cleaned = "971" + cleaned;
-  } else if (cleaned.startsWith("00")) {
-    cleaned = cleaned.substring(2);
-  } else if (cleaned.startsWith("0")) {
-    cleaned = cleaned.substring(1);
+async function claimLog(args: {
+  companyId: string;
+  settingId: string;
+  reminderType: string;
+  invoiceId: string;
+  contactId: string | null;
+  channel: DunningChannel;
+  level: number;
+  status: string;
+  recipientEmail?: string | null;
+  recipientPhone?: string | null;
+}): Promise<string | null> {
+  const { rows } = await pool.query(
+    `INSERT INTO reminder_logs (company_id, reminder_setting_id, reminder_type, related_entity_type,
+            related_entity_id, recipient_email, recipient_phone, channel, status, attempt_number, level,
+            contact_id)
+     VALUES ($1, $2, $3, 'invoice', $4, $5, $6, $7, $8, $9, $9, $10)
+     ON CONFLICT DO NOTHING RETURNING id`,
+    [
+      args.companyId,
+      args.settingId,
+      args.reminderType,
+      args.invoiceId,
+      args.recipientEmail ?? null,
+      args.recipientPhone ?? null,
+      args.channel,
+      args.status,
+      args.level,
+      args.contactId,
+    ]
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function settleLog(
+  id: string,
+  patch: { status: string; error?: string | null; outboxId?: string | null; sent?: boolean }
+) {
+  await pool.query(
+    `UPDATE reminder_logs SET status = $2, error_message = $3, outbox_id = coalesce($4, outbox_id),
+            sent_at = CASE WHEN $5 THEN now() ELSE sent_at END
+      WHERE id = $1`,
+    [id, patch.status, patch.error ?? null, patch.outboxId ?? null, patch.sent === true]
+  );
+}
+
+/** A view/pay link for the customer: the invoice share link (it shows Pay now when live). */
+async function customerInvoiceLink(invoice: {
+  id: string;
+  shareToken: string | null;
+  shareTokenExpiresAt: Date | null;
+}) {
+  let token = invoice.shareToken;
+  if (
+    !token ||
+    (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date())
+  ) {
+    const crypto = await import("crypto");
+    token = crypto.randomBytes(16).toString("hex");
+    await storage.setInvoiceShareToken(invoice.id, token, new Date(Date.now() + 90 * DAY_MS));
   }
-  if (cleaned.length < 8 || cleaned.length > 15) return "";
-  return cleaned;
+  const { publicBaseUrl } = await import("./payments");
+  return `${publicBaseUrl()}/view/invoice/${token}`;
+}
+
+async function dunCompany(companyId: string, now: Date, summary: DunningSummary): Promise<void> {
+  const settings = (await storage.getReminderSettingsByCompanyId(companyId)).filter(
+    (s) =>
+      s.isEnabled &&
+      ["invoice_due_soon", "invoice_overdue", "payment_followup"].includes(s.reminderType)
+  );
+  if (!settings.length) return;
+  const invoices = await eligibleInvoices(companyId);
+  if (!invoices.length) return;
+  summary.companies++;
+  const today = uaeDate(now);
+  const { rows: logRows } = await pool.query(
+    `SELECT reminder_setting_id, related_entity_id, channel, level FROM reminder_logs
+      WHERE company_id = $1 AND reminder_setting_id IS NOT NULL AND level IS NOT NULL`,
+    [companyId]
+  );
+  const logged = new Map<string, Set<number>>();
+  for (const r of logRows) {
+    const k = `${r.reminder_setting_id}:${r.related_entity_id}:${r.channel}`;
+    if (!logged.has(k)) logged.set(k, new Set());
+    logged.get(k)!.add(Number(r.level));
+  }
+  const company = await storage.getCompany(companyId);
+  if (!company) return;
+
+  for (const inv of invoices) {
+    for (const setting of settings) {
+      const channels: DunningChannel[] = [
+        ...(setting.sendEmail ? (["email"] as const) : []),
+        ...(setting.sendSms ? (["sms"] as const) : []),
+        ...(setting.sendInApp ? (["in_app"] as const) : []),
+      ];
+      const levels = dunningLevels(setting, inv.due);
+      for (const channel of channels) {
+        const key = `${setting.id}:${inv.id}:${channel}`;
+        const done = logged.get(key) ?? new Set<number>();
+        const pick = pickDunningLevel(levels, today, done, {
+          dueIso: inv.due,
+          reminderType: setting.reminderType,
+        });
+        if (!pick.send) continue;
+        summary.considered++;
+        for (const lvl of pick.skip) {
+          const id = await claimLog({
+            companyId,
+            settingId: setting.id,
+            reminderType: setting.reminderType,
+            invoiceId: inv.id,
+            contactId: inv.contact_id,
+            channel,
+            level: lvl,
+            status: "skipped",
+          });
+          if (id) {
+            await settleLog(id, {
+              status: "skipped",
+              error: "Superseded by a later level (catch-up)",
+            });
+            summary.skipped++;
+          }
+        }
+        await dunOne({ company, setting, inv, channel, level: pick.send, today, summary });
+      }
+    }
+  }
+}
+
+async function dunOne(args: {
+  company: Company;
+  setting: ReminderSetting;
+  inv: EligibleInvoice;
+  channel: DunningChannel;
+  level: number;
+  today: string;
+  summary: DunningSummary;
+}): Promise<void> {
+  const { company, setting, inv, channel, level, summary } = args;
+  const contact = inv.contact_id ? await storage.getCustomerContact(inv.contact_id) : undefined;
+  const logId = await claimLog({
+    companyId: company.id,
+    settingId: setting.id,
+    reminderType: setting.reminderType,
+    invoiceId: inv.id,
+    contactId: inv.contact_id,
+    channel,
+    level,
+    status: "pending",
+    recipientEmail: channel === "email" ? (contact?.email ?? null) : null,
+    recipientPhone: channel === "sms" ? (contact?.phone ?? null) : null,
+  });
+  if (!logId) return; // another run took this level
+  const daysOverdue = Math.floor((Date.parse(args.today) - Date.parse(inv.due)) / DAY_MS);
+  try {
+    if (channel === "in_app") {
+      const { notify } = await import("./notification-engine.service");
+      await notify({
+        companyId: company.id,
+        type: "invoice.overdue",
+        entityId: inv.id,
+        eventKey: `dunning:${setting.id}:${inv.id}:${level}`,
+        title: `Reminder ${level} for invoice ${inv.number}`,
+        message: contact
+          ? `Payment reminder ${level} for invoice ${inv.number} is due for ${contact.name}.`
+          : `Invoice ${inv.number} has no customer contact; the customer cannot be reminded.`,
+        priority: daysOverdue > 14 ? "urgent" : daysOverdue > 0 ? "high" : "normal",
+        relatedEntityType: "invoice",
+        actionUrl: `/invoices/${inv.id}`,
+      });
+      await settleLog(logId, { status: "sent", sent: true });
+      summary.sent++;
+      return;
+    }
+    if (!contact) {
+      await settleLog(logId, { status: "failed", error: "Invoice has no customer contact" });
+      summary.failed++;
+      return;
+    }
+    const invoice = await storage.getInvoice(inv.id, company.id);
+    if (!invoice) return;
+    const link = await customerInvoiceLink(invoice);
+    if (channel === "sms") {
+      const r = await sendDunningSms(
+        contact.phone ?? null,
+        `${company.name}: invoice ${invoice.number}, ${invoice.currency} ${fromFils(Number(inv.open_fils))} ${daysOverdue > 0 ? "overdue" : "due"}. ${link}`
+      );
+      await settleLog(logId, {
+        status: r.status,
+        error: r.error ?? null,
+        sent: r.status === "sent",
+      });
+      if (r.status === "sent") summary.sent++;
+      else if (r.status === "requires_external") summary.blocked++;
+      else summary.failed++;
+      return;
+    }
+    if (!contact.email) {
+      await settleLog(logId, { status: "failed", error: "Customer has no email address" });
+      summary.failed++;
+      return;
+    }
+    const lang =
+      setting.language === "bilingual" &&
+      (contact.preferredLanguage === "en" || contact.preferredLanguage === "ar")
+        ? contact.preferredLanguage
+        : (setting.language as EmailLanguage);
+    const { subject, html, text } = buildReminderEmail({
+      invoice,
+      company,
+      customerName: contact.name,
+      openFils: Number(inv.open_fils),
+      level,
+      daysOverdue,
+      payUrl: setting.includePayLink ? link : null,
+      portalUrl: link,
+      language: lang,
+      customSubject: setting.emailSubject,
+      customTemplate: setting.emailTemplate,
+    });
+    const attachments: OutgoingAttachment[] = [];
+    if (setting.attachPdf) {
+      const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
+      const { invoicePdfOptions } = await import("../routes/invoices.routes");
+      attachments.push({
+        filename: `invoice-${invoice.number}.pdf`,
+        content: await generateInvoicePDF(
+          invoice,
+          lines,
+          company,
+          await invoicePdfOptions(invoice)
+        ),
+        contentType: "application/pdf",
+      });
+    }
+    const r = await sendEmail(contact.email, subject, text, {
+      html,
+      fromName: company.name,
+      replyTo: company.contactEmail ?? null,
+      companyId: company.id,
+      category: "reminder",
+      relatedEntityType: "invoice",
+      relatedEntityId: invoice.id,
+      attachments,
+      idempotencyKey: `dunning:${setting.id}:${invoice.id}:${level}`,
+    });
+    await settleLog(logId, {
+      status: r.status,
+      error: r.sent ? null : (r.error ?? null),
+      outboxId: r.id ?? null,
+      sent: r.sent,
+    });
+    await db
+      .update(invoicesTable)
+      .set({
+        reminderCount: sql`${invoicesTable.reminderCount} + 1`,
+        lastReminderSentAt: new Date(),
+      })
+      .where(eq(invoicesTable.id, invoice.id));
+    if (r.sent) summary.sent++;
+    else if (r.status === "blocked_no_provider") summary.blocked++;
+    else summary.queued++;
+  } catch (err) {
+    log.error({ err, invoiceId: inv.id, settingId: setting.id }, "Dunning reminder failed");
+    await settleLog(logId, { status: "failed", error: (err as Error)?.message ?? "error" });
+    summary.failed++;
+  }
 }
 
 /**
- * Build a pre-filled wa.me link for the given phone and message text.
- * Returns null if phone is not available.
+ * Run dunning for every company (or one). Idempotent: safe to run any number of times a day.
  */
-function buildWhatsAppLink(phone: string | undefined | null, message: string): string | null {
-  if (!phone || phone.trim() === "") return null;
-  const normalized = normalizePhone(phone);
-  // normalizePhone returns "" for unusable inputs (too short/long, invalid).
-  if (!normalized || normalized.length < 8) return null;
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+export async function runDunningScan(
+  now: Date = new Date(),
+  opts: { companyId?: string } = {}
+): Promise<DunningSummary> {
+  const summary: DunningSummary = {
+    companies: 0,
+    considered: 0,
+    sent: 0,
+    queued: 0,
+    blocked: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  const ids = opts.companyId
+    ? [opts.companyId]
+    : (
+        await pool.query(
+          `SELECT DISTINCT company_id FROM reminder_settings WHERE is_enabled = true`
+        )
+      ).rows.map((r: { company_id: string }) => r.company_id);
+  for (const companyId of ids) {
+    try {
+      await dunCompany(companyId, now, summary);
+    } catch (err) {
+      log.error({ err, companyId }, "Dunning scan failed for company");
+    }
+  }
+  return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,9 +512,8 @@ function registerBuiltInJobs() {
       name: "engagement.paymentReminderScan",
       cron: "0 * * * *",
       run: async () => {
-        log.info("Running hourly payment reminder scan...");
-        await scanPaymentReminders();
-        log.info("Hourly payment reminder scan complete");
+        const summary = await runDunningScan();
+        if (summary.considered) log.info(summary, "Dunning scan complete");
       },
     },
     {
@@ -249,6 +571,9 @@ function registerBuiltInJobs() {
   ];
   const already = new Set(listJobs().map((j) => j.name));
   for (const job of builtIns) if (!already.has(job.name)) registerJob(job);
+  // W4-D: outbox delivery worker + notification scans (idempotent registration).
+  registerOutboxJob();
+  registerNotificationEngine();
 }
 
 export function initScheduler() {
@@ -258,212 +583,6 @@ export function initScheduler() {
   log.info(
     { jobs: started },
     "Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly, report delivery scan hourly"
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Invoice date computation
-// ---------------------------------------------------------------------------
-
-/**
- * Computes the due date for an invoice based on its issue date and
- * the customer's payment terms (default 30 days).
- */
-function computeDueDate(invoiceDate: Date, paymentTerms: number): Date {
-  const due = new Date(invoiceDate);
-  due.setDate(due.getDate() + paymentTerms);
-  return due;
-}
-
-/**
- * Builds a unique key for deduplicating reminder logs so the same
- * reminder is not created twice for the same invoice + rule.
- */
-function reminderKey(invoiceId: string, rule: string): string {
-  return `${rule}::${invoiceId}`;
-}
-
-// ---------------------------------------------------------------------------
-// Payment reminder scanning
-// ---------------------------------------------------------------------------
-
-/**
- * Scans all companies for invoices that match engagement rules and
- * creates notifications for the company owner(s).
- */
-async function scanPaymentReminders() {
-  const companies = await storage.getAllCompanies();
-
-  for (const company of companies) {
-    try {
-      await scanCompanyPaymentReminders(company.id);
-    } catch (err) {
-      log.error({ err, companyId: company.id }, "Error scanning reminders for company");
-    }
-  }
-}
-
-/**
- * For a single company, check all unpaid invoices against the 5-level
- * escalation engine and create notifications where appropriate.
- *
- * UAE weekend skipping is applied: if the trigger date for a given
- * escalation level falls on Friday or Saturday, the reminder fires
- * on the preceding Thursday instead.
- */
-async function scanCompanyPaymentReminders(companyId: string) {
-  const invoices = await storage.getInvoicesByCompanyId(companyId);
-  const customers = await storage.getCustomerContactsByCompanyId(companyId);
-  const existingLogs = await storage.getReminderLogsByCompanyId(companyId);
-  const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-
-  // Build a set of already-sent reminder keys for dedup
-  const sentKeys = new Set<string>();
-  for (const rl of existingLogs) {
-    if (rl.relatedEntityId && rl.reminderType) {
-      sentKeys.add(reminderKey(rl.relatedEntityId, rl.reminderType));
-    }
-  }
-
-  // Build a lookup of customer name -> customer
-  const customerByName = new Map<string, (typeof customers)[number]>();
-  for (const c of customers) {
-    customerByName.set(c.name, c);
-  }
-
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  // Filter to unpaid invoices
-  const unpaid = invoices.filter((inv) => inv.status !== "paid" && inv.status !== "void");
-
-  for (const inv of unpaid) {
-    const customer = customerByName.get(inv.customerName);
-    const paymentTerms = customer?.paymentTerms ?? 30;
-    const dueDate = computeDueDate(new Date(inv.date), paymentTerms);
-    const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-
-    // Evaluate each escalation level
-    for (const level of ESCALATION_LEVELS) {
-      // Compute the target trigger date for this level.
-      // For due_in_3_days (diffDays = 3): trigger when today is 3 days before due.
-      // For overdue_7_days (diffDays = -7): trigger when today is 7 days after due.
-      const triggerDate = new Date(dueDateStart);
-      triggerDate.setDate(triggerDate.getDate() - level.diffDays);
-
-      // Apply UAE weekend skipping — if the trigger falls on Fri/Sat, shift to Thu
-      const adjustedTrigger = skipUAEWeekend(triggerDate);
-      const adjustedTriggerStart = new Date(
-        adjustedTrigger.getFullYear(),
-        adjustedTrigger.getMonth(),
-        adjustedTrigger.getDate()
-      );
-
-      // Check if today matches the adjusted trigger date
-      if (todayStart.getTime() !== adjustedTriggerStart.getTime()) {
-        continue;
-      }
-
-      const invoiceInfo: InvoiceInfo = {
-        id: inv.id,
-        number: inv.number,
-        total: inv.total,
-        customerName: inv.customerName,
-      };
-
-      const overdueDays = Math.abs(level.diffDays);
-      const title = level.titleFn(invoiceInfo, overdueDays);
-      const baseMessage = level.messageFn(invoiceInfo, dueDateStart);
-
-      // Build the WhatsApp wa.me link if the customer has a phone number.
-      // Prefer the dedicated WhatsApp number when set; fall back to phone.
-      const customerPhone = customer?.whatsappNumber?.trim() || customer?.phone;
-      const waLink = buildWhatsAppLink(customerPhone, baseMessage);
-      const message = waLink ? `${baseMessage}\n\nSend reminder: ${waLink}` : baseMessage;
-
-      await maybeCreateReminder({
-        companyId,
-        companyUsers,
-        invoice: invoiceInfo,
-        ruleType: level.ruleType,
-        sentKeys,
-        title,
-        message,
-        priority: level.priority,
-      });
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Reminder creation with dedup
-// ---------------------------------------------------------------------------
-
-interface ReminderParams {
-  companyId: string;
-  companyUsers: { userId: string }[];
-  invoice: { id: string; number: string; total: number };
-  ruleType: string;
-  sentKeys: Set<string>;
-  title: string;
-  message: string;
-  priority: "low" | "normal" | "high" | "urgent";
-}
-
-/**
- * Creates a notification + reminder log if one hasn't already been sent
- * for this invoice + rule combination.
- */
-async function maybeCreateReminder(params: ReminderParams) {
-  const key = reminderKey(params.invoice.id, params.ruleType);
-  if (params.sentKeys.has(key)) {
-    return; // Already sent this reminder
-  }
-
-  // Create a notification for each user associated with the company
-  for (const cu of params.companyUsers) {
-    try {
-      await storage.createNotification({
-        userId: cu.userId,
-        companyId: params.companyId,
-        type: "payment_due",
-        title: params.title,
-        message: params.message,
-        priority: params.priority,
-        relatedEntityType: "invoice",
-        relatedEntityId: params.invoice.id,
-        actionUrl: `/invoices`,
-        isRead: false,
-        isDismissed: false,
-      });
-    } catch (err) {
-      log.error(
-        { err, userId: cu.userId, invoiceId: params.invoice.id },
-        "Failed to create notification"
-      );
-    }
-  }
-
-  // Log the reminder to prevent duplicates
-  try {
-    await storage.createReminderLog({
-      companyId: params.companyId,
-      reminderType: params.ruleType,
-      relatedEntityType: "invoice",
-      relatedEntityId: params.invoice.id,
-      channel: "in_app",
-      status: "sent",
-      attemptNumber: 1,
-      sentAt: new Date(),
-    });
-  } catch (err) {
-    log.error({ err, invoiceId: params.invoice.id }, "Failed to create reminder log");
-  }
-
-  params.sentKeys.add(key);
-  log.info(
-    { companyId: params.companyId, invoiceId: params.invoice.id, rule: params.ruleType },
-    `Created payment reminder notification`
   );
 }
 

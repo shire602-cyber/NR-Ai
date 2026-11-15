@@ -3,8 +3,14 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import { registerNotificationEngine } from "../services/notification-engine.service";
+import { registerOutboxJob } from "../outbox";
 
 export function registerNotificationRoutes(app: Express) {
+  // W4-D: domain events → notifications, daily scans, and the email outbox worker.
+  registerNotificationEngine();
+  registerOutboxJob();
+
   // =====================================
   // NOTIFICATIONS & SMART REMINDERS
   // =====================================

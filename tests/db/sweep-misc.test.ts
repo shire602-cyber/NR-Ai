@@ -287,9 +287,11 @@ describe("W2-D portal", () => {
         })
       ).status
     ).toBe(201);
+    // W4-D (R16-09): an internal storage key can no longer be asserted by the client — upload
+    // the bytes instead (tests/db/portal-vault-notifications.test.ts).
     expect(
       (await a.as.post(url, { name: "d", fileUrl: "/uploads/d.pdf", fileName: "d.pdf" })).status
-    ).toBe(201);
+    ).toBe(400);
     expect((await a.as.post(url, { name: "d", fileName: "d.pdf", companyId: "x" })).status).toBe(
       400
     );

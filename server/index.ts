@@ -77,9 +77,13 @@ const smallJson = express.json({ limit: "1mb" });
 // The inbound email webhook needs the EXACT raw bytes to verify its HMAC
 // signature, so it gets a raw-body parser and is skipped by the JSON parser.
 app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
+// W4-D: payment-gateway and email-delivery webhooks are verified over the raw bytes too.
+const RAW_WEBHOOK_PREFIXES = ["/api/webhooks/invoice-payments", "/api/webhooks/email-events"];
+app.use(RAW_WEBHOOK_PREFIXES, express.raw({ type: "*/*", limit: "1mb" }));
 
 app.use((req, res, next) => {
   if (req.path === "/api/webhooks/email-intake") return next(); // raw body handled above
+  if (RAW_WEBHOOK_PREFIXES.some((p) => req.path.startsWith(`${p}/`))) return next();
   const useLarge = largeJsonRoutes.some((rx) => rx.test(req.path));
   return (useLarge ? largeJson : smallJson)(req, res, next);
 });
