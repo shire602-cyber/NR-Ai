@@ -12,6 +12,16 @@ import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { ACCOUNT_CODES } from "../constants";
+import {
+  BANK_FORMAT_LABELS,
+  importSourceFor,
+  parseBankCsvText,
+  parseBankStatement,
+  planBankImport,
+  toLegacyTransactions,
+  type BankParseResult,
+  type ParseOptions,
+} from "../services/bank-statement-parser.service";
 
 const log = createLogger("bank-statements");
 
@@ -56,10 +66,68 @@ const bankAccountUpdateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const bankStatementImportSchema = z.object({
-  bankAccountId: z.string().uuid("bankAccountId must be a valid UUID"),
-  csvContent: z.string().min(1, "csvContent (raw CSV text) is required"),
-});
+const columnIndex = z.number().int().min(0).max(200).nullable().optional();
+
+/** Statement source + parsing choices shared by the preview and import endpoints (R06-23). */
+const statementSourceShape = {
+  csvContent: z.string().min(1, "csvContent (raw statement text) is required").optional(),
+  fileBase64: z.string().min(1).optional(),
+  fileName: z.string().max(255).optional(),
+  delimiter: z.enum([",", ";", "\t", "|"]).optional(),
+  decimalSeparator: z.enum([".", ","]).optional(),
+  dateOrder: z.enum(["DMY", "MDY", "YMD"]).optional(),
+  headerRow: z.number().int().min(1).max(10000).optional(),
+  format: z
+    .enum([
+      "emiratesnbd",
+      "adcb",
+      "fab",
+      "mashreq",
+      "mashreqneo",
+      "rakbank",
+      "cbd",
+      "wio",
+      "generic",
+    ])
+    .optional(),
+  mapping: z
+    .object({
+      date: columnIndex,
+      description: columnIndex,
+      reference: columnIndex,
+      debit: columnIndex,
+      credit: columnIndex,
+      amount: columnIndex,
+      direction: columnIndex,
+      balance: columnIndex,
+    })
+    .optional(),
+};
+
+const hasStatementSource = (v: { csvContent?: string; fileBase64?: string }) =>
+  Boolean(v.csvContent || v.fileBase64);
+const statementSourceMessage = {
+  message: "csvContent (raw statement text) or fileBase64 (XLSX/other file) is required",
+  path: ["csvContent"],
+};
+
+const bankStatementImportSchema = z
+  .object({
+    bankAccountId: z.string().uuid("bankAccountId must be a valid UUID"),
+    ...statementSourceShape,
+    /** Import rows even when they match transactions already on the account. */
+    allowDuplicates: z.boolean().optional(),
+    /** Proceed although the preview flagged an ambiguity (assumed DD/MM, decimal point). */
+    acknowledgeAmbiguity: z.boolean().optional(),
+  })
+  .refine(hasStatementSource, statementSourceMessage);
+
+const bankStatementPreviewSchema = z
+  .object({
+    bankAccountId: z.string().uuid().optional(),
+    ...statementSourceShape,
+  })
+  .refine(hasStatementSource, statementSourceMessage);
 
 const bankMatchSchema = z.object({
   matchedType: z.enum(["invoice", "receipt", "journal"]),
@@ -71,333 +139,50 @@ const bankCreateEntrySchema = z.object({
   memo: z.string().max(500).optional().nullable(),
 });
 
-// ─── UAE Bank CSV Format Detection ─────────────────────────────────────────
-
-interface ParsedTransaction {
-  date: Date;
-  description: string;
-  debit: number;
-  credit: number;
-  balance: number | null;
-  reference: string | null;
-}
-
-type BankFormat = "emiratesnbd" | "adcb" | "fab" | "mashreq" | "generic";
-
-function normalizeHeader(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\ufeff/g, "")
-    .replace(/[\u200e\u200f]/g, "")
-    .replace(/[^a-z0-9\u0600-\u06ff]/g, "");
-}
-
-function detectBankFormat(headers: string[]): BankFormat {
-  const h = headers.map(normalizeHeader);
-  const joined = h.join(",");
-
-  if (joined.includes("valuedate") || joined.includes("narration")) return "emiratesnbd";
-  if (joined.includes("txndate") || joined.includes("particulars")) return "adcb";
-  if (joined.includes("transdate") || joined.includes("chequeno")) return "fab";
-  if (joined.includes("postingdate") || joined.includes("transactiondetails")) return "mashreq";
-  return "generic";
-}
+// ─── Statement parsing ──────────────────────────────────────────────────────
+// All parsing lives in services/bank-statement-parser.service.ts (pure functions, no DB).
 
 /**
- * Parse a raw CSV string into normalized transaction rows.
- * Handles quoted fields and various line endings.
+ * Synchronous CSV helper kept for existing callers/tests: parses CSV text and returns the
+ * valid transactions plus row error messages.
  */
-function parseCsvRow(line: string, delimiter = ","): string[] {
-  const fields: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      fields.push(current.trim());
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  fields.push(current.trim());
-  return fields;
+export function parseBankCsv(csvContent: string) {
+  return toLegacyTransactions(parseBankCsvText(csvContent));
 }
 
-function normalizeNumberGlyphs(value: string): string {
-  return value
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - "٠".charCodeAt(0)))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - "۰".charCodeAt(0)))
-    .replace(/٫/g, ".")
-    .replace(/٬/g, ",");
+type StatementRequestBody = {
+  csvContent?: string;
+  fileBase64?: string;
+  fileName?: string;
+  delimiter?: string;
+  decimalSeparator?: "." | ",";
+  dateOrder?: "DMY" | "MDY" | "YMD";
+  headerRow?: number;
+  format?: ParseOptions["format"];
+  mapping?: ParseOptions["mapping"];
+};
+
+function statementBytes(body: StatementRequestBody): Buffer {
+  return body.fileBase64
+    ? Buffer.from(body.fileBase64, "base64")
+    : Buffer.from(body.csvContent ?? "", "utf8");
 }
 
-function parseDate(raw: string): Date | null {
-  if (!raw) return null;
-  const cleaned = normalizeNumberGlyphs(raw).trim().replace(/\//g, "-");
-
-  // Try YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(cleaned)) {
-    const d = new Date(cleaned);
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  // Try DD-MM-YYYY or DD-MMM-YYYY
-  const parts = cleaned.split(/[-\/\s]/);
-  if (parts.length >= 3) {
-    const months: Record<string, number> = {
-      jan: 0,
-      feb: 1,
-      mar: 2,
-      apr: 3,
-      may: 4,
-      jun: 5,
-      jul: 6,
-      aug: 7,
-      sep: 8,
-      oct: 9,
-      nov: 10,
-      dec: 11,
-    };
-    const day = parseInt(parts[0]);
-    const monthStr = parts[1].toLowerCase();
-    const month = isNaN(parseInt(parts[1])) ? months[monthStr.slice(0, 3)] : parseInt(parts[1]) - 1;
-    const year = parseInt(parts[2].length === 2 ? "20" + parts[2] : parts[2]);
-    const d = new Date(year, month, day);
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  return null;
+function statementOptions(body: StatementRequestBody): ParseOptions {
+  const options: ParseOptions = {};
+  if (body.delimiter) options.delimiter = body.delimiter;
+  if (body.decimalSeparator) options.decimalSeparator = body.decimalSeparator;
+  if (body.dateOrder) options.dateOrder = body.dateOrder;
+  if (body.headerRow) options.headerRow = body.headerRow;
+  if (body.format) options.format = body.format;
+  if (body.mapping) options.mapping = body.mapping;
+  return options;
 }
 
-function parseAmount(raw: string): number {
-  if (!raw) return 0;
-  const normalizedDigits = normalizeNumberGlyphs(raw);
-  // Remove currency symbols, commas, spaces; handle parentheses as negative
-  const negative =
-    normalizedDigits.trim().startsWith("(") ||
-    normalizedDigits.trim().startsWith("-") ||
-    /\bdr\b/i.test(normalizedDigits) ||
-    /مدين|سحب|خصم/.test(normalizedDigits);
-  const cleaned = normalizedDigits.replace(/[^0-9.]/g, "");
-  const val = parseFloat(cleaned) || 0;
-  return negative ? -val : val;
-}
-
-function debitCreditDirection(raw: string): "debit" | "credit" | null {
-  const normalized = normalizeHeader(raw);
-  if (!normalized) return null;
-
-  if (["d", "dr"].includes(normalized)) return "debit";
-  if (["c", "cr"].includes(normalized)) return "credit";
-
-  if (
-    ["debit", "withdrawal", "outflow", "paid", "مدين", "سحب", "خصم"].some((token) =>
-      normalized.includes(normalizeHeader(token))
-    )
-  ) {
-    return "debit";
-  }
-
-  if (
-    ["credit", "deposit", "inflow", "received", "دائن", "ايداع", "إيداع"].some((token) =>
-      normalized.includes(normalizeHeader(token))
-    )
-  ) {
-    return "credit";
-  }
-
-  return null;
-}
-
-function mapRow(fields: string[], headers: string[], format: BankFormat): ParsedTransaction | null {
-  const normalizedHeaders = headers.map(normalizeHeader);
-  const get = (...keys: string[]): string => {
-    const normalizedKeys = keys.map(normalizeHeader).filter(Boolean);
-    const idx = normalizedHeaders.findIndex(
-      (header) =>
-        Boolean(header) &&
-        normalizedKeys.some(
-          (key) =>
-            header === key ||
-            (key.length > 2 && header.includes(key)) ||
-            (key.length > 2 && header.length > 2 && key.includes(header))
-        )
-    );
-    return idx >= 0 ? (fields[idx] || "").trim() : "";
-  };
-
-  let dateStr = "";
-  let description = "";
-  let debitStr = "";
-  let creditStr = "";
-  let balanceStr = "";
-  let reference = "";
-
-  if (format === "emiratesnbd") {
-    dateStr = get("ValueDate", "Date", "TransactionDate", "تاريخ", "تاريخالقيمة");
-    description = get("Narration", "Description", "Details", "البيان", "الوصف", "تفاصيل");
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "RunningBalance", "الرصيد", "رصيد");
-    reference = get("ChequeNo", "Reference", "Ref", "مرجع", "رقمالمرجع");
-  } else if (format === "adcb") {
-    dateStr = get("TxnDate", "Date", "TransactionDate", "تاريخ", "تاريخالعملية");
-    description = get("Particulars", "Description", "Details", "البيان", "الوصف", "تفاصيل");
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "ClosingBalance", "الرصيد", "رصيد");
-    reference = get("Reference", "Ref", "ChequeNo", "مرجع", "رقمالمرجع");
-  } else if (format === "fab") {
-    dateStr = get("TransDate", "Date", "ValueDate", "تاريخ", "تاريخالعملية");
-    description = get("Description", "Details", "Narration", "البيان", "الوصف", "تفاصيل");
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "RunningBalance", "الرصيد", "رصيد");
-    reference = get("ChequeNo", "Reference", "TxnRef", "مرجع", "رقمالمرجع");
-  } else if (format === "mashreq") {
-    dateStr = get("PostingDate", "Date", "ValueDate", "تاريخ", "تاريخالقيد");
-    description = get(
-      "TransactionDetails",
-      "Description",
-      "Narration",
-      "البيان",
-      "الوصف",
-      "تفاصيل"
-    );
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "AvailableBalance", "الرصيد", "رصيد");
-    reference = get("Reference", "Ref", "ChequeNo", "مرجع", "رقمالمرجع");
-  } else {
-    // Generic: try common column names
-    dateStr = get("Date", "TransactionDate", "ValueDate", "TxnDate", "تاريخ", "تاريخالعملية");
-    description = get(
-      "Description",
-      "Details",
-      "Narration",
-      "Particulars",
-      "البيان",
-      "الوصف",
-      "تفاصيل"
-    );
-    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
-    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
-    balanceStr = get("Balance", "RunningBalance", "ClosingBalance", "الرصيد", "رصيد");
-    reference = get("Reference", "Ref", "ChequeNo", "TxnRef", "مرجع", "رقمالمرجع");
-
-    // If there's a single amount column, respect a paired Dr/Cr or type column when present.
-    if (!debitStr && !creditStr) {
-      const amtStr = get("Amount", "TransactionAmount", "Debit/Credit", "المبلغ", "مبلغ");
-      const direction = debitCreditDirection(
-        get(
-          "Type",
-          "TransactionType",
-          "DrCr",
-          "DebitCredit",
-          "Debit/CreditType",
-          "النوع",
-          "نوعالعملية",
-          "مديندائن",
-          "دائنمدين"
-        )
-      );
-      const amt = parseAmount(amtStr);
-      if (direction === "debit") debitStr = String(Math.abs(amt));
-      else if (direction === "credit") creditStr = String(Math.abs(amt));
-      else if (amt < 0) debitStr = String(Math.abs(amt));
-      else creditStr = String(amt);
-    }
-  }
-
-  const txnDate = parseDate(dateStr);
-  if (!txnDate) return null;
-
-  const debit = Math.abs(parseAmount(debitStr));
-  const credit = Math.abs(parseAmount(creditStr));
-  const balance = balanceStr ? parseAmount(balanceStr) : null;
-
-  // Skip rows with no monetary value
-  if (debit === 0 && credit === 0) return null;
-
-  const cleanedDesc = description.replace(/\s+/g, " ").trim();
-  if (!cleanedDesc) return null;
-
-  return {
-    date: txnDate,
-    description: cleanedDesc,
-    debit,
-    credit,
-    balance: balance !== 0 ? balance : null,
-    reference: reference || null,
-  };
-}
-
-/**
- * Parse CSV content and return normalized transactions.
- * Skips header-only detection rows and blank lines.
- */
-export function parseBankCsv(csvContent: string): {
-  transactions: ParsedTransaction[];
-  format: BankFormat;
-  errors: string[];
-} {
-  const lines = csvContent
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .split("\n")
-    .filter((l) => l.trim().length > 0);
-
-  if (lines.length < 2) {
-    return { transactions: [], format: "generic", errors: ["CSV has no data rows"] };
-  }
-
-  const delimiters = [",", ";", "\t"];
-  let delimiter = ",";
-  let headerIdx = 0;
-  let headerFieldCount = 0;
-  for (let i = 0; i < Math.min(10, lines.length); i++) {
-    for (const candidate of delimiters) {
-      const fields = parseCsvRow(lines[i], candidate);
-      if (fields.length > headerFieldCount) {
-        headerIdx = i;
-        delimiter = candidate;
-        headerFieldCount = fields.length;
-      }
-    }
-    if (headerFieldCount >= 3) {
-      break;
-    }
-  }
-
-  const headers = parseCsvRow(lines[headerIdx], delimiter);
-  const format = detectBankFormat(headers);
-  const transactions: ParsedTransaction[] = [];
-  const errors: string[] = [];
-
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const fields = parseCsvRow(lines[i], delimiter);
-    if (fields.every((f) => !f)) continue; // blank row
-
-    try {
-      const txn = mapRow(fields, headers, format);
-      if (txn) {
-        transactions.push(txn);
-      }
-    } catch (err: any) {
-      errors.push(`Row ${i + 1}: ${err.message}`);
-    }
-  }
-
-  return { transactions, format, errors };
+function summarizeRowErrors(parsed: BankParseResult): string[] {
+  return parsed.rows
+    .filter((r) => r.errors.length > 0)
+    .map((r) => `Row ${r.rowIndex}: ${r.errors.join("; ")}`);
 }
 
 // ─── AI Transaction Matching ────────────────────────────────────────────────
@@ -529,6 +314,72 @@ export function registerBankStatementRoutes(app: Express) {
   // ─────────────────────────────────────────────────────────────
 
   /**
+   * POST /api/companies/:companyId/bank-statements/preview
+   * Parse a statement without saving anything. Returns the detected format, delimiter, decimal
+   * separator and date order, the detected (or supplied) column mapping, the header cells, the
+   * first rows as parsed, row errors, and ambiguity warnings that need a user choice.
+   * Body: same source/options fields as /import (no bankAccountId required).
+   */
+  app.post(
+    "/api/companies/:companyId/bank-statements/preview",
+    authMiddleware,
+    requireCustomer,
+    validate({ body: bankStatementPreviewSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      let parsed: BankParseResult;
+      try {
+        parsed = await parseBankStatement(statementBytes(req.body), statementOptions(req.body));
+      } catch (err: any) {
+        log.warn({ err: err.message }, "Bank statement preview failed to parse");
+        return res.status(400).json({ message: "Could not read the statement file" });
+      }
+
+      const errorRows = parsed.rows.filter((r) => r.errors.length > 0);
+      res.json({
+        kind: parsed.kind,
+        detectedFormat: parsed.format,
+        detectedFormatLabel: BANK_FORMAT_LABELS[parsed.format],
+        delimiter: parsed.delimiter,
+        decimalSeparator: parsed.decimalSeparator,
+        dateOrder: parsed.dateOrder,
+        headerRow: parsed.headerRowIndex,
+        headers: parsed.headers,
+        mapping: parsed.mapping,
+        fileFingerprint: parsed.fileFingerprint,
+        accountHint: parsed.accountHint,
+        currency: parsed.currency,
+        totalRows: parsed.rows.length,
+        validRows: parsed.rows.length - errorRows.length,
+        errorRows: errorRows.length,
+        ignoredRows: parsed.ignored.length,
+        sampleRows: parsed.rows.slice(0, 10).map((r) => ({
+          rowIndex: r.rowIndex,
+          date: r.date ? r.date.toISOString().slice(0, 10) : null,
+          description: r.description,
+          debit: r.debit,
+          credit: r.credit,
+          amount: r.amount,
+          balance: r.balance,
+          reference: r.reference,
+          errors: r.errors,
+          raw: r.raw,
+        })),
+        errors: errorRows
+          .slice(0, 50)
+          .map((r) => ({ rowIndex: r.rowIndex, errors: r.errors, raw: r.raw })),
+        warnings: parsed.warnings,
+        requiresChoice: parsed.warnings.some((w) => w.requiresChoice),
+      });
+    })
+  );
+
+  /**
    * POST /api/companies/:companyId/bank-statements/import
    * Import bank statement rows from a CSV.
    *
@@ -553,7 +404,7 @@ export function registerBankStatementRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const { bankAccountId, csvContent } = req.body;
+      const { bankAccountId, allowDuplicates, acknowledgeAmbiguity } = req.body;
 
       // Validate bank account belongs to this company
       const bankAccount = await storage.getBankAccountById(bankAccountId);
@@ -561,66 +412,82 @@ export function registerBankStatementRoutes(app: Express) {
         return res.status(404).json({ message: "Bank account not found" });
       }
 
-      // Parse CSV
-      const { transactions: parsed, format, errors: parseErrors } = parseBankCsv(csvContent);
+      // Parse (CSV / XLSX / MT940 / CAMT.053 / OFX)
+      let parsedFile: BankParseResult;
+      try {
+        parsedFile = await parseBankStatement(statementBytes(req.body), statementOptions(req.body));
+      } catch (err: any) {
+        log.warn({ err: err.message }, "Bank statement import failed to parse");
+        return res.status(400).json({ message: "Could not read the statement file" });
+      }
+      const format = parsedFile.format;
+      const parseErrors = summarizeRowErrors(parsedFile);
+      const validRows = parsedFile.rows.filter((r) => r.errors.length === 0 && r.date);
 
-      if (parsed.length === 0) {
+      if (validRows.length === 0) {
         return res.status(400).json({
-          message: "No valid transactions found in CSV",
+          message: "No valid transactions found in the statement",
           parseErrors,
+          warnings: parsedFile.warnings,
           detectedFormat: format,
         });
       }
 
-      // Map parsed rows to insert records
-      const allRows = parsed.map((txn) => ({
+      // Ambiguity (DD/MM vs MM/DD, decimal comma) must be a user choice, not a silent guess.
+      const unresolved = parsedFile.warnings.filter((w) => w.requiresChoice);
+      if (unresolved.length > 0 && !acknowledgeAmbiguity) {
+        return res.status(409).json({
+          code: "CHOICE_REQUIRED",
+          message:
+            "The statement is ambiguous. Confirm the date order, decimal separator or column mapping and retry.",
+          warnings: parsedFile.warnings,
+          dateOrder: parsedFile.dateOrder,
+          decimalSeparator: parsedFile.decimalSeparator,
+          detectedFormat: format,
+        });
+      }
+
+      // Dedupe against existing transactions on the same managed bank account. Identical rows
+      // inside one statement are all kept; a re-import of the same file adds nothing (R06-06).
+      const existing = await storage.getBankTransactionsByCompanyId(companyId);
+      const plan = planBankImport(
+        parsedFile.rows,
+        existing
+          .filter((t) => t.bankStatementAccountId === bankAccountId)
+          .map((t) => ({
+            date: t.transactionDate,
+            amount: Number(t.amount),
+            description: t.description,
+            reference: t.reference,
+            importSource: t.importSource,
+          })),
+        {
+          fileFingerprint: parsedFile.fileFingerprint,
+          kind: parsedFile.kind,
+          allowDuplicates: Boolean(allowDuplicates),
+        }
+      );
+
+      const importSource = importSourceFor(parsedFile.kind, parsedFile.fileFingerprint);
+      const toInsert = plan.toInsert.map((txn) => ({
         companyId,
         bankAccountId: bankAccount.glAccountId || null,
         bankStatementAccountId: bankAccountId,
-        transactionDate: txn.date,
+        transactionDate: txn.date as Date,
         description: txn.description,
         // amount: positive = credit (inflow), negative = debit (outflow)
-        amount: txn.credit > 0 ? txn.credit : -txn.debit,
+        amount: txn.amount,
         balance: txn.balance,
         reference: txn.reference,
         category: null,
         matchStatus: "unmatched" as const,
         isReconciled: false,
-        importSource: "csv",
+        importSource,
       }));
 
-      // Dedupe against existing transactions on the same managed bank account.
-      // Re-importing the same statement (or overlapping date ranges) is common,
-      // and bulk-inserting duplicates would corrupt the reconciliation worklist.
-      const existing = await storage.getBankTransactionsByCompanyId(companyId);
-      const dedupeKey = (t: {
-        transactionDate: Date | string;
-        amount: number;
-        reference: string | null;
-      }) => {
-        const dateStr = (
-          t.transactionDate instanceof Date ? t.transactionDate : new Date(t.transactionDate)
-        )
-          .toISOString()
-          .slice(0, 10);
-        return `${dateStr}|${Number(t.amount).toFixed(2)}|${t.reference ?? ""}`;
-      };
-      const existingKeys = new Set(
-        existing.filter((t) => t.bankStatementAccountId === bankAccountId).map(dedupeKey)
-      );
-      const toInsert: typeof allRows = [];
-      let skippedDuplicates = 0;
-      for (const row of allRows) {
-        const key = dedupeKey(row);
-        if (existingKeys.has(key)) {
-          skippedDuplicates++;
-          continue;
-        }
-        existingKeys.add(key); // also dedupe within this batch
-        toInsert.push(row);
-      }
-
       const created = toInsert.length > 0 ? await storage.bulkCreateBankTransactions(toInsert) : [];
+      const duplicateSkips = plan.skipped.filter((s) => s.reason !== "invalid_row");
+      const skippedDuplicates = duplicateSkips.length;
 
       // Run AI auto-matching in background (non-blocking)
       autoMatchImportedTransactions(companyId).catch(() => {});
@@ -639,7 +506,17 @@ export function registerBankStatementRoutes(app: Express) {
       res.status(201).json({
         imported: created.length,
         skippedDuplicates,
+        skipped: plan.skipped.slice(0, 200).map(({ rowIndex, reason, detail }) => ({
+          rowIndex,
+          reason,
+          detail,
+        })),
+        fileAlreadyImported: plan.fileAlreadyImported,
+        fileFingerprint: parsedFile.fileFingerprint,
         detectedFormat: format,
+        dateOrder: parsedFile.dateOrder,
+        decimalSeparator: parsedFile.decimalSeparator,
+        warnings: parsedFile.warnings.length > 0 ? parsedFile.warnings : undefined,
         parseErrors: parseErrors.length > 0 ? parseErrors : undefined,
         message:
           skippedDuplicates > 0

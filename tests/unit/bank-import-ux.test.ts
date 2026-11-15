@@ -19,3 +19,21 @@ describe("Bank import launch UX", () => {
     expect(source).toContain("Matching suggestions are being prepared");
   });
 });
+
+describe("Bank import column mapper (R06-23)", () => {
+  it("R06-23 previews the statement and exposes a column mapper with en + ar strings", () => {
+    expect(source).toContain("/bank-statements/preview");
+    expect(source).toContain('data-testid="panel-statement-mapper"');
+    expect(source).toContain("select-map-");
+    expect(source).toContain('data-testid="select-statement-date-order"');
+    expect(source).toContain('data-testid="checkbox-acknowledge-ambiguity"');
+    expect(source).toContain("ربط الأعمدة");
+    expect(source).toContain("Column mapping");
+    expect(source).toContain(".xlsx");
+  });
+
+  it("R06-11 ambiguity must be confirmed before importing", () => {
+    expect(source).toContain("acknowledgeAmbiguity");
+    expect(source).toContain("statementPreview.requiresChoice");
+  });
+});

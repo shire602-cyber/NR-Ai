@@ -70,6 +70,8 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/drizzle.config.ts ./
 COPY --from=builder /app/migrations ./migrations
+# PDF fonts (Noto Sans / Noto Naskh Arabic) are read from disk by server/services/pdf-fonts.ts
+COPY --from=builder /app/server/assets ./server/assets
 
 RUN mkdir -p uploads/receipts && chown -R muhasib:nodejs uploads
 

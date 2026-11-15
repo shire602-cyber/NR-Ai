@@ -198,6 +198,130 @@ function formatDate(dateStr: string) {
   }
 }
 
+// ─── Statement import: preview + column mapper (R06-23) ─────────────────────
+
+const MAPPER_FIELDS = [
+  "date",
+  "description",
+  "reference",
+  "debit",
+  "credit",
+  "amount",
+  "direction",
+  "balance",
+] as const;
+type MapperField = (typeof MAPPER_FIELDS)[number];
+
+interface StatementPreview {
+  kind: "csv" | "xlsx" | "mt940" | "camt053" | "ofx";
+  detectedFormat: string;
+  detectedFormatLabel: string;
+  delimiter: string | null;
+  decimalSeparator: "." | ",";
+  dateOrder: "DMY" | "MDY" | "YMD" | null;
+  headerRow: number | null;
+  headers: string[];
+  mapping: Partial<Record<MapperField, number | null>>;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  sampleRows: Array<{
+    rowIndex: number;
+    date: string | null;
+    description: string;
+    debit: number;
+    credit: number;
+    errors: string[];
+  }>;
+  warnings: Array<{ code: string; message: string; requiresChoice?: boolean }>;
+  requiresChoice: boolean;
+}
+
+interface StatementOverrides {
+  dateOrder?: "DMY" | "MDY";
+  decimalSeparator?: "." | ",";
+  mapping?: Partial<Record<MapperField, number | null>>;
+}
+
+const IMPORT_STRINGS = {
+  en: {
+    detected: "Detected",
+    reviewTitle: "Review before importing",
+    rows: "rows",
+    valid: "valid",
+    withErrors: "with errors",
+    dateOrder: "Date order",
+    decimalSeparator: "Decimal separator",
+    decimalPoint: "Point (1,234.50)",
+    decimalComma: "Comma (1.234,50)",
+    columnMapping: "Column mapping",
+    notMapped: "— not mapped —",
+    confirmAssumption: "Import using the settings shown above",
+    previewLoading: "Reading statement...",
+    previewFailed: "Could not read the statement",
+    sampleRows: "First rows",
+    colDate: "Date",
+    colDescription: "Description",
+    colDebit: "Debit",
+    colCredit: "Credit",
+    fields: {
+      date: "Date",
+      description: "Description",
+      reference: "Reference",
+      debit: "Debit",
+      credit: "Credit",
+      amount: "Amount",
+      direction: "Dr/Cr or Type",
+      balance: "Balance",
+    } as Record<MapperField, string>,
+    formats:
+      "CSV, XLSX, MT940, CAMT.053, OFX — Emirates NBD, ADCB, FAB, Mashreq, Mashreq Neo, RAKBANK, CBD, Wio",
+  },
+  ar: {
+    detected: "تم اكتشاف",
+    reviewTitle: "مراجعة قبل الاستيراد",
+    rows: "صفوف",
+    valid: "صالحة",
+    withErrors: "بها أخطاء",
+    dateOrder: "ترتيب التاريخ",
+    decimalSeparator: "الفاصل العشري",
+    decimalPoint: "نقطة (1,234.50)",
+    decimalComma: "فاصلة (1.234,50)",
+    columnMapping: "ربط الأعمدة",
+    notMapped: "— غير مربوط —",
+    confirmAssumption: "استيراد بالإعدادات الموضحة أعلاه",
+    previewLoading: "جارٍ قراءة الكشف...",
+    previewFailed: "تعذرت قراءة الكشف",
+    sampleRows: "أول الصفوف",
+    colDate: "التاريخ",
+    colDescription: "البيان",
+    colDebit: "مدين",
+    colCredit: "دائن",
+    fields: {
+      date: "التاريخ",
+      description: "البيان",
+      reference: "المرجع",
+      debit: "مدين",
+      credit: "دائن",
+      amount: "المبلغ",
+      direction: "مدين/دائن أو النوع",
+      balance: "الرصيد",
+    } as Record<MapperField, string>,
+    formats:
+      "CSV وXLSX وMT940 وCAMT.053 وOFX — بنك الإمارات دبي الوطني، أبوظبي التجاري، أبوظبي الأول، مشرق، مشرق نيو، راك بنك، التجاري دبي، ويو",
+  },
+};
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 function downloadSampleBankCsv() {
   const blob = new Blob([SAMPLE_BANK_CSV], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -225,6 +349,11 @@ export default function BankReconciliation() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showReconciled, setShowReconciled] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [statementPreview, setStatementPreview] = useState<StatementPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [statementOverrides, setStatementOverrides] = useState<StatementOverrides>({});
+  const [acknowledgeAmbiguity, setAcknowledgeAmbiguity] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [pdfProgress, setPdfProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState("");
@@ -307,8 +436,16 @@ export default function BankReconciliation() {
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   const importMutation = useMutation({
-    mutationFn: async (payload: { bankAccountId: string; csvContent: string }) =>
-      apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload),
+    mutationFn: async (payload: {
+      bankAccountId: string;
+      fileBase64: string;
+      fileName?: string;
+      dateOrder?: "DMY" | "MDY";
+      decimalSeparator?: "." | ",";
+      mapping?: Partial<Record<MapperField, number | null>>;
+      headerRow?: number;
+      acknowledgeAmbiguity?: boolean;
+    }) => apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
@@ -319,7 +456,7 @@ export default function BankReconciliation() {
             : `Imported ${data.imported ?? 0} transaction(s). Matching suggestions are being prepared.`,
       });
       setImportDialogOpen(false);
-      setImportFile(null);
+      resetStatementPreview();
       setPdfProgress(0);
       setProcessingStatus("");
     },
@@ -437,12 +574,72 @@ export default function BankReconciliation() {
 
   // ─── File import handlers ─────────────────────────────────────────────────
 
+  const strings = IMPORT_STRINGS[locale === "ar" ? "ar" : "en"];
+
+  const resetStatementPreview = () => {
+    setImportFile(null);
+    setStatementPreview(null);
+    setPreviewError(null);
+    setStatementOverrides({});
+    setAcknowledgeAmbiguity(false);
+  };
+
+  const isPdfFile = (file: File) =>
+    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+  const runStatementPreview = async (
+    file: File,
+    overrides: StatementOverrides,
+    headerRow?: number
+  ) => {
+    if (!companyId) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const preview = (await apiRequest(
+        "POST",
+        `/api/companies/${companyId}/bank-statements/preview`,
+        {
+          fileBase64: await fileToBase64(file),
+          fileName: file.name,
+          ...overrides,
+          ...(overrides.mapping && headerRow ? { headerRow } : {}),
+        }
+      )) as StatementPreview;
+      setStatementPreview(preview);
+    } catch (error: any) {
+      setStatementPreview(null);
+      setPreviewError(error?.message || strings.previewFailed);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const updateOverrides = (next: StatementOverrides) => {
+    setStatementOverrides(next);
+    setAcknowledgeAmbiguity(false);
+    if (importFile)
+      void runStatementPreview(importFile, next, statementPreview?.headerRow ?? undefined);
+  };
+
+  const handleMappingChange = (field: MapperField, value: string) => {
+    const base = statementOverrides.mapping ?? statementPreview?.mapping ?? {};
+    updateOverrides({
+      ...statementOverrides,
+      mapping: { ...base, [field]: value === "__none" ? null : Number(value) },
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setImportFile(file);
+      setStatementPreview(null);
+      setStatementOverrides({});
+      setAcknowledgeAmbiguity(false);
       setPdfProgress(0);
       setProcessingStatus("");
+      if (!isPdfFile(file)) void runStatementPreview(file, {});
     }
   };
 
@@ -479,7 +676,7 @@ export default function BankReconciliation() {
     setIsImporting(true);
 
     try {
-      if (importFile.type === "application/pdf") {
+      if (isPdfFile(importFile)) {
         // PDF → text → AI parse → import as JSON
         setProcessingStatus("Converting PDF pages...");
         const pdfjsLib = await loadPdfJs();
@@ -528,11 +725,19 @@ export default function BankReconciliation() {
         });
         toast({ title: "Import Successful", description: `Imported ${txns.length} transactions` });
         setImportDialogOpen(false);
-        setImportFile(null);
+        resetStatementPreview();
       } else {
-        // CSV — send raw content to the proper endpoint
-        const csvContent = await importFile.text();
-        await importMutation.mutateAsync({ bankAccountId: selectedBankAccount, csvContent });
+        // CSV / XLSX / MT940 / CAMT.053 / OFX — send the file bytes plus the user's choices.
+        await importMutation.mutateAsync({
+          bankAccountId: selectedBankAccount,
+          fileBase64: await fileToBase64(importFile),
+          fileName: importFile.name,
+          ...statementOverrides,
+          ...(statementOverrides.mapping && statementPreview?.headerRow
+            ? { headerRow: statementPreview.headerRow }
+            : {}),
+          acknowledgeAmbiguity,
+        });
       }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Import Failed", description: error?.message });
@@ -1109,8 +1314,14 @@ export default function BankReconciliation() {
       </Dialog>
 
       {/* ── Import Dialog ─────────────────────────────────────────────────────── */}
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(open) => {
+          setImportDialogOpen(open);
+          if (!open) resetStatementPreview();
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t.importBankStatement}</DialogTitle>
             <DialogDescription>{t.uploadBankStatement}</DialogDescription>
@@ -1140,14 +1351,14 @@ export default function BankReconciliation() {
               <Label>Statement File</Label>
               <Input
                 type="file"
-                accept=".csv,.pdf,application/pdf"
+                accept=".csv,.txt,.xlsx,.sta,.mt940,.xml,.ofx,.qfx,.pdf,application/pdf"
                 onChange={handleFileChange}
                 disabled={isImporting}
                 data-testid="input-bank-statement-file"
               />
               {importFile && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {importFile.type === "application/pdf" ? (
+                  {isPdfFile(importFile) ? (
                     <FileText className="w-4 h-4 text-destructive" />
                   ) : (
                     <FileSpreadsheet className="w-4 h-4 text-[hsl(var(--chart-5))]" />
@@ -1157,6 +1368,17 @@ export default function BankReconciliation() {
                   </span>
                 </div>
               )}
+              {previewLoading && (
+                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  {strings.previewLoading}
+                </p>
+              )}
+              {previewError && (
+                <p className="text-xs text-destructive" data-testid="text-statement-preview-error">
+                  {previewError}
+                </p>
+              )}
               {isImporting && pdfProgress > 0 && (
                 <div className="space-y-1">
                   <Progress value={pdfProgress} className="h-2" />
@@ -1164,6 +1386,184 @@ export default function BankReconciliation() {
                 </div>
               )}
             </div>
+            {statementPreview && importFile && !isPdfFile(importFile) && (
+              <div
+                className="border rounded-md p-3 space-y-3"
+                dir={locale === "ar" ? "rtl" : "ltr"}
+                data-testid="panel-statement-mapper"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-sm">{strings.reviewTitle}</p>
+                  <Badge variant="secondary">
+                    {strings.detected}: {statementPreview.detectedFormatLabel}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {statementPreview.totalRows} {strings.rows} · {statementPreview.validRows}{" "}
+                  {strings.valid}
+                  {statementPreview.errorRows > 0 && (
+                    <span className="text-destructive">
+                      {" "}
+                      · {statementPreview.errorRows} {strings.withErrors}
+                    </span>
+                  )}
+                </p>
+
+                {statementPreview.warnings.length > 0 && (
+                  <ul className="space-y-1" data-testid="list-statement-warnings">
+                    {statementPreview.warnings.map((w) => (
+                      <li
+                        key={w.code + w.message}
+                        className={
+                          w.requiresChoice
+                            ? "text-xs text-[hsl(var(--chart-4))]"
+                            : "text-xs text-muted-foreground"
+                        }
+                      >
+                        {w.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {(statementPreview.kind === "csv" || statementPreview.kind === "xlsx") && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {statementPreview.dateOrder && statementPreview.dateOrder !== "YMD" && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">{strings.dateOrder}</Label>
+                        <Select
+                          value={statementOverrides.dateOrder ?? statementPreview.dateOrder}
+                          onValueChange={(value) =>
+                            updateOverrides({
+                              ...statementOverrides,
+                              dateOrder: value as "DMY" | "MDY",
+                            })
+                          }
+                        >
+                          <SelectTrigger data-testid="select-statement-date-order">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DMY">DD/MM/YYYY</SelectItem>
+                            <SelectItem value="MDY">MM/DD/YYYY</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <Label className="text-xs">{strings.decimalSeparator}</Label>
+                      <Select
+                        value={
+                          statementOverrides.decimalSeparator ?? statementPreview.decimalSeparator
+                        }
+                        onValueChange={(value) =>
+                          updateOverrides({
+                            ...statementOverrides,
+                            decimalSeparator: value as "." | ",",
+                          })
+                        }
+                      >
+                        <SelectTrigger data-testid="select-statement-decimal">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value=".">{strings.decimalPoint}</SelectItem>
+                          <SelectItem value=",">{strings.decimalComma}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                {statementPreview.headers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium">{strings.columnMapping}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {MAPPER_FIELDS.map((field) => {
+                        const current = (statementOverrides.mapping ?? statementPreview.mapping)[
+                          field
+                        ];
+                        return (
+                          <div key={field} className="space-y-1">
+                            <Label className="text-xs">{strings.fields[field]}</Label>
+                            <Select
+                              value={current == null ? "__none" : String(current)}
+                              onValueChange={(value) => handleMappingChange(field, value)}
+                            >
+                              <SelectTrigger data-testid={`select-map-${field}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none">{strings.notMapped}</SelectItem>
+                                {statementPreview.headers.map((header, index) => (
+                                  <SelectItem key={index} value={String(index)}>
+                                    {index + 1}. {header || "—"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {statementPreview.sampleRows.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">{strings.sampleRows}</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs" data-testid="table-statement-sample">
+                        <thead>
+                          <tr className="text-muted-foreground">
+                            <th className="text-start font-normal pe-2">#</th>
+                            <th className="text-start font-normal pe-2">{strings.colDate}</th>
+                            <th className="text-start font-normal pe-2">
+                              {strings.colDescription}
+                            </th>
+                            <th className="text-end font-normal pe-2">{strings.colDebit}</th>
+                            <th className="text-end font-normal">{strings.colCredit}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statementPreview.sampleRows.slice(0, 5).map((row) => (
+                            <tr
+                              key={row.rowIndex}
+                              className={row.errors.length > 0 ? "text-destructive" : undefined}
+                              title={row.errors.join("; ")}
+                            >
+                              <td className="pe-2">{row.rowIndex}</td>
+                              <td className="pe-2">{row.date ?? "—"}</td>
+                              <td className="pe-2 max-w-[16rem] truncate">{row.description}</td>
+                              <td className="text-end pe-2">
+                                {row.debit ? row.debit.toFixed(2) : ""}
+                              </td>
+                              <td className="text-end">
+                                {row.credit ? row.credit.toFixed(2) : ""}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {statementPreview.requiresChoice && (
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="ack-statement-ambiguity"
+                      checked={acknowledgeAmbiguity}
+                      onCheckedChange={(checked) => setAcknowledgeAmbiguity(checked === true)}
+                      data-testid="checkbox-acknowledge-ambiguity"
+                    />
+                    <Label htmlFor="ack-statement-ambiguity" className="text-xs">
+                      {strings.confirmAssumption}
+                    </Label>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
@@ -1171,6 +1571,10 @@ export default function BankReconciliation() {
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
                     <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, Arabic/English generic</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
+                    <span>{strings.formats}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
@@ -1205,14 +1609,26 @@ export default function BankReconciliation() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setImportDialogOpen(false)}
+              onClick={() => {
+                setImportDialogOpen(false);
+                resetStatementPreview();
+              }}
               disabled={isImporting}
             >
               Cancel
             </Button>
             <Button
               onClick={handleImport}
-              disabled={isImporting || !importFile || !selectedBankAccount}
+              disabled={
+                isImporting ||
+                !importFile ||
+                !selectedBankAccount ||
+                previewLoading ||
+                (!!statementPreview &&
+                  !isPdfFile(importFile) &&
+                  (statementPreview.validRows === 0 ||
+                    (statementPreview.requiresChoice && !acknowledgeAmbiguity)))
+              }
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

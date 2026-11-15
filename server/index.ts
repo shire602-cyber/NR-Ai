@@ -61,7 +61,7 @@ const largeJsonRoutes = [
   /^\/api\/export\//,
   /^\/api\/firm\/bulk\/ocr/,
   /^\/api\/companies\/[^/]+\/receipts$/,
-  /^\/api\/companies\/[^/]+\/bank-statements\/import$/,
+  /^\/api\/companies\/[^/]+\/bank-statements\/(import|preview)$/,
 ];
 
 const largeJson = express.json({ limit: "10mb" });
@@ -189,9 +189,7 @@ const APP_UID = 1001;
 const APP_GID = 1001;
 
 const runningAsRoot =
-  process.platform === "linux" &&
-  typeof process.getuid === "function" &&
-  process.getuid() === 0;
+  process.platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0;
 
 if (runningAsRoot) {
   // We own everything right now — create the tree and hand the (root-owned)
@@ -216,20 +214,14 @@ if (runningAsRoot) {
   } catch (err) {
     // Staying root is acceptable: the volume is already chowned and root can
     // write it, so receipt saving works — we only lose the hardening.
-    log.error(
-      { err: (err as Error).message },
-      "Failed to drop privileges; continuing as root"
-    );
+    log.error({ err: (err as Error).message }, "Failed to drop privileges; continuing as root");
   }
 } else {
   // Non-root (local dev, or already-unprivileged): just ensure the dirs.
   try {
     fs.mkdirSync(receiptsDir, { recursive: true });
   } catch (err) {
-    log.warn(
-      { err: (err as Error).message, receiptsDir },
-      "Could not create uploads directory"
-    );
+    log.warn({ err: (err as Error).message, receiptsDir }, "Could not create uploads directory");
   }
 }
 
