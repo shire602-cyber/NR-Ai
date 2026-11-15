@@ -40,7 +40,7 @@ import {
 
 interface ReconcileMatch {
   bankTransactionId: string;
-  matchedType: "journal_entry" | "invoice" | "receipt";
+  matchedType: "journal_entry" | "invoice" | "receipt" | "bill";
   matchedId: string;
   confidence: number;
   matchReason: string;
@@ -71,6 +71,7 @@ const matchTypeConfig = {
   },
   invoice: { icon: FileText, label: "Invoice", color: "text-info", bg: "bg-info-subtle" },
   receipt: { icon: Receipt, label: "Receipt", color: "text-success", bg: "bg-success-subtle" },
+  bill: { icon: FileText, label: "Bill", color: "text-warning", bg: "bg-warning-subtle" },
 };
 
 function getConfidenceStyle(confidence: number) {
@@ -148,8 +149,13 @@ export default function AutoReconcile() {
         matches: matchesToApply,
       });
     },
-    onSuccess: (data: any) => {
-      toast({ title: "Reconciliation applied", description: data.message });
+    onSuccess: (data: { message: string; skipped?: number; errors?: string[] }) => {
+      // Failed or skipped lines are reported, never counted as reconciled.
+      toast({
+        title: "Reconciliation applied",
+        description: [data.message, ...(data.errors ?? []).slice(0, 3)].join(" · "),
+        variant: data.errors && data.errors.length > 0 ? "destructive" : undefined,
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       scanMutation.mutate();
     },

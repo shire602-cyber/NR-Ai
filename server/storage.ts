@@ -642,7 +642,7 @@ export interface IStorage {
   // Bank Accounts
   createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
   getBankAccountsByCompanyId(companyId: string): Promise<BankAccount[]>;
-  getBankAccountById(id: string): Promise<BankAccount | undefined>;
+  getBankAccountById(id: string, companyId?: string): Promise<BankAccount | undefined>;
   updateBankAccount(id: string, data: Partial<InsertBankAccount>): Promise<BankAccount>;
 
   // Bank Transactions
@@ -656,13 +656,8 @@ export interface IStorage {
     companyId: string,
     data: Partial<InsertBankTransaction>
   ): Promise<BankTransaction>;
-  reconcileBankTransaction(
-    id: string,
-    companyId: string,
-    matchedId: string,
-    matchType: "journal" | "receipt" | "invoice",
-    createdBy?: string
-  ): Promise<BankTransaction>;
+  // W3-C: reconcileBankTransaction was removed. Every reconcile path goes through
+  // services/bank-reconciliation.service.ts applyMatch (it wrote raw Dr Bank / Cr AR journals).
 
   // Cash Flow Forecasts
   createCashFlowForecast(forecast: InsertCashFlowForecast): Promise<CashFlowForecast>;
@@ -2949,15 +2944,22 @@ export class DatabaseStorage implements IStorage {
       .orderBy(bankAccounts.nameEn);
   }
 
-  async getBankAccountById(id: string): Promise<BankAccount | undefined> {
-    const [result] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, id));
+  async getBankAccountById(id: string, companyId?: string): Promise<BankAccount | undefined> {
+    const [result] = await db
+      .select()
+      .from(bankAccounts)
+      .where(
+        companyId
+          ? and(eq(bankAccounts.id, id), eq(bankAccounts.companyId, companyId))
+          : eq(bankAccounts.id, id)
+      );
     return result;
   }
 
   async updateBankAccount(id: string, data: Partial<InsertBankAccount>): Promise<BankAccount> {
     const [result] = await db
       .update(bankAccounts)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(bankAccounts.id, id))
       .returning();
     if (!result) throw new Error("Bank account not found");
@@ -2992,7 +2994,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(bankTransactions)
-      .where(eq(bankTransactions.companyId, companyId))
+      .where(and(eq(bankTransactions.companyId, companyId), isNull(bankTransactions.deletedAt)))
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
@@ -3001,7 +3003,12 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(bankTransactions)
       .where(
-        and(eq(bankTransactions.companyId, companyId), eq(bankTransactions.isReconciled, false))
+        and(
+          eq(bankTransactions.companyId, companyId),
+          eq(bankTransactions.isReconciled, false),
+          isNull(bankTransactions.deletedAt),
+          isNull(bankTransactions.excludedAt)
+        )
       )
       .orderBy(desc(bankTransactions.transactionDate));
   }
@@ -3015,114 +3022,6 @@ export class DatabaseStorage implements IStorage {
       .update(bankTransactions)
       .set(data)
       .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
-      .returning();
-    if (!transaction) {
-      throw new Error("Bank transaction not found");
-    }
-    return transaction;
-  }
-
-  async reconcileBankTransaction(
-    id: string,
-    companyId: string,
-    matchedId: string,
-    matchType: "journal" | "receipt" | "invoice",
-    createdBy?: string
-  ): Promise<BankTransaction> {
-    // Load the bank txn so we have amount/date/bankAccountId for JE posting.
-    const existing = await this.getBankTransactionById(id, companyId);
-    if (!existing) {
-      throw new Error("Bank transaction not found");
-    }
-
-    const updateData: any = {
-      isReconciled: true,
-    };
-    if (matchType === "journal") {
-      updateData.matchedJournalEntryId = matchedId;
-    } else if (matchType === "receipt") {
-      updateData.matchedReceiptId = matchedId;
-    } else {
-      updateData.matchedInvoiceId = matchedId;
-    }
-
-    // Reconciliation must produce a journal entry: previously this method only
-    // flipped flags on the bank transaction, leaving the books out of step
-    // with the bank statement. For 'journal' matches the contra entry already
-    // exists, so we just link to it. For 'invoice' / 'receipt' matches we
-    // either link an existing source-derived JE (e.g. one posted by
-    // recordInvoicePayment / receipt posting) or create a fresh
-    // bank-reconciliation JE here.
-    if (
-      createdBy &&
-      matchType !== "journal" &&
-      !existing.matchedJournalEntryId &&
-      existing.bankAccountId
-    ) {
-      const sourceTag = matchType === "invoice" ? "payment" : "receipt";
-      const sourceEntries = await this.getJournalEntriesBySource(
-        existing.companyId,
-        sourceTag,
-        matchedId
-      );
-      const linkedExisting = sourceEntries[0];
-
-      if (linkedExisting) {
-        updateData.matchedJournalEntryId = linkedExisting.id;
-      } else {
-        const accounts = await this.getAccountsByCompanyId(existing.companyId);
-        const arAccount = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
-        const apAccount = accounts.find((a) => a.code === ACCOUNT_CODES.AP && a.isSystemAccount);
-        const isInflow = Number(existing.amount) > 0;
-        // Inflow: customer paid → Dr Bank, Cr A/R (link to invoice).
-        // Outflow: paid vendor / expense → Dr A/P, Cr Bank (link to receipt).
-        const contraAccount = isInflow ? arAccount : apAccount;
-
-        if (contraAccount) {
-          const absAmount = Math.abs(Number(existing.amount));
-          const txnDate =
-            existing.transactionDate instanceof Date
-              ? existing.transactionDate
-              : new Date(existing.transactionDate);
-          const entryNumber = await this.generateEntryNumber(existing.companyId, txnDate);
-
-          const newEntry = await this.createJournalEntry(
-            {
-              companyId: existing.companyId,
-              entryNumber,
-              date: txnDate,
-              memo: `Bank reconciliation: ${existing.description}`.slice(0, 500),
-              status: "posted",
-              source: "bank_reconciliation",
-              sourceId: existing.id,
-              createdBy,
-              postedBy: createdBy,
-              postedAt: new Date(),
-            },
-            [
-              {
-                accountId: existing.bankAccountId,
-                debit: isInflow ? absAmount : 0,
-                credit: isInflow ? 0 : absAmount,
-                description: existing.description,
-              },
-              {
-                accountId: contraAccount.id,
-                debit: isInflow ? 0 : absAmount,
-                credit: isInflow ? absAmount : 0,
-                description: existing.description,
-              },
-            ]
-          );
-          updateData.matchedJournalEntryId = newEntry.id;
-        }
-      }
-    }
-
-    const [transaction] = await db
-      .update(bankTransactions)
-      .set(updateData)
-      .where(eq(bankTransactions.id, id))
       .returning();
     if (!transaction) {
       throw new Error("Bank transaction not found");

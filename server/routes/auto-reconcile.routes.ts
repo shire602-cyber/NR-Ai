@@ -1,90 +1,79 @@
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { requirePermission } from "../middleware/companyRolePolicy";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
 import { storage } from "../storage";
 import {
   autoReconcileTransactions,
   applyReconcileMatches,
 } from "../services/auto-reconcile.service";
+import {
+  autoReconcileApplyBody,
+  type AutoReconcileApplyBody,
+} from "../../shared/validators/banking";
+
+function actor(req: Request): string {
+  return (req as Request & { user: { id: string } }).user.id;
+}
+
+async function assertAccess(req: Request, companyId: string): Promise<void> {
+  if (!(await storage.hasCompanyAccess(actor(req), companyId)))
+    throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
+}
 
 export function registerAutoReconcileRoutes(app: Express) {
-  // =====================================
-  // Auto-Reconciliation Routes
-  // =====================================
-
   /**
    * POST /api/companies/:companyId/auto-reconcile
-   * Run AI auto-reconciliation on unreconciled bank transactions.
-   * Returns suggested matches with confidence scores.
+   * Score unreconciled bank lines against cash-side entries, open invoices / bills and receipts.
+   * Read-only: returns suggestions with confidence scores.
    */
   app.post(
     "/api/companies/:companyId/auto-reconcile",
     authMiddleware,
     requireCustomer,
+    strictBody(z.object({}).strict()),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      // Check if user has access to this company
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const result = await autoReconcileTransactions(companyId);
-      res.json(result);
+      await assertAccess(req, companyId);
+      res.json(await autoReconcileTransactions(companyId));
     })
   );
 
   /**
    * POST /api/companies/:companyId/auto-reconcile/apply
-   * Apply suggested matches — reconcile bank transactions with matched records.
-   * Body: { matches: [{ bankTransactionId, matchedType, matchedId }] }
+   * Apply suggestions through the bank match service (R06-05). Already reconciled lines are
+   * skipped (applying twice is a no-op); errors carry codes, never SQL (R06-16).
    */
   app.post(
     "/api/companies/:companyId/auto-reconcile/apply",
     authMiddleware,
     requireCustomer,
+    requirePermission("ledger.post"),
+    strictBody(autoReconcileApplyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-      const { matches } = req.body;
-
-      // Check if user has access to this company
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (!matches || !Array.isArray(matches) || matches.length === 0) {
-        return res.status(400).json({ message: "No matches provided to apply" });
-      }
-
-      // Validate each match has required fields
-      for (const match of matches) {
-        if (!match.bankTransactionId || !match.matchedType || !match.matchedId) {
-          return res.status(400).json({
-            message: "Each match must have bankTransactionId, matchedType, and matchedId",
-          });
-        }
-        if (!["journal", "receipt", "invoice", "journal_entry"].includes(match.matchedType)) {
-          return res.status(400).json({
-            message: `Invalid matchedType: ${match.matchedType}. Must be journal, receipt, or invoice.`,
-          });
-        }
-      }
-
-      // Normalize matchedType for the storage layer
-      const normalizedMatches = matches.map((m: any) => ({
-        ...m,
-        matchedType: m.matchedType === "journal_entry" ? "journal" : m.matchedType,
-      }));
-
-      const result = await applyReconcileMatches(companyId, normalizedMatches, userId);
+      await assertAccess(req, companyId);
+      const body = parsedBody<AutoReconcileApplyBody>(req);
+      const result = await applyReconcileMatches(
+        companyId,
+        body.matches.map((m) => ({
+          bankTransactionId: m.bankTransactionId,
+          matchedType: m.matchedType,
+          matchedId: m.matchedId,
+        })),
+        actor(req),
+        req
+      );
       res.json({
-        message: `Successfully reconciled ${result.applied} transaction(s)`,
+        message: `Reconciled ${result.applied} transaction(s)`,
         applied: result.applied,
+        skipped: result.skipped,
         errors: result.errors,
+        results: result.results,
       });
     })
   );

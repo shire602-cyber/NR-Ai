@@ -42,7 +42,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -57,7 +57,10 @@ interface ReconciliationRule {
   matchField: string;
   matchType: string;
   matchValue: string;
-  targetAccountId: string | null;
+  accountId: string | null;
+  vatTreatment: string;
+  requireReview: boolean;
+  direction: string;
   category: string | null;
   memo: string | null;
   isActive: boolean | null;
@@ -67,8 +70,29 @@ interface ReconciliationRule {
 
 interface AutoMatchResult {
   matched: number;
+  posted: number;
+  pendingReview: number;
   totalUnreconciled: number;
   rulesEvaluated: number;
+  errors: Array<{ bankTransactionId: string; message: string }>;
+}
+
+interface RuleSuggestion {
+  matchValue: string;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  occurrences: number;
+  direction: "inflow" | "outflow";
+}
+
+interface RuleAccountOption {
+  id: string;
+  code: string;
+  nameEn: string;
+  type: string;
+  subType: string | null;
+  isActive: boolean;
 }
 
 const ruleFormSchema = z.object({
@@ -77,6 +101,10 @@ const ruleFormSchema = z.object({
   matchField: z.enum(["description", "reference", "amount"]),
   matchType: z.enum(["contains", "exact", "starts_with", "regex"]),
   matchValue: z.string().min(1, "Match value is required"),
+  accountId: z.string().uuid("Choose the GL account this rule posts to"),
+  vatTreatment: z.enum(["none", "standard", "zero_rated", "exempt"]),
+  requireReview: z.boolean().default(false),
+  direction: z.enum(["any", "inflow", "outflow"]).default("any"),
   category: z.string().optional(),
   memo: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -110,6 +138,17 @@ export default function ReconciliationRules() {
     queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
     enabled: !!selectedCompanyId,
   });
+  const { data: ruleAccounts } = useQuery<RuleAccountOption[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "accounts"],
+    enabled: !!selectedCompanyId,
+  });
+  const { data: ruleSuggestions } = useQuery<RuleSuggestion[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules", "suggestions"],
+    enabled: !!selectedCompanyId,
+  });
+  const postableAccounts = (ruleAccounts ?? []).filter(
+    (a) => a.isActive && !(a.type === "asset" && a.subType === "bank")
+  );
 
   const form = useForm<RuleFormData>({
     resolver: zodResolver(ruleFormSchema),
@@ -119,6 +158,10 @@ export default function ReconciliationRules() {
       matchField: "description",
       matchType: "contains",
       matchValue: "",
+      accountId: "",
+      vatTreatment: "none",
+      requireReview: false,
+      direction: "any",
       category: "",
       memo: "",
       isActive: true,
@@ -208,11 +251,16 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "bank-transactions"],
+        queryKey: ["/api/companies", selectedCompanyId, "bank-statements"],
       });
       toast({
-        title: "Auto-match completed",
-        description: `Matched ${result.matched} of ${result.totalUnreconciled} unreconciled transactions using ${result.rulesEvaluated} rules.`,
+        title: t["banking.rules.ranTitle"],
+        description: formatMessage(t["banking.rules.ranResult"], {
+          posted: result.posted,
+          review: result.pendingReview,
+          total: result.totalUnreconciled,
+          errors: result.errors?.length ?? 0,
+        }),
       });
     },
     onError: (error: Error) => {
@@ -228,6 +276,29 @@ export default function ReconciliationRules() {
       matchField: "description",
       matchType: "contains",
       matchValue: "",
+      accountId: "",
+      vatTreatment: "none",
+      requireReview: false,
+      direction: "any",
+      category: "",
+      memo: "",
+      isActive: true,
+    });
+    setDialogOpen(true);
+  }
+
+  function openFromSuggestion(sg: RuleSuggestion) {
+    setEditingRule(null);
+    form.reset({
+      name: sg.matchValue.toUpperCase(),
+      priority: 0,
+      matchField: "description",
+      matchType: "contains",
+      matchValue: sg.matchValue,
+      accountId: sg.accountId,
+      vatTreatment: "none",
+      requireReview: false,
+      direction: sg.direction,
       category: "",
       memo: "",
       isActive: true,
@@ -243,6 +314,10 @@ export default function ReconciliationRules() {
       matchField: rule.matchField as "description" | "reference" | "amount",
       matchType: rule.matchType as "contains" | "exact" | "starts_with" | "regex",
       matchValue: rule.matchValue,
+      accountId: rule.accountId ?? "",
+      vatTreatment: (rule.vatTreatment ?? "none") as RuleFormData["vatTreatment"],
+      requireReview: rule.requireReview ?? false,
+      direction: (rule.direction ?? "any") as RuleFormData["direction"],
       category: rule.category ?? "",
       memo: rule.memo ?? "",
       isActive: rule.isActive ?? true,
@@ -309,6 +384,31 @@ export default function ReconciliationRules() {
           </>
         }
       />
+
+      {ruleSuggestions && ruleSuggestions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t["banking.rules.suggestionsTitle"]}</CardTitle>
+            <CardDescription>{t["banking.rules.suggestionsHint"]}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {ruleSuggestions.map((sg) => (
+              <div
+                key={`${sg.matchValue}-${sg.accountId}-${sg.direction}`}
+                className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
+              >
+                <span>
+                  <span className="font-mono">{sg.matchValue}</span> → {sg.accountCode}{" "}
+                  {sg.accountName} ({sg.occurrences})
+                </span>
+                <Button size="sm" variant="outline" onClick={() => openFromSuggestion(sg)}>
+                  {t["banking.rules.useSuggestion"]}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -525,6 +625,101 @@ export default function ReconciliationRules() {
                       <Input placeholder="e.g. RENT or ^SALARY.*" {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="accountId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t["banking.rules.account"]}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-rule-account">
+                          <SelectValue placeholder={t["banking.rules.account"]} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {postableAccounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.code} {a.nameEn}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="vatTreatment"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["banking.line.vatTreatment"]}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(["none", "standard", "zero_rated", "exempt"] as const).map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {t[`banking.line.vat.${v}`]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="direction"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["banking.rules.direction"]}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(["any", "inflow", "outflow"] as const).map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {t[`banking.rules.direction.${v}`]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="requireReview"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <FormLabel className="text-base">
+                        {t["banking.rules.requireReview"]}
+                      </FormLabel>
+                      <p className="text-sm text-muted-foreground">
+                        {t["banking.rules.requireReviewHint"]}
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )}
               />
