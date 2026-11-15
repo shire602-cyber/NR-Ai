@@ -46,6 +46,14 @@ import {
   setClassifierConfig,
 } from "../services/training-data.service";
 
+import { createHash } from "node:crypto";
+import { DomainError } from "../errors";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { applyMatch } from "../services/bank-reconciliation.service";
+import { aiRowsToParsedRows, importStatementRows } from "../services/bank-import.service";
+import { aiStatementImportBody, type AiStatementImportBody } from "../../shared/validators/banking";
+
 const log = createLogger("ai");
 
 // RFC 4122 UUID format guard — used before validating AI-returned IDs against
@@ -300,21 +308,38 @@ ${DATA_BLOCK_INSTRUCTION}`,
           completion.choices[0].message.content || '{"transactions": []}'
         );
 
-        // Validate and clean up transactions
-        const validTransactions = (aiResponse.transactions || [])
-          .filter((t: any) => {
-            return t.date && t.description && typeof t.amount === "number" && !isNaN(t.amount);
-          })
-          .map((t: any) => ({
-            date: t.date,
-            description: t.description.substring(0, 200),
-            amount: t.amount.toString(),
-            reference: t.reference || null,
+        // W3-C (R06-12/R06-24): model output goes through the same strict row validation as the
+        // import pipeline — a bad date or amount is reported, never turned into NaN or a guess.
+        const rawRows: unknown[] = Array.isArray(aiResponse?.transactions)
+          ? aiResponse.transactions
+          : [];
+        const candidates = rawRows
+          .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+          .map((t) => ({
+            date: typeof t.date === "string" ? t.date : "",
+            description: typeof t.description === "string" ? t.description : "",
+            amount: typeof t.amount === "number" || typeof t.amount === "string" ? t.amount : "",
+            reference: typeof t.reference === "string" ? t.reference : null,
           }));
+        const parsedRows = aiRowsToParsedRows(candidates);
+        const validTransactions = parsedRows
+          .filter((r) => r.errors.length === 0)
+          .map((r) => ({
+            date: (r.date as Date).toISOString().slice(0, 10),
+            description: r.description.substring(0, 200),
+            amount: r.amount.toFixed(2),
+            reference: r.reference,
+          }));
+        const rejected = parsedRows
+          .filter((r) => r.errors.length > 0)
+          .map((r) => ({ rowIndex: r.rowIndex, errors: r.errors }));
 
-        log.info({ count: validTransactions.length }, "Parsed bank statement");
+        log.info(
+          { count: validTransactions.length, rejected: rejected.length },
+          "Parsed bank statement"
+        );
 
-        res.json({ transactions: validTransactions });
+        res.json({ transactions: validTransactions, rejected });
       } catch (error: any) {
         log.error({ err: error }, "AI bank statement parsing error");
         res.status(error?.status || error?.statusCode || 500).json({
@@ -1033,14 +1058,26 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
           return res.status(404).json({ message: "Transaction not found" });
         }
 
-        const transaction = await storage.reconcileBankTransaction(
-          id,
-          txn.companyId,
-          matchId,
-          matchType
-        );
-        res.json(transaction);
+        // W3-C: every reconcile goes through the one bank match service (payments for
+        // invoices, cash-side check for journals, period lock, idempotent apply).
+        const kind =
+          matchType === "invoice"
+            ? "invoice"
+            : matchType === "receipt"
+              ? "receipt"
+              : matchType === "bill"
+                ? "bill"
+                : "journal";
+        const result = await applyMatch({
+          companyId: txn.companyId,
+          transactionId: id,
+          actorId: userId,
+          target: { kind, id: String(matchId) },
+          req,
+        });
+        res.json(result.transaction);
       } catch (error: any) {
+        if (error instanceof DomainError) throw error;
         res
           .status(error?.status || error?.statusCode || 500)
           .json({ message: error.message, ...aiErrorBody(error) });
@@ -1103,46 +1140,60 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     })
   );
 
-  // Import bank transactions from CSV
+  // PDF / AI-extracted statement rows (W3-C, R06-12): requires a managed bank account and goes
+  // through the shared import pipeline (parser row shape, strict validation, dedupe, import
+  // batch with undo, continuity check). Invalid rows are reported, never stored as NaN.
   app.post(
     "/api/companies/:companyId/bank-transactions/import",
     authMiddleware,
     requireCustomer,
+    strictBody(aiStatementImportBody),
     asyncHandler(async (req: Request, res: Response) => {
-      try {
-        const { companyId } = req.params;
-        const { transactions } = req.body;
-        const userId = (req as any).user.id;
-
-        // Verify company access
-        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-        if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-
-        if (!Array.isArray(transactions)) {
-          return res.status(400).json({ message: "Transactions array required" });
-        }
-
-        const imported = [];
-        for (const t of transactions) {
-          const transaction = await storage.createBankTransaction({
-            companyId,
-            transactionDate: new Date(t.date),
-            description: t.description,
-            amount: parseFloat(t.amount),
-            reference: t.reference,
-            importSource: "csv",
-          });
-          imported.push(transaction);
-        }
-
-        res.json({ imported: imported.length, transactions: imported });
-      } catch (error: any) {
-        res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+      const { companyId } = req.params;
+      const userId = (req as any).user.id as string;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
+      const body = parsedBody<AiStatementImportBody>(req);
+      const rows = aiRowsToParsedRows(body.transactions);
+      if (!rows.some((r) => r.errors.length === 0)) {
+        return res.status(400).json({
+          code: "NO_VALID_TRANSACTIONS",
+          message: "No valid transactions found",
+          rowErrors: rows.map((r) => ({ rowIndex: r.rowIndex, errors: r.errors })).slice(0, 100),
+        });
+      }
+      const fingerprint = createHash("sha256")
+        .update(
+          JSON.stringify(
+            rows.map((r) => [r.date?.toISOString() ?? "", r.description, r.amount, r.reference])
+          )
+        )
+        .digest("hex");
+      const result = await importStatementRows({
+        companyId,
+        bankAccountId: body.bankAccountId,
+        rows,
+        kind: "csv",
+        fileFingerprint: fingerprint,
+        importSource: `pdf_ai:${fingerprint.slice(0, 16)}`,
+        source: "pdf_ai",
+        fileName: body.fileName ?? null,
+        format: "pdf_ai",
+        actorId: userId,
+        allowDuplicates: body.allowDuplicates,
+      });
+      res.status(201).json({
+        imported: result.imported.length,
+        batchId: result.batchId,
+        continuityWarning: result.continuityWarning,
+        skipped: result.plan.skipped.map(({ rowIndex, reason, detail }) => ({
+          rowIndex,
+          reason,
+          detail,
+        })),
+        transactions: result.imported,
+      });
     })
   );
 

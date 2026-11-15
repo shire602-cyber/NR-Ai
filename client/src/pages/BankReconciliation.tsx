@@ -84,6 +84,7 @@ interface BankTransaction {
   matchedReceiptId: string | null;
   matchedInvoiceId: string | null;
   matchConfidence: number | null;
+  matchedType?: string | null;
   importSource: string | null;
   createdAt: string;
 }
@@ -114,7 +115,7 @@ function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
 
 interface MatchSuggestion {
   bankTransactionId: string;
-  matchedType: "journal_entry" | "invoice" | "receipt";
+  matchedType: "journal_entry" | "invoice" | "receipt" | "bill";
   matchedId: string;
   confidence: number;
   matchReason: string;
@@ -165,6 +166,12 @@ const matchTypeConfig = {
     label: "Receipt",
     color: "text-[hsl(var(--chart-5))]",
     bg: "bg-[hsl(var(--chart-5)/0.10)]",
+  },
+  bill: {
+    icon: FileText,
+    label: "Bill",
+    color: "text-[hsl(var(--chart-2))]",
+    bg: "bg-[hsl(var(--chart-2)/0.10)]",
   },
 };
 
@@ -554,6 +561,24 @@ export default function BankReconciliation() {
     },
   });
 
+  const confirmDraftMutation = useMutation({
+    mutationFn: (transactionId: string) =>
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/bank-statements/${transactionId}/confirm-entry`,
+        {}
+      ),
+    onSuccess: () => toast({ title: t["banking.line.matched"] }),
+    onError: (error: Error) =>
+      toast({
+        variant: "destructive",
+        title: t["banking.common.error"],
+        description: error?.message,
+      }),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] }),
+  });
+
   const autoReconcileMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/auto-reconcile`),
     onSuccess: (data: any) => {
@@ -756,6 +781,11 @@ export default function BankReconciliation() {
   };
 
   const handleAcceptSuggestion = (tx: BankTransaction) => {
+    // A rule / create-entry draft waiting for review: posting the draft reconciles the line.
+    if (tx.matchedType === "rule" || tx.matchedType === "entry") {
+      confirmDraftMutation.mutate(tx.id);
+      return;
+    }
     if (!tx.matchedJournalEntryId && !tx.matchedInvoiceId && !tx.matchedReceiptId) return;
     const matchedId = tx.matchedJournalEntryId ?? tx.matchedInvoiceId ?? tx.matchedReceiptId!;
     const matchedType = tx.matchedJournalEntryId
@@ -1309,6 +1339,19 @@ export default function BankReconciliation() {
             </div>
           </div>
 
+          {selectedTransaction && !selectedTransaction.isReconciled && companyId && (
+            <BankLineActions
+              companyId={companyId}
+              transaction={selectedTransaction}
+              bankAccounts={bankAccounts ?? []}
+              transactions={transactions ?? []}
+              onDone={() => {
+                setMatchDialogOpen(false);
+                setSelectedTransaction(null);
+              }}
+            />
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setMatchDialogOpen(false)}>
               Close
@@ -1769,6 +1812,345 @@ export default function BankReconciliation() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Other ways to reconcile a line (W3-C, R06-21 / R06-22) ─────────────────
+
+interface GlAccountOption {
+  id: string;
+  code: string;
+  nameEn: string;
+  type: string;
+  subType: string | null;
+  isActive: boolean;
+}
+
+interface OpenDocument {
+  id: string;
+  number?: string;
+  customerName?: string;
+  total?: number;
+  status?: string;
+}
+
+type LineMode = "entry" | "split" | "transfer" | "exclude";
+
+function BankLineActions({
+  companyId,
+  transaction,
+  bankAccounts,
+  transactions,
+  onDone,
+}: {
+  companyId: string;
+  transaction: BankTransaction;
+  bankAccounts: BankAccount[];
+  transactions: BankTransaction[];
+  onDone: () => void;
+}) {
+  const { t } = useTranslation();
+  const tr = (k: string) => t[k] ?? k;
+  const { toast } = useToast();
+  const [mode, setMode] = useState<LineMode>("entry");
+  const [accountId, setAccountId] = useState("");
+  const [vatTreatment, setVatTreatment] = useState("none");
+  const [bankFee, setBankFee] = useState("");
+  const [memo, setMemo] = useState("");
+  const [draft, setDraft] = useState(false);
+  const [allocations, setAllocations] = useState<Array<{ id: string; amount: string }>>([
+    { id: "", amount: "" },
+  ]);
+  const [otherAccount, setOtherAccount] = useState("");
+  const [counterpart, setCounterpart] = useState("none");
+  const [reason, setReason] = useState("");
+
+  const inflow = transaction.amount > 0;
+  const { data: glAccounts } = useQuery<GlAccountOption[]>({
+    queryKey: ["/api/companies", companyId, "accounts"],
+  });
+  const { data: invoices } = useQuery<OpenDocument[]>({
+    queryKey: ["/api/companies", companyId, "invoices"],
+    enabled: mode === "split" && inflow,
+  });
+  const contraAccounts = (glAccounts ?? []).filter(
+    (a) => a.isActive && !(a.type === "asset" && a.subType === "bank")
+  );
+  const openInvoices = (invoices ?? []).filter((i) =>
+    ["sent", "posted", "partial", "overdue"].includes(i.status ?? "")
+  );
+  const toFilsLocal = (v: string) => Math.round(Number(v || 0) * 100);
+  const allocatedFils = allocations.reduce((s, a) => s + toFilsLocal(a.amount), 0);
+  const bankFils = Math.round(Math.abs(transaction.amount) * 100);
+  const counterparts = transactions.filter(
+    (x) =>
+      x.bankStatementAccountId === otherAccount &&
+      !x.isReconciled &&
+      Math.round(x.amount * 100) === -Math.round(transaction.amount * 100)
+  );
+
+  const done = (title: string) => {
+    toast({ title });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "invoices"] });
+    onDone();
+  };
+  const onError = (error: Error) =>
+    toast({
+      variant: "destructive",
+      title: tr("banking.common.error"),
+      description: error?.message,
+    });
+  const base = `/api/companies/${companyId}/bank-statements/${transaction.id}`;
+
+  const entryMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `${base}/create-entry`, {
+        accountId,
+        vatTreatment,
+        ...(bankFee ? { bankFee } : {}),
+        ...(memo ? { memo } : {}),
+        postingMode: draft ? "draft" : "posted",
+      }),
+    onSuccess: () => done(tr("banking.line.entryCreated")),
+    onError,
+  });
+  const splitMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `${base}/match`, {
+        allocations: allocations
+          .filter((a) => a.id && a.amount)
+          .map((a) => ({ type: "invoice", id: a.id, amount: a.amount })),
+      }),
+    onSuccess: () => done(tr("banking.line.matched")),
+    onError,
+  });
+  const transferMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `${base}/match`, {
+        matchedType: "transfer",
+        matchedId: otherAccount,
+        ...(counterpart !== "none" ? { counterpartTransactionId: counterpart } : {}),
+      }),
+    onSuccess: () => done(tr("banking.line.matched")),
+    onError,
+  });
+  const excludeMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `${base}/exclude`, { reason }),
+    onSuccess: () => done(tr("banking.line.excluded")),
+    onError,
+  });
+
+  const modes: Array<[LineMode, string]> = [
+    ["entry", "banking.line.createEntry"],
+    ...(inflow ? ([["split", "banking.line.split"]] as Array<[LineMode, string]>) : []),
+    ["transfer", "banking.line.transfer"],
+    ["exclude", "banking.line.exclude"],
+  ];
+
+  return (
+    <div className="mt-4 rounded-lg border p-4 space-y-3" data-testid="bank-line-actions">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {tr("banking.line.actions")}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {modes.map(([m, key]) => (
+          <Button
+            key={m}
+            size="sm"
+            variant={mode === m ? "default" : "outline"}
+            onClick={() => setMode(m)}
+          >
+            {tr(key)}
+          </Button>
+        ))}
+      </div>
+
+      {mode === "entry" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label>{tr("banking.line.account")}</Label>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger data-testid="select-entry-account">
+                <SelectValue placeholder={tr("banking.line.account")} />
+              </SelectTrigger>
+              <SelectContent>
+                {contraAccounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.code} {a.nameEn}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>{tr("banking.line.vatTreatment")}</Label>
+            <Select value={vatTreatment} onValueChange={setVatTreatment}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["none", "standard", "zero_rated", "exempt"].map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {tr(`banking.line.vat.${v}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="line-fee">{tr("banking.line.bankFee")}</Label>
+            <Input
+              id="line-fee"
+              inputMode="decimal"
+              value={bankFee}
+              onChange={(e) => setBankFee(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="line-memo">{tr("banking.line.memo")}</Label>
+            <Input id="line-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={draft} onCheckedChange={(v) => setDraft(v === true)} />
+            {tr("banking.line.draft")}
+          </label>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => entryMutation.mutate()}
+              disabled={!accountId || entryMutation.isPending}
+              data-testid="button-create-entry"
+            >
+              {tr("banking.line.post")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "split" && (
+        <div className="space-y-2">
+          {allocations.map((a, i) => (
+            <div key={i} className="grid grid-cols-3 gap-2">
+              <Select
+                value={a.id}
+                onValueChange={(v) =>
+                  setAllocations(allocations.map((x, j) => (j === i ? { ...x, id: v } : x)))
+                }
+              >
+                <SelectTrigger className="col-span-2">
+                  <SelectValue placeholder={tr("banking.line.document")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {openInvoices.map((inv) => (
+                    <SelectItem key={inv.id} value={inv.id}>
+                      {inv.number} {inv.customerName}{" "}
+                      {inv.total != null ? formatCurrency(inv.total) : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                inputMode="decimal"
+                value={a.amount}
+                aria-label={tr("banking.common.amount")}
+                onChange={(e) =>
+                  setAllocations(
+                    allocations.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x))
+                  )
+                }
+              />
+            </div>
+          ))}
+          <div className="flex items-center justify-between text-sm">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAllocations([...allocations, { id: "", amount: "" }])}
+            >
+              {tr("banking.line.addAllocation")}
+            </Button>
+            <span className="font-mono">
+              {tr("banking.line.allocated")}: {(allocatedFils / 100).toFixed(2)} ·{" "}
+              {tr("banking.line.remaining")}: {((bankFils - allocatedFils) / 100).toFixed(2)}
+            </span>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => splitMutation.mutate()}
+              disabled={allocatedFils !== bankFils || splitMutation.isPending}
+            >
+              {tr("banking.line.applySplit")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "transfer" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label>{tr("banking.line.otherAccount")}</Label>
+            <Select value={otherAccount} onValueChange={setOtherAccount}>
+              <SelectTrigger>
+                <SelectValue placeholder={tr("banking.line.otherAccount")} />
+              </SelectTrigger>
+              <SelectContent>
+                {bankAccounts
+                  .filter((b) => b.id !== transaction.bankStatementAccountId)
+                  .map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.nameEn}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>{tr("banking.line.counterpart")}</Label>
+            <Select value={counterpart} onValueChange={setCounterpart}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{tr("banking.line.noCounterpart")}</SelectItem>
+                {counterparts.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.transactionDate.slice(0, 10)} {c.description}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2 flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => transferMutation.mutate()}
+              disabled={!otherAccount || transferMutation.isPending}
+            >
+              {tr("banking.line.applyTransfer")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "exclude" && (
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <Label htmlFor="line-reason">{tr("banking.line.excludeReason")}</Label>
+            <Input id="line-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => excludeMutation.mutate()}
+            disabled={reason.trim().length < 3 || excludeMutation.isPending}
+          >
+            {tr("banking.line.excludeApply")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

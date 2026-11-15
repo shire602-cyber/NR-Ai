@@ -110,6 +110,8 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "chartOfAccounts", url: "/chart-of-accounts" },
       { titleKey: "journal", url: "/journal" },
       { titleKey: "bankReconciliation", url: "/bank-reconciliation" },
+      { titleKey: "banking.accounts.title", url: "/bank-accounts" },
+      { titleKey: "banking.feeds.title", url: "/bank-feeds" },
       { titleKey: "reconciliationRules", url: "/reconciliation-rules" },
       { titleKey: "costCenters", url: "/cost-centers" },
       { titleKey: "exchangeRates", url: "/exchange-rates" },

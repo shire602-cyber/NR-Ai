@@ -1,10 +1,7 @@
 {
   "description": "Ratchet: direct journal writes outside server/ledger/ and server/storage.ts. Burn down to empty; regenerate with `node scripts/check-ledger-writes.mjs --update` only after removing call sites.",
-  "total": 12,
+  "total": 11,
   "files": {
-    "server/routes/bank-statements.routes.ts": {
-      "storage-create-journal-entry": 1
-    },
     "server/routes/expense-claims.routes.ts": {
       "storage-create-journal-entry": 1
     },

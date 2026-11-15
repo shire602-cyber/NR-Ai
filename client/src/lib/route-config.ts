@@ -12,6 +12,8 @@ export const customerOnlyRoutes = [
   "/inventory",
   "/fixed-assets",
   "/bank-reconciliation",
+  "/bank-accounts",
+  "/bank-feeds",
   "/payroll",
   "/budgets",
   "/ai",
