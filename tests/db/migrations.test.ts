@@ -42,10 +42,22 @@ describe("migrations", () => {
     }
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
-      expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
-      // Still a reserved placeholder, or filled by its owner with idempotent SQL.
-      const stripped = body.replace(/^--.*$/gm, "").trim();
-      expect(stripped === "SELECT 1;" || /^-- .*Idempotent/im.test(body), e.tag).toBe(true);
+      const sqlBody = body.replace(/^--.*$/gm, "").trim();
+      if (/^-- .*reserved placeholder/m.test(body)) {
+        // Untouched reservation: a no-op that names its owning workstream.
+        expect(body, e.tag).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
+        expect(sqlBody, e.tag).toBe("SELECT 1;");
+      } else {
+        // Filled by its owning workstream: the header line names the file and the
+        // workstream, declares the SQL idempotent, and every DDL statement is re-runnable.
+        expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\bW\d-[A-E]\b/m);
+        expect(body, e.tag).toMatch(/^-- .*\bIdempotent\b/im);
+        expect(sqlBody, e.tag).not.toBe("SELECT 1;");
+        expect(sqlBody, e.tag).not.toMatch(
+          /CREATE (TABLE|INDEX|UNIQUE INDEX)\s+(?!IF NOT EXISTS)(?!CONCURRENTLY IF NOT EXISTS)/i
+        );
+        expect(sqlBody, e.tag).not.toMatch(/ADD COLUMN\s+(?!IF NOT EXISTS)/i);
+      }
     }
   });
 

@@ -1,0 +1,1039 @@
+/**
+ * Core financial statements (trial balance, P&L, balance sheet, cash flow,
+ * general ledger, cash accounts). One implementation serves every report
+ * endpoint (R11-05).
+ *
+ * Policy: statements are correct by computation, not by closing entries.
+ *  - Retained earnings brought forward = cumulative income - expenses before
+ *    the fiscal year containing the as-of date, plus any balance on the
+ *    retained-earnings account (3020).
+ *  - Current year earnings = P&L from fiscal-year start to the as-of date.
+ *  - Closing / year-end entries are excluded from every query
+ *    (CLOSING_ENTRY_SQL), so a posted year-end close never zeroes the P&L and
+ *    is never double counted by the roll-forward.
+ */
+import { DomainError } from "../errors";
+import { pool } from "../db";
+import {
+  addDays,
+  addMonths,
+  buckets,
+  daysBetween,
+  fiscalYearStart,
+  type Granularity,
+  type IsoDate,
+} from "./dates";
+import {
+  accountTotals,
+  aed,
+  ledgerLines,
+  loadAccounts,
+  loadCompany,
+  naturalBalance,
+  netIncomeOf,
+  type AccountTotals,
+  type Fils,
+  type Queryable,
+  type ReportAccount,
+} from "./ledger-query";
+import {
+  indirectActivity,
+  isCashAccount,
+  isContraAsset,
+  isNonCurrent,
+  isRetainedEarningsAccount,
+  plSection,
+  type CashFlowActivity,
+  type PlSection,
+} from "./classify";
+
+export const REPORT_CURRENCY = "AED";
+
+export interface StatementLine {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountNameAr?: string | null;
+  amount: number;
+}
+
+export interface StatementSection {
+  total: number;
+  lines: StatementLine[];
+}
+
+function line(a: ReportAccount, fils: Fils): StatementLine {
+  return {
+    accountId: a.id,
+    accountCode: a.code,
+    accountName: a.nameEn,
+    accountNameAr: a.nameAr,
+    amount: aed(fils),
+  };
+}
+
+function section(items: Array<[ReportAccount, Fils]>, keepZero = false): StatementSection {
+  const kept = items.filter(([, f]) => keepZero || f !== 0);
+  return {
+    total: aed(kept.reduce((s, [, f]) => s + f, 0)),
+    lines: kept.map(([a, f]) => line(a, f)),
+  };
+}
+
+// ─── Trial balance ──────────────────────────────────────────────────────────
+
+export interface TrialBalanceRow {
+  accountId: string;
+  accountName: string;
+  accountNameAr?: string | null;
+  accountCode: string;
+  accountType: string;
+  totalDebit: number;
+  totalCredit: number;
+  balance: number;
+  debitBalance: number;
+  creditBalance: number;
+  hasForeignLines: boolean;
+  synthetic?: boolean;
+}
+
+export interface TrialBalance {
+  reportCurrency: string;
+  from: IsoDate | null;
+  to: IsoDate;
+  rows: TrialBalanceRow[];
+  retainedEarningsBroughtForward: number;
+  totals: {
+    sumDebits: number;
+    sumCredits: number;
+    difference: number;
+    sumDebitBalances: number;
+    sumCreditBalances: number;
+  };
+  isBalanced: boolean;
+}
+
+export const RETAINED_EARNINGS_BF_ID = "retained-earnings-brought-forward";
+export const CURRENT_YEAR_EARNINGS_ID = "current-year-earnings";
+
+/**
+ * Balance-sheet accounts carry their cumulative totals through `to`; income
+ * and expense accounts carry [from, to] activity only. The P&L before `from`
+ * is rolled into a synthetic "Retained earnings brought forward" row, so
+ * debits equal credits for every range (R11-02).
+ */
+export async function trialBalance(
+  args: { companyId: string; from?: IsoDate | null; to: IsoDate },
+  q: Queryable = pool
+): Promise<TrialBalance> {
+  const { companyId, to } = args;
+  const from = args.from ?? null;
+  const [accounts, cumulative, period, prior] = await Promise.all([
+    loadAccounts(companyId, q),
+    accountTotals(companyId, { to }, q),
+    from ? accountTotals(companyId, { from, to }, q) : Promise.resolve(null),
+    from ? accountTotals(companyId, { to: addDays(from, -1) }, q) : Promise.resolve(null),
+  ]);
+  const rows: TrialBalanceRow[] = [];
+  let sumD = 0;
+  let sumC = 0;
+  let sumDB = 0;
+  let sumCB = 0;
+  for (const a of accounts) {
+    const isBs = a.type === "asset" || a.type === "liability" || a.type === "equity";
+    const t: AccountTotals = (isBs ? cumulative : (period ?? cumulative)).get(a.id) ?? {
+      debit: 0,
+      credit: 0,
+    };
+    const net = t.debit - t.credit;
+    sumD += t.debit;
+    sumC += t.credit;
+    if (net > 0) sumDB += net;
+    else sumCB += -net;
+    rows.push({
+      accountId: a.id,
+      accountName: a.nameEn,
+      accountNameAr: a.nameAr,
+      accountCode: a.code,
+      accountType: a.type,
+      totalDebit: aed(t.debit),
+      totalCredit: aed(t.credit),
+      balance: aed(naturalBalance(a.type, t)),
+      debitBalance: aed(net > 0 ? net : 0),
+      creditBalance: aed(net < 0 ? -net : 0),
+      hasForeignLines: t.hasForeign === true,
+    });
+  }
+  const reBf = prior ? netIncomeOf(accounts, prior) : 0;
+  if (from) {
+    const d = reBf < 0 ? -reBf : 0;
+    const c = reBf > 0 ? reBf : 0;
+    sumD += d;
+    sumC += c;
+    sumDB += d;
+    sumCB += c;
+    rows.push({
+      accountId: RETAINED_EARNINGS_BF_ID,
+      accountName: "Retained earnings brought forward",
+      accountNameAr: "الأرباح المحتجزة المرحلة",
+      accountCode: "",
+      accountType: "equity",
+      totalDebit: aed(d),
+      totalCredit: aed(c),
+      balance: aed(reBf),
+      debitBalance: aed(d),
+      creditBalance: aed(c),
+      hasForeignLines: false,
+      synthetic: true,
+    });
+  }
+  return {
+    reportCurrency: REPORT_CURRENCY,
+    from,
+    to,
+    rows,
+    retainedEarningsBroughtForward: aed(reBf),
+    totals: {
+      sumDebits: aed(sumD),
+      sumCredits: aed(sumC),
+      difference: aed(Math.abs(sumD - sumC)),
+      sumDebitBalances: aed(sumDB),
+      sumCreditBalances: aed(sumCB),
+    },
+    isBalanced: sumD === sumC && sumDB === sumCB,
+  };
+}
+
+// ─── Profit and loss ────────────────────────────────────────────────────────
+
+export interface PlTotals {
+  revenue: number;
+  costOfSales: number;
+  grossProfit: number;
+  operatingExpenses: number;
+  operatingProfit: number;
+  otherIncome: number;
+  otherExpenses: number;
+  totalIncome: number;
+  totalExpenses: number;
+  netProfit: number;
+}
+
+export interface ProfitAndLoss extends PlTotals {
+  reportCurrency: string;
+  from: IsoDate | null;
+  to: IsoDate;
+  sections: {
+    revenue: StatementSection;
+    costOfSales: StatementSection;
+    operatingExpenses: StatementSection;
+    otherIncome: StatementSection;
+    otherExpenses: StatementSection;
+  };
+  columns?: Array<
+    PlTotals & { label: string; from: IsoDate; to: IsoDate; byAccount: Record<string, number> }
+  >;
+  comparison?: {
+    basis: PlCompareTo;
+    label: string;
+    from: IsoDate | null;
+    to: IsoDate;
+    budgetId?: string;
+    totals: PlTotals;
+    byAccount: Record<string, number>;
+    variance: PlTotals;
+  };
+}
+
+export type PlCompareTo = "prior_period" | "prior_year" | "budget";
+export type PlColumns = "total" | "monthly" | "quarterly";
+
+/** Signed P&L amount of an account (fils): income credit-normal, expense debit-normal. */
+function plAmount(a: ReportAccount, t: AccountTotals | undefined): Fils {
+  if (!t) return 0;
+  return a.type === "income" ? t.credit - t.debit : t.debit - t.credit;
+}
+
+function plFromAmounts(accounts: ReportAccount[], amountOf: (a: ReportAccount) => Fils) {
+  const groups: Record<PlSection, Array<[ReportAccount, Fils]>> = {
+    revenue: [],
+    cost_of_sales: [],
+    operating_expenses: [],
+    other_income: [],
+    other_expenses: [],
+  };
+  const byAccount: Record<string, number> = {};
+  for (const a of accounts) {
+    const s = plSection(a);
+    if (!s) continue;
+    const f = amountOf(a);
+    groups[s].push([a, f]);
+    if (f !== 0) byAccount[a.id] = aed(f);
+  }
+  const sum = (k: PlSection) => groups[k].reduce((s, [, f]) => s + f, 0);
+  const rev = sum("revenue");
+  const cos = sum("cost_of_sales");
+  const opex = sum("operating_expenses");
+  const oi = sum("other_income");
+  const oe = sum("other_expenses");
+  const totalsFils = {
+    revenue: rev,
+    costOfSales: cos,
+    grossProfit: rev - cos,
+    operatingExpenses: opex,
+    operatingProfit: rev - cos - opex,
+    otherIncome: oi,
+    otherExpenses: oe,
+    totalIncome: rev + oi,
+    totalExpenses: cos + opex + oe,
+    netProfit: rev + oi - cos - opex - oe,
+  };
+  const totals = Object.fromEntries(
+    Object.entries(totalsFils).map(([k, v]) => [k, aed(v)])
+  ) as unknown as PlTotals;
+  return { groups, totals, totalsFils, byAccount };
+}
+
+function diffTotals(a: PlTotals, b: PlTotals): PlTotals {
+  const out = {} as PlTotals;
+  for (const k of Object.keys(a) as Array<keyof PlTotals>) {
+    out[k] = aed(Math.round(a[k] * 100) - Math.round(b[k] * 100));
+  }
+  return out;
+}
+
+/** Same-length range immediately before [from, to]. */
+export function priorPeriod(from: IsoDate, to: IsoDate): { from: IsoDate; to: IsoDate } {
+  // Whole calendar months shift by months, so Feb compares to Jan, not 28 days.
+  if (from.slice(8) === "01" && addDays(to, 1).slice(8) === "01") {
+    const months =
+      (Number(addDays(to, 1).slice(0, 4)) - Number(from.slice(0, 4))) * 12 +
+      (Number(addDays(to, 1).slice(5, 7)) - Number(from.slice(5, 7)));
+    return { from: addMonths(from, -months), to: addDays(from, -1) };
+  }
+  const len = daysBetween(from, to);
+  const pTo = addDays(from, -1);
+  return { from: addDays(pTo, -len), to: pTo };
+}
+
+export function priorYear(
+  from: IsoDate | null,
+  to: IsoDate
+): { from: IsoDate | null; to: IsoDate } {
+  return { from: from ? addMonths(from, -12) : null, to: addMonths(to, -12) };
+}
+
+async function budgetAmounts(
+  companyId: string,
+  budgetId: string,
+  from: IsoDate,
+  to: IsoDate,
+  q: Queryable
+): Promise<Map<string, Fils>> {
+  const plan = await q.query(`SELECT id FROM budget_plans WHERE id = $1 AND company_id = $2`, [
+    budgetId,
+    companyId,
+  ]);
+  if (!plan.rows[0]) throw new DomainError("BUDGET_NOT_FOUND", 404);
+  const months = buckets(from, to, "month", 240).map((b) => Number(b.from.slice(5, 7)));
+  const cols = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const { rows } = await q.query(
+    `SELECT account_id, ${cols.map((c) => `ROUND(COALESCE(SUM(${c}),0) * 100)::bigint AS ${c}`).join(", ")}
+       FROM budget_lines WHERE budget_id = $1 AND account_id IS NOT NULL GROUP BY account_id`,
+    [budgetId]
+  );
+  const out = new Map<string, Fils>();
+  for (const r of rows) {
+    let f = 0;
+    for (const m of months) f += Number(r[cols[m - 1]]) || 0;
+    out.set(r.account_id, f);
+  }
+  return out;
+}
+
+export async function profitAndLoss(
+  args: {
+    companyId: string;
+    from?: IsoDate | null;
+    to: IsoDate;
+    compareTo?: PlCompareTo | null;
+    budgetId?: string | null;
+    columns?: PlColumns;
+  },
+  q: Queryable = pool
+): Promise<ProfitAndLoss> {
+  const { companyId, to } = args;
+  const from = args.from ?? null;
+  const accounts = await loadAccounts(companyId, q);
+  const totals = await accountTotals(companyId, { from, to }, q);
+  const main = plFromAmounts(accounts, (a) => plAmount(a, totals.get(a.id)));
+  const result: ProfitAndLoss = {
+    reportCurrency: REPORT_CURRENCY,
+    from,
+    to,
+    ...main.totals,
+    sections: {
+      revenue: section(main.groups.revenue),
+      costOfSales: section(main.groups.cost_of_sales),
+      operatingExpenses: section(main.groups.operating_expenses),
+      otherIncome: section(main.groups.other_income),
+      otherExpenses: section(main.groups.other_expenses),
+    },
+  };
+
+  if (args.columns && args.columns !== "total") {
+    if (!from) {
+      throw new DomainError(
+        "REPORT_RANGE_REQUIRED",
+        400,
+        undefined,
+        "from is required for column layouts"
+      );
+    }
+    const gran: Granularity = args.columns === "monthly" ? "month" : "quarter";
+    const cols = buckets(from, to, gran);
+    result.columns = [];
+    for (const b of cols) {
+      const t = await accountTotals(companyId, { from: b.from, to: b.to }, q);
+      const p = plFromAmounts(accounts, (a) => plAmount(a, t.get(a.id)));
+      result.columns.push({
+        label: b.label,
+        from: b.from,
+        to: b.to,
+        ...p.totals,
+        byAccount: p.byAccount,
+      });
+    }
+  }
+
+  if (args.compareTo) {
+    let cmp: { from: IsoDate | null; to: IsoDate };
+    let label: string;
+    let amountOf: (a: ReportAccount) => Fils;
+    if (args.compareTo === "budget") {
+      if (!args.budgetId) throw new DomainError("BUDGET_ID_REQUIRED", 400);
+      if (!from) throw new DomainError("REPORT_RANGE_REQUIRED", 400);
+      const budget = await budgetAmounts(companyId, args.budgetId, from, to, q);
+      cmp = { from, to };
+      label = "Budget";
+      amountOf = (a) => budget.get(a.id) ?? 0;
+    } else {
+      if (args.compareTo === "prior_period") {
+        if (!from) throw new DomainError("REPORT_RANGE_REQUIRED", 400);
+        cmp = priorPeriod(from, to);
+        label = "Prior period";
+      } else {
+        cmp = priorYear(from, to);
+        label = "Prior year";
+      }
+      const t = await accountTotals(companyId, cmp, q);
+      amountOf = (a) => plAmount(a, t.get(a.id));
+    }
+    const c = plFromAmounts(accounts, amountOf);
+    result.comparison = {
+      basis: args.compareTo,
+      label,
+      from: cmp.from,
+      to: cmp.to,
+      ...(args.budgetId && args.compareTo === "budget" ? { budgetId: args.budgetId } : {}),
+      totals: c.totals,
+      byAccount: c.byAccount,
+      variance: diffTotals(main.totals, c.totals),
+    };
+  }
+  return result;
+}
+
+// ─── Balance sheet ──────────────────────────────────────────────────────────
+
+export interface BalanceSheet {
+  reportCurrency: string;
+  asOf: IsoDate;
+  fiscalYearStart: IsoDate;
+  assets: { current: StatementSection; nonCurrent: StatementSection; total: number };
+  liabilities: { current: StatementSection; nonCurrent: StatementSection; total: number };
+  equity: {
+    capital: StatementSection;
+    retainedEarningsBroughtForward: number;
+    currentYearEarnings: number;
+    total: number;
+    /** Capital lines + synthetic retained earnings b/f + current year earnings. */
+    lines: StatementLine[];
+  };
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+  difference: number;
+  comparison?: Omit<BalanceSheet, "comparison"> & { basis: BsCompareTo; label: string };
+}
+
+export type BsCompareTo = "prior_year" | "prior_period" | "prior_year_end";
+
+async function balanceSheetCore(
+  companyId: string,
+  asOf: IsoDate,
+  fsm: number,
+  accounts: ReportAccount[],
+  q: Queryable
+): Promise<Omit<BalanceSheet, "comparison">> {
+  const fyStart = fiscalYearStart(asOf, fsm);
+  const [cum, preFy] = await Promise.all([
+    accountTotals(companyId, { to: asOf }, q),
+    accountTotals(companyId, { to: addDays(fyStart, -1) }, q),
+  ]);
+  const cyTotals = await accountTotals(companyId, { from: fyStart, to: asOf }, q);
+
+  const curA: Array<[ReportAccount, Fils]> = [];
+  const nonA: Array<[ReportAccount, Fils]> = [];
+  const curL: Array<[ReportAccount, Fils]> = [];
+  const nonL: Array<[ReportAccount, Fils]> = [];
+  const capital: Array<[ReportAccount, Fils]> = [];
+  let reAccounts = 0;
+
+  for (const a of accounts) {
+    const t = cum.get(a.id);
+    if (!t) continue;
+    if (a.type === "asset") {
+      const net = t.debit - t.credit;
+      // A-2: credit-balance asset is presented as a liability, except contra assets.
+      if (net >= 0 || isContraAsset(a)) (isNonCurrent(a) ? nonA : curA).push([a, net]);
+      else curL.push([a, -net]);
+    } else if (a.type === "liability") {
+      const net = t.credit - t.debit;
+      if (net >= 0) (isNonCurrent(a) ? nonL : curL).push([a, net]);
+      else curA.push([a, -net]);
+    } else if (a.type === "equity") {
+      const net = t.credit - t.debit;
+      if (isRetainedEarningsAccount(a)) reAccounts += net;
+      else capital.push([a, net]);
+    }
+  }
+  const reBf = netIncomeOf(accounts, preFy) + reAccounts;
+  const cye = netIncomeOf(accounts, cyTotals);
+
+  const sum = (xs: Array<[ReportAccount, Fils]>) => xs.reduce((s, [, f]) => s + f, 0);
+  const totalAssets = sum(curA) + sum(nonA);
+  const totalLiabilities = sum(curL) + sum(nonL);
+  const totalEquity = sum(capital) + reBf + cye;
+  const diff = totalAssets - totalLiabilities - totalEquity;
+  const capitalSection = section(capital);
+  return {
+    reportCurrency: REPORT_CURRENCY,
+    asOf,
+    fiscalYearStart: fyStart,
+    assets: { current: section(curA), nonCurrent: section(nonA), total: aed(totalAssets) },
+    liabilities: {
+      current: section(curL),
+      nonCurrent: section(nonL),
+      total: aed(totalLiabilities),
+    },
+    equity: {
+      capital: capitalSection,
+      retainedEarningsBroughtForward: aed(reBf),
+      currentYearEarnings: aed(cye),
+      total: aed(totalEquity),
+      lines: [
+        ...capitalSection.lines,
+        {
+          accountId: RETAINED_EARNINGS_BF_ID,
+          accountCode: "",
+          accountName: "Retained earnings brought forward",
+          accountNameAr: "الأرباح المحتجزة المرحلة",
+          amount: aed(reBf),
+        },
+        {
+          accountId: CURRENT_YEAR_EARNINGS_ID,
+          accountCode: "",
+          accountName: "Current year earnings",
+          accountNameAr: "أرباح السنة الحالية",
+          amount: aed(cye),
+        },
+      ],
+    },
+    totalAssets: aed(totalAssets),
+    totalLiabilities: aed(totalLiabilities),
+    totalEquity: aed(totalEquity),
+    totalLiabilitiesAndEquity: aed(totalLiabilities + totalEquity),
+    isBalanced: diff === 0,
+    difference: aed(diff),
+  };
+}
+
+export async function balanceSheet(
+  args: { companyId: string; asOf: IsoDate; compareTo?: BsCompareTo | null },
+  q: Queryable = pool
+): Promise<BalanceSheet> {
+  const company = await loadCompany(args.companyId, q);
+  const accounts = await loadAccounts(args.companyId, q);
+  const core = await balanceSheetCore(
+    args.companyId,
+    args.asOf,
+    company.fiscalYearStartMonth,
+    accounts,
+    q
+  );
+  if (!args.compareTo) return core;
+  let cmpDate: IsoDate;
+  let label: string;
+  if (args.compareTo === "prior_year") {
+    cmpDate = addMonths(args.asOf, -12);
+    label = "Prior year";
+  } else if (args.compareTo === "prior_period") {
+    cmpDate = addDays(args.asOf.slice(0, 8) + "01", -1);
+    label = "Prior month end";
+  } else {
+    cmpDate = addDays(fiscalYearStart(args.asOf, company.fiscalYearStartMonth), -1);
+    label = "Prior year end";
+  }
+  const cmp = await balanceSheetCore(
+    args.companyId,
+    cmpDate,
+    company.fiscalYearStartMonth,
+    accounts,
+    q
+  );
+  return { ...core, comparison: { ...cmp, basis: args.compareTo, label } };
+}
+
+// ─── Cash flow ──────────────────────────────────────────────────────────────
+
+export interface CashFlowLine {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  amount: number;
+}
+
+export interface CashFlowStatement {
+  reportCurrency: string;
+  from: IsoDate | null;
+  to: IsoDate;
+  method: "indirect" | "direct";
+  openingCash: number;
+  closingCash: number;
+  netCashChange: number;
+  netIncome: number;
+  operating: { total: number; breakdown: CashFlowLine[] };
+  investing: { total: number; breakdown: CashFlowLine[] };
+  financing: { total: number; breakdown: CashFlowLine[] };
+  cashProof: {
+    openingCash: number;
+    netCashChange: number;
+    computedClosingCash: number;
+    closingCashPerLedger: number;
+    difference: number;
+    isBalanced: boolean;
+  };
+  cashAccounts: Array<{
+    accountId: string;
+    accountCode: string;
+    accountName: string;
+    opening: number;
+    closing: number;
+  }>;
+}
+
+export const NET_INCOME_LINE_ID = "net-income";
+
+export async function cashFlow(
+  args: { companyId: string; from?: IsoDate | null; to: IsoDate; method?: "indirect" | "direct" },
+  q: Queryable = pool
+): Promise<CashFlowStatement> {
+  const { companyId, to } = args;
+  const from = args.from ?? null;
+  const method = args.method ?? "indirect";
+  const accounts = await loadAccounts(companyId, q);
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const cashIds = new Set(accounts.filter(isCashAccount).map((a) => a.id));
+  const [range, opening] = await Promise.all([
+    accountTotals(companyId, { from, to }, q),
+    from ? accountTotals(companyId, { to: addDays(from, -1) }, q) : Promise.resolve(new Map()),
+  ]);
+
+  let openFils = 0;
+  let moveFils = 0;
+  const cashAccounts: CashFlowStatement["cashAccounts"] = [];
+  for (const id of Array.from(cashIds)) {
+    const a = byId.get(id)!;
+    const o = opening.get(id);
+    const r = range.get(id);
+    const of = o ? o.debit - o.credit : 0;
+    const mv = r ? r.debit - r.credit : 0;
+    openFils += of;
+    moveFils += mv;
+    if (of !== 0 || mv !== 0)
+      cashAccounts.push({
+        accountId: id,
+        accountCode: a.code,
+        accountName: a.nameEn,
+        opening: aed(of),
+        closing: aed(of + mv),
+      });
+  }
+
+  const buckets: Record<CashFlowActivity, Map<string, Fils>> = {
+    operating: new Map(),
+    investing: new Map(),
+    financing: new Map(),
+  };
+  const netIncome = netIncomeOf(accounts, range);
+
+  if (method === "indirect") {
+    buckets.operating.set(NET_INCOME_LINE_ID, netIncome);
+    for (const a of accounts) {
+      if (cashIds.has(a.id)) continue;
+      if (a.type !== "asset" && a.type !== "liability" && a.type !== "equity") continue;
+      const t = range.get(a.id);
+      if (!t) continue;
+      const effect = t.credit - t.debit; // increase in an asset uses cash; in a liability provides it
+      if (effect === 0) continue;
+      const act = indirectActivity(a);
+      buckets[act].set(a.id, (buckets[act].get(a.id) ?? 0) + effect);
+    }
+  } else {
+    const lines = await ledgerLines(companyId, { from, to }, q);
+    const byEntry = new Map<string, typeof lines>();
+    for (const l of lines) {
+      const list = byEntry.get(l.entryId) ?? [];
+      list.push(l);
+      byEntry.set(l.entryId, list);
+    }
+    for (const entryLines of Array.from(byEntry.values())) {
+      const cashLines = entryLines.filter((l) => cashIds.has(l.accountId));
+      if (!cashLines.length) continue;
+      const netCash = cashLines.reduce((s, l) => s + l.debit - l.credit, 0);
+      let dominant: (typeof entryLines)[number] | undefined;
+      let w = -1;
+      for (const l of entryLines) {
+        if (cashIds.has(l.accountId)) continue;
+        const lw = Math.abs(l.debit - l.credit);
+        if (lw > w) {
+          w = lw;
+          dominant = l;
+        }
+      }
+      const cp = dominant ? byId.get(dominant.accountId) : undefined;
+      const act: CashFlowActivity =
+        !cp || cp.type === "income" || cp.type === "expense"
+          ? "operating"
+          : cp.type === "asset" && isNonCurrent(cp)
+            ? "investing"
+            : indirectActivity(cp);
+      const key = cp?.id ?? "unclassified";
+      buckets[act].set(key, (buckets[act].get(key) ?? 0) + netCash);
+    }
+  }
+
+  const build = (act: CashFlowActivity) => {
+    const breakdown: CashFlowLine[] = [];
+    let total = 0;
+    for (const [id, f] of Array.from(buckets[act].entries())) {
+      total += f;
+      if (id === NET_INCOME_LINE_ID) {
+        breakdown.push({
+          accountId: id,
+          accountCode: "",
+          accountName: "Net income",
+          amount: aed(f),
+        });
+        continue;
+      }
+      const a = byId.get(id);
+      breakdown.push({
+        accountId: id,
+        accountCode: a?.code ?? "",
+        accountName: a?.nameEn ?? "Unclassified",
+        amount: aed(f),
+      });
+    }
+    breakdown.sort((x, y) =>
+      x.accountId === NET_INCOME_LINE_ID
+        ? -1
+        : y.accountId === NET_INCOME_LINE_ID
+          ? 1
+          : x.accountCode.localeCompare(y.accountCode)
+    );
+    return { total, section: { total: aed(total), breakdown } };
+  };
+  const op = build("operating");
+  const inv = build("investing");
+  const fin = build("financing");
+  const computedNet = op.total + inv.total + fin.total;
+  return {
+    reportCurrency: REPORT_CURRENCY,
+    from,
+    to,
+    method,
+    openingCash: aed(openFils),
+    closingCash: aed(openFils + moveFils),
+    netCashChange: aed(computedNet),
+    netIncome: aed(netIncome),
+    operating: op.section,
+    investing: inv.section,
+    financing: fin.section,
+    cashProof: {
+      openingCash: aed(openFils),
+      netCashChange: aed(computedNet),
+      computedClosingCash: aed(openFils + computedNet),
+      closingCashPerLedger: aed(openFils + moveFils),
+      difference: aed(openFils + moveFils - (openFils + computedNet)),
+      isBalanced: moveFils === computedNet,
+    },
+    cashAccounts,
+  };
+}
+
+/**
+ * Bucketed direct-method cash movement (inflow/outflow per activity) for the
+ * legacy /api/reports/:companyId/cash-flow/:period endpoint.
+ */
+export async function cashFlowBuckets(
+  args: { companyId: string; from: IsoDate; to: IsoDate; granularity: Granularity },
+  q: Queryable = pool
+) {
+  const { companyId, from, to } = args;
+  const accounts = await loadAccounts(companyId, q);
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const cashIds = new Set(accounts.filter(isCashAccount).map((a) => a.id));
+  const [opening, lines] = await Promise.all([
+    accountTotals(companyId, { to: addDays(from, -1) }, q),
+    ledgerLines(companyId, { from, to }, q),
+  ]);
+  let running = 0;
+  for (const id of Array.from(cashIds)) {
+    const t = opening.get(id);
+    if (t) running += t.debit - t.credit;
+  }
+  const openingCash = running;
+  const out = [];
+  for (const b of buckets(from, to, args.granularity)) {
+    const inB = lines.filter((l) => l.date >= b.from && l.date <= b.to);
+    const byEntry = new Map<string, typeof inB>();
+    for (const l of inB) {
+      const list = byEntry.get(l.entryId) ?? [];
+      list.push(l);
+      byEntry.set(l.entryId, list);
+    }
+    const flows = { operating: [0, 0], investing: [0, 0], financing: [0, 0] } as Record<
+      CashFlowActivity,
+      [number, number]
+    >;
+    for (const entryLines of Array.from(byEntry.values())) {
+      const cashLines = entryLines.filter((l) => cashIds.has(l.accountId));
+      if (!cashLines.length) continue;
+      const weights: Record<CashFlowActivity, number> = {
+        operating: 0,
+        investing: 0,
+        financing: 0,
+      };
+      for (const l of entryLines) {
+        if (cashIds.has(l.accountId)) continue;
+        const a = byId.get(l.accountId);
+        const act: CashFlowActivity =
+          !a || a.type === "income" || a.type === "expense" ? "operating" : indirectActivity(a);
+        weights[act] += Math.abs(l.debit - l.credit);
+      }
+      let dom: CashFlowActivity = "operating";
+      let w = -1;
+      for (const act of ["operating", "investing", "financing"] as CashFlowActivity[]) {
+        if (weights[act] > w) {
+          w = weights[act];
+          dom = act;
+        }
+      }
+      flows[dom][0] += cashLines.reduce((s, l) => s + l.debit, 0);
+      flows[dom][1] += cashLines.reduce((s, l) => s + l.credit, 0);
+    }
+    const net =
+      flows.operating[0] -
+      flows.operating[1] +
+      flows.investing[0] -
+      flows.investing[1] +
+      flows.financing[0] -
+      flows.financing[1];
+    running += net;
+    out.push({
+      period: b.label,
+      from: b.from,
+      to: b.to,
+      operatingInflow: aed(flows.operating[0]),
+      operatingOutflow: aed(flows.operating[1]),
+      investingInflow: aed(flows.investing[0]),
+      investingOutflow: aed(flows.investing[1]),
+      financingInflow: aed(flows.financing[0]),
+      financingOutflow: aed(flows.financing[1]),
+      netCashFlow: aed(net),
+      endingBalance: aed(running),
+    });
+  }
+  return { openingCash: aed(openingCash), buckets: out };
+}
+
+// ─── General ledger ─────────────────────────────────────────────────────────
+
+export interface GeneralLedgerAccount {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  openingBalance: number;
+  debitTotal: number;
+  creditTotal: number;
+  closingBalance: number;
+  lines: Array<{
+    date: IsoDate;
+    entryId: string;
+    entryNumber: string;
+    memo: string | null;
+    description: string | null;
+    source: string;
+    debit: number;
+    credit: number;
+    balance: number;
+    isClosingEntry: boolean;
+  }>;
+}
+
+export interface GeneralLedger {
+  reportCurrency: string;
+  from: IsoDate | null;
+  to: IsoDate;
+  accounts: GeneralLedgerAccount[];
+  totals: { debit: number; credit: number };
+  truncated: boolean;
+}
+
+const GL_LINE_LIMIT = 50_000;
+
+/**
+ * General ledger across all (or selected) accounts. Balance-sheet accounts
+ * open with their cumulative balance; income/expense accounts open with the
+ * fiscal-year-to-date balance before `from` (they reset each fiscal year).
+ */
+export async function generalLedger(
+  args: {
+    companyId: string;
+    from?: IsoDate | null;
+    to: IsoDate;
+    accountIds?: string[] | null;
+    includeClosing?: boolean;
+    includeEmpty?: boolean;
+  },
+  q: Queryable = pool
+): Promise<GeneralLedger> {
+  const { companyId, to } = args;
+  const from = args.from ?? null;
+  const company = await loadCompany(companyId, q);
+  let accounts = await loadAccounts(companyId, q);
+  if (args.accountIds?.length) {
+    const want = new Set(args.accountIds);
+    accounts = accounts.filter((a) => want.has(a.id));
+    if (!accounts.length) throw new DomainError("ACCOUNT_NOT_FOUND", 404);
+  }
+  const ids = accounts.map((a) => a.id);
+  const fyStart = from ? fiscalYearStart(from, company.fiscalYearStartMonth) : null;
+  const [bsOpen, plOpen, lines] = await Promise.all([
+    from
+      ? accountTotals(companyId, { to: addDays(from, -1), includeClosing: args.includeClosing }, q)
+      : Promise.resolve(new Map()),
+    from && fyStart && fyStart < from
+      ? accountTotals(
+          companyId,
+          { from: fyStart, to: addDays(from, -1), includeClosing: args.includeClosing },
+          q
+        )
+      : Promise.resolve(new Map()),
+    ledgerLines(
+      companyId,
+      { from, to, accountIds: ids, includeClosing: args.includeClosing, limit: GL_LINE_LIMIT + 1 },
+      q
+    ),
+  ]);
+  const truncated = lines.length > GL_LINE_LIMIT;
+  const linesByAccount = new Map<string, typeof lines>();
+  for (const l of lines.slice(0, GL_LINE_LIMIT)) {
+    const list = linesByAccount.get(l.accountId) ?? [];
+    list.push(l);
+    linesByAccount.set(l.accountId, list);
+  }
+  let totD = 0;
+  let totC = 0;
+  const out: GeneralLedgerAccount[] = [];
+  for (const a of accounts) {
+    const isBs = a.type === "asset" || a.type === "liability" || a.type === "equity";
+    const openT = (isBs ? bsOpen : plOpen).get(a.id) as AccountTotals | undefined;
+    const open = naturalBalance(a.type, openT);
+    const own = linesByAccount.get(a.id) ?? [];
+    if (!own.length && open === 0 && !args.includeEmpty) continue;
+    const debitNormal = a.type === "asset" || a.type === "expense";
+    let bal = open;
+    let d = 0;
+    let c = 0;
+    const rows = own.map((l) => {
+      bal += debitNormal ? l.debit - l.credit : l.credit - l.debit;
+      d += l.debit;
+      c += l.credit;
+      return {
+        date: l.date,
+        entryId: l.entryId,
+        entryNumber: l.entryNumber,
+        memo: l.memo,
+        description: l.description,
+        source: l.source,
+        debit: aed(l.debit),
+        credit: aed(l.credit),
+        balance: aed(bal),
+        isClosingEntry: l.isClosingEntry,
+      };
+    });
+    totD += d;
+    totC += c;
+    out.push({
+      accountId: a.id,
+      accountCode: a.code,
+      accountName: a.nameEn,
+      accountType: a.type,
+      openingBalance: aed(open),
+      debitTotal: aed(d),
+      creditTotal: aed(c),
+      closingBalance: aed(bal),
+      lines: rows,
+    });
+  }
+  return {
+    reportCurrency: REPORT_CURRENCY,
+    from,
+    to,
+    accounts: out,
+    totals: { debit: aed(totD), credit: aed(totC) },
+    truncated,
+  };
+}
+
+// ─── Cash accounts ──────────────────────────────────────────────────────────
+
+export async function cashAccounts(
+  companyId: string,
+  asOf?: IsoDate | null,
+  q: Queryable = pool
+): Promise<
+  Array<{
+    accountId: string;
+    accountCode: string;
+    accountName: string;
+    subType: string | null;
+    balance: number;
+  }>
+> {
+  const accounts = (await loadAccounts(companyId, q)).filter(isCashAccount);
+  const totals = await accountTotals(companyId, { to: asOf ?? null }, q);
+  return accounts.map((a) => ({
+    accountId: a.id,
+    accountCode: a.code,
+    accountName: a.nameEn,
+    subType: a.subType,
+    balance: aed(naturalBalance("asset", totals.get(a.id))),
+  }));
+}

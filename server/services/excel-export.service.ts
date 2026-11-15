@@ -296,11 +296,24 @@ function safeSheetName(name: string): string {
   return (sanitized || "Sheet").slice(0, 31);
 }
 
-function normalizeGenericCell(value: unknown): unknown {
+/**
+ * R11-10: report exports historically formatted money with toFixed(2), which
+ * wrote "112200.00" as a TEXT cell that Excel cannot sum. A string that is a
+ * plain 2-decimal amount (optionally negative, no grouping) is written as a
+ * number. Codes such as "1020" or "0012" have no decimals and stay text;
+ * percentages ("12.50%") and anything else stay text too.
+ */
+const MONEY_STRING = /^-?\d{1,15}\.\d{2}$/;
+
+export function normalizeGenericCell(value: unknown): unknown {
   if (value == null) return "";
   if (value instanceof Date) return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : "";
   if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (MONEY_STRING.test(trimmed)) return Number(trimmed);
+    return value;
+  }
   return String(value);
 }

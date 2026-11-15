@@ -27,10 +27,34 @@ export interface ExportData {
   sheetName?: string;
 }
 
+// R11-10: amounts prepared with toFixed(2) ("112200.00") must reach Excel as
+// NUMBER cells so they can be summed. Plain 2-decimal amounts are converted;
+// account codes ("1020"), percentages and labels stay text. The server export
+// service applies the same rule (normalizeGenericCell) for other callers.
+const EXPORT_MONEY_STRING = /^-?\d{1,15}\.\d{2}$/;
+
+export function coerceExportCell(value: unknown): unknown {
+  if (typeof value === "string" && EXPORT_MONEY_STRING.test(value.trim())) {
+    return Number(value.trim());
+  }
+  return value;
+}
+
+export function coerceExportSheets(data: ExportData[]): ExportData[] {
+  return data.map((sheet) => ({
+    ...sheet,
+    rows: sheet.rows.map((row) => {
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(row)) out[key] = coerceExportCell(value);
+      return out;
+    }),
+  }));
+}
+
 export async function exportToExcel(data: ExportData[], filename: string) {
   const { blob, filename: downloadedFilename } = await postForBlob(
     "/api/export/excel",
-    { sheets: data, filename },
+    { sheets: coerceExportSheets(data), filename },
     `${filename}.xlsx`
   );
   await triggerBlobDownload(blob, downloadedFilename);
@@ -966,7 +990,10 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { metric: "Posted expense credits (AED)", value: formatExportAmount(report?.creditAed) },
         { metric: "Net posted expenses (AED)", value: formatExportAmount(report?.totalAed) },
         { metric: "Receipt VAT captured (AED)", value: formatExportAmount(report?.vatAed) },
-        { metric: "Receipt spend captured (AED)", value: formatExportAmount(report?.receiptSpendAed) },
+        {
+          metric: "Receipt spend captured (AED)",
+          value: formatExportAmount(report?.receiptSpendAed),
+        },
         { metric: "Basis", value: report?.basis ?? "" },
       ],
     },

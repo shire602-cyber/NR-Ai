@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
@@ -150,6 +151,42 @@ export default function AccountLedger() {
   const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
 
   const paginatedEntries = ledger?.entries || [];
+
+  // R02-20: server-side Excel export of this account's ledger (numeric cells,
+  // opening/closing balances) through the reporting kernel's general ledger.
+  const handleExportExcel = async () => {
+    if (!accountId || !selectedCompanyId) return;
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams({ accountIds: accountId, format: "xlsx" });
+      if (dateRange.from) params.set("from", format(dateRange.from, "yyyy-MM-dd"));
+      if (dateRange.to) params.set("to", format(dateRange.to, "yyyy-MM-dd"));
+      const response = await fetch(
+        apiUrl(
+          `/api/companies/${selectedCompanyId}/reports/general-ledger/export?${params.toString()}`
+        ),
+        { headers: { ...getAuthHeaders() }, credentials: "include" }
+      );
+      if (!response.ok) throw new Error(`${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ledger-${ledger?.account.code ?? accountId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({
+        title: t["statements.exportFailed"],
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleExportCSV = () => {
     if (!ledger) return;
@@ -345,6 +382,16 @@ export default function AccountLedger() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleExportExcel()}
+            disabled={!ledger || isExporting || !selectedCompanyId}
+            data-testid="button-export-xlsx"
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            <T k="statements.exportExcel" />
+          </Button>
           <Button
             variant="outline"
             size="sm"

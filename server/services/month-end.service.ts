@@ -1,10 +1,28 @@
 import { pool } from "../db";
 import { storage } from "../storage";
+import { DomainError } from "../errors";
 import { detectAnomalies } from "./anomaly-detection.service";
+import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
+import {
+  YEAR_END_CLOSE_SOURCE,
+  accountTotals,
+  aed,
+  fiscalYearEnd as fiscalYearEndOf,
+  fiscalYearStart as fiscalYearStartOf,
+  isRetainedEarningsAccount,
+  loadAccounts,
+  loadCompany,
+  parseReportDate,
+} from "../reporting";
 
 // ===========================
 // Month-End Close Automation
-// Checklist, closing entries, period locking, AI validation.
+// Checklist, computed close, period locking, year-end close, AI validation.
+//
+// Policy (W2-B): statements are correct by computation, not by closing
+// entries. Monthly close posts nothing. A year-end closing entry is optional
+// (company opt-in), tagged `year_end_close`, and excluded from every P&L,
+// corporate-tax and comparison query.
 // ===========================
 
 export interface ChecklistItem {
@@ -15,23 +33,38 @@ export interface ChecklistItem {
   details?: string;
 }
 
-interface ClosingJournalEntry {
-  id: string;
-  entryNumber: string;
-  date: string;
-  memo: string;
-  lines: Array<{
-    accountId: string;
-    accountCode: string;
-    accountName: string;
-    debit: number;
-    credit: number;
-  }>;
-  totalDebits: number;
-  totalCredits: number;
+export interface ClosingLine {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
 }
 
-interface MonthEndCloseRecord {
+/**
+ * The computed close for a period: what a closing entry WOULD contain, built
+ * only from posted, non-closing lines dated inside the period (R08-01).
+ */
+export interface CloseSummary {
+  id: string | null;
+  entryNumber: string | null;
+  posted: boolean;
+  mode: "computed" | "posted";
+  periodStart: string;
+  periodEnd: string;
+  date: string;
+  memo: string;
+  lines: ClosingLine[];
+  totalDebits: number;
+  totalCredits: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  netIncome: number;
+  retainedEarningsAccount: { id: string; code: string; name: string } | null;
+  message: string;
+}
+
+export interface MonthEndCloseRecord {
   id: string;
   companyId: string;
   periodEnd: string;
@@ -40,20 +73,13 @@ interface MonthEndCloseRecord {
   closedAt: string | null;
   closingEntryId: string | null;
   createdAt: string;
-}
-
-/**
- * Previously created month_end_close at query time, which (a) ran DDL on the
- * request path and (b) silently diverged from the migration-defined table,
- * causing "column closing_entry_id does not exist" and a 500 on lock-period.
- *
- * The table and its columns/constraint are now owned solely by migrations
- * (0014/0073 create it; 0087 reconciles column names + unique constraint).
- * This is retained as a no-op so the six call sites need not change, and so
- * that DDL never runs on a user request again.
- */
-async function ensureMonthEndTable(): Promise<void> {
-  // Intentionally empty — schema is owned by migrations. See 0087.
+  lockType: LockType;
+  lockScope: LockScope;
+  lockReason: string | null;
+  checklistOverride: boolean;
+  unlockedBy: string | null;
+  unlockedAt: string | null;
+  unlockReason: string | null;
 }
 
 /**
@@ -295,340 +321,275 @@ export async function getCloseChecklist(
   return checklist;
 }
 
+/** Validate a YYYY-MM-DD period pair; 400 on garbage (R08-11). */
+export function assertPeriodRange(
+  periodStart: unknown,
+  periodEnd: unknown
+): { periodStart: string; periodEnd: string } {
+  const start = parseReportDate(periodStart, "periodStart");
+  const end = parseReportDate(periodEnd, "periodEnd");
+  if (!start || !end) {
+    throw new DomainError(
+      "PERIOD_REQUIRED",
+      400,
+      undefined,
+      "periodStart and periodEnd are required (YYYY-MM-DD)"
+    );
+  }
+  if (start > end) {
+    throw new DomainError(
+      "INVALID_PERIOD",
+      400,
+      { periodStart: start, periodEnd: end },
+      "periodStart must be on or before periodEnd"
+    );
+  }
+  return { periodStart: start, periodEnd: end };
+}
+
+async function findRetainedEarningsAccount(companyId: string) {
+  const accounts = (await loadAccounts(companyId)).filter((a) => a.isActive);
+  return (
+    accounts.find((a) => a.code === "3020") ??
+    accounts.find((a) => isRetainedEarningsAccount(a)) ??
+    null
+  );
+}
+
 /**
- * Generate closing journal entries for a period.
- * Debits all revenue accounts, credits all expense accounts,
- * and posts the net difference to retained earnings.
+ * R08-01: compute closing lines from posted lines of entries dated INSIDE the
+ * period only (the kernel filters date/status in WHERE, never on an outer-join
+ * ON clause), excluding earlier closing entries.
  */
-export async function generateClosingEntries(
+export async function computeCloseSummary(
   companyId: string,
-  periodStart: string,
-  periodEnd: string,
-  userId: string
-): Promise<ClosingJournalEntry> {
-  // Idempotency check #1: refuse to generate closing entries if the period is
-  // already formally locked in month_end_close.
-  await ensureMonthEndTable();
-  const existingClose = await pool.query(
-    `SELECT id, status, closing_entry_id
-     FROM month_end_close
-     WHERE company_id = $1 AND period_end = $2::date`,
-    [companyId, periodEnd]
-  );
-  const closeRow = existingClose.rows[0];
-  if (closeRow && closeRow.status === "locked") {
-    throw new Error(
-      `Period ending ${periodEnd} is already closed (closing entry ${closeRow.closing_entry_id || "unknown"}). ` +
-        `Unlock the period before generating new closing entries.`
-    );
+  periodStartRaw: unknown,
+  periodEndRaw: unknown
+): Promise<CloseSummary> {
+  const { periodStart, periodEnd } = assertPeriodRange(periodStartRaw, periodEndRaw);
+  const [accounts, totals, re] = await Promise.all([
+    loadAccounts(companyId),
+    accountTotals(companyId, { from: periodStart, to: periodEnd }),
+    findRetainedEarningsAccount(companyId),
+  ]);
+  const lines: ClosingLine[] = [];
+  let dr = 0;
+  let cr = 0;
+  let revenue = 0;
+  let expenses = 0;
+  for (const a of accounts) {
+    if (a.type !== "income" && a.type !== "expense") continue;
+    const t = totals.get(a.id);
+    if (!t) continue;
+    const net = t.debit - t.credit; // fils, debit positive
+    if (net === 0) continue;
+    if (a.type === "income") revenue += -net;
+    else expenses += net;
+    // A closing line reverses the balance.
+    const debit = net < 0 ? -net : 0;
+    const credit = net > 0 ? net : 0;
+    dr += debit;
+    cr += credit;
+    lines.push({
+      accountId: a.id,
+      accountCode: a.code,
+      accountName: a.nameEn,
+      debit: aed(debit),
+      credit: aed(credit),
+    });
   }
-
-  // Idempotency check #2: refuse to generate closing entries twice for the
-  // same period. Without this, calling twice double-closes revenue/expense
-  // and corrupts equity even when month_end_close has not been locked yet.
-  const existingClosingResult = await pool.query(
-    `SELECT id, entry_number, date, memo, status
-     FROM journal_entries
-     WHERE company_id = $1
-       AND source = 'system'
-       AND date = $2::date
-       AND memo LIKE 'Closing entries for %'
-       AND status != 'void'
-     LIMIT 1`,
-    [companyId, periodEnd]
-  );
-  if (existingClosingResult.rows.length > 0) {
-    throw new Error(
-      `Closing entries already exist for period ending ${periodEnd} (entry ${existingClosingResult.rows[0].entry_number}). ` +
-        `Reverse the existing closing entry before re-running.`
-    );
+  const netIncome = revenue - expenses;
+  if (netIncome !== 0 && re) {
+    const debit = netIncome < 0 ? -netIncome : 0;
+    const credit = netIncome > 0 ? netIncome : 0;
+    dr += debit;
+    cr += credit;
+    lines.push({
+      accountId: re.id,
+      accountCode: re.code,
+      accountName: re.nameEn,
+      debit: aed(debit),
+      credit: aed(credit),
+    });
   }
-
-  // Get all income accounts with their balances for the period
-  const incomeResult = await pool.query(
-    `SELECT
-       a.id, a.code, a.name_en,
-       COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0) AS balance
-     FROM accounts a
-     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-     LEFT JOIN journal_entries je ON je.id = jl.entry_id
-       AND je.company_id = $1
-       AND je.status = 'posted'
-       AND je.date >= $2::date
-       AND je.date <= $3::date
-     WHERE a.company_id = $1
-       AND a.type = 'income'
-       AND a.is_active = true
-     GROUP BY a.id, a.code, a.name_en
-     HAVING COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0) != 0
-     ORDER BY a.code`,
-    [companyId, periodStart, periodEnd]
-  );
-
-  // Get all expense accounts with their balances for the period
-  const expenseResult = await pool.query(
-    `SELECT
-       a.id, a.code, a.name_en,
-       COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS balance
-     FROM accounts a
-     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-     LEFT JOIN journal_entries je ON je.id = jl.entry_id
-       AND je.company_id = $1
-       AND je.status = 'posted'
-       AND je.date >= $2::date
-       AND je.date <= $3::date
-     WHERE a.company_id = $1
-       AND a.type = 'expense'
-       AND a.is_active = true
-     GROUP BY a.id, a.code, a.name_en
-     HAVING COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) != 0
-     ORDER BY a.code`,
-    [companyId, periodStart, periodEnd]
-  );
-
-  // Find or use retained earnings account
-  const retainedResult = await pool.query(
-    `SELECT id, code, name_en FROM accounts
-     WHERE company_id = $1
-       AND type = 'equity'
-       AND (LOWER(name_en) LIKE '%retained%' OR code LIKE '3%')
-       AND is_active = true
-     ORDER BY
-       CASE WHEN LOWER(name_en) LIKE '%retained%' THEN 0 ELSE 1 END,
-       code
-     LIMIT 1`,
-    [companyId]
-  );
-
-  if (retainedResult.rows.length === 0) {
-    throw new Error(
-      "No retained earnings equity account found. Please create one before closing the period."
-    );
-  }
-
-  const retainedAccount = retainedResult.rows[0];
-
-  // Build the closing entry lines
-  const lines: ClosingJournalEntry["lines"] = [];
-  let totalDebits = 0;
-  let totalCredits = 0;
-
-  // Debit revenue accounts to close them (revenue normally has credit balance)
-  for (const row of incomeResult.rows) {
-    const balance = parseFloat(row.balance);
-    if (balance > 0) {
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: Math.round(balance * 100) / 100,
-        credit: 0,
-      });
-      totalDebits += balance;
-    } else if (balance < 0) {
-      // Contra-revenue (negative balance)
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: 0,
-        credit: Math.round(Math.abs(balance) * 100) / 100,
-      });
-      totalCredits += Math.abs(balance);
-    }
-  }
-
-  // Credit expense accounts to close them (expenses normally have debit balance)
-  for (const row of expenseResult.rows) {
-    const balance = parseFloat(row.balance);
-    if (balance > 0) {
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: 0,
-        credit: Math.round(balance * 100) / 100,
-      });
-      totalCredits += balance;
-    } else if (balance < 0) {
-      // Contra-expense (negative balance)
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: Math.round(Math.abs(balance) * 100) / 100,
-        credit: 0,
-      });
-      totalDebits += Math.abs(balance);
-    }
-  }
-
-  // Net difference goes to retained earnings
-  const netIncome = totalDebits - totalCredits;
-  if (Math.abs(netIncome) > 0.005) {
-    if (netIncome > 0) {
-      // Net income: credit retained earnings
-      lines.push({
-        accountId: retainedAccount.id,
-        accountCode: retainedAccount.code,
-        accountName: retainedAccount.name_en,
-        debit: 0,
-        credit: Math.round(netIncome * 100) / 100,
-      });
-      totalCredits += netIncome;
-    } else {
-      // Net loss: debit retained earnings
-      lines.push({
-        accountId: retainedAccount.id,
-        accountCode: retainedAccount.code,
-        accountName: retainedAccount.name_en,
-        debit: Math.round(Math.abs(netIncome) * 100) / 100,
-        credit: 0,
-      });
-      totalDebits += Math.abs(netIncome);
-    }
-  }
-
-  if (lines.length === 0) {
-    throw new Error("No revenue or expense balances found for this period. Nothing to close.");
-  }
-
-  // Format period for memo
-  const periodLabel = `${periodStart} to ${periodEnd}`;
-  const memo = `Closing entries for ${periodLabel}`;
-  const periodEndDate = new Date(periodEnd);
-  const entryNumber = await storage.generateEntryNumber(companyId, periodEndDate);
-
-  // Create entry + lines atomically via storage (validates balance & wraps in transaction)
-  const journalLines = lines.map((line) => ({
-    accountId: line.accountId,
-    debit: Math.round(line.debit * 100) / 100,
-    credit: Math.round(line.credit * 100) / 100,
-    description: `Closing entry - ${line.accountName}`,
-  }));
-
-  const entry = await storage.createJournalEntry(
-    {
-      companyId,
-      entryNumber,
-      date: periodEndDate,
-      memo,
-      status: "posted",
-      source: "system",
-      createdBy: userId,
-      postedBy: userId,
-      postedAt: new Date(),
-    } as any,
-    journalLines
-  );
-
   return {
-    id: entry.id,
-    entryNumber: entry.entryNumber,
-    date: entry.date instanceof Date ? entry.date.toISOString() : String(entry.date),
-    memo: entry.memo ?? memo,
+    id: null,
+    entryNumber: null,
+    posted: false,
+    mode: "computed",
+    periodStart,
+    periodEnd,
+    date: periodEnd,
+    memo: `Computed close for ${periodStart} to ${periodEnd}`,
     lines,
-    totalDebits: Math.round(totalDebits * 100) / 100,
-    totalCredits: Math.round(totalCredits * 100) / 100,
+    totalDebits: aed(dr),
+    totalCredits: aed(cr),
+    totalRevenue: aed(revenue),
+    totalExpenses: aed(expenses),
+    netIncome: aed(netIncome),
+    retainedEarningsAccount: re ? { id: re.id, code: re.code, name: re.nameEn } : null,
+    message:
+      "Monthly close posts no journal entry: statements roll earnings into retained earnings by " +
+      "computation. Use the year-end close to record (and, if enabled, post) the fiscal-year close.",
   };
 }
 
 /**
- * Lock a period to prevent further modifications.
+ * Month-end "generate closing entries" (R08-01, R08-02). The endpoint now
+ * returns the computed close summary and posts nothing. A closing entry can
+ * only be posted through the year-end close, and only when the company opts in.
+ */
+export async function generateClosingEntries(
+  companyId: string,
+  periodStart: unknown,
+  periodEnd: unknown
+): Promise<CloseSummary> {
+  return computeCloseSummary(companyId, periodStart, periodEnd);
+}
+
+// ─── Close settings ─────────────────────────────────────────────────────────
+
+export interface CloseSettings {
+  postYearEndClosingEntry: boolean;
+  requireChecklistToLock: boolean;
+}
+
+export async function getCloseSettings(companyId: string): Promise<CloseSettings> {
+  const r = await pool.query(
+    `SELECT post_year_end_closing_entry, require_checklist_to_lock
+       FROM company_close_settings WHERE company_id = $1`,
+    [companyId]
+  );
+  return {
+    postYearEndClosingEntry: r.rows[0]?.post_year_end_closing_entry === true,
+    requireChecklistToLock: r.rows[0] ? r.rows[0].require_checklist_to_lock !== false : true,
+  };
+}
+
+export async function updateCloseSettings(
+  companyId: string,
+  patch: Partial<CloseSettings>,
+  userId: string
+): Promise<CloseSettings> {
+  const next = { ...(await getCloseSettings(companyId)), ...patch };
+  await pool.query(
+    `INSERT INTO company_close_settings
+       (company_id, post_year_end_closing_entry, require_checklist_to_lock, updated_by, updated_at)
+     VALUES ($1, $2, $3, $4, now())
+     ON CONFLICT (company_id) DO UPDATE SET
+       post_year_end_closing_entry = EXCLUDED.post_year_end_closing_entry,
+       require_checklist_to_lock = EXCLUDED.require_checklist_to_lock,
+       updated_by = EXCLUDED.updated_by,
+       updated_at = now()`,
+    [companyId, next.postYearEndClosingEntry, next.requireChecklistToLock, userId]
+  );
+  return next;
+}
+
+// ─── Locking ────────────────────────────────────────────────────────────────
+
+export interface LockOptions {
+  lockType?: LockType;
+  lockScope?: LockScope;
+  reason?: string | null;
+  checklistOverride?: boolean;
+  checklistSnapshot?: unknown;
+  closingEntryId?: string | null;
+}
+
+/**
+ * Lock a period. New locks are lock-through (everything on or before
+ * periodEnd) and hard unless told otherwise. Routes enforce the checklist and
+ * role policy before calling this.
  */
 export async function lockPeriod(
   companyId: string,
   periodEnd: string,
   userId: string,
-  closingEntryId?: string
+  opts: LockOptions = {}
 ): Promise<MonthEndCloseRecord> {
-  await ensureMonthEndTable();
-
+  const end = parseReportDate(periodEnd, "periodEnd");
+  if (!end) {
+    throw new DomainError("PERIOD_REQUIRED", 400, undefined, "periodEnd is required (YYYY-MM-DD)");
+  }
   const result = await pool.query(
-    `INSERT INTO month_end_close (company_id, period_end, status, closed_by, closed_at, closing_entry_id)
-     VALUES ($1, $2::date, 'locked', $3, now(), $4)
+    `INSERT INTO month_end_close
+       (company_id, period_start, period_end, status, closed_by, closed_at, closing_entry_id,
+        lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot)
+     VALUES ($1, date_trunc('month', $2::date), $2::date, 'locked', $3, now(), $4, $5, $6, $7, $8, $9::jsonb)
      ON CONFLICT (company_id, period_end)
      DO UPDATE SET
        status = 'locked',
        closed_by = EXCLUDED.closed_by,
        closed_at = now(),
        closing_entry_id = COALESCE(EXCLUDED.closing_entry_id, month_end_close.closing_entry_id),
+       lock_type = EXCLUDED.lock_type,
+       lock_scope = EXCLUDED.lock_scope,
+       lock_reason = EXCLUDED.lock_reason,
+       checklist_override = EXCLUDED.checklist_override,
+       checklist_snapshot = EXCLUDED.checklist_snapshot,
        updated_at = now()
      RETURNING *`,
-    [companyId, periodEnd, userId, closingEntryId || null]
+    [
+      companyId,
+      end,
+      userId,
+      opts.closingEntryId || null,
+      opts.lockType ?? "hard",
+      opts.lockScope ?? "through",
+      opts.reason ?? null,
+      opts.checklistOverride === true,
+      opts.checklistSnapshot === undefined ? null : JSON.stringify(opts.checklistSnapshot),
+    ]
   );
-
   return formatCloseRecord(result.rows[0]);
 }
 
 /**
- * Check if a given date falls within a locked period.
- *
- * A month_end_close row locks ONLY the month it represents (the calendar month
- * ending at period_end). Locking February must not retroactively close January.
+ * Is `date` inside a locked period? A lock-through row covers every date on or
+ * before its period_end; a legacy month row covers only its calendar month.
  */
 export async function isPeriodLocked(companyId: string, date: string): Promise<boolean> {
-  await ensureMonthEndTable();
-
-  const result = await pool.query(
-    `SELECT 1
-     FROM month_end_close
-     WHERE company_id = $1
-       AND status = 'locked'
-       AND $2::date >= date_trunc('month', period_end)::date
-       AND $2::date <= period_end
-     LIMIT 1`,
-    [companyId, date]
-  );
-
-  return result.rowCount! > 0;
+  return (await getEffectiveLock(companyId, date)) !== null;
 }
 
 /**
- * Unlock a previously-locked period. Reverses lockPeriod by flipping status
- * back to 'open'. The month_end_close row itself is preserved so that audit
- * trail (closed_by / closed_at) survives the unlock.
+ * Unlock a locked period. The row survives so the audit trail (closed_by /
+ * closed_at, unlocked_by / unlock_reason) is preserved. Role policy lives in
+ * the route.
  */
 export async function unlockPeriod(
   companyId: string,
-  periodEnd: string
+  periodEnd: string,
+  opts: { userId?: string | null; reason?: string | null } = {}
 ): Promise<MonthEndCloseRecord | null> {
-  await ensureMonthEndTable();
-
+  const end = parseReportDate(periodEnd, "periodEnd");
+  if (!end) throw new DomainError("PERIOD_REQUIRED", 400);
   const result = await pool.query(
     `UPDATE month_end_close
-     SET status = 'open', updated_at = now()
-     WHERE company_id = $1 AND period_end = $2::date
-     RETURNING *`,
-    [companyId, periodEnd]
+        SET status = 'open', updated_at = now(), unlocked_by = $3, unlocked_at = now(),
+            unlock_reason = $4
+      WHERE company_id = $1 AND period_end::date = $2::date AND status = 'locked'
+      RETURNING *`,
+    [companyId, end, opts.userId ?? null, opts.reason ?? null]
   );
-
   if (result.rowCount === 0) return null;
   return formatCloseRecord(result.rows[0]);
 }
 
-/**
- * List all locked periods for a company.
- */
+/** List all locked periods for a company. */
 export async function listLockedPeriods(companyId: string): Promise<MonthEndCloseRecord[]> {
-  await ensureMonthEndTable();
-
   const result = await pool.query(
     `SELECT * FROM month_end_close
      WHERE company_id = $1 AND status = 'locked'
      ORDER BY period_end DESC`,
     [companyId]
   );
-
   return result.rows.map(formatCloseRecord);
 }
 
-/**
- * Get the history of month-end close records for a company.
- */
+/** History of month-end close records for a company. */
 export async function getCloseHistory(companyId: string): Promise<MonthEndCloseRecord[]> {
-  await ensureMonthEndTable();
-
   const result = await pool.query(
     `SELECT mc.*, u.email AS closed_by_email
      FROM month_end_close mc
@@ -637,11 +598,289 @@ export async function getCloseHistory(companyId: string): Promise<MonthEndCloseR
      ORDER BY mc.period_end DESC`,
     [companyId]
   );
-
   return result.rows.map((row: any) => ({
     ...formatCloseRecord(row),
     closedByEmail: row.closed_by_email || null,
   }));
+}
+
+// ─── Year-end close (R11-14) ────────────────────────────────────────────────
+
+export interface FiscalYearCloseRecord {
+  id: string;
+  companyId: string;
+  fiscalYearStart: string;
+  fiscalYearEnd: string;
+  status: "closed" | "reopened";
+  hardClosed: boolean;
+  closingEntryId: string | null;
+  netIncome: number;
+  reason: string | null;
+  closedBy: string | null;
+  closedAt: string | null;
+  reopenedBy: string | null;
+  reopenedAt: string | null;
+  reopenReason: string | null;
+}
+
+function formatYearClose(row: any): FiscalYearCloseRecord {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    fiscalYearStart: row.fys,
+    fiscalYearEnd: row.fye,
+    status: row.status,
+    hardClosed: row.hard_closed === true,
+    closingEntryId: row.closing_entry_id ?? null,
+    netIncome: Number(row.net_income) || 0,
+    reason: row.reason ?? null,
+    closedBy: row.closed_by ?? null,
+    closedAt: row.closed_at ?? null,
+    reopenedBy: row.reopened_by ?? null,
+    reopenedAt: row.reopened_at ?? null,
+    reopenReason: row.reopen_reason ?? null,
+  };
+}
+
+const YEAR_CLOSE_COLUMNS = `*, fiscal_year_start::text AS fys, fiscal_year_end::text AS fye`;
+
+export async function listFiscalYearCloses(companyId: string): Promise<FiscalYearCloseRecord[]> {
+  const r = await pool.query(
+    `SELECT ${YEAR_CLOSE_COLUMNS} FROM fiscal_year_closes
+      WHERE company_id = $1 ORDER BY fiscal_year_end DESC`,
+    [companyId]
+  );
+  return r.rows.map(formatYearClose);
+}
+
+/**
+ * The seam the close posts through. Default: storage.createJournalEntry.
+ * INTEGRATION SEAM (W2-A): swap in the ledger posting kernel with
+ * setClosePostingPort() once server/ledger exists.
+ */
+export interface ClosePostingPort {
+  post(input: {
+    companyId: string;
+    date: string;
+    memo: string;
+    source: string;
+    userId: string;
+    lines: Array<{ accountId: string; debit: number; credit: number; description: string }>;
+  }): Promise<{ id: string; entryNumber: string }>;
+}
+
+export const storageClosePostingPort: ClosePostingPort = {
+  async post(input) {
+    const date = new Date(`${input.date}T00:00:00.000Z`);
+    const entryNumber = await storage.generateEntryNumber(input.companyId, date);
+    const entry = await storage.createJournalEntry(
+      {
+        companyId: input.companyId,
+        entryNumber,
+        date,
+        memo: input.memo,
+        status: "posted",
+        source: input.source,
+        createdBy: input.userId,
+        postedBy: input.userId,
+        postedAt: new Date(),
+      },
+      input.lines
+    );
+    return { id: entry.id, entryNumber: entry.entryNumber };
+  },
+};
+
+let closePostingPort: ClosePostingPort = storageClosePostingPort;
+
+export function setClosePostingPort(port: ClosePostingPort): void {
+  closePostingPort = port;
+}
+
+export interface YearEndCloseResult {
+  record: FiscalYearCloseRecord;
+  summary: CloseSummary;
+  posted: boolean;
+  closingEntryId: string | null;
+  entryNumber: string | null;
+  lock: MonthEndCloseRecord;
+}
+
+/**
+ * Close a fiscal year: records the close and locks through the year end
+ * (soft, or hard with hardClose). Posts ONE closing entry tagged
+ * `year_end_close` to retained earnings only when the company opted in; that
+ * entry is excluded from every statement and corporate-tax query so the
+ * roll-forward never double counts it. Closing twice -> 409.
+ */
+export async function closeFiscalYear(
+  companyId: string,
+  fiscalYearEndRaw: unknown,
+  userId: string,
+  opts: {
+    hardClose?: boolean;
+    reason?: string | null;
+    checklistOverride?: boolean;
+    checklistSnapshot?: unknown;
+  } = {}
+): Promise<YearEndCloseResult> {
+  const fye = parseReportDate(fiscalYearEndRaw, "fiscalYearEnd");
+  if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
+  const company = await loadCompany(companyId);
+  const expectedEnd = fiscalYearEndOf(fye, company.fiscalYearStartMonth);
+  if (expectedEnd !== fye) {
+    throw new DomainError(
+      "NOT_FISCAL_YEAR_END",
+      400,
+      { expectedFiscalYearEnd: expectedEnd },
+      "fiscalYearEnd must be the last day of the company's fiscal year"
+    );
+  }
+  const fys = fiscalYearStartOf(fye, company.fiscalYearStartMonth);
+  const existing = await pool.query(
+    `SELECT status FROM fiscal_year_closes WHERE company_id = $1 AND fiscal_year_end = $2::date`,
+    [companyId, fye]
+  );
+  if (existing.rows[0]?.status === "closed") {
+    throw new DomainError(
+      "FISCAL_YEAR_ALREADY_CLOSED",
+      409,
+      { fiscalYearEnd: fye },
+      "This fiscal year is already closed"
+    );
+  }
+
+  const summary = await computeCloseSummary(companyId, fys, fye);
+  const settings = await getCloseSettings(companyId);
+  let closingEntryId: string | null = null;
+  let entryNumber: string | null = null;
+  if (settings.postYearEndClosingEntry && summary.lines.length > 0) {
+    if (!summary.retainedEarningsAccount) {
+      throw new DomainError(
+        "RETAINED_EARNINGS_ACCOUNT_MISSING",
+        422,
+        undefined,
+        "Create a retained earnings equity account (3020) before posting a year-end close"
+      );
+    }
+    const posted = await closePostingPort.post({
+      companyId,
+      date: fye,
+      memo: `Year-end close FY ${fys} to ${fye}`,
+      source: YEAR_END_CLOSE_SOURCE,
+      userId,
+      lines: summary.lines.map((l) => ({
+        accountId: l.accountId,
+        debit: l.debit,
+        credit: l.credit,
+        description: `Year-end close - ${l.accountName}`,
+      })),
+    });
+    closingEntryId = posted.id;
+    entryNumber = posted.entryNumber;
+  }
+
+  const r = await pool.query(
+    `INSERT INTO fiscal_year_closes
+       (company_id, fiscal_year_start, fiscal_year_end, status, hard_closed, closing_entry_id,
+        net_income, reason, closed_by, closed_at)
+     VALUES ($1, $2::date, $3::date, 'closed', $4, $5, $6, $7, $8, now())
+     ON CONFLICT (company_id, fiscal_year_end) DO UPDATE SET
+       status = 'closed', hard_closed = EXCLUDED.hard_closed,
+       closing_entry_id = EXCLUDED.closing_entry_id, net_income = EXCLUDED.net_income,
+       reason = EXCLUDED.reason, closed_by = EXCLUDED.closed_by, closed_at = now()
+     WHERE fiscal_year_closes.status <> 'closed'
+     RETURNING ${YEAR_CLOSE_COLUMNS}`,
+    [
+      companyId,
+      fys,
+      fye,
+      opts.hardClose === true,
+      closingEntryId,
+      summary.netIncome,
+      opts.reason ?? null,
+      userId,
+    ]
+  );
+  if (!r.rows[0]) {
+    throw new DomainError("FISCAL_YEAR_ALREADY_CLOSED", 409, { fiscalYearEnd: fye });
+  }
+  const lock = await lockPeriod(companyId, fye, userId, {
+    lockType: opts.hardClose ? "hard" : "soft",
+    lockScope: "through",
+    reason: opts.reason ?? `Year-end close ${fye}`,
+    checklistOverride: opts.checklistOverride,
+    checklistSnapshot: opts.checklistSnapshot,
+    closingEntryId,
+  });
+  return {
+    record: formatYearClose(r.rows[0]),
+    summary: {
+      ...summary,
+      id: closingEntryId,
+      entryNumber,
+      posted: closingEntryId !== null,
+      mode: closingEntryId ? "posted" : "computed",
+    },
+    posted: closingEntryId !== null,
+    closingEntryId,
+    entryNumber,
+    lock,
+  };
+}
+
+/**
+ * Reopen a closed fiscal year: reverses a posted closing entry (the reversal
+ * is tagged year_end_close too, so it is also excluded from statements) and
+ * unlocks the year end. The route enforces who may reopen a hard close.
+ */
+export async function reopenFiscalYear(
+  companyId: string,
+  fiscalYearEndRaw: unknown,
+  userId: string,
+  reason: string
+): Promise<FiscalYearCloseRecord> {
+  const fye = parseReportDate(fiscalYearEndRaw, "fiscalYearEnd");
+  if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
+  const existing = await pool.query(
+    `SELECT ${YEAR_CLOSE_COLUMNS} FROM fiscal_year_closes
+      WHERE company_id = $1 AND fiscal_year_end = $2::date`,
+    [companyId, fye]
+  );
+  const row = existing.rows[0];
+  if (!row || row.status !== "closed") throw new DomainError("FISCAL_YEAR_NOT_CLOSED", 404);
+  if (row.closing_entry_id) {
+    const lines = await pool.query(
+      `SELECT account_id, ROUND(debit * 100)::bigint AS d, ROUND(credit * 100)::bigint AS c, description
+         FROM journal_lines WHERE entry_id = $1`,
+      [row.closing_entry_id]
+    );
+    if (lines.rows.length) {
+      await closePostingPort.post({
+        companyId,
+        date: fye,
+        memo: `Reversal of year-end close FY ${row.fys} to ${fye}`,
+        source: YEAR_END_CLOSE_SOURCE,
+        userId,
+        lines: lines.rows.map((l: any) => ({
+          accountId: l.account_id,
+          debit: aed(Number(l.c)),
+          credit: aed(Number(l.d)),
+          description: `Reversal - ${l.description ?? ""}`.trim(),
+        })),
+      });
+    }
+  }
+  const r = await pool.query(
+    `UPDATE fiscal_year_closes
+        SET status = 'reopened', reopened_by = $3, reopened_at = now(), reopen_reason = $4,
+            closing_entry_id = NULL
+      WHERE company_id = $1 AND fiscal_year_end = $2::date
+      RETURNING ${YEAR_CLOSE_COLUMNS}`,
+    [companyId, fye, userId, reason]
+  );
+  await unlockPeriod(companyId, fye, { userId, reason });
+  return formatYearClose(r.rows[0]);
 }
 
 /**
@@ -679,15 +918,27 @@ export async function aiValidation(
   return { ready, summary, checklist };
 }
 
+function isoOf(v: unknown): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v ?? "").slice(0, 10);
+}
+
 function formatCloseRecord(row: any): MonthEndCloseRecord {
   return {
     id: row.id,
     companyId: row.company_id,
-    periodEnd: row.period_end,
+    periodEnd: isoOf(row.period_end),
     status: row.status,
     closedBy: row.closed_by,
     closedAt: row.closed_at,
     closingEntryId: row.closing_entry_id,
     createdAt: row.created_at,
+    lockType: row.lock_type === "soft" ? "soft" : "hard",
+    lockScope: row.lock_scope === "through" ? "through" : "month",
+    lockReason: row.lock_reason ?? null,
+    checklistOverride: row.checklist_override === true,
+    unlockedBy: row.unlocked_by ?? null,
+    unlockedAt: row.unlocked_at ?? null,
+    unlockReason: row.unlock_reason ?? null,
   };
 }
