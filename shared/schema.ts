@@ -331,6 +331,8 @@ export const companies = pgTable("companies", {
   wpsEmployerBankName: text("wps_employer_bank_name"),
   wpsEmployerIban: text("wps_employer_iban"),
   wpsEmployerRoutingCode: text("wps_employer_routing_code"),
+  // W3-D (migration 0098): WPS agent / salary-transfer provider id (bank or exchange house).
+  wpsAgentId: text("wps_agent_id"),
   // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
   // is reduced by this ratio per FTA partial-exemption rules.
   exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
