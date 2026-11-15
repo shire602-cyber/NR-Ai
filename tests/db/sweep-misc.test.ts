@@ -337,8 +337,8 @@ describe("W2-D wave-1 findings", () => {
   it("[W1A-01] purchase-order PUT cannot move the PO or change status/number/totals", async () => {
     const a = await h.createTenant();
     const b = await h.createSecondTenant();
+    // W3-B (R04-09/R04-10): number is server-assigned and server-owned fields are a 400.
     const created = await a.as.post(`/api/companies/${a.company.id}/purchase-orders`, {
-      number: "PO-W2D-1",
       vendorName: "Vendor",
       date: "2026-01-10T00:00:00.000Z",
       lines: [{ description: "Item", quantity: 2, unitPrice: 50, vatRate: 0.05 }],
@@ -356,7 +356,9 @@ describe("W2-D wave-1 findings", () => {
       total: 1,
       vendorName: "Renamed Vendor",
     });
-    expect(r.status).toBe(200);
+    expect(r.status).toBe(400);
+    const ok = await a.as.put(`/api/purchase-orders/${poId}`, { vendorName: "Renamed Vendor" });
+    expect(ok.status).toBe(200);
     const after = await h.sql(
       "SELECT company_id, status, number, total::text AS total, vendor_name FROM purchase_orders WHERE id = $1",
       [poId]

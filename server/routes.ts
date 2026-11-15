@@ -48,6 +48,7 @@ import { registerRecurringInvoiceRoutes } from "./routes/recurring-invoices.rout
 import { registerInventoryRoutes } from "./routes/inventory.routes";
 import { registerPayrollRoutes } from "./routes/payroll.routes";
 import { registerBillPayRoutes } from "./routes/bill-pay.routes";
+import { registerVendorRoutes } from "./routes/vendors.routes";
 import { registerFixedAssetRoutes } from "./routes/fixed-assets.routes";
 import { registerBudgetRoutes } from "./routes/budgets.routes";
 import { registerExpenseClaimRoutes } from "./routes/expense-claims.routes";
@@ -120,6 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Accounts Payable ───────────────────────────────────
   registerBillPayRoutes(app);
+  registerVendorRoutes(app);
 
   // ─── Asset Management ───────────────────────────────────
   registerFixedAssetRoutes(app);

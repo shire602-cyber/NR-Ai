@@ -95,6 +95,38 @@ const purchaseOrderSchema = z.object({
 
 type PurchaseOrderFormData = z.infer<typeof purchaseOrderSchema>;
 
+/** The server owns number / status / totals; only these fields are sent (W3-B, R04-09/10). */
+type PoPayload = {
+  vendorName: string;
+  vendorTrn: string | null;
+  date: string;
+  expectedDeliveryDate: string | null;
+  currency: string;
+  notes: string | null;
+  lines: Array<{ description: string; quantity: number; unitPrice: number; vatRate: number }>;
+};
+
+const PO_COPY = {
+  en: {
+    cancel: "Cancel order",
+    convert: "Convert to bill",
+    converted: "Bill created from the purchase order (pending approval)",
+    cancelled: "Purchase order cancelled",
+    partiallyReceived: "Partially received",
+    receiveAll: "Receive outstanding",
+    numberAssigned: "Assigned on save",
+  },
+  ar: {
+    cancel: "إلغاء أمر الشراء",
+    convert: "تحويل إلى فاتورة",
+    converted: "تم إنشاء فاتورة من أمر الشراء (بانتظار الاعتماد)",
+    cancelled: "تم إلغاء أمر الشراء",
+    partiallyReceived: "مستلم جزئيًا",
+    receiveAll: "استلام الكميات المتبقية",
+    numberAssigned: "يُحدد عند الحفظ",
+  },
+} as const;
+
 interface PurchaseOrder {
   id: string;
   companyId: string;
@@ -114,6 +146,7 @@ interface PurchaseOrder {
 
 export default function PurchaseOrders() {
   const { t, locale } = useTranslation();
+  const pc = PO_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
@@ -152,7 +185,7 @@ export default function PurchaseOrders() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: PurchaseOrderFormData) =>
+    mutationFn: (data: PoPayload) =>
       apiRequest("POST", `/api/companies/${selectedCompanyId}/purchase-orders`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -176,7 +209,7 @@ export default function PurchaseOrders() {
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: PurchaseOrderFormData }) =>
+    mutationFn: ({ id, data }: { id: string; data: PoPayload }) =>
       apiRequest("PUT", `/api/purchase-orders/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -226,16 +259,21 @@ export default function PurchaseOrders() {
         sent: "send",
         approved: "approve",
         received: "receive",
+        cancelled: "cancel",
+        billed: "convert-to-bill",
       };
       const action = actionMap[status];
       if (!action) throw new Error(`Unknown status: ${status}`);
-      return apiRequest("POST", `/api/purchase-orders/${id}/${action}`);
+      return apiRequest("POST", `/api/purchase-orders/${id}/${action}`, {});
     },
-    onSuccess: () => {
+    onSuccess: (_r: unknown, vars: { id: string; status: string }) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
-      toast({ title: "Status updated", description: "Purchase order status has been updated." });
+      if (vars.status === "billed") toast({ title: pc.converted });
+      else if (vars.status === "cancelled") toast({ title: pc.cancelled });
+      else
+        toast({ title: "Status updated", description: "Purchase order status has been updated." });
     },
     onError: (error: any) => {
       toast({
@@ -287,9 +325,15 @@ export default function PurchaseOrders() {
   };
 
   const onSubmit = async (data: PurchaseOrderFormData) => {
-    const poData = {
-      ...data,
-      companyId: selectedCompanyId!,
+    const poData: PoPayload = {
+      vendorName: data.vendorName,
+      vendorTrn: data.vendorTrn || null,
+      date: format(data.date, "yyyy-MM-dd"),
+      expectedDeliveryDate: data.expectedDeliveryDate
+        ? format(data.expectedDeliveryDate, "yyyy-MM-dd")
+        : null,
+      currency: data.currency,
+      notes: data.notes || null,
       lines: fields.map((_, index) => ({
         description: data.lines[index].description,
         quantity: Number(data.lines[index].quantity),
@@ -315,6 +359,8 @@ export default function PurchaseOrders() {
         return "bg-success-subtle text-success ";
       case "received":
         return "bg-success-subtle text-success ";
+      case "partially_received":
+        return "bg-warning-subtle text-warning ";
       case "cancelled":
         return "bg-danger-subtle text-destructive ";
       default:
@@ -393,7 +439,12 @@ export default function PurchaseOrders() {
                       <FormItem>
                         <FormLabel>PO Number</FormLabel>
                         <FormControl>
-                          <Input {...field} className="font-mono" />
+                          <Input
+                            {...field}
+                            value={editingPO ? field.value : pc.numberAssigned}
+                            readOnly
+                            className="font-mono"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -827,10 +878,32 @@ export default function PurchaseOrders() {
                               onClick={() =>
                                 updateStatusMutation.mutate({ id: po.id, status: "received" })
                               }
-                              disabled={po.status !== "approved"}
+                              disabled={
+                                po.status !== "approved" && po.status !== "partially_received"
+                              }
                             >
                               <PackageCheck className="w-4 h-4 mr-2" />
-                              Receive
+                              {pc.receiveAll}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                updateStatusMutation.mutate({ id: po.id, status: "billed" })
+                              }
+                              disabled={
+                                !["approved", "partially_received", "received"].includes(po.status)
+                              }
+                            >
+                              <Download className="w-4 h-4 me-2" />
+                              {pc.convert}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                updateStatusMutation.mutate({ id: po.id, status: "cancelled" })
+                              }
+                              disabled={!["draft", "sent", "approved"].includes(po.status)}
+                            >
+                              <Trash2 className="w-4 h-4 me-2" />
+                              {pc.cancel}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() =>

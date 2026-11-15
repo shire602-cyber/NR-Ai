@@ -22,6 +22,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -87,6 +88,8 @@ interface ExpenseClaimItem {
   amount: number;
   vat_amount: number;
   receipt_url?: string | null;
+  supplier_trn?: string | null;
+  has_tax_invoice?: boolean;
   merchant_name?: string | null;
   created_at?: string;
 }
@@ -140,6 +143,8 @@ const expenseItemSchema = z.object({
   vat_amount: z.coerce.number().min(0, "VAT amount must be >= 0"),
   merchant_name: z.string().optional().nullable(),
   receipt_url: z.string().optional().nullable(),
+  supplier_trn: z.string().optional().nullable(),
+  has_tax_invoice: z.boolean().default(true),
 });
 
 const claimFormSchema = z.object({
@@ -158,16 +163,74 @@ type ReviewFormData = z.infer<typeof reviewFormSchema>;
 
 const paymentFormSchema = z.object({
   payment_reference: z.string().optional().nullable(),
+  payment_account_id: z.string().optional().nullable(),
 });
 
 type PaymentFormData = z.infer<typeof paymentFormSchema>;
+
+// ─── W3-B copy (en + ar) ──────────────────────────────────
+
+const CLAIM_COPY = {
+  en: {
+    taxInvoice: "Valid tax invoice (VAT recoverable)",
+    supplierTrn: "Supplier TRN",
+    paidFrom: "Paid from (bank / cash account)",
+    defaultBank: "Default bank account",
+    paid: "Paid",
+  },
+  ar: {
+    taxInvoice: "فاتورة ضريبية صالحة (ضريبة قابلة للاسترداد)",
+    supplierTrn: "الرقم الضريبي للمورد",
+    paidFrom: "مدفوع من (حساب بنكي / نقدي)",
+    defaultBank: "الحساب البنكي الافتراضي",
+    paid: "مدفوعة",
+  },
+} as const;
+
+/** Server contract: blanks become null, amounts stay numbers (validated server-side). */
+function claimPayload(data: ClaimFormData) {
+  return {
+    title: data.title,
+    description: data.description || null,
+    items: data.items.map((i) => ({
+      expense_date: i.expense_date,
+      category: i.category,
+      description: i.description,
+      amount: i.amount,
+      vat_amount: i.vat_amount,
+      merchant_name: i.merchant_name || null,
+      receipt_url: i.receipt_url || null,
+      supplier_trn: i.supplier_trn || null,
+      has_tax_invoice: i.has_tax_invoice,
+    })),
+  };
+}
 
 // ─── Component ────────────────────────────────────────────
 
 export default function ExpenseClaims() {
   const { t, locale } = useTranslation();
+  const cc = CLAIM_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { data: ledgerAccounts = [] } = useQuery<
+    Array<{
+      id: string;
+      code: string;
+      nameEn: string;
+      nameAr?: string;
+      type: string;
+      subType?: string;
+    }>
+  >({
+    queryKey: ["/api/companies", companyId, "accounts"],
+    enabled: !!companyId,
+  });
+  const cashAccounts = ledgerAccounts.filter(
+    (a) =>
+      a.type === "asset" &&
+      (a.subType === "cash" || a.subType === "bank" || ["1010", "1020", "1030"].includes(a.code))
+  );
   const currentUser = getStoredUser();
 
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
@@ -249,7 +312,7 @@ export default function ExpenseClaims() {
 
   const createClaimMutation = useMutation({
     mutationFn: (data: ClaimFormData) =>
-      apiRequest("POST", `/api/companies/${companyId}/expense-claims`, data),
+      apiRequest("POST", `/api/companies/${companyId}/expense-claims`, claimPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
       queryClient.invalidateQueries({
@@ -269,7 +332,7 @@ export default function ExpenseClaims() {
 
   const updateClaimMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: ClaimFormData }) =>
-      apiRequest("PATCH", `/api/expense-claims/${id}`, data),
+      apiRequest("PATCH", `/api/expense-claims/${id}`, claimPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
       queryClient.invalidateQueries({
@@ -351,8 +414,19 @@ export default function ExpenseClaims() {
   });
 
   const markPaidMutation = useMutation({
-    mutationFn: ({ id, payment_reference }: { id: string; payment_reference?: string | null }) =>
-      apiRequest("POST", `/api/expense-claims/${id}/mark-paid`, { payment_reference }),
+    mutationFn: ({
+      id,
+      payment_reference,
+      payment_account_id,
+    }: {
+      id: string;
+      payment_reference?: string | null;
+      payment_account_id?: string | null;
+    }) =>
+      apiRequest("POST", `/api/expense-claims/${id}/mark-paid`, {
+        payment_reference: payment_reference || null,
+        payment_account_id: payment_account_id || null,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
       queryClient.invalidateQueries({
@@ -408,6 +482,8 @@ export default function ExpenseClaims() {
                 vat_amount: parseFloat(String(item.vat_amount)) || 0,
                 merchant_name: item.merchant_name || "",
                 receipt_url: item.receipt_url || "",
+                supplier_trn: item.supplier_trn || "",
+                has_tax_invoice: item.has_tax_invoice !== false,
               }))
             : [
                 {
@@ -463,13 +539,17 @@ export default function ExpenseClaims() {
 
   const handleOpenPaymentDialog = (claimId: string) => {
     setPaymentClaimId(claimId);
-    paymentForm.reset({ payment_reference: "" });
+    paymentForm.reset({ payment_reference: "", payment_account_id: "" });
     setPaymentDialogOpen(true);
   };
 
   const handlePaymentSubmit = (data: PaymentFormData) => {
     if (!paymentClaimId) return;
-    markPaidMutation.mutate({ id: paymentClaimId, payment_reference: data.payment_reference });
+    markPaidMutation.mutate({
+      id: paymentClaimId,
+      payment_reference: data.payment_reference,
+      payment_account_id: data.payment_account_id,
+    });
   };
 
   // ─── Helpers ──────────────────────────────────────────
@@ -501,7 +581,7 @@ export default function ExpenseClaims() {
           </StatusBadge>
         );
       case "paid":
-        return <StatusBadge tone="accent">Paid</StatusBadge>;
+        return <StatusBadge tone="accent">{cc.paid}</StatusBadge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -945,6 +1025,7 @@ export default function ExpenseClaims() {
                         vat_amount: 0,
                         merchant_name: "",
                         receipt_url: "",
+                        has_tax_invoice: true,
                       })
                     }
                   >
@@ -1074,6 +1155,36 @@ export default function ExpenseClaims() {
                               <Input type="number" step="0.01" min="0" {...field} />
                             </FormControl>
                             <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={claimForm.control}
+                        name={`items.${index}.supplier_trn`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{cc.supplierTrn}</FormLabel>
+                            <FormControl>
+                              <Input inputMode="numeric" {...field} value={field.value || ""} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={claimForm.control}
+                        name={`items.${index}.has_tax_invoice`}
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(v) => field.onChange(v === true)}
+                              />
+                            </FormControl>
+                            <FormLabel className="font-normal">{cc.taxInvoice}</FormLabel>
                           </FormItem>
                         )}
                       />
@@ -1385,6 +1496,30 @@ export default function ExpenseClaims() {
                       />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={paymentForm.control}
+                name="payment_account_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{cc.paidFrom}</FormLabel>
+                    <Select value={field.value || ""} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={cc.defaultBank} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {cashAccounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.code} - {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </FormItem>
                 )}
               />
