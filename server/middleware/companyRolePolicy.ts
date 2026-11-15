@@ -17,7 +17,9 @@
  *      own authMiddleware answers 401);
  *   4. loads the caller's company_users role and answers 403
  *      PERMISSION_DENIED when the role lacks the permission, or 403
- *      COMPANY_ACCESS_DENIED when the caller is not a member at all.
+ *      COMPANY_ACCESS_DENIED when the caller is not a member of a company it
+ *      named (URL/body/query). A non-member addressing another tenant's row
+ *      id gets 404 NOT_FOUND, so row ids are no existence oracle.
  *
  * Platform admins and NR firm staff (users.firm_role) are not company
  * members in the RBAC sense; they pass through to the route's existing
@@ -286,6 +288,7 @@ const RESOURCES: Record<string, string> = {
   "vat-returns": "SELECT company_id FROM vat_returns WHERE id = $1",
   "compliance-tasks": "SELECT company_id FROM compliance_tasks WHERE id = $1",
   documents: "SELECT company_id FROM documents WHERE id = $1",
+  "tax-returns-archive": "SELECT company_id FROM tax_return_archive WHERE id = $1",
 };
 
 /** Deeper resource shapes: [path prefix segments, SQL]. The id follows the prefix. */
@@ -319,28 +322,51 @@ function startsWith(segs: string[], prefix: string[]): boolean {
   return prefix.every((p, i) => segs[i] === p);
 }
 
-/** The company a request acts on, or null if it cannot be determined. */
-export async function resolveRequestCompany(req: Request, path: string): Promise<string | null> {
+/**
+ * How the company was found: named by the caller (URL / body / query) or
+ * looked up from a tenant row id in the path. A non-member probing another
+ * tenant's row id gets 404 (no existence oracle); naming a company gets 403.
+ */
+export type CompanySource = "named" | "row";
+
+/** The company a request acts on (and how it was found), or null. */
+export async function resolveRequestCompanyWithSource(
+  req: Request,
+  path: string
+): Promise<{ companyId: string; source: CompanySource } | null> {
+  const named = (id: string | null) => (id ? { companyId: id, source: "named" as const } : null);
+  const row = (id: string | null) => (id ? { companyId: id, source: "row" as const } : null);
   const segs = splitPath(path);
   if (segs[0] === "companies" && segs[1]) {
-    return UUID_RE.test(segs[1]) ? segs[1].toLowerCase() : null;
+    return named(UUID_RE.test(segs[1]) ? segs[1].toLowerCase() : null);
   }
   for (const prefix of COMPANY_PARAM_PREFIXES) {
     const id = segs[prefix.length];
-    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return id.toLowerCase();
+    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return named(id.toLowerCase());
   }
   for (const [prefix, sqlText] of NESTED_RESOURCES) {
     const id = segs[prefix.length];
-    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return lookupCompany(sqlText, id);
+    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) {
+      return row(await lookupCompany(sqlText, id));
+    }
   }
   const resource = RESOURCES[segs[0]];
-  if (resource && segs[1] && UUID_RE.test(segs[1])) return lookupCompany(resource, segs[1]);
+  if (resource && segs[1] && UUID_RE.test(segs[1])) {
+    return row(await lookupCompany(resource, segs[1]));
+  }
 
   const fromBody = (req.body as Record<string, unknown> | undefined)?.companyId;
-  if (typeof fromBody === "string" && UUID_RE.test(fromBody)) return fromBody.toLowerCase();
+  if (typeof fromBody === "string" && UUID_RE.test(fromBody)) return named(fromBody.toLowerCase());
   const fromQuery = (req.query as Record<string, unknown> | undefined)?.companyId;
-  if (typeof fromQuery === "string" && UUID_RE.test(fromQuery)) return fromQuery.toLowerCase();
+  if (typeof fromQuery === "string" && UUID_RE.test(fromQuery)) {
+    return named(fromQuery.toLowerCase());
+  }
   return null;
+}
+
+/** The company a request acts on, or null if it cannot be determined. */
+export async function resolveRequestCompany(req: Request, path: string): Promise<string | null> {
+  return (await resolveRequestCompanyWithSource(req, path))?.companyId ?? null;
 }
 
 // ─── Membership ──────────────────────────────────────────────────────────
@@ -391,8 +417,9 @@ export async function companyRolePolicy(
     const user = auth.user;
     if (bypassesCompanyRoles(user)) return next();
 
-    const companyId = await resolveRequestCompany(req, req.path);
-    if (!companyId) return next();
+    const resolved = await resolveRequestCompanyWithSource(req, req.path);
+    if (!resolved) return next();
+    const { companyId } = resolved;
 
     const role = await getCompanyRole(user.id, companyId);
     const allowed = !!role && roleHasAnyPermission(role, permissions);
@@ -409,6 +436,11 @@ export async function companyRolePolicy(
       return next();
     }
     log.info({ userId: user.id, method: req.method, path: req.path, ...details }, "RBAC denied");
+    if (!role && resolved.source === "row") {
+      // Another tenant's row id: answer like a missing row (tenant-scoped 404).
+      res.status(404).json({ message: "Not found", code: "NOT_FOUND" });
+      return;
+    }
     deny(res, role ? "PERMISSION_DENIED" : "COMPANY_ACCESS_DENIED", details);
   } catch (err) {
     next(err);

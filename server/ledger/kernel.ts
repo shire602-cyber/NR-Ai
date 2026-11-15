@@ -515,7 +515,7 @@ async function resolveReversalDate(
         "A reversal cannot be dated before the entry it reverses"
       );
     }
-    assertNotFuture(iso);
+    if (!opts.allowFutureDate) assertNotFuture(iso);
     await assertPeriodNotLocked(original.companyId, at);
     return iso === origIso ? new Date(original.date) : at;
   }
@@ -598,10 +598,12 @@ async function reverseInTx(
     companyId: original.companyId,
     dateIso: date.toISOString().slice(0, 10),
     dateAt: date,
-    memo: `${label} of ${original.entryNumber}${reason ? `: ${reason}` : ""}`,
+    memo: opts.memo
+      ? String(opts.memo).slice(0, 1000)
+      : `${label} of ${original.entryNumber}${reason ? `: ${reason}` : ""}`,
     reference: original.reference ?? null,
-    source: "reversal",
-    sourceId: original.id,
+    source: opts.source ? String(opts.source) : "reversal",
+    sourceId: opts.sourceId ?? original.id,
     idempotencyKey: null,
     status: "posted",
     kind: "reversal" satisfies EntryKind,

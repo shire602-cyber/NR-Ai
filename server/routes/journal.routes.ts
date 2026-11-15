@@ -63,8 +63,11 @@ const log = createLogger("journal");
 const APPROVER_ROLES = new Set(["owner", "admin", "accountant", "cfo"]);
 /** Roles that may change the maker-checker threshold. */
 const SETTINGS_ROLES = new Set(["owner", "admin", "cfo"]);
-/** Journal attachments ride the default 1 MB JSON body limit. */
-const MAX_ATTACHMENT_BYTES = 700 * 1024;
+/**
+ * POST /api/journal/:id/attachments is in server/index.ts largeJsonRoutes (10 MB JSON),
+ * so a base64 body of up to 10 MB carries a ~7 MB file (validator caps data at 10M chars).
+ */
+const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024;
 
 function userIdOf(req: Request): string {
   return (req as Request & { user: { id: string } }).user.id;

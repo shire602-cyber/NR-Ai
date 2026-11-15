@@ -100,6 +100,11 @@ gets `reversed_by_entry_id` and `reversal_kind` (`reversed` | `voided`) in the s
 reversed (`409 ENTRY_IS_REVERSAL`); a non-posted entry is `409 ENTRY_NOT_POSTED`. Reversals may hit
 accounts archived since the original was posted.
 
+Scheduled reversals (integration W2): `ReverseOptions` also takes `allowFutureDate` (explicit
+`date` after today, e.g. FX revaluation reversing on as-of + 1), `source`, `sourceId` and `memo`
+for the reversal entry (defaults `reversal`, the original id, `Reversal of <number>`). The link and
+the one-reversal rule are unchanged.
+
 ### `reverseBySource(companyId, source, sourceId, { date?, reason?, void? }, ctx)`
 
 Reverses every unreversed posted entry of one document in one transaction (void, credit, unmatch,

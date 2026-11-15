@@ -16,6 +16,7 @@ import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
 import { withDocumentLock, LOCK_NS } from "./document-lock";
+import { postJournal, type LedgerTx, type PostJournalLineInput } from "../ledger";
 
 const log = createLogger("invoice-posting");
 
@@ -47,14 +48,15 @@ export async function postInvoiceRevenueJournal(
   // entry — measured at 10 duplicate entries for 10 parallel requests, i.e.
   // revenue and output VAT overstated 10x. Hold an advisory lock on the invoice
   // so exactly one caller can pass the idempotency check.
-  return await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, async () =>
-    postInvoiceRevenueJournalLocked(invoice, userId)
+  return await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, async (tx) =>
+    postInvoiceRevenueJournalLocked(invoice, userId, tx)
   );
 }
 
 async function postInvoiceRevenueJournalLocked(
   invoice: InvoiceLike,
-  userId: string
+  userId: string,
+  tx: LedgerTx
 ): Promise<boolean> {
   const existing = await storage.getJournalEntriesBySource(
     invoice.companyId,
@@ -160,22 +162,31 @@ async function postInvoiceRevenueJournalLocked(
     });
   }
 
-  const entryNumber = await storage.generateEntryNumber(invoice.companyId, invoiceDate);
-  await storage.createJournalEntry(
+  if (arDebit <= 0) {
+    log.warn({ invoiceId: invoice.id }, "Invoice has no value to recognise - no journal posted");
+    return false;
+  }
+
+  // Posted through the ledger kernel inside the document-lock transaction, so
+  // the lock, the idempotency check and the journal commit together. The
+  // idempotency key is a second guard against a duplicate revenue entry.
+  const { entry, replayed } = await postJournal(
     {
       companyId: invoice.companyId,
       date: invoiceDate,
       memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
-      entryNumber,
       status: "posted",
       source: "invoice",
       sourceId: invoice.id,
-      createdBy: userId,
-      postedBy: userId,
-      postedAt: invoiceDate,
-    } as any,
-    journalLines as any
+      idempotencyKey: `invoice:${invoice.id}:revenue`,
+      allowFutureDate: true,
+      allowSameAccount: true,
+      lines: journalLines as unknown as PostJournalLineInput[],
+    },
+    { actorId: userId, tx }
   );
+  if (replayed) return false;
+  const entryNumber = entry.entryNumber;
 
   log.info({ entryNumber, invoiceId: invoice.id }, "Revenue recognition journal entry created");
   return true;

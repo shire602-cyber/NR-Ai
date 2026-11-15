@@ -2,7 +2,8 @@
  * Receipt posting (W2-D: R05-02, R05-19b). Builds the balanced journal for a receipt (single
  * expense account or a multi-account split) in integer fils and posts it through
  * storage.postReceiptAtomic / reviseReceiptAtomic, which claim the receipt with a conditional
- * UPDATE inside the same transaction as the journal insert.
+ * UPDATE inside the same ledger transaction as the server/ledger kernel post (postJournal) and
+ * reversal (reverseBySource).
  */
 import { storage } from "../storage";
 import type { Account, InsertJournalLine, Receipt } from "../../shared/schema";
@@ -316,15 +317,15 @@ export async function reviseReceipt(
     expenseAccountId: merged.accountId,
     paymentAccountId,
   });
-  const reversalDate = new Date();
+  // The ledger kernel dates the reversal (original date if its period is open, else today) and
+  // enforces period locks for both entries.
   await assertPeriodNotLocked(receipt.companyId, plan.entryDate);
-  await assertPeriodNotLocked(receipt.companyId, reversalDate);
   const result = await storage.reviseReceiptAtomic({
     receiptId: receipt.id,
     companyId: receipt.companyId,
     userId,
     patch: patch as never,
-    reversalDate,
+    reversalDate: null,
     reason,
     entryDate: plan.entryDate,
     memo: plan.memo,

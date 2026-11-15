@@ -278,8 +278,8 @@ import { allocatePayment, buildPaymentJournalLines } from "./services/invoice-li
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 import { createJournalEntryCompat, legacyLinesToInput } from "./ledger/legacy";
+import { postJournal, reverseBySource, withLedgerTx } from "./ledger";
 import { previewEntryNumber } from "./ledger/numbering";
-import { DomainError } from "./errors";
 import { scopedDelete, scopedGet, scopedUpdate } from "./tenancy";
 
 /** R01-05: canonical form of an email address (trimmed, lower-cased). */
@@ -341,7 +341,8 @@ export interface ReviseReceiptAtomicArgs {
   userId: string;
   /** Receipt columns to change as part of the revision (already validated). */
   patch: Partial<InsertReceipt>;
-  reversalDate: Date;
+  /** Reversal date; null = the ledger default (original date if its period is open, else today). */
+  reversalDate?: Date | null;
   reason: string | null;
   entryDate: Date;
   memo: string;
@@ -2421,54 +2422,15 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
-  /** Insert a posted journal entry (+lines) inside an open transaction, numbering it gap-free. */
-  private async insertPostedEntryTx(
-    tx: typeof db,
-    entry: Omit<InsertJournalEntry, "entryNumber"> & {
-      companyId: string;
-      date: Date;
-    },
-    lines: JournalLineInsert[]
-  ): Promise<JournalEntry> {
-    if (!Array.isArray(lines) || lines.length === 0) {
-      throw new Error("Journal entry must have at least one line");
-    }
-    assertBalanced(lines);
-    const dateStr = entry.date.toISOString().slice(0, 10).replace(/-/g, "");
-    const prefix = `JE-${dateStr}`;
-    const counterStart = prefix.length + 2;
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(${hashStringToInt(entry.companyId)}, ${hashStringToInt(prefix)})`
-    );
-    const res: any = await tx.execute(sql`
-      SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)), 0) AS max_seq
-        FROM journal_entries
-       WHERE company_id = ${entry.companyId}
-         AND entry_number LIKE ${prefix + "-%"}
-         AND entry_number ~ ${"^" + prefix + "-[0-9]+$"}
-    `);
-    const next =
-      Number(((res.rows ?? res) as Array<{ max_seq: number | string | null }>)[0]?.max_seq ?? 0) +
-      1;
-    const [created] = await tx
-      .insert(journalEntries)
-      .values({ ...entry, entryNumber: `${prefix}-${String(next).padStart(3, "0")}` })
-      .returning();
-    for (const line of lines) {
-      await tx.insert(journalLines).values({ ...line, entryId: created.id });
-    }
-    return created;
-  }
-
   /**
    * Post a receipt exactly once. The claim is a conditional UPDATE ... WHERE posted = false
-   * RETURNING inside the same transaction as the journal insert, so concurrent posts produce one
-   * entry and a failure leaves the receipt unposted (R05-02).
+   * RETURNING inside the same ledger transaction as the kernel post (server/ledger postJournal),
+   * so concurrent posts produce one entry and a failure leaves the receipt unposted (R05-02).
    */
   async postReceiptAtomic(
     args: PostReceiptAtomicArgs
   ): Promise<{ receipt: Receipt; entry: JournalEntry }> {
-    return await db.transaction(async (tx: typeof db) => {
+    return await withLedgerTx(async (tx: typeof db) => {
       const [claimed] = await tx
         .update(receipts)
         .set({
@@ -2497,8 +2459,7 @@ export class DatabaseStorage implements IStorage {
           "Receipt has already been posted"
         );
       }
-      const entry = await this.insertPostedEntryTx(
-        tx,
+      const { entry } = await postJournal(
         {
           companyId: args.companyId,
           date: args.entryDate,
@@ -2506,11 +2467,10 @@ export class DatabaseStorage implements IStorage {
           status: "posted",
           source: "receipt",
           sourceId: args.receiptId,
-          createdBy: args.userId,
-          postedBy: args.userId,
-          postedAt: new Date(),
-        } as any,
-        args.lines
+          allowFutureDate: true,
+          lines: legacyLinesToInput(args.lines),
+        },
+        { actorId: args.userId, tx }
       );
       const [receipt] = await tx
         .update(receipts)
@@ -2522,13 +2482,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
-   * Revise a posted receipt: reverse its journal entry and post the corrected one in a single
-   * transaction. The receipt row is locked so two revisions cannot interleave.
+   * Revise a posted receipt: reverse its journal entries (server/ledger reverseBySource) and post
+   * the corrected one in a single ledger transaction. The receipt row is locked so two revisions
+   * cannot interleave.
    */
   async reviseReceiptAtomic(
     args: ReviseReceiptAtomicArgs
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }> {
-    return await db.transaction(async (tx: typeof db) => {
+    return await withLedgerTx(async (tx: typeof db) => {
       const [locked] = await tx
         .select()
         .from(receipts)
@@ -2543,57 +2504,25 @@ export class DatabaseStorage implements IStorage {
           "Only a posted receipt can be revised. Edit unposted receipts with PUT."
         );
       }
-      const [original] = await tx
-        .select()
-        .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.id, locked.journalEntryId),
-            eq(journalEntries.companyId, args.companyId)
-          )
-        );
-      if (!original) throw new DomainError("RECEIPT_JOURNAL_MISSING", 409);
-      const originalLines = await tx
-        .select()
-        .from(journalLines)
-        .where(eq(journalLines.entryId, original.id));
-      if (originalLines.length === 0) throw new DomainError("RECEIPT_JOURNAL_MISSING", 409);
-
-      const reversal = await this.insertPostedEntryTx(
-        tx,
-        {
-          companyId: args.companyId,
-          date: args.reversalDate,
-          memo: `Reversal of ${original.entryNumber}: ${args.reason ?? "Receipt revised"}`,
-          status: "posted",
-          source: "reversal",
-          sourceId: original.id,
-          reversedEntryId: original.id,
-          reversalReason: args.reason,
-          createdBy: args.userId,
-          postedBy: args.userId,
-          postedAt: new Date(),
-        } as any,
-        originalLines.map((l: any) => ({
-          accountId: l.accountId,
-          costCenterId: l.costCenterId,
-          debit: l.credit,
-          credit: l.debit,
-          description: `Reversal: ${l.description || ""}`,
-          foreignCurrency: l.foreignCurrency,
-          foreignDebit: l.foreignCredit,
-          foreignCredit: l.foreignDebit,
-          exchangeRate: l.exchangeRate,
-        }))
+      const ctx = { actorId: args.userId, tx, companyId: args.companyId };
+      const reversed = await reverseBySource(
+        args.companyId,
+        "receipt",
+        args.receiptId,
+        { date: args.reversalDate ?? null, reason: args.reason ?? "Receipt revised" },
+        ctx
       );
+      const reversal =
+        reversed.find((r) => r.original.id === locked.journalEntryId)?.reversal ??
+        reversed[0]?.reversal;
+      if (!reversal) throw new DomainError("RECEIPT_JOURNAL_MISSING", 409);
 
       const [updated] = await tx
         .update(receipts)
         .set(args.patch)
         .where(eq(receipts.id, args.receiptId))
         .returning();
-      const entry = await this.insertPostedEntryTx(
-        tx,
+      const { entry } = await postJournal(
         {
           companyId: args.companyId,
           date: args.entryDate,
@@ -2601,11 +2530,10 @@ export class DatabaseStorage implements IStorage {
           status: "posted",
           source: "receipt",
           sourceId: args.receiptId,
-          createdBy: args.userId,
-          postedBy: args.userId,
-          postedAt: new Date(),
-        } as any,
-        args.buildLines(updated)
+          allowFutureDate: true,
+          lines: legacyLinesToInput(args.buildLines(updated)),
+        },
+        ctx
       );
       const [receipt] = await tx
         .update(receipts)

@@ -247,8 +247,9 @@ describe("W2-D portal", () => {
     expect((await a.as.patch(`/api/compliance-tasks/${tid}`, { status: "completed" })).status).toBe(
       200
     );
+    // Another tenant's row id is answered like a missing row (central RBAC policy, server/tenancy).
     expect((await b.as.patch(`/api/compliance-tasks/${tid}`, { status: "cancelled" })).status).toBe(
-      403
+      404
     );
 
     const msgUrl = `/api/companies/${a.company.id}/messages`;

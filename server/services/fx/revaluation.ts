@@ -7,14 +7,21 @@
  * realised result is recognised on settlement. Re-running the same date is a no-op; undo
  * posts equal-and-opposite entries for both and marks the run 'undone'.
  *
- * FOLLOW-UP: post through server/ledger once the W2-A ledger kernel lands; today this uses
- * storage.createJournalEntryWithLines (balance-checked, numbered, transactional per entry).
+ * Every entry goes through the server/ledger kernel in ONE ledger transaction per run/undo:
+ * postJournal (kind 'revaluation') for the revaluation and undo entries, reverseEntry for the
+ * scheduled next-day reversal (linked via reversed_entry_id / reversed_by_entry_id).
  */
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
-import { fxRevaluations, type FxRevaluation, type JournalEntry } from "../../../shared/schema";
-import { filsToNumber, fromFils, sumFils } from "../../../shared/money";
+import {
+  fxRevaluations,
+  journalLines,
+  type FxRevaluation,
+  type JournalEntry,
+} from "../../../shared/schema";
+import { postJournal, reverseEntry, withLedgerTx, type LedgerTx } from "../../ledger";
+import { filsToNumber, fromFils, sumFils, toFils } from "../../../shared/money";
 import { ACCOUNT_CODES } from "../../constants";
 import { DomainError } from "../../errors";
 import { assertPeriodNotLocked } from "../period-lock.service";
@@ -247,36 +254,40 @@ export async function previewRevaluation(companyId: string, asOfInput?: string) 
   };
 }
 
-type JeLine = { accountId: string; debit: number; credit: number; description: string };
+type JeLine = { accountId: string; debitFils: number; creditFils: number; description: string };
 
 const toJeLines = (lines: RevaluationLine[], flip = false, prefix = ""): JeLine[] =>
-  lines.map((l) => ({
-    accountId: l.accountId,
-    debit: filsToNumber(flip ? l.creditFils : l.debitFils),
-    credit: filsToNumber(flip ? l.debitFils : l.creditFils),
-    description: `${prefix}${l.description}`.slice(0, 255),
-  }));
+  lines
+    .filter((l) => l.debitFils !== 0 || l.creditFils !== 0)
+    .map((l) => ({
+      accountId: l.accountId,
+      debitFils: flip ? l.creditFils : l.debitFils,
+      creditFils: flip ? l.debitFils : l.creditFils,
+      description: `${prefix}${l.description}`.slice(0, 255),
+    }));
 
 async function post(
+  tx: LedgerTx,
   companyId: string,
   dateIso: string,
   userId: string,
-  data: { memo: string; source: string; sourceId: string; reversedEntryId?: string },
+  data: { memo: string; source: string; sourceId: string; idempotencyKey: string },
   lines: JeLine[]
 ): Promise<JournalEntry> {
-  const { entry } = await storage.createJournalEntryWithLines(
-    companyId,
-    isoToDate(dateIso),
+  const { entry } = await postJournal(
     {
+      companyId,
+      date: dateIso,
       memo: data.memo,
       status: "posted",
       source: data.source,
       sourceId: data.sourceId,
-      reversedEntryId: data.reversedEntryId ?? null,
-      createdBy: userId,
-      postedBy: userId,
+      idempotencyKey: data.idempotencyKey,
+      kind: "revaluation",
+      allowFutureDate: true,
+      lines,
     },
-    lines
+    { actorId: userId, tx, companyId }
   );
   return entry;
 }
@@ -327,23 +338,25 @@ export async function runRevaluation(
   await assertPeriodNotLocked(companyId, isoToDate(asOf));
   await assertPeriodNotLocked(companyId, isoToDate(reversalDate));
 
-  // Claim the (company, as_of) slot first; a concurrent run loses here and is a no-op.
-  const claimed = rowsOf(
-    await db.execute(sql`
-      INSERT INTO fx_revaluations (company_id, as_of, status, created_by)
-      VALUES (${companyId}, ${asOf}, 'pending', ${userId})
-      ON CONFLICT (company_id, as_of) WHERE status <> 'undone' DO NOTHING
-      RETURNING id`)
-  );
-  if (claimed.length === 0) {
-    const again = await getActiveRevaluation(companyId, asOf);
-    return { posted: false as const, noop: true, reason: "ALREADY_POSTED", revaluation: again };
-  }
-  const revaluationId = String(claimed[0].id);
+  // One ledger transaction: claim the (company, as_of) slot, post the revaluation and its
+  // next-day reversal, record the run. Any failure rolls everything back (no compensation).
+  // A concurrent run waits on the slot's unique index and then loses as a no-op.
+  return withLedgerTx(async (tx) => {
+    const claimed = rowsOf(
+      await tx.execute(sql`
+        INSERT INTO fx_revaluations (company_id, as_of, status, created_by)
+        VALUES (${companyId}, ${asOf}, 'pending', ${userId})
+        ON CONFLICT (company_id, as_of) WHERE status <> 'undone' DO NOTHING
+        RETURNING id`)
+    );
+    if (claimed.length === 0) {
+      const again = await getActiveRevaluation(companyId, asOf);
+      return { posted: false as const, noop: true, reason: "ALREADY_POSTED", revaluation: again };
+    }
+    const revaluationId = String(claimed[0].id);
 
-  let entry: JournalEntry | null = null;
-  try {
-    entry = await post(
+    const entry = await post(
+      tx,
       companyId,
       asOf,
       userId,
@@ -351,20 +364,20 @@ export async function runRevaluation(
         memo: `Unrealised FX revaluation ${asOf}`,
         source: FX_REVALUATION_SOURCE,
         sourceId: revaluationId,
+        idempotencyKey: `fx_revaluation:${revaluationId}`,
       },
       toJeLines(lines)
     );
-    const reversal = await post(
-      companyId,
-      reversalDate,
-      userId,
+    const { reversal } = await reverseEntry(
+      entry.id,
       {
-        memo: `Automatic reversal of unrealised FX revaluation ${asOf}`,
+        date: reversalDate,
+        allowFutureDate: true,
         source: FX_REVALUATION_REVERSAL_SOURCE,
         sourceId: revaluationId,
-        reversedEntryId: entry.id,
+        memo: `Automatic reversal of unrealised FX revaluation ${asOf}`,
       },
-      toJeLines(lines, true, "Reversal — ")
+      { actorId: userId, tx, companyId }
     );
     const summary = {
       receivable: fromFils(exposure.totals.receivableFils),
@@ -376,7 +389,7 @@ export async function runRevaluation(
       lines: serialise(lines),
       warnings: exposure.warnings,
     };
-    const [row] = await db
+    const [row] = await tx
       .update(fxRevaluations)
       .set({
         status: "posted",
@@ -397,30 +410,7 @@ export async function runRevaluation(
       lines: serialise(lines),
       warnings: exposure.warnings,
     };
-  } catch (err) {
-    // Compensate a half-posted run so the books never keep an unreversed revaluation.
-    if (entry) {
-      await post(
-        companyId,
-        asOf,
-        userId,
-        {
-          memo: `Rollback of failed FX revaluation ${asOf}`,
-          source: FX_REVALUATION_UNDO_SOURCE,
-          sourceId: revaluationId,
-          reversedEntryId: entry.id,
-        },
-        toJeLines(lines, true, "Rollback — ")
-      ).catch(() => undefined);
-      await db
-        .update(fxRevaluations)
-        .set({ status: "undone", journalEntryId: entry.id, undoneAt: new Date() })
-        .where(eq(fxRevaluations.id, revaluationId));
-    } else {
-      await db.delete(fxRevaluations).where(eq(fxRevaluations.id, revaluationId));
-    }
-    throw err;
-  }
+  });
 }
 
 export async function undoRevaluation(companyId: string, revaluationId: string, userId: string) {
@@ -437,43 +427,63 @@ export async function undoRevaluation(companyId: string, revaluationId: string, 
   await assertPeriodNotLocked(companyId, isoToDate(row.asOf));
   await assertPeriodNotLocked(companyId, isoToDate(reversalDate));
 
-  const undoIds: string[] = [];
-  for (const [entryId, dateIso] of [
-    [row.journalEntryId, row.asOf],
-    [row.reversalEntryId, reversalDate],
-  ] as const) {
-    if (!entryId) continue;
-    const original = await storage.getJournalLinesByEntryId(entryId);
-    const undo = await post(
-      companyId,
-      dateIso,
-      userId,
-      {
-        memo: `Undo of unrealised FX revaluation ${row.asOf}`,
-        source: FX_REVALUATION_UNDO_SOURCE,
-        sourceId: row.id,
-        reversedEntryId: entryId,
-      },
-      original.map((l) => ({
-        accountId: l.accountId,
-        debit: Number(l.credit) || 0,
-        credit: Number(l.debit) || 0,
-        description: `Undo — ${l.description ?? ""}`.slice(0, 255),
-      }))
-    );
-    undoIds.push(undo.id);
-  }
-  const [updated] = await db
-    .update(fxRevaluations)
-    .set({
-      status: "undone",
-      undoneBy: userId,
-      undoneAt: new Date(),
-      summary: { ...((row.summary as Record<string, unknown>) ?? {}), undoEntryIds: undoIds },
-    })
-    .where(eq(fxRevaluations.id, row.id))
-    .returning();
-  return { undone: true, revaluation: updated, undoEntryIds: undoIds };
+  // The revaluation is already linked to its reversal, so undo posts equal-and-opposite
+  // revaluation entries for both (one ledger transaction, conditional on status = 'posted').
+  return withLedgerTx(async (tx) => {
+    const [claimed] = await tx
+      .update(fxRevaluations)
+      .set({ status: "undone", undoneBy: userId, undoneAt: new Date() })
+      .where(and(eq(fxRevaluations.id, row.id), eq(fxRevaluations.status, "posted")))
+      .returning();
+    if (!claimed) throw new DomainError("REVALUATION_NOT_POSTED", 409);
+    const undoIds: string[] = [];
+    for (const [entryId, dateIso, tag] of [
+      [row.journalEntryId, row.asOf, "revaluation"],
+      [row.reversalEntryId, reversalDate, "reversal"],
+    ] as const) {
+      if (!entryId) continue;
+      const original = await tx
+        .select()
+        .from(journalLines)
+        .where(eq(journalLines.entryId, entryId));
+      const undo = await post(
+        tx,
+        companyId,
+        dateIso,
+        userId,
+        {
+          memo: `Undo of unrealised FX revaluation ${row.asOf}`,
+          source: FX_REVALUATION_UNDO_SOURCE,
+          sourceId: row.id,
+          idempotencyKey: `fx_revaluation:${row.id}:undo:${tag}`,
+        },
+        original
+          .map(
+            (l: {
+              accountId: string;
+              debit: unknown;
+              credit: unknown;
+              description: string | null;
+            }) => ({
+              accountId: l.accountId,
+              debitFils: toFils(String(l.credit ?? 0)),
+              creditFils: toFils(String(l.debit ?? 0)),
+              description: `Undo — ${l.description ?? ""}`.slice(0, 255),
+            })
+          )
+          .filter((l: JeLine) => l.debitFils !== 0 || l.creditFils !== 0)
+      );
+      undoIds.push(undo.id);
+    }
+    const [updated] = await tx
+      .update(fxRevaluations)
+      .set({
+        summary: { ...((row.summary as Record<string, unknown>) ?? {}), undoEntryIds: undoIds },
+      })
+      .where(eq(fxRevaluations.id, row.id))
+      .returning();
+    return { undone: true, revaluation: updated, undoEntryIds: undoIds };
+  });
 }
 
 export async function listRevaluations(companyId: string): Promise<FxRevaluation[]> {

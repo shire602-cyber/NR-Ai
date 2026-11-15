@@ -1,6 +1,6 @@
 import { pool } from "../db";
-import { storage } from "../storage";
 import { DomainError } from "../errors";
+import { postJournal } from "../ledger";
 import { detectAnomalies } from "./anomaly-detection.service";
 import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
 import {
@@ -654,9 +654,9 @@ export async function listFiscalYearCloses(companyId: string): Promise<FiscalYea
 }
 
 /**
- * The seam the close posts through. Default: storage.createJournalEntry.
- * INTEGRATION SEAM (W2-A): swap in the ledger posting kernel with
- * setClosePostingPort() once server/ledger exists.
+ * The seam the close posts through. Default: the server/ledger posting kernel
+ * (postJournal) with entry kind `year_end_close`; tests may swap it with
+ * setClosePostingPort().
  */
 export interface ClosePostingPort {
   post(input: {
@@ -665,33 +665,42 @@ export interface ClosePostingPort {
     memo: string;
     source: string;
     userId: string;
+    /** The entry this one undoes (reopen), recorded as source_id. */
+    sourceId?: string | null;
+    idempotencyKey?: string | null;
     lines: Array<{ accountId: string; debit: number; credit: number; description: string }>;
   }): Promise<{ id: string; entryNumber: string }>;
 }
 
-export const storageClosePostingPort: ClosePostingPort = {
+export const ledgerClosePostingPort: ClosePostingPort = {
   async post(input) {
-    const date = new Date(`${input.date}T00:00:00.000Z`);
-    const entryNumber = await storage.generateEntryNumber(input.companyId, date);
-    const entry = await storage.createJournalEntry(
+    const { entry } = await postJournal(
       {
         companyId: input.companyId,
-        entryNumber,
-        date,
+        date: input.date,
         memo: input.memo,
-        status: "posted",
         source: input.source,
-        createdBy: input.userId,
-        postedBy: input.userId,
-        postedAt: new Date(),
+        sourceId: input.sourceId ?? null,
+        idempotencyKey: input.idempotencyKey ?? null,
+        status: "posted",
+        kind: "year_end_close",
+        allowFutureDate: true,
+        lines: input.lines
+          .filter((l) => l.debit !== 0 || l.credit !== 0)
+          .map((l) => ({
+            accountId: l.accountId,
+            debitFils: Math.round(l.debit * 100),
+            creditFils: Math.round(l.credit * 100),
+            description: l.description,
+          })),
       },
-      input.lines
+      { actorId: input.userId, audit: true }
     );
     return { id: entry.id, entryNumber: entry.entryNumber };
   },
 };
 
-let closePostingPort: ClosePostingPort = storageClosePostingPort;
+let closePostingPort: ClosePostingPort = ledgerClosePostingPort;
 
 export function setClosePostingPort(port: ClosePostingPort): void {
   closePostingPort = port;
@@ -849,27 +858,46 @@ export async function reopenFiscalYear(
   );
   const row = existing.rows[0];
   if (!row || row.status !== "closed") throw new DomainError("FISCAL_YEAR_NOT_CLOSED", 404);
-  if (row.closing_entry_id) {
-    const lines = await pool.query(
-      `SELECT account_id, ROUND(debit * 100)::bigint AS d, ROUND(credit * 100)::bigint AS c, description
-         FROM journal_lines WHERE entry_id = $1`,
-      [row.closing_entry_id]
-    );
-    if (lines.rows.length) {
-      await closePostingPort.post({
-        companyId,
-        date: fye,
-        memo: `Reversal of year-end close FY ${row.fys} to ${fye}`,
-        source: YEAR_END_CLOSE_SOURCE,
-        userId,
-        lines: lines.rows.map((l: any) => ({
-          accountId: l.account_id,
-          debit: aed(Number(l.c)),
-          credit: aed(Number(l.d)),
-          description: `Reversal - ${l.description ?? ""}`.trim(),
-        })),
-      });
+  // Unlock first: the reversal is dated on the (locked) fiscal year end and the
+  // posting kernel enforces period locks. Restore the lock if posting fails.
+  const unlocked = await unlockPeriod(companyId, fye, { userId, reason });
+  try {
+    if (row.closing_entry_id) {
+      const lines = await pool.query(
+        `SELECT account_id, ROUND(debit * 100)::bigint AS d, ROUND(credit * 100)::bigint AS c, description
+           FROM journal_lines WHERE entry_id = $1`,
+        [row.closing_entry_id]
+      );
+      if (lines.rows.length) {
+        // Tagged year_end_close (not a kernel "reversal") so statements keep
+        // excluding both sides of the close.
+        await closePostingPort.post({
+          companyId,
+          date: fye,
+          memo: `Reversal of year-end close FY ${row.fys} to ${fye}`,
+          source: YEAR_END_CLOSE_SOURCE,
+          sourceId: row.closing_entry_id,
+          idempotencyKey: `year_end_close:${row.closing_entry_id}:reopen`,
+          userId,
+          lines: lines.rows.map((l: any) => ({
+            accountId: l.account_id,
+            debit: aed(Number(l.c)),
+            credit: aed(Number(l.d)),
+            description: `Reversal - ${l.description ?? ""}`.trim(),
+          })),
+        });
+      }
     }
+  } catch (err) {
+    if (unlocked) {
+      await pool.query(
+        `UPDATE month_end_close SET status = 'locked', updated_at = now(),
+                unlocked_by = NULL, unlocked_at = NULL, unlock_reason = NULL
+          WHERE company_id = $1 AND period_end::date = $2::date AND status = 'open'`,
+        [companyId, fye]
+      );
+    }
+    throw err;
   }
   const r = await pool.query(
     `UPDATE fiscal_year_closes
@@ -879,7 +907,6 @@ export async function reopenFiscalYear(
       RETURNING ${YEAR_CLOSE_COLUMNS}`,
     [companyId, fye, userId, reason]
   );
-  await unlockPeriod(companyId, fye, { userId, reason });
   return formatYearClose(r.rows[0]);
 }
 

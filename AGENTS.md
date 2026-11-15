@@ -466,6 +466,35 @@ Scope: this file applies to the whole repository.
   the axe/keyboard crawl.
 - After a merged build, refresh the bundle baseline with
   `node scripts/check-bundle-budget.mjs --update`.
+- Every journal write goes through the ledger kernel in `server/ledger/` (frozen API in
+  `index.ts`, rules in its README): `postJournal`, `reverseEntry` / `voidEntry` /
+  `reverseBySource`, `withLedgerTx` (pass `ctx.tx` to post inside your own transaction). Exact fils
+  balance, account/period guards, in-transaction numbering under `pg_advisory_xact_lock`,
+  idempotency keys and one-reversal-per-entry live there. `storage.createJournalEntry` is a legacy
+  adapter over the kernel; new code must not add call sites (ratchet
+  `scripts/guard-baselines/ledger-writes.json`). Reversed/voided originals keep `status = posted`;
+  use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
+  (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
+  linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.
+- Statements, trial balance, aging, cash flow and corporate-tax figures read the reporting kernel in
+  `server/reporting/` (see its README); other ledger readers should use it or `NOT_CLOSING_SQL`.
+- Tenant-owned rows are loaded with `server/tenancy` (`scopedGet` / `scopedUpdate` /
+  `scopedDelete` / `requireOwned`): a row in another tenant is a 404, never a 403.
+- Company roles are enforced centrally by `server/middleware/companyRolePolicy.ts`
+  (`POLICY_RULES`, permissions in `shared/permissions.ts`), mounted on `/api` before every route
+  module. Unlisted company-scoped requests need `reports.read` (reads) or `documents.write`
+  (mutations); non-members naming a company get 403 `COMPANY_ACCESS_DENIED`, non-members
+  addressing another tenant's row id get 404. Add a rule for new sensitive routes and add new
+  row-id path prefixes to `RESOURCES`. `RBAC_ENFORCE=enforce` (default) | `report` | `off`; fix
+  test fixtures by giving users the right `company_users.role`, never by turning enforcement off.
+- `TRUST_PROXY_HOPS` (default 1, warning in production when unset) sets Express `trust proxy` for
+  `req.ip` and per-IP rate limits; `true` is refused.
+- FX rate convention: a row (X, Y, r) means 1 X = r Y; company rates are stored as (foreign, base)
+  with `company_id` set (NULL = admin-only system row) and `rate_type` spot | closing | average.
+  Migration 0094 assigns pre-0094 non-FTA rates to the company only when the database has exactly
+  one company; on multi-company databases they are flagged `legacy_unscoped` and ignored by
+  lookups (re-enter them per company), and inverted manual rows are rewritten to (foreign, AED)
+  with `legacy_inverted = true` (`scripts/qa/find-inverted-rates.mjs` lists them).
 
 ## Database And Migrations
 
@@ -483,7 +512,11 @@ Scope: this file applies to the whole repository.
   `user_onboarding.tour_dismissed_at`, test-credential revocation) through `0109` are reserved,
   one file per remediation workstream (the filename names the owner, e.g. `0090_w2a_ledger_kernel`).
   A workstream replaces only its own placeholder with idempotent SQL; never edit
-  `migrations/meta/_journal.json` or add new numbers. Because placeholders change content, gates
+  `migrations/meta/_journal.json` or add new numbers. `tests/db/migrations.test.ts` enforces: an
+  untouched placeholder stays `SELECT 1;` and keeps its "reserved placeholder ... owned by
+  workstream" header; a filled file drops that marker, keeps a first-line header naming the file
+  and workstream (e.g. `-- 0093_w2d_write_sweep (W2-D): ...`), says `Idempotent`, and uses
+  `IF NOT EXISTS` for every CREATE TABLE/INDEX and ADD COLUMN. Because placeholders change content, gates
   run on freshly created databases. New tables in `shared/schema.ts` go directly below their
   owning block, and every Drizzle column must be created by some migration.
 

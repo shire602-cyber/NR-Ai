@@ -120,6 +120,17 @@ export interface ReverseOptions {
   /** Reversal date. Default: the original date if its period is open, else today. */
   date?: string | Date | null;
   reason?: string | null;
+  /**
+   * Scheduled reversals (accrual / revaluation auto-reversal on as-of + 1 day):
+   * allow an explicit `date` after today. Default false -> 422 FUTURE_DATE.
+   */
+  allowFutureDate?: boolean;
+  /** Source tag of the reversal entry (default "reversal"). */
+  source?: string | null;
+  /** source_id of the reversal entry (default: the original entry id). */
+  sourceId?: string | null;
+  /** Memo of the reversal entry (default "Reversal of <entry number>[: reason]"). */
+  memo?: string | null;
 }
 
 export interface ReverseResult {
