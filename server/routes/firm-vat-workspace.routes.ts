@@ -31,6 +31,14 @@ import {
   VAT_WORKPAPER_CATEGORIES,
   type VatWorkpaperCategory,
 } from "../services/firm-vat-workspace.service";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import {
+  vatWorkpaperBulkStatusBody,
+  vatWorkpaperRowBody,
+  vatWorkpaperRowPatchBody,
+  vatWorkpaperStatusBody,
+} from "../../shared/validators/vat";
 import {
   buildVatWorkpaperTemplateWorkbook,
   buildVatWorkpaperWorkbook,
@@ -62,10 +70,7 @@ const vatRowSchema = z.object({
   sourceDocumentId: z.string().uuid().optional().nullable(),
   notes: z.string().trim().max(4000).optional().nullable(),
   auditReason: z.string().trim().max(2000).optional().nullable(),
-});
-
-const partialVatRowSchema = vatRowSchema.partial().extend({
-  rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES).optional(),
+  vatOverrideReason: z.string().trim().max(2000).optional().nullable(),
 });
 
 const createWorkpaperSchema = z.object({
@@ -102,12 +107,6 @@ const importFileSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
   fileDataBase64: z.string().min(1).max(15_000_000),
   defaultEmirate: z.string().trim().max(40).optional(),
-});
-
-const statusSchema = z.object({
-  status: z.enum(["draft", "in_review", "ready", "generated", "filed", "locked"]),
-  reviewerUserId: z.string().uuid().optional().nullable(),
-  notes: z.string().trim().max(4000).optional().nullable(),
 });
 
 const VAT_EVIDENCE_MAX_BYTES = Number(
@@ -284,6 +283,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.post(
     "/:id/rows",
+    strictBody(vatWorkpaperRowBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = uuidParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -291,7 +291,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = vatRowSchema.parse(req.body);
+      const parsed = parsedBody<z.output<typeof vatWorkpaperRowBody>>(req);
       const row = await addVatWorkpaperRow(parsedParams.data.id, (req as any).user.id, parsed);
       await recordAudit({
         userId: (req as any).user?.id,
@@ -308,6 +308,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.patch(
     "/:id/rows/:rowId",
+    strictBody(vatWorkpaperRowPatchBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = rowParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -315,7 +316,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = partialVatRowSchema.parse(req.body);
+      const parsed = parsedBody<z.output<typeof vatWorkpaperRowPatchBody>>(req);
       const row = await updateVatWorkpaperRow(
         parsedParams.data.id,
         parsedParams.data.rowId,
@@ -532,7 +533,8 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
       let rows;
       try {
-        rows = await parseVatWorkbookRows(buffer, parsed.defaultEmirate || "dubai");
+        // R07-09: no default emirate. Rows without one fail validation and are listed.
+        rows = await parseVatWorkbookRows(buffer, parsed.defaultEmirate || "");
       } catch {
         return res
           .status(400)
@@ -570,17 +572,14 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
   // Review queue: approve (or exclude) all draft rows in one action.
   router.post(
     "/:id/rows/bulk-status",
+    strictBody(vatWorkpaperBulkStatusBody),
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
       const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
       if (!detail) return;
 
-      const bodySchema = z.object({
-        to: z.enum(["approved", "excluded"]),
-        rowIds: z.array(z.string().uuid()).max(2000).optional(),
-      });
-      const body = bodySchema.parse(req.body);
+      const body = parsedBody<z.output<typeof vatWorkpaperBulkStatusBody>>(req);
 
       const result = await bulkUpdateVatWorkpaperRowStatus(
         parsed.data.id,
@@ -672,6 +671,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
 
   router.patch(
     "/:id/status",
+    strictBody(vatWorkpaperStatusBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = uuidParamSchema.safeParse(req.params);
       if (!parsedParams.success)
@@ -679,11 +679,15 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
       if (!detail) return;
 
-      const parsed = statusSchema.parse(req.body);
-      const workpaper = await updateVatWorkpaperStatus(parsedParams.data.id, parsed.status, {
-        reviewerUserId: parsed.reviewerUserId,
-        notes: parsed.notes,
-      });
+      const parsed = parsedBody<z.output<typeof vatWorkpaperStatusBody>>(req);
+      // R15-02: maker-checker state machine; the reviewer is always the caller.
+      const workpaper = await updateVatWorkpaperStatus(
+        parsedParams.data.id,
+        parsed.status,
+        (req as any).user.id,
+        { notes: parsed.notes, reason: parsed.reason },
+        req
+      );
       await recordAudit({
         userId: (req as any).user?.id,
         companyId: detail.workpaper.companyId,

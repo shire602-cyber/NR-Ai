@@ -3954,6 +3954,19 @@ export const vatReturns = pgTable(
     declarantPosition: text("declarant_position"),
     declarationDate: timestamp("declaration_date"),
 
+    // W4-E (migration 0104): amended returns, VAT-to-GL reconciliation, readiness gate.
+    amendsReturnId: uuid("amends_return_id"),
+    amendmentDiff: jsonb("amendment_diff"),
+    reconciliationSnapshot: jsonb("reconciliation_snapshot"),
+    reconciliationOverrideReason: text("reconciliation_override_reason"),
+    reconciliationOverrideBy: uuid("reconciliation_override_by"),
+    reconciliationOverrideAt: timestamp("reconciliation_override_at"),
+    readyBy: uuid("ready_by"),
+    readyAt: timestamp("ready_at"),
+    engineVersion: text("engine_version"),
+    vatGroupId: uuid("vat_group_id"),
+    partialExemptionRatio: rate("partial_exemption_ratio"),
+
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
@@ -4017,6 +4030,10 @@ export const vatReturnPeriods = pgTable(
     submittedBy: uuid("submitted_by").references(() => users.id),
     ftaReferenceNumber: text("fta_reference_number"),
     notes: text("notes"),
+    // W4-E (migration 0104)
+    reconciliationSnapshot: jsonb("reconciliation_snapshot"),
+    reconciliationOverrideReason: text("reconciliation_override_reason"),
+    reconciliationOverrideBy: uuid("reconciliation_override_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -4067,8 +4084,18 @@ export const vatWorkpapers = pgTable(
     periodStart: timestamp("period_start").notNull(),
     periodEnd: timestamp("period_end").notNull(),
     dueDate: timestamp("due_date").notNull(),
-    status: text("status").notNull().default("draft"), // draft | in_review | ready | generated | filed | locked
+    status: text("status").notNull().default("draft"), // draft | prepared | reviewed | filed | locked (W4-E)
     reviewerUserId: uuid("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+    // W4-E (migration 0104): maker-checker trail.
+    preparedBy: uuid("prepared_by"),
+    preparedAt: timestamp("prepared_at"),
+    reviewedBy: uuid("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    filedBy: uuid("filed_by"),
+    filedAt: timestamp("filed_at"),
+    lockedBy: uuid("locked_by"),
+    lockedAt: timestamp("locked_at"),
+    returnGeneratedAt: timestamp("return_generated_at"),
     generatedVatReturnId: uuid("generated_vat_return_id").references(() => vatReturns.id, {
       onDelete: "set null",
     }),
@@ -4123,6 +4150,8 @@ export const vatWorkpaperRows = pgTable(
     sourceDocumentId: uuid("source_document_id"),
     notes: text("notes"),
     auditReason: text("audit_reason"),
+    // W4-E: reason required when VAT is not 5% / 0% of the taxable amount.
+    vatOverrideReason: text("vat_override_reason"),
     reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
     reviewedAt: timestamp("reviewed_at"),
     createdBy: uuid("created_by")
@@ -4193,6 +4222,143 @@ export type InsertVatWorkpaperRow = z.infer<typeof insertVatWorkpaperRowSchema>;
 export type VatWorkpaperRow = typeof vatWorkpaperRows.$inferSelect;
 export type InsertVatWorkpaperAttachment = z.infer<typeof insertVatWorkpaperAttachmentSchema>;
 export type VatWorkpaperAttachment = typeof vatWorkpaperAttachments.$inferSelect;
+
+// ===========================
+// W4-E VAT engine tables (migration 0104)
+// ===========================
+export const badDebtReliefClaims = pgTable(
+  "bad_debt_relief_claims",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    claimDate: pgDate("claim_date").notNull(),
+    emirate: text("emirate").notNull(),
+    outstandingAmount: money("outstanding_amount").notNull(),
+    taxableAmount: money("taxable_amount").notNull(),
+    vatAmount: money("vat_amount").notNull(),
+    writtenOff: boolean("written_off").notNull().default(false),
+    customerNotified: boolean("customer_notified").notNull().default(false),
+    customerNotifiedAt: pgDate("customer_notified_at"),
+    status: text("status").notNull().default("claimed"), // claimed | reversed
+    journalEntryId: uuid("journal_entry_id"),
+    reversalEntryId: uuid("reversal_entry_id"),
+    reversedAt: pgDate("reversed_at"),
+    reversalReason: text("reversal_reason"),
+    notes: text("notes"),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_bad_debt_relief_company").on(table.companyId, table.claimDate),
+  })
+);
+export type BadDebtReliefClaim = typeof badDebtReliefClaims.$inferSelect;
+
+export const vatReturnAdjustments = pgTable(
+  "vat_return_adjustments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    periodStart: pgDate("period_start").notNull(),
+    periodEnd: pgDate("period_end").notNull(),
+    kind: text("kind").notNull(),
+    emirate: text("emirate"),
+    amount: money("amount").notNull().default(0),
+    vatAmount: money("vat_amount").notNull().default(0),
+    reason: text("reason").notNull(),
+    reference: text("reference"),
+    correctsPeriodStart: pgDate("corrects_period_start"),
+    correctsPeriodEnd: pgDate("corrects_period_end"),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyPeriodIdx: index("idx_vat_return_adjustments_company_period").on(
+      table.companyId,
+      table.periodStart,
+      table.periodEnd
+    ),
+  })
+);
+export type VatReturnAdjustmentRow = typeof vatReturnAdjustments.$inferSelect;
+
+export const vatRecoveryRules = pgTable("vat_recovery_rules", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  matchType: text("match_type").notNull(), // category | account_code | account_id
+  matchValue: text("match_value").notNull(),
+  recoverablePercent: money("recoverable_percent").notNull(),
+  label: text("label").notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type VatRecoveryRule = typeof vatRecoveryRules.$inferSelect;
+
+export const receiptVatTreatments = pgTable("receipt_vat_treatments", {
+  receiptId: uuid("receipt_id")
+    .primaryKey()
+    .references(() => receipts.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  supplyType: text("supply_type").notNull().default("standard_rated"),
+  vatBase: money("vat_base").notNull().default(0),
+  recoverableVat: money("recoverable_vat").notNull().default(0),
+  nonRecoverableVat: money("non_recoverable_vat").notNull().default(0),
+  netBase: money("net_base").notNull().default(0),
+  ruleLabel: text("rule_label"),
+  lines: jsonb("lines")
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const vatGroups = pgTable("vat_groups", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  representativeCompanyId: uuid("representative_company_id")
+    .notNull()
+    .unique("vat_groups_representative_unique")
+    .references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  groupTrn: text("group_trn").notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const vatGroupMembers = pgTable(
+  "vat_group_members",
+  {
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => vatGroups.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyUnique: uniqueIndex("uniq_vat_group_members_company").on(table.companyId),
+  })
+);
 
 // ===========================
 // Corporate Tax Returns (9% UAE CT)

@@ -10,6 +10,14 @@ import type { Account, InsertJournalLine, Receipt } from "../../shared/schema";
 import { DomainError } from "../errors";
 import { filsToNumber, mulRate, sumFils, toFils } from "../../shared/money";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import {
+  loadRecoveryRules,
+  resolveRecovery,
+  saveReceiptVatTreatment,
+  type ReceiptVatTreatment,
+} from "../tax/vat-recovery";
+import { recoverableShare } from "../tax/vat-boxes";
+import { SUPPLY_TYPES } from "../../shared/validators/primitives";
 
 type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
 
@@ -28,6 +36,31 @@ export interface ReceiptJournalPlan {
   memo: string;
   lines: JournalLineInsert[];
   expenseAccountId: string | null;
+  /** W4-E: recoverable / blocked input-VAT split, persisted for the VAT engine. */
+  vatTreatment: Omit<ReceiptVatTreatment, "receiptId" | "companyId">;
+}
+
+/** W4-E (R05-28): supply type of the receipt (or of each split line) chosen at posting. */
+export interface ReceiptVatOptions {
+  vatSupplyType?: string | null;
+  lineSupplyTypes?: Array<string | null> | null;
+}
+
+const ZERO_VAT_TYPES = new Set(["zero_rated", "exempt", "out_of_scope"]);
+
+function assertSupplyType(type: string, vatFils: number, index?: number): string {
+  if (!(SUPPLY_TYPES as readonly string[]).includes(type)) {
+    throw new DomainError("INVALID_SUPPLY_TYPE", 400, { index, type });
+  }
+  if (ZERO_VAT_TYPES.has(type) && vatFils > 0) {
+    throw new DomainError(
+      "SUPPLY_TYPE_RATE_MISMATCH",
+      422,
+      { index, type },
+      `A ${type.replace(/_/g, "-")} purchase cannot carry VAT`
+    );
+  }
+  return type;
 }
 
 function receiptEntryDate(receipt: Pick<Receipt, "date">): Date {
@@ -66,7 +99,7 @@ function assertAccountUsable(account: Account | undefined, kind: "expense" | "pa
  */
 export async function planReceiptJournal(
   receipt: Receipt,
-  opts: { expenseAccountId?: string | null; paymentAccountId: string }
+  opts: { expenseAccountId?: string | null; paymentAccountId: string; vat?: ReceiptVatOptions }
 ): Promise<ReceiptJournalPlan> {
   const accounts = await storage.getAccountsByCompanyId(receipt.companyId);
   const byId = new Map(accounts.map((a) => [a.id, a]));
@@ -162,6 +195,39 @@ export async function planReceiptJournal(
   }
   const separateVat = vatBaseTotal > 0 && inputVat !== null;
 
+  // W4-E (R05-28): per-component recoverable share. Blocked VAT (entertainment, personal-use
+  // vehicles, company rules) is added to the expense; only the recoverable part is Input VAT.
+  const rules = vatBaseTotal > 0 ? await loadRecoveryRules(receipt.companyId) : [];
+  const treatmentLines = components.map((c, i) => {
+    const supplyType = assertSupplyType(
+      opts.vat?.lineSupplyTypes?.[i] || opts.vat?.vatSupplyType || "standard_rated",
+      c.vatFils,
+      i
+    );
+    const account = byId.get(c.accountId);
+    const vatBase = toBase(c.vatFils);
+    const rule = resolveRecovery(
+      {
+        category: receipt.category,
+        accountId: c.accountId,
+        accountCode: account?.code ?? null,
+        accountName: account?.nameEn ?? null,
+      },
+      rules
+    );
+    const recoverable = separateVat ? recoverableShare(vatBase, rule.percent) : 0;
+    return {
+      accountId: c.accountId,
+      supplyType,
+      netBaseFils: toBase(c.netFils),
+      vatBaseFils: vatBase,
+      recoverableFils: recoverable,
+      percent: separateVat ? rule.percent : 0,
+      rule: rule.label,
+    };
+  });
+  const recoverableTotal = sumFils(treatmentLines.map((t) => t.recoverableFils));
+
   const withFx = (
     line: JournalLineInsert,
     foreignDebitFils: number,
@@ -180,12 +246,18 @@ export async function planReceiptJournal(
   const lines: JournalLineInsert[] = [];
   let debitBase = 0;
   let foreignDebitTotal = 0;
-  for (const c of components) {
-    // When there is no separate Input VAT account (or no VAT) the VAT folds into the expense.
+  components.forEach((c, idx) => {
+    // When there is no separate Input VAT account (or no VAT) the VAT folds into the expense;
+    // the non-recoverable share of VAT always does.
     const netBase = toBase(c.netFils);
     const vatBase = toBase(c.vatFils);
-    const lineBase = separateVat ? netBase : netBase + vatBase;
-    const lineForeign = separateVat ? c.netFils : c.netFils + c.vatFils;
+    const blockedBase = vatBase - treatmentLines[idx].recoverableFils;
+    const lineBase = separateVat ? netBase + blockedBase : netBase + vatBase;
+    const blockedForeign =
+      separateVat && blockedBase > 0
+        ? c.vatFils - Math.round((c.vatFils * treatmentLines[idx].recoverableFils) / (vatBase || 1))
+        : 0;
+    const lineForeign = separateVat ? c.netFils + blockedForeign : c.netFils + c.vatFils;
     lines.push(
       withFx(
         {
@@ -201,26 +273,30 @@ export async function planReceiptJournal(
     );
     debitBase += lineBase;
     foreignDebitTotal += lineForeign;
-  }
+  });
 
   let creditBase: number;
   let foreignCreditTotal: number;
   if (separateVat) {
     const vatForeign = sumFils(components.map((c) => c.vatFils));
-    lines.push(
-      withFx(
-        {
-          accountId: inputVat!.id,
-          debit: filsToNumber(vatBaseTotal),
-          credit: 0,
-          description: `Input VAT${isReverseCharge ? " (reverse-charge)" : ""} - ${merchant}`,
-        },
-        vatForeign,
-        0
-      )
-    );
-    debitBase += vatBaseTotal;
-    foreignDebitTotal += vatForeign;
+    const recoverableForeign =
+      vatForeign - (foreignDebitTotal - sumFils(components.map((c) => c.netFils)));
+    if (recoverableTotal > 0) {
+      lines.push(
+        withFx(
+          {
+            accountId: inputVat!.id,
+            debit: filsToNumber(recoverableTotal),
+            credit: 0,
+            description: `Input VAT${isReverseCharge ? " (reverse-charge)" : ""} - ${merchant}`,
+          },
+          recoverableForeign,
+          0
+        )
+      );
+    }
+    debitBase += recoverableTotal;
+    foreignDebitTotal += recoverableForeign;
     if (isReverseCharge && outputVat) {
       lines.push(
         withFx(
@@ -258,11 +334,26 @@ export async function planReceiptJournal(
     )
   );
 
+  const vatBaseSum = sumFils(treatmentLines.map((t) => t.vatBaseFils));
+  const types = new Set(treatmentLines.map((t) => t.supplyType));
   return {
     entryDate: receiptEntryDate(receipt),
     memo: `Receipt: ${label}`,
     lines,
     expenseAccountId: splitLines.length > 0 ? null : components[0].accountId,
+    vatTreatment: {
+      supplyType: isReverseCharge
+        ? "reverse_charge"
+        : types.size === 1
+          ? [...types][0]
+          : "standard_rated",
+      vatBaseFils: vatBaseSum,
+      recoverableVatFils: recoverableTotal,
+      nonRecoverableVatFils: vatBaseSum - recoverableTotal,
+      netBaseFils: sumFils(treatmentLines.map((t) => t.netBaseFils)),
+      ruleLabel: treatmentLines.find((t) => t.rule)?.rule ?? null,
+      lines: treatmentLines,
+    },
   };
 }
 
@@ -270,7 +361,7 @@ export async function planReceiptJournal(
 export async function postReceipt(
   receipt: Receipt,
   userId: string,
-  input: { accountId?: string | null; paymentAccountId: string }
+  input: { accountId?: string | null; paymentAccountId: string; vat?: ReceiptVatOptions }
 ): Promise<{ receipt: Receipt; entryId: string }> {
   if (receipt.posted) {
     throw new DomainError(
@@ -283,6 +374,7 @@ export async function postReceipt(
   const plan = await planReceiptJournal(receipt, {
     expenseAccountId: input.accountId ?? null,
     paymentAccountId: input.paymentAccountId,
+    vat: input.vat,
   });
   await assertPeriodNotLocked(receipt.companyId, plan.entryDate);
   const result = await storage.postReceiptAtomic({
@@ -294,6 +386,11 @@ export async function postReceipt(
     entryDate: plan.entryDate,
     memo: plan.memo,
     lines: plan.lines,
+  });
+  await saveReceiptVatTreatment({
+    receiptId: receipt.id,
+    companyId: receipt.companyId,
+    ...plan.vatTreatment,
   });
   return { receipt: result.receipt, entryId: result.entry.id };
 }
@@ -330,6 +427,11 @@ export async function reviseReceipt(
     entryDate: plan.entryDate,
     memo: plan.memo,
     buildLines: () => plan.lines,
+  });
+  await saveReceiptVatTreatment({
+    receiptId: receipt.id,
+    companyId: receipt.companyId,
+    ...plan.vatTreatment,
   });
   return result;
 }

@@ -4,8 +4,8 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db, pool } from "../db";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
-import { invoices, invoiceLines, receipts } from "../../shared/schema";
-import type { Invoice, InvoiceLine, Receipt } from "../../shared/schema";
+import { invoices, invoiceLines } from "../../shared/schema";
+import type { Invoice, InvoiceLine } from "../../shared/schema";
 import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import { UAE_VAT_RATE } from "../constants";
 import { DomainError } from "../errors";
@@ -30,6 +30,18 @@ import {
   type Granularity,
 } from "../reporting";
 import { assertReportAccess, deprecate, readFormat, sendTabular } from "../reporting/http";
+import { computeVat201, loadVatCompany, type VatComputation } from "../tax/vat-engine";
+import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
+import { periodContaining } from "../tax/vat-periods";
+import { EMIRATES } from "../../shared/validators/primitives";
+
+function vatBox1Total(c: VatComputation, suffix: "Amount" | "Vat"): number {
+  const fils = EMIRATES.reduce(
+    (s, e) => s + c.boxesFils[`${EMIRATE_BOX_PREFIX[e]}${suffix}` as Vat201Key],
+    0
+  );
+  return fils / 100;
+}
 
 /**
  * Register advanced report routes (cash flow, aging, period comparison).
@@ -435,140 +447,88 @@ export function registerReportRoutes(app: Express) {
     })
   );
 
-  // VAT Return report (UAE)
+  // VAT Return report (UAE). R07-03 / R12-03: the one VAT engine (documents + manual VAT
+  // journal adjustments, Box 1 by emirate of supply) with its VAT-to-GL reconciliation.
   app.get(
     "/api/companies/:id/reports/vat-return",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
       const companyId = req.params.id;
       // R12-05: accept from/to or startDate/endDate.
       const q = req.query as Record<string, string | undefined>;
-      const from = q.from ?? q.startDate ?? q.periodStart;
-      const to = q.to ?? q.endDate ?? q.periodEnd;
-
-      if (!from || !to) {
+      const fromQ = q.from ?? q.startDate ?? q.periodStart;
+      const toQ = q.to ?? q.endDate ?? q.periodEnd;
+      if (!fromQ || !toQ) {
         return res
           .status(400)
           .json({ message: "from and to date params are required (YYYY-MM-DD)" });
       }
-      readRange({ from, to });
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
-
-      const fromDate = uaeDayStart(from);
-      const toDate = uaeDayEnd(to);
-
-      // Get all invoices in range — exclude drafts (not issued), voids, and
-      // cancelled invoices so the VAT return only reports real supplies.
-      const periodInvoices: Invoice[] = (
-        await db
-          .select()
-          .from(invoices)
-          .where(
-            and(
-              eq(invoices.companyId, companyId),
-              gte(invoices.date, fromDate),
-              lte(invoices.date, toDate)
-            )
-          )
-      ).filter(
-        (inv: Invoice) =>
-          inv.status !== "draft" && inv.status !== "void" && inv.status !== "cancelled"
-      );
-
-      const invoiceIds = periodInvoices.map((i: Invoice) => i.id);
-
-      const allLines: InvoiceLine[] =
-        invoiceIds.length > 0
-          ? await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds))
-          : [];
-
-      let standardRatedSupplies = 0;
-      let zeroRatedSupplies = 0;
-      let exemptSupplies = 0;
-
-      // Build invoice lookup for exchange rates
-      const invoiceRateMap = new Map<string, number>();
-      for (const inv of periodInvoices) {
-        invoiceRateMap.set(inv.id, inv.exchangeRate ?? 1);
-      }
-
-      for (const line of allLines) {
-        // Convert line amounts to AED using the parent invoice's exchange rate
-        const rate = invoiceRateMap.get(line.invoiceId) ?? 1;
-        const lineTotal = line.quantity * line.unitPrice * rate;
-        const supplyType = line.vatSupplyType ?? "standard_rated";
-        if (supplyType === "zero_rated") {
-          zeroRatedSupplies += lineTotal;
-        } else if (supplyType === "exempt") {
-          exemptSupplies += lineTotal;
-        } else {
-          // standard_rated and out_of_scope treated as standard for Box 1
-          standardRatedSupplies += lineTotal;
-        }
-      }
-
-      const outputVat = standardRatedSupplies * UAE_VAT_RATE;
-
-      // Get expenses (receipts) in range with VAT.
-      // Only posted receipts can be claimed for input VAT recovery.
-      const periodReceipts: Receipt[] = (
-        await db
-          .select()
-          .from(receipts)
-          .where(
-            and(
-              eq(receipts.companyId, companyId),
-              gte(receipts.date, fromDate),
-              lte(receipts.date, toDate)
-            )
-          )
-      ).filter((r: Receipt) => r.posted === true);
-
-      const standardRatedExpenses = periodReceipts.reduce((s: number, r: Receipt) => {
-        const rate = r.exchangeRate ?? 1;
-        // receipts.amount is the net subtotal (excludes VAT); see convention
-        // documented in receipts.routes.ts. Use it directly as the VAT base.
-        return s + (r.amount ?? 0) * rate;
-      }, 0);
-
-      const inputVat = periodReceipts.reduce((s: number, r: Receipt) => {
-        const rate = r.exchangeRate ?? 1;
-        return s + (r.vatAmount ?? 0) * rate;
-      }, 0);
-
-      const billVatRes = await pool.query(
-        `SELECT
-           COALESCE(SUM(subtotal * COALESCE(exchange_rate, 1)), 0) AS subtotal,
-           COALESCE(SUM(vat_amount * COALESCE(exchange_rate, 1)), 0) AS vat
-         FROM vendor_bills
-         WHERE company_id = $1
-           AND bill_date >= $2::date
-           AND bill_date <= $3::date
-           AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
-           AND COALESCE(reverse_charge, false) = false`,
-        [companyId, from, to]
-      );
-      const approvedBillExpenses = Number(billVatRes.rows[0]?.subtotal || 0);
-      const approvedBillInputVat = Number(billVatRes.rows[0]?.vat || 0);
-
-      const totalSupplies = standardRatedSupplies + zeroRatedSupplies + exemptSupplies;
-      const totalStandardRatedExpenses = standardRatedExpenses + approvedBillExpenses;
-      const totalInputVat = inputVat + approvedBillInputVat;
-      const netVatDue = outputVat - totalInputVat;
-
+      const range = readRange({ from: fromQ, to: toQ });
+      await assertReportAccess(req, companyId);
+      const c = await computeVat201({
+        companyId,
+        from: range.from!,
+        to: range.to,
+        allowIncomplete: true,
+      });
+      const b = c.boxes;
+      const standard = vatBox1Total(c, "Amount");
       res.json({
-        period: { from, to },
-        box1_standardRatedSupplies: standardRatedSupplies,
-        box2_zeroRatedSupplies: zeroRatedSupplies,
-        box3_exemptSupplies: exemptSupplies,
-        box4_totalSupplies: totalSupplies,
-        box5_outputVat: outputVat,
-        box6_standardRatedExpenses: totalStandardRatedExpenses,
-        box7_inputVatRecoverable: totalInputVat,
-        box8_netVatDue: netVatDue,
+        period: { from: range.from, to: range.to },
+        engineVersion: c.engineVersion,
+        // Legacy summary keys (kept for existing clients), now engine-backed.
+        box1_standardRatedSupplies: standard,
+        box2_zeroRatedSupplies: b.box4ZeroRatedAmount,
+        box3_exemptSupplies: b.box5ExemptAmount,
+        box4_totalSupplies:
+          Math.round((standard + b.box4ZeroRatedAmount + b.box5ExemptAmount) * 100) / 100,
+        box5_outputVat: b.box12TotalDueTax,
+        box6_standardRatedExpenses: b.box9ExpensesAmount,
+        box7_inputVatRecoverable: b.box13RecoverableTax,
+        box8_netVatDue: b.box14PayableTax,
+        boxes: b,
+        issues: c.issues,
+        complete: c.complete,
+        excluded: { outOfScopeAmount: c.excluded.outOfScopeFils / 100 },
+        reconciliation: c.reconciliation,
+      });
+    })
+  );
+
+  // VAT summary (dashboard / reports centre). W2-B carry-over: accepts from/to or
+  // startDate/endDate, reads the VAT engine (so ledger-only VAT journals count) and returns
+  // the reconciliation. Without a start date it covers the tax period containing `to`.
+  app.get(
+    "/api/companies/:companyId/reports/vat-summary",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertReportAccess(req, companyId);
+      const range = readRange(req.query as Record<string, unknown>);
+      let from = range.from;
+      if (!from) {
+        const company = await loadVatCompany(companyId);
+        from = periodContaining(range.to, company.frequency, company.startMonth).from;
+      }
+      const c = await computeVat201({ companyId, from, to: range.to, allowIncomplete: true });
+      const b = c.boxes;
+      const salesSubtotal =
+        Math.round((vatBox1Total(c, "Amount") + b.box4ZeroRatedAmount + b.box5ExemptAmount) * 100) /
+        100;
+      res.json({
+        reportCurrency: "AED",
+        period: { from, to: range.to },
+        salesSubtotal,
+        salesVAT: b.box12TotalDueTax,
+        purchasesSubtotal: b.box11TotalAmount,
+        purchasesVAT: b.box13RecoverableTax,
+        netVATPayable: b.box14PayableTax,
+        boxes: b,
+        issues: c.issues,
+        reconciliation: {
+          hasUnexplainedDifference: c.reconciliation.hasUnexplainedDifference,
+          ...c.reconciliation.aed,
+        },
       });
     })
   );

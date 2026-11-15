@@ -44,6 +44,7 @@ import { exportToExcel } from "@/lib/export";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
+import VatReturnControls from "@/components/vat/VatReturnControls";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import { PageHeader } from "@/components/ui/page-header";
 import {
@@ -71,6 +72,12 @@ interface VATReturn {
   taxYearEnd: string | null;
   vatStagger: string | null;
   status: string;
+  /** W4-E: VAT-to-GL reconciliation captured when the return was generated. */
+  reconciliationSnapshot?: {
+    hasUnexplainedDifference?: boolean;
+    aed?: { unexplainedOutput?: number; unexplainedInput?: number };
+  } | null;
+  amendsReturnId?: string | null;
   box1aAbuDhabiAmount: number;
   box1aAbuDhabiVat: number;
   box1aAbuDhabiAdj: number;
@@ -492,9 +499,11 @@ export default function VATFiling() {
 
   const handleSaveReturn = () => {
     if (!selectedReturn) return;
+    // W4-E: boxes come from the VAT engine; only descriptive fields are editable. Corrections
+    // go through return adjustments (tourist refunds, corrections) so they are audited.
     updateMutation.mutate({
       id: selectedReturn.id,
-      data: { ...vatFormData, notes },
+      data: { notes },
     });
   };
 
@@ -1432,6 +1441,13 @@ export default function VATFiling() {
               readOnly={true}
             />
           )}
+          {selectedReturn && companyId && (
+            <VatReturnControls
+              companyId={companyId}
+              vatReturn={selectedReturn}
+              onChanged={() => setViewDialogOpen(false)}
+            />
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
               {locale === "ar" ? "إغلاق" : "Close"}
@@ -1486,7 +1502,7 @@ export default function VATFiling() {
                     : undefined,
                   vatStagger: selectedReturn.vatStagger || "Quarterly",
                 }}
-                readOnly={false}
+                readOnly={true}
               />
               <div className="space-y-2">
                 <Label>{locale === "ar" ? "ملاحظات" : "Notes"}</Label>

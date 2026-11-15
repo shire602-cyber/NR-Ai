@@ -12,6 +12,13 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { pool } from "../db";
+import { DomainError, AppError } from "../errors";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { recordAudit } from "../services/audit.service";
+import { vatAutopilotStatusBody } from "../../shared/validators/vat";
+import { assertAlignedPeriod, frequencyOf } from "../tax/vat-periods";
+import { loadVatCompany } from "../tax/vat-engine";
 import {
   calculateVatReturn,
   upsertCalculatedPeriod,
@@ -44,18 +51,12 @@ const calculateQuerySchema = z.object({
 // `amount` is bounded to ±1 trillion AED so a malicious or fat-fingered value
 // can't blow up downstream numeric columns. NaN/Infinity are rejected by the
 // `.finite()` clause.
-const adjustmentBodySchema = z.object({
+const adjustmentBodySchema = z.strictObject({
   companyId: z.string().uuid(),
   periodId: z.string().uuid(),
   box: z.string().refine(isValidVat201BoxKey, { message: "Unknown VAT 201 box key" }),
   amount: z.number().finite().min(-1e12).max(1e12),
   reason: z.string().min(1).max(2000),
-});
-
-const statusBodySchema = z.object({
-  companyId: z.string().uuid(),
-  status: z.enum(["draft", "ready", "submitted", "accepted"]),
-  ftaReferenceNumber: z.string().min(1).max(100).optional(),
 });
 
 const dueDatesQuerySchema = z.object({
@@ -64,21 +65,26 @@ const dueDatesQuerySchema = z.object({
 
 const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
 
-function parsePeriod(parsed: z.infer<typeof calculateQuerySchema>): VatPeriod | undefined {
-  if (!parsed.periodStart || !parsed.periodEnd) return undefined;
-  const start = new Date(parsed.periodStart);
-  const end = new Date(parsed.periodEnd);
-  if (end <= start) return undefined;
-  return {
-    start,
-    end,
-    // FTA-mandated: due 28 days after period end (normalised to UTC midnight
-    // by computeDueDate so it matches what the service produces for
-    // auto-detected periods). Override is intentionally not accepted from the
-    // request body — the deadline is statutory, not user data.
-    dueDate: computeDueDate(end),
-    frequency: parsed.frequency === "monthly" ? "monthly" : "quarterly",
-  };
+/**
+ * An explicit period must be exactly one tax period of the company's stagger (R07-07): a
+ * misaligned range is 422 PERIOD_NOT_ALIGNED. The due date is statutory (period end + 28 days).
+ */
+async function parsePeriod(
+  companyId: string,
+  parsed: z.infer<typeof calculateQuerySchema>
+): Promise<VatPeriod | undefined> {
+  if (!parsed.periodStart && !parsed.periodEnd) return undefined;
+  const company = await loadVatCompany(companyId);
+  const frequency = parsed.frequency ?? company.frequency;
+  const aligned = assertAlignedPeriod({
+    from: parsed.periodStart,
+    to: parsed.periodEnd,
+    frequency: frequencyOf(frequency),
+    startMonth: company.startMonth,
+  });
+  const start = new Date(`${aligned.from}T00:00:00.000Z`);
+  const end = new Date(`${aligned.to}T23:59:59.999Z`);
+  return { start, end, dueDate: computeDueDate(end), frequency: aligned.frequency };
 }
 
 function badRequest(res: Response, err: z.ZodError) {
@@ -94,6 +100,8 @@ function badRequest(res: Response, err: z.ZodError) {
  * it isn't silently masked as a generic "calculation failed" 400.
  */
 function mapCalculationError(err: unknown): { status: number; code: string; message: string } {
+  // Engine / period / TRN errors already carry their status and code.
+  if (err instanceof AppError) throw err;
   const message = (err as { message?: string })?.message || "Failed to calculate VAT return";
   if (/TRN/.test(message)) return { status: 400, code: "NO_TRN", message };
   if (/emirate/i.test(message)) return { status: 422, code: "EMIRATE_NOT_SET", message };
@@ -119,7 +127,7 @@ export function registerVATAutopilotRoutes(app: Express) {
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
       // Optional period override via query string for historical calculations.
-      const period = parsePeriod(query.data);
+      const period = await parsePeriod(companyId, query.data);
 
       try {
         const calc = await calculateVatReturn(companyId, period);
@@ -187,11 +195,10 @@ export function registerVATAutopilotRoutes(app: Express) {
   app.post(
     "/api/vat/autopilot/adjustments",
     authMiddleware,
+    strictBody(adjustmentBodySchema, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const body = adjustmentBodySchema.safeParse(req.body);
-      if (!body.success) return badRequest(res, body.error);
-
-      const { companyId, periodId, box, amount, reason } = body.data;
+      const { companyId, periodId, box, amount, reason } =
+        parsedBody<z.output<typeof adjustmentBodySchema>>(req);
       const uid = userId(req);
       if (!uid) return res.status(401).json({ message: "Unauthenticated" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
@@ -220,14 +227,14 @@ export function registerVATAutopilotRoutes(app: Express) {
   app.patch(
     "/api/vat/autopilot/periods/:periodId/status",
     authMiddleware,
+    strictBody(vatAutopilotStatusBody, { allowServerOwned: ["companyId", "status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const params = z.object({ periodId: z.string().uuid() }).safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
-      const body = statusBodySchema.safeParse(req.body);
-      if (!body.success) return badRequest(res, body.error);
 
       const { periodId } = params.data;
-      const { companyId, status, ftaReferenceNumber } = body.data;
+      const { companyId, status, ftaReferenceNumber, overrideReason } =
+        parsedBody<z.output<typeof vatAutopilotStatusBody>>(req);
       const uid = userId(req);
       if (!uid) return res.status(401).json({ message: "Unauthenticated" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
@@ -240,11 +247,27 @@ export function registerVATAutopilotRoutes(app: Express) {
           newStatus: status,
           userId: uid,
           ftaReferenceNumber,
+          overrideReason: overrideReason ?? null,
         });
         if (!summary) return res.status(404).json({ message: "Period not found" });
+        await recordAudit({
+          userId: uid,
+          companyId,
+          action: `vat_period.status.${status}`,
+          entityType: "vat_return_period",
+          entityId: periodId,
+          after: { status, overrideReason: overrideReason ?? null },
+          req,
+        });
         res.json(summary);
-      } catch (err: any) {
-        res.status(400).json({ message: err?.message || "Could not update status" });
+      } catch (err: unknown) {
+        if (err instanceof DomainError) throw err;
+        res
+          .status(400)
+          .json({
+            message: (err as Error)?.message || "Could not update status",
+            code: "INVALID_TRANSITION",
+          });
       }
     })
   );

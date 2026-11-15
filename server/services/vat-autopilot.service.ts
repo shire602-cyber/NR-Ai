@@ -17,7 +17,13 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
+import { DomainError } from "../errors";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
+import { computeVat201, type VatComputation } from "../tax/vat-engine";
+import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
+import type { VatReconciliation } from "../tax/vat-reconciliation";
+import { assertCompanyTrn } from "../tax/vat-returns.service";
+import { EMIRATES } from "../../shared/validators/primitives";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +79,11 @@ export interface VatAutopilotCalculation {
   period: VatPeriod;
   boxes: VatBoxBreakdown;
   reconciliation: ReconciliationResult;
+  /** Full VAT-to-GL reconciliation by source from the VAT engine (R12-08b). */
+  ledgerReconciliation: VatReconciliation;
+  engineVersion: string;
+  /** Every VAT 201 box (incl. 2, 6, 7 and adjustment columns) from the engine, AED. */
+  fullBoxes: Record<string, number>;
   invoicesProcessed: number;
   receiptsProcessed: number;
   partialExemption: {
@@ -84,7 +95,7 @@ export interface VatAutopilotCalculation {
 }
 
 export interface Vat201BoxValues {
-  // Standard-rated sales by emirate (only the company's emirate is populated)
+  // Standard-rated sales by the emirate of each supply (W4-E, R07-02)
   box1aAbuDhabiAmount: number;
   box1aAbuDhabiVat: number;
   box1bDubaiAmount: number;
@@ -444,10 +455,14 @@ export function buildVat201Boxes(
       boxes.box1gFujairahVat = stdVat;
       break;
     case "dubai":
-    default:
       boxes.box1bDubaiAmount = stdAmt;
       boxes.box1bDubaiVat = stdVat;
       break;
+    default:
+      // R07-02 / R07-09: never guess the emirate.
+      if (stdAmt !== 0 || stdVat !== 0) {
+        throw new DomainError("EMIRATE_MISSING", 422, { emirate }, "Unknown or missing emirate");
+      }
   }
 
   // Box 8 totals output side; Box 11 totals input side; Boxes 12-14 net it out.
@@ -664,208 +679,67 @@ export async function calculateVatReturn(
   if (!company.trnVatNumber) {
     throw new Error("Company must have a TRN/VAT number to calculate a VAT return");
   }
-  // H1: Box 1a–1g attributes standard-rated supplies to a named emirate. With
-  // no emirate set, the box mapping would silently fall through to Dubai and
-  // misfile a non-Dubai company's entire turnover. Refuse instead of guessing.
-  if (!company.emirate) {
-    throw new Error(
-      "Set your company's emirate before calculating a VAT return. Box 1 of the VAT 201 attributes supplies by emirate and must not be guessed."
-    );
-  }
+  assertCompanyTrn(company.trnVatNumber);
 
   const frequency = frequencyFromCompany(company.vatFilingFrequency);
   const resolvedPeriod = period ?? detectFilingPeriod(frequency, company.vatPeriodStartMonth, now);
-
-  // ── Sales side ────────────────────────────────────────────────────────────
-  // Pull invoice lines for the period in a single query. We exclude draft,
-  // void, and cancelled invoices because they create no VAT obligation.
-  const invoiceLineRes = await pool.query(
-    `SELECT il.quantity::numeric AS quantity,
-            (il.unit_price::numeric * COALESCE(i.exchange_rate, 1)::numeric) AS unit_price,
-            il.vat_rate::numeric AS vat_rate,
-            il.vat_supply_type AS vat_supply_type,
-            i.id AS invoice_id
-     FROM invoice_lines il
-     JOIN invoices i ON i.id = il.invoice_id
-     WHERE i.company_id = $1
-       AND i.date >= $2 AND i.date <= $3
-       AND i.status NOT IN ('void','draft','cancelled')`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-
-  const invoiceIdSet = new Set<string>();
-  const lines: InvoiceLineForVat[] = (invoiceLineRes.rows as Array<Record<string, unknown>>).map(
-    (row) => {
-      invoiceIdSet.add(String(row.invoice_id));
-      return {
-        quantity: Number(row.quantity) || 0,
-        unitPrice: Number(row.unit_price) || 0,
-        vatRate: row.vat_rate === null ? null : Number(row.vat_rate),
-        vatSupplyType: row.vat_supply_type as InvoiceLineForVat["vatSupplyType"],
-      };
-    }
-  );
-  const sales = aggregateInvoiceLines(lines);
-
-  // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
-  // with negative invoice lines after A-B11. The invoice-line query above
-  // therefore captures them exactly once and applies the invoice exchange rate.
-
-  // ── Purchases side ────────────────────────────────────────────────────────
-  // Posted receipts only — drafts cannot support input VAT recovery.
-  const receiptRes = await pool.query(
-    `SELECT id,
-            COALESCE(amount, 0)::numeric AS amount,
-            COALESCE(vat_amount, 0)::numeric AS vat_amount,
-            reverse_charge,
-            currency,
-            COALESCE(exchange_rate, 1)::numeric AS exchange_rate
-     FROM receipts
-     WHERE company_id = $1
-       AND posted = true
-       AND COALESCE(date, created_at) >= $2
-       AND COALESCE(date, created_at) <= $3`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-
-  let totalExpenses = 0;
-  let inputVatGross = 0;
-  let receiptReverseChargeAmount = 0;
-  let receiptReverseChargeVat = 0;
-  for (const row of receiptRes.rows as Array<Record<string, unknown>>) {
-    const amount = Number(row.amount) || 0;
-    const vat = Number(row.vat_amount) || 0;
-    const rate = Number(row.exchange_rate) || 1;
-    const currency = String(row.currency || "AED");
-    // Convert to AED if the receipt is in foreign currency. Receipts already
-    // store base_currency_amount but only on insertion — for safety we
-    // recompute when the source currency isn't AED.
-    const aedAmount = currency === "AED" ? amount : convertToAed(amount, rate);
-    const aedVat = currency === "AED" ? vat : convertToAed(vat, rate);
-    if (row.reverse_charge) {
-      receiptReverseChargeAmount += aedAmount;
-      receiptReverseChargeVat += aedVat;
-    } else {
-      totalExpenses += aedAmount;
-      inputVatGross += aedVat;
-    }
-  }
-
-  // Vendor bills come from the bill-pay schema which isn't always installed
-  // in dev — only swallow the missing-table case, surface anything else (a
-  // real query failure must not silently mask VAT). Reverse-charge bills feed
-  // Boxes 3/10; ordinary approved/paid bills carry recoverable input VAT into
-  // Box 9. Pending bills are excluded to match GL posting at approval time.
-  let billReverseChargeAmount = 0;
-  let billReverseChargeVat = 0;
-  try {
-    const billRes = await pool.query(
-      `SELECT
-         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-       FROM vendor_bills
-       WHERE company_id = $1
-         AND bill_date >= $2::date AND bill_date <= $3::date
-         AND status NOT IN ('void','cancelled','draft','pending')`,
-      // Calendar-date comparison — timestamptz casts shift boundaries in
-      // non-UTC server timezones (e.g. an Apr 1 bill falling out of Q2).
-      [
-        companyId,
-        resolvedPeriod.start.toISOString().slice(0, 10),
-        resolvedPeriod.end.toISOString().slice(0, 10),
-      ]
-    );
-    billReverseChargeAmount = Number(billRes.rows[0]?.rc_amount || 0);
-    billReverseChargeVat = Number(billRes.rows[0]?.rc_vat || 0);
-    totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
-    inputVatGross += Number(billRes.rows[0]?.std_vat || 0);
-  } catch (err) {
-    // PG SQLSTATE 42P01 = undefined_table. Anything else is a real error.
-    if ((err as { code?: string })?.code !== "42P01") throw err;
-  }
-
-  const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
-  const reverseChargeVat = receiptReverseChargeVat + billReverseChargeVat;
-
-  const partialExemption = applyPartialExemption(inputVatGross, company.exemptSupplyRatio);
-  const reverseChargePartial = applyPartialExemption(reverseChargeVat, company.exemptSupplyRatio);
-
-  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat);
-  const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable);
-
-  const boxes: VatBoxBreakdown = {
-    standardRatedSales: sales.standardRatedAmount,
-    standardRatedVat: sales.standardRatedVat,
-    zeroRatedSales: sales.zeroRatedAmount,
-    exemptSales: sales.exemptAmount,
-    reverseChargeAmount: round2(reverseChargeAmount),
-    reverseChargeVat: round2(reverseChargeVat),
-    totalOutputVat,
-    totalExpenses: round2(totalExpenses),
-    inputVatGross: round2(inputVatGross),
-    inputVatRecoverable: partialExemption.recoverable,
-    inputVatIrrecoverable: partialExemption.irrecoverable,
-    reverseChargeVatRecoverable: reverseChargePartial.recoverable,
-    totalInputVat,
-    netVatPayable: round2(totalOutputVat - totalInputVat),
-  };
-
-  // ── Reconciliation against the journal ───────────────────────────────────
-  const ledgerRes = await pool.query(
-    `SELECT a.vat_type, COALESCE(SUM(jl.credit), 0) AS credit_total,
-                          COALESCE(SUM(jl.debit), 0) AS debit_total
-     FROM journal_lines jl
-     JOIN journal_entries je ON je.id = jl.entry_id
-     JOIN accounts a ON a.id = jl.account_id
-     WHERE je.company_id = $1
-       AND je.status = 'posted'
-       AND je.date >= $2 AND je.date <= $3
-       AND a.is_vat_account = true
-     GROUP BY a.vat_type`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-  let outputLedger = 0;
-  let inputLedger = 0;
-  for (const row of ledgerRes.rows as Array<Record<string, unknown>>) {
-    const vatType = String(row.vat_type || "");
-    const credit = Number(row.credit_total) || 0;
-    const debit = Number(row.debit_total) || 0;
-    if (vatType === "output") outputLedger += credit - debit;
-    else if (vatType === "input") inputLedger += debit - credit;
-  }
-
-  const reconciliation = reconcile(
-    { outputVat: totalOutputVat, inputVat: totalInputVat },
-    { outputVat: outputLedger, inputVat: inputLedger }
-  );
-
-  const vat201 = buildVat201Boxes(
-    {
-      standardRatedAmount: sales.standardRatedAmount,
-      standardRatedVat: sales.standardRatedVat,
-      zeroRatedAmount: sales.zeroRatedAmount,
-      exemptAmount: sales.exemptAmount,
-      reverseChargeAmount: boxes.reverseChargeAmount,
-      reverseChargeVat: boxes.reverseChargeVat,
-      reverseChargeVatRecoverable: boxes.reverseChargeVatRecoverable,
-      totalExpenses: boxes.totalExpenses,
-      inputVatRecoverable: boxes.inputVatRecoverable,
-    },
-    company.emirate
-  );
-
-  return {
+  // R07-03: the one VAT engine. Box 1 is split by each supply's emirate (R07-02).
+  const c = await computeVat201({
     companyId,
-    period: resolvedPeriod,
+    from: resolvedPeriod.start.toISOString().slice(0, 10),
+    to: resolvedPeriod.end.toISOString().slice(0, 10),
+  });
+  return autopilotViewOf(c, resolvedPeriod);
+}
+
+/** Autopilot response shape from an engine computation (pure). */
+export function autopilotViewOf(c: VatComputation, period: VatPeriod): VatAutopilotCalculation {
+  const b = c.boxes;
+  const sum = (suffix: string) =>
+    round2(EMIRATES.reduce((s, e) => s + b[`${EMIRATE_BOX_PREFIX[e]}${suffix}` as Vat201Key], 0));
+  const boxes: VatBoxBreakdown = {
+    standardRatedSales: sum("Amount"),
+    standardRatedVat: sum("Vat"),
+    zeroRatedSales: b.box4ZeroRatedAmount,
+    exemptSales: b.box5ExemptAmount,
+    reverseChargeAmount: round2(b.box3ReverseChargeAmount + b.box6ImportsAmount),
+    reverseChargeVat: round2(b.box3ReverseChargeVat + b.box6ImportsVat),
+    totalOutputVat: b.box12TotalDueTax,
+    totalExpenses: b.box9ExpensesAmount,
+    inputVatGross: round2(c.partialExemption.grossInputVatFils / 100),
+    inputVatRecoverable: b.box9ExpensesVat,
+    inputVatIrrecoverable: round2(c.partialExemption.apportionedFils / 100),
+    reverseChargeVatRecoverable: b.box10ReverseChargeVat,
+    totalInputVat: b.box13RecoverableTax,
+    netVatPayable: b.box14PayableTax,
+  };
+  const r = c.reconciliation;
+  const reconciliation: ReconciliationResult = {
+    outputVatLedger: r.ledgerOutputVatFils / 100,
+    outputVatCalculated: r.returnOutputVatFils / 100,
+    outputVatDelta: r.unexplainedOutputFils / 100,
+    inputVatLedger: r.ledgerInputVatFils / 100,
+    inputVatCalculated: r.returnInputVatFils / 100,
+    inputVatDelta: r.unexplainedInputFils / 100,
+    hasDiscrepancy: r.hasUnexplainedDifference,
+    toleranceAed: 0,
+  };
+  const vat201 = Object.fromEntries(
+    VAT201_BOX_KEYS.map((k) => [k, (b as Record<string, number>)[k] ?? 0])
+  ) as unknown as Vat201BoxValues;
+  return {
+    companyId: c.companyId,
+    period,
     boxes,
     reconciliation,
-    invoicesProcessed: invoiceIdSet.size,
-    receiptsProcessed: receiptRes.rows.length,
+    ledgerReconciliation: r,
+    engineVersion: c.engineVersion,
+    fullBoxes: { ...b },
+    invoicesProcessed: c.counts.invoices + c.counts.creditNotes + c.counts.debitNotes,
+    receiptsProcessed: c.counts.receipts,
     partialExemption: {
-      exemptSupplyRatio: company.exemptSupplyRatio,
-      recoverableRatio: partialExemption.recoverableRatio,
+      exemptSupplyRatio: c.partialExemption.exemptSupplyRatio,
+      recoverableRatio: c.partialExemption.recoverableRatio,
     },
     vat201,
   };
@@ -880,12 +754,13 @@ export async function upsertCalculatedPeriod(calc: VatAutopilotCalculation): Pro
   const res = await pool.query(
     `INSERT INTO vat_return_periods
        (company_id, period_start, period_end, due_date, frequency,
-        output_vat, input_vat, net_vat_payable, calculated_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+        output_vat, input_vat, net_vat_payable, reconciliation_snapshot, calculated_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now(), now())
      ON CONFLICT (company_id, period_start, period_end)
      DO UPDATE SET output_vat = EXCLUDED.output_vat,
                    input_vat = EXCLUDED.input_vat,
                    net_vat_payable = EXCLUDED.net_vat_payable,
+                   reconciliation_snapshot = EXCLUDED.reconciliation_snapshot,
                    calculated_at = now(),
                    updated_at = now()
      RETURNING id`,
@@ -898,6 +773,7 @@ export async function upsertCalculatedPeriod(calc: VatAutopilotCalculation): Pro
       calc.boxes.totalOutputVat,
       calc.boxes.totalInputVat,
       calc.boxes.netVatPayable,
+      JSON.stringify(calc.ledgerReconciliation ?? null),
     ]
   );
   return String(res.rows[0].id);
@@ -1071,13 +947,41 @@ export async function updatePeriodStatus(input: {
   newStatus: VatPeriodStatus;
   userId: string;
   ftaReferenceNumber?: string;
+  overrideReason?: string | null;
 }): Promise<VatPeriodSummary | null> {
   const cur = await pool.query(
-    `SELECT id, company_id, status FROM vat_return_periods
+    `SELECT id, company_id, status, period_start, period_end FROM vat_return_periods
      WHERE id = $1 AND company_id = $2`,
     [input.periodId, input.companyId]
   );
   if (cur.rows.length === 0) return null;
+  if (input.newStatus === "ready" && cur.rows[0].status === "draft") {
+    // R12-03: "ready to submit" is blocked while the return disagrees with the VAT control
+    // accounts, unless overridden with a reason (stored and audited by the caller).
+    const c = await computeVat201({
+      companyId: input.companyId,
+      from: new Date(cur.rows[0].period_start).toISOString().slice(0, 10),
+      to: new Date(cur.rows[0].period_end).toISOString().slice(0, 10),
+      allowIncomplete: true,
+    });
+    if (c.reconciliation.hasUnexplainedDifference) {
+      const reason = input.overrideReason?.trim();
+      if (!reason) {
+        throw new DomainError(
+          "VAT_RECONCILIATION_DIFFERENCE",
+          409,
+          { unexplained: c.reconciliation.aed },
+          "The VAT return does not agree with the VAT control accounts. Resolve it or give an override reason."
+        );
+      }
+      await pool.query(
+        `UPDATE vat_return_periods SET reconciliation_override_reason = $3,
+                reconciliation_override_by = $4, reconciliation_snapshot = $5::jsonb
+          WHERE id = $1 AND company_id = $2`,
+        [input.periodId, input.companyId, reason, input.userId, JSON.stringify(c.reconciliation)]
+      );
+    }
+  }
   const currentStatus = cur.rows[0].status as VatPeriodStatus;
   const cur_rank = STATUS_RANK[currentStatus];
   const new_rank = STATUS_RANK[input.newStatus];

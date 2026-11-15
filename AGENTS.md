@@ -399,6 +399,20 @@ Scope: this file applies to the whole repository.
 - Operating cash-flow comparison (`operating-cash-flow`) uses the latest two quarterly buckets from
   `/api/reports/:companyId/cash-flow/quarter` (the endpoint also accepts `from`/`to` now; the
   canonical statement with opening/closing cash is `/api/companies/:id/reports/cash-flow`).
+- VAT 201 figures come from ONE engine, `computeVat201` in `server/tax/vat-engine.ts` (W4-E):
+  `vat-returns/generate`, VAT autopilot, `/reports/vat-return`, `/reports/vat-summary` (from/to or
+  startDate/endDate) and the firm workpaper books pull all call it. Boxes are integer fils per
+  document (classifySupply on `invoice_lines.net_amount` / `vat_supply_type`; Box 1a-1g by the
+  invoice's place-of-supply emirate, missing emirate is 422 `EMIRATE_MISSING`, never a default);
+  bills (reverse charge, imports Box 6, partial recovery), vendor debit notes, posted receipts
+  (blocked input VAT via `receipt_vat_treatments`), bad-debt relief, return adjustments (Box 2,
+  Box 7, corrections) and manual VAT journal lines (adjustment columns) are included; out-of-scope
+  is in no box. Returns cover exactly one stagger period (422 `PERIOD_NOT_ALIGNED`) and carry a
+  VAT-to-GL reconciliation (`server/tax/vat-reconciliation.ts`); "ready"/submit is 409
+  `VAT_RECONCILIATION_DIFFERENCE` on an unexplained difference unless an audited override reason is
+  given. `vat-due` reads the engine-backed vat-summary. Nothing is transmitted to the FTA. Firm VAT
+  workpapers run draft -> prepared -> reviewed -> filed -> locked with preparer != reviewer.
+  Verify with `tests/db/vat-engine.test.ts` and `tests/db/vat-firm-workpaper.test.ts`.
 - Corporate tax comparison (`corporate-tax-payable`) uses `/corporate-tax/calculate` for the
   current and previous comparison periods; keep it in tax-exposure presets alongside `vat-due` and
   `total-tax-exposure`.
