@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
 import { useMemo, useState } from "react";
+import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,12 @@ import {
   RotateCcw,
   Download,
   BookOpen,
+  AlertTriangle,
+  ShieldCheck,
+  Users,
+  ClipboardCheck,
+  Send,
+  FilePen,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
@@ -79,6 +86,13 @@ interface CorporateTaxReturn {
   taxPayable: number;
   status: string;
   filedAt: string | null;
+  filedBy?: string | null;
+  reviewedBy?: string | null;
+  preparedBy?: string | null;
+  amendmentNumber?: number;
+  amendsReturnId?: string | null;
+  provisionEntryId?: string | null;
+  filingDeadline?: string;
   workpaper: CorporateTaxWorkpaper | null;
   notes: string | null;
   createdAt: string;
@@ -112,7 +126,28 @@ const statusBadge = (status: string) => {
       return (
         <Badge variant="default" className="bg-success hover:bg-success">
           <Banknote className="w-3 h-3 mr-1" />
-          Paid
+          <T k="corporateTax.statusPaid" />
+        </Badge>
+      );
+    case "computed":
+      return (
+        <Badge variant="secondary">
+          <Calculator className="w-3 h-3 mr-1" />
+          <T k="corporateTax.statusComputed" />
+        </Badge>
+      );
+    case "reviewed":
+      return (
+        <Badge variant="outline">
+          <ClipboardCheck className="w-3 h-3 mr-1" />
+          <T k="corporateTax.statusReviewed" />
+        </Badge>
+      );
+    case "amended":
+      return (
+        <Badge variant="outline">
+          <FilePen className="w-3 h-3 mr-1" />
+          <T k="corporateTax.statusAmended" />
         </Badge>
       );
     default:
@@ -288,10 +323,6 @@ export default function CorporateTax() {
   const saveDraftMutation = useMutation({
     mutationFn: () => {
       if (!adjustedCalculation) throw new Error("No corporate tax workpaper to save");
-      const taxableIncome =
-        adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses - deductions;
-      const taxableAmount = Math.max(0, taxableIncome - adjustedCalculation.exemptionThreshold);
-      const taxPayable = Math.round(taxableAmount * adjustedCalculation.taxRate * 100) / 100;
       const workpaper: CorporateTaxWorkpaper = {
         source: hasManualWorkpaper ? "manual_workpaper" : "journal_calculation",
         rows: workpaperRows.filter((row) => row.amount > 0 || row.notes?.trim()),
@@ -301,19 +332,15 @@ export default function CorporateTax() {
         preparedAt: new Date().toISOString(),
       };
 
+      // R08-09: the server computes taxable income, rate and liability.
       return apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, {
-        taxPeriodStart: new Date(periodStart).toISOString(),
-        taxPeriodEnd: new Date(periodEnd).toISOString(),
+        taxPeriodStart: periodStart,
+        taxPeriodEnd: periodEnd,
         totalRevenue: adjustedCalculation.totalRevenue,
         totalExpenses: adjustedCalculation.totalExpenses,
         totalDeductions: deductions,
-        taxableIncome: Math.round(taxableIncome * 100) / 100,
-        exemptionThreshold: adjustedCalculation.exemptionThreshold,
-        taxRate: adjustedCalculation.taxRate,
-        taxPayable,
-        status: "draft",
-        workpaper,
-        notes: notes || null,
+        workpaper: { source: workpaper.source, rows: workpaper.rows },
+        ...(notes ? { notes } : {}),
       });
     },
     onSuccess: () => {
@@ -338,46 +365,54 @@ export default function CorporateTax() {
     },
   });
 
-  // Update status mutation
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, {
-        status,
-        ...(status === "filed" ? { filedAt: new Date().toISOString() } : {}),
+  // Lifecycle transitions (R08-04): computed -> reviewed -> filed -> paid; void; amend.
+  const invalidateReturns = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+    });
+  const transitionMutation = useMutation({
+    mutationFn: ({
+      id,
+      to,
+      postProvision,
+    }: {
+      id: string;
+      to: "computed" | "reviewed" | "filed" | "paid" | "void";
+      postProvision?: boolean;
+    }) =>
+      apiRequest("POST", `/api/corporate-tax/returns/${id}/transition`, {
+        to,
+        ...(postProvision ? { postProvision: true } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
-      toast({ title: "Status Updated", description: "Tax return status has been updated." });
+      invalidateReturns();
+      toast({ title: t["corporateTax.statusUpdated"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
         variant: "destructive",
-        title: "Update Failed",
-        description: error?.message || "Failed to update status",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
       });
     },
   });
-
-  // Delete mutation
-  const deleteMutation = useMutation({
+  const amendMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, { status: "void" }),
+      apiRequest("POST", `/api/corporate-tax/returns/${id}/amend`, {
+        reason: t["corporateTax.amendDefaultReason"],
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
-      toast({ title: "Return Removed", description: "Corporate tax return has been removed." });
+      invalidateReturns();
+      toast({ title: t["corporateTax.amendmentCreated"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) =>
       toast({
         variant: "destructive",
-        title: "Delete Failed",
-        description: error?.message || "Failed to remove return",
-      });
-    },
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
+      }),
   });
+  const [postProvision, setPostProvision] = useState(true);
 
   const updateWorkpaperRow = (id: string, patch: Partial<CorporateTaxWorkpaperRow>) => {
     setWorkpaperRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -789,6 +824,8 @@ export default function CorporateTax() {
         </CardContent>
       </Card>
 
+      <CtCompliancePanel companyId={companyId} />
+
       {/* Returns Table */}
       <Card>
         <CardHeader>
@@ -796,6 +833,13 @@ export default function CorporateTax() {
           <CardDescription>Saved corporate tax returns and their filing status</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm">
+            <p className="text-muted-foreground">{t["corporateTax.lifecycleHelp"]}</p>
+            <label className="flex items-center gap-2">
+              <Switch checked={postProvision} onCheckedChange={setPostProvision} />
+              {t["corporateTax.postProvisionOnFiling"]}
+            </label>
+          </div>
           {isLoadingReturns ? (
             <div className="space-y-3">
               <Skeleton className="h-10 w-full" />
@@ -851,7 +895,16 @@ export default function CorporateTax() {
                         <TableCell className="text-right font-semibold">
                           {formatCurrency(taxReturn.taxPayable, "AED", locale)}
                         </TableCell>
-                        <TableCell>{statusBadge(taxReturn.status)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            {statusBadge(taxReturn.status)}
+                            {taxReturn.filingDeadline && (
+                              <span className="text-xs text-muted-foreground">
+                                {t["corporateTax.dueBy"]} {taxReturn.filingDeadline}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button
@@ -878,56 +931,113 @@ export default function CorporateTax() {
                             >
                               <Download className="w-4 h-4" />
                             </Button>
-                            {taxReturn.status === "draft" && (
+                            {(taxReturn.status === "draft" || taxReturn.status === "computed") && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => pullFromBooksMutation.mutate(taxReturn.id)}
                                 disabled={pullFromBooksMutation.isPending}
-                                title="Pull workpaper from books"
+                                title={t["corporateTax.pullFromBooks"]}
                                 data-testid={`button-ct-pull-${taxReturn.id}`}
                               >
                                 <BookOpen className="w-4 h-4" />
                               </Button>
                             )}
                             {taxReturn.status === "draft" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "computed" })
+                                }
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.markComputed"]}
+                                data-testid={`button-ct-compute-${taxReturn.id}`}
+                              >
+                                <Calculator className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {taxReturn.status === "computed" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "reviewed" })
+                                }
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.markReviewed"]}
+                                data-testid={`button-ct-review-${taxReturn.id}`}
+                              >
+                                <ClipboardCheck className="w-4 h-4 text-info" />
+                              </Button>
+                            )}
+                            {taxReturn.status === "reviewed" && (
                               <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() =>
-                                    updateStatusMutation.mutate({
+                                    transitionMutation.mutate({
                                       id: taxReturn.id,
-                                      status: "filed",
+                                      to: "filed",
+                                      postProvision,
                                     })
                                   }
-                                  disabled={updateStatusMutation.isPending}
-                                  title="Mark as Filed"
+                                  disabled={transitionMutation.isPending}
+                                  title={t["corporateTax.markFiled"]}
+                                  data-testid={`button-ct-file-${taxReturn.id}`}
                                 >
-                                  <CheckCircle2 className="w-4 h-4 text-info" />
+                                  <Send className="w-4 h-4 text-info" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => deleteMutation.mutate(taxReturn.id)}
-                                  disabled={deleteMutation.isPending}
-                                  title="Delete"
+                                  onClick={() =>
+                                    transitionMutation.mutate({ id: taxReturn.id, to: "computed" })
+                                  }
+                                  disabled={transitionMutation.isPending}
+                                  title={t["corporateTax.sendBack"]}
                                 >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                  <RotateCcw className="w-4 h-4" />
                                 </Button>
                               </>
+                            )}
+                            {(taxReturn.status === "draft" || taxReturn.status === "computed") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "void" })
+                                }
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.voidReturn"]}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
                             )}
                             {taxReturn.status === "filed" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() =>
-                                  updateStatusMutation.mutate({ id: taxReturn.id, status: "paid" })
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "paid" })
                                 }
-                                disabled={updateStatusMutation.isPending}
-                                title="Mark as Paid"
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.markPaid"]}
                               >
                                 <Banknote className="w-4 h-4 text-success" />
+                              </Button>
+                            )}
+                            {(taxReturn.status === "filed" || taxReturn.status === "paid") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => amendMutation.mutate(taxReturn.id)}
+                                disabled={amendMutation.isPending}
+                                title={t["corporateTax.amend"]}
+                                data-testid={`button-ct-amend-${taxReturn.id}`}
+                              >
+                                <FilePen className="w-4 h-4" />
                               </Button>
                             )}
                           </div>
@@ -1011,6 +1121,14 @@ export default function CorporateTax() {
                 {statusBadge(viewReturn.status)}
               </div>
 
+              {viewReturn.filingDeadline && (
+                <div className="text-muted-foreground text-xs">
+                  {t["corporateTax.dueBy"]} {viewReturn.filingDeadline}
+                  {viewReturn.amendmentNumber
+                    ? ` · ${t["corporateTax.amendmentLabel"]} ${viewReturn.amendmentNumber}`
+                    : ""}
+                </div>
+              )}
               {viewReturn.filedAt && (
                 <div className="text-muted-foreground text-xs">
                   Filed on: {format(new Date(viewReturn.filedAt), "dd MMM yyyy, HH:mm")}
@@ -1071,5 +1189,271 @@ export default function CorporateTax() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export interface CtProfile {
+  isQfzp: boolean;
+  freeZone: string | null;
+  mneGroupRevenue: number | null;
+  tradeLicenceExpiry: string | null;
+  exciseRegistered: boolean;
+  einvoicingRevenueBand: "ge_50m" | "lt_50m" | null;
+  adviserConfirmedAt: string | null;
+  adviserName: string | null;
+  adviserReviewPending: boolean;
+}
+
+interface RelatedParty {
+  id: string;
+  name: string;
+  relationship: "related_party" | "connected_person";
+  jurisdiction: string | null;
+  transactionValue: number;
+}
+
+/**
+ * CT profile (QFZP, compliance settings), adviser confirmation and the
+ * related-party register (W4-A: R08-15, R08-17, R08-21).
+ */
+export function CtCompliancePanel({ companyId }: { companyId: string }) {
+  const { t, locale } = useTranslation();
+  const { toast } = useToast();
+  const profileKey = [`/api/companies/${companyId}/corporate-tax/profile`];
+  const partiesKey = [`/api/companies/${companyId}/corporate-tax/related-parties`];
+  const { data: profile } = useQuery<CtProfile>({ queryKey: profileKey });
+  const { data: parties = [] } = useQuery<RelatedParty[]>({ queryKey: partiesKey });
+  const [adviserName, setAdviserName] = useState("");
+  const [partyName, setPartyName] = useState("");
+  const [partyValue, setPartyValue] = useState("");
+  const [partyKind, setPartyKind] = useState<RelatedParty["relationship"]>("related_party");
+
+  const onError = (e: Error) =>
+    toast({ variant: "destructive", title: t["corporateTax.saveFailed"], description: e.message });
+
+  const saveProfile = useMutation({
+    mutationFn: (patch: Partial<CtProfile>) =>
+      apiRequest("PUT", `/api/companies/${companyId}/corporate-tax/profile`, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKey });
+      toast({ title: t["corporateTax.profileSaved"] });
+    },
+    onError,
+  });
+
+  const confirmAdviser = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/corporate-tax/profile/adviser-confirmation`, {
+        adviserName,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKey });
+      setAdviserName("");
+      toast({ title: t["corporateTax.adviserConfirmed"] });
+    },
+    onError,
+  });
+
+  const addParty = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/corporate-tax/related-parties`, {
+        name: partyName,
+        relationship: partyKind,
+        transactionValue: Number(partyValue) || 0,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: partiesKey });
+      setPartyName("");
+      setPartyValue("");
+    },
+    onError,
+  });
+
+  const removeParty = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/companies/${companyId}/corporate-tax/related-parties/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: partiesKey }),
+    onError,
+  });
+
+  const total = parties
+    .filter((p) => p.relationship === "related_party")
+    .reduce((s, p) => s + p.transactionValue, 0);
+
+  return (
+    <Card data-testid="ct-compliance-panel">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5" />
+          {t["corporateTax.profileTitle"]}
+        </CardTitle>
+        <CardDescription>{t["corporateTax.profileDescription"]}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {profile?.adviserReviewPending !== false ? (
+          <div
+            className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+            data-testid="ct-adviser-review-pending"
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 text-warning shrink-0" />
+            <div className="space-y-2 flex-1">
+              <p className="font-medium">{t["corporateTax.adviserPendingTitle"]}</p>
+              <p className="text-muted-foreground">{t["corporateTax.adviserPendingBody"]}</p>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  className="max-w-xs"
+                  value={adviserName}
+                  onChange={(e) => setAdviserName(e.target.value)}
+                  placeholder={t["corporateTax.adviserNamePlaceholder"]}
+                  aria-label={t["corporateTax.adviserNamePlaceholder"]}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => confirmAdviser.mutate()}
+                  disabled={adviserName.trim().length < 2 || confirmAdviser.isPending}
+                >
+                  {t["corporateTax.recordAdviserConfirmation"]}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Badge variant="success">
+            {t["corporateTax.adviserConfirmedBy"]} {profile.adviserName}
+          </Badge>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <Label htmlFor="ct-qfzp">{t["corporateTax.qfzpLabel"]}</Label>
+              <p className="text-xs text-muted-foreground">{t["corporateTax.qfzpHelp"]}</p>
+            </div>
+            <Switch
+              id="ct-qfzp"
+              checked={profile?.isQfzp === true}
+              onCheckedChange={(checked) => saveProfile.mutate({ isQfzp: checked })}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <Label htmlFor="ct-excise">{t["corporateTax.exciseLabel"]}</Label>
+              <p className="text-xs text-muted-foreground">{t["corporateTax.exciseHelp"]}</p>
+            </div>
+            <Switch
+              id="ct-excise"
+              checked={profile?.exciseRegistered === true}
+              onCheckedChange={(checked) => saveProfile.mutate({ exciseRegistered: checked })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ct-licence">{t["corporateTax.tradeLicenceExpiry"]}</Label>
+            <Input
+              id="ct-licence"
+              type="date"
+              defaultValue={profile?.tradeLicenceExpiry ?? ""}
+              onBlur={(e) =>
+                e.target.value !== (profile?.tradeLicenceExpiry ?? "") &&
+                saveProfile.mutate({ tradeLicenceExpiry: e.target.value || null })
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ct-band">{t["corporateTax.einvoicingBand"]}</Label>
+            <select
+              id="ct-band"
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={profile?.einvoicingRevenueBand ?? ""}
+              onChange={(e) =>
+                saveProfile.mutate({
+                  einvoicingRevenueBand: (e.target.value ||
+                    null) as CtProfile["einvoicingRevenueBand"],
+                })
+              }
+            >
+              <option value="">{t["corporateTax.einvoicingBandAuto"]}</option>
+              <option value="ge_50m">{t["corporateTax.einvoicingBandLarge"]}</option>
+              <option value="lt_50m">{t["corporateTax.einvoicingBandSmall"]}</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium flex items-center gap-2">
+              <Users className="w-4 h-4" /> {t["corporateTax.relatedPartiesTitle"]}
+            </h3>
+            <span className="text-sm text-muted-foreground">
+              {t["corporateTax.relatedPartiesTotal"]} {formatCurrency(total, "AED", locale)}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">{t["corporateTax.relatedPartiesHelp"]}</p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="max-w-xs"
+              value={partyName}
+              onChange={(e) => setPartyName(e.target.value)}
+              placeholder={t["corporateTax.partyName"]}
+              aria-label={t["corporateTax.partyName"]}
+            />
+            <select
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+              value={partyKind}
+              onChange={(e) => setPartyKind(e.target.value as RelatedParty["relationship"])}
+              aria-label={t["corporateTax.partyRelationship"]}
+            >
+              <option value="related_party">{t["corporateTax.relatedParty"]}</option>
+              <option value="connected_person">{t["corporateTax.connectedPerson"]}</option>
+            </select>
+            <Input
+              className="max-w-[180px]"
+              type="number"
+              min={0}
+              value={partyValue}
+              onChange={(e) => setPartyValue(e.target.value)}
+              placeholder={t["corporateTax.partyValue"]}
+              aria-label={t["corporateTax.partyValue"]}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => addParty.mutate()}
+              disabled={!partyName.trim() || addParty.isPending}
+            >
+              {t["corporateTax.addParty"]}
+            </Button>
+          </div>
+          {parties.length > 0 && (
+            <ul className="divide-y rounded-md border text-sm">
+              {parties.map((p) => (
+                <li key={p.id} className="flex items-center justify-between px-3 py-2">
+                  <span>
+                    {p.name}{" "}
+                    <span className="text-muted-foreground">
+                      (
+                      {p.relationship === "related_party"
+                        ? t["corporateTax.relatedParty"]
+                        : t["corporateTax.connectedPerson"]}
+                      )
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    {formatCurrency(p.transactionValue, "AED", locale)}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeParty.mutate(p.id)}
+                      aria-label={t["corporateTax.removeParty"]}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

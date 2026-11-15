@@ -45,11 +45,35 @@ interface ComplianceTask {
   dueDate: string;
 }
 
-interface VatReturn {
+/** Generated + manual obligations from /compliance-calendar (W4-A, R08-21). */
+interface ComplianceObligation {
   id: string;
-  periodLabel?: string;
+  source: "manual" | "generated";
+  obligationType: string | null;
+  eventType: string;
+  title: string;
+  titleAr: string | null;
   dueDate: string;
-  status: string;
+  status: "upcoming" | "completed" | "overdue" | "dismissed";
+  legalSource: string | null;
+  daysUntilDue: number;
+}
+
+function obligationCategory(o: Pick<ComplianceObligation, "obligationType" | "eventType">) {
+  switch (o.obligationType ?? o.eventType) {
+    case "vat_return":
+    case "vat_filing":
+      return "vat_filing";
+    case "corporate_tax_return":
+    case "ct_registration":
+    case "corporate_tax_filing":
+      return "corporate_tax";
+    case "wps_payroll":
+    case "excise_return":
+      return "payment";
+    default:
+      return "other";
+  }
 }
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -81,8 +105,10 @@ export default function ComplianceCalendar() {
     enabled: !!companyId,
   });
 
-  const { data: vatReturns } = useQuery<VatReturn[]>({
-    queryKey: ["/api/companies", companyId, "vat-returns"],
+  // Generated obligations: VAT by stagger, CT 9 months after year end, UBO,
+  // licence, excise, e-invoicing and WPS. Status follows the return state.
+  const { data: obligations } = useQuery<ComplianceObligation[]>({
+    queryKey: ["/api/companies", companyId, "compliance-calendar"],
     enabled: !!companyId,
   });
 
@@ -100,7 +126,7 @@ export default function ComplianceCalendar() {
       title: string;
       category: string;
       status: string;
-      type: "task" | "vat";
+      type: "task" | "obligation";
     }> = [];
 
     tasks?.forEach((task) => {
@@ -114,24 +140,20 @@ export default function ComplianceCalendar() {
       });
     });
 
-    vatReturns?.forEach((vat) => {
-      if (vat.status !== "filed") {
-        events.push({
-          id: vat.id,
-          date: parseISO(vat.dueDate),
-          title:
-            locale === "ar"
-              ? `إقرار ضريبة القيمة المضافة - ${vat.periodLabel || ""}`
-              : `VAT Return - ${vat.periodLabel || ""}`,
-          category: "vat_filing",
-          status: vat.status,
-          type: "vat",
-        });
-      }
+    obligations?.forEach((o) => {
+      if (o.status === "dismissed") return;
+      events.push({
+        id: o.id,
+        date: parseISO(o.dueDate),
+        title: locale === "ar" && o.titleAr ? o.titleAr : o.title,
+        category: obligationCategory(o),
+        status: o.status,
+        type: "obligation",
+      });
     });
 
     return events;
-  }, [tasks, vatReturns, locale]);
+  }, [tasks, obligations, locale]);
 
   const getEventsForDate = (date: Date) => {
     return allEvents.filter((event) => isSameDay(event.date, date));

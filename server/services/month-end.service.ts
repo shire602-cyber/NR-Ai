@@ -27,10 +27,26 @@ import {
 
 export interface ChecklistItem {
   id: number;
+  /** Stable step key used for sign-offs (W4-A). */
+  key?: string;
   title: string;
   description: string;
   status: "complete" | "incomplete";
   details?: string;
+  /** Judgment steps a preparer may sign off when the system check cannot prove them. */
+  requiresSignOff?: boolean;
+  /** Where the user fixes the step (client route) and, for FX, the API to run. */
+  actionHref?: string;
+  actionEndpoint?: string;
+  /** Filled by getChecklistWithSignOffs. */
+  signOff?: {
+    stepKey: string;
+    signedOffBy: string;
+    signedOffByEmail: string | null;
+    signedOffAt: string;
+    note: string | null;
+  } | null;
+  effectiveStatus?: "complete" | "incomplete";
 }
 
 export interface ClosingLine {
@@ -317,6 +333,124 @@ export async function getCloseChecklist(
         ? `${vatCount} VAT return(s) prepared`
         : "No VAT return prepared for this period",
   });
+
+  // ── W4-A (R08-23): accruals, prepayments, FX revaluation ────────────────
+  // 8. Accruals recorded: expense activity in the period should be matched by
+  //    accrual entries (auto-reversing journals or Accrued Expenses 2040)
+  //    unless the preparer signs the step off as not required.
+  const accrualResult = await pool.query(
+    `SELECT
+       (SELECT COUNT(*) FROM journal_entries je
+         WHERE je.company_id = $1 AND je.status = 'posted'
+           AND ((je.date + interval '4 hours')::date) BETWEEN $2::date AND $3::date
+           AND (je.auto_reverse_on IS NOT NULL OR COALESCE(je.memo, '') ILIKE '%accru%'
+                OR EXISTS (SELECT 1 FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+                            WHERE jl.entry_id = je.id AND a.code = '2040'))) AS accruals,
+       (SELECT COUNT(*) FROM journal_lines jl
+          JOIN journal_entries je ON je.id = jl.entry_id
+          JOIN accounts a ON a.id = jl.account_id
+         WHERE je.company_id = $1 AND je.status = 'posted' AND a.type = 'expense'
+           AND ((je.date + interval '4 hours')::date) BETWEEN $2::date AND $3::date) AS expense_lines`,
+    [companyId, periodStart, periodEnd]
+  );
+  const accrualCount = parseInt(accrualResult.rows[0]?.accruals || "0");
+  const expenseLines = parseInt(accrualResult.rows[0]?.expense_lines || "0");
+  checklist.push({
+    id: 8,
+    key: "accruals",
+    title: "Accruals Recorded",
+    description: "Expenses incurred but not yet billed are accrued (auto-reversing journals)",
+    status: expenseLines === 0 || accrualCount > 0 ? "complete" : "incomplete",
+    details:
+      expenseLines === 0
+        ? "No expense activity in this period"
+        : accrualCount > 0
+          ? `${accrualCount} accrual entr${accrualCount === 1 ? "y" : "ies"} posted`
+          : "No accrual entries found. Post accruals or sign this step off as not required.",
+    requiresSignOff: true,
+    actionHref: "/journal",
+  });
+
+  // 9. Prepayments amortised: a prepaid balance (1060) needs release activity.
+  const prepaid = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN ((je.date + interval '4 hours')::date) <= $3::date
+                         THEN ROUND(jl.debit * 100) - ROUND(jl.credit * 100) END), 0)::bigint AS balance,
+       COALESCE(SUM(CASE WHEN ((je.date + interval '4 hours')::date) BETWEEN $2::date AND $3::date
+                         THEN ROUND(jl.credit * 100) END), 0)::bigint AS released
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '1060'`,
+    [companyId, periodStart, periodEnd]
+  );
+  const prepaidBalance = Number(prepaid.rows[0]?.balance || 0) / 100;
+  const prepaidReleased = Number(prepaid.rows[0]?.released || 0) / 100;
+  checklist.push({
+    id: 9,
+    key: "prepayments",
+    title: "Prepayments Amortised",
+    description: "The period's share of prepaid expenses has been released to the P&L",
+    status: prepaidBalance <= 0 || prepaidReleased > 0 ? "complete" : "incomplete",
+    details:
+      prepaidBalance <= 0
+        ? "No prepaid balance"
+        : prepaidReleased > 0
+          ? `AED ${prepaidReleased.toFixed(2)} released; AED ${prepaidBalance.toFixed(2)} remaining`
+          : `AED ${prepaidBalance.toFixed(2)} prepaid with no release this period`,
+    requiresSignOff: true,
+    actionHref: "/journal",
+  });
+
+  // 10. FX revaluation: open foreign-currency balances need a revaluation at period end.
+  const fx = await pool.query(
+    `SELECT
+       (SELECT COUNT(DISTINCT jl.account_id) FROM journal_lines jl
+          JOIN journal_entries je ON je.id = jl.entry_id
+          JOIN accounts a ON a.id = jl.account_id
+         WHERE je.company_id = $1 AND je.status = 'posted'
+           AND a.type IN ('asset', 'liability')
+           AND COALESCE(jl.foreign_currency, '') NOT IN ('', 'AED')
+           AND ((je.date + interval '4 hours')::date) <= $3::date) AS fx_accounts,
+       (SELECT COUNT(*) FROM journal_entries je
+         WHERE je.company_id = $1 AND je.status = 'posted'
+           AND (je.entry_kind = 'revaluation' OR je.source IN ('fx_revaluation', 'revaluation'))
+           AND ((je.date + interval '4 hours')::date) BETWEEN $2::date AND $3::date) AS revaluations`,
+    [companyId, periodStart, periodEnd]
+  );
+  const fxAccounts = parseInt(fx.rows[0]?.fx_accounts || "0");
+  const revaluations = parseInt(fx.rows[0]?.revaluations || "0");
+  checklist.push({
+    id: 10,
+    key: "fx_revaluation",
+    title: "FX Revaluation Run",
+    description: "Foreign-currency balances revalued at the period-end rate",
+    status: fxAccounts === 0 || revaluations > 0 ? "complete" : "incomplete",
+    details:
+      fxAccounts === 0
+        ? "No foreign-currency balances"
+        : revaluations > 0
+          ? `${revaluations} revaluation entr${revaluations === 1 ? "y" : "ies"} posted`
+          : `${fxAccounts} account(s) hold foreign-currency balances; run the revaluation`,
+    requiresSignOff: true,
+    actionHref: "/exchange-rates",
+    actionEndpoint: "POST /api/companies/:companyId/exchange-rates/revalue",
+  });
+
+  const keys: Record<number, string> = {
+    1: "bank_reconciliation",
+    2: "invoices_posted",
+    3: "receipts_categorized",
+    4: "anomaly_scan",
+    5: "ai_inbox",
+    6: "depreciation",
+    7: "vat_return",
+  };
+  for (const item of checklist) item.key = item.key ?? keys[item.id];
+  const bank = checklist.find((c) => c.id === 1);
+  if (bank) bank.actionHref = "/bank-reconciliation";
+  const dep = checklist.find((c) => c.id === 6);
+  if (dep) dep.actionHref = "/fixed-assets";
 
   return checklist;
 }
@@ -968,4 +1102,223 @@ function formatCloseRecord(row: any): MonthEndCloseRecord {
     unlockedAt: row.unlocked_at ?? null,
     unlockReason: row.unlock_reason ?? null,
   };
+}
+
+// ─── Step sign-off and reopen workflow (W4-A, R08-23) ───────────────────────
+
+export const CLOSE_STEP_KEYS = [
+  "bank_reconciliation",
+  "invoices_posted",
+  "receipts_categorized",
+  "anomaly_scan",
+  "ai_inbox",
+  "depreciation",
+  "vat_return",
+  "accruals",
+  "prepayments",
+  "fx_revaluation",
+] as const;
+export type CloseStepKey = (typeof CLOSE_STEP_KEYS)[number];
+
+export interface StepSignOff {
+  stepKey: string;
+  signedOffBy: string;
+  signedOffByEmail: string | null;
+  signedOffAt: string;
+  note: string | null;
+}
+
+export async function listStepSignOffs(
+  companyId: string,
+  periodEnd: string
+): Promise<StepSignOff[]> {
+  const r = await pool.query(
+    `SELECT s.step_key, s.signed_off_by, u.email, s.signed_off_at, s.note
+       FROM month_end_step_signoffs s
+       LEFT JOIN users u ON u.id = s.signed_off_by
+      WHERE s.company_id = $1 AND s.period_end = $2::date
+      ORDER BY s.signed_off_at`,
+    [companyId, periodEnd]
+  );
+  return r.rows.map((row: Record<string, unknown>) => ({
+    stepKey: String(row.step_key),
+    signedOffBy: String(row.signed_off_by),
+    signedOffByEmail: (row.email as string) ?? null,
+    signedOffAt: new Date(row.signed_off_at as string).toISOString(),
+    note: (row.note as string) ?? null,
+  }));
+}
+
+/** Checklist with each step's sign-off (user and time) merged in. */
+export async function getChecklistWithSignOffs(
+  companyId: string,
+  periodStart: string,
+  periodEnd: string
+): Promise<ChecklistItem[]> {
+  const [checklist, signoffs] = await Promise.all([
+    getCloseChecklist(companyId, periodStart, periodEnd),
+    listStepSignOffs(companyId, periodEnd),
+  ]);
+  const byKey = new Map(signoffs.map((s) => [s.stepKey, s]));
+  return checklist.map((item) => {
+    const signOff = item.key ? (byKey.get(item.key) ?? null) : null;
+    return {
+      ...item,
+      signOff,
+      effectiveStatus: item.status === "complete" || signOff ? "complete" : "incomplete",
+    };
+  });
+}
+
+export async function signOffStep(
+  companyId: string,
+  periodEnd: string,
+  stepKey: CloseStepKey,
+  userId: string,
+  note: string | null
+): Promise<StepSignOff> {
+  const locked = await pool.query(
+    `SELECT 1 FROM month_end_close
+      WHERE company_id = $1 AND period_end::date = $2::date AND status = 'locked'`,
+    [companyId, periodEnd]
+  );
+  if ((locked.rowCount ?? 0) > 0) {
+    throw new DomainError(
+      "PERIOD_LOCKED",
+      409,
+      { periodEnd },
+      "The period is locked; reopen it before changing sign-offs"
+    );
+  }
+  await pool.query(
+    `INSERT INTO month_end_step_signoffs (company_id, period_end, step_key, signed_off_by, note)
+     VALUES ($1, $2::date, $3, $4, $5)
+     ON CONFLICT (company_id, period_end, step_key)
+     DO UPDATE SET signed_off_by = EXCLUDED.signed_off_by, signed_off_at = now(),
+                   note = EXCLUDED.note`,
+    [companyId, periodEnd, stepKey, userId, note]
+  );
+  const all = await listStepSignOffs(companyId, periodEnd);
+  return all.find((s) => s.stepKey === stepKey)!;
+}
+
+export async function withdrawStepSignOff(
+  companyId: string,
+  periodEnd: string,
+  stepKey: CloseStepKey
+): Promise<boolean> {
+  const r = await pool.query(
+    `DELETE FROM month_end_step_signoffs
+      WHERE company_id = $1 AND period_end = $2::date AND step_key = $3`,
+    [companyId, periodEnd, stepKey]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+export interface ReopenRequest {
+  id: string;
+  companyId: string;
+  periodEnd: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  requestedBy: string;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
+
+function formatReopen(row: Record<string, unknown>): ReopenRequest {
+  return {
+    id: String(row.id),
+    companyId: String(row.company_id),
+    periodEnd: isoOf(row.period_end),
+    reason: String(row.reason),
+    status: row.status as ReopenRequest["status"],
+    requestedBy: String(row.requested_by),
+    requestedAt: new Date(row.requested_at as string).toISOString(),
+    decidedBy: (row.decided_by as string) ?? null,
+    decidedAt: row.decided_at ? new Date(row.decided_at as string).toISOString() : null,
+    decisionNote: (row.decision_note as string) ?? null,
+  };
+}
+
+export async function listReopenRequests(companyId: string): Promise<ReopenRequest[]> {
+  const r = await pool.query(
+    `SELECT * FROM month_end_reopen_requests WHERE company_id = $1
+      ORDER BY requested_at DESC LIMIT 100`,
+    [companyId]
+  );
+  return r.rows.map(formatReopen);
+}
+
+export async function getReopenRequest(
+  companyId: string,
+  id: string
+): Promise<ReopenRequest | null> {
+  const r = await pool.query(
+    `SELECT * FROM month_end_reopen_requests WHERE company_id = $1 AND id = $2`,
+    [companyId, id]
+  );
+  return r.rows[0] ? formatReopen(r.rows[0]) : null;
+}
+
+export async function createReopenRequest(
+  companyId: string,
+  periodEnd: string,
+  reason: string,
+  userId: string
+): Promise<ReopenRequest> {
+  const locked = await pool.query(
+    `SELECT 1 FROM month_end_close
+      WHERE company_id = $1 AND period_end::date = $2::date AND status = 'locked'`,
+    [companyId, periodEnd]
+  );
+  if ((locked.rowCount ?? 0) === 0) {
+    throw new DomainError(
+      "PERIOD_NOT_LOCKED",
+      404,
+      undefined,
+      "No locked period found for that date"
+    );
+  }
+  try {
+    const r = await pool.query(
+      `INSERT INTO month_end_reopen_requests (company_id, period_end, reason, requested_by)
+       VALUES ($1, $2::date, $3, $4) RETURNING *`,
+      [companyId, periodEnd, reason, userId]
+    );
+    return formatReopen(r.rows[0]);
+  } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      throw new DomainError(
+        "REOPEN_REQUEST_PENDING",
+        409,
+        undefined,
+        "A reopen request for this period is already pending"
+      );
+    }
+    throw err;
+  }
+}
+
+/** Conditional decision: only a pending request can be approved or rejected. */
+export async function decideReopenRequest(
+  companyId: string,
+  id: string,
+  decision: "approved" | "rejected",
+  userId: string,
+  note: string | null
+): Promise<ReopenRequest> {
+  const r = await pool.query(
+    `UPDATE month_end_reopen_requests
+        SET status = $3, decided_by = $4, decided_at = now(), decision_note = $5
+      WHERE company_id = $1 AND id = $2 AND status = 'pending'
+      RETURNING *`,
+    [companyId, id, decision, userId, note]
+  );
+  if (r.rowCount === 0) {
+    throw new DomainError("REOPEN_REQUEST_NOT_PENDING", 409, undefined, "Request is not pending");
+  }
+  return formatReopen(r.rows[0]);
 }

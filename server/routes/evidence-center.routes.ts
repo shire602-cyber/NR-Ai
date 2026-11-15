@@ -5,6 +5,8 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import {
+  buildCtEvidencePack,
+  buildCtEvidencePackWorkbook,
   buildEvidenceCenter,
   buildEvidenceRefundPackCoverPdf,
   buildEvidenceRefundPackWorkbook,
@@ -39,7 +41,12 @@ async function authorizeEvidenceCenter(req: Request, res: Response) {
 async function writeEvidenceActivity(input: {
   userId: string;
   companyId: string;
-  action: "resolve" | "waive" | "request_reviewed" | "refund_pack_exported";
+  action:
+    | "resolve"
+    | "waive"
+    | "request_reviewed"
+    | "refund_pack_exported"
+    | "ct_evidence_pack_exported";
   entityType: string;
   entityId?: string | null;
   description: string;
@@ -70,6 +77,45 @@ export function registerEvidenceCenterRoutes(app: Express) {
 
       const center = await buildEvidenceCenter(authorized.companyId);
       res.json(center);
+    })
+  );
+
+  // R08-22: corporate tax evidence pack (workpaper, adjustment support,
+  // related-party register) next to the VAT refund pack.
+  app.get(
+    "/api/companies/:companyId/evidence-center/ct-pack",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const authorized = await authorizeEvidenceCenter(req, res);
+      if (!authorized) return;
+      res.json(await buildCtEvidencePack(authorized.companyId));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/evidence-center/ct-pack.xlsx",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const authorized = await authorizeEvidenceCenter(req, res);
+      if (!authorized) return;
+      const pack = await buildCtEvidencePack(authorized.companyId);
+      const buffer = await buildCtEvidencePackWorkbook(pack);
+      await writeEvidenceActivity({
+        ...authorized,
+        action: "ct_evidence_pack_exported",
+        entityType: "ct_evidence_pack",
+        entityId: pack.ctReturn?.id ?? null,
+        description: `Exported corporate tax evidence pack for ${pack.companyName}`,
+        metadata: { format: "xlsx", readinessScore: pack.readinessScore },
+      });
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${pack.workbookFilename}"`);
+      res.send(buffer);
     })
   );
 

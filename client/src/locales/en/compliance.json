@@ -1,0 +1,22 @@
+{
+  "compliance.closeApproveReopen": "Approve and reopen",
+  "compliance.closeRejectReopen": "Reject",
+  "compliance.closeReopenDescription": "Reopening a locked period needs a reason and approval by the owner (or firm staff) who did not request it.",
+  "compliance.closeReopenReasonLabel": "Reason for reopening {date}",
+  "compliance.closeReopenRequested": "Reopen request sent for approval",
+  "compliance.closeReopenTitle": "Reopen requests",
+  "compliance.closeRequestReopen": "Request reopen",
+  "compliance.closeSignOff": "Sign off",
+  "compliance.closeSignedOffBy": "Signed off by {user} on {time}",
+  "compliance.closeSubmitReopen": "Submit request",
+  "compliance.closeWithdrawSignOff": "Withdraw sign-off",
+  "compliance.ctPackAdviserPending": "Adviser review pending for the corporate tax set-up.",
+  "compliance.ctPackDescription": "Workpaper, support for every adjustment and the related-party register for the latest corporate tax return. Muhasib does not file returns with the FTA.",
+  "compliance.ctPackDownload": "Download CT pack",
+  "compliance.ctPackDue": "due",
+  "compliance.ctPackNoReturn": "No corporate tax return prepared yet.",
+  "compliance.ctPackTitle": "Corporate tax evidence pack",
+  "compliance.generatedBadge": "From the compliance calendar",
+  "compliance.statusFollowsReturn": "Completes automatically when the return is filed",
+  "compliance.updateFailed": "Could not update the obligation"
+}
