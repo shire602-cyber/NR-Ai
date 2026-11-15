@@ -43,7 +43,14 @@ describe("migrations", () => {
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
       expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
-      expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      const sqlBody = body.replace(/^--.*$/gm, "").trim();
+      if (/reserved placeholder/.test(body)) {
+        expect(sqlBody).toBe("SELECT 1;");
+      } else {
+        // Filled by its owning workstream: must stay idempotent (re-runnable).
+        expect(sqlBody, e.tag).not.toMatch(/CREATE (TABLE|INDEX|UNIQUE INDEX) (?!IF NOT EXISTS)/i);
+        expect(sqlBody, e.tag).not.toMatch(/ADD COLUMN (?!IF NOT EXISTS)/i);
+      }
     }
   });
 

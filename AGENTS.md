@@ -147,8 +147,21 @@ Scope: this file applies to the whole repository.
   omitted from the average. Do not present these as complete automation-health scores, formal audit
   classifications, or proof of end-to-end hands-free accounting.
 - Balance leverage comparisons (`liability-asset-ratio`, `debt-to-equity-ratio`) use point-in-time
-  Balance Sheet snapshots; `startDate` only affects the current-period net-income row returned by
-  the endpoint.
+  Balance Sheet snapshots; `startDate` only affects `currentPeriodNetIncome`. Equity always carries
+  capital + retained earnings brought forward + current-year earnings, so the snapshot balances for
+  every range.
+- Financial statements come from ONE implementation, the reporting kernel in `server/reporting/`
+  (see its README): `/reports/pl`, `/reports/balance-sheet`, `/reports/trial-balance`,
+  `/financial-statements/*`, the comparison endpoints, aging, cash flow, general ledger and
+  corporate-tax calculate / pull-from-books all read it. Statements are correct by computation:
+  retained earnings brought forward = income − expenses before the fiscal year containing the as-of
+  date plus any 3020 balance; current-year earnings = fiscal-year-to-date P&L. Only posted entries
+  count, and closing / year-end entries (`source = 'year_end_close'`, legacy `system` "Closing
+  entries for …") are excluded from every statement, P&L, comparison and corporate-tax query. Monthly
+  close posts nothing; locking is lock-through (soft or hard) and needs the checklist or an audited
+  override. `/reports/pl` keeps `totalRevenue` = total income (revenue + other income) for existing
+  metrics; the split (revenue vs other income such as 4090 FX gain, cost of sales, gross profit) is
+  in `sections` and on the canonical `/reports/profit-loss`.
 - Inventory review items/share/value (`inventory-review-items`, `inventory-review-share`,
   `inventory-review-value`) are current inventory-valuation queue signals for active products that
   are low stock, negative stock, or missing cost, compared against a clear baseline of zero. The
@@ -353,8 +366,8 @@ Scope: this file applies to the whole repository.
   generated `sif_file_content`; do not present it as bank submission, WPS settlement, or employee
   payment completion.
 - Operating cash-flow comparison (`operating-cash-flow`) uses the latest two quarterly buckets from
-  `/api/reports/:companyId/cash-flow/quarter`; do not treat it as a custom date-range cash-flow
-  statement until that endpoint supports arbitrary comparison ranges.
+  `/api/reports/:companyId/cash-flow/quarter` (the endpoint also accepts `from`/`to` now; the
+  canonical statement with opening/closing cash is `/api/companies/:id/reports/cash-flow`).
 - Corporate tax comparison (`corporate-tax-payable`) uses `/corporate-tax/calculate` for the
   current and previous comparison periods; keep it in tax-exposure presets alongside `vat-due` and
   `total-tax-exposure`.

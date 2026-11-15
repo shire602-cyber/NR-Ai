@@ -55,6 +55,7 @@ import { registerAnomalyRoutes } from "./routes/anomaly.routes";
 import { registerAutoReconcileRoutes } from "./routes/auto-reconcile.routes";
 import { registerAIGLRoutes } from "./routes/ai-gl.routes";
 import { registerMonthEndRoutes } from "./routes/month-end.routes";
+import { periodLockContextMiddleware } from "./services/period-lock.service";
 import { registerComplianceDashboardRoutes } from "./routes/compliance-dashboard.routes";
 import { registerQuoteRoutes } from "./routes/quotes.routes";
 import { registerCreditNoteRoutes } from "./routes/credit-notes.routes";
@@ -91,6 +92,7 @@ const log = createLogger("routes");
 
 export async function registerRoutes(app: Express): Promise<Server> {
   log.info("Registering route modules...");
+  app.use(periodLockContextMiddleware); // W2-B: soft-lock override reason visible to write paths
 
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);

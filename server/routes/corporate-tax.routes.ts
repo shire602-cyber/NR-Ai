@@ -18,6 +18,31 @@ import {
 } from "../../shared/ct-workpaper";
 import { insertCorporateTaxReturnSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
+import { pool } from "../db";
+import {
+  ENTRY_LOCAL_DATE_SQL,
+  NOT_CLOSING_SQL,
+  accountTotals,
+  aed,
+  profitAndLoss,
+  readRange,
+} from "../reporting";
+
+/** UAE calendar date of a stored timestamp. */
+function uaeIsoDate(d: Date): string {
+  return new Date(d.getTime() + 4 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** Posted, non-closing journal entries in [from, to] (UAE dates). */
+async function countPeriodEntries(companyId: string, from: string, to: string): Promise<number> {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM journal_entries je
+      WHERE je.company_id = $1 AND je.status = 'posted' AND ${NOT_CLOSING_SQL}
+        AND ${ENTRY_LOCAL_DATE_SQL} BETWEEN $2::date AND $3::date`,
+    [companyId, from, to]
+  );
+  return Number(r.rows[0]?.n) || 0;
+}
 
 const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const CT_IMPORT_MAX_ROWS = 2000;
@@ -380,29 +405,22 @@ export function registerCorporateTaxRoutes(app: Express) {
           .json({ message: "Only draft returns can be repopulated from the books" });
       }
 
-      const startDate = new Date(ctReturn.taxPeriodStart);
-      const endDate = new Date(ctReturn.taxPeriodEnd);
-
+      // R08-02: posted, non-closing ledger activity only (reporting kernel).
+      const startIso = uaeIsoDate(new Date(ctReturn.taxPeriodStart));
+      const endIso = uaeIsoDate(new Date(ctReturn.taxPeriodEnd));
       const allAccounts = await storage.getAccountsByCompanyId(ctReturn.companyId);
       const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
-
-      const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId);
-      const periodEntries = journalEntries.filter((entry) => {
-        const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
-      });
-
+      const ledger = await accountTotals(ctReturn.companyId, { from: startIso, to: endIso });
       const netByAccount = new Map<string, number>();
-      const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map((e) => e.id));
-      for (const line of periodLines) {
-        const account = accountMap.get(line.accountId);
+      for (const [accountId, t] of Array.from(ledger.entries())) {
+        const account = accountMap.get(accountId);
         if (!account || (account.type !== "income" && account.type !== "expense")) continue;
-        const net =
-          account.type === "income"
-            ? (line.credit || 0) - (line.debit || 0)
-            : (line.debit || 0) - (line.credit || 0);
-        netByAccount.set(line.accountId, (netByAccount.get(line.accountId) ?? 0) + net);
+        const fils = account.type === "income" ? t.credit - t.debit : t.debit - t.credit;
+        netByAccount.set(accountId, aed(fils));
       }
+      const periodEntries = {
+        length: await countPeriodEntries(ctReturn.companyId, startIso, endIso),
+      };
 
       const rows = [...netByAccount.entries()]
         .map(([accountId, amount]) => {
@@ -411,7 +429,7 @@ export function registerCorporateTaxRoutes(app: Express) {
             id: `books-${accountId}`,
             type: (account.type === "income" ? "revenue" : "expense") as "revenue" | "expense",
             label: account.nameEn,
-            amount: Math.round(amount * 100) / 100,
+            amount,
             notes: `Posted net for ${account.code ?? ""}`.trim(),
           };
         })
@@ -451,12 +469,13 @@ export function registerCorporateTaxRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { companyId } = req.params;
-      const { periodStart, periodEnd } = req.query;
-
-      if (!periodStart || !periodEnd) {
-        return res
-          .status(400)
-          .json({ message: "periodStart and periodEnd query parameters are required" });
+      // R12-05: accept periodStart/periodEnd, from/to or startDate/endDate.
+      const range = readRange(req.query as Record<string, unknown>, { requireFrom: true });
+      if (!(req.query.periodEnd ?? req.query.to ?? req.query.endDate)) {
+        return res.status(400).json({
+          message: "periodStart and periodEnd query parameters are required",
+          code: "REPORT_RANGE_REQUIRED",
+        });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -464,43 +483,15 @@ export function registerCorporateTaxRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const startDate = new Date(periodStart as string);
-      const endDate = new Date(periodEnd as string);
+      const startDate = new Date(`${range.from}T00:00:00.000Z`);
+      const endDate = new Date(`${range.to}T00:00:00.000Z`);
 
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-        return res
-          .status(400)
-          .json({ message: "Invalid date format for periodStart or periodEnd" });
-      }
-
-      // Get all accounts for this company to identify revenue vs expense accounts
-      const allAccounts = await storage.getAccountsByCompanyId(companyId);
-      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
-
-      // Get all journal entries in the period
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
-      const periodEntries = journalEntries.filter((entry) => {
-        const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
-      });
-
-      let totalRevenue = 0;
-      let totalExpenses = 0;
-
-      // Single batched fetch for all period lines.
-      const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map((e) => e.id));
-      for (const line of periodLines) {
-        const account = accountMap.get(line.accountId);
-        if (!account) continue;
-
-        if (account.type === "income") {
-          // Revenue accounts: credit side increases revenue
-          totalRevenue += (line.credit || 0) - (line.debit || 0);
-        } else if (account.type === "expense") {
-          // Expense accounts: debit side increases expenses
-          totalExpenses += (line.debit || 0) - (line.credit || 0);
-        }
-      }
+      // R08-02: the ledger P&L from the reporting kernel — posted entries only,
+      // closing / year-end entries excluded, so a close never zeroes the tax.
+      const pl = await profitAndLoss({ companyId, from: range.from, to: range.to });
+      let totalRevenue = pl.totalIncome;
+      let totalExpenses = pl.totalExpenses;
+      const periodEntries = { length: await countPeriodEntries(companyId, range.from!, range.to) };
 
       // Ensure non-negative values
       totalRevenue = Math.max(0, totalRevenue);

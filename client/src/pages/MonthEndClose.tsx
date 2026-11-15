@@ -32,7 +32,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -76,8 +78,10 @@ interface ValidationResponse {
 }
 
 interface ClosingEntry {
-  id: string;
-  entryNumber: string;
+  id: string | null;
+  entryNumber: string | null;
+  posted?: boolean;
+  netIncome?: number;
   date: string;
   memo: string;
   lines: Array<{
@@ -101,6 +105,18 @@ interface CloseRecord {
   closingEntryId: string | null;
   createdAt: string;
   closedByEmail?: string | null;
+  lockType?: "soft" | "hard";
+  lockScope?: "month" | "through";
+  lockReason?: string | null;
+  checklistOverride?: boolean;
+  unlockReason?: string | null;
+}
+
+interface CloseSettingsResponse {
+  postYearEndClosingEntry: boolean;
+  requireChecklistToLock: boolean;
+  lockThroughDate: string | null;
+  permissions: { canLock: boolean; canUnlock: boolean; canReopenHardClose: boolean };
 }
 
 // ---- Fix routes for incomplete items ----
@@ -157,6 +173,27 @@ export default function MonthEndClose() {
     enabled: !!companyId,
   });
 
+  const { data: closeSettings } = useQuery<CloseSettingsResponse>({
+    queryKey: [`/api/companies/${companyId}/month-end/settings`],
+    enabled: !!companyId,
+  });
+
+  // Lock form state (R08-05 / R02-19): lock type, checklist override + reason.
+  const [lockType, setLockType] = useState<"soft" | "hard">("soft");
+  const [overrideChecklist, setOverrideChecklist] = useState(false);
+  const [lockReason, setLockReason] = useState("");
+  const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
+  const [unlockReason, setUnlockReason] = useState("");
+  const [fiscalYearEnd, setFiscalYearEnd] = useState(`${now.getFullYear() - 1}-12-31`);
+  const [hardClose, setHardClose] = useState(false);
+  const [yearEndReason, setYearEndReason] = useState("");
+
+  const invalidateClose = () => {
+    for (const key of ["history", "settings"]) {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/month-end/${key}`] });
+    }
+  };
+
   // ---- Mutations ----
 
   const validationMutation = useMutation<ValidationResponse>({
@@ -180,8 +217,13 @@ export default function MonthEndClose() {
     },
     onSuccess: (data) => {
       toast({
-        title: "Closing Entries Created",
-        description: `Journal entry ${data.entryNumber} posted with ${data.lines.length} lines.`,
+        title: t["monthEnd.computedCloseTitle"],
+        description: formatMessage(t["monthEnd.computedCloseToast"], {
+          lines: data.lines.length,
+          net: (data.netIncome ?? 0).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE", {
+            minimumFractionDigits: 2,
+          }),
+        }),
       });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/month-end/checklist`],
@@ -197,21 +239,71 @@ export default function MonthEndClose() {
     mutationFn: async () => {
       return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
         periodEnd: periodDates.periodEnd,
+        lockType,
+        ...(overrideChecklist ? { overrideChecklist: true } : {}),
+        ...(lockReason.trim() ? { reason: lockReason.trim() } : {}),
       });
     },
     onSuccess: () => {
       toast({
-        title: "Period Locked",
-        description: `Period ${formatPeriodLabel(period)} has been locked.`,
+        title: t["monthEnd.periodLocked"],
+        description: formatMessage(t["monthEnd.periodLockedToast"], {
+          date: periodDates.periodEnd,
+        }),
       });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/month-end/history`],
-      });
+      setOverrideChecklist(false);
+      setLockReason("");
+      invalidateClose();
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
+
+  const unlockMutation = useMutation<CloseRecord, Error, { periodEnd: string; reason: string }>({
+    mutationFn: async ({ periodEnd, reason }) =>
+      apiRequest("POST", `/api/companies/${companyId}/period-lock/unlock`, { periodEnd, reason }),
+    onSuccess: () => {
+      toast({ title: t["monthEnd.unlocked"] });
+      setUnlockTarget(null);
+      setUnlockReason("");
+      invalidateClose();
+    },
+    onError: (error: Error) => {
+      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const yearEndMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("POST", `/api/companies/${companyId}/month-end/year-end-close`, {
+        fiscalYearEnd,
+        hardClose,
+        ...(overrideChecklist ? { overrideChecklist: true } : {}),
+        ...(yearEndReason.trim() ? { reason: yearEndReason.trim() } : {}),
+      }),
+    onSuccess: () => {
+      toast({ title: t["monthEnd.yearClosed"] });
+      setYearEndReason("");
+      invalidateClose();
+    },
+    onError: (error: Error) => {
+      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const settingsMutation = useMutation({
+    mutationFn: async (postYearEndClosingEntry: boolean) =>
+      apiRequest("PUT", `/api/companies/${companyId}/month-end/settings`, {
+        postYearEndClosingEntry,
+      }),
+    onSuccess: invalidateClose,
+    onError: (error: Error) => {
+      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const lockReasonValid = !overrideChecklist || lockReason.trim().length >= 3;
 
   // ---- Helpers ----
 
@@ -253,14 +345,16 @@ export default function MonthEndClose() {
     }
   }
 
+  // Lock-through semantics: a lock covers every date on or before its period end.
+  const lockThroughDate = closeSettings?.lockThroughDate ?? null;
   const isCurrentPeriodLocked =
+    (lockThroughDate !== null && periodDates.periodEnd <= lockThroughDate) ||
     historyData?.some(
       (record) =>
         record.status === "locked" &&
-        new Date(record.periodEnd)
-          .toISOString()
-          .startsWith(`${selectedYear}-${selectedMonth.padStart(2, "0")}`)
-    ) || false;
+        String(record.periodEnd).startsWith(`${selectedYear}-${selectedMonth.padStart(2, "0")}`)
+    ) ||
+    false;
 
   const completedCount =
     checklistData?.checklist.filter((i) => i.status === "complete").length || 0;
@@ -311,7 +405,9 @@ export default function MonthEndClose() {
         {isCurrentPeriodLocked && (
           <Badge variant="destructive" className="flex items-center gap-1 text-sm px-3 py-1">
             <Lock className="h-4 w-4" />
-            Period Locked
+            {lockThroughDate
+              ? formatMessage(t["monthEnd.lockedThrough"], { date: lockThroughDate })
+              : t["monthEnd.periodLocked"]}
           </Badge>
         )}
       </div>
@@ -408,7 +504,11 @@ export default function MonthEndClose() {
                   </div>
                   {item.status === "incomplete" && fixRoutes[item.id] && (
                     <a href={fixRoutes[item.id]}>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                      >
                         Fix <ArrowRight className="h-3 w-3 ml-1" />
                       </Button>
                     </a>
@@ -489,31 +589,32 @@ export default function MonthEndClose() {
         {/* Generate Closing Entries */}
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button
-              disabled={closingEntriesMutation.isPending || isCurrentPeriodLocked}
-              className="bg-info hover:bg-info"
-            >
+            <Button disabled={closingEntriesMutation.isPending} className="bg-info hover:bg-info">
               {closingEntriesMutation.isPending ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <FileText className="h-4 w-4 mr-2" />
               )}
-              Generate Closing Entries
+              <T k="monthEnd.computeClose" />
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Generate Closing Entries</AlertDialogTitle>
+              <AlertDialogTitle>
+                <T k="monthEnd.computeCloseTitle" />
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                This will create a journal entry that closes all revenue and expense accounts for{" "}
-                {formatPeriodLabel(period)}, transferring the net result to retained earnings. This
-                action posts the entry immediately.
+                {formatMessage(t["monthEnd.computeCloseBody"], {
+                  period: formatPeriodLabel(period),
+                })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+              <AlertDialogCancel>
+                <T k="pages.cancel" />
+              </AlertDialogCancel>
               <AlertDialogAction onClick={() => closingEntriesMutation.mutate()}>
-                Generate & Post
+                <T k="monthEnd.computeCloseAction" />
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -524,29 +625,83 @@ export default function MonthEndClose() {
           <AlertDialogTrigger asChild>
             <Button
               variant="destructive"
-              disabled={lockPeriodMutation.isPending || isCurrentPeriodLocked}
+              disabled={
+                lockPeriodMutation.isPending ||
+                isCurrentPeriodLocked ||
+                closeSettings?.permissions.canLock === false
+              }
             >
               {lockPeriodMutation.isPending ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <Lock className="h-4 w-4 mr-2" />
               )}
-              Lock Period
+              <T k="pages.lockPeriod" />
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle><T k="pages.lockPeriod" /></AlertDialogTitle>
+              <AlertDialogTitle>
+                <T k="pages.lockPeriod" />
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                Locking {formatPeriodLabel(period)} will prevent any modifications to transactions
-                in this period. This is typically done after all closing entries are posted and the
-                period has been fully reviewed. This action cannot be easily undone.
+                {formatMessage(t["monthEnd.lockBody"], { date: periodDates.periodEnd })}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="lock-type">
+                  <T k="monthEnd.lockType" />
+                </Label>
+                <Select value={lockType} onValueChange={(v) => setLockType(v as "soft" | "hard")}>
+                  <SelectTrigger id="lock-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="soft">{t["monthEnd.softLock"]}</SelectItem>
+                    <SelectItem value="hard">{t["monthEnd.hardLock"]}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {completedCount < totalCount && (
+                <p className="text-sm text-warning flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <T k="monthEnd.checklistIncomplete" />
+                </p>
+              )}
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={overrideChecklist}
+                  onChange={(e) => setOverrideChecklist(e.target.checked)}
+                  data-testid="checkbox-override-checklist"
+                />
+                <T k="monthEnd.overrideChecklist" />
+              </label>
+              <div className="space-y-1">
+                <Label htmlFor="lock-reason">
+                  <T k="monthEnd.reason" />
+                </Label>
+                <Input
+                  id="lock-reason"
+                  value={lockReason}
+                  onChange={(e) => setLockReason(e.target.value)}
+                  placeholder={t["monthEnd.reasonPlaceholder"]}
+                />
+                {!lockReasonValid && (
+                  <p className="text-xs text-destructive">
+                    <T k="monthEnd.reasonRequired" />
+                  </p>
+                )}
+              </div>
+            </div>
             <AlertDialogFooter>
-              <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+              <AlertDialogCancel>
+                <T k="pages.cancel" />
+              </AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => lockPeriodMutation.mutate()}
+                disabled={!lockReasonValid}
                 className="bg-destructive hover:bg-destructive"
               >
                 <T k="pages.lockPeriod" />
@@ -562,17 +717,19 @@ export default function MonthEndClose() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <BookOpen className="h-5 w-5 text-info" />
-              <CardTitle className="text-lg">Closing Entry Created</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="monthEnd.computedCloseTitle" />
+              </CardTitle>
             </div>
-            <CardDescription>
-              {closingEntriesMutation.data.entryNumber} - {closingEntriesMutation.data.memo}
-            </CardDescription>
+            <CardDescription>{closingEntriesMutation.data.memo}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead><T k="pages.account" /></TableHead>
+                  <TableHead>
+                    <T k="pages.account" />
+                  </TableHead>
                   <TableHead className="text-right">Debit (AED)</TableHead>
                   <TableHead className="text-right">Credit (AED)</TableHead>
                 </TableRow>
@@ -597,7 +754,9 @@ export default function MonthEndClose() {
                   </TableRow>
                 ))}
                 <TableRow className="font-bold border-t-2">
-                  <TableCell><T k="pages.total2" /></TableCell>
+                  <TableCell>
+                    <T k="pages.total2" />
+                  </TableCell>
                   <TableCell className="text-right">
                     {closingEntriesMutation.data.totalDebits.toLocaleString("en-AE", {
                       minimumFractionDigits: 2,
@@ -637,10 +796,15 @@ export default function MonthEndClose() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead><T k="pages.period" /></TableHead>
-                  <TableHead><T k="pages.status" /></TableHead>
+                  <TableHead>
+                    <T k="pages.period" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
                   <TableHead>Closed By</TableHead>
                   <TableHead>Closed At</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -675,6 +839,19 @@ export default function MonthEndClose() {
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(record.closedAt)}
                     </TableCell>
+                    <TableCell>
+                      {record.status === "locked" && closeSettings?.permissions.canUnlock && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setUnlockTarget(String(record.periodEnd).slice(0, 10))}
+                          data-testid={`button-unlock-${String(record.periodEnd).slice(0, 10)}`}
+                        >
+                          <Unlock className="h-3 w-3 mr-1" />
+                          <T k="monthEnd.unlock" />
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -686,6 +863,123 @@ export default function MonthEndClose() {
           )}
         </CardContent>
       </Card>
+
+      {/* Year-end close (R11-14) */}
+      {closeSettings?.permissions.canLock && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              <T k="monthEnd.yearEndTitle" />
+            </CardTitle>
+            <CardDescription>
+              <T k="monthEnd.yearEndBody" />
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div className="space-y-1">
+                <Label htmlFor="fiscal-year-end">
+                  <T k="monthEnd.fiscalYearEnd" />
+                </Label>
+                <Input
+                  id="fiscal-year-end"
+                  type="date"
+                  value={fiscalYearEnd}
+                  onChange={(e) => setFiscalYearEnd(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="year-end-reason">
+                  <T k="monthEnd.reason" />
+                </Label>
+                <Input
+                  id="year-end-reason"
+                  value={yearEndReason}
+                  onChange={(e) => setYearEndReason(e.target.value)}
+                  placeholder={t["monthEnd.reasonPlaceholder"]}
+                />
+              </div>
+              <Button
+                onClick={() => yearEndMutation.mutate()}
+                disabled={
+                  yearEndMutation.isPending ||
+                  (overrideChecklist && yearEndReason.trim().length < 3)
+                }
+              >
+                <Lock className="h-4 w-4 mr-2" />
+                <T k="monthEnd.closeYear" />
+              </Button>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={hardClose}
+                onChange={(e) => setHardClose(e.target.checked)}
+              />
+              <T k="monthEnd.hardClose" />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={overrideChecklist}
+                onChange={(e) => setOverrideChecklist(e.target.checked)}
+              />
+              <T k="monthEnd.overrideChecklist" />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={closeSettings.postYearEndClosingEntry}
+                onChange={(e) => settingsMutation.mutate(e.target.checked)}
+                data-testid="checkbox-post-year-end-entry"
+              />
+              <T k="monthEnd.postClosingEntry" />
+            </label>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Unlock with reason (R02-11) */}
+      <AlertDialog
+        open={unlockTarget !== null}
+        onOpenChange={(open) => !open && setUnlockTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <T k="monthEnd.unlockTitle" />
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {formatMessage(t["monthEnd.unlockBody"], { date: unlockTarget ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1">
+            <Label htmlFor="unlock-reason">
+              <T k="monthEnd.reason" />
+            </Label>
+            <Input
+              id="unlock-reason"
+              value={unlockReason}
+              onChange={(e) => setUnlockReason(e.target.value)}
+              placeholder={t["monthEnd.reasonPlaceholder"]}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={unlockReason.trim().length < 3 || unlockMutation.isPending}
+              onClick={() =>
+                unlockTarget &&
+                unlockMutation.mutate({ periodEnd: unlockTarget, reason: unlockReason.trim() })
+              }
+            >
+              <T k="monthEnd.unlock" />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
