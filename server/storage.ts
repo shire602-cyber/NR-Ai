@@ -266,6 +266,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } from "drizzle-orm";
+import { DomainError } from "./errors";
 import Decimal from "decimal.js";
 import {
   statusFromPayments,
@@ -321,6 +322,39 @@ function assertBalanced(lines: Array<{ debit?: number | null; credit?: number | 
   }
 }
 
+type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
+
+export interface PostReceiptAtomicArgs {
+  receiptId: string;
+  companyId: string;
+  userId: string;
+  accountId: string | null;
+  paymentAccountId: string;
+  entryDate: Date;
+  memo: string;
+  lines: JournalLineInsert[];
+}
+
+export interface ReviseReceiptAtomicArgs {
+  receiptId: string;
+  companyId: string;
+  userId: string;
+  /** Receipt columns to change as part of the revision (already validated). */
+  patch: Partial<InsertReceipt>;
+  reversalDate: Date;
+  reason: string | null;
+  entryDate: Date;
+  memo: string;
+  /** Builds the new journal lines from the receipt as it will be after `patch`. */
+  buildLines: (updated: Receipt) => JournalLineInsert[];
+}
+
+export interface SplitReceiptAtomicArgs {
+  receiptId: string;
+  companyId: string;
+  parts: Array<Partial<InsertReceipt>>;
+}
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
@@ -343,6 +377,8 @@ export interface IStorage {
   // Companies
   getCompany(id: string): Promise<Company | undefined>;
   getCompanyByName(name: string): Promise<Company | undefined>;
+  ownerHasCompanyNamed(userId: string, name: string, excludeCompanyId?: string): Promise<boolean>;
+  companyHasPostedJournal(companyId: string): Promise<boolean>;
   getCompaniesByUserId(userId: string): Promise<Company[]>;
   createCompany(company: InsertCompany): Promise<Company>;
   updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company>;
@@ -415,6 +451,7 @@ export interface IStorage {
   createAccount(account: InsertAccount): Promise<Account>;
   updateAccount(id: string, companyId: string, data: Partial<Account>): Promise<Account>;
   deleteAccount(id: string, companyId: string): Promise<void>;
+  archiveAccountForCompany(id: string, companyId: string): Promise<Account>;
   accountHasTransactions(accountId: string): Promise<boolean>;
 
   // Account Ledger & Balance
@@ -535,6 +572,18 @@ export interface IStorage {
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
   updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt>;
+  updateReceiptIfUnposted(
+    id: string,
+    companyId: string,
+    data: Partial<InsertReceipt>
+  ): Promise<Receipt>;
+  postReceiptAtomic(
+    args: PostReceiptAtomicArgs
+  ): Promise<{ receipt: Receipt; entry: JournalEntry }>;
+  reviseReceiptAtomic(
+    args: ReviseReceiptAtomicArgs
+  ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }>;
+  splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]>;
   deleteReceipt(id: string, companyId: string): Promise<void>;
 
   // Customer Contacts
@@ -680,6 +729,13 @@ export interface IStorage {
   getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
   createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
   updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
+  getReminderSetting(id: string): Promise<ReminderSetting | undefined>;
+  deleteReminderSettingForCompany(id: string, companyId: string): Promise<boolean>;
+  updateReminderSettingForCompany(
+    id: string,
+    companyId: string,
+    data: Partial<InsertReminderSetting>
+  ): Promise<ReminderSetting | undefined>;
 
   // Reminder Logs
   getReminderLogsByCompanyId(companyId: string): Promise<ReminderLog[]>;
@@ -719,9 +775,12 @@ export interface IStorage {
   createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent>;
   getAnalyticsEvents(filters?: {
     userId?: string;
+    companyId?: string;
+    companyIds?: string[];
     eventType?: string;
     startDate?: Date;
     endDate?: Date;
+    limit?: number;
   }): Promise<AnalyticsEvent[]>;
 
   // Feature Usage Metrics
@@ -807,6 +866,12 @@ export interface IStorage {
   getTaxReturnArchive(companyId: string): Promise<TaxReturnArchive[]>;
   getTaxReturnArchiveItem(id: string): Promise<TaxReturnArchive | undefined>;
   createTaxReturnArchive(taxReturn: InsertTaxReturnArchive): Promise<TaxReturnArchive>;
+  updateTaxReturnArchive(
+    id: string,
+    companyId: string,
+    data: Partial<InsertTaxReturnArchive>
+  ): Promise<TaxReturnArchive | undefined>;
+  deleteTaxReturnArchive(id: string, companyId: string): Promise<boolean>;
 
   // Compliance Tasks
   getComplianceTasks(companyId: string): Promise<ComplianceTask[]>;
@@ -973,6 +1038,15 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(data: InsertProduct): Promise<Product>;
   updateProduct(id: string, data: Partial<Product>): Promise<Product>;
+  applyInventoryMovement(args: {
+    productId: string;
+    companyId: string;
+    type: "purchase" | "sale" | "adjustment" | "return";
+    quantity: number;
+    unitCost?: number | null;
+    reference?: string | null;
+    notes?: string | null;
+  }): Promise<{ movement: InventoryMovement; newStock: number }>;
   deleteProduct(id: string): Promise<void>;
 
   // Inventory Movements
@@ -1195,6 +1269,38 @@ export class DatabaseStorage implements IStorage {
       .from(companies)
       .where(and(eq(companies.id, id), isNull(companies.deletedAt)));
     return company || undefined;
+  }
+
+  async ownerHasCompanyNamed(
+    userId: string,
+    name: string,
+    excludeCompanyId?: string
+  ): Promise<boolean> {
+    // Company names are unique per owner (case-insensitive), never across tenants (R14-09).
+    const rows = await db
+      .select({ id: companies.id })
+      .from(companies)
+      .innerJoin(companyUsers, eq(companyUsers.companyId, companies.id))
+      .where(
+        and(
+          eq(companyUsers.userId, userId),
+          eq(companyUsers.role, "owner"),
+          isNull(companies.deletedAt),
+          sql`lower(btrim(${companies.name})) = lower(btrim(${name}))`,
+          excludeCompanyId ? sql`${companies.id} <> ${excludeCompanyId}` : sql`true`
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async companyHasPostedJournal(companyId: string): Promise<boolean> {
+    const rows = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(and(eq(journalEntries.companyId, companyId), eq(journalEntries.status, "posted")))
+      .limit(1);
+    return rows.length > 0;
   }
 
   async getCompanyByName(name: string): Promise<Company | undefined> {
@@ -1586,6 +1692,24 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAccount(id: string, companyId: string): Promise<void> {
     await db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
+  }
+
+  async archiveAccountForCompany(id: string, companyId: string): Promise<Account> {
+    const [account] = await db
+      .update(accounts)
+      .set({ isArchived: true, isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(accounts.id, id),
+          eq(accounts.companyId, companyId),
+          eq(accounts.isSystemAccount, false)
+        )
+      )
+      .returning();
+    if (!account) {
+      throw new Error("Account not found or is a system account");
+    }
+    return account;
   }
 
   async archiveAccount(id: string): Promise<Account> {
@@ -2271,6 +2395,261 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Receipt not found");
     }
     return receipt;
+  }
+
+  /** Update only while the receipt is still unposted (a posted receipt is immutable, R05-01). */
+  async updateReceiptIfUnposted(
+    id: string,
+    companyId: string,
+    data: Partial<InsertReceipt>
+  ): Promise<Receipt> {
+    const [receipt] = await db
+      .update(receipts)
+      .set(data)
+      .where(
+        and(eq(receipts.id, id), eq(receipts.companyId, companyId), eq(receipts.posted, false))
+      )
+      .returning();
+    if (receipt) return receipt;
+    const existing = await this.getReceipt(id, companyId);
+    if (!existing) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+    throw new DomainError(
+      "RECEIPT_POSTED",
+      409,
+      { receiptId: id, journalEntryId: existing.journalEntryId },
+      "This receipt is posted and cannot be edited. Use POST /api/receipts/:id/revise."
+    );
+  }
+
+  /** Insert a posted journal entry (+lines) inside an open transaction, numbering it gap-free. */
+  private async insertPostedEntryTx(
+    tx: typeof db,
+    entry: Omit<InsertJournalEntry, "entryNumber"> & {
+      companyId: string;
+      date: Date;
+    },
+    lines: JournalLineInsert[]
+  ): Promise<JournalEntry> {
+    if (!Array.isArray(lines) || lines.length === 0) {
+      throw new Error("Journal entry must have at least one line");
+    }
+    assertBalanced(lines);
+    const dateStr = entry.date.toISOString().slice(0, 10).replace(/-/g, "");
+    const prefix = `JE-${dateStr}`;
+    const counterStart = prefix.length + 2;
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${hashStringToInt(entry.companyId)}, ${hashStringToInt(prefix)})`
+    );
+    const res: any = await tx.execute(sql`
+      SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)), 0) AS max_seq
+        FROM journal_entries
+       WHERE company_id = ${entry.companyId}
+         AND entry_number LIKE ${prefix + "-%"}
+         AND entry_number ~ ${"^" + prefix + "-[0-9]+$"}
+    `);
+    const next =
+      Number(((res.rows ?? res) as Array<{ max_seq: number | string | null }>)[0]?.max_seq ?? 0) +
+      1;
+    const [created] = await tx
+      .insert(journalEntries)
+      .values({ ...entry, entryNumber: `${prefix}-${String(next).padStart(3, "0")}` })
+      .returning();
+    for (const line of lines) {
+      await tx.insert(journalLines).values({ ...line, entryId: created.id });
+    }
+    return created;
+  }
+
+  /**
+   * Post a receipt exactly once. The claim is a conditional UPDATE ... WHERE posted = false
+   * RETURNING inside the same transaction as the journal insert, so concurrent posts produce one
+   * entry and a failure leaves the receipt unposted (R05-02).
+   */
+  async postReceiptAtomic(
+    args: PostReceiptAtomicArgs
+  ): Promise<{ receipt: Receipt; entry: JournalEntry }> {
+    return await db.transaction(async (tx: typeof db) => {
+      const [claimed] = await tx
+        .update(receipts)
+        .set({
+          posted: true,
+          accountId: args.accountId,
+          paymentAccountId: args.paymentAccountId,
+        })
+        .where(
+          and(
+            eq(receipts.id, args.receiptId),
+            eq(receipts.companyId, args.companyId),
+            eq(receipts.posted, false)
+          )
+        )
+        .returning();
+      if (!claimed) {
+        const [existing] = await tx
+          .select()
+          .from(receipts)
+          .where(and(eq(receipts.id, args.receiptId), eq(receipts.companyId, args.companyId)));
+        if (!existing) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+        throw new DomainError(
+          "RECEIPT_POSTED",
+          409,
+          { receiptId: args.receiptId, journalEntryId: existing.journalEntryId },
+          "Receipt has already been posted"
+        );
+      }
+      const entry = await this.insertPostedEntryTx(
+        tx,
+        {
+          companyId: args.companyId,
+          date: args.entryDate,
+          memo: args.memo,
+          status: "posted",
+          source: "receipt",
+          sourceId: args.receiptId,
+          createdBy: args.userId,
+          postedBy: args.userId,
+          postedAt: new Date(),
+        } as any,
+        args.lines
+      );
+      const [receipt] = await tx
+        .update(receipts)
+        .set({ journalEntryId: entry.id })
+        .where(eq(receipts.id, args.receiptId))
+        .returning();
+      return { receipt, entry };
+    });
+  }
+
+  /**
+   * Revise a posted receipt: reverse its journal entry and post the corrected one in a single
+   * transaction. The receipt row is locked so two revisions cannot interleave.
+   */
+  async reviseReceiptAtomic(
+    args: ReviseReceiptAtomicArgs
+  ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }> {
+    return await db.transaction(async (tx: typeof db) => {
+      const [locked] = await tx
+        .select()
+        .from(receipts)
+        .where(and(eq(receipts.id, args.receiptId), eq(receipts.companyId, args.companyId)))
+        .for("update");
+      if (!locked) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+      if (!locked.posted || !locked.journalEntryId) {
+        throw new DomainError(
+          "RECEIPT_NOT_POSTED",
+          409,
+          { receiptId: args.receiptId },
+          "Only a posted receipt can be revised. Edit unposted receipts with PUT."
+        );
+      }
+      const [original] = await tx
+        .select()
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.id, locked.journalEntryId),
+            eq(journalEntries.companyId, args.companyId)
+          )
+        );
+      if (!original) throw new DomainError("RECEIPT_JOURNAL_MISSING", 409);
+      const originalLines = await tx
+        .select()
+        .from(journalLines)
+        .where(eq(journalLines.entryId, original.id));
+      if (originalLines.length === 0) throw new DomainError("RECEIPT_JOURNAL_MISSING", 409);
+
+      const reversal = await this.insertPostedEntryTx(
+        tx,
+        {
+          companyId: args.companyId,
+          date: args.reversalDate,
+          memo: `Reversal of ${original.entryNumber}: ${args.reason ?? "Receipt revised"}`,
+          status: "posted",
+          source: "reversal",
+          sourceId: original.id,
+          reversedEntryId: original.id,
+          reversalReason: args.reason,
+          createdBy: args.userId,
+          postedBy: args.userId,
+          postedAt: new Date(),
+        } as any,
+        originalLines.map((l: any) => ({
+          accountId: l.accountId,
+          costCenterId: l.costCenterId,
+          debit: l.credit,
+          credit: l.debit,
+          description: `Reversal: ${l.description || ""}`,
+          foreignCurrency: l.foreignCurrency,
+          foreignDebit: l.foreignCredit,
+          foreignCredit: l.foreignDebit,
+          exchangeRate: l.exchangeRate,
+        }))
+      );
+
+      const [updated] = await tx
+        .update(receipts)
+        .set(args.patch)
+        .where(eq(receipts.id, args.receiptId))
+        .returning();
+      const entry = await this.insertPostedEntryTx(
+        tx,
+        {
+          companyId: args.companyId,
+          date: args.entryDate,
+          memo: args.memo,
+          status: "posted",
+          source: "receipt",
+          sourceId: args.receiptId,
+          createdBy: args.userId,
+          postedBy: args.userId,
+          postedAt: new Date(),
+        } as any,
+        args.buildLines(updated)
+      );
+      const [receipt] = await tx
+        .update(receipts)
+        .set({ journalEntryId: entry.id })
+        .where(eq(receipts.id, args.receiptId))
+        .returning();
+      return { receipt, entry, reversal };
+    });
+  }
+
+  /** Split an unposted multi-receipt upload into separate receipts (the source row is replaced). */
+  async splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]> {
+    return await db.transaction(async (tx: typeof db) => {
+      const [source] = await tx
+        .select()
+        .from(receipts)
+        .where(and(eq(receipts.id, args.receiptId), eq(receipts.companyId, args.companyId)))
+        .for("update");
+      if (!source) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+      if (source.posted) {
+        throw new DomainError("RECEIPT_POSTED", 409, undefined, "A posted receipt cannot be split");
+      }
+      const { id: _id, createdAt: _createdAt, ...inherited } = source;
+      const created: Receipt[] = [];
+      for (const part of args.parts) {
+        const [row] = await tx
+          .insert(receipts)
+          .values({
+            ...inherited,
+            lines: null,
+            journalEntryId: null,
+            posted: false,
+            autoPosted: false,
+            // Parts share the stored image; content hash is cleared so duplicate detection
+            // does not treat the parts as one upload.
+            contentSha256: null,
+            ...part,
+          })
+          .returning();
+        created.push(row);
+      }
+      await tx.delete(receipts).where(eq(receipts.id, args.receiptId));
+      return created;
+    });
   }
 
   async deleteReceipt(id: string, companyId: string): Promise<void> {
@@ -3671,6 +4050,36 @@ export class DatabaseStorage implements IStorage {
     return setting;
   }
 
+  async getReminderSetting(id: string): Promise<ReminderSetting | undefined> {
+    const [setting] = await db.select().from(reminderSettings).where(eq(reminderSettings.id, id));
+    return setting || undefined;
+  }
+
+  async deleteReminderSettingForCompany(id: string, companyId: string): Promise<boolean> {
+    const rows = await db
+      .delete(reminderSettings)
+      .where(and(eq(reminderSettings.id, id), eq(reminderSettings.companyId, companyId)))
+      .returning({ id: reminderSettings.id });
+    return rows.length > 0;
+  }
+
+  async updateReminderSettingForCompany(
+    id: string,
+    companyId: string,
+    data: Partial<InsertReminderSetting>
+  ): Promise<ReminderSetting | undefined> {
+    // companyId is immutable: it only appears in the WHERE clause.
+    const { companyId: _ignored, ...rest } = data as Partial<InsertReminderSetting> & {
+      companyId?: string;
+    };
+    const [setting] = await db
+      .update(reminderSettings)
+      .set({ ...rest, updatedAt: new Date() })
+      .where(and(eq(reminderSettings.id, id), eq(reminderSettings.companyId, companyId)))
+      .returning();
+    return setting || undefined;
+  }
+
   async updateReminderSetting(
     id: string,
     data: Partial<InsertReminderSetting>
@@ -3835,20 +4244,29 @@ export class DatabaseStorage implements IStorage {
 
   async getAnalyticsEvents(filters?: {
     userId?: string;
+    companyId?: string;
+    companyIds?: string[];
     eventType?: string;
     startDate?: Date;
     endDate?: Date;
+    limit?: number;
   }): Promise<AnalyticsEvent[]> {
-    let query = db.select().from(analyticsEvents);
-
-    if (filters?.userId) {
-      query = query.where(eq(analyticsEvents.userId, filters.userId)) as typeof query;
+    // Filters AND together (the previous chained .where() calls replaced each other).
+    const conds = [];
+    if (filters?.userId) conds.push(eq(analyticsEvents.userId, filters.userId));
+    if (filters?.companyId) conds.push(eq(analyticsEvents.companyId, filters.companyId));
+    if (filters?.companyIds) {
+      if (filters.companyIds.length === 0) return [];
+      conds.push(inArray(analyticsEvents.companyId, filters.companyIds));
     }
-    if (filters?.eventType) {
-      query = query.where(eq(analyticsEvents.eventType, filters.eventType)) as typeof query;
-    }
+    if (filters?.eventType) conds.push(eq(analyticsEvents.eventType, filters.eventType));
+    if (filters?.startDate) conds.push(gte(analyticsEvents.createdAt, filters.startDate));
+    if (filters?.endDate) conds.push(lte(analyticsEvents.createdAt, filters.endDate));
 
-    return await query.orderBy(desc(analyticsEvents.createdAt));
+    const base = db.select().from(analyticsEvents);
+    const filtered = conds.length ? base.where(and(...conds)) : base;
+    const ordered = filtered.orderBy(desc(analyticsEvents.createdAt));
+    return await (filters?.limit ? ordered.limit(filters.limit) : ordered);
   }
 
   // Feature Usage Metrics
@@ -4185,6 +4603,28 @@ export class DatabaseStorage implements IStorage {
   async createTaxReturnArchive(insertTaxReturn: InsertTaxReturnArchive): Promise<TaxReturnArchive> {
     const [taxReturn] = await db.insert(taxReturnArchive).values(insertTaxReturn).returning();
     return taxReturn;
+  }
+
+  async updateTaxReturnArchive(
+    id: string,
+    companyId: string,
+    data: Partial<InsertTaxReturnArchive>
+  ): Promise<TaxReturnArchive | undefined> {
+    const { companyId: _ignored, ...rest } = data;
+    const [row] = await db
+      .update(taxReturnArchive)
+      .set(rest)
+      .where(and(eq(taxReturnArchive.id, id), eq(taxReturnArchive.companyId, companyId)))
+      .returning();
+    return row || undefined;
+  }
+
+  async deleteTaxReturnArchive(id: string, companyId: string): Promise<boolean> {
+    const rows = await db
+      .delete(taxReturnArchive)
+      .where(and(eq(taxReturnArchive.id, id), eq(taxReturnArchive.companyId, companyId)))
+      .returning({ id: taxReturnArchive.id });
+    return rows.length > 0;
   }
 
   // Compliance Tasks
@@ -5014,7 +5454,8 @@ export class DatabaseStorage implements IStorage {
       // A-B5/A-B12: compute the balanced legs via the tested pure builder. AR
       // clears at the invoice rate; cash at the payment-date rate (when one is
       // supplied — else the invoice rate, i.e. no FX, identical to before).
-      const invRate = Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
+      const invRate =
+        Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
       const payRate = hasPaymentRate ? Number(input.paymentExchangeRate) : invRate;
       // Resolve FX gain/loss accounts only when a differing payment rate could
       // produce realised FX (avoids a lookup on the common same-rate path).
@@ -5186,6 +5627,71 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProduct(id: string): Promise<void> {
     await db.delete(products).where(eq(products.id, id));
+  }
+
+  /**
+   * Record a stock movement and update the product balance in ONE transaction, stock check first
+   * (R10-03). The product row is locked FOR UPDATE, so concurrent sales cannot both pass the
+   * check, and a rejected sale writes no movement row.
+   */
+  async applyInventoryMovement(args: {
+    productId: string;
+    companyId: string;
+    type: "purchase" | "sale" | "adjustment" | "return";
+    quantity: number;
+    unitCost?: number | null;
+    reference?: string | null;
+    notes?: string | null;
+  }): Promise<{ movement: InventoryMovement; newStock: number }> {
+    return await db.transaction(async (tx: typeof db) => {
+      const locked: any = await tx.execute(
+        sql`SELECT current_stock FROM products WHERE id = ${args.productId} AND company_id = ${args.companyId} FOR UPDATE`
+      );
+      const row = (locked.rows ?? locked)[0] as { current_stock: number | string } | undefined;
+      if (!row) throw new DomainError("PRODUCT_NOT_FOUND", 404);
+      const onHand = Number(row.current_stock);
+
+      let stockChange = 0;
+      switch (args.type) {
+        case "purchase":
+        case "return":
+          stockChange = Math.abs(args.quantity);
+          break;
+        case "sale":
+          stockChange = -Math.abs(args.quantity);
+          break;
+        case "adjustment":
+          stockChange = args.quantity;
+          break;
+      }
+      const newStock = onHand + stockChange;
+      if (newStock < 0 && args.type !== "adjustment") {
+        throw new DomainError(
+          "INSUFFICIENT_STOCK",
+          422,
+          { onHand, requested: Math.abs(stockChange) },
+          `Insufficient stock: ${onHand} on hand, ${Math.abs(stockChange)} requested. Record a stock adjustment if the on-hand figure is wrong.`
+        );
+      }
+
+      const [movement] = await tx
+        .insert(inventoryMovements)
+        .values({
+          productId: args.productId,
+          companyId: args.companyId,
+          type: args.type,
+          quantity: args.quantity,
+          unitCost: args.unitCost ?? null,
+          reference: args.reference ?? null,
+          notes: args.notes ?? null,
+        })
+        .returning();
+      await tx
+        .update(products)
+        .set({ currentStock: newStock })
+        .where(and(eq(products.id, args.productId), eq(products.companyId, args.companyId)));
+      return { movement, newStock };
+    });
   }
 
   // Inventory Movements

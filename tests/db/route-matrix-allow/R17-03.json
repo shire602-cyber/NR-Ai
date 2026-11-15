@@ -1,6 +1,0 @@
-{
-  "issue": "R17-03",
-  "owner": "W2-D",
-  "reason": "PUT /api/accounts/:id passes raw body to updateAccount; companyId in the body moves the account into another tenant.",
-  "routes": ["PUT /api/accounts/:id#inject"]
-}

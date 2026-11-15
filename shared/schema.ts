@@ -308,6 +308,8 @@ export const companies = pgTable("companies", {
   contactEmail: text("contact_email"),
   websiteUrl: text("website_url"),
   logoUrl: text("logo_url"),
+  // W2-D (migration 0093): logo stored through fileStorage (storage key), served by /api/companies/:id/logo.
+  logoPath: text("logo_path"),
 
   // Tax & Compliance
   trnVatNumber: text("trn_vat_number"),
@@ -407,7 +409,19 @@ export const companyPreferencesSchema = z.object({
     .nullable()
     .or(z.literal("").transform(() => null)),
   industry: z.string().max(100).optional().nullable(),
-  logoUrl: z.string().optional().nullable(),
+  // W2-D: same rule as shared/validators/companies.ts (https or raster data:image, ~1 MB cap).
+  logoUrl: z
+    .string()
+    .max(1_000_000, "Logo must be 1 MB or smaller")
+    .refine(
+      (v) =>
+        v === "" ||
+        /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(v) ||
+        /^https:\/\/[^\s/]+/i.test(v),
+      "Logo must be an https:// URL or a PNG/JPEG/GIF/WebP image"
+    )
+    .optional()
+    .nullable(),
   dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
   locale: z.enum(["en", "ar"]).optional(),
 });
@@ -789,6 +803,8 @@ export const accounts = pgTable(
     isSystemAccount: boolean("is_system_account").notNull().default(false), // System accounts cannot be deleted
     isActive: boolean("is_active").notNull().default(true),
     isArchived: boolean("is_archived").notNull().default(false), // Soft delete / archive
+    // W2-D (migration 0093): account hierarchy. FK + cycle check live in SQL / the route.
+    parentId: uuid("parent_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at"),
   },
@@ -1880,6 +1896,16 @@ export const receipts = pgTable(
     imageData: text("image_data"),
     imagePath: text("image_path"),
     rawText: text("raw_text"),
+    // W2-D (migration 0093): optional multi-account split [{accountId, amount, vatAmount, costCenterId}].
+    lines: jsonb("lines").$type<
+      Array<{
+        accountId: string;
+        amount: number;
+        vatAmount?: number | null;
+        costCenterId?: string | null;
+        description?: string | null;
+      }>
+    >(),
     // W1-D (migration 0089): supplier TRN, upload content hash and true file type/size.
     supplierTrn: text("supplier_trn"),
     contentSha256: text("content_sha256"),
@@ -4941,10 +4967,7 @@ export const clientEmailSources = pgTable(
     companyIdx: index("idx_client_email_sources_company").on(table.companyId),
     firmIdx: index("idx_client_email_sources_firm").on(table.firmId),
     // One sender address maps to at most one company per firm.
-    firmSenderUq: unique("uq_client_email_sources_firm_sender").on(
-      table.firmId,
-      table.senderEmail
-    ),
+    firmSenderUq: unique("uq_client_email_sources_firm_sender").on(table.firmId, table.senderEmail),
   })
 );
 

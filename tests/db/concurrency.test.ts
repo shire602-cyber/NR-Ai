@@ -124,10 +124,11 @@ describe.skipIf(process.env.HARNESS_MODE !== "postgres")("concurrency (real Post
     expect(r.body.code).toBe("LINE_HAS_BOTH_SIDES");
   });
 
-  it("ignores companyType self-promotion instead of failing", async () => {
+  it("refuses companyType self-promotion (403, W2-D R17-05) and leaves the type unchanged", async () => {
     const r = await t.as.patch(`/api/companies/${t.company.id}`, { companyType: "nra" });
-    expect(r.status).toBe(200);
-    expect(r.body.companyType).not.toBe("nra");
+    expect(r.status).toBe(403);
+    const rows = await h.sql("SELECT company_type FROM companies WHERE id = $1", [t.company.id]);
+    expect(rows[0].company_type).not.toBe("nra");
   });
 
   it("whole ledger still balances after the concurrent abuse", async () => {

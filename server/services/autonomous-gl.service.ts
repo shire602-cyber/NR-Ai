@@ -533,7 +533,7 @@ async function createJournalEntryForQueueItem(
   if (!bankAccountId) {
     const { rows: bankAccounts } = await pool.query(
       `SELECT id FROM accounts
-       WHERE company_id = $1 AND type = 'asset' AND sub_type = 'current_asset'
+       WHERE company_id = $1 AND type = 'asset' AND sub_type IN ('current_asset', 'cash', 'bank')
          AND (lower(name_en) LIKE '%bank%' OR lower(name_en) LIKE '%cash%')
          AND is_active = true
        ORDER BY code LIMIT 1`,
@@ -634,10 +634,15 @@ export async function processUserFeedback(
   queueId: string,
   action: "accept" | "reject" | "correct",
   userId: string,
-  userAccountId?: string
+  userAccountId: string | undefined,
+  companyId: string
 ): Promise<{ success: boolean; message: string }> {
-  // Get the queue item
-  const _itemResult = await pool.query(`SELECT * FROM ai_gl_queue WHERE id = $1`, [queueId]);
+  // Get the queue item. Scoped to the caller's company: loading by id alone let a user of
+  // company B accept/reject/correct company A's queue items (W1A-02).
+  const _itemResult = await pool.query(
+    `SELECT * FROM ai_gl_queue WHERE id = $1 AND company_id = $2`,
+    [queueId, companyId]
+  );
   const [item]: AIGLQueueItem[] = _itemResult.rows;
 
   if (!item) {
@@ -754,6 +759,14 @@ export async function processUserFeedback(
   if (action === "correct") {
     if (!userAccountId) {
       return { success: false, message: "userAccountId is required for correction" };
+    }
+    // The chosen account must belong to the same company as the queue item (W1A-02).
+    const { rows: ownedAccount } = await pool.query(
+      `SELECT 1 FROM accounts WHERE id = $1 AND company_id = $2`,
+      [userAccountId, companyId]
+    );
+    if (ownedAccount.length === 0) {
+      return { success: false, message: "Account not found for this company" };
     }
 
     // Create journal entry with user's chosen account

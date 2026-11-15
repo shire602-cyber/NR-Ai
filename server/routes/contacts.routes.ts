@@ -5,10 +5,39 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
-import { insertCustomerContactSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
+import { sanitizePlainText, zText } from "../../shared/validators/primitives";
 
 const log = createLogger("contacts");
+
+// Free-text contact fields pass through zText (markup/control characters stripped, length capped)
+// before they reach storage (R17-09). Unknown / server-owned keys (companyId, portal tokens, ...)
+// are dropped, never written.
+const optText = (max: number) =>
+  z
+    .union([z.literal(""), zText(max), z.null()])
+    .transform((v) => (v === "" ? null : v))
+    .optional();
+
+const contactFields = {
+  name: zText(200, { min: 1 }),
+  nameAr: optText(200),
+  email: z
+    .union([z.literal(""), z.string().trim().toLowerCase().email().max(254), z.null()])
+    .transform((v) => (v === "" ? null : v))
+    .optional(),
+  phone: optText(40),
+  whatsappNumber: optText(40),
+  trnNumber: optText(40),
+  address: optText(300),
+  city: optText(100),
+  country: optText(100),
+  contactPerson: optText(200),
+  paymentTerms: z.number().int().min(0).max(365).optional().nullable(),
+  notes: optText(2000),
+  isActive: z.boolean().optional(),
+};
+const contactCreateSchema = z.object(contactFields);
+const contactUpdateSchema = z.object(contactFields).partial();
 
 const contactImportPreviewSchema = z.object({
   fileName: z
@@ -63,6 +92,12 @@ function mapContactImportRow(row: Record<string, any>): Record<string, string> {
   };
 }
 
+/** Sanitise one imported cell: strip markup/control characters and cap the length. */
+function clean(value: unknown, max: number): string {
+  if (value === undefined || value === null) return "";
+  return sanitizePlainText(String(value)).slice(0, max);
+}
+
 export function registerContactRoutes(app: Express) {
   // =====================================
   // Customer Contacts Routes (for Customer users)
@@ -101,9 +136,9 @@ export function registerContactRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // S-M1: allowlist body fields, then pin the tenant scope.
+      // Validated + sanitised body, then pin the tenant scope.
       const contactData: Record<string, any> = {
-        ...pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]),
+        ...contactCreateSchema.parse(req.body ?? {}),
         companyId,
       };
 
@@ -238,12 +273,12 @@ export function registerContactRoutes(app: Express) {
             await storage.updateCustomerContact(
               existing.id,
               {
-                name: contact.name,
-                phone: contact.phone || null,
-                trnNumber: contact.trnNumber || contact.trn || null,
-                address: contact.address || null,
-                city: contact.city || null,
-                country: contact.country || "UAE",
+                name: clean(contact.name, 200),
+                phone: clean(contact.phone, 40) || null,
+                trnNumber: clean(contact.trnNumber || contact.trn, 40) || null,
+                address: clean(contact.address, 300) || null,
+                city: clean(contact.city, 100) || null,
+                country: clean(contact.country, 100) || "UAE",
               },
               companyId
             );
@@ -252,13 +287,13 @@ export function registerContactRoutes(app: Express) {
             // Prepare for bulk insert
             contactsToCreate.push({
               companyId,
-              email: contact.email,
-              name: contact.name,
-              phone: contact.phone || null,
-              trnNumber: contact.trnNumber || contact.trn || null,
-              address: contact.address || null,
-              city: contact.city || null,
-              country: contact.country || "UAE",
+              email: clean(contact.email, 254),
+              name: clean(contact.name, 200),
+              phone: clean(contact.phone, 40) || null,
+              trnNumber: clean(contact.trnNumber || contact.trn, 40) || null,
+              address: clean(contact.address, 300) || null,
+              city: clean(contact.city, 100) || null,
+              country: clean(contact.country, 100) || "UAE",
               isActive: true,
             });
           }
@@ -363,11 +398,14 @@ export function registerContactRoutes(app: Express) {
 
       // S-M1: allowlist update fields (tenant scope cannot be changed here).
       // S-L3: scope the write to the company.
-      const contact = await storage.updateCustomerContact(
-        id,
-        pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]) as any,
-        companyId
-      );
+      const updateData = contactUpdateSchema.parse(req.body ?? {});
+      if (updateData.trnNumber && !/^[0-9]{15}$/.test(updateData.trnNumber)) {
+        return res.status(422).json({
+          message: "UAE TRN must be exactly 15 digits.",
+          code: "INVALID_TRN",
+        });
+      }
+      const contact = await storage.updateCustomerContact(id, updateData as any, companyId);
       res.json(contact);
     })
   );
