@@ -19,7 +19,13 @@ import { DomainError } from "../errors";
 import { assertRetentionExpired } from "../services/retention.service";
 import { recordAudit } from "../services/audit.service";
 import { emitDomainEvent } from "../platform/domain-events";
-import { assertTransition, postJournal, transitionRow, withLedgerTx } from "../ledger";
+import {
+  assertTransition,
+  loadBaseCurrency,
+  postJournal,
+  transitionRow,
+  withLedgerTx,
+} from "../ledger";
 import {
   BILL_PAYMENT_JE_SOURCE,
   billHasPostedJournal,
@@ -294,7 +300,12 @@ export function registerBillPayRoutes(app: Express) {
           ).rows[0]?.default_expense_account_id ?? null)
         : null;
       const plan = await planBillJournal(bill, lines, { vendorDefaultAccountId: vendorDefault });
-      const amountFils = toBase(filsOf(bill.total_amount), rateTextOf(bill), isForeign(bill));
+      const billBase = await loadBaseCurrency(String(bill.company_id));
+      const amountFils = toBase(
+        filsOf(bill.total_amount),
+        rateTextOf(bill, billBase),
+        isForeign(bill, billBase)
+      );
       const outcome = await withLedgerTx(async (tx, { afterCommit }) => {
         const locked = (
           await txRows<BillRow>(tx, `SELECT * FROM vendor_bills WHERE id = $1 FOR UPDATE`, [
@@ -754,7 +765,12 @@ export function registerBillPayRoutes(app: Express) {
               p.payment_account_id,
               p.payment_method
             );
-            const amount = toBase(filsOf(p.amount), rateTextOf(bill), isForeign(bill));
+            const billBase = await loadBaseCurrency(companyId);
+            const amount = toBase(
+              filsOf(p.amount),
+              rateTextOf(bill, billBase),
+              isForeign(bill, billBase)
+            );
             await postJournal(
               {
                 companyId,

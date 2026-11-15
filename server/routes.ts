@@ -81,6 +81,7 @@ import { registerEmailIntakeRoutes } from "./routes/email-intake.routes";
 import { registerAdminHealthRoutes } from "./routes/admin-health.routes";
 import { registerBankStatementRoutes } from "./routes/bank-statements.routes";
 import { registerExchangeRateRoutes } from "./routes/exchange-rates.routes";
+import { registerConsolidationRoutes } from "./routes/consolidation.routes";
 import { registerNRARoutes } from "./routes/nra.routes";
 import { registerFirmRoutes } from "./routes/firm.routes";
 import { registerFirmBulkRoutes } from "./routes/firm-bulk.routes";
@@ -193,6 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerVATAutopilotRoutes(app);
   registerCorporateTaxRoutes(app);
   registerExchangeRateRoutes(app);
+  registerConsolidationRoutes(app);
 
   // ─── Team & Client Portal ──────────────────────────────
   registerTeamRoutes(app);

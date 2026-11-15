@@ -116,6 +116,12 @@ const STRINGS = {
     scopeSystem: "System",
     stale: "Stale",
     staleHint: `Older than ${STALE_DAYS} days`,
+    staleBannerTitle: "Some exchange rates are out of date",
+    staleBannerBody:
+      "These pairs have no rate in the last {days} days. Documents and revaluations will warn until a newer rate is added:",
+    feedOffTitle: "No automatic rate feed",
+    feedOffBody:
+      "The CBUAE / ECB rate feed is not configured for this platform, so rates are only updated when entered here or imported by an administrator.",
     rewritten: "Corrected",
     rewrittenHint: "Stored inverted by an earlier version; corrected by migration",
     rateTypes: { spot: "Spot", closing: "Closing", average: "Average" } as Record<RateType, string>,
@@ -211,6 +217,12 @@ const STRINGS = {
     scopeSystem: "النظام",
     stale: "قديم",
     staleHint: `أقدم من ${STALE_DAYS} أيام`,
+    staleBannerTitle: "بعض أسعار الصرف قديمة",
+    staleBannerBody:
+      "لا يوجد سعر لهذه الأزواج خلال آخر {days} يوماً. ستظهر تنبيهات في المستندات وإعادة التقييم حتى تتم إضافة سعر أحدث:",
+    feedOffTitle: "لا توجد تغذية تلقائية للأسعار",
+    feedOffBody:
+      "تغذية أسعار المصرف المركزي / البنك المركزي الأوروبي غير مفعّلة على هذه المنصة، لذلك تُحدَّث الأسعار فقط عند إدخالها هنا أو استيرادها من قبل المسؤول.",
     rewritten: "مُصحَّح",
     rewrittenHint: "خُزّن معكوساً في إصدار سابق وصُحّح أثناء الترحيل",
     rateTypes: { spot: "فوري", closing: "إقفال", average: "متوسط" } as Record<RateType, string>,
@@ -337,6 +349,12 @@ interface RevaluationPreview {
   warnings: string[];
 }
 
+interface FeedStatus {
+  maxAgeDays: number;
+  stale: Array<{ pair: string; rateType: string; date: string; ageDays: number; scope: string }>;
+  feed: { capability: string; configured: string[] };
+}
+
 interface Revaluation {
   id: string;
   asOf: string;
@@ -393,6 +411,12 @@ export default function ExchangeRates() {
 
   const { data: history } = useQuery<Revaluation[]>({
     queryKey: [historyKey],
+    enabled: !!companyId,
+  });
+
+  // W5-C (R14-14): stale-rate banner and feed status.
+  const { data: feedStatus } = useQuery<FeedStatus>({
+    queryKey: [`/api/companies/${companyId}/exchange-rates/feed-status`],
     enabled: !!companyId,
   });
 
@@ -634,6 +658,34 @@ export default function ExchangeRates() {
           </>
         }
       />
+
+      {feedStatus && feedStatus.stale.length > 0 && (
+        <div
+          className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+          role="status"
+          data-testid="banner-stale-rates"
+        >
+          <p className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4" />
+            {s.staleBannerTitle}
+          </p>
+          <p className="mt-1">
+            {s.staleBannerBody.replace("{days}", String(feedStatus.maxAgeDays))}{" "}
+            {feedStatus.stale
+              .map((p) => `${p.pair} (${p.rateType}, ${formatDate(p.date, locale)})`)
+              .join(", ")}
+          </p>
+        </div>
+      )}
+      {feedStatus && feedStatus.feed.capability !== "live" && (
+        <div
+          className="rounded-md border border-border bg-muted/40 p-3 text-sm"
+          data-testid="banner-feed-off"
+        >
+          <p className="font-medium">{s.feedOffTitle}</p>
+          <p className="mt-1 text-muted-foreground">{s.feedOffBody}</p>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

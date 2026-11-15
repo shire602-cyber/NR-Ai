@@ -14,6 +14,7 @@
  */
 import { DomainError } from "../errors";
 import { pool } from "../db";
+import { DEFAULT_BASE_CURRENCY } from "../ledger/currency";
 import {
   addDays,
   addMonths,
@@ -31,6 +32,7 @@ import {
   loadCompany,
   naturalBalance,
   netIncomeOf,
+  reportCurrencyOf,
   type AccountTotals,
   type Fils,
   type Queryable,
@@ -47,7 +49,11 @@ import {
   type PlSection,
 } from "./classify";
 
-export const REPORT_CURRENCY = "AED";
+/**
+ * @deprecated W5-C (R14-19): statements are labelled in the company's base (functional)
+ * currency — see `reportCurrencyOf`. This is only the schema default.
+ */
+export const REPORT_CURRENCY = DEFAULT_BASE_CURRENCY;
 
 export interface StatementLine {
   accountId: string;
@@ -188,7 +194,7 @@ export async function trialBalance(
     });
   }
   return {
-    reportCurrency: REPORT_CURRENCY,
+    reportCurrency: await reportCurrencyOf(companyId, q),
     from,
     to,
     rows,
@@ -368,7 +374,7 @@ export async function profitAndLoss(
   const totals = await accountTotals(companyId, { from, to }, q);
   const main = plFromAmounts(accounts, (a) => plAmount(a, totals.get(a.id)));
   const result: ProfitAndLoss = {
-    reportCurrency: REPORT_CURRENCY,
+    reportCurrency: await reportCurrencyOf(companyId, q),
     from,
     to,
     ...main.totals,
@@ -520,7 +526,7 @@ async function balanceSheetCore(
   const diff = totalAssets - totalLiabilities - totalEquity;
   const capitalSection = section(capital);
   return {
-    reportCurrency: REPORT_CURRENCY,
+    reportCurrency: await reportCurrencyOf(companyId, q),
     asOf,
     fiscalYearStart: fyStart,
     assets: { current: section(curA), nonCurrent: section(nonA), total: aed(totalAssets) },
@@ -762,7 +768,7 @@ export async function cashFlow(
   const fin = build("financing");
   const computedNet = op.total + inv.total + fin.total;
   return {
-    reportCurrency: REPORT_CURRENCY,
+    reportCurrency: await reportCurrencyOf(companyId, q),
     from,
     to,
     method,
@@ -1003,7 +1009,7 @@ export async function generalLedger(
     });
   }
   return {
-    reportCurrency: REPORT_CURRENCY,
+    reportCurrency: await reportCurrencyOf(companyId, q),
     from,
     to,
     accounts: out,

@@ -116,6 +116,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "reconciliationRules", url: "/reconciliation-rules" },
       { titleKey: "costCenters", url: "/cost-centers" },
       { titleKey: "exchangeRates", url: "/exchange-rates" },
+      { titleKey: "consolidation.navGroups", url: "/company-groups" },
       { titleKey: "fixedAssets", url: "/fixed-assets" },
       { titleKey: "monthEndClose", url: "/month-end" },
     ],

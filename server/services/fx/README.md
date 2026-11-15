@@ -73,6 +73,39 @@ replaces the first.
 - `undoRevaluation` posts equal-and-opposite entries for both and marks the run `undone`, after
   which the date can be revalued again.
 
-Known limits: credit notes are not netted against invoice exposure; there is no per-currency
-trial balance yet; revaluation posts through `storage.createJournalEntryWithLines` until the
-W2-A ledger kernel is available.
+Known limits: credit notes are not netted against invoice exposure.
+
+## Functional currency (W5-C, R14-19)
+
+The company's `base_currency` is its functional currency. `baseCurrencyOf(company)` /
+`loadBaseCurrency(companyId, tx)` (server/ledger) replace every literal "AED" in the posting
+services, invoice routes, FX services and reporting: a document in the base currency is not
+converted (rate 1, no foreign tags); rates stay "base units per 1 foreign unit"; statements carry
+`reportCurrency` = base currency. VAT returns are filed in AED — see the FOLLOW-UP in the W5-C
+report for non-AED companies.
+
+## Multi-currency balances (W5-C, R14-16)
+
+- `bankAccountBalances(companyId, asOf)` (`bank-balances.ts`): each bank account's balance in its
+  own currency (foreign lines tagged with that currency) and in base, remeasured at the closing
+  rate for foreign accounts. Routes: `GET /api/companies/:id/bank-accounts/currency-balances`,
+  `.../bank-accounts/:accountId/currency-balance`.
+- Invoice payments, bill payments, receipt payments and expense-claim reimbursements tag the cash
+  leg with the foreign amount, so the revaluation run (bank accounts are part of the exposure)
+  and the per-currency trial balance (`server/reporting/currency-trial-balance.ts`,
+  `GET /api/companies/:id/reports/trial-balance-by-currency`) see them. A foreign claim paid from
+  a bank account in that currency settles at the payment-date rate with realised FX; a foreign
+  receipt left on the default rate 1 takes the receipt-date rate from `fx.getRate`.
+
+## Rate feed (W5-C, R14-14)
+
+`feed.ts`: CBUAE (AED per unit table → `(CUR, AED)`) and ECB (euro reference XML →
+`(EUR, CUR)`) adapters write **system** rows (`company_id` NULL, `source` = provider,
+`rate_type` spot) through `saveRate` (validation + sanity band; a jump is skipped and reported).
+Job `fx.rateFeed` (weekdays 14:05 UTC) runs only when `FX_RATE_FEED` is set (`cbuae`, `ecb`);
+URLs `FX_RATE_FEED_CBUAE_URL` / `FX_RATE_FEED_ECB_URL`. Unconfigured, capability `fx_rate_feed`
+is `requires_external` and fetches answer `503 FX_RATE_FEED_NOT_CONFIGURED`. Admin routes:
+`GET /api/exchange-rates/feed/status`, `POST /api/exchange-rates/feed/run { provider, payload? }`
+(a downloaded payload needs no network), `POST /api/exchange-rates/import-csv` (date,from,to,rate).
+Every run is logged in `fx_rate_feed_runs`. `GET /api/companies/:id/exchange-rates/feed-status`
+drives the stale-rate banner on the Exchange Rates page. Recorded samples: tests/fixtures/fx-feed/.

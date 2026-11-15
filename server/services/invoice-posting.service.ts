@@ -39,6 +39,10 @@ import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { withDocumentLock, LOCK_NS } from "./document-lock";
 import {
+  DEFAULT_BASE_CURRENCY,
+  documentCurrency,
+  isForeignCurrency,
+  loadBaseCurrency,
   postJournal,
   reverseBySource,
   transitionRow,
@@ -70,7 +74,12 @@ async function inventoryHook(name: string, tx: LedgerTx, args: Record<string, un
 
 const log = createLogger("invoice-posting");
 
-export const BASE_CURRENCY = "AED";
+/**
+ * @deprecated W5-C (R14-19): the base currency is per company — use
+ * `loadBaseCurrency(companyId, tx)` / `baseCurrencyOf(company)` from server/ledger.
+ * Kept only as the default for modules that have not moved yet.
+ */
+export const BASE_CURRENCY = DEFAULT_BASE_CURRENCY;
 
 /** Ledger codes used by the sales cycle. */
 export const SALES_CODES = {
@@ -243,9 +252,13 @@ export async function getArAccount(tx: LedgerTx, companyId: string): Promise<str
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-export function invoiceRate(invoice: { currency?: string | null; exchangeRate?: unknown }): string {
-  const currency = (invoice.currency || BASE_CURRENCY).toUpperCase();
-  if (currency === BASE_CURRENCY) return "1";
+/** Rate (company base per 1 document unit) of a stored document; "1" when it is in the base. */
+export function invoiceRate(
+  invoice: { currency?: string | null; exchangeRate?: unknown },
+  baseCurrency: string
+): string {
+  const currency = documentCurrency(invoice.currency, baseCurrency);
+  if (currency === baseCurrency) return "1";
   const r = Number(invoice.exchangeRate);
   if (!Number.isFinite(r) || r <= 0) {
     throw new DomainError(
@@ -258,8 +271,8 @@ export function invoiceRate(invoice: { currency?: string | null; exchangeRate?: 
   return String(invoice.exchangeRate);
 }
 
-function isForeign(invoice: { currency?: string | null }): boolean {
-  return (invoice.currency || BASE_CURRENCY).toUpperCase() !== BASE_CURRENCY;
+function isForeign(invoice: { currency?: string | null }, baseCurrency: string): boolean {
+  return isForeignCurrency(invoice.currency, baseCurrency);
 }
 
 export function toBase(docFils: number, rate: string): number {
@@ -393,10 +406,12 @@ export function buildRevenueLines(args: {
   totals: SalesDocumentTotals;
   lines: Array<{ costCenterId?: string | null }>;
   accounts: SalesAccounts;
+  /** The company's functional currency (W5-C). */
+  baseCurrency: string;
 }): PostJournalLineInput[] {
-  const { invoice, rate, totals, accounts: acc } = args;
-  const foreign = isForeign(invoice);
-  const cur = (invoice.currency || BASE_CURRENCY).toUpperCase();
+  const { invoice, rate, totals, accounts: acc, baseCurrency } = args;
+  const foreign = isForeign(invoice, baseCurrency);
+  const cur = documentCurrency(invoice.currency, baseCurrency);
   const fx = (docFils: number, side: "debit" | "credit") =>
     foreign
       ? {
@@ -472,8 +487,16 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     roles,
     vat: totals.vatFils > 0,
   });
-  const rate = invoiceRate(invoice);
-  const journalLinesIn = buildRevenueLines({ invoice, rate, totals, lines, accounts: acc });
+  const baseCurrency = await loadBaseCurrency(invoice.companyId, tx);
+  const rate = invoiceRate(invoice, baseCurrency);
+  const journalLinesIn = buildRevenueLines({
+    invoice,
+    rate,
+    totals,
+    lines,
+    accounts: acc,
+    baseCurrency,
+  });
   const docLabel = invoice.invoiceType === "debit_note" ? "Debit Note" : "Sales Invoice";
   const { replayed } = await postJournal(
     {
@@ -740,9 +763,10 @@ async function postCreditNoteInTx(args: {
 }): Promise<{ entryId: string; customerCreditId: string | null; customerCreditFils: number }> {
   const { tx, original, creditNote, totals, mode, userId, creditDocFils } = args;
   const companyId = original.companyId;
-  const rate = invoiceRate(original);
-  const foreign = isForeign(original);
-  const cur = (original.currency || BASE_CURRENCY).toUpperCase();
+  const baseCurrency = await loadBaseCurrency(companyId, tx);
+  const rate = invoiceRate(original, baseCurrency);
+  const foreign = isForeign(original, baseCurrency);
+  const cur = documentCurrency(original.currency, baseCurrency);
   const arId = await getArAccount(tx, companyId);
   const [vatRow] = await tx
     .select({ id: accounts.id })
@@ -1041,7 +1065,7 @@ export async function insertCreditNoteDocument(
   }
   const date = args.date ? new Date(`${args.date}T00:00:00.000Z`) : new Date();
   const number = await allocateInvoiceNumber(args.companyId, "credit_note", date, tx);
-  const rate = invoiceRate(original);
+  const rate = invoiceRate(original, await loadBaseCurrency(args.companyId, tx));
   const [creditNote] = await tx
     .insert(invoices)
     .values({

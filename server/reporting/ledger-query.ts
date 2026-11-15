@@ -1,10 +1,12 @@
 /**
  * The one place the reporting kernel reads the ledger. All sums are done in
  * SQL in integer fils (ROUND(x * 100)) so no float accumulation reaches a
- * report; conversion back to AED happens once, at the edge (`aed()`).
+ * report; conversion back to major units of the company's base currency happens once,
+ * at the edge (`aed()`, kept for its historical name).
  */
 import { pool } from "../db";
 import { DomainError } from "../errors";
+import { baseCurrencyOf } from "../ledger/currency";
 import type { IsoDate } from "./dates";
 
 export interface Queryable {
@@ -30,7 +32,7 @@ export const ENTRY_LOCAL_DATE_SQL = `((je.date + interval '4 hours')::date)`;
 
 export type Fils = number;
 
-/** Fils -> AED number with exactly 2dp representation (single division, no accumulation). */
+/** Minor units -> major-unit number of the base currency, exactly 2dp (single division). */
 export function aed(fils: Fils): number {
   const v = fils / 100;
   return Object.is(v, -0) ? 0 : v;
@@ -58,7 +60,7 @@ export async function loadCompany(
   q: Queryable = pool
 ): Promise<CompanyReportSettings> {
   const { rows } = await q.query(
-    `SELECT id, name, COALESCE(base_currency, 'AED') AS base_currency,
+    `SELECT id, name, base_currency,
             COALESCE(fiscal_year_start_month, 1) AS fsm
        FROM companies WHERE id = $1`,
     [companyId]
@@ -70,6 +72,11 @@ export async function loadCompany(
     baseCurrency: rows[0].base_currency,
     fiscalYearStartMonth: Number(rows[0].fsm) || 1,
   };
+}
+
+/** The currency a company's statements are expressed in: its base (functional) currency. */
+export async function reportCurrencyOf(companyId: string, q: Queryable = pool): Promise<string> {
+  return baseCurrencyOf(await loadCompany(companyId, q));
 }
 
 export async function loadAccounts(
@@ -118,7 +125,8 @@ export async function accountTotals(
     `SELECT jl.account_id,
             COALESCE(SUM(ROUND(jl.debit * 100)), 0)::bigint AS d,
             COALESCE(SUM(ROUND(jl.credit * 100)), 0)::bigint AS c,
-            COALESCE(bool_or(COALESCE(jl.foreign_currency, '') NOT IN ('', 'AED')), false) AS f
+            COALESCE(bool_or(UPPER(COALESCE(jl.foreign_currency, '')) NOT IN
+              ('', (SELECT UPPER(c.base_currency) FROM companies c WHERE c.id = $1))), false) AS f
        FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
       WHERE je.company_id = $1

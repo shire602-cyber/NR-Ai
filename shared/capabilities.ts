@@ -319,12 +319,13 @@ const DEFS: readonly CapabilityDef[] = [
     id: "fx_rate_feed",
     label: { en: "Exchange-rate feed", ar: "تغذية أسعار الصرف" },
     externalAction: {
-      en: "Subscribe to an FX rate provider (e.g. CBUAE published rates) and set its URL/key.",
-      ar: "اشترك لدى مزود أسعار صرف (مثل أسعار المصرف المركزي) واضبط الرابط والمفتاح.",
+      en: "Set FX_RATE_FEED (cbuae, ecb or both) and the provider URLs (FX_RATE_FEED_CBUAE_URL, FX_RATE_FEED_ECB_URL) agreed with the rate provider.",
+      ar: "اضبط FX_RATE_FEED (cbuae أو ecb أو كلاهما) وروابط المزود (FX_RATE_FEED_CBUAE_URL و FX_RATE_FEED_ECB_URL) المتفق عليها مع مزود الأسعار.",
     },
-    envVars: ["FX_RATE_FEED_URL", "FX_RATE_API_KEY"],
-    whenUnconfigured: "disabled",
-    detect: (env) => (set(env, "FX_RATE_FEED_URL") ? "live" : null),
+    envVars: ["FX_RATE_FEED", "FX_RATE_FEED_CBUAE_URL", "FX_RATE_FEED_ECB_URL", "FX_RATE_API_KEY"],
+    // W5-C (R14-14): the adapters exist; a live feed needs the provider arrangement.
+    whenUnconfigured: "requires_external",
+    detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
   },
   {
     id: "antivirus",

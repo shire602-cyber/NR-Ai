@@ -29,6 +29,8 @@ import { importBankStatement, parseCSVBankStatement } from "../services/bank-imp
 import { createLogger } from "../config/logger";
 import { z } from "zod";
 import { zUuid } from "../../shared/validators/primitives";
+import { parseReportDate, uaeToday } from "../reporting";
+import { bankAccountBalances } from "../services/fx/bank-balances";
 
 const logger = createLogger("bank-routes");
 
@@ -56,6 +58,34 @@ const connectionLinkBody = z.object({ bankAccountId: zUuid }).strict();
 
 export function registerBankRoutes(app: Express) {
   registerBankFeedJobs();
+
+  // ─── Bank-account balances in account and base currency (W5-C, R14-16) ──
+
+  const balanceAsOf = (req: Request): string =>
+    parseReportDate(req.query.asOf, "asOf") ?? uaeToday();
+
+  app.get(
+    "/api/companies/:companyId/bank-accounts/currency-balances",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertAccess(req, companyId);
+      res.json(await bankAccountBalances(companyId, balanceAsOf(req)));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/bank-accounts/:accountId/currency-balance",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, accountId } = req.params;
+      await assertAccess(req, companyId);
+      const all = await bankAccountBalances(companyId, balanceAsOf(req));
+      const one = all.accounts.find((a) => a.bankAccountId === accountId);
+      if (!one) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
+      res.json({ asOf: all.asOf, ...one });
+    })
+  );
 
   // ─── Connections ───────────────────────────────────────────────────────
 

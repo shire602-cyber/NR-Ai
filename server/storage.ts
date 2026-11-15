@@ -292,7 +292,13 @@ import { allocatePayment, buildPaymentJournalLines } from "./services/invoice-li
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 import { createJournalEntryCompat, legacyLinesToInput } from "./ledger/legacy";
-import { postJournal, reverseBySource, withLedgerTx } from "./ledger";
+import {
+  isForeignCurrency,
+  loadBaseCurrency,
+  postJournal,
+  reverseBySource,
+  withLedgerTx,
+} from "./ledger";
 import { previewEntryNumber } from "./ledger/numbering";
 import { scopedDelete, scopedGet, scopedUpdate } from "./tenancy";
 
@@ -5386,8 +5392,9 @@ export class DatabaseStorage implements IStorage {
       // credit notes / part payments would otherwise leave a fils behind).
       let receivableCreditAedOverride: number | null = null;
       const settlesInFull = remainingD.minus(allocation.appliedToReceivable).abs().lte(0.005);
-      const isForeignInvoice =
-        !!lockedInvoice.currency && lockedInvoice.currency.toUpperCase() !== "AED";
+      // W5-C (R14-19): foreign means "not the company's functional currency".
+      const companyBase = await loadBaseCurrency(input.companyId, tx);
+      const isForeignInvoice = isForeignCurrency(lockedInvoice.currency, companyBase);
       if (settlesInFull && isForeignInvoice) {
         const residual: any = await tx.execute(sql`
           WITH docs AS (
@@ -5445,10 +5452,7 @@ export class DatabaseStorage implements IStorage {
       // W3-A: posted through the ledger kernel inside this transaction (exact
       // fils balance, account/period guards, in-transaction numbering). The
       // payment date is the journal date (R03-13).
-      const foreignCur =
-        lockedInvoice.currency && lockedInvoice.currency.toUpperCase() !== "AED"
-          ? lockedInvoice.currency.toUpperCase()
-          : null;
+      const foreignCur = isForeignInvoice ? lockedInvoice.currency.toUpperCase() : null;
       const { entry } = await postJournal(
         {
           companyId: input.companyId,
@@ -5460,6 +5464,9 @@ export class DatabaseStorage implements IStorage {
           allowFutureDate: true,
           lines: built.lines.map((l) => {
             const isAr = l.accountId === input.receivableAccountId && l.credit > 0;
+            // W5-C (R14-16): the cash leg carries the foreign amount received so a
+            // foreign-currency bank account reports its balance in its own currency.
+            const isCash = l.accountId === input.paymentAccountId && l.debit > 0;
             return {
               accountId: l.accountId,
               debit: l.debit > 0 ? l.debit.toFixed(2) : undefined,
@@ -5470,6 +5477,13 @@ export class DatabaseStorage implements IStorage {
                     foreignCurrency: foreignCur,
                     foreignCredit: new Decimal(allocation.appliedToReceivable).toFixed(2),
                     exchangeRate: String(invRate),
+                  }
+                : {}),
+              ...(foreignCur && isCash
+                ? {
+                    foreignCurrency: foreignCur,
+                    foreignDebit: amountD.toFixed(2),
+                    exchangeRate: String(payRate),
                   }
                 : {}),
             };

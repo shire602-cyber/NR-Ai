@@ -24,9 +24,21 @@ import { recordAudit } from "../services/audit.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import {
   buildExpenseClaimApprovalLines,
+  buildExpenseClaimFxPaymentLines,
   buildExpenseClaimPaymentLines,
 } from "../services/expense-claim-posting";
-import { defineMachine, postJournal, transitionRow, withLedgerTx, type LedgerTx } from "../ledger";
+import {
+  defineMachine,
+  documentCurrency,
+  loadBaseCurrency,
+  postJournal,
+  transitionRow,
+  withLedgerTx,
+  type LedgerTx,
+} from "../ledger";
+import { resolve } from "../platform/service-registry";
+import type { FxConvert } from "../services/fx";
+import { getFxAccounts } from "../services/invoice-posting.service";
 import { txRows } from "../services/bill-posting.service";
 import {
   nextDocNumber,
@@ -140,12 +152,13 @@ async function claimSettings(companyId: string) {
   };
 }
 
-/** Normalise items: rate-based mileage / per-diem, FX conversion to AED, VAT recoverability. */
+/** Normalise items: mileage / per-diem, FX conversion to the base currency, VAT recoverability. */
 async function prepareItems(
   companyId: string,
   items: ExpenseClaimItemInput[]
 ): Promise<PreparedItem[]> {
   const settings = await claimSettings(companyId);
+  const base = await loadBaseCurrency(companyId);
   const out: PreparedItem[] = [];
   for (const [i, item] of items.entries()) {
     const type = item.item_type ?? "expense";
@@ -170,11 +183,11 @@ async function prepareItems(
       );
     }
     const vatFils = type === "expense" ? (item.vat_amount ?? 0) : 0;
-    const currency = (item.currency ?? "AED").toUpperCase();
+    const currency = documentCurrency(item.currency, base);
     let rate: string | null = null;
     let netAed = netFils;
     let vatAed = vatFils;
-    if (currency !== "AED") {
+    if (currency !== base) {
       rate = await resolveDocRate(
         companyId,
         currency,
@@ -194,8 +207,8 @@ async function prepareItems(
       unit_rate: unitRate,
       amount: fromFils(netAed),
       vat_amount: fromFils(vatAed),
-      original_currency: currency !== "AED" ? currency : null,
-      original_amount: currency !== "AED" ? fromFils(netFils + vatFils) : null,
+      original_currency: currency !== base ? currency : null,
+      original_amount: currency !== base ? fromFils(netFils + vatFils) : null,
       exchange_rate: rate,
       supplier_trn: item.supplier_trn ?? null,
       has_tax_invoice: hasTaxInvoice,
@@ -413,7 +426,7 @@ export function registerExpenseClaimRoutes(app: Express) {
         const rows = await txRows<ClaimRow>(
           tx,
           `INSERT INTO expense_claims (company_id, submitted_by, claim_number, title, description, total_amount, currency, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'AED', 'draft') RETURNING *`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft') RETURNING *`,
           [
             companyId,
             req.user!.id,
@@ -421,6 +434,7 @@ export function registerExpenseClaimRoutes(app: Express) {
             body.title,
             body.description ?? null,
             fromFils(total),
+            await loadBaseCurrency(companyId),
           ]
         );
         await insertItems(tx, rows[0].id, items);
@@ -783,6 +797,63 @@ export function registerExpenseClaimRoutes(app: Express) {
           { machine: claimMachine, where: eq(expenseClaimsTable.companyId, claim.company_id) }
         );
         if (!row) throw new DomainError("CLAIM_NOT_APPROVED", 409);
+        const claimNumber = claim.claim_number || claim.id.slice(0, 8);
+        // W5-C (R14-16): a single-currency foreign claim paid from a bank account in that
+        // currency settles at the payment-date rate (fx) with realised FX.
+        const fxItems = await txRows<{
+          original_currency: string | null;
+          original_amount: string | null;
+        }>(
+          tx,
+          `SELECT original_currency, original_amount FROM expense_claim_items WHERE claim_id = $1`,
+          [claim.id]
+        );
+        const claimCurrencies = new Set(fxItems.map((i) => i.original_currency));
+        const foreignCur =
+          fxItems.length > 0 && claimCurrencies.size === 1 ? [...claimCurrencies][0] : null;
+        const bankCur = foreignCur
+          ? (
+              await txRows<{ currency: string }>(
+                tx,
+                `SELECT UPPER(currency) AS currency FROM bank_accounts
+                  WHERE company_id = $1 AND gl_account_id = $2 AND is_active = true LIMIT 1`,
+                [claim.company_id, cash.id]
+              )
+            )[0]?.currency
+          : null;
+        let paymentLines: ReturnType<typeof buildExpenseClaimPaymentLines> =
+          buildExpenseClaimPaymentLines({
+            payableAccountId: payable.id,
+            paymentAccountId: cash.id,
+            amountFils,
+            claimNumber,
+          });
+        if (foreignCur && bankCur === foreignCur.toUpperCase()) {
+          const foreignFils = sumFils(
+            fxItems.map((i) => toFils(String(i.original_amount ?? 0), { rounding: "halfUp" }))
+          );
+          const base = await loadBaseCurrency(claim.company_id, tx);
+          const conv = await resolve<FxConvert>("fx.convert")(
+            claim.company_id,
+            foreignFils,
+            foreignCur,
+            base,
+            paymentDate
+          );
+          const fxAcc = await getFxAccounts(tx, claim.company_id);
+          paymentLines = buildExpenseClaimFxPaymentLines({
+            payableAccountId: payable.id,
+            paymentAccountId: cash.id,
+            accruedFils: amountFils,
+            foreignCurrency: foreignCur.toUpperCase(),
+            foreignFils,
+            paymentRate: conv.rateText,
+            cashBaseFils: conv.convertedFils,
+            fxGainAccountId: fxAcc.gain,
+            fxLossAccountId: fxAcc.loss,
+            claimNumber,
+          });
+        }
         const { entry } = await postJournal(
           {
             companyId: claim.company_id,
@@ -794,12 +865,7 @@ export function registerExpenseClaimRoutes(app: Express) {
             idempotencyKey: `expense_claim:${claim.id}:paid`,
             reference: body.payment_reference ?? claim.claim_number,
             allowFutureDate: true,
-            lines: buildExpenseClaimPaymentLines({
-              payableAccountId: payable.id,
-              paymentAccountId: cash.id,
-              amountFils,
-              claimNumber: claim.claim_number || claim.id.slice(0, 8),
-            }),
+            lines: paymentLines,
           },
           { actorId: req.user!.id, tx }
         );

@@ -32,8 +32,8 @@ import { registerJob, listJobs } from "../platform/job-registry";
 import type { FxGetRate } from "./fx";
 import { recordAudit } from "./audit.service";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { documentCurrency, isForeignCurrency, loadBaseCurrency } from "../ledger";
 import {
-  BASE_CURRENCY,
   BILL_PAYMENT_JE_SOURCE,
   PAYABLE_BILL_STATES,
   VENDOR_ADVANCES_CODE,
@@ -70,18 +70,22 @@ const log = createLogger("bill-payment");
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Rate (document currency → AED) as a 6dp-safe string: given, else fx.getRate (tenant-scoped). */
+/**
+ * Rate (document currency → company base currency) as a 6dp-safe string: "1" in the base
+ * currency (W5-C), else given, else fx.getRate (tenant-scoped).
+ */
 export async function resolveDocRate(
   companyId: string,
   currency: string | null | undefined,
   dateIso: string,
   given?: string | null
 ): Promise<string> {
-  const cur = (currency || BASE_CURRENCY).toUpperCase();
-  if (cur === BASE_CURRENCY) return "1";
+  const base = await loadBaseCurrency(companyId);
+  const cur = documentCurrency(currency, base);
+  if (cur === base) return "1";
   if (given) return given;
   const getRate = resolve<FxGetRate>("fx.getRate");
-  const r = await getRate(companyId, cur, BASE_CURRENCY, dateIso);
+  const r = await getRate(companyId, cur, base, dateIso);
   return r.rateText;
 }
 
@@ -179,8 +183,9 @@ async function settledApBaseFils(tx: LedgerTx, bill: BillRow): Promise<number> {
     `SELECT amount, ap_amount_base FROM bill_payments WHERE bill_id = $1`,
     [bill.id]
   );
-  const rate = rateTextOf(bill);
-  const foreign = isForeign(bill);
+  const base = await loadBaseCurrency(String(bill.company_id), tx);
+  const rate = rateTextOf(bill, base);
+  const foreign = isForeign(bill, base);
   return sumFils(
     rows.map((r) => {
       if (r.ap_amount_base !== null && r.ap_amount_base !== undefined)
@@ -288,7 +293,11 @@ async function prepareBill(
   if (input.recoverable_vat_percent !== undefined)
     header.recoverable_vat_percent = input.recoverable_vat_percent;
 
-  const currency = String(get("currency", existing?.currency ?? BASE_CURRENCY)).toUpperCase();
+  const companyBase = await loadBaseCurrency(companyId);
+  const currency = documentCurrency(
+    String(get("currency", existing?.currency ?? companyBase)),
+    companyBase
+  );
   const reverseCharge = get("reverse_charge", existing?.reverse_charge ?? false) === true;
   const isImport = get("is_import", existing?.is_import ?? false) === true;
   if (
@@ -299,7 +308,7 @@ async function prepareBill(
   ) {
     const given =
       input.exchange_rate ??
-      (input.currency === undefined && existing && isForeign(existing)
+      (input.currency === undefined && existing && isForeign(existing, companyBase)
         ? String(existing.exchange_rate)
         : null);
     header.currency = currency;
@@ -694,13 +703,14 @@ export async function recordBillPayment(
   }
   const cash = await resolvePaymentAccount(companyId, args.paymentAccountId, args.method);
   const ap = await requireApAccount(companyId);
-  const foreign = isForeign(billPre);
-  const billRate = rateTextOf(billPre);
+  const companyBase = await loadBaseCurrency(companyId);
+  const foreign = isForeign(billPre, companyBase);
+  const billRate = rateTextOf(billPre, companyBase);
   const payRate = foreign
     ? await resolveDocRate(companyId, billPre.currency, args.date, args.exchangeRate ?? null)
     : "1";
   const fx = foreign ? await fxAccounts(companyId) : null;
-  const currency = (billPre.currency || BASE_CURRENCY).toUpperCase();
+  const currency = documentCurrency(billPre.currency, companyBase);
 
   let paidEvent = false;
   const result = await withLedgerTx(async (tx, { afterCommit }) => {
@@ -952,8 +962,9 @@ export async function createPrepayment(args: {
   });
   if (!vendor?.vendorName)
     throw new DomainError("VENDOR_REQUIRED", 400, undefined, "Vendor is required");
-  const currency = (input.currency || BASE_CURRENCY).toUpperCase();
-  const foreign = currency !== BASE_CURRENCY;
+  const companyBase = await loadBaseCurrency(companyId);
+  const currency = documentCurrency(input.currency, companyBase);
+  const foreign = isForeignCurrency(currency, companyBase);
   const rate = await resolveDocRate(
     companyId,
     currency,
@@ -1040,7 +1051,8 @@ export async function applyPrepayment(args: {
     if (!PAYABLE_BILL_STATES.includes(String(bill.status) as BillState)) {
       throw new DomainError("BILL_NOT_PAYABLE", 409, { status: bill.status });
     }
-    if ((bill.currency || BASE_CURRENCY).toUpperCase() !== pre.currency) {
+    const companyBase = await loadBaseCurrency(companyId, tx);
+    if (documentCurrency(bill.currency, companyBase) !== pre.currency) {
       throw new DomainError(
         "CURRENCY_MISMATCH",
         409,
@@ -1054,12 +1066,12 @@ export async function applyPrepayment(args: {
       throw new DomainError("PREPAYMENT_INSUFFICIENT", 400, { available: fromFils(available) });
     if (input.amount > remaining)
       throw new DomainError("OVERPAYMENT", 400, { remaining: fromFils(remaining) });
-    const foreign = isForeign(bill);
+    const foreign = isForeign(bill, companyBase);
     const apBase =
       input.amount === remaining
         ? (await currentBillApCreditFils(tx, companyId, bill.id)) -
           (await settledApBaseFils(tx, bill))
-        : toBase(input.amount, rateTextOf(bill), foreign);
+        : toBase(input.amount, rateTextOf(bill, companyBase), foreign);
     const advBase = toBase(input.amount, pre.exchange_rate, foreign);
     const fxDiff = advBase - apBase;
     const ins = await txRows<{ id: string }>(
@@ -1152,8 +1164,9 @@ export async function createDebitNote(args: {
   const vendor = await resolveVendor(companyId, { vendor_id: vendorId, vendor_name: vendorName });
   if (!vendor?.vendorName)
     throw new DomainError("VENDOR_REQUIRED", 400, undefined, "Vendor is required");
-  const currency = (input.currency || BASE_CURRENCY).toUpperCase();
-  const foreign = currency !== BASE_CURRENCY;
+  const companyBase = await loadBaseCurrency(companyId);
+  const currency = documentCurrency(input.currency, companyBase);
+  const foreign = isForeignCurrency(currency, companyBase);
   const rate = await resolveDocRate(
     companyId,
     currency,
@@ -1267,7 +1280,8 @@ export async function applyDebitNote(args: {
     if (!PAYABLE_BILL_STATES.includes(String(bill.status) as BillState)) {
       throw new DomainError("BILL_NOT_PAYABLE", 409, { status: bill.status });
     }
-    if ((bill.currency || BASE_CURRENCY).toUpperCase() !== note.currency) {
+    const companyBase = await loadBaseCurrency(companyId, tx);
+    if (documentCurrency(bill.currency, companyBase) !== note.currency) {
       throw new DomainError(
         "CURRENCY_MISMATCH",
         409,
@@ -1281,12 +1295,12 @@ export async function applyDebitNote(args: {
       throw new DomainError("CREDIT_INSUFFICIENT", 400, { available: fromFils(available) });
     if (input.amount > remaining)
       throw new DomainError("OVERPAYMENT", 400, { remaining: fromFils(remaining) });
-    const foreign = isForeign(bill);
+    const foreign = isForeign(bill, companyBase);
     const apBase =
       input.amount === remaining
         ? (await currentBillApCreditFils(tx, companyId, bill.id)) -
           (await settledApBaseFils(tx, bill))
-        : toBase(input.amount, rateTextOf(bill), foreign);
+        : toBase(input.amount, rateTextOf(bill, companyBase), foreign);
     const noteBase = toBase(input.amount, note.exchange_rate, foreign);
     const fxDiff = noteBase - apBase; // A/P was debited noteBase at issue; the bill needs apBase
     const ins = await txRows<{ id: string }>(
@@ -1378,6 +1392,7 @@ export async function batchPaymentCsv(companyId: string, billIds: string[]) {
     "amount_due",
   ];
   const lines = [header.join(",")];
+  const companyBase = await loadBaseCurrency(companyId);
   const skipped: Array<{ billId: string; reason: string }> = [];
   const found = r.rows as Array<Record<string, string | null>>;
   for (const row of found) {
@@ -1396,7 +1411,7 @@ export async function batchPaymentCsv(companyId: string, billIds: string[]) {
         row.iban,
         row.bank_name,
         row.due_date ? new Date(row.due_date).toISOString().slice(0, 10) : "",
-        row.currency || BASE_CURRENCY,
+        documentCurrency(row.currency, companyBase),
         fromFils(due),
       ]
         .map(csvCell)
