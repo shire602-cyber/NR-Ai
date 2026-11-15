@@ -1,4 +1,14 @@
 import { T } from "@/components/layout/T";
+import { GroupConsolidationPanel } from "./reports/GroupConsolidation";
+import { DeliveryRunFiles } from "./reports/DeliveryRunFiles";
+import {
+  BalanceCheck,
+  DataBasisBadge,
+  ProfitLossSections,
+  StatementDownloads,
+  StatementsQuickPanel,
+  type PlSectionsPayload,
+} from "./reports/StatementParts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -75,6 +85,8 @@ import {
   type ReportCatalogDiscovery,
 } from "@/lib/reportCatalogApi";
 import {
+  reportCatalogDataBasis,
+  reportComparisonMetricBasis,
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
   reportAutomationStarterHref,
@@ -185,9 +197,10 @@ interface AccountLineItem {
   amount: number;
 }
 
-interface ProfitLossReport {
+interface ProfitLossReport extends PlSectionsPayload {
   revenue: AccountLineItem[];
   expenses: AccountLineItem[];
+  /** Legacy: total income (operating revenue + other income). */
   totalRevenue: number;
   totalExpenses: number;
   netProfit: number;
@@ -225,6 +238,9 @@ interface BalanceSheetReport {
   totalAssets: number;
   totalLiabilities: number;
   totalEquity: number;
+  /** Kernel balance check (W2-B): assets = liabilities + equity. */
+  isBalanced?: boolean;
+  difference?: number;
 }
 
 interface ConsolidatedCompanyStatementSource {
@@ -322,6 +338,12 @@ interface ReportDeliveryRunSummary {
   triggerRuleCount: number;
   retriedFromRunId: string | null;
   errorMessage: string | null;
+  /** W5-A: blocked runs say why (no_email_provider | no_recipients | handoff_review). */
+  blockedReason?: string | null;
+  artifactCount?: number;
+  recipientAddresses?: string[];
+  sentAt?: string | null;
+  retryScheduledAt?: string | null;
   createdAt: string;
 }
 
@@ -850,12 +872,15 @@ interface VarianceLine {
   category: string;
   description: string | null;
   accountId: string | null;
+  /** W3-E: variance is signed by account type (positive = favourable). */
+  accountType?: string | null;
   months: Record<string, VarianceMonth>;
   totals: {
     budget: number;
     actual: number;
     variance: number;
     variancePercent: number;
+    favourable?: boolean;
   };
 }
 
@@ -1226,12 +1251,13 @@ const reportViewerCategoryLabels: Record<string, string> = {
   "Management & Planning": "Management & Planning",
 };
 
+// R18-10: statements and tax first for an SMB owner.
 const reportViewerCategoryOrder = [
   "Financial Statements",
+  "Accountant & Taxes",
   "Sales & Receivables",
   "Purchases & Payables",
   "Payroll",
-  "Accountant & Taxes",
   "Inventory & Assets",
   "Management & Planning",
 ] as const;
@@ -2376,6 +2402,11 @@ function comparisonBadgeVariant(row: ComparisonMetricRow): BadgeProps["variant"]
   return improved ? "success" : "warning";
 }
 
+/** A spend (non-income) line whose actual exceeds its budget (R13 / W3-E sign convention). */
+export function isOverBudgetLine(line: Pick<VarianceLine, "accountType" | "totals">): boolean {
+  return line.accountType !== "income" && line.totals.actual > line.totals.budget;
+}
+
 function makeComparisonMetric(
   input: Omit<ComparisonMetricRow, "delta" | "percentChange">
 ): ComparisonMetricRow {
@@ -2402,6 +2433,7 @@ function formatDeliveryRunTimestamp(value: string | null | undefined): string {
 function deliveryRunStatusVariant(status: string): BadgeProps["variant"] {
   if (status === "sent") return "success";
   if (status === "failed" || status === "cancelled") return "destructive";
+  if (status === "blocked") return "warning";
   return "info";
 }
 
@@ -8230,7 +8262,9 @@ export default function Reports() {
     const actualTotal = varianceLines.reduce((sum, line) => sum + line.totals.actual, 0);
     const variance = budgetTotal - actualTotal;
     const variancePercent = budgetTotal !== 0 ? (variance / budgetTotal) * 100 : 0;
-    const overBudgetLines = varianceLines.filter((line) => line.totals.variance < 0).length;
+    // W3-E: variance is "positive = favourable" by account type, so a negative income
+    // variance is under target, not over budget. Over budget = spend above its budget.
+    const overBudgetLines = varianceLines.filter(isOverBudgetLine).length;
     const largestVarianceLines = [...varianceLines].sort(
       (a, b) => Math.abs(b.totals.variance) - Math.abs(a.totals.variance)
     );
@@ -11874,14 +11908,14 @@ export default function Reports() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Export to Excel
+                  <T k="reportCenter.exportToExcel" />
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
                   data-testid="menu-export-sheets"
                 >
                   <SiGooglesheets className="w-4 h-4 mr-2" />
-                  Export to Google Sheets
+                  <T k="reportCenter.exportToGoogleSheets" />
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -11907,7 +11941,7 @@ export default function Reports() {
                   >
                     <Link href={backToReportsHref}>
                       <ArrowLeft className="h-3.5 w-3.5" />
-                      Back to reports
+                      <T k="reportCenter.backToReports" />
                     </Link>
                   </Button>
                 ) : null}
@@ -12004,7 +12038,7 @@ export default function Reports() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h2 id="role-focus-title" className="text-xl font-semibold">
-                  Role focus
+                  <T k="reportCenter.roleFocus" />
                 </h2>
                 <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
               </div>
@@ -12036,7 +12070,7 @@ export default function Reports() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Saved reporting context
+                    <T k="reportCenter.savedReportingContext" />
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Badge variant="info" data-testid="reports-workflow-context-role">
@@ -12049,7 +12083,9 @@ export default function Reports() {
                         </span>
                       </Badge>
                     ) : (
-                      <Badge variant="outline">No saved search</Badge>
+                      <Badge variant="outline">
+                        <T k="reportCenter.noSavedSearch" />
+                      </Badge>
                     )}
                     {activeReportWorkflowGapFilterLabel ? (
                       <Badge variant="outline" data-testid="reports-workflow-context-gap">
@@ -12058,7 +12094,9 @@ export default function Reports() {
                         </span>
                       </Badge>
                     ) : (
-                      <Badge variant="outline">No gap filter</Badge>
+                      <Badge variant="outline">
+                        <T k="reportCenter.noGapFilter" />
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -12069,7 +12107,7 @@ export default function Reports() {
                         href={reportWorkflowContextShareHref}
                         data-testid="button-open-report-workflow-context-link"
                       >
-                        Open share link
+                        <T k="reportCenter.openShareLink" />
                         <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
@@ -12081,7 +12119,7 @@ export default function Reports() {
                       data-testid="button-reset-report-workflow-context"
                     >
                       <X className="h-3.5 w-3.5" />
-                      Reset context
+                      <T k="reportCenter.resetContext" />
                     </Button>
                   </div>
                 ) : null}
@@ -12122,7 +12160,7 @@ export default function Reports() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <CardTitle id="reports-home-title" className="text-xl">
-                      Reporting command center
+                      <T k="reportCenter.reportingCommandCenter" />
                     </CardTitle>
                     <CardDescription>{personaScopeDescription}</CardDescription>
                   </div>
@@ -12140,21 +12178,29 @@ export default function Reports() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Ready reports</div>
+                    <div className="text-xs text-muted-foreground">
+                      <T k="reportCenter.readyReports" />
+                    </div>
                     <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.ready}</div>
                   </div>
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Live reports</div>
+                    <div className="text-xs text-muted-foreground">
+                      <T k="reportCenter.liveReports" />
+                    </div>
                     <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.live}</div>
                   </div>
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Automations</div>
+                    <div className="text-xs text-muted-foreground">
+                      <T k="reportCenter.automations" />
+                    </div>
                     <div className="mt-1 font-mono text-2xl font-semibold">
                       {reportStats.automationStarters}
                     </div>
                   </div>
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Open queue</div>
+                    <div className="text-xs text-muted-foreground">
+                      <T k="reportCenter.openQueue" />
+                    </div>
                     <div className="mt-1 font-mono text-2xl font-semibold">
                       {automationQueueCount}
                     </div>
@@ -12178,7 +12224,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("reports")}
                     data-testid="button-report-home-search-open"
                   >
-                    Search library
+                    <T k="reportCenter.searchLibrary" />
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -12191,7 +12237,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("reports")}
                   >
                     <FileText className="h-4 w-4" />
-                    Reports
+                    <T k="reportCenter.reports" />
                   </Button>
                   <Button
                     type="button"
@@ -12200,7 +12246,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("comparisons")}
                   >
                     <BarChart3 className="h-4 w-4" />
-                    Compare
+                    <T k="reportCenter.compare" />
                   </Button>
                   <Button
                     type="button"
@@ -12209,7 +12255,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("automation")}
                   >
                     <Sparkles className="h-4 w-4" />
-                    Automate
+                    <T k="reportCenter.automate" />
                   </Button>
                   <Button
                     type="button"
@@ -12218,7 +12264,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("delivery")}
                   >
                     <Send className="h-4 w-4" />
-                    Delivery
+                    <T k="reportCenter.delivery" />
                   </Button>
                 </div>
               </CardContent>
@@ -12228,7 +12274,9 @@ export default function Reports() {
               <CardHeader className="space-y-3 pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">Next automation</CardTitle>
+                    <CardTitle className="text-base">
+                      <T k="reportCenter.nextAutomation" />
+                    </CardTitle>
                     <CardDescription>
                       {reportHomeAutomationOperation?.workspace.title ?? personaFilterLabel}
                     </CardDescription>
@@ -12247,13 +12295,17 @@ export default function Reports() {
                   <>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Health</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.health" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {reportHomeAutomationOperation.automationScore}/100
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">At risk</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.atRisk" />
+                        </div>
                         <div className="mt-1 truncate font-mono text-sm font-semibold">
                           {formatCurrency(
                             reportHomeAutomationOperation.amountAtRisk,
@@ -12273,13 +12325,13 @@ export default function Reports() {
                     </div>
                     <Button asChild size="sm" variant="outline">
                       <Link href={reportHomeAutomationOperation.nextAction.href}>
-                        Open action <ArrowRight className="h-3.5 w-3.5" />
+                        <T k="reportCenter.openAction" /> <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    Select a role to show the next automation action.
+                    <T k="reportCenter.selectARoleToShowTheNext" />
                   </div>
                 )}
               </CardContent>
@@ -12289,7 +12341,9 @@ export default function Reports() {
           <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-xl font-semibold">Top reports</h2>
+                <h2 className="text-xl font-semibold">
+                  <T k="reportCenter.topReports" />
+                </h2>
                 <p className="text-sm text-muted-foreground">
                   {personaFilterLabel} shortcuts from the active quick-access profile.
                 </p>
@@ -12300,7 +12354,7 @@ export default function Reports() {
                 variant="outline"
                 onClick={() => setReportWorkspaceTab("reports")}
               >
-                All reports
+                <T k="reportCenter.allReports" />
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -12332,16 +12386,22 @@ export default function Reports() {
                             <Link href={href}>Open</Link>
                           </Button>
                           <Button asChild size="sm" variant="outline">
-                            <Link href={workflowHref}>Automate</Link>
+                            <Link href={workflowHref}>
+                              <T k="reportCenter.automate" />
+                            </Link>
                           </Button>
                           {comparisonHref ? (
                             <Button asChild size="sm" variant="ghost">
-                              <Link href={comparisonHref}>Compare</Link>
+                              <Link href={comparisonHref}>
+                                <T k="reportCenter.compare" />
+                              </Link>
                             </Button>
                           ) : null}
                           {deliveryHref ? (
                             <Button asChild size="sm" variant="ghost">
-                              <Link href={deliveryHref}>Schedule</Link>
+                              <Link href={deliveryHref}>
+                                <T k="reportCenter.schedule" />
+                              </Link>
                             </Button>
                           ) : null}
                         </div>
@@ -12352,7 +12412,7 @@ export default function Reports() {
               </div>
             ) : (
               <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                No quick-access reports match the current filters.
+                <T k="reportCenter.noQuickAccessReportsMatchTheCurrent" />
               </div>
             )}
           </div>
@@ -12362,8 +12422,12 @@ export default function Reports() {
               <CardHeader className="space-y-2 pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">Suites</CardTitle>
-                    <CardDescription>Report packs ready for recurring review.</CardDescription>
+                    <CardTitle className="text-base">
+                      <T k="reportCenter.suites" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="reportCenter.reportPacksReadyForRecurringReview" />
+                    </CardDescription>
                   </div>
                   <Button
                     type="button"
@@ -12371,7 +12435,7 @@ export default function Reports() {
                     variant="outline"
                     onClick={() => setReportWorkspaceTab("suites")}
                   >
-                    Open suites
+                    <T k="reportCenter.openSuites" />
                   </Button>
                 </div>
               </CardHeader>
@@ -12400,8 +12464,12 @@ export default function Reports() {
               <CardHeader className="space-y-2 pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">Saved views</CardTitle>
-                    <CardDescription>Reusable filters and comparison presets.</CardDescription>
+                    <CardTitle className="text-base">
+                      <T k="reportCenter.savedViews" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="reportCenter.reusableFiltersAndComparisonPresets" />
+                    </CardDescription>
                   </div>
                   <Button
                     type="button"
@@ -12409,7 +12477,7 @@ export default function Reports() {
                     variant="outline"
                     onClick={() => setReportWorkspaceTab("reports")}
                   >
-                    Open views
+                    <T k="reportCenter.openViews" />
                   </Button>
                 </div>
               </CardHeader>
@@ -12432,7 +12500,7 @@ export default function Reports() {
                   ))
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    No saved views match the current filters.
+                    <T k="reportCenter.noSavedViewsMatchTheCurrentFilters" />
                   </div>
                 )}
               </CardContent>
@@ -12448,7 +12516,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-suites-title" className="text-xl font-semibold">
-              Report suites
+              <T k="reportCenter.reportSuites" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Role-based bundles that combine reports, comparisons, saved views, packs, and
@@ -12512,7 +12580,9 @@ export default function Reports() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Comparison</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.comparison" />
+                      </div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.comparisonPreset.title}
                       </div>
@@ -12524,25 +12594,33 @@ export default function Reports() {
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Automation</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.automation" />
+                      </div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.automationStarter.setupTime}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Trigger rules</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.triggerRules" />
+                      </div>
                       <div className="mt-1 font-mono font-medium text-foreground">
                         {suite.triggerRules.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Delivery</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.delivery" />
+                      </div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.deliverySubscription.channel}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Saved views</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.savedViews" />
+                      </div>
                       <div className="mt-1 font-mono font-medium text-foreground">
                         {suite.savedViews.length}
                       </div>
@@ -12555,7 +12633,9 @@ export default function Reports() {
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <div className="font-medium text-foreground">Delivery readiness</div>
+                        <div className="font-medium text-foreground">
+                          <T k="reportCenter.deliveryReadiness" />
+                        </div>
                         <div className="mt-1 text-muted-foreground">
                           {suiteDeliverySubscription
                             ? `${suiteDeliverySubscription.channel} · ${
@@ -12592,7 +12672,7 @@ export default function Reports() {
                     <Button asChild size="sm" variant="outline" className="justify-start">
                       <Link href={suite.comparisonHref}>
                         <BarChart3 className="h-3.5 w-3.5" />
-                        Compare
+                        <T k="reportCenter.compare" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline" className="justify-start">
@@ -12604,13 +12684,13 @@ export default function Reports() {
                     <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
                       <Link href={suite.automationHref}>
                         <Sparkles className="h-3.5 w-3.5" />
-                        Autopilot
+                        <T k="reportCenter.autopilot" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
                       <Link href={suite.deliveryHref}>
                         <Send className="h-3.5 w-3.5" />
-                        Delivery
+                        <T k="reportCenter.delivery" />
                       </Link>
                     </Button>
                     <Button
@@ -12649,7 +12729,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-management-briefs-title" className="text-xl font-semibold">
-              Management pack briefs
+              <T k="reportCenter.managementPackBriefs" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Advisory-ready KPI, narrative, dimensional, and delivery context for each role.{" "}
@@ -12701,13 +12781,17 @@ export default function Reports() {
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Narratives</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.narratives" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {brief.narrativeSections.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Dimensions</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.dimensions" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {brief.dimensionBreakdowns.length}
                       </div>
@@ -12716,7 +12800,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      KPI widgets
+                      <T k="reportCenter.kpiWidgets" />
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {brief.kpiWidgets.map((widget) => (
@@ -12737,7 +12821,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Narrative sections
+                      <T k="reportCenter.narrativeSections" />
                     </div>
                     {brief.narrativeSections.map((section) => (
                       <div
@@ -12761,7 +12845,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Dimensional lenses
+                      <T k="reportCenter.dimensionalLenses" />
                     </div>
                     <div className="grid gap-2">
                       {brief.dimensionBreakdowns.map((dimension) => (
@@ -12792,14 +12876,18 @@ export default function Reports() {
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
                       <Link href={brief.href}>
-                        Open brief <ArrowRight className="h-3.5 w-3.5" />
+                        <T k="reportCenter.openBrief" /> <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={brief.suiteHref}>Open suite</Link>
+                      <Link href={brief.suiteHref}>
+                        <T k="reportCenter.openSuite" />
+                      </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={brief.deliveryHref}>Open delivery</Link>
+                      <Link href={brief.deliveryHref}>
+                        <T k="reportCenter.openDelivery" />
+                      </Link>
                     </Button>
                   </div>
                 </CardContent>
@@ -12816,7 +12904,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-quick-access-title" className="text-xl font-semibold">
-              Quick access reports
+              <T k="reportCenter.quickAccessReports" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Role-specific launch boards for the reports, comparison, autopilot, and delivery pack
@@ -12885,7 +12973,7 @@ export default function Reports() {
                                 href={workflowHref}
                                 data-testid={`report-quick-access-report-automation-${report.id}`}
                               >
-                                Automate
+                                <T k="reportCenter.automate" />
                               </Link>
                             </Button>
                             {comparisonHref ? (
@@ -12894,7 +12982,7 @@ export default function Reports() {
                                   href={comparisonHref}
                                   data-testid={`report-quick-access-report-comparison-${report.id}`}
                                 >
-                                  Compare
+                                  <T k="reportCenter.compare" />
                                 </Link>
                               </Button>
                             ) : null}
@@ -12904,7 +12992,7 @@ export default function Reports() {
                                   href={deliveryHref}
                                   data-testid={`report-quick-access-report-delivery-${report.id}`}
                                 >
-                                  Schedule
+                                  <T k="reportCenter.schedule" />
                                 </Link>
                               </Button>
                             ) : null}
@@ -12920,7 +13008,7 @@ export default function Reports() {
                       data-testid={`report-quick-access-more-${profile.persona}`}
                     >
                       <div className="text-[11px] font-semibold uppercase text-muted-foreground">
-                        More reports
+                        <T k="reportCenter.moreReports" />
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {profile.additionalReports.map(({ report, href }) => (
@@ -12944,19 +13032,19 @@ export default function Reports() {
                     <Button asChild size="sm" variant="outline" className="h-auto justify-start">
                       <Link href={profile.comparisonHref}>
                         <BarChart3 className="h-3.5 w-3.5" />
-                        Comparison
+                        <T k="reportCenter.comparison" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline" className="h-auto justify-start">
                       <Link href={profile.automationHref}>
                         <Sparkles className="h-3.5 w-3.5" />
-                        Autopilot
+                        <T k="reportCenter.autopilot" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline" className="h-auto justify-start">
                       <Link href={profile.deliveryHref}>
                         <Send className="h-3.5 w-3.5" />
-                        Delivery
+                        <T k="reportCenter.delivery" />
                       </Link>
                     </Button>
                   </div>
@@ -12974,7 +13062,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-saved-views-title" className="text-xl font-semibold">
-              Saved report views
+              <T k="reportCenter.savedReportViews" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Prebuilt report-view presets with date range, comparison period, basis, currency,
@@ -13028,17 +13116,21 @@ export default function Reports() {
 
                 <div className="flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="outline">
-                    <Link href={view.reportHref}>Open report</Link>
+                    <Link href={view.reportHref}>
+                      <T k="reportCenter.openReport" />
+                    </Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
-                    <Link href={view.comparisonHref}>Open comparison</Link>
+                    <Link href={view.comparisonHref}>
+                      <T k="reportCenter.openComparison" />
+                    </Link>
                   </Button>
                   <Button asChild size="sm" variant="ghost" className="text-accent">
                     <Link
                       href={view.workflowHref}
                       data-testid={`report-saved-view-automation-${view.id}`}
                     >
-                      Open automation <ArrowRight className="h-3.5 w-3.5" />
+                      <T k="reportCenter.openAutomation" /> <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </Button>
                 </div>
@@ -13056,7 +13148,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-accountant-handoff-title" className="text-xl font-semibold">
-              Accountant handoff
+              <T k="reportCenter.accountantHandoff" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Share role-specific report context, readiness status, and the next automation action
@@ -13092,19 +13184,25 @@ export default function Reports() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div className="rounded-md border p-2">
-                    <div className="text-muted-foreground">Reports</div>
+                    <div className="text-muted-foreground">
+                      <T k="reportCenter.reports" />
+                    </div>
                     <div className="mt-1 font-mono font-semibold text-foreground">
                       {item.readyReportCount}/{item.reportCount}
                     </div>
                   </div>
                   <div className="rounded-md border p-2">
-                    <div className="text-muted-foreground">Rules</div>
+                    <div className="text-muted-foreground">
+                      <T k="reportCenter.rules" />
+                    </div>
                     <div className="mt-1 font-mono font-semibold text-foreground">
                       {item.readyRuleCount}/{item.automationRuleCount}
                     </div>
                   </div>
                   <div className="rounded-md border p-2">
-                    <div className="text-muted-foreground">Delivery</div>
+                    <div className="text-muted-foreground">
+                      <T k="reportCenter.delivery" />
+                    </div>
                     <div className="mt-1 font-mono font-semibold text-foreground">
                       {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                     </div>
@@ -13131,7 +13229,7 @@ export default function Reports() {
                       href={item.shareHref}
                       data-testid={`report-accountant-handoff-share-${item.workspace.persona}`}
                     >
-                      Open shared view
+                      <T k="reportCenter.openSharedView" />
                     </Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
@@ -13166,7 +13264,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-workflow-readiness-title" className="text-xl font-semibold">
-              Automation readiness
+              <T k="reportCenter.automationReadiness" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Role-specific coverage gaps before report packs, alerts, and delivery automations run.
@@ -13202,19 +13300,25 @@ export default function Reports() {
 
               <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                 <div className="rounded-md bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Score</div>
+                  <div className="text-muted-foreground">
+                    <T k="reportCenter.score" />
+                  </div>
                   <div className="mt-1 font-mono text-base font-semibold">
                     {item.automationScore}%
                   </div>
                 </div>
                 <div className="rounded-md bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Rules</div>
+                  <div className="text-muted-foreground">
+                    <T k="reportCenter.rules" />
+                  </div>
                   <div className="mt-1 font-mono text-base font-semibold">
                     {item.readyRuleCount}/{item.automationRuleCount}
                   </div>
                 </div>
                 <div className="rounded-md bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Delivery</div>
+                  <div className="text-muted-foreground">
+                    <T k="reportCenter.delivery" />
+                  </div>
                   <div className="mt-1 font-mono text-base font-semibold">
                     {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                   </div>
@@ -13249,7 +13353,7 @@ export default function Reports() {
                   }
                   data-testid={`report-workflow-filter-report-gaps-${item.workspace.persona}`}
                 >
-                  Report gaps
+                  <T k="reportCenter.reportGaps" />
                 </Button>
                 <Button
                   type="button"
@@ -13265,7 +13369,7 @@ export default function Reports() {
                   onClick={() => applyReportWorkflowGapFilter("rule-gaps", item.workspace.persona)}
                   data-testid={`report-workflow-filter-rule-gaps-${item.workspace.persona}`}
                 >
-                  Rule gaps
+                  <T k="reportCenter.ruleGaps" />
                 </Button>
                 <Button
                   type="button"
@@ -13283,7 +13387,7 @@ export default function Reports() {
                   }
                   data-testid={`report-workflow-filter-delivery-gaps-${item.workspace.persona}`}
                 >
-                  Delivery gaps
+                  <T k="reportCenter.deliveryGaps" />
                 </Button>
               </div>
 
@@ -13313,7 +13417,7 @@ export default function Reports() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 id="report-workflow-finder-title" className="text-xl font-semibold">
-              Workflow finder
+              <T k="reportCenter.workflowFinder" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Reports, packs, comparisons, delivery routes, and automations for{" "}
@@ -13363,7 +13467,7 @@ export default function Reports() {
               data-testid="button-clear-report-workflow-search"
             >
               <X className="h-4 w-4" />
-              Clear
+              <T k="reportCenter.clear" />
             </Button>
           ) : null}
         </div>
@@ -13435,7 +13539,7 @@ export default function Reports() {
             className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
             data-testid="report-workflow-finder-empty"
           >
-            No report workflows match the current role and search.
+            <T k="reportCenter.noReportWorkflowsMatchTheCurrentRole" />
           </div>
         )}
       </section>
@@ -13448,7 +13552,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-catalog-readiness-title" className="text-xl font-semibold">
-              Catalog readiness
+              <T k="reportCenter.catalogReadiness" />
             </h2>
             <p className="text-sm text-muted-foreground">
               API-synced report library coverage for high-level reports, comparison packs, delivery
@@ -13476,7 +13580,9 @@ export default function Reports() {
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Reports ready</div>
+            <div className="text-xs text-muted-foreground">
+              <T k="reportCenter.reportsReady" />
+            </div>
             <div className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.ready}/{reportStats.total}
             </div>
@@ -13485,14 +13591,18 @@ export default function Reports() {
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Pack templates</div>
+            <div className="text-xs text-muted-foreground">
+              <T k="reportCenter.packTemplates" />
+            </div>
             <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.packTemplates}</div>
             <div className="mt-1 text-xs text-muted-foreground">
               {reportStats.reportSuites} suites · {reportStats.deliverySubscriptions} delivery
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Comparison presets</div>
+            <div className="text-xs text-muted-foreground">
+              <T k="reportCenter.comparisonPresets" />
+            </div>
             <div className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.comparisonPresets}
             </div>
@@ -13501,7 +13611,9 @@ export default function Reports() {
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Automation starters</div>
+            <div className="text-xs text-muted-foreground">
+              <T k="reportCenter.automationStarters" />
+            </div>
             <div className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.automationStarters}
             </div>
@@ -13541,19 +13653,25 @@ export default function Reports() {
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md bg-secondary/40 p-2">
-                      <div className="text-muted-foreground">Packs</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.packs" />
+                      </div>
                       <div className="mt-1 font-mono font-semibold">
                         {workspace.packTemplateCount}
                       </div>
                     </div>
                     <div className="rounded-md bg-secondary/40 p-2">
-                      <div className="text-muted-foreground">Comps</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.comps" />
+                      </div>
                       <div className="mt-1 font-mono font-semibold">
                         {workspace.comparisonPresetCount}
                       </div>
                     </div>
                     <div className="rounded-md bg-secondary/40 p-2">
-                      <div className="text-muted-foreground">Starters</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.starters" />
+                      </div>
                       <div className="mt-1 font-mono font-semibold">
                         {workspace.automationStarterCount}
                       </div>
@@ -13573,7 +13691,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-role-setup-title" className="text-xl font-semibold">
-              Role setup paths
+              <T k="reportCenter.roleSetupPaths" />
             </h2>
             <p className="text-sm text-muted-foreground">
               First-run checklists for owners, solo entrepreneurs, freelancers, and accountants to
@@ -13640,7 +13758,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-role-workflows-title" className="text-xl font-semibold">
-              Role workflow checklist
+              <T k="reportCenter.roleWorkflowChecklist" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Recurring report routines for owner, freelancer, and accountant workspaces after the
@@ -13721,7 +13839,9 @@ export default function Reports() {
                             data-testid={`report-role-workflow-defaults-${step.id}`}
                           >
                             <div>
-                              <div className="font-medium text-foreground">Default view</div>
+                              <div className="font-medium text-foreground">
+                                <T k="reportCenter.defaultView" />
+                              </div>
                               <Link
                                 href={step.defaultViewHref}
                                 className="mt-1 block text-muted-foreground hover:text-primary"
@@ -13730,7 +13850,9 @@ export default function Reports() {
                               </Link>
                             </div>
                             <div>
-                              <div className="font-medium text-foreground">Handoff guardrail</div>
+                              <div className="font-medium text-foreground">
+                                <T k="reportCenter.handoffGuardrail" />
+                              </div>
                               <div className="mt-1 text-muted-foreground">
                                 {step.handoffGuardrail}
                               </div>
@@ -13747,10 +13869,14 @@ export default function Reports() {
                               </Link>
                             </Button>
                             <Button asChild size="sm" variant="outline">
-                              <Link href={step.automationHref}>Open automation</Link>
+                              <Link href={step.automationHref}>
+                                <T k="reportCenter.openAutomation" />
+                              </Link>
                             </Button>
                             <Button asChild size="sm" variant="outline">
-                              <Link href={step.deliveryHref}>Open delivery</Link>
+                              <Link href={step.deliveryHref}>
+                                <T k="reportCenter.openDelivery" />
+                              </Link>
                             </Button>
                           </div>
                         </div>
@@ -13771,7 +13897,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-operations-title" className="text-xl font-semibold">
-              Report automation operations
+              <T k="reportCenter.reportAutomationOperations" />
             </h2>
             <p className="text-sm text-muted-foreground">
               One operating view for report readiness, auto-send rules, delivery recovery, and next
@@ -13817,7 +13943,9 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Health</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.health" />
+                        </div>
                         <div className="mt-1 flex items-baseline gap-1">
                           <span className="font-mono text-lg font-semibold">
                             {item.automationScore}
@@ -13825,11 +13953,13 @@ export default function Reports() {
                           <span className="text-xs text-muted-foreground">/100</span>
                         </div>
                         <Badge variant={item.automationHealthVariant} dot className="mt-2">
-                          Automation
+                          <T k="reportCenter.automation" />
                         </Badge>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Reports ready</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.reportsReady" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {item.readyReportCount}/{item.reportCount}
                         </div>
@@ -13838,7 +13968,9 @@ export default function Reports() {
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Auto-send rules</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.autoSendRules" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {item.readyRuleCount}/{item.automationRuleCount}
                         </div>
@@ -13847,7 +13979,9 @@ export default function Reports() {
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Deliveries ready</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.deliveriesReady" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                         </div>
@@ -13874,7 +14008,9 @@ export default function Reports() {
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={item.nextAction.href}>Open action</Link>
+                          <Link href={item.nextAction.href}>
+                            <T k="reportCenter.openAction" />
+                          </Link>
                         </Button>
                         <Button
                           type="button"
@@ -13882,20 +14018,24 @@ export default function Reports() {
                           variant={personaFilter === workspace.persona ? "default" : "ghost"}
                           onClick={() => setReportPersonaFilter(workspace.persona)}
                         >
-                          Set focus
+                          <T k="reportCenter.setFocus" />
                         </Button>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Amount at risk</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.amountAtRisk" />
+                        </div>
                         <div className="mt-1 truncate font-mono font-semibold text-foreground">
                           {formatCurrency(item.amountAtRisk, "AED", locale)}
                         </div>
                       </div>
                       <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Comparison warnings</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.comparisonWarnings" />
+                        </div>
                         <div className="mt-1 font-mono font-semibold text-foreground">
                           {item.comparisonWarnings}
                         </div>
@@ -13905,12 +14045,12 @@ export default function Reports() {
                     <div className="flex flex-wrap gap-2">
                       <Button asChild size="sm" variant="outline">
                         <Link href={reportSectionHref(workspace, "automation-command-center")}>
-                          Open command center
+                          <T k="reportCenter.openCommandCenter" />
                         </Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
                         <Link href={reportSectionHref(workspace, "delivery-subscriptions")}>
-                          Open delivery
+                          <T k="reportCenter.openDelivery" />
                         </Link>
                       </Button>
                     </div>
@@ -13929,7 +14069,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-impact-title" className="text-xl font-semibold">
-              Automation impact
+              <T k="reportCenter.automationImpact" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Estimated monthly work removed by ready report rules, scheduled packs, and linked
@@ -13987,14 +14127,18 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Hours saved</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.hoursSaved" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {item.estimate.estimatedMonthlyHoursSaved}
                         </div>
                         <div className="mt-1 text-muted-foreground">estimated / month</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Automated items</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.automatedItems" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {item.estimate.estimatedAutomatedItemCount}
                         </div>
@@ -14003,7 +14147,9 @@ export default function Reports() {
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Coverage</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.coverage" />
+                        </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {item.estimate.coverageScore}%
                         </div>
@@ -14012,7 +14158,9 @@ export default function Reports() {
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Amount watched</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.amountWatched" />
+                        </div>
                         <div className="mt-1 truncate font-mono text-sm font-semibold">
                           {formatCurrency(item.estimate.amountAtRisk, "AED", locale)}
                         </div>
@@ -14040,7 +14188,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Outcome signals
+                        <T k="reportCenter.outcomeSignals" />
                       </div>
                       {item.profile.outcomeSignals.map((signal) => (
                         <div
@@ -14050,7 +14198,9 @@ export default function Reports() {
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="font-medium text-foreground">{signal.label}</div>
-                            <Badge variant="info">Proxy</Badge>
+                            <Badge variant="info">
+                              <T k="reportCenter.proxy" />
+                            </Badge>
                           </div>
                           <div className="mt-1 text-muted-foreground">{signal.currentProxy}</div>
                           <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
@@ -14074,10 +14224,14 @@ export default function Reports() {
 
                     <div className="flex flex-wrap gap-2">
                       <Button asChild size="sm" variant="outline">
-                        <Link href={item.commandCenterHref}>Open command center</Link>
+                        <Link href={item.commandCenterHref}>
+                          <T k="reportCenter.openCommandCenter" />
+                        </Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={item.starterHref}>Open autopilot</Link>
+                        <Link href={item.starterHref}>
+                          <T k="reportCenter.openAutopilot" />
+                        </Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -14095,7 +14249,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="decision-shortcuts-title" className="text-xl font-semibold">
-              Decision shortcuts
+              <T k="reportCenter.decisionShortcuts" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Business questions that route owners, freelancers, and accountants to the right
@@ -14140,13 +14294,17 @@ export default function Reports() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Primary report</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.primaryReport" />
+                      </div>
                       <div className="mt-1 font-medium text-foreground">
                         {shortcut.primaryReport.name}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Report bundle</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.reportBundle" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {shortcut.reports.length}
                       </div>
@@ -14181,17 +14339,21 @@ export default function Reports() {
 
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href={shortcut.primaryReportHref}>Open report</Link>
+                      <Link href={shortcut.primaryReportHref}>
+                        <T k="reportCenter.openReport" />
+                      </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={shortcut.comparisonHref}>Open comparison</Link>
+                      <Link href={shortcut.comparisonHref}>
+                        <T k="reportCenter.openComparison" />
+                      </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
                       <Link
                         href={shortcut.workflowHref}
                         data-testid={`report-decision-shortcut-automation-${shortcut.id}`}
                       >
-                        Open automation
+                        <T k="reportCenter.openAutomation" />
                       </Link>
                     </Button>
                   </div>
@@ -14209,7 +14371,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-starters-title" className="text-xl font-semibold">
-              Automation starters
+              <T k="reportCenter.automationStarters" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Persona-specific setup paths for turning report packs, comparisons, and open queues
@@ -14227,7 +14389,9 @@ export default function Reports() {
         >
           <div className="rounded-md border p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-muted-foreground">Last scan</div>
+              <div className="text-muted-foreground">
+                <T k="reportCenter.lastScan" />
+              </div>
               <Badge
                 variant={
                   latestReportDeliverySchedulerScan?.status === "error"
@@ -14246,31 +14410,41 @@ export default function Reports() {
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Queued by scan</div>
+            <div className="text-muted-foreground">
+              <T k="reportCenter.queuedByScan" />
+            </div>
             <div className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.queuedRuns ?? 0}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Guardrail skips</div>
+            <div className="text-muted-foreground">
+              <T k="reportCenter.guardrailSkips" />
+            </div>
             <div className="mt-1 font-mono text-base font-semibold">
               {reportDeliverySchedulerGuardrailSkips}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Handoff skips</div>
+            <div className="text-muted-foreground">
+              <T k="reportCenter.handoffSkips" />
+            </div>
             <div className="mt-1 font-mono text-base font-semibold">
               {reportDeliverySchedulerHandoffSkipCount}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Actor skips</div>
+            <div className="text-muted-foreground">
+              <T k="reportCenter.actorSkips" />
+            </div>
             <div className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.skippedNoActor ?? 0}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Scan errors</div>
+            <div className="text-muted-foreground">
+              <T k="reportCenter.scanErrors" />
+            </div>
             <div className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.errors ?? 0}
             </div>
@@ -14285,7 +14459,7 @@ export default function Reports() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-foreground">
-                  Scheduled sends held for handoff
+                  <T k="reportCenter.scheduledSendsHeldForHandoff" />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   These due report packs were not auto-sent because the latest scheduler scan found
@@ -14313,11 +14487,13 @@ export default function Reports() {
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button asChild size="sm" variant="outline" className="h-7 px-2">
                       <Link href={review.href}>
-                        Open handoff <ArrowRight className="h-3.5 w-3.5" />
+                        <T k="reportCenter.openHandoff" /> <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                      <Link href={review.subscriptionHref}>Open delivery</Link>
+                      <Link href={review.subscriptionHref}>
+                        <T k="reportCenter.openDelivery" />
+                      </Link>
                     </Button>
                   </div>
                 </div>
@@ -14362,23 +14538,31 @@ export default function Reports() {
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Setup</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.setup" />
+                        </div>
                         <div className="font-medium text-foreground">{starter.setupTime}</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Ready reports</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.readyReports" />
+                        </div>
                         <div className="font-mono text-base font-semibold">
                           {starter.readyCount}/{starter.reports.length}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Playbooks</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.playbooks" />
+                        </div>
                         <div className="font-mono text-base font-semibold">
                           {starter.playbooks.length}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">At risk</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.atRisk" />
+                        </div>
                         <div className="truncate font-mono text-sm font-semibold">
                           {formatCurrency(starter.amountAtRisk, "AED", locale)}
                         </div>
@@ -14392,7 +14576,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Setup checklist
+                        <T k="reportCenter.setupChecklist" />
                       </div>
                       {starter.setupSteps.map((step) => (
                         <div key={step} className="flex gap-2 text-xs text-muted-foreground">
@@ -14423,7 +14607,7 @@ export default function Reports() {
                         variant="outline"
                         onClick={() => setReportPersonaFilter(starter.persona)}
                       >
-                        Filter workspace
+                        <T k="reportCenter.filterWorkspace" />
                       </Button>
                     </div>
                   </CardContent>
@@ -14441,7 +14625,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="trigger-rules-title" className="text-xl font-semibold">
-              Trigger rules
+              <T k="reportCenter.triggerRules" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Report-driven thresholds that route cash, tax, close, and advisory signals into
@@ -14494,11 +14678,15 @@ export default function Reports() {
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Cadence</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.cadence" />
+                        </div>
                         <div className="mt-1 font-medium text-foreground">{rule.cadence}</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Open work</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.openWork" />
+                        </div>
                         <div className="mt-1 font-mono text-base font-semibold">
                           {rule.openWorkItemCount}
                         </div>
@@ -14536,10 +14724,14 @@ export default function Reports() {
                         <Link href={rule.primaryReportHref}>{rule.actionLabel}</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={rule.decisionShortcutHref}>Open question</Link>
+                        <Link href={rule.decisionShortcutHref}>
+                          <T k="reportCenter.openQuestion" />
+                        </Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={rule.automationStarterHref}>Open automation</Link>
+                        <Link href={rule.automationStarterHref}>
+                          <T k="reportCenter.openAutomation" />
+                        </Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -14557,7 +14749,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-delivery-subscriptions-title" className="text-xl font-semibold">
-              Delivery subscriptions
+              <T k="reportCenter.deliverySubscriptions" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Scheduled report packs that define cadence, recipients, channel, and guardrails before
@@ -14610,7 +14802,7 @@ export default function Reports() {
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                Automation recovery
+                <T k="reportCenter.automationRecovery" />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 Failed delivery recovery and review queue for the current{" "}
@@ -14627,7 +14819,9 @@ export default function Reports() {
               className="rounded-md bg-secondary/40 p-2"
               data-testid="report-delivery-recovery-failed-runs"
             >
-              <div className="text-muted-foreground">Failed runs</div>
+              <div className="text-muted-foreground">
+                <T k="reportCenter.failedRuns" />
+              </div>
               <div className="mt-1 font-mono text-base font-semibold text-foreground">
                 {reportDeliveryRecoverySummary.failedRunCount}
               </div>
@@ -14636,7 +14830,9 @@ export default function Reports() {
               className="rounded-md bg-secondary/40 p-2"
               data-testid="report-delivery-recovery-retryable-subscriptions"
             >
-              <div className="text-muted-foreground">Retryable subscriptions</div>
+              <div className="text-muted-foreground">
+                <T k="reportCenter.retryableSubscriptions" />
+              </div>
               <div className="mt-1 font-mono text-base font-semibold text-foreground">
                 {reportDeliveryRecoverySummary.retryableSubscriptionCount}
               </div>
@@ -14645,7 +14841,9 @@ export default function Reports() {
               className="rounded-md bg-secondary/40 p-2"
               data-testid="report-delivery-recovery-review-subscriptions"
             >
-              <div className="text-muted-foreground">Needs review</div>
+              <div className="text-muted-foreground">
+                <T k="reportCenter.needsReview" />
+              </div>
               <div className="mt-1 font-mono text-base font-semibold text-foreground">
                 {reportDeliveryRecoverySummary.reviewSubscriptionCount}
               </div>
@@ -14678,7 +14876,7 @@ export default function Reports() {
                 data-testid="report-delivery-recovery-retry-latest"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Retry latest
+                <T k="reportCenter.retryLatest" />
               </Button>
             ) : reportDeliveryRecoverySummary.nextAction.kind === "open" ? (
               <Button asChild size="sm" variant="outline">
@@ -14686,7 +14884,7 @@ export default function Reports() {
                   href={reportDeliveryRecoverySummary.nextAction.href}
                   data-testid="report-delivery-recovery-open-review"
                 >
-                  Open review
+                  <T k="reportCenter.openReview" />
                 </Link>
               </Button>
             ) : null}
@@ -14699,7 +14897,9 @@ export default function Reports() {
         >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-sm font-semibold text-foreground">Automation command strip</div>
+              <div className="text-sm font-semibold text-foreground">
+                <T k="reportCenter.automationCommandStrip" />
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 One-click recovery, guardrail review, delivery queueing, and comparison paths for{" "}
                 {personaFilterLabel.toLowerCase()} workflows.
@@ -14731,7 +14931,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
-                  Retry recovery
+                  <T k="reportCenter.retryRecovery" />
                 </div>
                 <Button
                   type="button"
@@ -14745,7 +14945,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Requeue the latest failed scheduled report pack.
+                <T k="reportCenter.requeueTheLatestFailedScheduledReportPack" />
               </div>
               <Button
                 type="button"
@@ -14764,7 +14964,7 @@ export default function Reports() {
                 }}
                 data-testid="report-delivery-command-retry"
               >
-                Retry now
+                <T k="reportCenter.retryNow" />
               </Button>
             </div>
 
@@ -14777,7 +14977,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                  Review guardrails
+                  <T k="reportCenter.reviewGuardrails" />
                 </div>
                 <Button
                   type="button"
@@ -14791,7 +14991,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Open the first delivery needing setup, enablement, or review.
+                <T k="reportCenter.openTheFirstDeliveryNeedingSetupEnablement" />
               </div>
               {reportDeliveryAutomationCommandTargets.reviewSubscription ? (
                 <Button asChild size="sm" variant="outline" className="mt-2">
@@ -14799,7 +14999,7 @@ export default function Reports() {
                     href={reportDeliveryAutomationCommandTargets.reviewSubscription.href}
                     data-testid="report-delivery-command-review"
                   >
-                    Open review
+                    <T k="reportCenter.openReview" />
                   </Link>
                 </Button>
               ) : (
@@ -14811,7 +15011,7 @@ export default function Reports() {
                   disabled
                   data-testid="report-delivery-command-review"
                 >
-                  No review
+                  <T k="reportCenter.noReview" />
                 </Button>
               )}
             </div>
@@ -14825,7 +15025,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <Send className="h-3.5 w-3.5 text-muted-foreground" />
-                  Queue next pack
+                  <T k="reportCenter.queueNextPack" />
                 </div>
                 <Button
                   type="button"
@@ -14839,7 +15039,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Queue the next enabled delivery subscription for this role.
+                <T k="reportCenter.queueTheNextEnabledDeliverySubscriptionFor" />
               </div>
               <Button
                 type="button"
@@ -14874,7 +15074,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                  Open comparison
+                  <T k="reportCenter.openComparison" />
                 </div>
                 <Button
                   type="button"
@@ -14890,7 +15090,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Review the highest-priority comparison pack for this persona.
+                <T k="reportCenter.reviewTheHighestPriorityComparisonPackFor" />
               </div>
               {reportDeliveryAutomationCommandTargets.comparisonPreset ? (
                 <Button asChild size="sm" variant="outline" className="mt-2">
@@ -14898,7 +15098,7 @@ export default function Reports() {
                     href={reportDeliveryAutomationCommandTargets.comparisonPreset.href}
                     data-testid="report-delivery-command-comparison"
                   >
-                    Open comparison
+                    <T k="reportCenter.openComparison" />
                   </Link>
                 </Button>
               ) : (
@@ -14910,7 +15110,7 @@ export default function Reports() {
                   disabled
                   data-testid="report-delivery-command-comparison"
                 >
-                  No comparison
+                  <T k="reportCenter.noComparison" />
                 </Button>
               )}
             </div>
@@ -14925,7 +15125,7 @@ export default function Reports() {
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <ListFilter className="h-4 w-4 text-muted-foreground" />
-                Delivery run timeline
+                <T k="reportCenter.deliveryRunTimeline" />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 Filter queued, sent, and failed report-pack automations within the current{" "}
@@ -14983,7 +15183,9 @@ export default function Reports() {
                   ) : null}
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button asChild size="sm" variant="outline">
-                      <Link href={run.subscriptionHref}>Open subscription</Link>
+                      <Link href={run.subscriptionHref}>
+                        <T k="reportCenter.openSubscription" />
+                      </Link>
                     </Button>
                     {run.status === "failed" ? (
                       <Button
@@ -14995,7 +15197,7 @@ export default function Reports() {
                         data-testid={`report-delivery-run-timeline-retry-${run.id}`}
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
-                        Retry delivery
+                        <T k="reportCenter.retryDelivery" />
                       </Button>
                     ) : null}
                   </div>
@@ -15061,25 +15263,33 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Cadence</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.cadence" />
+                        </div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.cadence}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Channel</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.channel" />
+                        </div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.channel}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Ready reports</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.readyReports" />
+                        </div>
                         <div className="mt-1 font-mono text-base font-semibold">
                           {subscription.readyCount}/{subscription.reports.length}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Open work</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.openWork" />
+                        </div>
                         <div className="mt-1 font-mono text-base font-semibold">
                           {subscription.openWorkItemCount}
                         </div>
@@ -15088,7 +15298,9 @@ export default function Reports() {
 
                     <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Next delivery</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.nextDelivery" />
+                        </div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.enabled
                             ? subscription.nextRunLabel || "Calculated on queue"
@@ -15096,13 +15308,17 @@ export default function Reports() {
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Settings</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.settings" />
+                        </div>
                         <div className="mt-1 font-medium capitalize text-foreground">
                           {subscription.settingsSource}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Suite</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.suite" />
+                        </div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.reportSuites[0]?.title ?? "Not linked"}
                         </div>
@@ -15120,7 +15336,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-cadence-${subscription.id}`}
                               className="text-xs"
                             >
-                              Cadence
+                              <T k="reportCenter.cadence" />
                             </Label>
                             <Input
                               id={`report-delivery-cadence-${subscription.id}`}
@@ -15137,7 +15353,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-channel-${subscription.id}`}
                               className="text-xs"
                             >
-                              Channel
+                              <T k="reportCenter.channel" />
                             </Label>
                             <Input
                               id={`report-delivery-channel-${subscription.id}`}
@@ -15154,7 +15370,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-format-${subscription.id}`}
                               className="text-xs"
                             >
-                              Format
+                              <T k="reportCenter.format" />
                             </Label>
                             <Input
                               id={`report-delivery-format-${subscription.id}`}
@@ -15171,7 +15387,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-recipients-${subscription.id}`}
                               className="text-xs"
                             >
-                              Recipients
+                              <T k="reportCenter.recipients" />
                             </Label>
                             <Input
                               id={`report-delivery-recipients-${subscription.id}`}
@@ -15188,7 +15404,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-guardrail-${subscription.id}`}
                               className="text-xs"
                             >
-                              Guardrail
+                              <T k="reportCenter.guardrail" />
                             </Label>
                             <Textarea
                               id={`report-delivery-guardrail-${subscription.id}`}
@@ -15234,7 +15450,7 @@ export default function Reports() {
                             }
                           >
                             <Save className="h-4 w-4" />
-                            Save delivery settings
+                            <T k="reportCenter.saveDeliverySettings" />
                           </Button>
                           <Button
                             type="button"
@@ -15271,7 +15487,9 @@ export default function Reports() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="font-medium text-foreground">Pack preview</div>
+                          <div className="font-medium text-foreground">
+                            <T k="reportCenter.packPreview" />
+                          </div>
                           <p className="mt-1 text-muted-foreground">
                             {subscription.preview.summary}
                           </p>
@@ -15356,7 +15574,7 @@ export default function Reports() {
                           variant="warning"
                           data-testid={`report-delivery-handoff-acknowledgement-${subscription.id}`}
                         >
-                          Acknowledge handoff gaps before queueing
+                          <T k="reportCenter.acknowledgeHandoffGapsBeforeQueueing" />
                         </Badge>
                       ) : null}
                     </div>
@@ -15366,7 +15584,9 @@ export default function Reports() {
                       data-testid={`report-delivery-run-history-${subscription.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium text-foreground">Recent delivery runs</div>
+                        <div className="font-medium text-foreground">
+                          <T k="reportCenter.recentDeliveryRuns" />
+                        </div>
                         <Badge variant="neutral">{subscription.deliveryRuns.length}</Badge>
                       </div>
                       {subscription.latestDeliveryRun ? (
@@ -15389,15 +15609,20 @@ export default function Reports() {
                                   Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
                                   {run.readyReportCount}/{run.reportCount} reports - {run.channel}
                                 </div>
-                                {run.status === "failed" ? (
+                                {run.status === "failed" || run.status === "blocked" ? (
                                   <div className="mt-1 text-destructive">
                                     {run.errorMessage ??
                                       "Retry after fixing delivery settings or guardrails."}
                                   </div>
                                 ) : null}
+                                <DeliveryRunFiles
+                                  companyId={selectedCompanyId}
+                                  runId={run.id}
+                                  artifactCount={run.artifactCount}
+                                />
                                 {run.retriedFromRunId ? (
                                   <div className="mt-1 text-muted-foreground">
-                                    Requeued from a failed delivery run.
+                                    <T k="reportCenter.requeuedFromAFailedDeliveryRun" />
                                   </div>
                                 ) : null}
                               </div>
@@ -15413,7 +15638,7 @@ export default function Reports() {
                                 >
                                   {run.readinessStatus}
                                 </Badge>
-                                {run.status === "failed" ? (
+                                {run.status === "failed" || run.status === "blocked" ? (
                                   <Button
                                     type="button"
                                     size="sm"
@@ -15424,7 +15649,7 @@ export default function Reports() {
                                     onClick={() => retryReportDeliveryRun.mutate(run.id)}
                                   >
                                     <RotateCcw className="h-3.5 w-3.5" />
-                                    Retry delivery
+                                    <T k="reportCenter.retryDelivery" />
                                   </Button>
                                 ) : null}
                               </div>
@@ -15433,14 +15658,14 @@ export default function Reports() {
                         </div>
                       ) : (
                         <div className="mt-3 rounded-md bg-secondary/40 p-2 text-muted-foreground">
-                          No queued delivery runs yet.
+                          <T k="reportCenter.noQueuedDeliveryRunsYet" />
                         </div>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Trigger rules
+                        <T k="reportCenter.triggerRules" />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {subscription.triggerRules.map((rule) => (
@@ -15464,7 +15689,9 @@ export default function Reports() {
 
                     <div className="flex flex-wrap gap-2">
                       <Button asChild size="sm">
-                        <Link href={subscription.href}>Open subscription</Link>
+                        <Link href={subscription.href}>
+                          <T k="reportCenter.openSubscription" />
+                        </Link>
                       </Button>
                       <Button
                         type="button"
@@ -15494,7 +15721,7 @@ export default function Reports() {
                           onClick={() => startEditingReportDeliverySubscription(subscription)}
                         >
                           <Pencil className="h-4 w-4" />
-                          Edit settings
+                          <T k="reportCenter.editSettings" />
                         </Button>
                       ) : null}
                       <Button
@@ -15514,15 +15741,21 @@ export default function Reports() {
                         {subscription.enabled ? "Pause delivery" : "Enable delivery"}
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={subscription.packTemplateHref}>Open pack</Link>
+                        <Link href={subscription.packTemplateHref}>
+                          <T k="reportCenter.openPack" />
+                        </Link>
                       </Button>
                       {subscription.reportSuites[0] ? (
                         <Button asChild size="sm" variant="outline">
-                          <Link href={subscription.reportSuites[0].href}>Open suite</Link>
+                          <Link href={subscription.reportSuites[0].href}>
+                            <T k="reportCenter.openSuite" />
+                          </Link>
                         </Button>
                       ) : null}
                       <Button asChild size="sm" variant="outline">
-                        <Link href={subscription.automationStarterHref}>Open automation</Link>
+                        <Link href={subscription.automationStarterHref}>
+                          <T k="reportCenter.openAutomation" />
+                        </Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -15540,7 +15773,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="recommended-reports-title" className="text-xl font-semibold">
-              Recommended reports
+              <T k="reportCenter.recommendedReports" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Next-best report actions based on open automation queues and current-vs-prior
@@ -15634,7 +15867,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-product-depth-title" className="text-xl font-semibold">
-              Reporting workflow map
+              <T k="reportCenter.reportingWorkflowMap" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Open the reporting work that is ready, being hardened, or waiting on deeper accounting
@@ -15695,7 +15928,9 @@ export default function Reports() {
                             ) : null}
                           </div>
                           <Button asChild size="sm" variant="outline">
-                            <Link href={subgoal.href}>Open workflow</Link>
+                            <Link href={subgoal.href}>
+                              <T k="reportCenter.openWorkflow" />
+                            </Link>
                           </Button>
                         </div>
 
@@ -15720,7 +15955,9 @@ export default function Reports() {
                                     variant="outline"
                                     className="h-7 shrink-0 px-2"
                                   >
-                                    <Link href={target.href}>Open target</Link>
+                                    <Link href={target.href}>
+                                      <T k="reportCenter.openTarget" />
+                                    </Link>
                                   </Button>
                                 </div>
                                 <div className="mt-2 flex flex-wrap gap-1">
@@ -15769,7 +16006,7 @@ export default function Reports() {
                         {subgoal.requiredSourceRecords?.length ? (
                           <div className="mt-3 space-y-2">
                             <div className="text-xs font-medium uppercase text-muted-foreground">
-                              Required source records
+                              <T k="reportCenter.requiredSourceRecords" />
                             </div>
                             <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                               {subgoal.requiredSourceRecords.map((record) => (
@@ -15812,7 +16049,9 @@ export default function Reports() {
                             Next: {subgoal.nextAction}
                           </div>
                           <Button asChild size="sm" variant="ghost" className="justify-start">
-                            <Link href={area.href}>Open header</Link>
+                            <Link href={area.href}>
+                              <T k="reportCenter.openHeader" />
+                            </Link>
                           </Button>
                         </div>
                       </div>
@@ -15832,7 +16071,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-readiness-title" className="text-xl font-semibold">
-              Report pack readiness
+              <T k="reportCenter.reportPackReadiness" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Delivery checks for scheduled packs before they reach owners, freelancers, or
@@ -15885,7 +16124,7 @@ export default function Reports() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-medium uppercase text-muted-foreground">
-                          Automation health
+                          <T k="reportCenter.automationHealth" />
                         </div>
                         <div className="mt-1 font-mono text-2xl font-semibold">
                           {item.automationHealth.score}
@@ -15904,13 +16143,17 @@ export default function Reports() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Lanes</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.lanes" />
+                        </div>
                         <div className="font-mono font-semibold">
                           {item.automationHealth.automationLaneScore}%
                         </div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Review</div>
+                        <div className="text-muted-foreground">
+                          <T k="reportCenter.review" />
+                        </div>
                         <div className="font-mono font-semibold">
                           {item.automationHealth.reviewSignals}
                         </div>
@@ -15922,7 +16165,9 @@ export default function Reports() {
                         data-testid={`automation-health-trend-${item.workspace.persona}`}
                       >
                         <div>
-                          <div className="text-xs font-medium">Health trend</div>
+                          <div className="text-xs font-medium">
+                            <T k="reportCenter.healthTrend" />
+                          </div>
                           <div className="text-xs text-muted-foreground">{healthTrend.detail}</div>
                         </div>
                         <Badge variant={healthTrend.variant} dot>
@@ -15965,7 +16210,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="period-comparison-title" className="text-xl font-semibold">
-              Period comparison
+              <T k="reportCenter.periodComparison" />
             </h2>
             <p className="text-sm text-muted-foreground">
               {comparisonCurrentLabel} compared with {comparisonPreviousLabel}.{" "}
@@ -16041,7 +16286,9 @@ export default function Reports() {
                       {preset.automationTrigger}
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={preset.href}>Open preset</Link>
+                      <Link href={preset.href}>
+                        <T k="reportCenter.openPreset" />
+                      </Link>
                     </Button>
                   </div>
                 </CardContent>
@@ -16088,7 +16335,9 @@ export default function Reports() {
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">Movement</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.movement" />
+                      </div>
                       <div className="truncate font-mono text-sm font-semibold">
                         {formatComparisonValue(row, row.delta, locale)}
                       </div>
@@ -16116,7 +16365,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-queues-title" className="text-xl font-semibold">
-              Automation queues
+              <T k="reportCenter.automationQueues" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Live report signals routed to the next workflow. {personaScopeDescription}
@@ -16159,7 +16408,9 @@ export default function Reports() {
                         <div className="font-mono text-2xl font-semibold">{item.count}</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Amount</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.amount" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {typeof item.amount === "number"
                             ? formatCurrency(item.amount, item.currency ?? "AED", locale)
@@ -16205,7 +16456,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-coverage-title" className="text-xl font-semibold">
-              Automation coverage
+              <T k="reportCenter.automationCoverage" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Role coverage across live reports, comparison lenses, workflow links, and pack
@@ -16251,25 +16502,33 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-2">
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Live reports</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.liveReports" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {item.liveReportCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Automations</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.automations" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {item.automatedSignalCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Comparisons</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.comparisons" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {item.comparisonTypeCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Workflows</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.workflows" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {item.workflowReportCount}
                         </div>
@@ -16279,7 +16538,7 @@ export default function Reports() {
                     <div className="rounded-md border p-3">
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <span className="font-medium uppercase text-muted-foreground">
-                          Open work
+                          <T k="reportCenter.openWork" />
                         </span>
                         <span className="font-mono">
                           {item.openWorkItemCount} items -{" "}
@@ -16290,7 +16549,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Signal coverage
+                        <T k="reportCenter.signalCoverage" />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {item.topSignals.map((signal) => (
@@ -16319,7 +16578,7 @@ export default function Reports() {
                         variant="outline"
                         onClick={() => navigate(reportWorkspaceHref(workspace))}
                       >
-                        Open workspace
+                        <T k="reportCenter.openWorkspace" />
                       </Button>
                       <Badge variant="outline">{item.playbookCount} playbooks</Badge>
                     </div>
@@ -16338,7 +16597,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-command-center-title" className="text-xl font-semibold">
-              Automation command center
+              <T k="reportCenter.automationCommandCenter" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Auto-send readiness across report rules, blocker queues, and pack delivery.{" "}
@@ -16366,7 +16625,9 @@ export default function Reports() {
             <CardHeader className="space-y-3 pb-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle className="text-base font-semibold">Auto-send readiness</CardTitle>
+                  <CardTitle className="text-base font-semibold">
+                    <T k="reportCenter.autoSendReadiness" />
+                  </CardTitle>
                   <CardDescription>
                     Rule coverage and open work before scheduled report packs are sent.
                   </CardDescription>
@@ -16451,7 +16712,7 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="space-y-2">
                   <div className="text-xs font-medium uppercase text-muted-foreground">
-                    Top blockers
+                    <T k="reportCenter.topBlockers" />
                   </div>
                   {reportAutomationCommandCenter.topReviewRules.length ? (
                     reportAutomationCommandCenter.topReviewRules.map((rule) => (
@@ -16490,7 +16751,7 @@ export default function Reports() {
 
                 <div className="space-y-2">
                   <div className="text-xs font-medium uppercase text-muted-foreground">
-                    Pack delivery readiness
+                    <T k="reportCenter.packDeliveryReadiness" />
                   </div>
                   {visibleReportPackReadiness.map((item) => (
                     <div
@@ -16524,7 +16785,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-rules-title" className="text-xl font-semibold">
-              Report automation rules
+              <T k="reportCenter.reportAutomationRules" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Role-specific pack rules that connect triggers, reports, recipients, and next
@@ -16567,25 +16828,33 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Reports</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.reports" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {rule.liveReportCount}/{rule.reportCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Comparisons</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.comparisons" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {rule.comparisonMetricCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Open work</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.openWork" />
+                        </div>
                         <div className="font-mono text-lg font-semibold">
                           {rule.openWorkItemCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Amount</div>
+                        <div className="text-xs text-muted-foreground">
+                          <T k="reportCenter.amount" />
+                        </div>
                         <div className="truncate font-mono text-sm font-semibold">
                           {formatCurrency(rule.amountAtRisk, "AED", locale)}
                         </div>
@@ -16609,7 +16878,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Report bundle
+                        <T k="reportCenter.reportBundle" />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {rule.linkedReports.slice(0, 5).map((report) => (
@@ -16625,7 +16894,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Rule signals
+                        <T k="reportCenter.ruleSignals" />
                       </div>
                       {rule.matchingSignals.length ? (
                         rule.matchingSignals.slice(0, 3).map((signal) => (
@@ -16644,14 +16913,14 @@ export default function Reports() {
                         ))
                       ) : (
                         <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                          No live exceptions currently map to this rule.
+                          <T k="reportCenter.noLiveExceptionsCurrentlyMapToThis" />
                         </div>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Automation runbook
+                        <T k="reportCenter.automationRunbook" />
                       </div>
                       {rule.runbookSteps.map((step, index) => (
                         <div
@@ -16711,7 +16980,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-roadmap-title" className="text-xl font-semibold">
-              Report roadmap
+              <T k="reportCenter.reportRoadmap" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Planned report gaps by role, with the automation unlocks each workspace gains next.{" "}
@@ -16749,23 +17018,31 @@ export default function Reports() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Live now</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.liveNow" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">{item.liveReportCount}</div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Planned</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.planned" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {item.plannedReportCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Categories</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.categories" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {item.plannedCategories.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Prereqs</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.prereqs" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {item.prerequisiteCount}
                       </div>
@@ -16777,7 +17054,7 @@ export default function Reports() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <div className="text-xs font-medium uppercase text-muted-foreground">
-                            Top roadmap priority
+                            <T k="reportCenter.topRoadmapPriority" />
                           </div>
                           <div className="mt-1 text-sm font-medium">
                             {item.topPriorityReport.name}
@@ -16800,7 +17077,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Next report unlocks
+                      <T k="reportCenter.nextReportUnlocks" />
                     </div>
                     {item.nextReports.length > 0 ? (
                       item.nextReports.map((report) => {
@@ -16861,7 +17138,7 @@ export default function Reports() {
                                   reportWorkspaceHref(workspace)
                                 }
                               >
-                                Open area
+                                <T k="reportCenter.openArea" />
                               </Link>
                             </Button>
                           </div>
@@ -16869,14 +17146,14 @@ export default function Reports() {
                       })
                     ) : (
                       <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                        All target reports for this workspace are live or API-backed.
+                        <T k="reportCenter.allTargetReportsForThisWorkspaceAre" />
                       </div>
                     )}
                   </div>
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Automation unlocks
+                      <T k="reportCenter.automationUnlocks" />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(item.plannedAutomationHooks.length > 0
@@ -16892,7 +17169,7 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Workflow dependencies
+                      <T k="reportCenter.workflowDependencies" />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(item.plannedWorkflowDependencies.length > 0
@@ -16907,7 +17184,9 @@ export default function Reports() {
                   </div>
 
                   <Button asChild size="sm" variant="outline">
-                    <Link href={item.nextWorkflow}>Open next workflow</Link>
+                    <Link href={item.nextWorkflow}>
+                      <T k="reportCenter.openNextWorkflow" />
+                    </Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -16923,7 +17202,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-automation-title" className="text-xl font-semibold">
-              Report pack automation
+              <T k="reportCenter.reportPackAutomation" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Scheduled workspace packs with live report signals before delivery.{" "}
@@ -16965,23 +17244,31 @@ export default function Reports() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Health</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.health" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {automationHealth?.score ?? 0}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Open signals</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.openSignals" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">{item.openSignalCount}</div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Work items</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.workItems" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {item.openWorkItemCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Amount</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.amount" />
+                      </div>
                       <div className="truncate font-mono text-sm font-semibold">
                         {formatCurrency(item.amountAtRisk, "AED", locale)}
                       </div>
@@ -17001,7 +17288,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Report pack readiness
+                      <T k="reportCenter.reportPackReadiness" />
                     </div>
                     {readiness?.checks.slice(0, 4).map((check) => (
                       <div
@@ -17021,7 +17308,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Live signals
+                      <T k="reportCenter.liveSignals" />
                     </div>
                     {item.signals.slice(0, 3).map((signal) => (
                       <div
@@ -17046,7 +17333,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => navigate(reportWorkspaceHref(workspace))}
                     >
-                      Open workspace
+                      <T k="reportCenter.openWorkspace" />
                     </Button>
                     <Button
                       type="button"
@@ -17056,7 +17343,7 @@ export default function Reports() {
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                     >
                       <SiGooglesheets className="mr-2 h-4 w-4" />
-                      Send pack
+                      <T k="reportCenter.sendPack" />
                     </Button>
                   </div>
                 </CardContent>
@@ -17073,7 +17360,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="comparison-snapshots-title" className="text-xl font-semibold">
-              Comparison snapshots
+              <T k="reportCenter.comparisonSnapshots" />
             </h2>
             <p className="text-sm text-muted-foreground">
               {comparisonCurrentLabel} vs {comparisonPreviousLabel}. {personaScopeDescription}
@@ -17090,7 +17377,9 @@ export default function Reports() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Current vs prior period</CardTitle>
+            <CardTitle>
+              <T k="reportCenter.currentVsPriorPeriod" />
+            </CardTitle>
             <CardDescription>
               High-level movement across revenue, profit, sales, spend, and tax cash flow.
             </CardDescription>
@@ -17103,11 +17392,21 @@ export default function Reports() {
                 <Table className="min-w-[920px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Metric</TableHead>
-                      <TableHead>Signal</TableHead>
-                      <TableHead className="text-right">Current</TableHead>
-                      <TableHead className="text-right">Baseline</TableHead>
-                      <TableHead className="text-right">Change</TableHead>
+                      <TableHead>
+                        <T k="reportCenter.metric" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="reportCenter.signal" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="reportCenter.current" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="reportCenter.baseline" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="reportCenter.change" />
+                      </TableHead>
                       <TableHead>
                         <T k="pages.roles" />
                       </TableHead>
@@ -17117,7 +17416,12 @@ export default function Reports() {
                   <TableBody>
                     {visibleComparisonRows.map((row) => (
                       <TableRow key={row.id}>
-                        <TableCell className="font-medium">{row.label}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="flex items-center gap-2">
+                            {row.label}
+                            <DataBasisBadge basis={reportComparisonMetricBasis(row.id)} />
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <Badge variant={comparisonBadgeVariant(row)} dot>
                             {row.signal}
@@ -17173,7 +17477,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="persona-workspaces-title" className="text-xl font-semibold">
-              Workspaces
+              <T k="reportCenter.workspaces" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Role-focused report coverage for owners, solo entrepreneurs, freelancers, and
@@ -17207,19 +17511,25 @@ export default function Reports() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Reports</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.reports" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {workspace.catalogReportCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Ready</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.ready" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {workspace.readyReports}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Automations</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.automations" />
+                      </div>
                       <div className="font-mono text-lg font-semibold">
                         {workspace.automationCount}
                       </div>
@@ -17231,19 +17541,25 @@ export default function Reports() {
                     data-testid={`report-workspace-catalog-metadata-${workspace.persona}`}
                   >
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Packs</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.packs" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {workspace.packTemplateCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Comparisons</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.comparisons" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {workspace.comparisonPresetCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Starters</div>
+                      <div className="text-muted-foreground">
+                        <T k="reportCenter.starters" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {workspace.automationStarterCount}
                       </div>
@@ -17252,7 +17568,9 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium">Readiness</span>
+                      <span className="font-medium">
+                        <T k="reportCenter.readiness" />
+                      </span>
                       <span className="font-mono">{workspace.readiness}%</span>
                     </div>
                     <div className="h-2 rounded-full bg-secondary">
@@ -17264,7 +17582,9 @@ export default function Reports() {
                   </div>
 
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Primary signal</div>
+                    <div className="text-xs text-muted-foreground">
+                      <T k="reportCenter.primarySignal" />
+                    </div>
                     <div className="text-sm font-medium">{workspace.topReadyReport?.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {workspace.topReadyReport?.automation}
@@ -17273,7 +17593,7 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Automation outcome
+                      <T k="reportCenter.automationOutcome" />
                     </div>
                     <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {workspace.automationOutcome}
@@ -17282,7 +17602,7 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Report pack cadence
+                      <T k="reportCenter.reportPackCadence" />
                     </div>
                     <div className="mt-2 space-y-2 text-xs text-muted-foreground">
                       <div>
@@ -17302,7 +17622,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Automation playbooks
+                      <T k="reportCenter.automationPlaybooks" />
                     </div>
                     {workspace.automations.map((playbook) => {
                       const linkedReports = playbook.reportIds
@@ -17349,14 +17669,14 @@ export default function Reports() {
                       }}
                       data-testid={`button-open-workspace-${workspace.persona}`}
                     >
-                      Open reports
+                      <T k="reportCenter.openReports" />
                     </Button>
                     <Button asChild size="sm" variant="outline">
                       <Link
                         href={reportSectionHref(workspace, "automation-command-center")}
                         data-testid={`button-open-automation-center-${workspace.persona}`}
                       >
-                        Open automations
+                        <T k="reportCenter.openAutomations" />
                       </Link>
                     </Button>
                     <Button
@@ -17365,7 +17685,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => setReportPersonaFilter(workspace.persona)}
                     >
-                      Filter library
+                      <T k="reportCenter.filterLibrary" />
                     </Button>
                     <Button
                       type="button"
@@ -17376,7 +17696,7 @@ export default function Reports() {
                       data-testid={`button-export-workspace-pack-${workspace.persona}`}
                     >
                       <Download className="mr-2 h-4 w-4" />
-                      Export pack
+                      <T k="reportCenter.exportPack" />
                     </Button>
                     <Button
                       type="button"
@@ -17387,7 +17707,7 @@ export default function Reports() {
                       data-testid={`button-export-workspace-pack-sheets-${workspace.persona}`}
                     >
                       <SiGooglesheets className="mr-2 h-4 w-4" />
-                      Sheets pack
+                      <T k="reportCenter.sheetsPack" />
                     </Button>
                   </div>
                 </CardContent>
@@ -17404,7 +17724,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-templates-title" className="text-xl font-semibold">
-              Report pack templates
+              <T k="reportCenter.reportPackTemplates" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Ready-made packs for recurring owner, freelancer, and accountant decisions.
@@ -17440,11 +17760,15 @@ export default function Reports() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md border p-3">
-                      <div className="font-medium text-foreground">Cadence</div>
+                      <div className="font-medium text-foreground">
+                        <T k="reportCenter.cadence" />
+                      </div>
                       <div className="mt-1 text-muted-foreground">{template.cadence}</div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="font-medium text-foreground">Ready reports</div>
+                      <div className="font-medium text-foreground">
+                        <T k="reportCenter.readyReports" />
+                      </div>
                       <div className="mt-1 font-mono text-base font-semibold">
                         {template.readyCount}/{template.reports.length}
                       </div>
@@ -17479,7 +17803,9 @@ export default function Reports() {
 
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href={template.href}>Open template</Link>
+                      <Link href={template.href}>
+                        <T k="reportCenter.openTemplate" />
+                      </Link>
                     </Button>
                     <Button
                       type="button"
@@ -17487,7 +17813,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => setReportPersonaFilter(template.persona)}
                     >
-                      Filter library
+                      <T k="reportCenter.filterLibrary" />
                     </Button>
                   </div>
                 </CardContent>
@@ -17504,7 +17830,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-center-title" className="text-xl font-semibold">
-              Report center
+              <T k="reportCenter.reportCenter" />
             </h2>
             <p className="text-sm text-muted-foreground">
               {reportStats.ready} ready/API-backed reports from a {reportStats.total}-report target
@@ -17531,7 +17857,7 @@ export default function Reports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Inline reports
+                <T k="reportCenter.inlineReports" />
               </CardTitle>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -17553,7 +17879,7 @@ export default function Reports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Target catalog
+                <T k="reportCenter.targetCatalog" />
               </CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -17568,7 +17894,9 @@ export default function Reports() {
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle>Pinned reports</CardTitle>
+                  <CardTitle>
+                    <T k="reportCenter.pinnedReports" />
+                  </CardTitle>
                   <CardDescription>
                     Report shortcuts saved for the current role filter and shown first in the
                     library.
@@ -17609,7 +17937,7 @@ export default function Reports() {
                           onClick={() => toggleReportFavorite(report)}
                           data-testid={`report-favorite-shortcut-toggle-${report.id}`}
                         >
-                          Unpin
+                          <T k="reportCenter.unpin" />
                         </Button>
                       </div>
                     </div>
@@ -17622,7 +17950,9 @@ export default function Reports() {
           <Card data-testid="favorite-report-shortcuts-empty">
             <CardContent className="flex flex-col gap-2 p-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
               <span>Pin reports from the library to keep role-specific shortcuts here.</span>
-              <Badge variant="neutral">No pinned reports</Badge>
+              <Badge variant="neutral">
+                <T k="reportCenter.noPinnedReports" />
+              </Badge>
             </CardContent>
           </Card>
         )}
@@ -17631,7 +17961,9 @@ export default function Reports() {
           <CardHeader className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <CardTitle>Report coverage map</CardTitle>
+                <CardTitle>
+                  <T k="reportCenter.reportCoverageMap" />
+                </CardTitle>
                 <CardDescription>
                   Category-level view of report depth, comparison coverage, and automation hooks.
                 </CardDescription>
@@ -17678,7 +18010,9 @@ export default function Reports() {
                         </dd>
                       </div>
                       <div className="rounded-md bg-muted/40 p-2">
-                        <dt className="text-muted-foreground">Planned</dt>
+                        <dt className="text-muted-foreground">
+                          <T k="reportCenter.planned" />
+                        </dt>
                         <dd className="font-mono text-base font-semibold">
                           {coverage.plannedCount}
                         </dd>
@@ -17715,7 +18049,9 @@ export default function Reports() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Report library</CardTitle>
+            <CardTitle>
+              <T k="reportCenter.reportLibrary" />
+            </CardTitle>
             <CardDescription>
               Decision question, status, comparison mode, and automation hook for each report
               family.
@@ -17726,12 +18062,24 @@ export default function Reports() {
               <Table className="min-w-[960px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Report</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Comparison</TableHead>
-                    <TableHead>Automation</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>
+                      <T k="reportCenter.report" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="reportCenter.category" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="reportCenter.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="reportCenter.comparison" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="reportCenter.automation" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="reportCenter.actions" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -17766,7 +18114,7 @@ export default function Reports() {
                             <div className="font-medium">{report.name}</div>
                             {isFavoriteReport ? (
                               <Badge variant="success" dot>
-                                Pinned
+                                <T k="reportCenter.pinned" />
                               </Badge>
                             ) : null}
                           </div>
@@ -17810,7 +18158,7 @@ export default function Reports() {
                               </Button>
                             ) : (
                               <Button type="button" size="sm" variant="ghost" disabled>
-                                Queued
+                                <T k="reportCenter.queued" />
                               </Button>
                             )}
                             <Button asChild size="sm" variant="outline">
@@ -17818,7 +18166,7 @@ export default function Reports() {
                                 href={workflowHref}
                                 data-testid={`report-library-automation-${report.id}`}
                               >
-                                Automate
+                                <T k="reportCenter.automate" />
                               </Link>
                             </Button>
                             {comparisonHref ? (
@@ -17827,7 +18175,7 @@ export default function Reports() {
                                   href={comparisonHref}
                                   data-testid={`report-library-comparison-${report.id}`}
                                 >
-                                  Compare
+                                  <T k="reportCenter.compare" />
                                 </Link>
                               </Button>
                             ) : null}
@@ -17837,7 +18185,7 @@ export default function Reports() {
                                   href={deliveryHref}
                                   data-testid={`report-library-delivery-${report.id}`}
                                 >
-                                  Schedule
+                                  <T k="reportCenter.schedule" />
                                 </Link>
                               </Button>
                             ) : null}
@@ -17857,7 +18205,7 @@ export default function Reports() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h3 id="connected-report-centers-title" className="text-lg font-semibold">
-                  Connected report centers
+                  <T k="reportCenter.connectedReportCenters" />
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   Live report families served by adjacent workspaces, kept discoverable from this
@@ -17899,7 +18247,9 @@ export default function Reports() {
                       ))}
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={report.href}>Open report center</Link>
+                      <Link href={report.href}>
+                        <T k="reportCenter.openReportCenter" />
+                      </Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -17910,6 +18260,14 @@ export default function Reports() {
       </section>
 
       <div className={reportWorkspacePanelClass("reports", "space-y-6")}>
+        {!hasFocusedReportSelection ? (
+          <StatementsQuickPanel
+            companyId={selectedCompanyId}
+            from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+            to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+            onShowAdvanced={() => setReportWorkspaceTab("home")}
+          />
+        ) : null}
         {!hasFocusedReportSelection ? (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Report Center">
             {reportViewerGroups.map((group) => (
@@ -17935,7 +18293,14 @@ export default function Reports() {
                       data-testid={`button-report-center-${option.id}`}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">{option.label}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="block truncate text-sm font-medium">{option.label}</span>
+                          <DataBasisBadge
+                            basis={
+                              option.reportId ? reportCatalogDataBasis(option.reportId) : undefined
+                            }
+                          />
+                        </span>
                         <span className="mt-1 block line-clamp-2 text-xs leading-snug text-muted-foreground">
                           {option.description}
                         </span>
@@ -17964,31 +18329,31 @@ export default function Reports() {
                 {t.vatSummary}
               </TabsTrigger>
               <TabsTrigger value="tax" data-testid="tab-corporate-tax">
-                Corporate Tax
+                <T k="reportCenter.corporateTax" />
               </TabsTrigger>
               <TabsTrigger value="sales" data-testid="tab-invoice-status">
-                Sales
+                <T k="reportCenter.sales" />
               </TabsTrigger>
               <TabsTrigger value="balances" data-testid="tab-balance-summaries">
-                Balances
+                <T k="reportCenter.balances" />
               </TabsTrigger>
               <TabsTrigger value="expenses" data-testid="tab-expense-reports">
-                Expenses
+                <T k="reportCenter.expenses" />
               </TabsTrigger>
               <TabsTrigger value="payroll" data-testid="tab-payroll-reports">
-                Payroll
+                <T k="reportCenter.payroll" />
               </TabsTrigger>
               <TabsTrigger value="trial" data-testid="tab-trial-balance">
                 {t.trialBalance}
               </TabsTrigger>
               <TabsTrigger value="ledger" data-testid="tab-ledger-reports">
-                Ledger
+                <T k="reportCenter.ledger" />
               </TabsTrigger>
               <TabsTrigger value="close" data-testid="tab-month-end-close-status">
-                Close
+                <T k="reportCenter.close" />
               </TabsTrigger>
               <TabsTrigger value="planning" data-testid="tab-planning-reports">
-                Planning
+                <T k="reportCenter.planning" />
               </TabsTrigger>
             </TabsList>
 
@@ -18042,7 +18407,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.netProfit" />
+                    </CardTitle>
                     <div className="w-8 h-8 rounded-md bg-info-subtle flex items-center justify-center">
                       <DollarSign className="w-4 h-4 text-info " />
                     </div>
@@ -18060,21 +18427,33 @@ export default function Reports() {
               </div>
 
               <Card>
-                <CardHeader>
-                  <CardTitle>{t.profitLoss} Statement</CardTitle>
-                  <CardDescription>
-                    {dateRange.from && dateRange.to
-                      ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "All time"}
-                  </CardDescription>
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <CardTitle>{t.profitLoss}</CardTitle>
+                    <CardDescription>
+                      {dateRange.from && dateRange.to
+                        ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                        : t["reportCenter.allTime"]}
+                    </CardDescription>
+                  </div>
+                  <StatementDownloads
+                    companyId={selectedCompanyId}
+                    kind="profit-loss"
+                    from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                    to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+                  />
                 </CardHeader>
                 <CardContent>
                   {plLoading ? (
                     <Skeleton className="h-64" />
+                  ) : profitLoss?.sections ? (
+                    <ProfitLossSections report={profitLoss} />
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-success ">Revenue</h3>
+                        <h3 className="font-semibold mb-3 text-success ">
+                          <T k="reportCenter.revenue" />
+                        </h3>
                         <Table>
                           <TableBody>
                             {profitLoss?.revenue?.map((item, index) => (
@@ -18101,7 +18480,9 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-destructive ">Expenses</h3>
+                        <h3 className="font-semibold mb-3 text-destructive ">
+                          <T k="reportCenter.expenses" />
+                        </h3>
                         <Table>
                           <TableBody>
                             {profitLoss?.expenses?.map((item, index) => (
@@ -18129,7 +18510,9 @@ export default function Reports() {
 
                       <div className="border-t-4 pt-4">
                         <div className="flex justify-between items-center text-lg font-semibold">
-                          <span>Net Profit</span>
+                          <span>
+                            <T k="reportCenter.netProfit" />
+                          </span>
                           <span
                             className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
                           >
@@ -18145,13 +18528,33 @@ export default function Reports() {
 
             <TabsContent value="bs">
               <Card>
-                <CardHeader>
-                  <CardTitle>{t.balanceSheet}</CardTitle>
-                  <CardDescription>
-                    {dateRange.from && dateRange.to
-                      ? `As of ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "Assets, liabilities, and equity as of today"}
-                  </CardDescription>
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <CardTitle>{t.balanceSheet}</CardTitle>
+                    <CardDescription>
+                      {dateRange.from && dateRange.to
+                        ? `As of ${format(dateRange.to, "MMM dd, yyyy")}`
+                        : "Assets, liabilities, and equity as of today"}
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <BalanceCheck
+                      isBalanced={balanceSheet?.isBalanced}
+                      difference={balanceSheet?.difference}
+                      testId="balance-sheet-balance-check"
+                    />
+                    <StatementDownloads
+                      companyId={selectedCompanyId}
+                      kind="balance-sheet"
+                      to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+                    />
+                    <StatementDownloads
+                      companyId={selectedCompanyId}
+                      kind="changes-in-equity"
+                      from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                      to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+                    />
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {bsLoading ? (
@@ -18159,7 +18562,9 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-info ">Assets</h3>
+                        <h3 className="font-semibold mb-3 text-info ">
+                          <T k="reportCenter.assets" />
+                        </h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.assets?.map((item, index) => (
@@ -18186,7 +18591,9 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-destructive ">Liabilities</h3>
+                        <h3 className="font-semibold mb-3 text-destructive ">
+                          <T k="reportCenter.liabilities" />
+                        </h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.liabilities?.map((item, index) => (
@@ -18213,7 +18620,9 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-chart-5 ">Equity</h3>
+                        <h3 className="font-semibold mb-3 text-chart-5 ">
+                          <T k="reportCenter.equity" />
+                        </h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.equity?.map((item, index) => (
@@ -18264,7 +18673,9 @@ export default function Reports() {
                           <h3 className="font-semibold text-success ">Sales (Output VAT)</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Subtotal</span>
+                              <span className="text-muted-foreground">
+                                <T k="reportCenter.subtotal" />
+                              </span>
                               <span className="font-mono">
                                 {formatCurrency(vatSummary?.salesSubtotal || 0, "AED", locale)}
                               </span>
@@ -18282,7 +18693,9 @@ export default function Reports() {
                           <h3 className="font-semibold text-info ">Purchases (Input VAT)</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Subtotal</span>
+                              <span className="text-muted-foreground">
+                                <T k="reportCenter.subtotal" />
+                              </span>
                               <span className="font-mono">
                                 {formatCurrency(vatSummary?.purchasesSubtotal || 0, "AED", locale)}
                               </span>
@@ -18299,7 +18712,9 @@ export default function Reports() {
 
                       <div className="border-t-4 pt-6">
                         <div className="flex justify-between items-center text-lg font-semibold">
-                          <span>Net VAT Payable to FTA</span>
+                          <span>
+                            <T k="reportCenter.netVatPayableToFta" />
+                          </span>
                           <span
                             className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-destructive " : "text-success "}`}
                           >
@@ -18370,7 +18785,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Above Band</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.aboveBand" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18393,7 +18810,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posted Journals</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.postedJournals" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18414,7 +18833,9 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Corporate Tax Estimate</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.corporateTaxEstimate" />
+                      </CardTitle>
                       <CardDescription>
                         {corporateTaxEstimate
                           ? `${formatReportDate(corporateTaxEstimate.periodStart)} - ${formatReportDate(corporateTaxEstimate.periodEnd)}`
@@ -18422,7 +18843,9 @@ export default function Reports() {
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/corporate-tax">Open Corporate Tax</Link>
+                      <Link href="/corporate-tax">
+                        <T k="reportCenter.openCorporateTax" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -18449,8 +18872,12 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Bridge</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.bridge" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.amount" />
+                            </TableHead>
                             <TableHead>Note</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -18483,7 +18910,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Invoice Value</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.invoiceValue" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18501,7 +18930,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Active Invoices</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.activeInvoices" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18519,7 +18950,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.unpaidInvoices" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -18537,7 +18970,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Overdue Outstanding</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.overdueOutstanding" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
@@ -18554,7 +18989,9 @@ export default function Reports() {
                         )}
                       </div>
                     ) : (
-                      <div className="text-sm font-medium">Mixed currencies</div>
+                      <div className="text-sm font-medium">
+                        <T k="reportCenter.mixedCurrencies" />
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -18570,7 +19007,9 @@ export default function Reports() {
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/payment-chasing">Open collections</Link>
+                      <Link href="/payment-chasing">
+                        <T k="reportCenter.openCollections" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -18581,13 +19020,17 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Current</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.current" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.current, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Overdue</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.overdue" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.overdue, "AED", locale)}
                           </div>
@@ -18599,7 +19042,9 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Total receivable</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.totalReceivable" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.total, "AED", locale)}
                           </div>
@@ -18610,13 +19055,19 @@ export default function Reports() {
                         <Table className="min-w-[920px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Customer</TableHead>
-                              <TableHead className="text-right">Current</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.customer" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.current" />
+                              </TableHead>
                               <TableHead className="text-right">1-30</TableHead>
                               <TableHead className="text-right">31-60</TableHead>
                               <TableHead className="text-right">61-90</TableHead>
                               <TableHead className="text-right">90+</TableHead>
-                              <TableHead className="text-right">Total</TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.total" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -18649,7 +19100,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No open receivables found for aging.
+                      <T k="reportCenter.noOpenReceivablesFoundForAging" />
                     </div>
                   )}
                 </CardContent>
@@ -18683,11 +19134,19 @@ export default function Reports() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Product / service</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Quantity</TableHead>
-                            <TableHead className="text-right">Sales</TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.invoices" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.quantity" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.sales" />
+                            </TableHead>
                             <TableHead className="text-right">VAT</TableHead>
-                            <TableHead className="text-right">Avg unit</TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.avgUnit" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18721,7 +19180,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No invoice line-item sales found for this period.
+                      <T k="reportCenter.noInvoiceLineItemSalesFoundFor" />
                     </div>
                   )}
                 </CardContent>
@@ -18730,8 +19189,12 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Card className={reportSectionClass(["invoice-status"])}>
                   <CardHeader>
-                    <CardTitle>Invoice status</CardTitle>
-                    <CardDescription>Status mix and AED-equivalent invoice value.</CardDescription>
+                    <CardTitle>
+                      <T k="reportCenter.invoiceStatus" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="reportCenter.statusMixAndAedEquivalentInvoiceValue" />
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     {salesLoading ? (
@@ -18740,9 +19203,15 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Value</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.status" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.invoices" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.value" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18763,7 +19232,7 @@ export default function Reports() {
                       </Table>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No invoices found for this period.
+                        <T k="reportCenter.noInvoicesFoundForThisPeriod" />
                       </div>
                     )}
                   </CardContent>
@@ -18771,9 +19240,11 @@ export default function Reports() {
 
                 <Card className={reportSectionClass(["revenue-customer"])}>
                   <CardHeader>
-                    <CardTitle>Revenue by customer</CardTitle>
+                    <CardTitle>
+                      <T k="reportCenter.revenueByCustomer" />
+                    </CardTitle>
                     <CardDescription>
-                      Issued invoice value by customer, shown in AED.
+                      <T k="reportCenter.issuedInvoiceValueByCustomerShownIn" />
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -18784,9 +19255,15 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Customer</TableHead>
-                              <TableHead className="text-right">Invoices</TableHead>
-                              <TableHead className="text-right">Value</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.customer" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.invoices" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.value" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -18806,7 +19283,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No issued customer revenue found for this period.
+                        <T k="reportCenter.noIssuedCustomerRevenueFoundForThis" />
                       </div>
                     )}
                   </CardContent>
@@ -18817,13 +19294,17 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Reminder routing</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.reminderRouting" />
+                      </CardTitle>
                       <CardDescription>
-                        Overdue customer balances grouped by recommended chase level.
+                        <T k="reportCenter.overdueCustomerBalancesGroupedByRecommendedChase" />
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/payment-chasing">Open chasing queue</Link>
+                      <Link href="/payment-chasing">
+                        <T k="reportCenter.openChasingQueue" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -18835,11 +19316,21 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Customer</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Outstanding</TableHead>
-                            <TableHead className="text-right">Oldest</TableHead>
-                            <TableHead className="text-right">Next level</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.customer" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.invoices" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.outstanding" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.oldest" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.nextLevel" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18865,7 +19356,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No overdue invoices in the reminder queue.
+                      <T k="reportCenter.noOverdueInvoicesInTheReminderQueue" />
                     </div>
                   )}
                 </CardContent>
@@ -18873,7 +19364,9 @@ export default function Reports() {
 
               <Card className={reportSectionClass(["invoice-status"])}>
                 <CardHeader>
-                  <CardTitle>Invoice detail</CardTitle>
+                  <CardTitle>
+                    <T k="reportCenter.invoiceDetail" />
+                  </CardTitle>
                   <CardDescription>
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
@@ -18888,14 +19381,30 @@ export default function Reports() {
                       <Table className="min-w-[900px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Invoice</TableHead>
-                            <TableHead>Customer</TableHead>
-                            <TableHead>Issue date</TableHead>
-                            <TableHead>Due date</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right">AED value</TableHead>
-                            <TableHead className="text-right">Proof</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.invoice" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.customer" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.issueDate" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.dueDate" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.status" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.amount" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.aedValue" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.proof" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18929,7 +19438,7 @@ export default function Reports() {
                               <TableCell className="text-right">
                                 <Button asChild size="sm" variant="outline">
                                   <Link href={evidenceSourceHref("invoice", invoice.id)}>
-                                    Proof
+                                    <T k="reportCenter.proof" />
                                   </Link>
                                 </Button>
                               </TableCell>
@@ -18940,7 +19449,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No invoices found for this period.
+                      <T k="reportCenter.noInvoicesFoundForThisPeriod" />
                     </div>
                   )}
                 </CardContent>
@@ -18964,7 +19473,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.customerOpenBalance" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingUp className="h-4 w-4 text-success " />
                     </div>
@@ -18982,7 +19493,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Customer Overdue</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.customerOverdue" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -19005,7 +19518,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Vendor Open Balance</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.vendorOpenBalance" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
@@ -19023,7 +19538,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Net AR Less AP</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.netArLessAp" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -19050,7 +19567,9 @@ export default function Reports() {
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/bill-pay?tab=summary">Open bill pay</Link>
+                      <Link href="/bill-pay?tab=summary">
+                        <T k="reportCenter.openBillPay" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19061,13 +19580,17 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Current</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.current" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(payableAgingSummary.current, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Overdue</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.overdue" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(payableAgingSummary.overdue, "AED", locale)}
                           </div>
@@ -19079,7 +19602,9 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Open bills</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.openBills" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {payableAgingSummary.billCount.toLocaleString(locale)}
                           </div>
@@ -19089,17 +19614,25 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Aging buckets</div>
+                            <div className="font-medium">
+                              <T k="reportCenter.agingBuckets" />
+                            </div>
                             <div className="text-xs text-muted-foreground">
-                              Bill count and open AED balance by due-date bucket.
+                              <T k="reportCenter.billCountAndOpenAedBalanceBy" />
                             </div>
                           </div>
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Bucket</TableHead>
-                                <TableHead className="text-right">Bills</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.bucket" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.bills" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.amount" />
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -19122,11 +19655,19 @@ export default function Reports() {
                           <Table className="min-w-[760px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Vendor</TableHead>
-                                <TableHead className="text-right">Bills</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.vendor" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.bills" />
+                                </TableHead>
                                 <TableHead className="text-right">Open</TableHead>
-                                <TableHead className="text-right">Overdue</TableHead>
-                                <TableHead className="text-right">Oldest</TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.overdue" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.oldest" />
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -19173,7 +19714,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No open payables found for aging.
+                      <T k="reportCenter.noOpenPayablesFoundForAging" />
                     </div>
                   )}
                 </CardContent>
@@ -19184,13 +19725,17 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Customer balance summary</CardTitle>
+                        <CardTitle>
+                          <T k="reportCenter.customerBalanceSummary" />
+                        </CardTitle>
                         <CardDescription>
                           Current open receivables from issued invoices, net of recorded payments.
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/payment-chasing">Open collections</Link>
+                        <Link href="/payment-chasing">
+                          <T k="reportCenter.openCollections" />
+                        </Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -19202,11 +19747,19 @@ export default function Reports() {
                         <Table className="min-w-[760px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Customer</TableHead>
-                              <TableHead className="text-right">Invoices</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.customer" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.invoices" />
+                              </TableHead>
                               <TableHead className="text-right">Open</TableHead>
-                              <TableHead className="text-right">Overdue</TableHead>
-                              <TableHead className="text-right">Oldest</TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.overdue" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.oldest" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19251,7 +19804,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No open customer balances.
+                        <T k="reportCenter.noOpenCustomerBalances" />
                       </div>
                     )}
                   </CardContent>
@@ -19261,13 +19814,17 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Vendor balance summary</CardTitle>
+                        <CardTitle>
+                          <T k="reportCenter.vendorBalanceSummary" />
+                        </CardTitle>
                         <CardDescription>
                           Current open payables from vendor bills, net of recorded payments.
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/bill-pay?tab=summary">Open bill pay</Link>
+                        <Link href="/bill-pay?tab=summary">
+                          <T k="reportCenter.openBillPay" />
+                        </Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -19279,11 +19836,19 @@ export default function Reports() {
                         <Table className="min-w-[760px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Vendor</TableHead>
-                              <TableHead className="text-right">Bills</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.vendor" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.bills" />
+                              </TableHead>
                               <TableHead className="text-right">Open</TableHead>
-                              <TableHead className="text-right">Overdue</TableHead>
-                              <TableHead className="text-right">Oldest</TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.overdue" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.oldest" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19328,7 +19893,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No open vendor balances.
+                        <T k="reportCenter.noOpenVendorBalances" />
                       </div>
                     )}
                   </CardContent>
@@ -19339,13 +19904,17 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Inventory valuation</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.inventoryValuation" />
+                      </CardTitle>
                       <CardDescription>
                         Stock quantity, cost value, reorder risk, and costing exceptions.
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/inventory">Open inventory</Link>
+                      <Link href="/inventory">
+                        <T k="reportCenter.openInventory" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19356,13 +19925,17 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Active products</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.activeProducts" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {inventoryValuationReport.activeProductCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Stock value</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.stockValue" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               inventoryValuationReport.totalStockValueAed,
@@ -19372,13 +19945,17 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Low stock</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.lowStock" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {inventoryValuationReport.lowStockCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Costing review</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.costingReview" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {inventoryValuationReport.missingCostCount}
                           </div>
@@ -19389,13 +19966,25 @@ export default function Reports() {
                         <Table className="min-w-[940px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Product</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.product" />
+                              </TableHead>
                               <TableHead>Unit</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Stock</TableHead>
-                              <TableHead className="text-right">Unit cost</TableHead>
-                              <TableHead className="text-right">Value</TableHead>
-                              <TableHead className="text-right">Movements</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.status" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.stock" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.unitCost" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.value" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.movements" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19452,7 +20041,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No inventory products found yet.
+                      <T k="reportCenter.noInventoryProductsFoundYet" />
                     </div>
                   )}
                 </CardContent>
@@ -19462,13 +20051,17 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Inventory movement</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.inventoryMovement" />
+                      </CardTitle>
                       <CardDescription>
                         Stock receipts, sales, returns, and adjustments for the selected period.
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/inventory">Open movements</Link>
+                      <Link href="/inventory">
+                        <T k="reportCenter.openMovements" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19479,25 +20072,33 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Movements</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.movements" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {inventoryMovementReport.movementCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Inbound units</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.inboundUnits" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {inventoryMovementReport.inboundUnits.toLocaleString(locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Outbound units</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.outboundUnits" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {inventoryMovementReport.outboundUnits.toLocaleString(locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Movement value</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.movementValue" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               inventoryMovementReport.totalMovementValueAed,
@@ -19511,9 +20112,11 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.75fr_1.25fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Movement type mix</div>
+                            <div className="font-medium">
+                              <T k="reportCenter.movementTypeMix" />
+                            </div>
                             <div className="text-xs text-muted-foreground">
-                              Quantity and value by movement type.
+                              <T k="reportCenter.quantityAndValueByMovementType" />
                             </div>
                           </div>
                           <div className="space-y-3">
@@ -19544,12 +20147,22 @@ export default function Reports() {
                             <TableHeader>
                               <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead>Product</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.product" />
+                                </TableHead>
                                 <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Quantity</TableHead>
-                                <TableHead className="text-right">Unit cost</TableHead>
-                                <TableHead className="text-right">Value</TableHead>
-                                <TableHead>Reference</TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.quantity" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.unitCost" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.value" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.reference" />
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -19593,7 +20206,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No inventory movements found for this period.
+                      <T k="reportCenter.noInventoryMovementsFoundForThisPeriod" />
                     </div>
                   )}
                 </CardContent>
@@ -19603,14 +20216,18 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Depreciation schedule</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.depreciationSchedule" />
+                      </CardTitle>
                       <CardDescription>
                         Estimated depreciation for {format(depreciationPeriodDate, "MMMM yyyy")}{" "}
                         from the fixed asset register.
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/fixed-assets">Open fixed assets</Link>
+                      <Link href="/fixed-assets">
+                        <T k="reportCenter.openFixedAssets" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19621,7 +20238,9 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Period depreciation</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.periodDepreciation" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               depreciationScheduleReport.periodDepreciationAed,
@@ -19631,7 +20250,9 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Annual run-rate</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.annualRunRate" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               depreciationScheduleReport.annualDepreciationAed,
@@ -19641,13 +20262,17 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Ready to post</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.readyToPost" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {depreciationScheduleReport.readyToPostCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Setup review</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.setupReview" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {depreciationScheduleReport.reviewCount}
                           </div>
@@ -19658,12 +20283,24 @@ export default function Reports() {
                         <Table className="min-w-[980px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Asset</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead className="text-right">Remaining</TableHead>
-                              <TableHead className="text-right">Monthly depreciation</TableHead>
-                              <TableHead className="text-right">Projected NBV</TableHead>
-                              <TableHead>Status</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.asset" />
+                              </TableHead>
+                              <TableHead>
+                                <T k="reportCenter.method" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.remaining" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.monthlyDepreciation" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.projectedNbv" />
+                              </TableHead>
+                              <TableHead>
+                                <T k="reportCenter.status" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19705,7 +20342,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No active fixed assets available for depreciation.
+                      <T k="reportCenter.noActiveFixedAssetsAvailableForDepreciation" />
                     </div>
                   )}
                 </CardContent>
@@ -19715,14 +20352,18 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Fixed asset register</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.fixedAssetRegister" />
+                      </CardTitle>
                       <CardDescription>
                         Asset cost, accumulated depreciation, net book value, and capitalization
                         review.
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/fixed-assets">Open fixed assets</Link>
+                      <Link href="/fixed-assets">
+                        <T k="reportCenter.openFixedAssets" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19733,19 +20374,25 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Active assets</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.activeAssets" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {fixedAssetRegisterReport.totalAssets}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Asset cost</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.assetCost" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(fixedAssetRegisterReport.totalCost, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Net book value</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.netBookValue" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               fixedAssetRegisterReport.totalNetBookValue,
@@ -19755,7 +20402,9 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Review items</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.reviewItems" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {fixedAssetRegisterReport.reviewCount}
                           </div>
@@ -19767,12 +20416,22 @@ export default function Reports() {
                           <Table className="min-w-[960px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Asset</TableHead>
-                                <TableHead>Category</TableHead>
-                                <TableHead>Purchase date</TableHead>
-                                <TableHead>Status</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.asset" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.category" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.purchaseDate" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.status" />
+                                </TableHead>
                                 <TableHead className="text-right">Cost</TableHead>
-                                <TableHead className="text-right">Depreciation</TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.depreciation" />
+                                </TableHead>
                                 <TableHead className="text-right">NBV</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -19815,9 +20474,11 @@ export default function Reports() {
 
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Category valuation</div>
+                            <div className="font-medium">
+                              <T k="reportCenter.categoryValuation" />
+                            </div>
                             <div className="text-xs text-muted-foreground">
-                              Active assets grouped by category.
+                              <T k="reportCenter.activeAssetsGroupedByCategory" />
                             </div>
                           </div>
                           <div className="max-h-[420px] space-y-3 overflow-auto pr-1">
@@ -19840,7 +20501,7 @@ export default function Reports() {
                               ))
                             ) : (
                               <div className="text-sm text-muted-foreground">
-                                No active asset categories.
+                                <T k="reportCenter.noActiveAssetCategories" />
                               </div>
                             )}
                           </div>
@@ -19849,7 +20510,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No fixed assets registered yet.
+                      <T k="reportCenter.noFixedAssetsRegisteredYet" />
                     </div>
                   )}
                 </CardContent>
@@ -19857,7 +20518,9 @@ export default function Reports() {
 
               <Card className={cn(hasFocusedReportSelection && "hidden")}>
                 <CardHeader>
-                  <CardTitle>Balance automation queues</CardTitle>
+                  <CardTitle>
+                    <T k="reportCenter.balanceAutomationQueues" />
+                  </CardTitle>
                   <CardDescription>
                     Current open-balance signals for collections and payable follow-up.
                   </CardDescription>
@@ -19865,31 +20528,41 @@ export default function Reports() {
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Collections queue</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.collectionsQueue" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {balanceReport.overdueCustomerCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Bill pay queue</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.billPayQueue" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {balanceReport.overdueVendorCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Inventory review</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.inventoryReview" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {inventoryValuationReport.reviewCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Asset review</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.assetReview" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {fixedAssetRegisterReport.reviewCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Last refreshed</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.lastRefreshed" />
+                      </div>
                       <div className="text-sm font-medium">
                         {formatReportDate(balanceReport.generatedAt)}
                       </div>
@@ -19917,7 +20590,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posted Expenses</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.postedExpenses" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
@@ -19935,7 +20610,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Gross Expense Debits</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.grossExpenseDebits" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -19953,7 +20630,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Receipt VAT Captured</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.receiptVatCaptured" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -19971,7 +20650,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posting Queue</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.postingQueue" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -19996,7 +20677,9 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Card className={reportSectionClass(["expenses-vendor"])}>
                   <CardHeader>
-                    <CardTitle>Expenses by vendor</CardTitle>
+                    <CardTitle>
+                      <T k="reportCenter.expensesByVendor" />
+                    </CardTitle>
                     <CardDescription>
                       Posted expense-account activity grouped by linked bill or receipt vendor.
                     </CardDescription>
@@ -20009,10 +20692,18 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Vendor</TableHead>
-                              <TableHead className="text-right">Entries</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Net expense</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.vendor" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.entries" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.lines" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.netExpense" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -20035,7 +20726,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No expenses found for this period.
+                        <T k="reportCenter.noExpensesFoundForThisPeriod" />
                       </div>
                     )}
                   </CardContent>
@@ -20043,7 +20734,9 @@ export default function Reports() {
 
                 <Card className={reportSectionClass(["expenses-category"])}>
                   <CardHeader>
-                    <CardTitle>Expenses by category</CardTitle>
+                    <CardTitle>
+                      <T k="reportCenter.expensesByCategory" />
+                    </CardTitle>
                     <CardDescription>
                       Posted expense-account activity grouped by chart-of-account category.
                     </CardDescription>
@@ -20056,11 +20749,21 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Category</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Debit</TableHead>
-                              <TableHead className="text-right">Credit</TableHead>
-                              <TableHead className="text-right">Net expense</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.category" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.lines" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.debit" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.credit" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.netExpense" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -20086,7 +20789,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No categorized expenses found for this period.
+                        <T k="reportCenter.noCategorizedExpensesFoundForThisPeriod" />
                       </div>
                     )}
                   </CardContent>
@@ -20097,13 +20800,17 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Expense claims</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.expenseClaims" />
+                      </CardTitle>
                       <CardDescription>
-                        Claim status, approval routing, and reimbursement queue.
+                        <T k="reportCenter.claimStatusApprovalRoutingAndReimbursementQueue" />
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/expense-claims">Open claims</Link>
+                      <Link href="/expense-claims">
+                        <T k="reportCenter.openClaims" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -20114,25 +20821,33 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Claims</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.claims" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {expenseClaimReport.claimCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Claim value</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.claimValue" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {formatCurrency(expenseClaimReport.totalAmount, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Needs approval</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.needsApproval" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {expenseClaimReport.submittedCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Approved unpaid</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.approvedUnpaid" />
+                          </div>
                           <div className="font-mono text-2xl font-semibold">
                             {expenseClaimReport.approvedUnpaidCount}
                           </div>
@@ -20142,9 +20857,11 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Claim status mix</div>
+                            <div className="font-medium">
+                              <T k="reportCenter.claimStatusMix" />
+                            </div>
                             <div className="text-xs text-muted-foreground">
-                              Current date-range claims by workflow status.
+                              <T k="reportCenter.currentDateRangeClaimsByWorkflowStatus" />
                             </div>
                           </div>
                           <div className="space-y-3">
@@ -20173,11 +20890,21 @@ export default function Reports() {
                           <Table className="min-w-[880px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Claim</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Created</TableHead>
-                                <TableHead>Submitted</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.claim" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.status" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.created" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.submitted" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.amount" />
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -20216,7 +20943,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No expense claims found for this period.
+                      <T k="reportCenter.noExpenseClaimsFoundForThisPeriod" />
                     </div>
                   )}
                 </CardContent>
@@ -20226,38 +20953,50 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Posting automation</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.postingAutomation" />
+                      </CardTitle>
                       <CardDescription>
-                        Receipts ready for review, posting, and autopilot follow-up.
+                        <T k="reportCenter.receiptsReadyForReviewPostingAndAutopilot" />
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/receipts">Open receipts</Link>
+                      <Link href="/receipts">
+                        <T k="reportCenter.openReceipts" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Captured receipts</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.capturedReceipts" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {expenseReport.receiptCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Auto-posted</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.autoPosted" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {expenseReport.autoPostedReceipts}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Needs posting</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.needsPosting" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {expenseReport.unpostedReceipts}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Claims review</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.claimsReview" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {expenseClaimReport.reviewCount}
                       </div>
@@ -20268,7 +21007,9 @@ export default function Reports() {
 
               <Card className={reportSectionClass(["expenses-vendor", "expenses-category"])}>
                 <CardHeader>
-                  <CardTitle>Posted expense detail</CardTitle>
+                  <CardTitle>
+                    <T k="reportCenter.postedExpenseDetail" />
+                  </CardTitle>
                   <CardDescription>
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
@@ -20283,14 +21024,28 @@ export default function Reports() {
                       <Table className="min-w-[980px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Entry</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.entry" />
+                            </TableHead>
                             <TableHead>Date</TableHead>
-                            <TableHead>Vendor</TableHead>
-                            <TableHead>Expense account</TableHead>
-                            <TableHead>Source</TableHead>
-                            <TableHead className="text-right">Debit</TableHead>
-                            <TableHead className="text-right">Credit</TableHead>
-                            <TableHead className="text-right">Net expense</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.vendor" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.expenseAccount" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.source" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.debit" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.credit" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.netExpense" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -20330,7 +21085,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No posted expense-account journal lines found for this period.
+                      <T k="reportCenter.noPostedExpenseAccountJournalLinesFound" />
                     </div>
                   )}
                 </CardContent>
@@ -20346,7 +21101,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Net payroll</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.netPayroll" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20364,7 +21121,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Payroll runs</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.payrollRuns" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20380,7 +21139,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Needs approval</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.needsApproval" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20398,7 +21159,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Needs SIF</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.needsSif" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20419,13 +21182,17 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Payroll Summary</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.payrollSummary" />
+                      </CardTitle>
                       <CardDescription>
                         Pay-period totals, approval state, and WPS/SIF readiness.
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/payroll">Open payroll</Link>
+                      <Link href="/payroll">
+                        <T k="reportCenter.openPayroll" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -20437,9 +21204,11 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Payroll status mix</div>
+                            <div className="font-medium">
+                              <T k="reportCenter.payrollStatusMix" />
+                            </div>
                             <div className="text-xs text-muted-foreground">
-                              Current date-range payroll by workflow status.
+                              <T k="reportCenter.currentDateRangePayrollByWorkflowStatus" />
                             </div>
                           </div>
                           <div className="space-y-3">
@@ -20468,12 +21237,24 @@ export default function Reports() {
                           <Table className="min-w-[920px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Period</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Employees</TableHead>
-                                <TableHead className="text-right">Basic</TableHead>
-                                <TableHead className="text-right">Allowances</TableHead>
-                                <TableHead className="text-right">Deductions</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.period" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.status" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.employees" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.basic" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.allowances" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.deductions" />
+                                </TableHead>
                                 <TableHead className="text-right">Net</TableHead>
                                 <TableHead>SIF</TableHead>
                               </TableRow>
@@ -20529,7 +21310,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No payroll runs found for this period.
+                      <T k="reportCenter.noPayrollRunsFoundForThisPeriod" />
                     </div>
                   )}
                 </CardContent>
@@ -20545,25 +21326,33 @@ export default function Reports() {
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">SIF generated</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.sifGenerated" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {payrollReport.sifGeneratedCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">WPS ready</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.wpsReady" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {payrollReport.wpsReadyCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Approved runs</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.approvedRuns" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {payrollReport.approvedCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Latest period</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.latestPeriod" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {payrollPeriodLabel(payrollReport.latestRun)}
                       </div>
@@ -20614,7 +21403,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Active Accounts</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.activeAccounts" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20632,7 +21423,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">FX Accounts</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.fxAccounts" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20676,12 +21469,22 @@ export default function Reports() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Code</TableHead>
-                            <TableHead>Account</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.account" />
+                            </TableHead>
                             <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Debit</TableHead>
-                            <TableHead className="text-right">Credit</TableHead>
-                            <TableHead className="text-right">Balance</TableHead>
-                            <TableHead>Flags</TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.debit" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.credit" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.balance" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="reportCenter.flags" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -20730,7 +21533,7 @@ export default function Reports() {
                           ))}
                           <TableRow className="border-t-2">
                             <TableCell colSpan={3} className="font-semibold">
-                              Totals
+                              <T k="reportCenter.totals" />
                             </TableCell>
                             <TableCell className="text-right font-mono font-semibold">
                               {formatCurrency(
@@ -20760,7 +21563,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No posted accounts found for this period.
+                      <T k="reportCenter.noPostedAccountsFoundForThisPeriod" />
                     </div>
                   )}
                 </CardContent>
@@ -20776,7 +21579,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posted Entries</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.postedEntries" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20822,7 +21627,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Accounts Touched</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.accountsTouched" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20840,7 +21647,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Review Queue</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.reviewQueue" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20865,9 +21674,11 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Card className={reportSectionClass(["account-transactions"])}>
                   <CardHeader>
-                    <CardTitle>Account transactions</CardTitle>
+                    <CardTitle>
+                      <T k="reportCenter.accountTransactions" />
+                    </CardTitle>
                     <CardDescription>
-                      Account-level debit, credit, and activity totals.
+                      <T k="reportCenter.accountLevelDebitCreditAndActivityTotals" />
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -20878,11 +21689,19 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Account</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.account" />
+                              </TableHead>
                               <TableHead>Type</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Debit</TableHead>
-                              <TableHead className="text-right">Credit</TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.lines" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.debit" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.credit" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -20915,7 +21734,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No posted account activity found for this period.
+                        <T k="reportCenter.noPostedAccountActivityFoundForThis" />
                       </div>
                     )}
                   </CardContent>
@@ -20923,8 +21742,12 @@ export default function Reports() {
 
                 <Card className={reportSectionClass(["general-ledger"])}>
                   <CardHeader>
-                    <CardTitle>Source review</CardTitle>
-                    <CardDescription>Automation routing by journal entry source.</CardDescription>
+                    <CardTitle>
+                      <T k="reportCenter.sourceReview" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="reportCenter.automationRoutingByJournalEntrySource" />
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     {ledgerLoading ? (
@@ -20933,11 +21756,21 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Source</TableHead>
-                            <TableHead className="text-right">Entries</TableHead>
-                            <TableHead className="text-right">Lines</TableHead>
-                            <TableHead className="text-right">Activity</TableHead>
-                            <TableHead className="text-right">Status</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.source" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.entries" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.lines" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.activity" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.status" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -20964,7 +21797,7 @@ export default function Reports() {
                       </Table>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No journal sources found for this period.
+                        <T k="reportCenter.noJournalSourcesFoundForThisPeriod" />
                       </div>
                     )}
                   </CardContent>
@@ -20975,7 +21808,9 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>General ledger detail</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.generalLedgerDetail" />
+                      </CardTitle>
                       <CardDescription>
                         {dateRange.from && dateRange.to
                           ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
@@ -20988,7 +21823,9 @@ export default function Reports() {
                         {ledgerDetailPageCount}
                       </Badge>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/journal">Open journal</Link>
+                        <Link href="/journal">
+                          <T k="reportCenter.openJournal" />
+                        </Link>
                       </Button>
                     </div>
                   </div>
@@ -21011,14 +21848,26 @@ export default function Reports() {
                         <Table className="min-w-[980px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Entry</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.entry" />
+                              </TableHead>
                               <TableHead>Date</TableHead>
-                              <TableHead>Account</TableHead>
-                              <TableHead>Source</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.account" />
+                              </TableHead>
+                              <TableHead>
+                                <T k="reportCenter.source" />
+                              </TableHead>
                               <TableHead>Memo</TableHead>
-                              <TableHead className="text-right">Debit</TableHead>
-                              <TableHead className="text-right">Credit</TableHead>
-                              <TableHead>Flags</TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.debit" />
+                              </TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.credit" />
+                              </TableHead>
+                              <TableHead>
+                                <T k="reportCenter.flags" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -21073,7 +21922,7 @@ export default function Reports() {
                             onClick={() => setLedgerDetailPage((page) => Math.max(1, page - 1))}
                           >
                             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                            Previous
+                            <T k="reportCenter.previous" />
                           </Button>
                           <Button
                             type="button"
@@ -21094,7 +21943,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No posted journal lines found for this period.
+                      <T k="reportCenter.noPostedJournalLinesFoundForThis" />
                     </div>
                   )}
                 </CardContent>
@@ -21110,7 +21959,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Close Readiness</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.closeReadiness" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21128,7 +21979,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Completed</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.completed" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <CheckCircle2 className="h-4 w-4 text-success " />
                     </div>
@@ -21144,7 +21997,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.needsReview2" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -21160,7 +22015,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Close Period</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.closePeriod" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21176,7 +22033,9 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Month-End Close Status</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.monthEndCloseStatus" />
+                      </CardTitle>
                       <CardDescription>
                         {monthEndCloseStatus
                           ? `${formatReportDate(monthEndCloseStatus.periodStart)} - ${formatReportDate(monthEndCloseStatus.periodEnd)}`
@@ -21184,7 +22043,9 @@ export default function Reports() {
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/month-end">Open month-end</Link>
+                      <Link href="/month-end">
+                        <T k="reportCenter.openMonthEnd" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -21195,10 +22056,18 @@ export default function Reports() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Check</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Details</TableHead>
+                          <TableHead>
+                            <T k="reportCenter.check" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="reportCenter.status" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="reportCenter.description" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="reportCenter.details" />
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -21223,7 +22092,7 @@ export default function Reports() {
                     </Table>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No month-end close checks found for this period.
+                      <T k="reportCenter.noMonthEndCloseChecksFoundFor" />
                     </div>
                   )}
                 </CardContent>
@@ -21232,11 +22101,15 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle id="audit-trail-title">Audit Trail</CardTitle>
+                      <CardTitle id="audit-trail-title">
+                        <T k="reportCenter.auditTrail" />
+                      </CardTitle>
                       <CardDescription>{auditTrailPeriodLabel}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/history">Open history</Link>
+                      <Link href="/history">
+                        <T k="reportCenter.openHistory" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -21255,19 +22128,25 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">High risk</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.highRisk" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {auditTrailReport.highRiskCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Posting actions</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.postingActions" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {auditTrailReport.postingActionCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Users</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.users" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {auditTrailReport.userCount}
                           </div>
@@ -21276,16 +22155,22 @@ export default function Reports() {
 
                       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                         <div className="space-y-3">
-                          <div className="text-sm font-medium">Activity by action</div>
+                          <div className="text-sm font-medium">
+                            <T k="reportCenter.activityByAction" />
+                          </div>
                           {auditTrailReport.actionRows.slice(0, 6).length ? (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Action</TableHead>
+                                  <TableHead>
+                                    <T k="reportCenter.action" />
+                                  </TableHead>
                                   <TableHead className="text-right">
                                     <T k="pages.events" />
                                   </TableHead>
-                                  <TableHead>Latest</TableHead>
+                                  <TableHead>
+                                    <T k="reportCenter.latest" />
+                                  </TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -21304,22 +22189,28 @@ export default function Reports() {
                             </Table>
                           ) : (
                             <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                              No activity actions found for this period.
+                              <T k="reportCenter.noActivityActionsFoundForThisPeriod" />
                             </div>
                           )}
                         </div>
 
                         <div className="space-y-3">
-                          <div className="text-sm font-medium">Activity by record type</div>
+                          <div className="text-sm font-medium">
+                            <T k="reportCenter.activityByRecordType" />
+                          </div>
                           {auditTrailReport.entityRows.slice(0, 6).length ? (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Record type</TableHead>
+                                  <TableHead>
+                                    <T k="reportCenter.recordType" />
+                                  </TableHead>
                                   <TableHead className="text-right">
                                     <T k="pages.events" />
                                   </TableHead>
-                                  <TableHead>Latest</TableHead>
+                                  <TableHead>
+                                    <T k="reportCenter.latest" />
+                                  </TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -21338,7 +22229,7 @@ export default function Reports() {
                             </Table>
                           ) : (
                             <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                              No audited record types found for this period.
+                              <T k="reportCenter.noAuditedRecordTypesFoundForThis" />
                             </div>
                           )}
                         </div>
@@ -21350,10 +22241,16 @@ export default function Reports() {
                             <TableHeader>
                               <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Record</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.action" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.record" />
+                                </TableHead>
                                 <TableHead>Risk</TableHead>
-                                <TableHead>Description</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.description" />
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -21384,7 +22281,7 @@ export default function Reports() {
                         </div>
                       ) : (
                         <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                          No activity logs found for this period.
+                          <T k="reportCenter.noActivityLogsFoundForThisPeriod" />
                         </div>
                       )}
                     </>
@@ -21395,32 +22292,44 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Management roll-up</CardTitle>
+                      <CardTitle>
+                        <T k="reportCenter.managementRollUp" />
+                      </CardTitle>
                       <CardDescription>
-                        {consolidatedStatementsReport.periodLabel}. Accessible-company management
-                        view; no eliminations applied.
+                        {consolidatedStatementsReport.periodLabel}.{" "}
+                        <T k="reportCenter.combinedViewUnconsolidated" />
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/financial-statements">Open statements</Link>
+                      <Link href="/financial-statements">
+                        <T k="reportCenter.openStatements" />
+                      </Link>
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <GroupConsolidationPanel
+                    from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                    to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+                  />
                   {consolidatedStatementsLoading ? (
                     <Skeleton className="h-80" />
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Entities</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.entities" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {consolidatedStatementsReport.loadedEntityCount}/
                             {consolidatedStatementsReport.entityCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Revenue</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.revenue" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {formatCurrency(
                               consolidatedStatementsReport.totalRevenue,
@@ -21430,13 +22339,17 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Net profit</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.netProfit2" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {formatCurrency(consolidatedStatementsReport.netProfit, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Assets</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.assets" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {formatCurrency(
                               consolidatedStatementsReport.totalAssets,
@@ -21446,7 +22359,9 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Review items</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="reportCenter.reviewItems" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {consolidatedStatementsReport.reviewCount}
                           </div>
@@ -21472,13 +22387,25 @@ export default function Reports() {
                           <Table className="min-w-[980px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Company</TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.company" />
+                                </TableHead>
                                 <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Revenue</TableHead>
-                                <TableHead className="text-right">Net profit</TableHead>
-                                <TableHead className="text-right">Assets</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Review</TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.revenue" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.netProfit2" />
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <T k="reportCenter.assets" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.status" />
+                                </TableHead>
+                                <TableHead>
+                                  <T k="reportCenter.review" />
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -21515,7 +22442,7 @@ export default function Reports() {
                         </div>
                       ) : (
                         <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                          No accessible companies found for this management roll-up.
+                          <T k="reportCenter.noAccessibleCompaniesFoundForThisManagement" />
                         </div>
                       )}
                     </>
@@ -21533,7 +22460,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Budget</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.budget" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21551,7 +22480,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Actual</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.actual" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21569,7 +22500,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Variance</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.variance" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {planningReport.variance >= 0 ? (
                         <CheckCircle2 className="h-4 w-4 text-success " />
@@ -21596,7 +22529,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Projected Cash</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="reportCenter.projectedCash" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21632,7 +22567,9 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Budget vs actual</CardTitle>
+                        <CardTitle>
+                          <T k="reportCenter.budgetVsActual" />
+                        </CardTitle>
                         <CardDescription>
                           {planningReport.budget
                             ? `${planningReport.budget.name} (${planningReport.budget.fiscalYear})`
@@ -21640,7 +22577,9 @@ export default function Reports() {
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/budgets">Open budgets</Link>
+                        <Link href="/budgets">
+                          <T k="reportCenter.openBudgets" />
+                        </Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -21651,11 +22590,21 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Category</TableHead>
-                            <TableHead className="text-right">Budget</TableHead>
-                            <TableHead className="text-right">Actual</TableHead>
-                            <TableHead className="text-right">Variance</TableHead>
-                            <TableHead className="text-right">Status</TableHead>
+                            <TableHead>
+                              <T k="reportCenter.category" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.budget" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.actual" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.variance" />
+                            </TableHead>
+                            <TableHead className="text-right">
+                              <T k="reportCenter.status" />
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -21685,7 +22634,7 @@ export default function Reports() {
                       </Table>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No budget variance data available.
+                        <T k="reportCenter.noBudgetVarianceDataAvailable" />
                       </div>
                     )}
                   </CardContent>
@@ -21695,13 +22644,17 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Cash flow forecast</CardTitle>
+                        <CardTitle>
+                          <T k="reportCenter.cashFlowForecast" />
+                        </CardTitle>
                         <CardDescription>
                           90-day projected inflows, outflows, and balance.
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/cashflow-forecast">Open forecast</Link>
+                        <Link href="/cashflow-forecast">
+                          <T k="reportCenter.openForecast" />
+                        </Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -21714,10 +22667,14 @@ export default function Reports() {
                           <TableHeader>
                             <TableRow>
                               <TableHead>Week</TableHead>
-                              <TableHead>Period</TableHead>
+                              <TableHead>
+                                <T k="reportCenter.period" />
+                              </TableHead>
                               <TableHead className="text-right">In</TableHead>
                               <TableHead className="text-right">Out</TableHead>
-                              <TableHead className="text-right">Balance</TableHead>
+                              <TableHead className="text-right">
+                                <T k="reportCenter.balance" />
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -21743,7 +22700,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No cash flow projection data available.
+                        <T k="reportCenter.noCashFlowProjectionDataAvailable" />
                       </div>
                     )}
                   </CardContent>
@@ -21752,27 +22709,35 @@ export default function Reports() {
 
               <Card className={cn(hasFocusedReportSelection && "hidden")}>
                 <CardHeader>
-                  <CardTitle>Planning automation</CardTitle>
+                  <CardTitle>
+                    <T k="reportCenter.planningAutomation" />
+                  </CardTitle>
                   <CardDescription>
-                    Signals that should drive alerts and follow-up workflows.
+                    <T k="reportCenter.signalsThatShouldDriveAlertsAndFollow" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Over-budget lines</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.overBudgetLines" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {planningReport.overBudgetLines}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Cash movement</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.cashMovement" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {formatCurrency(planningReport.cashMovement, "AED", locale)}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Forecast insights</div>
+                      <div className="text-xs text-muted-foreground">
+                        <T k="reportCenter.forecastInsights" />
+                      </div>
                       <div className="font-mono text-2xl font-semibold">
                         {planningReport.insights.length}
                       </div>

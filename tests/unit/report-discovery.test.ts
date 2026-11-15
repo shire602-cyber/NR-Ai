@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -68,6 +68,40 @@ function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
+/**
+ * R20-09: the Reports page is a thin shell over client/src/pages/reports/** feature
+ * modules, and its UI copy lives in the reportCenter i18n catalog (R18-02). Source
+ * assertions read the whole page: shell + modules + the English catalog values.
+ */
+function readReportsPageSource(): string {
+  const files: string[] = ["client/src/pages/Reports.tsx"];
+  const walk = (dir: string) => {
+    const abs = join(process.cwd(), dir);
+    if (!existsSync(abs)) return;
+    for (const name of readdirSync(abs).sort()) {
+      const rel = `${dir}/${name}`;
+      if (statSync(join(process.cwd(), rel)).isDirectory()) walk(rel);
+      else if (/\.tsx?$/.test(name)) files.push(rel);
+    }
+  };
+  walk("client/src/pages/reports");
+  const catalog = JSON.parse(read("client/src/locales/en/reportCenter.json")) as Record<
+    string,
+    string
+  >;
+  // <T k="reportCenter.x" /> reads as its English copy so copy assertions stay meaningful
+  // (a T node that is an element's only child reads as `>Copy<`, as before the split).
+  return files
+    .map((file) =>
+      read(file)
+        .replace(/>\s*<T k="(reportCenter\.[A-Za-z0-9]+)" \/>\s*</g, (m, key: string) =>
+          catalog[key] ? `>${catalog[key]}<` : m
+        )
+        .replace(/<T k="(reportCenter\.[A-Za-z0-9]+)" \/>/g, (m, key: string) => catalog[key] ?? m)
+    )
+    .join("\n");
+}
+
 function createMemoryLocalStorage(seed: Record<string, string> = {}): Storage {
   const store = new Map(Object.entries(seed));
 
@@ -101,7 +135,7 @@ describe("report discoverability", () => {
   const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
   const i18nSource = read("client/src/lib/i18n.ts");
   const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
-  const reportsSource = read("client/src/pages/Reports.tsx");
+  const reportsSource = readReportsPageSource();
   const vatFilingSource = read("client/src/pages/VATFiling.tsx");
   const vatWorkpaperPanelSource = read("client/src/components/vat/VatWorkpaperPanel.tsx");
   const invoicesSource = read("client/src/pages/Invoices.tsx");
