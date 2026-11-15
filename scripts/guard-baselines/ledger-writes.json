@@ -5,9 +5,6 @@
     "server/routes/bank-statements.routes.ts": {
       "storage-create-journal-entry": 1
     },
-    "server/routes/expense-claims.routes.ts": {
-      "storage-create-journal-entry": 1
-    },
     "server/routes/fixed-assets.routes.ts": {
       "storage-create-journal-entry": 2
     },
@@ -16,9 +13,6 @@
     },
     "server/services/autonomous-gl.service.ts": {
       "storage-create-journal-entry": 1
-    },
-    "server/services/bill-posting.service.ts": {
-      "storage-create-journal-entry": 2
     },
     "server/services/receipt-autopilot.service.ts": {
       "storage-create-journal-entry": 1

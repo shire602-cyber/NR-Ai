@@ -59,6 +59,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Plus,
@@ -75,6 +76,113 @@ import {
   BarChart3,
   Receipt,
 } from "lucide-react";
+
+// ===========================
+// W3-B copy (en + ar)
+// ===========================
+
+const COPY = {
+  en: {
+    reverseCharge: "Reverse charge (imported services / designated zone)",
+    exchangeRate: "Exchange rate to AED",
+    exchangeRateHint: "Leave blank to use the company rate for the date",
+    isImport: "Import of goods (customs)",
+    customsNo: "Customs declaration no.",
+    importVat: "Import VAT (customs)",
+    placeOfSupply: "Place of supply (emirate)",
+    supplyType: "VAT treatment",
+    standardRated: "Standard 5%",
+    zeroRated: "Zero-rated 0%",
+    exempt: "Exempt",
+    outOfScope: "Out of scope",
+    reverseChargeLine: "Reverse charge 5%",
+    paymentAccount: "Paid from (bank / cash account)",
+    defaultBank: "Default bank account",
+    paymentRate: "Payment-date rate to AED",
+    voidBill: "Void",
+    rejectBill: "Reject",
+    submitBill: "Submit for approval",
+    reasonPrompt: "Reason (required, kept in the audit trail)",
+    reviseNotice: "This bill is approved: saving posts a reversal and a corrected journal.",
+    voided: "Bill voided",
+    rejected: "Bill rejected",
+    submitted: "Bill submitted for approval",
+    draft: "Draft",
+    rejectedStatus: "Rejected",
+    voidStatus: "Void",
+    paidStatus: "Paid",
+    card: "Card",
+    cash: "Cash",
+  },
+  ar: {
+    reverseCharge: "احتساب عكسي (خدمات مستوردة / منطقة محددة)",
+    exchangeRate: "سعر الصرف إلى الدرهم",
+    exchangeRateHint: "اتركه فارغًا لاستخدام سعر الشركة في التاريخ",
+    isImport: "استيراد بضائع (جمارك)",
+    customsNo: "رقم البيان الجمركي",
+    importVat: "ضريبة الاستيراد (الجمارك)",
+    placeOfSupply: "مكان التوريد (الإمارة)",
+    supplyType: "المعاملة الضريبية",
+    standardRated: "نسبة أساسية 5%",
+    zeroRated: "نسبة صفرية 0%",
+    exempt: "معفاة",
+    outOfScope: "خارج النطاق",
+    reverseChargeLine: "احتساب عكسي 5%",
+    paymentAccount: "مدفوع من (حساب بنكي / نقدي)",
+    defaultBank: "الحساب البنكي الافتراضي",
+    paymentRate: "سعر الصرف بتاريخ الدفع",
+    voidBill: "إلغاء",
+    rejectBill: "رفض",
+    submitBill: "إرسال للاعتماد",
+    reasonPrompt: "السبب (مطلوب، يُحفظ في سجل التدقيق)",
+    reviseNotice: "هذه الفاتورة معتمدة: الحفظ يسجل قيدًا عكسيًا وقيدًا مصححًا.",
+    voided: "تم إلغاء الفاتورة",
+    rejected: "تم رفض الفاتورة",
+    submitted: "تم إرسال الفاتورة للاعتماد",
+    draft: "مسودة",
+    rejectedStatus: "مرفوضة",
+    voidStatus: "ملغاة",
+    paidStatus: "مدفوعة",
+    card: "بطاقة",
+    cash: "نقدًا",
+  },
+} as const;
+type Copy = { [K in keyof (typeof COPY)["en"]]: string };
+
+const SUPPLY_TYPES = [
+  "standard_rated",
+  "zero_rated",
+  "exempt",
+  "out_of_scope",
+  "reverse_charge",
+] as const;
+
+const EMIRATE_CODES = [
+  "abu_dhabi",
+  "dubai",
+  "sharjah",
+  "ajman",
+  "umm_al_quwain",
+  "ras_al_khaimah",
+  "fujairah",
+] as const;
+
+function supplyLabel(c: Copy, v: string): string {
+  switch (v) {
+    case "zero_rated":
+      return c.zeroRated;
+    case "exempt":
+      return c.exempt;
+    case "out_of_scope":
+      return c.outOfScope;
+    case "reverse_charge":
+      return c.reverseChargeLine;
+    default:
+      return c.standardRated;
+  }
+}
+
+const ymd = (d: Date) => format(d, "yyyy-MM-dd");
 
 // ===========================
 // Types
@@ -101,6 +209,13 @@ interface VendorBill {
   approved_at: string | null;
   paid_at: string | null;
   created_at: string;
+  reverse_charge?: boolean;
+  exchange_rate?: string;
+  is_import?: boolean;
+  customs_declaration_no?: string | null;
+  import_vat_amount?: string;
+  place_of_supply?: string | null;
+  display_status?: string;
 }
 
 interface BillLineItem {
@@ -112,6 +227,7 @@ interface BillLineItem {
   vat_rate: string;
   amount: string;
   account_id: string | null;
+  vat_supply_type?: string;
   created_at: string;
 }
 
@@ -156,6 +272,7 @@ const billLineSchema = z.object({
   quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
   unit_price: z.coerce.number().min(0, "Price must be non-negative"),
   vat_rate: z.coerce.number().default(5),
+  vat_supply_type: z.string().default("standard_rated"),
   account_id: z.string().optional(),
 });
 
@@ -166,6 +283,12 @@ const billFormSchema = z.object({
   bill_date: z.date(),
   due_date: z.date().optional(),
   currency: z.string().default("AED"),
+  exchange_rate: z.string().optional(),
+  reverse_charge: z.boolean().default(false),
+  is_import: z.boolean().default(false),
+  customs_declaration_no: z.string().optional(),
+  import_vat_amount: z.string().optional(),
+  place_of_supply: z.string().optional(),
   category: z.string().optional(),
   notes: z.string().optional(),
   line_items: z.array(billLineSchema).min(1, "At least one line item is required"),
@@ -175,6 +298,8 @@ const paymentFormSchema = z.object({
   payment_date: z.date(),
   amount: z.coerce.number().min(0.01, "Amount must be positive"),
   payment_method: z.string().default("bank_transfer"),
+  payment_account_id: z.string().optional(),
+  exchange_rate: z.string().optional(),
   reference: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -186,8 +311,22 @@ type PaymentFormData = z.infer<typeof paymentFormSchema>;
 // Status helpers
 // ===========================
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, c: Copy) {
   switch (status) {
+    case "draft":
+      return <Badge variant="outline">{c.draft}</Badge>;
+    case "rejected":
+      return (
+        <Badge variant="outline" className="bg-danger-subtle text-destructive ">
+          {c.rejectedStatus}
+        </Badge>
+      );
+    case "void":
+      return (
+        <Badge variant="outline" className="text-muted-foreground line-through">
+          {c.voidStatus}
+        </Badge>
+      );
     case "pending":
       return (
         <Badge variant="outline" className="bg-muted text-foreground ">
@@ -209,7 +348,7 @@ function getStatusBadge(status: string) {
     case "paid":
       return (
         <Badge variant="outline" className="bg-success-subtle text-success ">
-          Paid
+          {c.paidStatus}
         </Badge>
       );
     case "overdue":
@@ -237,6 +376,7 @@ function initialBillPayTab(): BillPayTab {
 
 export default function BillPay() {
   const { t, locale } = useTranslation();
+  const c: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { company, companyId } = useDefaultCompany();
 
@@ -341,9 +481,24 @@ export default function BillPay() {
       bill_date: new Date(),
       due_date: undefined,
       currency: "AED",
+      exchange_rate: "",
+      reverse_charge: false,
+      is_import: false,
+      customs_declaration_no: "",
+      import_vat_amount: "",
+      place_of_supply: "",
       category: "",
       notes: "",
-      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+      line_items: [
+        {
+          description: "",
+          quantity: 1,
+          unit_price: 0,
+          vat_rate: 5,
+          vat_supply_type: "standard_rated",
+          account_id: "",
+        },
+      ],
     },
   });
 
@@ -366,6 +521,8 @@ export default function BillPay() {
       payment_date: new Date(),
       amount: 0,
       payment_method: "bank_transfer",
+      payment_account_id: "",
+      exchange_rate: "",
       reference: "",
       notes: "",
     },
@@ -384,18 +541,34 @@ export default function BillPay() {
     });
   };
 
+  const buildBillPayload = (data: BillFormData) => ({
+    vendor_name: data.vendor_name,
+    vendor_trn: data.vendor_trn || null,
+    bill_number: data.bill_number || null,
+    bill_date: ymd(data.bill_date),
+    due_date: data.due_date ? ymd(data.due_date) : null,
+    currency: data.currency,
+    exchange_rate: data.currency !== "AED" && data.exchange_rate ? data.exchange_rate : null,
+    reverse_charge: data.reverse_charge || data.is_import,
+    is_import: data.is_import,
+    customs_declaration_no: data.is_import ? data.customs_declaration_no || null : null,
+    import_vat_amount: data.is_import && data.import_vat_amount ? data.import_vat_amount : null,
+    place_of_supply: data.place_of_supply || null,
+    category: data.category || null,
+    notes: data.notes || null,
+    line_items: data.line_items.map((l) => ({
+      description: l.description,
+      quantity: l.quantity,
+      unit_price: l.unit_price,
+      vat_supply_type: l.vat_supply_type,
+      vat_rate: ["zero_rated", "exempt", "out_of_scope"].includes(l.vat_supply_type) ? 0 : 5,
+      account_id: l.account_id || null,
+    })),
+  });
+
   const createBillMutation = useMutation({
     mutationFn: (data: BillFormData) => {
-      const payload = {
-        ...data,
-        bill_date: data.bill_date.toISOString(),
-        due_date: data.due_date ? data.due_date.toISOString() : null,
-        line_items: data.line_items.map((l) => ({
-          ...l,
-          account_id: l.account_id || null,
-        })),
-      };
-      return apiRequest("POST", `/api/companies/${companyId}/bills`, payload);
+      return apiRequest("POST", `/api/companies/${companyId}/bills`, buildBillPayload(data));
     },
     onSuccess: () => {
       invalidateBills();
@@ -413,16 +586,10 @@ export default function BillPay() {
   });
 
   const updateBillMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: BillFormData }) => {
-      const payload = {
-        ...data,
-        bill_date: data.bill_date.toISOString(),
-        due_date: data.due_date ? data.due_date.toISOString() : null,
-        line_items: data.line_items.map((l) => ({
-          ...l,
-          account_id: l.account_id || null,
-        })),
-      };
+    mutationFn: ({ id, data, reason }: { id: string; data: BillFormData; reason?: string }) => {
+      const payload = buildBillPayload(data);
+      // Approved bills are corrected by reversal + repost (POST /revise), never edited in place.
+      if (reason) return apiRequest("POST", `/api/bills/${id}/revise`, { ...payload, reason });
       return apiRequest("PATCH", `/api/bills/${id}`, payload);
     },
     onSuccess: () => {
@@ -471,11 +638,32 @@ export default function BillPay() {
     },
   });
 
+  type BillAction = "void" | "reject" | "submit";
+  const billActionMutation = useMutation({
+    mutationFn: ({ id, action, reason }: { id: string; action: BillAction; reason?: string }) =>
+      apiRequest("POST", `/api/bills/${id}/${action}`, action === "submit" ? {} : { reason }),
+    onSuccess: (_r: unknown, vars: { id: string; action: BillAction; reason?: string }) => {
+      invalidateBills();
+      toast({
+        title:
+          vars.action === "void" ? c.voided : vars.action === "reject" ? c.rejected : c.submitted,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: error?.message || "Error" });
+    },
+  });
+
   const recordPaymentMutation = useMutation({
     mutationFn: ({ billId, data }: { billId: string; data: PaymentFormData }) => {
       const payload = {
-        ...data,
-        payment_date: data.payment_date.toISOString(),
+        payment_date: ymd(data.payment_date),
+        amount: data.amount,
+        payment_method: data.payment_method,
+        payment_account_id: data.payment_account_id || null,
+        exchange_rate: data.exchange_rate || null,
+        reference: data.reference || null,
+        notes: data.notes || null,
       };
       return apiRequest("POST", `/api/bills/${billId}/payments`, payload);
     },
@@ -516,9 +704,24 @@ export default function BillPay() {
       bill_date: new Date(),
       due_date: undefined,
       currency: "AED",
+      exchange_rate: "",
+      reverse_charge: false,
+      is_import: false,
+      customs_declaration_no: "",
+      import_vat_amount: "",
+      place_of_supply: "",
       category: "",
       notes: "",
-      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+      line_items: [
+        {
+          description: "",
+          quantity: 1,
+          unit_price: 0,
+          vat_rate: 5,
+          vat_supply_type: "standard_rated",
+          account_id: "",
+        },
+      ],
     });
     setEditingBill(null);
   };
@@ -534,6 +737,16 @@ export default function BillPay() {
         bill_date: new Date(detail.bill_date),
         due_date: detail.due_date ? new Date(detail.due_date) : undefined,
         currency: detail.currency || "AED",
+        exchange_rate:
+          detail.currency && detail.currency !== "AED" ? String(detail.exchange_rate ?? "") : "",
+        reverse_charge: detail.reverse_charge === true,
+        is_import: detail.is_import === true,
+        customs_declaration_no: detail.customs_declaration_no || "",
+        import_vat_amount:
+          detail.is_import && Number(detail.import_vat_amount) > 0
+            ? String(detail.import_vat_amount)
+            : "",
+        place_of_supply: detail.place_of_supply || "",
         category: detail.category || "",
         notes: detail.notes || "",
         line_items:
@@ -543,9 +756,20 @@ export default function BillPay() {
                 quantity: Number(l.quantity),
                 unit_price: Number(l.unit_price),
                 vat_rate: Number(l.vat_rate),
+                vat_supply_type:
+                  l.vat_supply_type ?? (Number(l.vat_rate) === 0 ? "zero_rated" : "standard_rated"),
                 account_id: l.account_id || "",
               }))
-            : [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+            : [
+                {
+                  description: "",
+                  quantity: 1,
+                  unit_price: 0,
+                  vat_rate: 5,
+                  vat_supply_type: "standard_rated",
+                  account_id: "",
+                },
+              ],
       });
       setBillDialogOpen(true);
     } catch (error: any) {
@@ -564,6 +788,8 @@ export default function BillPay() {
       payment_date: new Date(),
       amount: Number(remaining.toFixed(2)),
       payment_method: "bank_transfer",
+      payment_account_id: "",
+      exchange_rate: "",
       reference: "",
       notes: "",
     });
@@ -572,6 +798,12 @@ export default function BillPay() {
 
   const onBillSubmit = (data: BillFormData) => {
     if (editingBill) {
+      if (["approved", "overdue"].includes(editingBill.status)) {
+        const reason = window.prompt(`${c.reviseNotice}\n${c.reasonPrompt}`);
+        if (!reason) return;
+        updateBillMutation.mutate({ id: editingBill.id, data, reason });
+        return;
+      }
       updateBillMutation.mutate({ id: editingBill.id, data });
     } else {
       createBillMutation.mutate(data);
@@ -591,9 +823,21 @@ export default function BillPay() {
   );
   const vatAmount = watchLines.reduce((sum, line) => {
     const lineAmount = (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
-    return sum + lineAmount * ((Number(line.vat_rate) || 0) / 100);
+    const rated = !["zero_rated", "exempt", "out_of_scope"].includes(line.vat_supply_type);
+    return sum + (rated ? lineAmount * 0.05 : 0);
   }, 0);
-  const totalAmount = subtotal + vatAmount;
+  const watchReverseCharge = billForm.watch("reverse_charge") || billForm.watch("is_import");
+  const watchCurrency = billForm.watch("currency");
+  const watchIsImport = billForm.watch("is_import");
+  // Reverse charge: VAT is self-assessed, the vendor is owed the subtotal only.
+  const totalAmount = watchReverseCharge ? subtotal : subtotal + vatAmount;
+  const cashAccounts = accounts.filter(
+    (a: { type?: string; subType?: string; code?: string }) =>
+      a.type === "asset" &&
+      (a.subType === "cash" ||
+        a.subType === "bank" ||
+        ["1010", "1020", "1030"].includes(a.code ?? ""))
+  );
 
   // Expense account options
   const expenseAccounts = accounts.filter((a: any) => a.type === "expense" || a.type === "asset");
@@ -919,6 +1163,109 @@ export default function BillPay() {
                           />
                         </div>
 
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {watchCurrency !== "AED" && (
+                            <FormField
+                              control={billForm.control}
+                              name="exchange_rate"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{c.exchangeRate}</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      inputMode="decimal"
+                                      placeholder={c.exchangeRateHint}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                          <FormField
+                            control={billForm.control}
+                            name="place_of_supply"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{c.placeOfSupply}</FormLabel>
+                                <Select value={field.value || ""} onValueChange={field.onChange}>
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder={c.placeOfSupply} />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {EMIRATE_CODES.map((e) => (
+                                      <SelectItem key={e} value={e}>
+                                        {e.replace(/_/g, " ")}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={billForm.control}
+                            name="reverse_charge"
+                            render={({ field }) => (
+                              <FormItem className="flex items-center gap-2 space-y-0">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={(v) => field.onChange(v === true)}
+                                  />
+                                </FormControl>
+                                <FormLabel className="font-normal">{c.reverseCharge}</FormLabel>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={billForm.control}
+                            name="is_import"
+                            render={({ field }) => (
+                              <FormItem className="flex items-center gap-2 space-y-0">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={(v) => field.onChange(v === true)}
+                                  />
+                                </FormControl>
+                                <FormLabel className="font-normal">{c.isImport}</FormLabel>
+                              </FormItem>
+                            )}
+                          />
+                          {watchIsImport && (
+                            <>
+                              <FormField
+                                control={billForm.control}
+                                name="customs_declaration_no"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>{c.customsNo}</FormLabel>
+                                    <FormControl>
+                                      <Input {...field} />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={billForm.control}
+                                name="import_vat_amount"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>{c.importVat}</FormLabel>
+                                    <FormControl>
+                                      <Input {...field} inputMode="decimal" />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            </>
+                          )}
+                        </div>
+
                         {/* Line Items */}
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
@@ -935,6 +1282,7 @@ export default function BillPay() {
                                   quantity: 1,
                                   unit_price: 0,
                                   vat_rate: 5,
+                                  vat_supply_type: "standard_rated",
                                   account_id: "",
                                 })
                               }
@@ -1001,17 +1349,23 @@ export default function BillPay() {
                               <div className="col-span-1">
                                 <FormField
                                   control={billForm.control}
-                                  name={`line_items.${index}.vat_rate`}
+                                  name={`line_items.${index}.vat_supply_type`}
                                   render={({ field }) => (
                                     <FormItem>
-                                      <FormControl>
-                                        <Input
-                                          {...field}
-                                          type="number"
-                                          step="0.01"
-                                          placeholder="VAT%"
-                                        />
-                                      </FormControl>
+                                      <Select value={field.value} onValueChange={field.onChange}>
+                                        <FormControl>
+                                          <SelectTrigger aria-label={c.supplyType}>
+                                            <SelectValue placeholder={c.supplyType} />
+                                          </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                          {SUPPLY_TYPES.map((st) => (
+                                            <SelectItem key={st} value={st}>
+                                              {supplyLabel(c, st)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
                                     </FormItem>
                                   )}
                                 />
@@ -1199,7 +1553,9 @@ export default function BillPay() {
                             <TableCell className="text-right">
                               {formatCurrency(Number(bill.amount_paid), bill.currency || "AED")}
                             </TableCell>
-                            <TableCell>{getStatusBadge(bill.status)}</TableCell>
+                            <TableCell>
+                              {getStatusBadge(bill.display_status ?? bill.status, c)}
+                            </TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -1212,6 +1568,16 @@ export default function BillPay() {
                                     <Edit className="w-4 h-4 mr-2" />
                                     Edit
                                   </DropdownMenuItem>
+                                  {(bill.status === "draft" || bill.status === "rejected") && (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        billActionMutation.mutate({ id: bill.id, action: "submit" })
+                                      }
+                                    >
+                                      <CheckCircle className="w-4 h-4 me-2" />
+                                      {c.submitBill}
+                                    </DropdownMenuItem>
+                                  )}
                                   {bill.status === "pending" && (
                                     <DropdownMenuItem
                                       onClick={() => approveBillMutation.mutate(bill.id)}
@@ -1220,12 +1586,47 @@ export default function BillPay() {
                                       <T k="pages.approve" />
                                     </DropdownMenuItem>
                                   )}
-                                  {bill.status !== "paid" && (
+                                  {bill.status === "pending" && (
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        const reason = window.prompt(c.reasonPrompt);
+                                        if (reason)
+                                          billActionMutation.mutate({
+                                            id: bill.id,
+                                            action: "reject",
+                                            reason,
+                                          });
+                                      }}
+                                    >
+                                      <AlertTriangle className="w-4 h-4 me-2" />
+                                      {c.rejectBill}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {["approved", "partial", "overdue"].includes(bill.status) && (
                                     <DropdownMenuItem onClick={() => handlePayBill(bill)}>
                                       <DollarSign className="w-4 h-4 mr-2" />
                                       <T k="pages.recordPayment" />
                                     </DropdownMenuItem>
                                   )}
+                                  {["draft", "pending", "approved", "overdue"].includes(
+                                    bill.status
+                                  ) &&
+                                    Number(bill.amount_paid) === 0 && (
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          const reason = window.prompt(c.reasonPrompt);
+                                          if (reason)
+                                            billActionMutation.mutate({
+                                              id: bill.id,
+                                              action: "void",
+                                              reason,
+                                            });
+                                        }}
+                                      >
+                                        <Trash2 className="w-4 h-4 me-2" />
+                                        {c.voidBill}
+                                      </DropdownMenuItem>
+                                    )}
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
                                     className="text-destructive"
@@ -1627,17 +2028,56 @@ export default function BillPay() {
                         <SelectItem value="bank_transfer">
                           <T k="pages.bankTransfer" />
                         </SelectItem>
-                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="cash">{c.cash}</SelectItem>
                         <SelectItem value="cheque">
                           <T k="pages.cheque" />
                         </SelectItem>
-                        <SelectItem value="card">Card</SelectItem>
+                        <SelectItem value="credit_card">{c.card}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <FormField
+                control={paymentForm.control}
+                name="payment_account_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{c.paymentAccount}</FormLabel>
+                    <Select value={field.value || ""} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={c.defaultBank} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {cashAccounts.map(
+                          (a: { id: string; code: string; nameEn: string; nameAr?: string }) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.code} - {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              {payingBill && payingBill.currency && payingBill.currency !== "AED" && (
+                <FormField
+                  control={paymentForm.control}
+                  name="exchange_rate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{c.paymentRate}</FormLabel>
+                      <FormControl>
+                        <Input {...field} inputMode="decimal" placeholder={c.exchangeRateHint} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={paymentForm.control}
                 name="reference"
