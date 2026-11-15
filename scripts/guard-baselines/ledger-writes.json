@@ -1,0 +1,48 @@
+{
+  "description": "Ratchet: direct journal writes outside server/ledger/ and server/storage.ts. Burn down to empty; regenerate with `node scripts/check-ledger-writes.mjs --update` only after removing call sites.",
+  "total": 19,
+  "files": {
+    "server/routes/bank-statements.routes.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/routes/exchange-rates.routes.ts": {
+      "storage-create-journal-entry": 2
+    },
+    "server/routes/expense-claims.routes.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/routes/fixed-assets.routes.ts": {
+      "storage-create-journal-entry": 2
+    },
+    "server/routes/invoices.routes.ts": {
+      "storage-create-journal-entry": 2
+    },
+    "server/routes/journal.routes.ts": {
+      "storage-create-journal-entry": 2
+    },
+    "server/routes/payroll.routes.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/routes/receipts.routes.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/services/autonomous-gl.service.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/services/bill-posting.service.ts": {
+      "storage-create-journal-entry": 2
+    },
+    "server/services/invoice-posting.service.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/services/month-end.service.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/services/receipt-autopilot.service.ts": {
+      "storage-create-journal-entry": 1
+    },
+    "server/services/scheduler.service.ts": {
+      "storage-create-journal-entry": 1
+    }
+  }
+}

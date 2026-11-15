@@ -1,0 +1,38 @@
+{
+  "description": "R17-20 ratchet: raw req.body reaching storage. Burn down to empty; regenerate with `node scripts/check-raw-body.mjs --update` only after removing offenders.",
+  "total": 15,
+  "files": {
+    "server/routes/accounts.routes.ts": {
+      "spread-req-body": 1,
+      "storage-write-req-body": 1
+    },
+    "server/routes/admin.routes.ts": {
+      "alias-req-body": 1,
+      "storage-write-req-body": 4
+    },
+    "server/routes/email-intake.routes.ts": {
+      "storage-write-req-body": 1
+    },
+    "server/routes/firm-bulk.routes.ts": {
+      "alias-req-body": 1
+    },
+    "server/routes/inventory.routes.ts": {
+      "storage-write-req-body": 1
+    },
+    "server/routes/onboarding.routes.ts": {
+      "alias-req-body": 1
+    },
+    "server/routes/push.routes.ts": {
+      "storage-write-req-body": 1
+    },
+    "server/routes/receipts.routes.ts": {
+      "storage-write-req-body": 1
+    },
+    "server/routes/reminders.routes.ts": {
+      "storage-write-req-body": 1
+    },
+    "server/routes/vat.routes.ts": {
+      "alias-req-body": 1
+    }
+  }
+}

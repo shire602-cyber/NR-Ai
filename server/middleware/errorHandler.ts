@@ -4,6 +4,8 @@ import { isProduction } from "../config/env";
 import { RetentionViolationError } from "../services/retention.service";
 import { AppError, RetentionError, ValidationError, AuthError } from "../errors";
 import { captureException } from "../services/monitoring";
+import { MoneyError } from "../../shared/money";
+import { zodFieldErrors } from "../http/strict-body";
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -14,16 +16,111 @@ function withRequestId<T extends object>(body: T, req: Request): T & { requestId
 
 /**
  * Walk an error's `cause` chain (max 5 hops) looking for a Postgres
- * SQLSTATE code. Drizzle wraps the underlying pg error in
- * DrizzleQueryError, so the code usually lives one level down.
+ * SQLSTATE code in class 22 (data exception) or 23 (integrity constraint).
+ * Drizzle wraps the underlying pg error in DrizzleQueryError, so the code
+ * usually lives one level down.
  */
-function hasPgErrorCode(err: unknown, code: string): boolean {
+function findPgClientErrorCode(err: unknown): string | null {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
-    if ((current as { code?: unknown }).code === code) return true;
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && /^2[23][0-9A-Z]{3}$/.test(code)) return code;
     current = (current as { cause?: unknown }).cause;
   }
-  return false;
+  return null;
+}
+
+/**
+ * Postgres SQLSTATEs caused by client input. The response never carries SQL
+ * text, constraint names or column values — only a stable code.
+ */
+const PG_CLIENT_ERRORS: Record<string, { status: number; code: string; message: string }> = {
+  "22P02": { status: 400, code: "INVALID_IDENTIFIER", message: "Invalid identifier format" },
+  "22007": { status: 400, code: "INVALID_DATE", message: "Invalid date or time value" },
+  "22008": { status: 400, code: "INVALID_DATE", message: "Date or time value out of range" },
+  "22003": { status: 400, code: "NUMERIC_OUT_OF_RANGE", message: "Numeric value out of range" },
+  "22001": { status: 400, code: "VALUE_TOO_LONG", message: "Value too long for field" },
+  "23502": { status: 400, code: "REQUIRED_FIELD_MISSING", message: "A required field is missing" },
+  "23514": { status: 400, code: "CONSTRAINT_VIOLATION", message: "A value failed a data rule" },
+  "23505": {
+    status: 409,
+    code: "DUPLICATE_VALUE",
+    message: "A record with this value already exists",
+  },
+  "23503": {
+    status: 409,
+    code: "REFERENCE_CONFLICT",
+    message: "The record references, or is referenced by, another record",
+  },
+};
+
+/** Message the CORS origin callback (middleware/security.ts) rejects with. */
+export const CORS_REJECTION_MESSAGE = "Not allowed by CORS";
+
+interface HttpLikeError {
+  type?: unknown;
+  status?: unknown;
+  statusCode?: unknown;
+  expose?: unknown;
+}
+
+export interface MappedTransportError {
+  status: number;
+  body: { message: string; code: string };
+}
+
+/**
+ * Map transport-level request errors (body-parser, CORS) to a 4xx response,
+ * or return null when the error is not one of them.
+ */
+export function mapRequestTransportError(err: unknown): MappedTransportError | null {
+  if (!err || typeof err !== "object") return null;
+  if (err instanceof Error && err.message === CORS_REJECTION_MESSAGE) {
+    return { status: 403, body: { message: "Origin not allowed", code: "ORIGIN_NOT_ALLOWED" } };
+  }
+  const e = err as HttpLikeError;
+  if (typeof e.type !== "string") return null;
+  if (e.type === "entity.parse.failed") {
+    return {
+      status: 400,
+      body: { message: "Request body is not valid JSON", code: "INVALID_JSON" },
+    };
+  }
+  if (e.type === "entity.too.large") {
+    return {
+      status: 413,
+      body: { message: "Request body is too large", code: "PAYLOAD_TOO_LARGE" },
+    };
+  }
+  if (e.type === "encoding.unsupported" || e.type === "charset.unsupported") {
+    return {
+      status: 415,
+      body: { message: "Unsupported request encoding", code: "UNSUPPORTED_ENCODING" },
+    };
+  }
+  // Other http-errors from body-parser (request.aborted, parameters.too.many, …).
+  const status =
+    typeof e.status === "number" ? e.status : typeof e.statusCode === "number" ? e.statusCode : 0;
+  if (e.expose === true && status >= 400 && status < 500) {
+    return { status, body: { message: "Malformed request", code: "BAD_REQUEST" } };
+  }
+  return null;
+}
+
+/**
+ * Mounted right after the body parsers (server/index.ts) so malformed JSON
+ * and CORS rejections (including preflight) answer 400/403 immediately
+ * instead of travelling on and surfacing as a 500.
+ */
+export function requestTransportErrorHandler(
+  err: unknown,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const mapped = mapRequestTransportError(err);
+  if (!mapped) return next(err);
+  res.status(mapped.status).json(withRequestId(mapped.body, req));
 }
 
 /**
@@ -34,6 +131,7 @@ function hasPgErrorCode(err: unknown, code: string): boolean {
  *   { message, code, requestId, details? }
  * In production, stack traces are never returned to the client. They are
  * always logged via pino with method/url/requestId for traceability.
+ * Client-input failures never answer 500.
  */
 export function globalErrorHandler(
   err: Error,
@@ -55,13 +153,28 @@ export function globalErrorHandler(
   }
 
   // Zod errors thrown directly from handlers — render the same shape that
-  // the validate() middleware produces so the client sees one schema.
+  // the validate()/strictBody() middleware produces so the client sees one schema.
   if (err instanceof ZodError) {
     const ve = new ValidationError("Validation error", {
       errors: err.flatten().fieldErrors,
       formErrors: err.flatten().formErrors,
     });
-    res.status(ve.statusCode).json(withRequestId(ve.toJSON(), req));
+    res
+      .status(ve.statusCode)
+      .json(withRequestId({ ...ve.toJSON(), fields: zodFieldErrors(err) }, req));
+    return;
+  }
+
+  // Exact-money parse failures (shared/money.ts) are always bad client input.
+  if (err instanceof MoneyError) {
+    res.status(400).json(withRequestId({ message: err.message, code: err.code }, req));
+    return;
+  }
+
+  // Malformed JSON, oversize bodies, rejected CORS origins (incl. preflight).
+  const transport = mapRequestTransportError(err);
+  if (transport) {
+    res.status(transport.status).json(withRequestId(transport.body, req));
     return;
   }
 
@@ -72,34 +185,19 @@ export function globalErrorHandler(
     return;
   }
 
-  // Postgres "invalid input syntax" (22P02) — e.g. a malformed UUID in a
-  // path param reaching a uuid column. This is bad *input*, not a server
-  // fault: answer 400, not 500. Drizzle wraps the pg error, so walk the
-  // cause chain looking for the SQLSTATE code.
-  if (hasPgErrorCode(err, "22P02")) {
-    res.status(400).json(
-      withRequestId(
-        { message: "Invalid identifier format", code: "INVALID_IDENTIFIER" },
-        req
-      )
-    );
+  // Postgres data/integrity errors caused by client input (bad uuid/date,
+  // numeric overflow, duplicates, FK) — 400/409 with a stable code, never the
+  // SQL text. Drizzle wraps the pg error, so walk the cause chain.
+  const pgCode = err instanceof AppError ? null : findPgClientErrorCode(err);
+  const pgMapped = pgCode ? PG_CLIENT_ERRORS[pgCode] : undefined;
+  if (pgMapped) {
+    res
+      .status(pgMapped.status)
+      .json(withRequestId({ message: pgMapped.message, code: pgMapped.code }, req));
     return;
   }
 
-  // Postgres unique violation (23505) — e.g. creating a cost centre with a
-  // code that already exists. A conflict with existing data, not a server
-  // fault: answer 409, not 500.
-  if (hasPgErrorCode(err, "23505")) {
-    res.status(409).json(
-      withRequestId(
-        { message: "A record with this value already exists", code: "DUPLICATE_VALUE" },
-        req
-      )
-    );
-    return;
-  }
-
-  // Any AppError (or subclass).
+  // Any AppError (or subclass, including DomainError).
   if (err instanceof AppError) {
     if (!err.isOperational || err.statusCode >= 500) {
       captureException(err, {
