@@ -9,7 +9,6 @@ import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
   FormControl,
@@ -35,15 +34,13 @@ import {
 } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { CardListSkeleton, PageSkeleton } from "@/components/ui/loading-skeletons";
+import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
@@ -58,6 +55,7 @@ import {
   Lock,
   FileText,
   Send,
+  Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -72,6 +70,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { VirtualList } from "@/components/VirtualList";
+
+/** Integer fils: balance is compared exactly, never with a 0.01 tolerance. */
+const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid("Please select an account"),
@@ -88,9 +89,9 @@ const journalSchema = z
   })
   .refine(
     (data) => {
-      const totalDebit = data.lines.reduce((sum, line) => sum + line.debit, 0);
-      const totalCredit = data.lines.reduce((sum, line) => sum + line.credit, 0);
-      return Math.abs(totalDebit - totalCredit) < 0.01;
+      const totalDebit = data.lines.reduce((sum, line) => sum + toFils(line.debit), 0);
+      const totalCredit = data.lines.reduce((sum, line) => sum + toFils(line.credit), 0);
+      return totalDebit === totalCredit;
     },
     {
       message: "Total debits must equal total credits",
@@ -100,12 +101,21 @@ const journalSchema = z
 
 type JournalFormData = z.infer<typeof journalSchema>;
 
+/** Body of POST /api/companies/:id/journal and PUT /api/journal/:id (strict on the server). */
+interface JournalPayload {
+  date: string;
+  memo: string | null;
+  lines: Array<{ accountId: string; debit: number; credit: number }>;
+}
+
 export default function Journal() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
+  const [reverseDate, setReverseDate] = useState("");
+  const [reverseReason, setReverseReason] = useState("");
 
   const { data: accounts } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
@@ -143,14 +153,15 @@ export default function Journal() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: JournalFormData) =>
+    mutationFn: (data: JournalPayload) =>
       apiRequest("POST", `/api/companies/${selectedCompanyId}/journal`, data),
-    onSuccess: () => {
+    onSuccess: (res: { status?: string; approvalStatus?: string | null }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
-      toast({
-        title: "Journal entry posted",
-        description: "Your double-entry journal has been recorded.",
-      });
+      toast(
+        res?.approvalStatus === "pending"
+          ? { title: t["journal.sentForApproval"], description: t["journal.sentForApprovalBody"] }
+          : { title: res?.status === "posted" ? t["journal.savedPosted"] : t["journal.savedDraft"] }
+      );
       setDialogOpen(false);
       setEditingEntry(null);
       form.reset({
@@ -173,7 +184,7 @@ export default function Journal() {
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: JournalFormData }) =>
+    mutationFn: ({ id, data }: { id: string; data: JournalPayload }) =>
       apiRequest("PUT", `/api/journal/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
@@ -203,13 +214,17 @@ export default function Journal() {
   });
 
   const postMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/journal/${id}/post`),
-    onSuccess: () => {
+    mutationFn: (id: string) => apiRequest("POST", `/api/journal/${id}/post`, {}),
+    onSuccess: (res: { code?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
-      toast({
-        title: "Entry posted",
-        description: "Journal entry has been posted and is now immutable.",
-      });
+      toast(
+        res?.code === "APPROVAL_REQUIRED"
+          ? { title: t["journal.sentForApproval"], description: t["journal.sentForApprovalBody"] }
+          : {
+              title: "Entry posted",
+              description: "Journal entry has been posted and is now immutable.",
+            }
+      );
     },
     onError: (error: any) => {
       toast({
@@ -221,19 +236,43 @@ export default function Journal() {
   });
 
   const reverseMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      apiRequest("POST", `/api/journal/${id}/reverse`, { reason }),
-    onSuccess: (data: any) => {
+    mutationFn: ({ id, reason, date }: { id: string; reason?: string; date?: string }) =>
+      apiRequest("POST", `/api/journal/${id}/reverse`, {
+        reason: reason || null,
+        date: date || null,
+      }),
+    onSuccess: (data: { reversalNumber?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
+      setReverseDate("");
+      setReverseReason("");
       toast({
-        title: "Entry reversed",
-        description: `Reversal entry ${data.reversalNumber} created. Original entry marked as void.`,
+        title: t["journal.reversedToast"],
+        description: formatMessage(t["journal.reversedToastBody"], {
+          number: data?.reversalNumber ?? "",
+        }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to reverse entry",
+        title: t["journal.actionFailed"],
+        description: error?.message,
+      });
+    },
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      apiRequest("POST", `/api/journal/${id}/void`, { reason: reason || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
+      setReverseReason("");
+      toast({ title: t["journal.voidedToast"] });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: t["journal.actionFailed"],
         description: error?.message,
       });
     },
@@ -294,15 +333,18 @@ export default function Journal() {
       return;
     }
 
-    // Convert numeric values to ensure proper storage
-    const submitData = {
-      ...data,
-      companyId: selectedCompanyId,
-      lines: data.lines.map((line) => ({
-        ...line,
-        debit: Number(line.debit),
-        credit: Number(line.credit),
-      })),
+    // The server owns companyId (from the URL). Empty lines are dropped: the
+    // ledger rejects zero-amount lines instead of storing them.
+    const submitData: JournalPayload = {
+      date: format(data.date, "yyyy-MM-dd"),
+      memo: data.memo || null,
+      lines: data.lines
+        .filter((line) => toFils(line.debit) > 0 || toFils(line.credit) > 0)
+        .map((line) => ({
+          accountId: line.accountId,
+          debit: Number(line.debit) || 0,
+          credit: Number(line.credit) || 0,
+        })),
     };
 
     if (editingEntry) {
@@ -314,9 +356,11 @@ export default function Journal() {
 
   // Calculate balance
   const watchLines = form.watch("lines");
-  const totalDebit = watchLines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
-  const totalCredit = watchLines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
-  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+  const totalDebitFils = watchLines.reduce((sum, line) => sum + toFils(line.debit), 0);
+  const totalCreditFils = watchLines.reduce((sum, line) => sum + toFils(line.credit), 0);
+  const totalDebit = totalDebitFils / 100;
+  const totalCredit = totalCreditFils / 100;
+  const isBalanced = totalDebitFils === totalCreditFils;
 
   return (
     <div className="space-y-8">
@@ -558,7 +602,7 @@ export default function Journal() {
                         <XCircle className="w-4 h-4 text-destructive" />
                         <StatusBadge tone="danger">
                           {t.notBalanced} (
-                          {formatNumber(Math.abs(totalDebit - totalCredit), locale)})
+                          {formatNumber(Math.abs(totalDebitFils - totalCreditFils) / 100, locale)})
                         </StatusBadge>
                       </>
                     )}
@@ -599,11 +643,34 @@ export default function Journal() {
           getKey={(entry) => entry.id}
           className="space-y-4"
           renderItem={(entry: any) => {
-            const isPosted = entry.status === "posted";
-            const isDraft = entry.status === "draft";
-            const isVoid = entry.status === "void";
+            // lifecycleStatus is derived by the API: a reversed or voided
+            // original keeps status "posted" (its reversal offsets it).
+            const lifecycle: string = entry.lifecycleStatus ?? entry.status;
+            const isPosted = lifecycle === "posted";
+            const isDraft = lifecycle === "draft";
+            const isVoid = lifecycle === "void";
+            const isReversalEntry = entry.entryKind === "reversal";
+            const canReverse = isPosted && !isReversalEntry;
 
             const getStatusBadge = () => {
+              if (lifecycle === "reversed" || lifecycle === "voided") {
+                return (
+                  <StatusBadge tone="danger">
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    {lifecycle === "voided"
+                      ? t["journal.statusVoided"]
+                      : t["journal.statusReversed"]}
+                  </StatusBadge>
+                );
+              }
+              if (isDraft && entry.approvalStatus === "pending") {
+                return (
+                  <StatusBadge tone="warning">
+                    <FileText className="w-3 h-3 mr-1" />
+                    {t["journal.statusPendingApproval"]}
+                  </StatusBadge>
+                );
+              }
               if (isPosted) {
                 return (
                   <StatusBadge tone="success">
@@ -634,7 +701,8 @@ export default function Journal() {
                 invoice: { label: "Invoice", tone: "info" },
                 receipt: { label: "Receipt", tone: "accent" },
                 payment: { label: "Payment", tone: "success" },
-                reversal: { label: "Reversal", tone: "warning" },
+                reversal: { label: t["journal.sourceReversal"], tone: "warning" },
+                journal_template: { label: t["journal.sourceTemplate"], tone: "info" },
               };
               const source = sources[entry.source];
               if (!source) return null;
@@ -657,6 +725,33 @@ export default function Journal() {
                         <span>{formatDate(entry.date, locale)}</span>
                       </div>
                       {entry.memo && <div className="font-medium">{entry.memo}</div>}
+                      {entry.reversedByEntry && (
+                        <div
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-reversed-by-${entry.id}`}
+                        >
+                          <Link href={`/journal/${entry.reversedByEntry.id}`}>
+                            {formatMessage(
+                              lifecycle === "voided"
+                                ? t["journal.voidedBy"]
+                                : t["journal.reversedBy"],
+                              { number: entry.reversedByEntry.entryNumber }
+                            )}
+                          </Link>
+                        </div>
+                      )}
+                      {entry.reversalOfEntry && (
+                        <div
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-reversal-of-${entry.id}`}
+                        >
+                          <Link href={`/journal/${entry.reversalOfEntry.id}`}>
+                            {formatMessage(t["journal.reversalOf"], {
+                              number: entry.reversalOfEntry.entryNumber,
+                            })}
+                          </Link>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {getStatusBadge()}
@@ -728,7 +823,7 @@ export default function Journal() {
                         </>
                       )}
 
-                      {isPosted && (
+                      {canReverse && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -737,18 +832,40 @@ export default function Journal() {
                               data-testid={`button-reverse-journal-${entry.id}`}
                             >
                               <RotateCcw className="w-4 h-4 mr-2" />
-                              Reverse
+                              {t["journal.reverse"]}
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Reverse Journal Entry?</AlertDialogTitle>
+                              <AlertDialogTitle>{t["journal.reverseTitle"]}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will create a new reversing entry that offsets this posted
-                                entry, and mark the original as void. Posted entries cannot be
-                                edited or deleted.
+                                {t["journal.reverseDescription"]}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
+                            <div className="space-y-3">
+                              <div className="space-y-1">
+                                <label className="text-sm font-medium">
+                                  {t["journal.reversalDate"]}
+                                </label>
+                                <Input
+                                  type="date"
+                                  value={reverseDate}
+                                  onChange={(e) => setReverseDate(e.target.value)}
+                                  data-testid={`input-reversal-date-${entry.id}`}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  {t["journal.reversalDateHint"]}
+                                </p>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-sm font-medium">{t["journal.reason"]}</label>
+                                <Input
+                                  value={reverseReason}
+                                  onChange={(e) => setReverseReason(e.target.value)}
+                                  data-testid={`input-reversal-reason-${entry.id}`}
+                                />
+                              </div>
+                            </div>
                             <AlertDialogFooter>
                               <AlertDialogCancel>
                                 <T k="pages.cancel" />
@@ -757,11 +874,47 @@ export default function Journal() {
                                 onClick={() =>
                                   reverseMutation.mutate({
                                     id: entry.id,
-                                    reason: "User requested reversal",
+                                    reason: reverseReason,
+                                    date: reverseDate,
                                   })
                                 }
                               >
-                                Reverse Entry
+                                {t["journal.confirmReverse"]}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {canReverse && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              data-testid={`button-void-journal-${entry.id}`}
+                            >
+                              <Ban className="w-4 h-4 mr-2" />
+                              {t["journal.void"]}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{t["journal.voidTitle"]}</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {t["journal.voidDescription"]}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>
+                                <T k="pages.cancel" />
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() =>
+                                  voidMutation.mutate({ id: entry.id, reason: reverseReason })
+                                }
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                {t["journal.confirmVoid"]}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>

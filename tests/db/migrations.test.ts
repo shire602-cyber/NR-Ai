@@ -43,7 +43,9 @@ describe("migrations", () => {
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
       expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
-      expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      // Still a reserved placeholder, or filled by its owner with idempotent SQL.
+      const stripped = body.replace(/^--.*$/gm, "").trim();
+      expect(stripped === "SELECT 1;" || /^-- .*Idempotent/im.test(body), e.tag).toBe(true);
     }
   });
 

@@ -817,6 +817,19 @@ export type Account = typeof accounts.$inferSelect;
 // ===========================
 // Journal Entries
 // ===========================
+// Calendar date (Postgres DATE) carried as "YYYY-MM-DD" (W2-A ledger kernel).
+const ledgerDate = customType<{ data: string; driverData: string | Date }>({
+  dataType() {
+    return "date";
+  },
+  fromDriver(value: string | Date): string {
+    return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  },
+  toDriver(value: string) {
+    return value;
+  },
+});
+
 export const journalEntries = pgTable(
   "journal_entries",
   {
@@ -837,6 +850,26 @@ export const journalEntries = pgTable(
     // Reversal support: if this entry is a reversal, link to original
     reversedEntryId: uuid("reversed_entry_id").references((): any => journalEntries.id),
     reversalReason: text("reversal_reason"),
+    // W2-A ledger kernel (migration 0090). On an ORIGINAL entry, the id of the
+    // one reversal that offsets it; set in the same transaction as the reversal.
+    reversedByEntryId: uuid("reversed_by_entry_id"),
+    // "reversed" | "voided" once reversedByEntryId is set (void = reversal dated
+    // on the original date). The ledger-effect `status` stays "posted".
+    reversalKind: text("reversal_kind"),
+    // standard | reversal | closing | year_end_close | opening | revaluation
+    entryKind: text("entry_kind").notNull().default("standard"),
+    // Caller-supplied idempotency key, unique per company when set.
+    idempotencyKey: text("idempotency_key"),
+    // Migration-time flag for pre-kernel duplicate reversals (kept out of the
+    // one-reversal-per-entry unique index; never set by the kernel).
+    isDuplicateReversal: boolean("is_duplicate_reversal").notNull().default(false),
+    reference: text("reference"),
+    // Maker-checker for manual journals: null (not required) | pending | approved
+    approvalStatus: text("approval_status"),
+    approvedBy: uuid("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    // Accrual support: the auto-reverse job reverses the entry on this date.
+    autoReverseOn: ledgerDate("auto_reverse_on"),
     // Audit trail
     createdBy: uuid("created_by")
       .notNull()
@@ -914,6 +947,103 @@ export const insertJournalLineSchema = createInsertSchema(journalLines).omit({
 
 export type InsertJournalLine = z.infer<typeof insertJournalLineSchema>;
 export type JournalLine = typeof journalLines.$inferSelect;
+
+// ===========================
+// Ledger kernel support tables (W2-A, migration 0090)
+// ===========================
+// Partial unique indexes on journal_entries live in SQL only (0090):
+//   uq_journal_entries_company_idempotency (company_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+//   uq_journal_entries_one_reversal (reversed_entry_id) WHERE entry_kind = 'reversal' AND NOT is_duplicate_reversal
+
+/** Integrity findings recorded by migrations / repair scans. Never edits posted data. */
+export const ledgerRepairFindings = pgTable(
+  "ledger_repair_findings",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id"),
+    kind: text("kind").notNull(), // duplicate_reversal | unbalanced_entry
+    entryId: uuid("entry_id").notNull(),
+    details: jsonb("details"),
+    foundAt: timestamp("found_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    kindEntryUnique: unique("uq_ledger_repair_findings_kind_entry").on(table.kind, table.entryId),
+  })
+);
+export type LedgerRepairFinding = typeof ledgerRepairFindings.$inferSelect;
+
+/** Per-company ledger settings (maker-checker threshold for manual journals). */
+export const ledgerSettings = pgTable("ledger_settings", {
+  companyId: uuid("company_id")
+    .primaryKey()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  // Manual journals whose total debit exceeds this need approval by a second
+  // user. null = maker-checker off.
+  manualApprovalThreshold: money("manual_approval_threshold"),
+  updatedBy: uuid("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type LedgerSettings = typeof ledgerSettings.$inferSelect;
+
+/** Recurring and auto-reversing manual journal templates. */
+export const journalTemplates = pgTable(
+  "journal_templates",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    memo: text("memo"),
+    // [{ accountId, debit?, credit?, description?, costCenterId? }] amounts as 2dp strings
+    lines: jsonb("lines").notNull(),
+    frequency: text("frequency").notNull().default("monthly"), // none | weekly | monthly | quarterly | yearly
+    nextRunOn: ledgerDate("next_run_on"),
+    endOn: ledgerDate("end_on"),
+    postAs: text("post_as").notNull().default("posted"), // draft | posted
+    autoReverseDays: integer("auto_reverse_days"), // null = no auto reversal
+    isActive: boolean("is_active").notNull().default(true),
+    lastRunOn: ledgerDate("last_run_on"),
+    lastEntryId: uuid("last_entry_id"),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => ({
+    companyIdx: index("idx_journal_templates_company").on(table.companyId),
+  })
+);
+export type JournalTemplate = typeof journalTemplates.$inferSelect;
+
+/** Files attached to a journal entry (stored through server/services/fileStorage). */
+export const journalAttachments = pgTable(
+  "journal_attachments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    entryId: uuid("entry_id")
+      .notNull()
+      .references(() => journalEntries.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    fileName: text("file_name").notNull(),
+    contentType: text("content_type").notNull(),
+    storageKey: text("storage_key").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    uploadedBy: uuid("uploaded_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    entryIdx: index("idx_journal_attachments_entry").on(table.entryId),
+  })
+);
+export type JournalAttachment = typeof journalAttachments.$inferSelect;
 
 // ===========================
 // Exchange Rates
