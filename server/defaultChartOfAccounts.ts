@@ -647,6 +647,68 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
   },
 ];
 
+/**
+ * W4-B: accounts that inventory and fixed-asset postings create on demand (never seeded by
+ * default, so existing charts and statements are unchanged until a company uses the feature).
+ */
+export const supplementaryAccounts: DefaultAccountTemplate[] = [
+  {
+    code: "2015",
+    nameEn: "Goods Received Not Invoiced",
+    nameAr: "بضائع مستلمة لم تصدر فواتيرها",
+    description: "Accrual for stock received on purchase orders before the supplier bill",
+    type: "liability",
+    subType: "current_liability",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
+    code: "3040",
+    nameEn: "Opening Balance Equity",
+    nameAr: "حقوق ملكية الأرصدة الافتتاحية",
+    description: "Offset for opening stock and other opening balances",
+    type: "equity",
+    subType: "owner_equity",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
+    code: "3050",
+    nameEn: "Revaluation Surplus",
+    nameAr: "فائض إعادة التقييم",
+    description: "Upward revaluation of property, plant and equipment (IAS 16)",
+    type: "equity",
+    subType: "owner_equity",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
+    code: "5007",
+    nameEn: "Inventory Adjustments & Write-downs",
+    nameAr: "تسويات وتخفيضات المخزون",
+    description: "Stocktake variances, shrinkage and inventory write-downs",
+    type: "expense",
+    subType: "cost_of_sales",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
+    code: "5150",
+    nameEn: "Impairment Loss",
+    nameAr: "خسارة انخفاض القيمة",
+    description: "Impairment of fixed assets (IAS 36)",
+    type: "expense",
+    subType: "other_expense",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+];
+
 export function createDefaultAccountsForCompany(
   companyId: string
 ): Omit<InsertAccount, "id" | "createdAt">[] {

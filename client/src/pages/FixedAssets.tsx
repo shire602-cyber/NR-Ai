@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
@@ -83,7 +83,9 @@ interface FixedAsset {
   purchase_date: string;
   purchase_cost: string;
   salvage_value: string;
-  useful_life_years: number;
+  useful_life_years: number | null;
+  needs_capitalization_je?: boolean;
+  capitalization_entry_id?: string | null;
   depreciation_method: string;
   accumulated_depreciation: string;
   net_book_value: string;
@@ -122,26 +124,40 @@ const CATEGORIES = [
   "Other",
 ] as const;
 
-const assetFormSchema = z.object({
-  assetName: z.string().min(1, "Asset name is required"),
-  assetNameAr: z.string().optional().nullable(),
-  assetNumber: z.string().optional().nullable(),
-  category: z.string().min(1, "Category is required"),
-  purchaseDate: z.string().min(1, "Purchase date is required"),
-  purchaseCost: z.coerce.number().min(0, "Purchase cost must be >= 0"),
-  salvageValue: z.coerce.number().min(0, "Salvage value must be >= 0").optional().nullable(),
-  usefulLifeYears: z.coerce.number().int().min(1, "Useful life must be at least 1 year"),
-  depreciationMethod: z.string().optional().nullable(),
-  location: z.string().optional().nullable(),
-  serialNumber: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+const assetFormSchema = z
+  .object({
+    assetName: z.string().min(1, "Asset name is required"),
+    assetNameAr: z.string().optional().nullable(),
+    assetNumber: z.string().optional().nullable(),
+    category: z.string().min(1, "Category is required"),
+    purchaseDate: z.string().min(1, "Purchase date is required"),
+    purchaseCost: z.coerce.number().min(0, "Purchase cost must be >= 0"),
+    salvageValue: z.coerce.number().min(0, "Salvage value must be >= 0").optional().nullable(),
+    // Land (IAS 16) has no useful life; every other category needs one.
+    usefulLifeYears: z.preprocess(
+      (v) => (v === "" || v === null || v === undefined ? null : v),
+      z.coerce.number().int().min(1, "Useful life must be at least 1 year").nullable()
+    ),
+    depreciationMethod: z.enum(["straight_line", "declining_balance"]).optional().nullable(),
+    location: z.string().optional().nullable(),
+    serialNumber: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+    paymentAccountId: z.string().optional().nullable(),
+  })
+  .refine((v) => v.category.trim().toLowerCase() === "land" || !!v.usefulLifeYears, {
+    message: "Useful life is required for depreciable assets",
+    path: ["usefulLifeYears"],
+  });
 
 type AssetFormData = z.infer<typeof assetFormSchema>;
 
 const disposeFormSchema = z.object({
   disposalDate: z.string().min(1, "Disposal date is required"),
   disposalAmount: z.coerce.number().min(0, "Disposal amount must be >= 0"),
+  proceedsAccountId: z.string().optional().nullable(),
+  onCredit: z.boolean().optional(),
+  buyerName: z.string().optional().nullable(),
+  vatTreatment: z.enum(["standard", "zero_rated", "exempt", "out_of_scope"]).optional(),
   notes: z.string().optional().nullable(),
 });
 
@@ -158,6 +174,7 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
 export default function FixedAssets() {
   const { t, locale } = useTranslation();
+  const fa = FA_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
@@ -210,6 +227,9 @@ export default function FixedAssets() {
     },
   });
 
+  const assetCategory = useWatch({ control: assetForm.control, name: "category" });
+  const disposeOnCredit = useWatch({ control: disposeForm.control, name: "onCredit" });
+
   const depRunForm = useForm<DepreciationRunData>({
     resolver: zodResolver(depreciationRunSchema),
     defaultValues: {
@@ -220,9 +240,35 @@ export default function FixedAssets() {
 
   // ─── Mutations ──────────────────────────────────────────
 
+  const { data: accountsList = [] } = useQuery<LedgerAccount[]>({
+    queryKey: [`/api/companies/${companyId}/accounts`],
+    enabled: !!companyId,
+  });
+  const cashAccounts = accountsList.filter(
+    (a) =>
+      a.type === "asset" &&
+      (a.code === "1010" || a.code === "1020" || /cash|bank/i.test(a.subType ?? ""))
+  );
+
+  const capitalizeMutation = useMutation({
+    mutationFn: ({ id, paymentAccountId }: { id: string; paymentAccountId: string }) =>
+      apiRequest("POST", `/api/fixed-assets/${id}/capitalize`, { paymentAccountId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
+      toast({ title: fa.capitalized });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+
   const createAssetMutation = useMutation({
     mutationFn: (data: AssetFormData) =>
-      apiRequest("POST", `/api/companies/${companyId}/fixed-assets`, data),
+      apiRequest("POST", `/api/companies/${companyId}/fixed-assets`, {
+        ...data,
+        usefulLifeYears: data.usefulLifeYears || null,
+        paymentAccountId: data.paymentAccountId || null,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
@@ -241,8 +287,10 @@ export default function FixedAssets() {
   });
 
   const updateAssetMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<AssetFormData> }) =>
-      apiRequest("PATCH", `/api/fixed-assets/${id}`, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<AssetFormData> }) => {
+      const { paymentAccountId: _p, ...rest } = data;
+      return apiRequest("PATCH", `/api/fixed-assets/${id}`, rest);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
@@ -294,7 +342,15 @@ export default function FixedAssets() {
 
   const disposeMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: DisposeFormData }) =>
-      apiRequest("POST", `/api/fixed-assets/${id}/dispose`, data),
+      apiRequest("POST", `/api/fixed-assets/${id}/dispose`, {
+        disposalDate: data.disposalDate,
+        disposalAmount: data.disposalAmount,
+        proceedsAccountId: data.onCredit ? null : data.proceedsAccountId || null,
+        onCredit: data.onCredit === true,
+        buyerName: data.buyerName || null,
+        vatTreatment: data.vatTreatment ?? "standard",
+        notes: data.notes || null,
+      }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
@@ -366,7 +422,8 @@ export default function FixedAssets() {
       purchaseCost: parseFloat(asset.purchase_cost),
       salvageValue: parseFloat(asset.salvage_value || "0"),
       usefulLifeYears: asset.useful_life_years,
-      depreciationMethod: asset.depreciation_method || "straight_line",
+      depreciationMethod:
+        asset.depreciation_method === "declining_balance" ? "declining_balance" : "straight_line",
       location: asset.location || "",
       serialNumber: asset.serial_number || "",
       notes: asset.notes || "",
@@ -473,6 +530,11 @@ export default function FixedAssets() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <a href={`/api/companies/${companyId}/fixed-assets/register?format=xlsx`}>
+              {fa.exportRegister}
+            </a>
+          </Button>
           <Button
             variant="outline"
             onClick={() => setDepRunDialogOpen(true)}
@@ -693,6 +755,25 @@ export default function FixedAssets() {
                       <TableCell>{getStatusBadge(asset.status)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {asset.status === "active" &&
+                            asset.needs_capitalization_je &&
+                            !asset.capitalization_entry_id &&
+                            cashAccounts[0] && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  capitalizeMutation.mutate({
+                                    id: asset.id,
+                                    paymentAccountId: cashAccounts[0].id,
+                                  })
+                                }
+                                title={fa.capitalizeHint}
+                                disabled={capitalizeMutation.isPending}
+                              >
+                                {fa.capitalize}
+                              </Button>
+                            )}
                           {asset.status === "active" && (
                             <>
                               <Button
@@ -880,14 +961,47 @@ export default function FixedAssets() {
                   )}
                 />
 
+                {!editingAsset && (
+                  <FormField
+                    control={assetForm.control}
+                    name="paymentAccountId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{fa.paidFrom}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={fa.notCapitalised} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {cashAccounts.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.code} — {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                )}
+
                 <FormField
                   control={assetForm.control}
                   name="usefulLifeYears"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Useful Life (Years) *</FormLabel>
+                      <FormLabel>{fa.usefulLife}</FormLabel>
                       <FormControl>
-                        <Input type="number" min="1" step="1" {...field} />
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          {...field}
+                          value={field.value ?? ""}
+                          disabled={assetCategory?.toLowerCase() === "land"}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1029,6 +1143,86 @@ export default function FixedAssets() {
                       <Input type="number" step="0.01" min="0" {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={disposeForm.control}
+                name="onCredit"
+                render={({ field }) => (
+                  <FormItem>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={field.value === true}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                      />
+                      {fa.onCredit}
+                    </label>
+                  </FormItem>
+                )}
+              />
+
+              {!disposeOnCredit && (
+                <FormField
+                  control={disposeForm.control}
+                  name="proceedsAccountId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{fa.proceedsAccount}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={fa.cashDefault} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {cashAccounts.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.code} — {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <FormField
+                control={disposeForm.control}
+                name="buyerName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{fa.buyer}</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={disposeForm.control}
+                name="vatTreatment"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{fa.vat}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? "standard"}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="standard">{fa.vatStandard}</SelectItem>
+                        <SelectItem value="zero_rated">{fa.vatZero}</SelectItem>
+                        <SelectItem value="exempt">{fa.vatExempt}</SelectItem>
+                        <SelectItem value="out_of_scope">{fa.vatOutOfScope}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </FormItem>
                 )}
               />
@@ -1196,3 +1390,52 @@ export default function FixedAssets() {
     </div>
   );
 }
+
+interface LedgerAccount {
+  id: string;
+  code: string;
+  nameEn: string;
+  nameAr: string | null;
+  type: string;
+  subType: string | null;
+}
+
+// W4-B copy (en + ar) for the register additions.
+const FA_COPY = {
+  en: {
+    usefulLife: "Useful life (years) — not needed for land",
+    paidFrom: "Paid from (posts the capitalisation)",
+    notCapitalised: "Not paid yet — capitalise later",
+    exportRegister: "Export register (xlsx)",
+    capitalize: "Capitalise",
+    capitalizeHint: "Post the purchase to the ledger so the asset can be depreciated",
+    capitalized: "Asset capitalised on the ledger",
+    onCredit: "Sold on credit (debit Accounts Receivable)",
+    proceedsAccount: "Proceeds received into",
+    cashDefault: "Cash on hand (1010)",
+    buyer: "Buyer",
+    vat: "VAT on the sale",
+    vatStandard: "Standard rated 5%",
+    vatZero: "Zero rated",
+    vatExempt: "Exempt",
+    vatOutOfScope: "Out of scope",
+  },
+  ar: {
+    usefulLife: "العمر الإنتاجي (سنوات) — غير مطلوب للأراضي",
+    paidFrom: "مدفوع من (يرحّل قيد الرسملة)",
+    notCapitalised: "لم يُدفع بعد — رسملة لاحقاً",
+    exportRegister: "تصدير السجل (xlsx)",
+    capitalize: "رسملة",
+    capitalizeHint: "ترحيل الشراء إلى دفتر الأستاذ ليتسنى استهلاك الأصل",
+    capitalized: "تمت رسملة الأصل في دفتر الأستاذ",
+    onCredit: "بيع آجل (مدين الذمم المدينة)",
+    proceedsAccount: "استلام المتحصلات في",
+    cashDefault: "النقد في الصندوق (1010)",
+    buyer: "المشتري",
+    vat: "ضريبة القيمة المضافة على البيع",
+    vatStandard: "خاضع بنسبة 5%",
+    vatZero: "خاضع بنسبة الصفر",
+    vatExempt: "معفى",
+    vatOutOfScope: "خارج النطاق",
+  },
+} as const;

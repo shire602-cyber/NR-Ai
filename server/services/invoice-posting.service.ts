@@ -59,6 +59,14 @@ import {
   type SalesDocumentTotals,
 } from "./document-totals.service";
 import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
+import { has, resolve } from "../platform/service-registry";
+
+// W4-B inventory / COGS hooks (provided by server/services/inventory). Called on the document's
+// transaction so stock and cost of sales commit atomically with the revenue entry.
+type InventoryHook = (tx: LedgerTx, args: Record<string, unknown>) => Promise<unknown>;
+async function inventoryHook(name: string, tx: LedgerTx, args: Record<string, unknown>) {
+  if (has(name)) await resolve<InventoryHook>(name)(tx, args);
+}
 
 const log = createLogger("invoice-posting");
 
@@ -481,6 +489,7 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     },
     { actorId: userId, tx }
   );
+  if (!replayed) await inventoryHook("inventory.onInvoiceIssued", tx, { invoice, lines, userId });
   return !replayed;
 }
 
@@ -598,6 +607,13 @@ export async function voidInvoice(
       { void: true, reason: reason ?? `Invoice ${target}` },
       { actorId: userId, tx }
     );
+    await inventoryHook("inventory.onInvoiceVoided", tx, {
+      companyId,
+      invoiceId,
+      number: inv.number,
+      userId,
+      reason,
+    });
     const row = await transitionRow<Invoice>(
       tx,
       invoices,
@@ -1147,6 +1163,12 @@ async function issueCreditNoteLocked(
     creditDocFils: cnTotalFils,
     userId,
   });
+  await inventoryHook("inventory.onCreditNoteIssued", tx, {
+    original,
+    creditNote: issued,
+    lines: cnLines,
+    userId,
+  });
   await refreshSettlementStatus(tx, original.id);
   return {
     creditNote: issued,
@@ -1264,6 +1286,12 @@ export async function voidCreditNote(
       { void: true, reason: reason ?? "Credit note voided" },
       { actorId: userId, tx }
     );
+    await inventoryHook("inventory.onCreditNoteVoided", tx, {
+      companyId,
+      creditNoteId,
+      number: fresh.number,
+      userId,
+    });
     if (credits.length) {
       await tx
         .update(customerCredits)

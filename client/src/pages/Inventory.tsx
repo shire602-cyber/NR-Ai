@@ -71,16 +71,30 @@ const productFormSchema = z.object({
   vatRate: z.coerce.number().min(0).max(1, "VAT rate must be between 0 and 1"),
   unit: z.string().min(1, "Unit is required"),
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
+  productType: z.enum(["inventory", "service", "bundle"]).optional(),
+  reorderPoint: z
+    .preprocess((v) => (v === "" || v === undefined ? null : v), z.coerce.number().int().min(0).nullable())
+    .optional(),
 });
 
 type ProductFormData = z.infer<typeof productFormSchema>;
 
-const movementFormSchema = z.object({
-  type: z.enum(["purchase", "adjustment", "return"]),
-  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
-  unitCost: z.coerce.number().min(0).optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+const movementFormSchema = z
+  .object({
+    type: z.enum(["purchase", "sale", "adjustment", "return"]),
+    // Adjustments are signed (stock-take correction); every other type is a positive quantity.
+    quantity: z.coerce
+      .number()
+      .int()
+      .refine((n) => n !== 0, "Quantity must not be zero"),
+    unitCost: z.coerce.number().min(0).optional().nullable(),
+    date: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  })
+  .refine((v) => v.type === "adjustment" || v.quantity > 0, {
+    message: "Quantity must be positive",
+    path: ["quantity"],
+  });
 
 type MovementFormData = z.infer<typeof movementFormSchema>;
 
@@ -88,6 +102,7 @@ type MovementFormData = z.infer<typeof movementFormSchema>;
 
 export default function Inventory() {
   const { t, locale } = useTranslation();
+  const c = INVENTORY_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
@@ -186,13 +201,23 @@ export default function Inventory() {
 
   const addMovementMutation = useMutation({
     mutationFn: ({ productId, data }: { productId: string; data: MovementFormData }) =>
-      apiRequest("POST", `/api/products/${productId}/movements`, data),
-    onSuccess: () => {
+      apiRequest("POST", `/api/products/${productId}/movements`, {
+        type: data.type,
+        quantity: data.quantity,
+        unitCost: data.unitCost || null,
+        date: data.date || undefined,
+        notes: data.notes || null,
+      }),
+    onSuccess: (res: { warnings?: string[] }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/inventory-movements`],
       });
-      toast({ title: "Stock Updated", description: "Inventory movement recorded successfully." });
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/inventory/valuation`] });
+      toast({
+        title: c.stockUpdated,
+        description: res?.warnings?.includes("NEGATIVE_STOCK") ? c.negativeWarning : c.postedToLedger,
+      });
       setAddStockDialogOpen(false);
       setStockProduct(null);
       movementForm.reset();
@@ -334,9 +359,15 @@ export default function Inventory() {
           </TabsTrigger>
           <TabsTrigger value="movements" className="flex items-center gap-2">
             <ArrowDownUp className="w-4 h-4" />
-            Movements
+            {c.movements}
           </TabsTrigger>
+          <TabsTrigger value="valuation">{c.valuation}</TabsTrigger>
+          <TabsTrigger value="warehouses">{c.warehouses}</TabsTrigger>
+          <TabsTrigger value="stocktake">{c.stocktake}</TabsTrigger>
+          <TabsTrigger value="settings">{c.settings}</TabsTrigger>
         </TabsList>
+
+        <InventoryAccountingTabs companyId={companyId} products={productsList} c={c} locale={locale} />
 
         {/* ─── Products Tab ──────────────────────────────── */}
         <TabsContent value="products">
@@ -713,6 +744,43 @@ export default function Inventory() {
 
                 <FormField
                   control={productForm.control}
+                  name="productType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{c.productType}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? "inventory"}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="inventory">{c.typeInventory}</SelectItem>
+                          <SelectItem value="service">{c.typeService}</SelectItem>
+                          <SelectItem value="bundle">{c.typeBundle}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={productForm.control}
+                  name="reorderPoint"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{c.reorderPoint}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="1" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={productForm.control}
                   name="lowStockThreshold"
                   render={({ field }) => (
                     <FormItem>
@@ -780,6 +848,7 @@ export default function Inventory() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="purchase"><T k="pages.purchase" /></SelectItem>
+                        <SelectItem value="sale">{c.saleIssue}</SelectItem>
                         <SelectItem value="adjustment"><T k="pages.adjustment" /></SelectItem>
                         <SelectItem value="return"><T k="pages.return" /></SelectItem>
                       </SelectContent>
@@ -796,7 +865,7 @@ export default function Inventory() {
                   <FormItem>
                     <FormLabel>{t.quantity || "Quantity"} *</FormLabel>
                     <FormControl>
-                      <Input type="number" min="1" step="1" {...field} />
+                      <Input type="number" step="1" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -885,5 +954,531 @@ export default function Inventory() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ─── W4-B: inventory accounting (valuation vs GL, warehouses, stocktake, settings) ──────────
+
+const INVENTORY_COPY = {
+  en: {
+    movements: "Movements",
+    valuation: "Valuation",
+    warehouses: "Warehouses",
+    stocktake: "Stocktake",
+    settings: "Settings",
+    stockUpdated: "Stock updated",
+    postedToLedger: "The movement and its journal entry were posted.",
+    negativeWarning: "Recorded. Stock is now negative: the cost is an estimate until the next receipt.",
+    saleIssue: "Issue / sale (no invoice)",
+    productType: "Product type",
+    typeInventory: "Stock item",
+    typeService: "Service (no stock)",
+    typeBundle: "Bundle / kit",
+    reorderPoint: "Reorder point",
+    product: "Product",
+    quantity: "Quantity",
+    unitCost: "Unit cost",
+    value: "Value (AED)",
+    total: "Total",
+    glBalance: "General ledger (inventory accounts)",
+    difference: "Difference",
+    reconciled: "Reconciled to the ledger",
+    notReconciled: "Does not reconcile — investigate",
+    ageing: "Stock ageing (days on hand)",
+    reorder: "Below reorder point",
+    suggested: "Suggested order",
+    none: "Nothing to show",
+    code: "Code",
+    name: "Name",
+    nameAr: "Arabic name",
+    addWarehouse: "Add warehouse",
+    defaultWh: "Default",
+    units: "Units",
+    transfer: "Transfer stock",
+    from: "From",
+    to: "To",
+    submit: "Submit",
+    counted: "Counted",
+    countDate: "Count date",
+    createCount: "Create count",
+    post: "Post",
+    posted: "Posted",
+    draft: "Draft",
+    lines: "Lines",
+    costingMethod: "Costing method",
+    weightedAverage: "Weighted average",
+    fifo: "FIFO (first in, first out)",
+    allowNegative: "Allow negative stock (with a warning)",
+    save: "Save",
+    saved: "Saved",
+    error: "Error",
+  },
+  ar: {
+    movements: "الحركات",
+    valuation: "التقييم",
+    warehouses: "المستودعات",
+    stocktake: "الجرد",
+    settings: "الإعدادات",
+    stockUpdated: "تم تحديث المخزون",
+    postedToLedger: "تم ترحيل الحركة وقيدها المحاسبي.",
+    negativeWarning: "تم التسجيل. المخزون الآن سالب: التكلفة تقديرية حتى الاستلام التالي.",
+    saleIssue: "صرف / بيع (بدون فاتورة)",
+    productType: "نوع المنتج",
+    typeInventory: "صنف مخزني",
+    typeService: "خدمة (بدون مخزون)",
+    typeBundle: "حزمة / طقم",
+    reorderPoint: "حد إعادة الطلب",
+    product: "المنتج",
+    quantity: "الكمية",
+    unitCost: "تكلفة الوحدة",
+    value: "القيمة (درهم)",
+    total: "الإجمالي",
+    glBalance: "دفتر الأستاذ (حسابات المخزون)",
+    difference: "الفرق",
+    reconciled: "مطابق لدفتر الأستاذ",
+    notReconciled: "غير مطابق — يرجى المراجعة",
+    ageing: "أعمار المخزون (أيام)",
+    reorder: "أقل من حد إعادة الطلب",
+    suggested: "الكمية المقترحة",
+    none: "لا توجد بيانات",
+    code: "الرمز",
+    name: "الاسم",
+    nameAr: "الاسم بالعربية",
+    addWarehouse: "إضافة مستودع",
+    defaultWh: "افتراضي",
+    units: "الوحدات",
+    transfer: "تحويل مخزون",
+    from: "من",
+    to: "إلى",
+    submit: "إرسال",
+    counted: "المعدود",
+    countDate: "تاريخ الجرد",
+    createCount: "إنشاء جرد",
+    post: "ترحيل",
+    posted: "مرحّل",
+    draft: "مسودة",
+    lines: "البنود",
+    costingMethod: "طريقة التكلفة",
+    weightedAverage: "المتوسط المرجح",
+    fifo: "الوارد أولاً صادر أولاً",
+    allowNegative: "السماح بالمخزون السالب (مع تحذير)",
+    save: "حفظ",
+    saved: "تم الحفظ",
+    error: "خطأ",
+  },
+} as const;
+
+type InventoryCopy = (typeof INVENTORY_COPY)["en"] | (typeof INVENTORY_COPY)["ar"];
+
+interface ValuationReport {
+  rows: Array<{ productId: string; name: string; nameAr: string | null; sku: string | null; quantity: number; unitCost: string; value: string }>;
+  totalValue: string;
+  glBalance: string;
+  difference: string;
+  reconciled: boolean;
+}
+interface AgeingReport {
+  totals: Array<{ label: string; qty: number; value: string }>;
+}
+interface ReorderRow {
+  productId: string;
+  name: string;
+  nameAr: string | null;
+  currentStock: number;
+  reorderPoint: number;
+  suggestedOrderQty: number;
+}
+interface WarehouseRow {
+  id: string;
+  code: string;
+  name: string;
+  name_ar: string | null;
+  is_default: boolean;
+  totalUnits: number;
+}
+interface StocktakeRow {
+  id: string;
+  count_date: string;
+  status: string;
+  lineCount: number;
+}
+
+function InventoryAccountingTabs({
+  companyId,
+  products,
+  c,
+  locale,
+}: {
+  companyId: string;
+  products: Product[];
+  c: InventoryCopy;
+  locale: string;
+}) {
+  const { toast } = useToast();
+  const base = `/api/companies/${companyId}`;
+  const valuation = useQuery<ValuationReport>({ queryKey: [`${base}/inventory/valuation`] });
+  const ageing = useQuery<AgeingReport>({ queryKey: [`${base}/inventory/ageing`] });
+  const reorder = useQuery<ReorderRow[]>({ queryKey: [`${base}/inventory/reorder`] });
+  const warehousesQ = useQuery<WarehouseRow[]>({ queryKey: [`${base}/warehouses`] });
+  const stocktakesQ = useQuery<StocktakeRow[]>({ queryKey: [`${base}/stocktakes`] });
+  const settingsQ = useQuery<{ costingMethod: string; allowNegativeStock: boolean }>({
+    queryKey: [`${base}/inventory/settings`],
+  });
+  const stocked = products.filter((p) => (p as Product & { productType?: string }).productType !== "service");
+
+  const fail = (e: Error) => toast({ title: c.error, description: e?.message, variant: "destructive" });
+  const refresh = () => {
+    for (const k of ["inventory/valuation", "inventory/ageing", "inventory/reorder", "warehouses", "stocktakes", "products", "inventory-movements"]) {
+      queryClient.invalidateQueries({ queryKey: [`${base}/${k}`] });
+    }
+  };
+
+  const [wh, setWh] = useState({ code: "", name: "", nameAr: "" });
+  const addWarehouse = useMutation({
+    mutationFn: () => apiRequest("POST", `${base}/warehouses`, { code: wh.code, name: wh.name, nameAr: wh.nameAr || null }),
+    onSuccess: () => {
+      setWh({ code: "", name: "", nameAr: "" });
+      refresh();
+    },
+    onError: fail,
+  });
+  const [tr, setTr] = useState({ productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: 1 });
+  const transfer = useMutation({
+    mutationFn: () => apiRequest("POST", `${base}/inventory/transfers`, tr),
+    onSuccess: () => {
+      toast({ title: c.saved });
+      refresh();
+    },
+    onError: fail,
+  });
+  const [count, setCount] = useState({ productId: "", countedQty: 0, countDate: new Date().toISOString().slice(0, 10) });
+  const createCount = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `${base}/stocktakes`, {
+        countDate: count.countDate,
+        lines: [{ productId: count.productId, countedQty: Number(count.countedQty) }],
+      }),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const postCount = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `${base}/stocktakes/${id}/post`, {}),
+    onSuccess: () => {
+      toast({ title: c.posted });
+      refresh();
+    },
+    onError: fail,
+  });
+  const saveSettings = useMutation({
+    mutationFn: (body: { costingMethod?: string; allowNegativeStock?: boolean }) =>
+      apiRequest("PUT", `${base}/inventory/settings`, body),
+    onSuccess: () => {
+      toast({ title: c.saved });
+      queryClient.invalidateQueries({ queryKey: [`${base}/inventory/settings`] });
+    },
+    onError: fail,
+  });
+  const nameOf = (p: { name: string; nameAr?: string | null }) => (locale === "ar" && p.nameAr ? p.nameAr : p.name);
+  const v = valuation.data;
+
+  return (
+    <>
+      <TabsContent value="valuation" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.valuation}</CardTitle>
+            {v && (
+              <CardDescription>
+                <Badge variant={v.reconciled ? "secondary" : "destructive"}>
+                  {v.reconciled ? c.reconciled : c.notReconciled}
+                </Badge>
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{c.product}</TableHead>
+                  <TableHead className="text-end">{c.quantity}</TableHead>
+                  <TableHead className="text-end">{c.unitCost}</TableHead>
+                  <TableHead className="text-end">{c.value}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(v?.rows ?? []).map((r) => (
+                  <TableRow key={r.productId}>
+                    <TableCell>{nameOf(r)}</TableCell>
+                    <TableCell className="text-end">{r.quantity}</TableCell>
+                    <TableCell className="text-end">{formatCurrency(Number(r.unitCost), "AED", locale)}</TableCell>
+                    <TableCell className="text-end">{formatCurrency(Number(r.value), "AED", locale)}</TableCell>
+                  </TableRow>
+                ))}
+                {v && (
+                  <>
+                    <TableRow>
+                      <TableCell className="font-semibold">{c.total}</TableCell>
+                      <TableCell />
+                      <TableCell />
+                      <TableCell className="text-end font-semibold">{formatCurrency(Number(v.totalValue), "AED", locale)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>{c.glBalance}</TableCell>
+                      <TableCell />
+                      <TableCell />
+                      <TableCell className="text-end">{formatCurrency(Number(v.glBalance), "AED", locale)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>{c.difference}</TableCell>
+                      <TableCell />
+                      <TableCell />
+                      <TableCell className="text-end">{formatCurrency(Number(v.difference), "AED", locale)}</TableCell>
+                    </TableRow>
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{c.ageing}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableBody>
+                  {(ageing.data?.totals ?? []).map((b) => (
+                    <TableRow key={b.label}>
+                      <TableCell>{b.label}</TableCell>
+                      <TableCell className="text-end">{b.qty}</TableCell>
+                      <TableCell className="text-end">{formatCurrency(Number(b.value), "AED", locale)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                {c.reorder}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(reorder.data ?? []).length === 0 ? (
+                <p className="text-muted-foreground text-sm">{c.none}</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{c.product}</TableHead>
+                      <TableHead className="text-end">{c.quantity}</TableHead>
+                      <TableHead className="text-end">{c.reorderPoint}</TableHead>
+                      <TableHead className="text-end">{c.suggested}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(reorder.data ?? []).map((r) => (
+                      <TableRow key={r.productId}>
+                        <TableCell>{nameOf(r)}</TableCell>
+                        <TableCell className="text-end">{r.currentStock}</TableCell>
+                        <TableCell className="text-end">{r.reorderPoint}</TableCell>
+                        <TableCell className="text-end">{r.suggestedOrderQty}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="warehouses" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.warehouses}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{c.code}</TableHead>
+                  <TableHead>{c.name}</TableHead>
+                  <TableHead className="text-end">{c.units}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(warehousesQ.data ?? []).map((w) => (
+                  <TableRow key={w.id}>
+                    <TableCell>
+                      {w.code} {w.is_default && <Badge variant="secondary">{c.defaultWh}</Badge>}
+                    </TableCell>
+                    <TableCell>{locale === "ar" && w.name_ar ? w.name_ar : w.name}</TableCell>
+                    <TableCell className="text-end">{w.totalUnits}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="grid gap-2 md:grid-cols-4">
+              <Input aria-label={c.code} placeholder={c.code} value={wh.code} onChange={(e) => setWh({ ...wh, code: e.target.value })} />
+              <Input aria-label={c.name} placeholder={c.name} value={wh.name} onChange={(e) => setWh({ ...wh, name: e.target.value })} />
+              <Input aria-label={c.nameAr} placeholder={c.nameAr} dir="rtl" value={wh.nameAr} onChange={(e) => setWh({ ...wh, nameAr: e.target.value })} />
+              <Button disabled={!wh.code || !wh.name || addWarehouse.isPending} onClick={() => addWarehouse.mutate()}>
+                <Plus className="w-4 h-4" />
+                {c.addWarehouse}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.transfer}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 md:grid-cols-5">
+            <Select value={tr.productId} onValueChange={(productId) => setTr({ ...tr, productId })}>
+              <SelectTrigger aria-label={c.product}>
+                <SelectValue placeholder={c.product} />
+              </SelectTrigger>
+              <SelectContent>
+                {stocked.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {nameOf(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(["fromWarehouseId", "toWarehouseId"] as const).map((k) => (
+              <Select key={k} value={tr[k]} onValueChange={(id) => setTr({ ...tr, [k]: id })}>
+                <SelectTrigger aria-label={k === "fromWarehouseId" ? c.from : c.to}>
+                  <SelectValue placeholder={k === "fromWarehouseId" ? c.from : c.to} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(warehousesQ.data ?? []).map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ))}
+            <Input
+              aria-label={c.quantity}
+              type="number"
+              min="1"
+              value={tr.quantity}
+              onChange={(e) => setTr({ ...tr, quantity: Number(e.target.value) })}
+            />
+            <Button
+              disabled={!tr.productId || !tr.fromWarehouseId || !tr.toWarehouseId || transfer.isPending}
+              onClick={() => transfer.mutate()}
+            >
+              {c.submit}
+            </Button>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="stocktake" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.stocktake}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-2 md:grid-cols-4">
+              <Select value={count.productId} onValueChange={(productId) => setCount({ ...count, productId })}>
+                <SelectTrigger aria-label={c.product}>
+                  <SelectValue placeholder={c.product} />
+                </SelectTrigger>
+                <SelectContent>
+                  {stocked.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {nameOf(p)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                aria-label={c.counted}
+                type="number"
+                min="0"
+                value={count.countedQty}
+                onChange={(e) => setCount({ ...count, countedQty: Number(e.target.value) })}
+              />
+              <Input
+                aria-label={c.countDate}
+                type="date"
+                value={count.countDate}
+                onChange={(e) => setCount({ ...count, countDate: e.target.value })}
+              />
+              <Button disabled={!count.productId || createCount.isPending} onClick={() => createCount.mutate()}>
+                {c.createCount}
+              </Button>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{c.countDate}</TableHead>
+                  <TableHead>{c.lines}</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(stocktakesQ.data ?? []).map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>{s.count_date}</TableCell>
+                    <TableCell>{s.lineCount}</TableCell>
+                    <TableCell className="text-end">
+                      {s.status === "draft" ? (
+                        <Button size="sm" disabled={postCount.isPending} onClick={() => postCount.mutate(s.id)}>
+                          {c.post}
+                        </Button>
+                      ) : (
+                        <Badge variant="secondary">{c.posted}</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="settings">
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.settings}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 max-w-md">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{c.costingMethod}</p>
+              <Select
+                value={settingsQ.data?.costingMethod ?? "weighted_average"}
+                onValueChange={(costingMethod) => saveSettings.mutate({ costingMethod })}
+              >
+                <SelectTrigger aria-label={c.costingMethod}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weighted_average">{c.weightedAverage}</SelectItem>
+                  <SelectItem value="fifo">{c.fifo}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settingsQ.data?.allowNegativeStock === true}
+                onChange={(e) => saveSettings.mutate({ allowNegativeStock: e.target.checked })}
+              />
+              {c.allowNegative}
+            </label>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </>
   );
 }

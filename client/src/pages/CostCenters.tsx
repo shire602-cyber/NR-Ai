@@ -69,6 +69,8 @@ interface CostCenter {
   companyId: string;
   code: string;
   name: string;
+  nameAr?: string | null;
+  type?: "cost_centre" | "project" | "job";
   description?: string | null;
   parentId?: string | null;
   isActive: boolean;
@@ -84,6 +86,11 @@ interface CostCenterProfitabilityRow {
   costCenterId: string;
   code: string;
   name: string;
+  nameAr?: string | null;
+  type?: string;
+  depth?: number;
+  isUnallocated?: boolean;
+  rollup?: { totalIncome: number; totalExpenses: number; netIncome: number };
   isActive: boolean;
   totalIncome: number;
   totalExpenses: number;
@@ -110,6 +117,8 @@ interface CostCenterProfitabilityReport {
 const costCenterFormSchema = z.object({
   code: z.string().min(1, "Code is required"),
   name: z.string().min(1, "Name is required"),
+  nameAr: z.string().optional().nullable(),
+  type: z.enum(["cost_centre", "project", "job"]).default("cost_centre"),
   description: z.string().optional(),
   parentId: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -121,6 +130,7 @@ type CostCenterFormData = z.infer<typeof costCenterFormSchema>;
 
 export default function CostCenters() {
   const { locale } = useTranslation();
+  const cc = CC_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
@@ -155,6 +165,8 @@ export default function CostCenters() {
     defaultValues: {
       code: "",
       name: "",
+      nameAr: "",
+      type: "cost_centre",
       description: "",
       parentId: null,
       isActive: true,
@@ -225,6 +237,8 @@ export default function CostCenters() {
     form.reset({
       code: "",
       name: "",
+      nameAr: "",
+      type: "cost_centre",
       description: "",
       parentId: null,
       isActive: true,
@@ -237,6 +251,8 @@ export default function CostCenters() {
     form.reset({
       code: costCenter.code,
       name: costCenter.name,
+      nameAr: costCenter.nameAr || "",
+      type: costCenter.type ?? "cost_centre",
       description: costCenter.description || "",
       parentId: costCenter.parentId || null,
       isActive: costCenter.isActive,
@@ -433,25 +449,42 @@ export default function CostCenters() {
                       <TableHead className="text-right"><T k="pages.income" /></TableHead>
                       <TableHead className="text-right"><T k="pages.expenses" /></TableHead>
                       <TableHead className="text-right"><T k="pages.netIncome" /></TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead className="text-right">{cc.rollup}</TableHead>
+                      <TableHead className="text-right">{cc.lines}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {profitabilityRows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                           No cost center allocations have been posted yet.
                         </TableCell>
                       </TableRow>
                     ) : (
                       profitabilityRows.map((row) => (
-                        <TableRow key={row.costCenterId}>
+                        <TableRow
+                          key={row.costCenterId}
+                          className={row.isUnallocated ? "bg-muted/40 italic" : undefined}
+                        >
                           <TableCell className="font-mono text-sm">{row.code}</TableCell>
-                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell className="font-medium" style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}>
+                            {row.isUnallocated
+                              ? cc.unallocated
+                              : locale === "ar" && row.nameAr
+                                ? row.nameAr
+                                : row.name}
+                            {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
+                              <Badge variant="outline" className="ms-2">
+                                {row.type === "project" ? cc.typeProject : cc.typeJob}
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell>
-                            <Badge variant={row.isActive ? "default" : "secondary"}>
-                              {row.isActive ? "Active" : "Inactive"}
-                            </Badge>
+                            {!row.isUnallocated && (
+                              <Badge variant={row.isActive ? "default" : "secondary"}>
+                                {row.isActive ? cc.active : cc.inactive}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {formatCurrency(row.totalIncome, "AED", locale)}
@@ -465,6 +498,9 @@ export default function CostCenters() {
                             }`}
                           >
                             {formatCurrency(row.netIncome, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {row.rollup ? formatCurrency(row.rollup.netIncome, "AED", locale) : ""}
                           </TableCell>
                           <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
                         </TableRow>
@@ -720,6 +756,43 @@ export default function CostCenters() {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="nameAr"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{cc.nameAr}</FormLabel>
+                      <FormControl>
+                        <Input dir="rtl" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{cc.type}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? "cost_centre"}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="cost_centre">{cc.typeCostCentre}</SelectItem>
+                          <SelectItem value="project">{cc.typeProject}</SelectItem>
+                          <SelectItem value="job">{cc.typeJob}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
               <FormField
                 control={form.control}
                 name="description"
@@ -807,3 +880,31 @@ export default function CostCenters() {
     </div>
   );
 }
+
+// W4-B copy (en + ar): Arabic names, types, roll-up and the Unallocated row (R10-10, R10-18, R10-19).
+const CC_COPY = {
+  en: {
+    nameAr: "Arabic name",
+    type: "Type",
+    typeCostCentre: "Cost centre",
+    typeProject: "Project",
+    typeJob: "Job",
+    unallocated: "Unallocated (no cost centre)",
+    rollup: "Net incl. children",
+    lines: "Lines",
+    active: "Active",
+    inactive: "Inactive",
+  },
+  ar: {
+    nameAr: "الاسم بالعربية",
+    type: "النوع",
+    typeCostCentre: "مركز تكلفة",
+    typeProject: "مشروع",
+    typeJob: "مهمة",
+    unallocated: "غير موزع (بدون مركز تكلفة)",
+    rollup: "الصافي مع الفروع",
+    lines: "البنود",
+    active: "نشط",
+    inactive: "غير نشط",
+  },
+} as const;
