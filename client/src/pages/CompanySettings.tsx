@@ -29,6 +29,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyPreferencesSchema, type Company, type CompanyPreferences } from "@shared/schema";
 import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
+import { WpsSettingsCard } from "./payroll/WpsTab";
 
 const CURRENCY_OPTIONS = [
   { value: "AED", label: "AED — UAE Dirham" },
@@ -706,6 +707,9 @@ export default function CompanySettings() {
           </Card>
         </form>
       </Form>
+
+      {/* W3-D: WPS / MOL settings used by the payroll SIF (SCR record). */}
+      {companyId && <WpsSettingsCard companyId={companyId} />}
     </div>
   );
 }

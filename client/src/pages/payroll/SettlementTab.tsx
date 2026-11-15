@@ -1,0 +1,248 @@
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Calculator, FileCheck } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
+import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
+import { StatusBadge } from "./StatusBadge";
+
+interface Preview {
+  employeeName: string;
+  completedYears: number;
+  trailingDays: number;
+  unpaidLeaveDays: number;
+  gratuityEligible: boolean;
+  gratuity: string;
+  gratuityCap: string | null;
+  isCapped: boolean;
+  provisionAccrued: string;
+  noticePay: string;
+  leaveEncashmentDays: number;
+  leaveEncashment: string;
+  otherAdditions: string;
+  deductions: string;
+  net: string;
+}
+
+interface SettlementRow {
+  id: string;
+  employee_name: string;
+  termination_date: string;
+  gratuity_amount: string;
+  net_amount: string;
+  status: string;
+}
+
+export function SettlementTab({ companyId }: { companyId: string }) {
+  const { tx, locale } = useHr();
+  const { toast } = useToast();
+  const listKey = [`/api/companies/${companyId}/payroll/settlements`];
+  const { data: employees = [] } = useQuery<Employee[]>({
+    queryKey: [`/api/companies/${companyId}/employees`],
+  });
+  const { data: settlements = [] } = useQuery<SettlementRow[]>({ queryKey: listKey });
+  const [form, setForm] = useState({
+    employeeId: "",
+    terminationDate: new Date().toISOString().slice(0, 10),
+    reason: "",
+    noticeDaysInLieu: "0",
+    leaveEncashmentDays: "",
+    otherAdditions: "0",
+    deductions: "0",
+  });
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const fmt = (v: string) => formatCurrency(Number(v), "AED", locale);
+  const body = () => ({
+    employeeId: form.employeeId,
+    terminationDate: form.terminationDate,
+    reason: form.reason,
+    noticeDaysInLieu: Number(form.noticeDaysInLieu || 0),
+    ...(form.leaveEncashmentDays !== ""
+      ? { leaveEncashmentDays: Number(form.leaveEncashmentDays) }
+      : {}),
+    otherAdditions: form.otherAdditions || "0",
+    deductions: form.deductions || "0",
+  });
+  const fail = (err: unknown) =>
+    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+
+  const previewMut = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/payroll/settlements/preview`, body()),
+    onSuccess: (d: Preview) => setPreview(d),
+    onError: fail,
+  });
+  const post = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/payroll/settlements`, body()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: listKey });
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
+      setPreview(null);
+      toast({ title: tx("hr.settlementPosted") });
+    },
+    onError: fail,
+  });
+
+  const field = (key: keyof typeof form, label: string, type = "text") => (
+    <div className="space-y-1">
+      <Label htmlFor={`set-${key}`}>{tx(label)}</Label>
+      <Input
+        id={`set-${key}`}
+        type={type}
+        value={form[key]}
+        onChange={(e) => {
+          setForm({ ...form, [key]: e.target.value });
+          setPreview(null);
+        }}
+      />
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{tx("hr.tab.settlement")}</CardTitle>
+          <CardDescription>{tx("hr.settlementHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="space-y-1">
+              <Label>{tx("hr.employee")}</Label>
+              <Select
+                value={form.employeeId || undefined}
+                onValueChange={(v) => {
+                  setForm({ ...form, employeeId: v });
+                  setPreview(null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={tx("hr.select")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees
+                    .filter((e) => e.status !== "terminated")
+                    .map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.full_name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {field("terminationDate", "hr.terminationDate", "date")}
+            {field("reason", "hr.reason")}
+            {field("noticeDaysInLieu", "hr.noticeDaysInLieu")}
+            {field("leaveEncashmentDays", "hr.leaveEncashmentDays")}
+            {field("otherAdditions", "hr.otherAdditions")}
+            {field("deductions", "hr.deductions")}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={!form.employeeId || !form.reason}
+              onClick={() => previewMut.mutate()}
+            >
+              <Calculator className="me-2 h-4 w-4" />
+              {tx("hr.preview")}
+            </Button>
+            <Button disabled={!preview || post.isPending} onClick={() => post.mutate()}>
+              <FileCheck className="me-2 h-4 w-4" />
+              {tx("hr.postSettlement")}
+            </Button>
+          </div>
+          {preview && (
+            <div className="grid grid-cols-1 gap-2 rounded border p-4 text-sm md:grid-cols-2">
+              <div>
+                {tx("hr.serviceLine", {
+                  years: preview.completedYears,
+                  days: preview.trailingDays,
+                  unpaid: preview.unpaidLeaveDays,
+                })}
+              </div>
+              <div>
+                {tx("hr.gratuity")}: {fmt(preview.gratuity)}
+                {preview.isCapped && preview.gratuityCap
+                  ? ` (${tx("hr.capped")} ${fmt(preview.gratuityCap)})`
+                  : ""}
+              </div>
+              <div>
+                {tx("hr.provisionAccrued")}: {fmt(preview.provisionAccrued)}
+              </div>
+              <div>
+                {tx("hr.noticePay")}: {fmt(preview.noticePay)}
+              </div>
+              <div>
+                {tx("hr.leaveEncashment")} ({preview.leaveEncashmentDays}):{" "}
+                {fmt(preview.leaveEncashment)}
+              </div>
+              <div>
+                {tx("hr.deductions")}: {fmt(preview.deductions)}
+              </div>
+              <div className="font-semibold">
+                {tx("hr.net")}: {fmt(preview.net)}
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">{tx("hr.counselReviewNote")}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{tx("hr.settlements")}</CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {settlements.length === 0 ? (
+            <p className="text-muted-foreground">{tx("hr.noSettlements")}</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{tx("hr.employee")}</TableHead>
+                  <TableHead>{tx("hr.terminationDate")}</TableHead>
+                  <TableHead className="text-end">{tx("hr.gratuity")}</TableHead>
+                  <TableHead className="text-end">{tx("hr.net")}</TableHead>
+                  <TableHead>{tx("hr.statusLabel")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {settlements.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>{s.employee_name}</TableCell>
+                    <TableCell>{dayOnly(s.termination_date)}</TableCell>
+                    <TableCell className="text-end">{fmt(s.gratuity_amount)}</TableCell>
+                    <TableCell className="text-end">{fmt(s.net_amount)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={s.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
