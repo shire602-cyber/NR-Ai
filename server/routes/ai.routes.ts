@@ -17,8 +17,29 @@ import {
   runAutopilot,
   recordClassificationFeedback,
 } from "../services/receipt-autopilot.service";
-import { saveReceiptImage } from "../services/fileStorage";
-import { randomUUID } from "crypto";
+import { saveReceiptFile, assertWithinStorageQuota } from "../services/fileStorage";
+import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
+import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
+import {
+  buildGroundedContext,
+  renderFiguresBlock,
+  verifyCitations,
+  GROUNDING_RULES,
+  INSUFFICIENT_DATA_ANSWER,
+} from "../services/ai/grounding";
+import { resolveModel, allowedClientModels, type AiTask } from "../services/ai/model-router";
+import {
+  createMeteredOpenAI,
+  aiErrorBody,
+  AiNotConfiguredError,
+  type MeteredOpenAI,
+} from "../services/ai/usage-meter";
+import {
+  DATA_BLOCK_INSTRUCTION,
+  TONE_PRESETS,
+  TONE_PRESET_NAMES,
+  wrapUserData,
+} from "../services/ai/data-blocks";
 import {
   getModelStats,
   getClassifierConfig,
@@ -44,29 +65,42 @@ function createOpenAIClient(): OpenAI | null {
   return new OpenAI({ apiKey });
 }
 
-function getAIModel(): string {
-  return getEnv().AI_MODEL;
+/** Company the request is about (body, params or query); only used for metering/quota. */
+function resolveRequestCompanyId(req: Request): string | null {
+  const candidate =
+    (req.body && typeof req.body === "object" ? (req.body as any).companyId : undefined) ??
+    req.params?.companyId ??
+    (typeof req.query?.companyId === "string" ? req.query.companyId : undefined);
+  return typeof candidate === "string" && UUID_RE.test(candidate) ? candidate : null;
+}
+
+export interface AIRouteDeps {
+  /** Inject a (mock) OpenAI client. `null` forces the not-configured state. */
+  openaiClient?: OpenAI | null;
 }
 
 // =============================================
 // Register AI routes
 // =============================================
 
-export function registerAIRoutes(app: Express) {
-  const openai = createOpenAIClient();
-  const AI_MODEL = getAIModel();
+export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
+  const openai = deps.openaiClient !== undefined ? deps.openaiClient : createOpenAIClient();
+  // Route-level AI rate limiter (also covers /api/ask, which is outside /api/ai/).
+  const aiLimiter = buildLimiter(limiterProfiles.ai);
 
   // If OpenAI is not configured, register routes that return graceful errors
   if (!openai) {
     log.warn("AI routes registered without OpenAI — AI endpoints will return 503");
   }
 
-  function getOpenAI(): OpenAI {
-    if (!openai)
-      throw Object.assign(new Error("AI service not configured — set OPENAI_API_KEY"), {
-        status: 503,
-      });
-    return openai;
+  /** Metered, quota-checked model client for a task. Throws 503 when AI is not configured. */
+  function getAI(req: Request, task: AiTask): MeteredOpenAI {
+    if (!openai) throw new AiNotConfiguredError();
+    return createMeteredOpenAI(openai, {
+      companyId: resolveRequestCompanyId(req),
+      userId: (req as any).user?.id ?? null,
+      task,
+    });
   }
 
   // =====================================
@@ -77,6 +111,7 @@ export function registerAIRoutes(app: Express) {
   app.post(
     "/api/ai/categorize",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       try {
@@ -139,8 +174,8 @@ export function registerAIRoutes(app: Express) {
           .join("\n");
 
         // Use OpenAI to categorize the expense
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const completion = await getAI(req, "categorize").chat.completions.create({
+          model: resolveModel("categorize"),
           messages: [
             {
               role: "system",
@@ -155,12 +190,14 @@ Analyze the transaction description and amount, then respond with a JSON object 
 - confidence: a number between 0 and 1 indicating how confident you are
 - reason: a brief explanation (1-2 sentences) of why you chose this account
 
-Consider UAE-specific patterns like DEWA (utilities), Careem/Uber (transport), du/Etisalat (telecom), etc.`,
+Consider UAE-specific patterns like DEWA (utilities), Careem/Uber (transport), du/Etisalat (telecom), etc.
+
+${DATA_BLOCK_INSTRUCTION}`,
             },
             {
               role: "user",
               content: `Categorize this transaction:
-Description: ${validated.description}
+${wrapUserData("description", validated.description, 500)}
 Amount: ${validated.amount} ${validated.currency}`,
             },
           ],
@@ -197,7 +234,9 @@ Amount: ${validated.amount} ${validated.currency}`,
         });
       } catch (error: any) {
         log.error({ err: error }, "AI categorization error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "AI categorization failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "AI categorization failed", ...aiErrorBody(error) });
       }
     })
   );
@@ -206,6 +245,7 @@ Amount: ${validated.amount} ${validated.currency}`,
   app.post(
     "/api/ai/parse-bank-statement",
     authMiddleware,
+    aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { text } = req.body;
@@ -215,8 +255,8 @@ Amount: ${validated.amount} ${validated.currency}`,
         }
 
         // Use OpenAI to parse bank statement transactions
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const completion = await getAI(req, "ocr").chat.completions.create({
+          model: resolveModel("ocr"),
           messages: [
             {
               role: "system",
@@ -243,11 +283,13 @@ Respond with a JSON object containing:
   ]
 }
 
-If no valid transactions can be found, return { "transactions": [] }`,
+If no valid transactions can be found, return { "transactions": [] }
+
+${DATA_BLOCK_INSTRUCTION}`,
             },
             {
               role: "user",
-              content: `Parse the following bank statement text and extract all transactions:\n\n${text.substring(0, 15000)}`,
+              content: `Parse the following bank statement text and extract all transactions:\n\n${wrapUserData("bank_statement", text, 15000)}`,
             },
           ],
           response_format: { type: "json_object" },
@@ -275,95 +317,108 @@ If no valid transactions can be found, return { "transactions": [] }`,
         res.json({ transactions: validTransactions });
       } catch (error: any) {
         log.error({ err: error }, "AI bank statement parsing error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to parse bank statement", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res.status(error?.status || error?.statusCode || 500).json({
+          message: error.message || "Failed to parse bank statement",
+          ...aiErrorBody(error),
+        });
       }
     })
   );
 
-  // AI CFO Advice Route
+  // AI CFO Advice Route (R05-09, R05-25, R05-26)
+  // Figures are computed on the server from POSTED ledger data. Any client-supplied
+  // `context` (revenue, profit, ...) is ignored: the model can never be fed arbitrary numbers.
   app.post(
     "/api/ai/cfo-advice",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     requireCompanyAccess("body"),
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const { companyId, question, context } = req.body;
+        const { companyId, question } = req.body;
 
-        if (!companyId || !question) {
+        if (!companyId || !question || typeof question !== "string") {
           return res.status(400).json({ message: "Company ID and question are required" });
         }
 
-        // Tenant access already enforced by requireCompanyAccess middleware above
-        // — no inline check needed.
+        // Throws 503 AI_NOT_CONFIGURED / 429 AI_QUOTA_EXCEEDED before any work is done.
+        const ai = getAI(req, "advisory");
+        const grounding = await buildGroundedContext(companyId);
 
-        // Get additional company data for context
-        const company = await storage.getCompany(companyId);
-        const accounts = await storage.getAccountsByCompanyId(companyId);
-        const invoices = await storage.getInvoicesByCompanyId(companyId);
-        const receipts = await storage.getReceiptsByCompanyId(companyId);
+        if (grounding.insufficientData) {
+          return res.json({
+            advice: INSUFFICIENT_DATA_ANSWER,
+            insufficientData: true,
+            grounded: true,
+            citations: [],
+            missing: grounding.missing,
+            context: { companyName: grounding.companyName, period: grounding.period },
+          });
+        }
 
-        // Build financial context from actual data
-        const financialContext = {
-          companyName: company?.name,
-          totalRevenue: context?.profitLoss?.totalRevenue || context?.stats?.revenue || 0,
-          totalExpenses: context?.profitLoss?.totalExpenses || context?.stats?.expenses || 0,
-          netProfit: context?.profitLoss?.netProfit || 0,
-          totalInvoices: invoices.length,
-          outstandingInvoices: invoices.filter((i) => i.status === "sent" || i.status === "draft")
-            .length,
-          outstandingAmount: invoices
-            .filter((i) => i.status === "sent" || i.status === "draft")
-            .reduce((sum, i) => sum + i.total, 0),
-          totalReceipts: receipts.length,
-          postedReceipts: receipts.filter((r) => r.posted).length,
-          accountCount: accounts.length,
-        };
-
-        // Use OpenAI to provide CFO advice
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const completion = await ai.chat.completions.create({
+          model: resolveModel("advisory"),
           messages: [
             {
               role: "system",
-              content: `You are an experienced CFO and financial advisor specializing in UAE businesses. You provide strategic financial advice based on real business data.
+              content: `You are an experienced CFO and financial advisor specializing in UAE businesses. You provide strategic financial advice based ONLY on the verified figures below.
 
-Company Financial Context:
-- Company: ${financialContext.companyName || "Your Business"}
-- Total Revenue: AED ${(financialContext.totalRevenue || 0).toLocaleString()}
-- Total Expenses: AED ${(financialContext.totalExpenses || 0).toLocaleString()}
-- Net Profit: AED ${(financialContext.netProfit || 0).toLocaleString()}
-- Total Invoices: ${financialContext.totalInvoices || 0}
-- Outstanding Invoices: ${financialContext.outstandingInvoices || 0} (AED ${(financialContext.outstandingAmount || 0).toLocaleString()})
-- Receipts Processed: ${financialContext.totalReceipts || 0} (${financialContext.postedReceipts || 0} posted)
-- Chart of Accounts: ${financialContext.accountCount || 0} accounts
+Company: ${grounding.companyName || "Your Business"}
+Period: ${grounding.period.start} to ${grounding.period.end}
+
+VERIFIED FIGURES (computed by the server from posted ledger entries):
+${renderFiguresBlock(grounding)}
+
+${GROUNDING_RULES}
 
 Your role is to:
 1. Provide actionable financial advice specific to UAE businesses
-2. Identify trends, risks, and opportunities in the data
+2. Identify trends, risks, and opportunities in the figures
 3. Suggest concrete steps to improve financial health
-4. Consider UAE-specific factors like VAT, corporate tax, and local business practices
+4. Consider UAE-specific factors like VAT (5%), corporate tax, and local business practices
 5. Be concise but thorough (2-4 paragraphs)
-6. Use specific numbers from the context when relevant
 
-Keep your tone professional but friendly, like a trusted advisor.`,
+Keep your tone professional but friendly, like a trusted advisor.
+
+${DATA_BLOCK_INSTRUCTION}`,
             },
             {
               role: "user",
-              content: question,
+              content: wrapUserData("question", question, 2000),
             },
           ],
-          temperature: 0.7,
+          temperature: 0.2,
           max_tokens: 800,
         });
 
+        const advice = completion.choices[0].message.content || "";
+        const check = verifyCitations(advice, grounding);
+
         res.json({
-          advice: completion.choices[0].message.content,
-          context: financialContext,
+          advice,
+          grounded: check.grounded,
+          insufficientData: false,
+          citations: check.cited.map((f) => ({
+            id: f.id,
+            label: f.label,
+            value: f.value,
+            unit: f.unit,
+            source: f.source,
+          })),
+          ...(check.unknown.length > 0 ? { unverifiedCitations: check.unknown } : {}),
+          missing: grounding.missing,
+          context: {
+            companyName: grounding.companyName,
+            period: grounding.period,
+            figures: grounding.figures,
+          },
         });
       } catch (error: any) {
         log.error({ err: error }, "AI CFO advice error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to get AI advice", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Failed to get AI advice", ...aiErrorBody(error) });
       }
     })
   );
@@ -376,6 +431,7 @@ Keep your tone professional but friendly, like a trusted advisor.`,
   app.post(
     "/api/ai/batch-categorize",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       try {
@@ -499,8 +555,8 @@ Keep your tone professional but friendly, like a trusted advisor.`,
 
         // Only call OpenAI for the remaining low-confidence transactions.
         if (remaining.length > 0) {
-          const completion = await getOpenAI().chat.completions.create({
-            model: AI_MODEL,
+          const completion = await getAI(req, "categorize").chat.completions.create({
+            model: resolveModel("categorize"),
             messages: [
               {
                 role: "system",
@@ -533,11 +589,13 @@ Respond with a JSON object:
       "flags": ["unusual_amount", "duplicate_risk"] // optional warnings
     }
   ]
-}`,
+}
+
+${DATA_BLOCK_INSTRUCTION}`,
               },
               {
                 role: "user",
-                content: `Categorize these transactions:\n${transactionList}`,
+                content: `Categorize these transactions:\n${wrapUserData("transactions", transactionList, 30000)}`,
               },
             ],
             response_format: { type: "json_object" },
@@ -577,7 +635,9 @@ Respond with a JSON object:
         res.json({ classifications: allClassifications });
       } catch (error: any) {
         log.error({ err: error }, "Batch categorization error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Batch categorization failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Batch categorization failed", ...aiErrorBody(error) });
       }
     })
   );
@@ -586,6 +646,7 @@ Respond with a JSON object:
   app.post(
     "/api/ai/detect-anomalies",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       try {
@@ -626,8 +687,8 @@ Respond with a JSON object:
           })),
         };
 
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const completion = await getAI(req, "advisory").chat.completions.create({
+          model: resolveModel("advisory"),
           messages: [
             {
               role: "system",
@@ -660,11 +721,13 @@ Respond with JSON:
     "potentialDuplicates": 2,
     "unusualTransactions": 2
   }
-}`,
+}
+
+${DATA_BLOCK_INSTRUCTION}`,
             },
             {
               role: "user",
-              content: `Analyze these transactions for anomalies:\n${JSON.stringify(transactionData, null, 2)}`,
+              content: `Analyze these transactions for anomalies:\n${wrapUserData("transactions", JSON.stringify(transactionData, null, 2), 60000)}`,
             },
           ],
           response_format: { type: "json_object" },
@@ -745,7 +808,9 @@ Respond with JSON:
         res.json(aiResponse);
       } catch (error: any) {
         log.error({ err: error }, "Anomaly detection error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Anomaly detection failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Anomaly detection failed", ...aiErrorBody(error) });
       }
     })
   );
@@ -776,7 +841,9 @@ Respond with JSON:
 
         res.json(alerts);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -806,7 +873,9 @@ Respond with JSON:
         const resolvedAlert = await storage.resolveAnomalyAlert(id, userId, note);
         res.json(resolvedAlert);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -815,6 +884,7 @@ Respond with JSON:
   app.post(
     "/api/ai/reconcile",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       try {
@@ -871,8 +941,8 @@ Respond with JSON:
             })),
         };
 
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const completion = await getAI(req, "categorize").chat.completions.create({
+          model: resolveModel("categorize"),
           messages: [
             {
               role: "system",
@@ -908,17 +978,17 @@ Respond with JSON:
       "reason": "No matching ledger entry found"
     }
   ]
-}`,
+}
+
+${DATA_BLOCK_INSTRUCTION}`,
             },
             {
               role: "user",
               content: `Match these bank transactions to ledger entries:
 
-Bank Transactions:
-${JSON.stringify(bankData, null, 2)}
+${wrapUserData("bank_transactions", JSON.stringify(bankData, null, 2), 40000)}
 
-Ledger Records:
-${JSON.stringify(ledgerData, null, 2)}`,
+${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
             },
           ],
           response_format: { type: "json_object" },
@@ -929,7 +999,9 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         res.json(aiResponse);
       } catch (error: any) {
         log.error({ err: error }, "Reconciliation error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Reconciliation failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Reconciliation failed", ...aiErrorBody(error) });
       }
     })
   );
@@ -969,7 +1041,9 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         );
         res.json(transaction);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -993,7 +1067,9 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         const transactions = await storage.getBankTransactionsByCompanyId(companyId);
         res.json(transactions);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -1020,7 +1096,9 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         } as any);
         res.json(transaction);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -1061,7 +1139,9 @@ ${JSON.stringify(ledgerData, null, 2)}`,
 
         res.json({ imported: imported.length, transactions: imported });
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -1070,6 +1150,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
   app.post(
     "/api/ai/forecast-cashflow",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       try {
@@ -1127,8 +1208,8 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           }).reverse(),
         };
 
-        const completion = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const completion = await getAI(req, "advisory").chat.completions.create({
+          model: resolveModel("advisory"),
           messages: [
             {
               role: "system",
@@ -1213,7 +1294,9 @@ Respond with JSON:
         });
       } catch (error: any) {
         log.error({ err: error }, "Cash flow forecast error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Forecasting failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Forecasting failed", ...aiErrorBody(error) });
       }
     })
   );
@@ -1229,7 +1312,9 @@ Respond with JSON:
         const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
         res.json(forecasts);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -1298,7 +1383,9 @@ Respond with JSON:
         const classification = await storage.getTransactionClassification(classificationId);
         res.json(classification);
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -1365,6 +1452,7 @@ Respond with JSON:
   app.post(
     "/api/ai/autopilot/process",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
@@ -1381,8 +1469,26 @@ Respond with JSON:
       // Persist any submitted image bytes through the sanitizing helper so the
       // DB only ever sees a server-generated relative path under uploads/receipts.
       let safeImagePath: string | null = null;
+      let fileFacts: { contentSha256: string; fileMime: string; fileSize: number } | null = null;
       if (ocr.imageData) {
-        safeImagePath = await saveReceiptImage(ocr.imageData, `${randomUUID()}.jpg`);
+        try {
+          const inspected = await inspectUpload(ocr.imageData);
+          await assertWithinStorageQuota(companyId, inspected.size);
+          safeImagePath = await saveReceiptFile(inspected.buffer, {
+            mime: inspected.mime,
+            ext: inspected.ext,
+          });
+          fileFacts = {
+            contentSha256: inspected.sha256,
+            fileMime: inspected.mime,
+            fileSize: inspected.size,
+          };
+        } catch (err) {
+          if (err instanceof UploadRejectedError) {
+            return res.status(err.status).json({ message: err.message, code: err.code });
+          }
+          throw err;
+        }
       }
 
       const result = await runAutopilot(companyId, userId, {
@@ -1396,6 +1502,7 @@ Respond with JSON:
         rawText: ocr.rawText ?? null,
         imagePath: safeImagePath,
         imageData: null,
+        ...(fileFacts ?? {}),
       });
       res.json(result);
     })
@@ -1478,9 +1585,10 @@ Respond with JSON:
   app.post(
     "/api/ai/nl-gateway",
     authMiddleware,
+    aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const { companyId, message, locale = "en", context = {} } = req.body;
+        const { companyId, message } = req.body;
         const userId = (req as any).user.id;
 
         if (!companyId || !message) {
@@ -1497,109 +1605,33 @@ Respond with JSON:
           return res.status(403).json({ message: "Access denied" });
         }
 
-        // Gather comprehensive financial context — parallel + single line fetch.
-        const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
-          storage.getAccountsByCompanyId(companyId),
-          storage.getInvoicesByCompanyId(companyId),
-          storage.getReceiptsByCompanyId(companyId),
-          storage.getJournalEntriesByCompanyId(companyId),
-          storage.getJournalLinesByCompanyId(companyId),
-        ]);
-        const accountById = new Map(accounts.map((a) => [a.id, a]));
+        // Throws 503 AI_NOT_CONFIGURED / 429 AI_QUOTA_EXCEEDED before any query runs.
+        const ai = getAI(req, "nl");
 
-        // Calculate account balances in a single pass.
-        const accountBalances = new Map<
-          string,
-          { debit: number; credit: number; balance: number }
-        >();
-        for (const line of allLines) {
-          const current = accountBalances.get(line.accountId) || {
-            debit: 0,
-            credit: 0,
-            balance: 0,
-          };
-          current.debit += Number(line.debit) || 0;
-          current.credit += Number(line.credit) || 0;
-          const account = accountById.get(line.accountId);
-          if (account) {
-            if (["asset", "expense"].includes(account.type)) {
-              current.balance = current.debit - current.credit;
-            } else {
-              current.balance = current.credit - current.debit;
-            }
-          }
-          accountBalances.set(line.accountId, current);
-        }
-
-        // Prepare financial summary for AI
+        // Server-computed, set-based figures from posted ledger entries (R05-09/R05-26).
+        // The previous implementation loaded every journal line, invoice and receipt per call;
+        // client-supplied `context` is ignored.
+        const grounding = await buildGroundedContext(companyId);
+        const figureValue = (prefix: string): number =>
+          grounding.figures.find((f) => f.label.startsWith(prefix))?.value ?? 0;
         const financialSummary = {
-          totalRevenue: Array.from(accountBalances.entries())
-            .filter(([id]) => accounts.find((a) => a.id === id)?.type === "income")
-            .reduce((sum, [, bal]) => sum + bal.balance, 0),
-          totalExpenses: Array.from(accountBalances.entries())
-            .filter(([id]) => accounts.find((a) => a.id === id)?.type === "expense")
-            .reduce((sum, [, bal]) => sum + bal.balance, 0),
-          totalAssets: Array.from(accountBalances.entries())
-            .filter(([id]) => accounts.find((a) => a.id === id)?.type === "asset")
-            .reduce((sum, [, bal]) => sum + bal.balance, 0),
-          totalLiabilities: Array.from(accountBalances.entries())
-            .filter(([id]) => accounts.find((a) => a.id === id)?.type === "liability")
-            .reduce((sum, [, bal]) => sum + bal.balance, 0),
+          totalRevenue: figureValue("Revenue"),
+          totalExpenses: figureValue("Expenses"),
+          netProfit: figureValue("Net profit"),
+          totalAssets: figureValue("Total assets"),
+          totalLiabilities: figureValue("Total liabilities"),
           invoicesSummary: {
-            total: invoices.length,
-            paid: invoices.filter((i) => i.status === "paid").length,
-            pending: invoices.filter((i) => i.status === "sent").length,
-            draft: invoices.filter((i) => i.status === "draft").length,
-            totalValue: invoices.reduce((sum, i) => sum + Number(i.total), 0),
-            outstandingValue: invoices
-              .filter((i) => i.status === "sent")
-              .reduce((sum, i) => sum + Number(i.total), 0),
+            pending: figureValue("Open invoices count"),
+            outstandingValue: figureValue("Open invoices (sent"),
           },
           expensesSummary: {
-            total: receipts.length,
-            posted: receipts.filter((r) => r.journalEntryId).length,
-            pending: receipts.filter((r) => !r.journalEntryId).length,
-            totalAmount: receipts.reduce(
-              (sum, r) => sum + Number(r.amount || 0) + Number(r.vatAmount || 0),
-              0
-            ),
+            total: figureValue("Receipts captured"),
+            posted: figureValue("Receipts posted"),
+            pending: Math.max(0, figureValue("Receipts captured") - figureValue("Receipts posted")),
+            totalAmount: figureValue("Unposted receipt value"),
           },
-          recentInvoices: invoices.slice(-5).map((i) => ({
-            number: i.number,
-            customer: i.customerName,
-            amount: i.total,
-            status: i.status,
-            date: i.date,
-          })),
-          recentExpenses: receipts.slice(-5).map((r) => ({
-            merchant: r.merchant,
-            amount: (r.amount || 0) + (r.vatAmount || 0),
-            category: r.category,
-            date: r.date,
-          })),
-          accounts: accounts.map((a) => ({
-            name: locale === "ar" ? a.nameAr : a.nameEn,
-            type: a.type,
-            balance: accountBalances.get(a.id)?.balance || 0,
-          })),
         };
-
-        // Group invoices and expenses by month for trend analysis
         const monthlyData = new Map<string, { revenue: number; expenses: number }>();
-        for (const invoice of invoices) {
-          const month = new Date(invoice.date).toISOString().slice(0, 7);
-          const current = monthlyData.get(month) || { revenue: 0, expenses: 0 };
-          current.revenue += Number(invoice.subtotal) || 0;
-          monthlyData.set(month, current);
-        }
-        for (const receipt of receipts) {
-          if (receipt.date) {
-            const month = new Date(receipt.date).toISOString().slice(0, 7);
-            const current = monthlyData.get(month) || { revenue: 0, expenses: 0 };
-            current.expenses += (Number(receipt.amount) || 0) + (Number(receipt.vatAmount) || 0);
-            monthlyData.set(month, current);
-          }
-        }
 
         const supportName = getEnv().SUPPORT_CONTACT_NAME;
         const supportPhone = getEnv().SUPPORT_CONTACT_PHONE;
@@ -1627,17 +1659,18 @@ CAPABILITIES:
 2. PROVIDE INSIGHTS: Give analysis and recommendations based on the financial data
 3. SUGGEST ACTIONS: Recommend actions the user could take (but don't execute them directly)
 
-CURRENT FINANCIAL DATA:
-${JSON.stringify(financialSummary, null, 2)}
+VERIFIED FIGURES (computed by the server from posted ledger entries, ${grounding.period.start} to ${grounding.period.end}):
+${renderFiguresBlock(grounding)}
 
-MONTHLY TRENDS:
-${JSON.stringify(Object.fromEntries(monthlyData), null, 2)}
+${GROUNDING_RULES}
+
+${DATA_BLOCK_INSTRUCTION}
 
 RULES:
 - Currency is AED (UAE Dirhams), format as "AED X,XXX.XX"
 - UAE VAT rate is 5%
-- Always be accurate with numbers from the data provided
-- If asked about something not in the data, say so clearly
+- Always be accurate with numbers from the figures provided
+- If asked about something not in the figures, say "insufficient data" and what is missing
 - Be concise but helpful
 - Support both English and Arabic (respond in the language of the query)
 - Format numbers properly with thousand separators
@@ -1666,18 +1699,19 @@ ${closingGuidance}
 Current date: ${new Date().toISOString().split("T")[0]}
 Company: ${company.name}`;
 
-        const response = await getOpenAI().chat.completions.create({
-          model: AI_MODEL,
+        const response = await ai.chat.completions.create({
+          model: resolveModel("nl"),
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: message },
+            { role: "user", content: wrapUserData("question", message, 4000) },
           ],
-          temperature: 0.7,
+          temperature: 0.2,
           max_tokens: 1000,
         });
 
         const assistantMessage =
           response.choices[0]?.message?.content || "I could not process your request.";
+        const citationCheck = verifyCitations(assistantMessage, grounding);
 
         // Determine intent for UI hints
         let intent = "query";
@@ -1714,37 +1748,59 @@ Company: ${company.name}`;
         res.json({
           response: assistantMessage,
           intent,
+          grounded: citationCheck.grounded,
+          insufficientData: grounding.insufficientData,
+          citations: citationCheck.cited.map((f) => ({
+            id: f.id,
+            label: f.label,
+            value: f.value,
+            unit: f.unit,
+            source: f.source,
+          })),
+          ...(citationCheck.unknown.length > 0
+            ? { unverifiedCitations: citationCheck.unknown }
+            : {}),
           data: {
             summary: financialSummary,
             monthlyTrends: Object.fromEntries(monthlyData),
+            figures: grounding.figures,
+            period: grounding.period,
           },
           followUpPrompts: followUpPrompts.slice(0, 3),
           timestamp: new Date().toISOString(),
         });
       } catch (error: any) {
         log.error({ err: error }, "NL Gateway error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to process query", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Failed to process query", ...aiErrorBody(error) });
       }
     })
   );
 
-  // Enhanced /api/ask endpoint with streaming support
+  // Enhanced /api/ask endpoint with streaming support. POST /api/ai/chat is an alias (R05-14).
+  // The client can no longer supply a system prompt (R05-10): only a named tone preset.
   app.post(
-    "/api/ask",
+    ["/api/ask", "/api/ai/chat"],
     authMiddleware,
+    aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
       const startTime = Date.now();
       let fullResponse = "";
       let conversationId: string | undefined;
       let isStreaming = false;
-      // Whitelist of models a client may request. Expensive models are intentionally
-      // excluded — only cost-controlled models can be selected.
-      const ALLOWED_AI_MODELS = ["gpt-3.5-turbo", "gpt-4o-mini"] as const;
+      // Models a client may request: cost-controlled allow-list derived from the router config.
+      const allowedModels = allowedClientModels();
       const validationSchema = z.object({
         message: z.string().min(1, "Message is required").max(10000, "Message is too long"),
         companyId: z.string().uuid("Invalid company ID format").optional(),
-        model: z.enum(ALLOWED_AI_MODELS).optional().default("gpt-4o-mini"),
-        systemPrompt: z.string().max(2000, "System prompt too long").optional(),
+        // Unknown or legacy model names (e.g. gpt-3.5-turbo from older clients) fall back to the
+        // configured default rather than failing the request or reaching an unapproved model.
+        model: z
+          .string()
+          .optional()
+          .transform((m) => (m && allowedModels.includes(m) ? m : resolveModel("nl"))),
+        tone: z.enum(TONE_PRESET_NAMES).optional().default("default"),
         stream: z.boolean().optional().default(false),
       });
       let validated: z.infer<typeof validationSchema> | undefined;
@@ -1762,14 +1818,15 @@ Company: ${company.name}`;
           }
         }
 
-        // Check if OpenAI API key is configured. "Not configured" is a 503
-        // (service unavailable), never a 500 — an unconfigured AI feature is an
-        // expected state, not a server fault.
-        if (!process.env.OPENAI_API_KEY) {
-          return res
-            .status(503)
-            .json({ message: "AI service not configured — set OPENAI_API_KEY", code: "AI_NOT_CONFIGURED" });
+        // "Not configured" is a 503 (service unavailable), never a 500 — an unconfigured AI
+        // feature is an expected state, not a server fault.
+        if (!openai) {
+          return res.status(503).json({
+            message: "AI service not configured — set OPENAI_API_KEY",
+            code: "AI_NOT_CONFIGURED",
+          });
         }
+        const ai = getAI(req, "nl");
 
         const askSupportName = getEnv().SUPPORT_CONTACT_NAME;
         const askSupportPhone = getEnv().SUPPORT_CONTACT_PHONE;
@@ -1784,12 +1841,15 @@ Company: ${company.name}`;
             : `- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to consult a qualified professional.
 - For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend consulting a qualified professional who can provide expert guidance tailored to your specific situation."`;
 
-        const systemPrompt =
-          validated.systemPrompt ||
-          `You are a helpful AI assistant for accounting and financial management. Provide clear, accurate, and professional responses.
+        // Fixed server-side system prompt; the client picks only a tone preset.
+        const systemPrompt = `You are a helpful AI assistant for accounting and financial management. Provide clear, accurate, and professional responses. You have no access to the user's books in this chat: if asked for the user's own figures, say you cannot see them and suggest the AI CFO or reports pages.
+${TONE_PRESETS[validated.tone]}
 
 IMPORTANT GUIDELINES:
-${askGuidanceBlock}`;
+${askGuidanceBlock}
+
+${DATA_BLOCK_INSTRUCTION}`;
+        const userContent = wrapUserData("question", validated.message, 10000);
 
         // Setup streaming if requested
         if (validated.stream) {
@@ -1800,13 +1860,13 @@ ${askGuidanceBlock}`;
           isStreaming = true; // Mark that headers are committed
 
           try {
-            const stream = await getOpenAI().chat.completions.create({
+            const stream = await ai.chat.completions.create({
               model: validated.model,
               messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: validated.message },
+                { role: "user", content: userContent },
               ],
-              temperature: 0.7,
+              temperature: 0.4,
               max_tokens: 2000,
               stream: true,
             });
@@ -1829,6 +1889,7 @@ ${askGuidanceBlock}`;
             res.write(
               `data: ${JSON.stringify({
                 error: true,
+                code: streamError?.code === "AI_QUOTA_EXCEEDED" ? "AI_QUOTA_EXCEEDED" : undefined,
                 message: errorMessage,
                 done: true,
               })}\n\n`
@@ -1843,7 +1904,7 @@ ${askGuidanceBlock}`;
                 prompt: validated.message,
                 response: fullResponse || "Error: " + errorMessage,
                 model: validated.model,
-                systemPrompt: validated.systemPrompt || null,
+                systemPrompt: `tone:${validated.tone}`,
                 responseTime: Date.now() - startTime,
                 error: errorMessage,
               });
@@ -1865,7 +1926,7 @@ ${askGuidanceBlock}`;
               prompt: validated.message,
               response: fullResponse,
               model: validated.model,
-              systemPrompt: validated.systemPrompt || null,
+              systemPrompt: `tone:${validated.tone}`,
               responseTime,
             });
           } catch (dbError) {
@@ -1878,13 +1939,13 @@ ${askGuidanceBlock}`;
           res.end();
         } else {
           // Non-streaming response
-          const response = await getOpenAI().chat.completions.create({
+          const response = await ai.chat.completions.create({
             model: validated.model,
             messages: [
               { role: "system", content: systemPrompt },
-              { role: "user", content: validated.message },
+              { role: "user", content: userContent },
             ],
-            temperature: 0.7,
+            temperature: 0.4,
             max_tokens: 2000,
           });
 
@@ -1900,7 +1961,7 @@ ${askGuidanceBlock}`;
             prompt: validated.message,
             response: assistantMessage,
             model: validated.model,
-            systemPrompt: validated.systemPrompt || null,
+            systemPrompt: `tone:${validated.tone}`,
             responseTime,
             tokensUsed: tokensUsed || null,
           });
@@ -1947,8 +2008,8 @@ ${askGuidanceBlock}`;
                 companyId: (validated as any)?.companyId || null,
                 prompt: (validated as any)?.message || "Unknown",
                 response: fullResponse || "Error: " + errorMessage,
-                model: (validated as any)?.model || "gpt-3.5-turbo",
-                systemPrompt: (validated as any)?.systemPrompt || null,
+                model: (validated as any)?.model || resolveModel("nl"),
+                systemPrompt: `tone:${(validated as any)?.tone ?? "default"}`,
                 responseTime: Date.now() - startTime,
                 error: errorMessage,
               });
@@ -1968,6 +2029,11 @@ ${askGuidanceBlock}`;
           });
         }
 
+        // Quota / not-configured errors carry stable codes.
+        if (error?.code === "AI_QUOTA_EXCEEDED" || error?.status === 503) {
+          return res.status(error.status).json({ message: error.message, ...aiErrorBody(error) });
+        }
+
         // Handle OpenAI API errors
         if (error.status) {
           const statusCode = error.status >= 400 && error.status < 600 ? error.status : 500;
@@ -1977,7 +2043,9 @@ ${askGuidanceBlock}`;
           });
         }
 
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to process request", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Failed to process request", ...aiErrorBody(error) });
       }
     })
   );
@@ -2008,7 +2076,9 @@ ${askGuidanceBlock}`;
         res.json(conversations);
       } catch (error: any) {
         log.error({ err: error }, "/api/ask/history error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to fetch history", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message || "Failed to fetch history", ...aiErrorBody(error) });
       }
     })
   );
@@ -2066,7 +2136,9 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -2128,7 +2200,9 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -2196,7 +2270,9 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -2262,7 +2338,9 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res
+          .status(error?.status || error?.statusCode || 500)
+          .json({ message: error.message, ...aiErrorBody(error) });
       }
     })
   );
@@ -2271,6 +2349,7 @@ ${askGuidanceBlock}`;
   app.post(
     "/api/ai/smart-suggest",
     authMiddleware,
+    aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, context, fieldType, currentValue } = req.body;
@@ -2364,13 +2443,16 @@ ${askGuidanceBlock}`;
           // Use AI for unknown merchants
           if (suggestions.length === 0 && context.merchant) {
             const expenseAccounts = accounts.filter((a) => a.type === "expense");
-            const prompt = `Given a UAE business expense from merchant "${context.merchant}"${context.category ? ` categorized as "${context.category}"` : ""}, suggest the most appropriate expense account from this list:
+            const prompt = `Given a UAE business expense, suggest the most appropriate expense account from this list:
 ${expenseAccounts.map((a) => `- ${a.nameEn}`).join("\n")}
+
+${DATA_BLOCK_INSTRUCTION}
+${wrapUserData("merchant", context.merchant, 200)}${context.category ? `\n${wrapUserData("category", context.category, 100)}` : ""}
 
 Respond with just the account name, nothing else.`;
 
-            const response = await getOpenAI().chat.completions.create({
-              model: AI_MODEL,
+            const response = await getAI(req, "categorize").chat.completions.create({
+              model: resolveModel("categorize"),
               messages: [{ role: "user", content: prompt }],
               temperature: 0.3,
               max_tokens: 50,
@@ -2409,12 +2491,15 @@ Respond with just the account name, nothing else.`;
             "Other",
           ];
 
-          const prompt = `For a UAE business expense from merchant "${context.merchant}", suggest the most appropriate expense category from: ${categories.join(", ")}
+          const prompt = `For a UAE business expense, suggest the most appropriate expense category from: ${categories.join(", ")}
+
+${DATA_BLOCK_INSTRUCTION}
+${wrapUserData("merchant", context.merchant, 200)}
 
 Respond with just the category name, nothing else.`;
 
-          const response = await getOpenAI().chat.completions.create({
-            model: AI_MODEL,
+          const response = await getAI(req, "categorize").chat.completions.create({
+            model: resolveModel("categorize"),
             messages: [{ role: "user", content: prompt }],
             temperature: 0.3,
             max_tokens: 30,
@@ -2437,7 +2522,10 @@ Respond with just the category name, nothing else.`;
         res.json({ suggestions });
       } catch (error: any) {
         log.error({ err: error }, "Smart suggest error");
-        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to generate suggestions", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
+        res.status(error?.status || error?.statusCode || 500).json({
+          message: error.message || "Failed to generate suggestions",
+          ...aiErrorBody(error),
+        });
       }
     })
   );

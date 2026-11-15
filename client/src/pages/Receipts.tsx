@@ -33,6 +33,14 @@ import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { clearCsrfToken, withCsrfHeader } from "@/lib/csrf";
 import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
+import {
+  BAND_LABELS,
+  bandRequiresReview,
+  deriveConfidenceBand,
+  receiptReviewDecision,
+  type ConfidenceBand,
+  type ReviewSnapshot,
+} from "@shared/receipt-confidence";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import {
   exportToExcel,
@@ -103,6 +111,36 @@ interface ExtractedData {
   confidence?: number;
   suggestedCategory?: string;
   classifier?: { method?: string; confidence?: number; reason?: string } | null;
+  // Confidence banding and review routing (R05-23)
+  confidenceBand?: ConfidenceBand;
+  reviewReasons?: string[];
+  reviewed?: boolean;
+  original?: ReviewSnapshot;
+  ocrSource?: string;
+  // FTA tax-invoice signals (R05-17)
+  supplierTrn?: string | null;
+  isTaxInvoice?: boolean;
+  simplifiedInvoice?: boolean;
+  reverseChargeSuggested?: boolean;
+  // Set after the server reported an exact duplicate and the user chose to upload anyway.
+  confirmDuplicate?: boolean;
+}
+
+/** Fill in band + the "as extracted" snapshot used to record the reviewer's decision. */
+function withReviewMeta(data: ExtractedData): ExtractedData {
+  const band =
+    data.confidenceBand ?? deriveConfidenceBand({ extractionConfidence: data.confidence }).band;
+  return {
+    ...data,
+    confidenceBand: band,
+    original: data.original ?? {
+      merchant: data.merchant,
+      date: data.date,
+      total: data.total,
+      vatAmount: data.vatAmount,
+      category: data.category,
+    },
+  };
 }
 
 interface ProcessedReceipt {
@@ -112,6 +150,8 @@ interface ProcessedReceipt {
   progress: number;
   data?: ExtractedData;
   error?: string;
+  /** True when the server rejected the save as an exact duplicate (409). */
+  duplicate?: boolean;
 }
 
 function isOcrRetryable(receipt: ProcessedReceipt): boolean {
@@ -298,6 +338,8 @@ const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
 
 export default function Receipts() {
   const { t, locale } = useTranslation();
+  // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
+  const tr = (en: string, ar: string) => (locale === "ar" ? ar : en);
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
@@ -852,9 +894,17 @@ export default function Receipts() {
             category: result.category || "Other",
             lineItems: result.lineItems || [],
             rawText: result.rawText || "",
-            confidence: result.confidence ?? 0.85,
+            // A missing confidence is LOW, never a flattering default (R05-15).
+            confidence: typeof result.confidence === "number" ? result.confidence : 0,
             suggestedCategory: result.category || "Other",
             classifier: result.classifier || null,
+            confidenceBand: result.confidenceBand,
+            reviewReasons: Array.isArray(result.reviewReasons) ? result.reviewReasons : [],
+            ocrSource: result.ocrSource,
+            supplierTrn: result.supplierTrn ?? null,
+            isTaxInvoice: Boolean(result.isTaxInvoice),
+            simplifiedInvoice: Boolean(result.simplifiedInvoice),
+            reverseChargeSuggested: Boolean(result.reverseChargeSuggested),
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];
@@ -907,7 +957,7 @@ export default function Receipts() {
 
         let tesseractText = "";
         try {
-          const result = await Tesseract.recognize(receipt.file, "eng", {
+          const result = await Tesseract.recognize(receipt.file, "eng+ara", {
             logger: (m) => {
               if (m.status === "recognizing text") {
                 setProcessedReceipts((prev) => {
@@ -960,7 +1010,12 @@ export default function Receipts() {
 
       setProcessedReceipts((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], status: "completed", data: parsed!, progress: 100 };
+        updated[index] = {
+          ...updated[index],
+          status: "completed",
+          data: withReviewMeta(parsed!),
+          progress: 100,
+        };
         return updated;
       });
     } catch (error: any) {
@@ -999,7 +1054,7 @@ export default function Receipts() {
   };
 
   const parseReceiptText = (text: string): ExtractedData => {
-    return parseReceiptOcrText(text);
+    return { ...parseReceiptOcrText(text), ocrSource: "browser-ocr" };
   };
 
   const categorizeWithAI = async (data: ExtractedData): Promise<string | null> => {
@@ -1044,11 +1099,27 @@ export default function Receipts() {
   };
 
   const saveAllReceipts = async () => {
-    const completedIndices = processedReceipts
+    const completed = processedReceipts
       .map((r, i) => ({ receipt: r, index: i }))
       .filter(({ receipt }) => receipt.status === "completed" && receipt.data);
+    // Confidence routing: low-confidence extractions need an explicit review click first.
+    const completedIndices = completed.filter(
+      ({ receipt }) =>
+        !bandRequiresReview(receipt.data!.confidenceBand) || receipt.data!.reviewed === true
+    );
+    const heldForReview = completed.length - completedIndices.length;
+    if (heldForReview > 0) {
+      toast({
+        title: tr("Review required", "المراجعة مطلوبة"),
+        description: tr(
+          `${heldForReview} low-confidence receipt(s) need review before saving`,
+          `${heldForReview} إيصال(ات) منخفضة الثقة تحتاج إلى مراجعة قبل الحفظ`
+        ),
+        variant: "destructive",
+      });
+    }
 
-    if (completedIndices.length === 0) {
+    if (completedIndices.length === 0 && completed.length === 0) {
       toast({
         title: "No receipts to save",
         description: "Please process receipts before saving",
@@ -1065,6 +1136,8 @@ export default function Receipts() {
       });
       return;
     }
+
+    if (completedIndices.length === 0) return;
 
     // Proceed with save directly - similar check removed for better UX
     await performSave(completedIndices);
@@ -1109,9 +1182,40 @@ export default function Receipts() {
           classifierMethod: receipt.data!.classifier?.method ?? null,
           classifierConfidence: receipt.data!.classifier?.confidence ?? null,
           classifierReason: receipt.data!.classifier?.reason ?? null,
+          supplierTrn: receipt.data!.supplierTrn || undefined,
+          confirmDuplicate: receipt.data!.confirmDuplicate === true ? true : undefined,
         };
 
-        await apiRequest("POST", `/api/companies/${companyId}/receipts`, receiptData);
+        const created = await apiRequest(
+          "POST",
+          `/api/companies/${companyId}/receipts`,
+          receiptData
+        );
+
+        // Fuzzy duplicate warning from the server: saved, but worth a second look.
+        if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
+          toast({
+            title: tr("Possible duplicate", "احتمال وجود تكرار"),
+            description: tr(
+              `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
+              `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
+            ),
+          });
+        }
+
+        // Record the human decision on the AI extraction for audit (non-fatal).
+        if (created?.id && receipt.data!.confidenceBand) {
+          apiRequest("POST", `/api/companies/${companyId}/receipts/${created.id}/review-decision`, {
+            decision: receiptReviewDecision(receipt.data!.original, {
+              merchant: receipt.data!.merchant,
+              date: receipt.data!.date,
+              total: receipt.data!.total,
+              vatAmount: receipt.data!.vatAmount,
+              category: receipt.data!.category,
+            }),
+            band: receipt.data!.confidenceBand,
+          }).catch(() => {});
+        }
 
         // Mark this receipt as saved
         setProcessedReceipts((prev) => {
@@ -1125,7 +1229,10 @@ export default function Receipts() {
         console.error("Failed to save receipt:", error);
 
         // Extract error message
-        const errorMessage = error?.message || "Failed to save to database";
+        const isDuplicate = error?.status === 409;
+        const errorMessage = isDuplicate
+          ? tr("This file has already been uploaded.", "تم رفع هذا الملف من قبل.")
+          : error?.message || "Failed to save to database";
         if (!firstSaveError) firstSaveError = errorMessage;
 
         // Mark this receipt as failed to save
@@ -1135,6 +1242,7 @@ export default function Receipts() {
             ...updated[index],
             status: "save_error",
             error: errorMessage,
+            duplicate: isDuplicate,
           };
           return updated;
         });
@@ -1622,9 +1730,31 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === "save_error" && (
-                      <div className="flex items-center gap-2 text-[hsl(var(--chart-4))]">
+                      <div className="flex flex-wrap items-center gap-2 text-[hsl(var(--chart-4))]">
                         <XCircle className="w-4 h-4" />
                         <span className="text-sm">{receipt.error || "Failed to save"}</span>
+                        {receipt.duplicate && receipt.data && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid={`button-upload-anyway-${index}`}
+                            onClick={() => {
+                              setProcessedReceipts((prev) => {
+                                const updated = [...prev];
+                                updated[index] = {
+                                  ...updated[index],
+                                  status: "completed",
+                                  duplicate: false,
+                                  error: undefined,
+                                  data: { ...updated[index].data!, confirmDuplicate: true },
+                                };
+                                return updated;
+                              });
+                            }}
+                          >
+                            {tr("Upload anyway", "رفع على أي حال")}
+                          </Button>
+                        )}
                       </div>
                     )}
 
@@ -1751,15 +1881,102 @@ export default function Receipts() {
                           </div>
                         )}
 
-                        {receipt.data.confidence && (
-                          <div className="col-span-2">
-                            <p className="text-xs text-muted-foreground">
-                              AI Confidence: {Math.round(receipt.data.confidence * 100)}%
-                              <Badge variant="secondary" className="ml-2">
+                        {receipt.data.confidenceBand && (
+                          <div
+                            className="col-span-2 space-y-1"
+                            data-testid={`confidence-band-${index}`}
+                          >
+                            <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant={
+                                  receipt.data.confidenceBand === "high" ? "secondary" : "outline"
+                                }
+                                className={
+                                  receipt.data.confidenceBand === "low"
+                                    ? "border-destructive text-destructive"
+                                    : undefined
+                                }
+                                data-testid={`badge-band-${receipt.data.confidenceBand}-${index}`}
+                              >
                                 <Sparkles className="w-2 h-2 mr-1" />
-                                GPT-4o Vision
+                                {
+                                  BAND_LABELS[receipt.data.confidenceBand][
+                                    locale === "ar" ? "ar" : "en"
+                                  ]
+                                }
                               </Badge>
+                              {typeof receipt.data.confidence === "number" && (
+                                <span>
+                                  {tr("Model confidence", "ثقة النموذج")}:{" "}
+                                  {Math.round(receipt.data.confidence * 100)}%
+                                </span>
+                              )}
+                              <span>
+                                {receipt.data.ocrSource === "browser-ocr" ||
+                                receipt.data.ocrSource === "tesseract" ||
+                                receipt.data.ocrSource === "text-parser"
+                                  ? tr("Local OCR", "التعرف المحلي")
+                                  : tr("AI vision", "الرؤية الذكية")}
+                              </span>
                             </p>
+                            {receipt.data.reviewReasons &&
+                              receipt.data.reviewReasons.length > 0 && (
+                                <ul className="text-xs text-muted-foreground list-disc ps-4">
+                                  {receipt.data.reviewReasons.map((reason, i) => (
+                                    <li key={i}>{reason}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            {bandRequiresReview(receipt.data.confidenceBand) && (
+                              <Button
+                                variant={receipt.data.reviewed ? "secondary" : "outline"}
+                                size="sm"
+                                data-testid={`button-mark-reviewed-${index}`}
+                                onClick={() =>
+                                  updateReceiptData(index, { reviewed: !receipt.data!.reviewed })
+                                }
+                              >
+                                {receipt.data.reviewed
+                                  ? tr("Reviewed - ready to save", "تمت المراجعة - جاهز للحفظ")
+                                  : tr("I have checked these figures", "لقد تحققت من هذه الأرقام")}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
+                        {(receipt.data.supplierTrn ||
+                          receipt.data.isTaxInvoice ||
+                          receipt.data.reverseChargeSuggested ||
+                          receipt.data.ocrSource === "ai") && (
+                          <div
+                            className="col-span-2 flex flex-wrap gap-2 text-xs"
+                            data-testid={`tax-invoice-signals-${index}`}
+                          >
+                            {receipt.data.supplierTrn && (
+                              <Badge variant="outline" dir="ltr">
+                                TRN {receipt.data.supplierTrn}
+                              </Badge>
+                            )}
+                            {receipt.data.isTaxInvoice && (
+                              <Badge variant="secondary">
+                                {receipt.data.simplifiedInvoice
+                                  ? tr("Simplified tax invoice", "فاتورة ضريبية مبسطة")
+                                  : tr("Tax invoice", "فاتورة ضريبية")}
+                              </Badge>
+                            )}
+                            {!receipt.data.isTaxInvoice && receipt.data.ocrSource === "ai" && (
+                              <Badge variant="outline">
+                                {tr(
+                                  "Not a tax invoice - VAT may not be recoverable",
+                                  "ليست فاتورة ضريبية - قد لا تُسترد ضريبة القيمة المضافة"
+                                )}
+                              </Badge>
+                            )}
+                            {receipt.data.reverseChargeSuggested && (
+                              <Badge variant="outline">
+                                {tr("Reverse charge suggested", "يُقترح الاحتساب العكسي")}
+                              </Badge>
+                            )}
                           </div>
                         )}
 

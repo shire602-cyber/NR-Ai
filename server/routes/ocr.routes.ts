@@ -19,20 +19,34 @@ import { extractReceiptWithLocalOcr } from "../services/local-ocr.service";
 import {
   createOcrClients,
   describeOcrProviders,
-  formatProviderFailures,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
 import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
+import { deriveConfidenceBand, type ValidationIssue } from "@shared/receipt-confidence";
+import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
+import { extractReceipt, type ExtractionClients } from "../services/ai/receipt-extraction";
+import {
+  normalizeModelConfidence,
+  VALID_RECEIPT_CATEGORIES,
+} from "../services/ai/structured-output";
+import { sanityCheckReceipt } from "../services/ai/structured-output";
+import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
+import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 
 const log = createLogger("ocr");
 
-function extractJson(raw: string): any {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
+export interface OcrRouteDeps {
+  /** Inject (mock) provider clients. Omit to build them from the environment. */
+  anthropic?: Anthropic | null;
+  openai?: OpenAI | null;
 }
 
-export function registerOCRRoutes(app: Express) {
-  const { anthropic, openai } = createOcrClients();
+export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
+  const envClients =
+    deps.anthropic === undefined && deps.openai === undefined ? createOcrClients() : null;
+  const anthropic = deps.anthropic !== undefined ? deps.anthropic : (envClients?.anthropic ?? null);
+  const openai = deps.openai !== undefined ? deps.openai : (envClients?.openai ?? null);
+  const aiLimiter = buildLimiter(limiterProfiles.ai);
 
   // ===========================
   // OCR Processing Endpoint
@@ -41,6 +55,7 @@ export function registerOCRRoutes(app: Express) {
   app.post(
     "/api/ocr/process",
     authMiddleware,
+    aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       if (!userId) {
@@ -80,64 +95,42 @@ export function registerOCRRoutes(app: Express) {
       const sanitizedContent = content ? String(content).slice(0, 10000) : "";
       const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
 
-      const validCategories = [
-        "Office Supplies",
-        "Utilities",
-        "Travel",
-        "Meals",
-        "Rent",
-        "Marketing",
-        "Equipment",
-        "Professional Services",
-        "Insurance",
-        "Maintenance",
-        "Communication",
-        "Other",
-      ];
+      const validCategories: string[] = [...VALID_RECEIPT_CATEGORIES];
 
       if (!imageData && !sanitizedContent) {
         return res.status(400).json({ message: "Missing imageData or content" });
       }
 
-      const extractionPrompt = `You are an expert accountant specializing in UAE business receipt and invoice processing. Analyze this receipt/invoice image carefully and extract ALL financial data with high precision.
+      // Validate the image from its bytes before it goes to any provider (R05-06/R05-08).
+      let imageDataUrl: string | null = null;
+      if (imageData) {
+        try {
+          const inspected = await inspectUpload(String(imageData));
+          imageDataUrl = `data:${inspected.mime};base64,${inspected.buffer.toString("base64")}`;
+        } catch (err) {
+          if (err instanceof UploadRejectedError) {
+            return res.status(err.status).json({ message: err.message, code: err.code });
+          }
+          throw err;
+        }
+      }
 
-Extract the following fields. Be extremely precise with numbers — read every digit carefully:
+      // Monthly AI cap (R05-26): applies before any provider call, local fallbacks stay free.
+      if (anthropic || openai) {
+        try {
+          await assertAiQuota(companyId);
+        } catch (err: any) {
+          if (err?.code === "AI_QUOTA_EXCEEDED") {
+            return res
+              .status(429)
+              .json({ message: err.message, code: "AI_QUOTA_EXCEEDED", usage: err.detail });
+          }
+          throw err;
+        }
+      }
 
-1. merchant: The exact business/supplier name as printed (include LLC, Co., etc.)
-2. date: Transaction date in YYYY-MM-DD format. Check for formats like DD/MM/YYYY, MM-DD-YYYY, written dates (15 Jan 2025), Arabic dates. If not found use today.
-3. invoiceNumber: Invoice/receipt/transaction number or reference (look for "Invoice No", "Receipt No", "Ref", "TRN", "#", bill number, etc.)
-4. subtotal: The amount BEFORE VAT/tax (look for "Subtotal", "Net Amount", "Before Tax", "Excl. VAT"). Number only.
-5. vatPercentage: The VAT/tax rate percentage (default 5 for UAE). Number only.
-6. vatAmount: The exact VAT/tax amount charged (look for "VAT", "Tax Amount", "VAT 5%"). Number only.
-7. total: The FINAL total amount paid including VAT (look for "Total", "Grand Total", "Amount Due", "Total Due", "Net Payable"). This is typically the largest amount. Number only.
-8. currency: Currency code (AED, USD, EUR, etc.). Default AED for UAE receipts.
-9. category: Classify into one of: ${validCategories.join(", ")}
-10. lineItems: Array of items. Each item: { "description": string, "quantity": number, "unitPrice": number, "total": number }
-
-IMPORTANT RULES:
-- The "total" field must be the grand total INCLUDING VAT — the final amount the customer pays
-- If you see only one amount, treat it as the total. Calculate subtotal = total / 1.05 for UAE receipts
-- If subtotal and vatAmount are both found but no total, compute total = subtotal + vatAmount
-- If total and vatAmount are both found but no subtotal, compute subtotal = total - vatAmount
-- For Arabic text: read right-to-left, extract numbers regardless of language
-- Numbers may use commas as thousands separators (1,234.56) — parse correctly
-- Amounts may show as "AED 1,234.56" or "1,234.56 AED" or just "1,234.56"
-- Look for TRN (Tax Registration Number) which indicates a VAT-registered business
-
-Respond ONLY with valid JSON matching this exact structure:
-{
-  "merchant": "string",
-  "date": "YYYY-MM-DD",
-  "invoiceNumber": "string or null",
-  "subtotal": number,
-  "vatPercentage": number,
-  "vatAmount": number,
-  "total": number,
-  "currency": "string",
-  "category": "string",
-  "lineItems": [{"description": "string", "quantity": number, "unitPrice": number, "total": number}],
-  "confidence": number between 0 and 1
-}`;
+      const ocrCtx: AiContext = { companyId, userId, task: "ocr" };
+      const clients: ExtractionClients = { anthropic, openai };
 
       // Helper: post-process AI extraction → run our internal classifier on the
       // merchant. Overrides AI's category if our classifier is more confident
@@ -153,11 +146,13 @@ Respond ONLY with valid JSON matching this exact structure:
             merchant,
             amount: subtotal,
             lineItems,
+            supplierTrn: typeof aiResult?.supplierTrn === "string" ? aiResult.supplierTrn : null,
           });
           // Only override the AI category when our classifier is at-or-above its
           // own confidence threshold. The AI's confidence is on the OCR
           // extraction (numbers/date/total), not the category — so we surface
           // both and let the caller see how the category was determined.
+          aiResult._aiCategory = aiResult.category;
           if (result.confidence >= 0.8 && isStandardCategory(result.category)) {
             aiResult.category = result.category;
           }
@@ -165,6 +160,9 @@ Respond ONLY with valid JSON matching this exact structure:
             method: result.method,
             confidence: result.confidence,
             reason: result.reason,
+            // Agreement is only meaningful when the classifier is deterministic/internal.
+            agreesWithAi:
+              result.method === "openai" ? null : result.category === aiResult._aiCategory,
           };
         } catch (err: any) {
           log.warn({ err: err?.message || err }, "Internal classifier enrichment failed");
@@ -182,9 +180,9 @@ Respond ONLY with valid JSON matching this exact structure:
 
       let localOcrErrorDetail: string | null = null;
       const tryLocalImageFallback = async (reason: string) => {
-        if (!imageData) return null;
+        if (!imageDataUrl) return null;
         try {
-          const localResult = await extractReceiptWithLocalOcr(String(imageData));
+          const localResult = await extractReceiptWithLocalOcr(imageDataUrl);
           localOcrErrorDetail = null;
           log.warn(
             {
@@ -231,15 +229,23 @@ Respond ONLY with valid JSON matching this exact structure:
         return res.status(503).json({
           message:
             "OCR service unavailable — AI provider not configured and local OCR fallback could not read the image.",
+          code: "AI_NOT_CONFIGURED",
         });
       }
 
       // Strategy 1: Vision API with image (Anthropic preferred, OpenAI fallback)
-      if (imageData) {
+      if (imageDataUrl) {
         try {
-          const aiResult = await runVisionOCR(imageData, extractionPrompt, anthropic, openai);
+          const aiResult = await runVisionOCR(imageDataUrl, clients, ocrCtx);
           return respondWithResult(aiResult, sanitizedContent, "ai-vision");
         } catch (visionError: any) {
+          if (visionError?.code === "AI_QUOTA_EXCEEDED") {
+            return res.status(429).json({
+              message: visionError.message,
+              code: "AI_QUOTA_EXCEEDED",
+              usage: visionError.detail,
+            });
+          }
           const provider = describeOcrProviders({ anthropic, openai });
           const detail = summarizeOcrProviderError(visionError);
           log.error({ err: detail, provider }, "Vision OCR failed");
@@ -263,9 +269,16 @@ Respond ONLY with valid JSON matching this exact structure:
       // Strategy 2: Text-based extraction (no image, or vision failed but text given)
       if (sanitizedContent) {
         try {
-          const aiResult = await runTextOCR(sanitizedContent, extractionPrompt, anthropic, openai);
+          const aiResult = await runTextOCR(sanitizedContent, clients, ocrCtx);
           return respondWithResult(aiResult, sanitizedContent, "ai-text");
         } catch (textError: any) {
+          if (textError?.code === "AI_QUOTA_EXCEEDED") {
+            return res.status(429).json({
+              message: textError.message,
+              code: "AI_QUOTA_EXCEEDED",
+              usage: textError.detail,
+            });
+          }
           const provider = describeOcrProviders({ anthropic, openai });
           const detail = summarizeOcrProviderError(textError);
           log.error({ err: detail, provider }, "Text OCR failed");
@@ -376,158 +389,43 @@ const genericExportSchema = z.object({
   filename: z.string().max(80).optional(),
 });
 
-async function runVisionOCR(
-  imageData: string,
-  prompt: string,
-  anthropic: Anthropic | null,
-  openai: OpenAI | null
-): Promise<any> {
-  // Parse the data URL once for both providers.
-  let base64Data = imageData;
-  let mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
-
-  const dataUrlMatch = imageData.match(/^data:([^;]+);base64,(.+)$/s);
-  if (dataUrlMatch) {
-    const mimeType = dataUrlMatch[1];
-    base64Data = dataUrlMatch[2];
-    if (mimeType.includes("png")) mediaType = "image/png";
-    else if (mimeType.includes("webp")) mediaType = "image/webp";
-    else if (mimeType.includes("gif")) mediaType = "image/gif";
-    else mediaType = "image/jpeg";
-  }
-
-  if (anthropic) {
-    try {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mediaType, data: base64Data },
-              },
-              { type: "text", text: prompt },
-            ],
-          },
-        ],
-      });
-      const block = response.content[0];
-      if (!block || block.type !== "text") {
-        throw new Error("Unexpected Anthropic response (no text block)");
-      }
-      return extractJson(block.text);
-    } catch (err) {
-      if (!openai) throw err;
-      log.warn(
-        { err: summarizeOcrProviderError(err) },
-        "Anthropic vision OCR failed; trying OpenAI"
-      );
-      const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [
-        { provider: "Anthropic", error: err },
-      ];
-      try {
-        return await runOpenAiVisionOCR(openai, mediaType, base64Data, prompt);
-      } catch (openaiErr) {
-        failures.push({ provider: "OpenAI", error: openaiErr });
-        throw new Error(formatProviderFailures(failures));
-      }
-    }
-  }
-
-  if (openai) {
-    return runOpenAiVisionOCR(openai, mediaType, base64Data, prompt);
-  }
-
-  throw new Error("No vision client available");
+function parseImageDataUrl(imageData: string): { base64: string; mediaType: string } {
+  const m = imageData.match(/^data:([^;]+);base64,(.+)$/s);
+  return m ? { mediaType: m[1], base64: m[2] } : { mediaType: "image/jpeg", base64: imageData };
 }
 
-async function runOpenAiVisionOCR(
-  openai: OpenAI,
-  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-  base64Data: string,
-  prompt: string
+/** Provider result -> the loose shape buildResult/enrichment consume (+ validation issues). */
+function toAiResult(outcome: Awaited<ReturnType<typeof extractReceipt>>): any {
+  return {
+    ...outcome.data,
+    _issues: outcome.issues,
+    _ocrSource: "ai",
+    _provider: outcome.provider,
+    _model: outcome.model,
+  };
+}
+
+async function runVisionOCR(
+  imageData: string,
+  clients: ExtractionClients,
+  ctx: AiContext
 ): Promise<any> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: { url: `data:${mediaType};base64,${base64Data}`, detail: "high" },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 1500,
-  });
-  const raw = response.choices[0]?.message?.content;
-  if (!raw) throw new Error("Empty OpenAI response");
-  return JSON.parse(raw);
+  if (!clients.anthropic && !clients.openai) throw new Error("No vision client available");
+  const { base64, mediaType } = parseImageDataUrl(imageData);
+  return toAiResult(
+    await extractReceipt({ clients, input: { kind: "image", base64, mediaType }, ctx })
+  );
 }
 
 async function runTextOCR(
   textContent: string,
-  prompt: string,
-  anthropic: Anthropic | null,
-  openai: OpenAI | null
+  clients: ExtractionClients,
+  ctx: AiContext
 ): Promise<any> {
-  const userMessage = `Extract receipt data from this OCR text:\n\n${textContent}`;
-
-  if (anthropic) {
-    try {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        system: prompt,
-        messages: [{ role: "user", content: userMessage }],
-      });
-      const block = response.content[0];
-      if (!block || block.type !== "text") {
-        throw new Error("Unexpected Anthropic response (no text block)");
-      }
-      return extractJson(block.text);
-    } catch (err) {
-      if (!openai) throw err;
-      log.warn({ err: summarizeOcrProviderError(err) }, "Anthropic text OCR failed; trying OpenAI");
-      const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [
-        { provider: "Anthropic", error: err },
-      ];
-      try {
-        return await runOpenAiTextOCR(openai, prompt, userMessage);
-      } catch (openaiErr) {
-        failures.push({ provider: "OpenAI", error: openaiErr });
-        throw new Error(formatProviderFailures(failures));
-      }
-    }
-  }
-
-  if (openai) {
-    return runOpenAiTextOCR(openai, prompt, userMessage);
-  }
-
-  throw new Error("No text client available");
-}
-
-async function runOpenAiTextOCR(openai: OpenAI, prompt: string, userMessage: string): Promise<any> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: userMessage },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 1500,
-  });
-  const raw = response.choices[0]?.message?.content;
-  if (!raw) throw new Error("Empty OpenAI response");
-  return JSON.parse(raw);
+  if (!clients.anthropic && !clients.openai) throw new Error("No text client available");
+  return toAiResult(
+    await extractReceipt({ clients, input: { kind: "text", text: textContent }, ctx })
+  );
 }
 
 function buildResult(
@@ -576,6 +474,41 @@ function buildResult(
       }))
     : [];
 
+  // A missing model confidence is LOW, never a flattering default (R05-15).
+  const confidence = normalizeModelConfidence(aiResult.confidence);
+
+  // Validation: issues the provider path already found, plus checks on the final reconciled
+  // figures (so deterministic-parser results are checked too).
+  const issues: ValidationIssue[] = Array.isArray(aiResult._issues) ? [...aiResult._issues] : [];
+  const have = new Set(issues.map((i) => i.code));
+  const finalIssues = sanityCheckReceipt({
+    merchant: aiResult.merchant,
+    date: aiResult.date ?? null,
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    currency: aiResult.currency ?? null,
+    supplierTrn: aiResult.supplierTrn ?? null,
+    vatPercentage,
+  });
+  for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
+  if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
+    issues.push({
+      code: "TRN_INVALID",
+      severity: "warning",
+      message: String(aiResult.supplierTrnIssue),
+    });
+  }
+
+  const classifier = aiResult._classifier || null;
+  const band = deriveConfidenceBand({
+    extractionConfidence: typeof aiResult.confidence === "number" ? aiResult.confidence : undefined,
+    classifierConfidence:
+      classifier && classifier.method !== "openai" ? classifier.confidence : null,
+    classifierAgrees: classifier ? (classifier.agreesWithAi ?? null) : null,
+    issues,
+  });
+
   return {
     merchant: aiResult.merchant ? String(aiResult.merchant).slice(0, 200) : "Unknown Merchant",
     date: parsedDate,
@@ -589,11 +522,16 @@ function buildResult(
     currency: aiResult.currency ? String(aiResult.currency).slice(0, 10) : "AED",
     category,
     lineItems,
-    confidence:
-      typeof aiResult.confidence === "number"
-        ? Math.min(1, Math.max(0, aiResult.confidence))
-        : 0.85,
-    classifier: aiResult._classifier || null,
+    supplierTrn: typeof aiResult.supplierTrn === "string" ? aiResult.supplierTrn : null,
+    isTaxInvoice: Boolean(aiResult.isTaxInvoice),
+    simplifiedInvoice: Boolean(aiResult.simplifiedInvoice),
+    reverseChargeSuggested: Boolean(aiResult.reverseChargeSuggested),
+    confidence,
+    confidenceBand: band.band,
+    confidenceScore: band.score,
+    reviewReasons: band.reasons,
+    validationIssues: issues,
+    classifier,
     ocrSource: aiResult._ocrSource || "ai",
     rawText,
     companyId,

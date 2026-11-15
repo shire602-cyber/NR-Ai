@@ -10,7 +10,11 @@ import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
 import { normalizeEmail } from "../services/email-intake";
-import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
+import {
+  isEmailIntakeEnabled,
+  isEmailIntakeConfigured,
+  getEmailIntakeStatus,
+} from "../services/email-intake-provider";
 import { pollEmailIntakeOnce } from "../services/email-intake-poller.service";
 import { computeCompletenessGaps, type BankLine } from "../services/intake-completeness";
 import { createChaseRequestsFromGaps } from "../services/intake-chasing";
@@ -100,6 +104,16 @@ export function registerEmailIntakeRoutes(app: Express) {
     })
   );
 
+  // Honest capture status for the UI.
+  app.get(
+    "/api/firm/email-intake/status",
+    authMiddleware,
+    requireFirmRole(),
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(getEmailIntakeStatus());
+    })
+  );
+
   // List the firm's sender→company mappings.
   app.get(
     "/api/firm/email-intake/sources",
@@ -108,7 +122,13 @@ export function registerEmailIntakeRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const firmId = (req as any).user.id as string;
       const sources = await storage.listClientEmailSourcesByFirm(firmId);
-      res.json({ sources, featureEnabled: isEmailIntakeEnabled(), mailboxConfigured: isEmailIntakeConfigured() });
+      res.json({
+        sources,
+        featureEnabled: isEmailIntakeEnabled(),
+        mailboxConfigured: isEmailIntakeConfigured(),
+        // Honest capture status: disabled | requires_configuration | enabled (R05-19a).
+        intake: getEmailIntakeStatus(),
+      });
     })
   );
 
@@ -193,7 +213,8 @@ export function registerEmailIntakeRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const user = (req as any).user;
       const allowed = await storage.hasCompanyAccess(user.id, req.params.companyId, user.firmRole);
-      if (!allowed) return res.status(403).json({ message: "Company not in your firm's client list" });
+      if (!allowed)
+        return res.status(403).json({ message: "Company not in your firm's client list" });
       const messages = await storage.listEmailIntakeMessagesByCompany(req.params.companyId);
       res.json({ messages });
     })
@@ -209,12 +230,15 @@ export function registerEmailIntakeRoutes(app: Express) {
       const user = (req as any).user;
       const { companyId } = req.params;
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
-      if (!allowed) return res.status(403).json({ message: "Company not in your firm's client list" });
+      if (!allowed)
+        return res.status(403).json({ message: "Company not in your firm's client list" });
 
       const periodStart = new Date(String(req.query.periodStart ?? ""));
       const periodEnd = new Date(String(req.query.periodEnd ?? ""));
       if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
-        return res.status(400).json({ message: "periodStart and periodEnd (ISO dates) are required" });
+        return res
+          .status(400)
+          .json({ message: "periodStart and periodEnd (ISO dates) are required" });
       }
 
       const lines = await loadBankLines(companyId);
@@ -232,15 +256,20 @@ export function registerEmailIntakeRoutes(app: Express) {
       const user = (req as any).user;
       const { companyId } = req.params;
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
-      if (!allowed) return res.status(403).json({ message: "Company not in your firm's client list" });
+      if (!allowed)
+        return res.status(403).json({ message: "Company not in your firm's client list" });
 
       const periodStart = new Date(String(req.body?.periodStart ?? ""));
       const periodEnd = new Date(String(req.body?.periodEnd ?? ""));
       if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
-        return res.status(400).json({ message: "periodStart and periodEnd (ISO dates) are required" });
+        return res
+          .status(400)
+          .json({ message: "periodStart and periodEnd (ISO dates) are required" });
       }
       // Default the chase due date to two weeks after period end unless overridden.
-      const dueDate = req.body?.dueDate ? new Date(String(req.body.dueDate)) : new Date(periodEnd.getTime() + 14 * 86400000);
+      const dueDate = req.body?.dueDate
+        ? new Date(String(req.body.dueDate))
+        : new Date(periodEnd.getTime() + 14 * 86400000);
 
       const lines = await loadBankLines(companyId);
       const { gaps } = computeCompletenessGaps({ lines, periodStart, periodEnd });

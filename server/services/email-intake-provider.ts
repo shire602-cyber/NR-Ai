@@ -51,6 +51,28 @@ export function isEmailIntakeConfigured(env: NodeJS.ProcessEnv = process.env): b
   return name !== "" && name !== "unconfigured";
 }
 
+export type EmailIntakeStatus = "enabled" | "requires_configuration" | "disabled";
+
+/**
+ * Honest capture status for the UI (R05-19a): `disabled` (feature flag off, the default),
+ * `requires_configuration` (flag on but no webhook secret / mailbox provider yet, so nothing
+ * can be received), or `enabled` (flag on and a provider/secret configured).
+ */
+export function getEmailIntakeStatus(env: NodeJS.ProcessEnv = process.env): {
+  status: EmailIntakeStatus;
+  missing: string[];
+} {
+  if (!isEmailIntakeEnabled(env))
+    return { status: "disabled", missing: ["EMAIL_INTAKE_ENABLED=true"] };
+  if (!isEmailIntakeConfigured(env)) {
+    return {
+      status: "requires_configuration",
+      missing: ["EMAIL_INTAKE_WEBHOOK_SECRET (inbound webhook) or EMAIL_INTAKE_PROVIDER"],
+    };
+  }
+  return { status: "enabled", missing: [] };
+}
+
 /**
  * Select the active mailbox source. Returns the unconfigured source until a real
  * adapter is implemented and selected via EMAIL_INTAKE_PROVIDER. Register real

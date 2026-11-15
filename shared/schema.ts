@@ -1741,6 +1741,11 @@ export const receipts = pgTable(
     imageData: text("image_data"),
     imagePath: text("image_path"),
     rawText: text("raw_text"),
+    // W1-D (migration 0089): supplier TRN, upload content hash and true file type/size.
+    supplierTrn: text("supplier_trn"),
+    contentSha256: text("content_sha256"),
+    fileMime: text("file_mime"),
+    fileSize: integer("file_size"),
     uploadedBy: uuid("uploaded_by")
       .notNull()
       .references(() => users.id),
@@ -2389,6 +2394,45 @@ export const insertTransactionClassificationSchema = createInsertSchema(
 
 export type InsertTransactionClassification = z.infer<typeof insertTransactionClassificationSchema>;
 export type TransactionClassification = typeof transactionClassifications.$inferSelect;
+
+// ===========================
+// AI usage metering (W1-D; created by migration 0089)
+// ===========================
+export const aiUsageEvents = pgTable(
+  "ai_usage_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    task: text("task").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    costUsd: real("cost_usd").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyCreatedIdx: index("idx_ai_usage_events_company_created").on(
+      table.companyId,
+      table.createdAt
+    ),
+  })
+);
+
+export const aiUsageLimits = pgTable("ai_usage_limits", {
+  companyId: uuid("company_id")
+    .primaryKey()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  monthlyTokenCap: integer("monthly_token_cap"),
+  monthlyCostCapUsd: real("monthly_cost_cap_usd"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type AiUsageEvent = typeof aiUsageEvents.$inferSelect;
+export type AiUsageLimit = typeof aiUsageLimits.$inferSelect;
 
 export type ClassifierMethod = "rule" | "keyword" | "statistical" | "openai";
 export type ClassifierMode = "hybrid" | "openai_only";

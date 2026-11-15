@@ -16,6 +16,8 @@
  */
 
 import OpenAI from "openai";
+import { createMeteredOpenAI } from "./ai/usage-meter";
+import { rememberVendorAccount } from "./vendor-memory.service";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { getEnv } from "../config/env";
@@ -55,6 +57,16 @@ export interface OcrReceipt {
   rawText?: string | null;
   imagePath?: string | null;
   imageData?: string | null;
+  /** Supplier TRN (validated) when the document carried one. */
+  supplierTrn?: string | null;
+  /** Model-reported extraction confidence (missing => 0). */
+  extractionConfidence?: number;
+  /** True when extraction was not high-confidence/clean: never auto-post, always review. */
+  needsReview?: boolean;
+  /** True file facts captured by the upload guard. */
+  contentSha256?: string | null;
+  fileMime?: string | null;
+  fileSize?: number | null;
 }
 
 export interface AutopilotResult {
@@ -76,11 +88,14 @@ export interface AutopilotResult {
 // =============================================
 
 let _openai: OpenAI | null | undefined;
-function getOpenAI(): OpenAI | null {
-  if (_openai !== undefined) return _openai;
-  const key = getEnv().OPENAI_API_KEY;
-  _openai = key ? new OpenAI({ apiKey: key }) : null;
-  return _openai;
+function getOpenAI(companyId?: string | null): OpenAI | null {
+  if (_openai === undefined) {
+    const key = getEnv().OPENAI_API_KEY;
+    _openai = key ? new OpenAI({ apiKey: key }) : null;
+  }
+  if (!_openai) return null;
+  // Every classification call is quota-checked and recorded in ai_usage_events (R05-26).
+  return createMeteredOpenAI(_openai, { companyId, task: "categorize" }) as unknown as OpenAI;
 }
 
 // Test-only seam — lets unit tests inject a fake OpenAI client without
@@ -103,7 +118,7 @@ export function __setOpenAIForTests(client: OpenAI | null): void {
  */
 export async function classifyOcrReceipt(
   companyId: string,
-  ocr: Pick<OcrReceipt, "merchant" | "amount" | "lineItems">,
+  ocr: Pick<OcrReceipt, "merchant" | "amount" | "lineItems"> & { supplierTrn?: string | null },
   prefetched?: {
     config?: { accuracyThreshold: number; mode: "hybrid" | "openai_only" };
     accounts?: Account[];
@@ -123,8 +138,9 @@ export async function classifyOcrReceipt(
     lineItems: (ocr.lineItems || []).map((li) => li?.description || "").filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
-    openai: getOpenAI(),
+    openai: getOpenAI(companyId),
     expenseAccountNames,
+    supplierTrn: ocr.supplierTrn ?? null,
   });
 }
 
@@ -162,8 +178,9 @@ export async function runAutopilot(
     lineItems: (ocr.lineItems || []).map((li) => li?.description || "").filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
-    openai: getOpenAI(),
+    openai: getOpenAI(companyId),
     expenseAccountNames,
+    supplierTrn: ocr.supplierTrn ?? null,
   });
 
   // Stage 2 — resolve account ids.
@@ -194,6 +211,10 @@ export async function runAutopilot(
     rawText: ocr.rawText ?? null,
     imageData: ocr.imageData ?? null,
     imagePath: ocr.imagePath ?? null,
+    supplierTrn: ocr.supplierTrn ?? null,
+    contentSha256: ocr.contentSha256 ?? null,
+    fileMime: ocr.fileMime ?? null,
+    fileSize: ocr.fileSize ?? null,
     uploadedBy,
     posted: false,
     autoPosted: false,
@@ -241,7 +262,8 @@ export async function runAutopilot(
     !!expenseAccountId &&
     !!paymentAccountId &&
     netAmount > 0 &&
-    isAed;
+    isAed &&
+    !ocr.needsReview;
 
   if (!shouldAutoPost) {
     return {
@@ -358,12 +380,17 @@ export async function recordClassificationFeedback(
   companyId: string,
   classificationId: string,
   wasAccepted: boolean,
-  userSelectedAccountId?: string | null
+  userSelectedAccountId?: string | null,
+  supplierTrn?: string | null
 ): Promise<void> {
   await storage.updateTransactionClassification(classificationId, companyId, {
     wasAccepted,
     userSelectedAccountId: userSelectedAccountId ?? undefined,
   });
+  // Vendor-to-account memory keyed by supplier TRN (R05-24).
+  if (wasAccepted && supplierTrn && userSelectedAccountId) {
+    await rememberVendorAccount(companyId, supplierTrn, userSelectedAccountId);
+  }
   invalidateModel(companyId);
   await applyAccuracyFailsafe(companyId);
 }
@@ -434,7 +461,7 @@ export async function autoPostManualReceipt(args: {
     lineItems: [],
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
-    openai: getOpenAI(),
+    openai: getOpenAI(companyId),
     expenseAccountNames: expenseAccounts.map((a) => a.nameEn),
   });
 

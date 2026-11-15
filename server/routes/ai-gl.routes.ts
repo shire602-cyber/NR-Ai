@@ -10,10 +10,14 @@ import {
   getAIGLStats,
 } from "../services/autonomous-gl.service";
 import { createLogger } from "../config/logger";
+import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
+import { aiErrorBody } from "../services/ai/usage-meter";
 
 const log = createLogger("ai-gl-routes");
 
 export function registerAIGLRoutes(app: Express) {
+  const aiLimiter = buildLimiter(limiterProfiles.ai);
+
   // =====================================
   // AI GL Queue — List items
   // =====================================
@@ -167,6 +171,7 @@ export function registerAIGLRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/ai-gl/scan",
     authMiddleware,
+    aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
@@ -180,7 +185,15 @@ export function registerAIGLRoutes(app: Express) {
       log.info({ companyId, userId }, "Manual AI GL scan triggered");
 
       // Step 1: Scan and classify
-      const scanResult = await scanAndClassifyTransactions(companyId);
+      let scanResult;
+      try {
+        scanResult = await scanAndClassifyTransactions(companyId);
+      } catch (err: any) {
+        if (err?.code === "AI_QUOTA_EXCEEDED") {
+          return res.status(429).json({ message: err.message, ...aiErrorBody(err) });
+        }
+        throw err;
+      }
 
       // Step 2: Auto-post high confidence items
       const postResult = await autoPostHighConfidence(companyId);

@@ -2,6 +2,9 @@ import OpenAI from "openai";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { getEnv } from "../config/env";
+import { resolveModel } from "./ai/model-router";
+import { createMeteredOpenAI } from "./ai/usage-meter";
+import { DATA_BLOCK_INSTRUCTION, wrapUserData } from "./ai/data-blocks";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { recordAudit } from "./audit.service";
@@ -88,13 +91,17 @@ interface AICategorizationResult {
 // OpenAI client
 // =============================================
 
-function createOpenAIClient(): OpenAI | null {
+function createOpenAIClient(companyId: string): OpenAI | null {
   const apiKey = getEnv().OPENAI_API_KEY;
   if (!apiKey) {
     log.warn("OPENAI_API_KEY not set — autonomous GL AI features disabled");
     return null;
   }
-  return new OpenAI({ apiKey });
+  // Quota-checked and recorded in ai_usage_events (R05-26).
+  return createMeteredOpenAI(new OpenAI({ apiKey }), {
+    companyId,
+    task: "categorize",
+  }) as unknown as OpenAI;
 }
 
 // =============================================
@@ -111,7 +118,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   ruleMatched: number;
   aiClassified: number;
 }> {
-  const openai = createOpenAIClient();
+  const openai = createOpenAIClient(companyId);
 
   // 1. Find unreconciled bank transactions that are NOT already in ai_gl_queue
   const _unreconciledResult = await pool.query(
@@ -267,6 +274,8 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
 
       aiClassified++;
     } catch (err: any) {
+      // Over the monthly AI cap: stop the scan and surface 429 instead of queueing every row blank.
+      if (err?.code === "AI_QUOTA_EXCEEDED") throw err;
       log.error({ err, txnId: txn.id }, "Failed to classify transaction with OpenAI");
 
       // Store with zero confidence on error
@@ -308,7 +317,7 @@ async function classifyWithOpenAI(
   accounts: ChartOfAccountRow[],
   fewShotExamples: FewShotExample[]
 ): Promise<AICategorizationResult> {
-  const AI_MODEL = getEnv().AI_MODEL;
+  const AI_MODEL = resolveModel("categorize");
 
   // Build chart of accounts context
   const accountList = accounts
@@ -336,6 +345,8 @@ CHART OF ACCOUNTS:
 ${accountList}
 ${fewShotBlock}
 
+${DATA_BLOCK_INSTRUCTION}
+
 RULES:
 - For payments/debits: typically debit an expense/asset account and credit the bank account.
 - For deposits/credits: typically debit the bank account and credit an income/liability account.
@@ -353,9 +364,9 @@ Return a JSON object with exactly these fields:
 }`;
 
   const userPrompt = `Categorize this bank transaction:
-Description: ${txn.description}
+${wrapUserData("description", txn.description, 500)}
 Amount: AED ${Math.abs(txn.amount).toFixed(2)} (${txn.amount > 0 ? "credit/deposit" : "debit/payment"})
-Date: ${txn.transaction_date}${txn.reference ? `\nReference: ${txn.reference}` : ""}`;
+Date: ${txn.transaction_date}${txn.reference ? `\n${wrapUserData("reference", txn.reference, 200)}` : ""}`;
 
   const completion = await openai.chat.completions.create({
     model: AI_MODEL,
