@@ -161,7 +161,6 @@ import type {
   Product,
   InsertProduct,
   InventoryMovement,
-  InsertInventoryMovement,
   BankAccount,
   InsertBankAccount,
   InvoicePayment,
@@ -1040,21 +1039,12 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(data: InsertProduct): Promise<Product>;
   updateProduct(id: string, data: Partial<Product>): Promise<Product>;
-  applyInventoryMovement(args: {
-    productId: string;
-    companyId: string;
-    type: "purchase" | "sale" | "adjustment" | "return";
-    quantity: number;
-    unitCost?: number | null;
-    reference?: string | null;
-    notes?: string | null;
-  }): Promise<{ movement: InventoryMovement; newStock: number }>;
+  // Stock changes go through server/services/inventory (costing + ledger, W4-B).
   deleteProduct(id: string): Promise<void>;
 
   // Inventory Movements
   getInventoryMovementsByProductId(productId: string): Promise<InventoryMovement[]>;
   getInventoryMovementsByCompanyId(companyId: string): Promise<InventoryMovement[]>;
-  createInventoryMovement(data: InsertInventoryMovement): Promise<InventoryMovement>;
 
   // Payment Chasing (Phase 4)
   createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase>;
@@ -5617,71 +5607,6 @@ export class DatabaseStorage implements IStorage {
     await db.delete(products).where(eq(products.id, id));
   }
 
-  /**
-   * Record a stock movement and update the product balance in ONE transaction, stock check first
-   * (R10-03). The product row is locked FOR UPDATE, so concurrent sales cannot both pass the
-   * check, and a rejected sale writes no movement row.
-   */
-  async applyInventoryMovement(args: {
-    productId: string;
-    companyId: string;
-    type: "purchase" | "sale" | "adjustment" | "return";
-    quantity: number;
-    unitCost?: number | null;
-    reference?: string | null;
-    notes?: string | null;
-  }): Promise<{ movement: InventoryMovement; newStock: number }> {
-    return await db.transaction(async (tx: typeof db) => {
-      const locked: any = await tx.execute(
-        sql`SELECT current_stock FROM products WHERE id = ${args.productId} AND company_id = ${args.companyId} FOR UPDATE`
-      );
-      const row = (locked.rows ?? locked)[0] as { current_stock: number | string } | undefined;
-      if (!row) throw new DomainError("PRODUCT_NOT_FOUND", 404);
-      const onHand = Number(row.current_stock);
-
-      let stockChange = 0;
-      switch (args.type) {
-        case "purchase":
-        case "return":
-          stockChange = Math.abs(args.quantity);
-          break;
-        case "sale":
-          stockChange = -Math.abs(args.quantity);
-          break;
-        case "adjustment":
-          stockChange = args.quantity;
-          break;
-      }
-      const newStock = onHand + stockChange;
-      if (newStock < 0 && args.type !== "adjustment") {
-        throw new DomainError(
-          "INSUFFICIENT_STOCK",
-          422,
-          { onHand, requested: Math.abs(stockChange) },
-          `Insufficient stock: ${onHand} on hand, ${Math.abs(stockChange)} requested. Record a stock adjustment if the on-hand figure is wrong.`
-        );
-      }
-
-      const [movement] = await tx
-        .insert(inventoryMovements)
-        .values({
-          productId: args.productId,
-          companyId: args.companyId,
-          type: args.type,
-          quantity: args.quantity,
-          unitCost: args.unitCost ?? null,
-          reference: args.reference ?? null,
-          notes: args.notes ?? null,
-        })
-        .returning();
-      await tx
-        .update(products)
-        .set({ currentStock: newStock })
-        .where(and(eq(products.id, args.productId), eq(products.companyId, args.companyId)));
-      return { movement, newStock };
-    });
-  }
-
   // Inventory Movements
   async getInventoryMovementsByProductId(productId: string): Promise<InventoryMovement[]> {
     return await db
@@ -5697,11 +5622,6 @@ export class DatabaseStorage implements IStorage {
       .from(inventoryMovements)
       .where(eq(inventoryMovements.companyId, companyId))
       .orderBy(desc(inventoryMovements.createdAt));
-  }
-
-  async createInventoryMovement(data: InsertInventoryMovement): Promise<InventoryMovement> {
-    const [movement] = await db.insert(inventoryMovements).values(data).returning();
-    return movement;
   }
 
   // ─── Payment Chasing (Phase 4) ─────────────────────────────────────────────

@@ -32,6 +32,7 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import type { Account } from "../../shared/schema";
+import { afterBillPosted, planBillStock, reverseBillStock } from "./inventory/documents";
 
 const log = createLogger("bill-posting");
 
@@ -444,6 +445,10 @@ export interface BillJournalPlan {
   apCreditFils: number;
   memo: string;
   date: string;
+  /** W4-B inventory hook: bill-line index behind each planned line (null for VAT / A/P). */
+  lineSources?: Array<number | null>;
+  /** W4-B inventory hook: the bill lines the plan was built from, in order. */
+  lineItems?: Array<{ description: string; amount: string | number }>;
 }
 
 /**
@@ -479,9 +484,11 @@ export async function planBillJournal(
       : netBase.map(() => 0);
 
   const lines: PostJournalLineInput[] = [];
+  const lineSources: Array<number | null> = [];
   for (let i = 0; i < lineItems.length; i++) {
     const debitFils = netBase[i] + shares[i];
     if (debitFils === 0) continue;
+    lineSources.push(i);
     const accountId = await resolveLineAccount(
       accounts,
       companyId,
@@ -566,6 +573,7 @@ export async function planBillJournal(
       "A bill with a zero total cannot be posted"
     );
   }
+  while (lineSources.length < lines.length) lineSources.push(null);
   lines.push({
     accountId: ap.id,
     creditFils: apCreditFils,
@@ -583,6 +591,8 @@ export async function planBillJournal(
     apCreditFils,
     memo: `Vendor Bill ${billRef} - ${bill.vendor_name}`.slice(0, 500),
     date: isoDateOf(bill.bill_date),
+    lineSources: [...lineSources, null],
+    lineItems: lineItems.map((l) => ({ description: l.description, amount: l.amount })),
   };
 }
 
@@ -593,6 +603,16 @@ export async function postBillJournal(
   plan: BillJournalPlan,
   actorId: string
 ) {
+  // W4-B (R10-01, R10-02, R10-11): stock-item lines debit inventory (or clear GRNI) and move stock;
+  // every line carries its bill line's cost centre. Same transaction as the A/P journal.
+  const stock = await planBillStock(tx, {
+    bill,
+    date: plan.date,
+    lines: plan.lines,
+    lineSources: plan.lineSources ?? plan.lines.map(() => null),
+    lineItems: plan.lineItems ?? [],
+    actorId,
+  });
   const result = await postJournal(
     {
       companyId: bill.company_id,
@@ -604,10 +624,11 @@ export async function postBillJournal(
       idempotencyKey: `bill:${bill.id}:r${bill.revision ?? 0}`,
       reference: bill.bill_number ?? null,
       allowFutureDate: true,
-      lines: plan.lines,
+      lines: stock.lines,
     },
     { actorId, tx }
   );
+  await afterBillPosted(tx, stock.movementIds, result.entry.id);
   log.info({ billId: bill.id, entryId: result.entry.id, replayed: result.replayed }, "Bill posted");
   return result;
 }
@@ -619,13 +640,16 @@ export async function reverseBillJournal(
   actorId: string,
   opts: { void?: boolean; reason?: string | null } = {}
 ) {
-  return reverseBySource(
+  const reversals = await reverseBySource(
     bill.company_id,
     BILL_JE_SOURCE,
     bill.id,
     { void: opts.void, reason: opts.reason ?? null, source: "bill_reversal", sourceId: bill.id },
     { actorId, tx }
   );
+  // W4-B: take the bill's stock back (mirrored inventory value; any drift trued up to COGS).
+  await reverseBillStock(tx, bill, actorId);
+  return reversals;
 }
 
 /** A/P credit (fils) of the bill's current, unreversed posted journal. */
