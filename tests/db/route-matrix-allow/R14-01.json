@@ -1,6 +1,0 @@
-{
-  "issue": "R14-01",
-  "owner": "W2-E",
-  "reason": "Exchange rates are global and writable by any authenticated user; tenant B's rate is served to tenant A.",
-  "routes": ["POST /api/exchange-rates#global", "POST /api/exchange-rates/fta/bulk#global"]
-}

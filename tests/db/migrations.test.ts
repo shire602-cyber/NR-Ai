@@ -43,7 +43,10 @@ describe("migrations", () => {
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
       expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
-      expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      // Reserved placeholders stay `SELECT 1;` until their workstream fills them in.
+      if (/reserved placeholder/.test(body)) {
+        expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      }
     }
   });
 

@@ -188,8 +188,16 @@ Scope: this file applies to the whole repository.
   control finding counts or complete audit coverage measures.
 - FX unrealized exposure (`fx-unrealized-exposure`) uses the current FX gains/losses report as an
   as-of snapshot, summing absolute unrealized gains and absolute unrealized losses against a clear
-  baseline of zero. Do not treat it as a historical FX movement comparison until FX exposure
-  snapshots are persisted.
+  baseline of zero. The report comes from `computeFxExposure` (`server/services/fx/exposure.ts`),
+  the same function the period-end revaluation posts from: outstanding balances (total less
+  payments dated on/before as-of) of posted foreign-currency invoices and vendor bills plus
+  GL-linked foreign bank accounts, remeasured at the company's closing rate (spot fallback);
+  drafts, voids, credit notes and unposted receipts are excluded. Do not treat it as a historical
+  FX movement comparison until FX exposure snapshots are persisted.
+- Exchange rates are tenant-scoped (`exchange_rates.company_id`, NULL = admin-only system row).
+  A row (X, Y, r) means 1 X = r Y; company rates are stored as (foreign, base). Resolve rates with
+  the `fx.getRate` / `fx.convert` services (`server/services/fx/README.md`) and a `companyId`;
+  the legacy `getLatestRate` helper reads system rows only.
 - Consolidated revenue/expenses/profit/margin (`consolidated-revenue`,
   `consolidated-expenses`, `consolidated-net-profit`, and `consolidated-margin`) use the
   accessible-company consolidated statements roll-up and include only loaded entities with no
