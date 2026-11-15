@@ -1,0 +1,150 @@
+import fs from "node:fs";
+import path from "node:path";
+import { randomBytes } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import pg from "pg";
+import {
+  HARNESS_DB_PREFIX,
+  createDatabase,
+  databaseUrl,
+  dropDatabase,
+  migrateDatabase,
+  repoRoot,
+} from "./pg-admin";
+import { useHarness } from "./harness";
+
+const h = useHarness();
+const journal = JSON.parse(
+  fs.readFileSync(path.join(repoRoot, "migrations/meta/_journal.json"), "utf8")
+) as {
+  entries: Array<{ idx: number; tag: string; when: number; version: string; breakpoints: boolean }>;
+};
+const sqlFile = (tag: string) =>
+  fs.readFileSync(path.join(repoRoot, "migrations", `${tag}.sql`), "utf8");
+
+describe("migrations", () => {
+  it("journal registers 0089-0109 in the existing entry format", () => {
+    const tags = journal.entries.map((e) => e.tag);
+    for (let n = 89; n <= 109; n++) {
+      const prefix = String(n).padStart(4, "0");
+      expect(
+        tags.some((t) => t.startsWith(`${prefix}_`)),
+        prefix
+      ).toBe(true);
+    }
+    journal.entries.forEach((e, i) => {
+      expect(e.idx).toBe(i);
+      if (i > 0) expect(e.when).toBeGreaterThan(journal.entries[i - 1].when);
+    });
+    for (const e of journal.entries.filter((x) => x.idx >= 88)) {
+      expect(e).toMatchObject({ version: "7", breakpoints: false });
+      expect(e.when - journal.entries[e.idx - 1].when).toBe(10_000);
+    }
+    for (const e of journal.entries.filter((x) => x.idx >= 89)) {
+      const body = sqlFile(e.tag);
+      expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
+      expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+    }
+  });
+
+  it.skipIf(process.env.HARNESS_MODE !== "postgres")(
+    "apply cleanly to an empty database with runMigrations alone",
+    async () => {
+      const admin = process.env.HARNESS_ADMIN_URL!;
+      const name = `${HARNESS_DB_PREFIX}empty_${process.pid}_${randomBytes(3).toString("hex")}_${Date.now().toString(36)}`;
+      await createDatabase(admin, name);
+      try {
+        migrateDatabase(databaseUrl(admin, name), { criticalSchema: false });
+        const client = new pg.Client({ connectionString: databaseUrl(admin, name) });
+        await client.connect();
+        try {
+          const { rows } = await client.query(
+            `SELECT COUNT(*)::int AS n FROM drizzle.__drizzle_migrations`
+          );
+          expect(rows[0].n).toBe(journal.entries.length);
+          // Re-running 0089 is a no-op (idempotent).
+          await client.query(sqlFile("0089_platform_foundation"));
+          await client.query(sqlFile("0089_platform_foundation"));
+        } finally {
+          await client.end();
+        }
+      } finally {
+        await dropDatabase(admin, name);
+      }
+    },
+    180_000
+  );
+
+  it("0089 creates the platform foundation objects", async () => {
+    const cols = await h.sql<{ table_name: string; column_name: string }>(
+      `SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND ((table_name = 'receipts' AND column_name IN ('supplier_trn','content_sha256','file_mime','file_size'))
+            OR (table_name = 'user_onboarding' AND column_name = 'tour_dismissed_at')
+            OR table_name IN ('ai_usage_events', 'ai_usage_limits'))`
+    );
+    const set = new Set(cols.map((c) => `${c.table_name}.${c.column_name}`));
+    for (const c of [
+      "receipts.supplier_trn",
+      "receipts.content_sha256",
+      "receipts.file_mime",
+      "receipts.file_size",
+      "user_onboarding.tour_dismissed_at",
+      "ai_usage_events.cost_usd",
+      "ai_usage_events.input_tokens",
+      "ai_usage_limits.monthly_token_cap",
+      "ai_usage_limits.monthly_cost_cap_usd",
+    ]) {
+      expect(set.has(c), c).toBe(true);
+    }
+    const idx = await h.sql(
+      `SELECT indexname FROM pg_indexes WHERE indexname IN
+        ('idx_ai_usage_events_company_created', 'idx_receipts_company_content_sha256')`
+    );
+    expect(idx).toHaveLength(2);
+  });
+
+  it("R17-16: the 0028 test credential is unusable after migrations, even if re-seeded", async () => {
+    const check = async () => {
+      const rows = await h.sql(
+        `SELECT u.password_hash, u.firm_role, u.is_admin,
+                (SELECT COUNT(*)::int FROM company_users cu WHERE cu.user_id = u.id) AS memberships
+           FROM users u WHERE u.email = 'test_firm_owner@nra.ae'`
+      );
+      for (const r of rows) {
+        expect(r.password_hash).not.toMatch(/^\$2[aby]\$/);
+        expect(r.firm_role).toBeNull();
+        expect(r.is_admin).toBe(false);
+        expect(r.memberships).toBe(0);
+      }
+      return rows.length;
+    };
+    await check();
+    await h.createTenant({ name: "Cred" });
+    // Simulate an environment that replayed 0028's user upsert after 0051,
+    // then 0089 must neutralise it again. (Only the first statement: the
+    // company upsert relies on a unique constraint 0029 dropped.)
+    await h.sql(sqlFile("0028_fix_test_credentials").split(";")[0]);
+    await h.sql(
+      `INSERT INTO company_users (company_id, user_id, role)
+       SELECT c.id, u.id, 'owner' FROM companies c, users u
+        WHERE u.email = 'test_firm_owner@nra.ae' LIMIT 1`
+    );
+    const seeded = await h.sql(
+      `SELECT 1 FROM company_users cu JOIN users u ON u.id = cu.user_id
+        WHERE u.email = 'test_firm_owner@nra.ae'`
+    );
+    expect(seeded.length).toBe(1);
+    const replayed = await h.sql(
+      `SELECT password_hash FROM users WHERE email = 'test_firm_owner@nra.ae'`
+    );
+    expect(replayed[0].password_hash).toMatch(/^\$2[aby]\$/);
+    await h.sql(sqlFile("0089_platform_foundation"));
+    expect(await check()).toBe(1);
+    const login = await h.anon.post("/api/auth/login", {
+      email: "test_firm_owner@nra.ae",
+      password: "TestFirmOwner123!",
+    });
+    expect(login.status).toBeGreaterThanOrEqual(400);
+  });
+});

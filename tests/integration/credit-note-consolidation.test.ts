@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { useHarness } from "../db/harness";
 
-const shouldRun =
-  process.env.RUN_DB_INTEGRATION === "1" && Boolean(process.env.INTEGRATION_DATABASE_URL);
-
+// Runs under `npm run test:db` on the real-Postgres harness (a fresh migrated
+// database per file). Excluded from the unit `npm test` config.
+const shouldRun = process.env.HARNESS_MODE === "postgres";
 const describeDb = shouldRun ? describe : describe.skip;
+const h = useHarness();
 
 type VatSalesTotals = {
   standardRatedAmount: number;
@@ -252,11 +254,8 @@ describeDb("credit-note consolidation integration", () => {
   let pool: PgPool;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = process.env.INTEGRATION_DATABASE_URL;
     const pg = await import("pg");
-    pool = new pg.default.Pool({
-      connectionString: process.env.INTEGRATION_DATABASE_URL,
-    }) as PgPool;
+    pool = new pg.default.Pool({ connectionString: h.databaseUrl }) as PgPool;
   });
 
   afterAll(async () => {
@@ -264,9 +263,8 @@ describeDb("credit-note consolidation integration", () => {
   });
 
   it("keeps VAT-201 sales totals and trial balance unchanged after backfill", async () => {
-    const { backfillStandaloneCreditNotes } = await import(
-      "../../server/services/credit-note-consolidation.service"
-    );
+    const { backfillStandaloneCreditNotes } =
+      await import("../../server/services/credit-note-consolidation.service");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
