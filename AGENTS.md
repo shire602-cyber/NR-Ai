@@ -334,10 +334,28 @@ Scope: this file applies to the whole repository.
   working capital unless a dedicated as-of balance source is added.
 - Cash runway/burn comparison metrics (`burn-rate`, `cash-runway-days`) are P&L/current-cash
   proxies capped to the 90-day cash-forecast horizon; do not present them as a full cash-flow model
-  or historical cash position comparison.
+  or historical cash position comparison. The Dashboard `monthlyBurnRate`/`cashRunway` (months) come
+  from `getDashboardStats` in `server/services/dashboard-stats.service.ts`: average expenses of the
+  last three completed UAE months from the posted ledger, divided into the GL cash/bank balance.
+- Dashboard stats (`GET /api/companies/:companyId/dashboard/stats`) are SQL-aggregated through
+  `server/reporting` and `agedReceivables`/`agedPayables`; never load all journal lines into Node.
+  `revenue`/`expenses`/`netProfit` are scoped to the selected period (`preset=month|quarter|ytd|custom`,
+  default this month) with `prior` and `priorYear` comparison blocks; `outstanding` is the remaining
+  balance of sent/partial invoices (total less payments) and equals the GL receivable; AR aging has a
+  `current` bucket by due date and AP aging uses approved vendor bills. Cash is cash/bank accounts
+  only. VAT and corporate-tax widgets are ledger-based (`vat`, `corporateTax`; the CT figure is
+  `computeCtLiability` over fiscal-year-to-date ledger P&L, an estimate and not a filed return).
+  Dashboard UI modules live in `client/src/pages/dashboard/`; tiles must keep their `links`.
+- Cash forecast (`server/services/cashflow-forecast.service.ts`) is document driven: opening cash is
+  the kernel cash/bank balance, inflows are remaining balances of sent/partial invoices on their due
+  date (overdue on an assumed recovery date), outflows are approved vendor bills on their due date
+  plus payroll, VAT/CT due dates (`compliance_calendar`, else latest draft VAT return) and manual
+  `cash_forecast_items` (loan repayments, one-offs). It never extrapolates historical averages: with
+  no dated items it returns `insufficientData: true` and an "Insufficient data" insight.
 - Cash forecast risk metrics (`projected-cash-shortfall`, `cash-risk-week-count`) use the current
-  90-day cash forecast projections only. They compare projected negative-cash exposure against a
-  zero-risk baseline, not against a historical forecast snapshot or bank-balance ledger proof.
+  90-day cash forecast projections only (the document-driven forecast above). They compare projected
+  negative-cash exposure against a zero-risk baseline, not against a historical forecast snapshot or
+  bank-balance ledger proof.
 - Tax funding metrics (`tax-reserve-coverage`, `tax-funding-gap`,
   `tax-adjusted-runway-days`) compare current positive cash forecast balance against current VAT
   plus corporate-tax exposure; tax-adjusted runway reuses the current burn-rate proxy after
@@ -346,8 +364,13 @@ Scope: this file applies to the whole repository.
   reserve-account proof.
 - Budget actual variance (`budget-actual-variance`) compares selected-budget actual totals against
   selected-budget totals from `/api/budget-plans/:id/variance`; the baseline is Budget, not the
-  previous period. Do not treat it as historical budget-trend analysis until period-specific budget
-  history exists.
+  previous period. Actuals come from the posted ledger (closing entries excluded) keyed by
+  year-month, a plan spans at most 12 months, and `variance`/`favourable` are signed by account type
+  (income above budget and expense below budget are favourable; `variance` positive = favourable).
+  Approved plans are frozen (lines 409 `BUDGET_FROZEN`; use `/new-version`), approval needs
+  `documents.approve` from a different user than the creator, and
+  `/api/analytics/budget-vs-actual` reads the approved plan. Do not treat it as historical
+  budget-trend analysis until period-specific budget history exists.
 - Payroll run count (`payroll-run-count`) counts payroll-run rows in the comparison range. Average
   payroll run value (`average-payroll-run-value`) divides payroll-run net totals by payroll-run
   count. Payroll deduction share (`payroll-deduction-share`) divides payroll-run `total_deductions`
@@ -413,13 +436,13 @@ Scope: this file applies to the whole repository.
 - Run the broader readiness sweep with `npm run audit:campaign`; it chains type/contract checks,
   audit inventory, frontend API coverage, production dependency audit, unit tests, and build.
 - Populate a dedicated synthetic report-audit company with `BASE_URL=... npm run
-  e2e:report-fixture`; it writes ignored evidence to `tests/e2e/.artifacts/` and should not be
+e2e:report-fixture`; it writes ignored evidence to `tests/e2e/.artifacts/` and should not be
   pointed at real client books.
 - For high-volume report behavior checks, run `BASE_URL=... REPORT_STRESS_EMAIL=...
-  REPORT_STRESS_PASSWORD=... node tests/e2e/report-stress-fixture.mjs`; use a dedicated synthetic
+REPORT_STRESS_PASSWORD=... node tests/e2e/report-stress-fixture.mjs`; use a dedicated synthetic
   company only, and keep `REPORT_STRESS_WRITE_DELAY_MS` high enough to avoid production rate limits.
 - Run the competitor-grade benchmark audit with `BASE_URL=http://localhost:5000 npm run
-  e2e:benchmark-audit`; it uses the report fixture by default, refuses production writes unless
+e2e:benchmark-audit`; it uses the report fixture by default, refuses production writes unless
   `BENCHMARK_ALLOW_PROD_WRITES=true` is explicitly set, and writes review evidence under
   `docs/qa/<date>-benchmark-audit/`.
 - Treat `BENCHMARK_RUN_FIXTURE=false` production runs as read-only deployment crawls only. They can

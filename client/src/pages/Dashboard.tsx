@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,8 +64,6 @@ import {
   type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import {
-  TrendingUp,
-  TrendingDown,
   FileText,
   Plus,
   Receipt,
@@ -95,54 +93,23 @@ import { Link } from "wouter";
 import { motion } from "framer-motion";
 import { MeshGradient } from "@/components/ui/mesh-gradient";
 import ClientDashboard from "./ClientDashboard";
-
-const CHART_COLORS = {
-  primary: "hsl(var(--chart-1))",
-  accent: "hsl(var(--chart-2))",
-  warning: "hsl(var(--chart-3))",
-  info: "hsl(var(--chart-4))",
-  muted: "hsl(var(--chart-5))",
-};
-
-const PIE_PALETTE = [
-  CHART_COLORS.accent,
-  CHART_COLORS.primary,
-  CHART_COLORS.warning,
-  CHART_COLORS.info,
-  CHART_COLORS.muted,
-];
-
-// ─── Count-up hook ───────────────────────────────────────────────────────────
-
-/** Eases a numeric value toward its target — the landing-page counter feel. */
-function useCountUp(target: number, duration = 1400): number {
-  const [value, setValue] = useState(0);
-  const fromRef = useRef(0);
-
-  useEffect(() => {
-    const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const effectiveDuration = reduceMotion ? 0 : duration;
-    const from = fromRef.current;
-    const start = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      const p = effectiveDuration === 0 ? 1 : Math.min(1, (now - start) / effectiveDuration);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setValue(from + (target - from) * eased);
-      if (p < 1) {
-        raf = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = target;
-      }
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
-
-  return value;
-}
+import { useDashboardPeriod } from "./dashboard/period";
+import { PeriodSelector } from "./dashboard/PeriodSelector";
+import {
+  BudgetVsActualWidget,
+  CashMovement,
+  DrillThroughTiles,
+  OverdueSummary,
+  PeriodComparison,
+  TaxWidgets,
+} from "./dashboard/PlanningWidgets";
+import type { DashboardStats } from "./dashboard/types";
+import { useCountUp } from "./dashboard/useCountUp";
+import { CHART_COLORS, PIE_PALETTE } from "./dashboard/chart-colors";
+import { KpiCard } from "./dashboard/KpiCard";
+import { ScoreRing, FilingStatusBadge, FixItRow } from "./dashboard/CompliancePulse";
+import { QuickAction, SectionHeader } from "./dashboard/Layout";
+import { EmptyState } from "./dashboard/EmptyState";
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -151,260 +118,6 @@ export default function Dashboard() {
   if (isLoading) return null;
   if (user?.userType === "client") return <ClientDashboard />;
   return <CustomerDashboard />;
-}
-
-// ─── Editorial KPI Card ──────────────────────────────────────────────────────
-
-interface KpiCardProps {
-  label: string;
-  value: string;
-  delta?: number;
-  trend?: "up" | "down" | "flat";
-  spark?: number[];
-  accent: "primary" | "success" | "warning" | "info";
-  isLoading?: boolean;
-  delay?: number;
-}
-
-function KpiCard({
-  label,
-  value,
-  delta,
-  trend,
-  spark,
-  accent,
-  isLoading,
-  delay = 0,
-}: KpiCardProps) {
-  const accentClasses = {
-    primary: "text-foreground",
-    success: "text-success-subtle-foreground",
-    warning: "text-warning-subtle-foreground",
-    info: "text-info-subtle-foreground",
-  }[accent];
-
-  const sparkColor = {
-    primary: "hsl(var(--chart-1))",
-    success: "hsl(var(--success))",
-    warning: "hsl(var(--warning))",
-    info: "hsl(var(--info))",
-  }[accent];
-
-  const sparkData = useMemo(() => (spark ?? []).map((v, i) => ({ i, v })), [spark]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay, ease: [0.4, 0, 0.2, 1] }}
-    >
-      <Card className="group h-full overflow-hidden hover-lift border-card-border">
-        <div className="p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-              {label}
-            </div>
-            {delta !== undefined && (
-              <div
-                className={
-                  "inline-flex items-center gap-0.5 text-[11px] font-mono font-semibold tabular-nums px-1.5 py-0.5 rounded " +
-                  (trend === "up"
-                    ? "bg-success-subtle text-success-subtle-foreground"
-                    : trend === "down"
-                      ? "bg-danger-subtle text-danger-subtle-foreground"
-                      : "bg-neutral-subtle text-neutral-subtle-foreground")
-                }
-              >
-                {trend === "up" ? (
-                  <TrendingUp className="w-3 h-3" />
-                ) : trend === "down" ? (
-                  <TrendingDown className="w-3 h-3" />
-                ) : null}
-                {delta > 0 ? "+" : ""}
-                {delta.toFixed(1)}%
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 flex items-end justify-between gap-3">
-            {isLoading ? (
-              <Skeleton className="h-9 w-32" />
-            ) : (
-              <div
-                className={
-                  "font-mono font-semibold tracking-tight tabular-nums text-[26px] leading-none " +
-                  accentClasses
-                }
-                data-testid={`text-${label.toLowerCase().replace(/\s+/g, "-")}`}
-              >
-                {value}
-              </div>
-            )}
-            {sparkData.length > 1 && (
-              <div className="w-20 h-10 -mb-1 opacity-90">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={sparkData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                    <defs>
-                      <linearGradient id={`spark-${accent}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={sparkColor} stopOpacity={0.45} />
-                        <stop offset="100%" stopColor={sparkColor} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <Area
-                      type="monotone"
-                      dataKey="v"
-                      stroke={sparkColor}
-                      strokeWidth={1.5}
-                      fill={`url(#spark-${accent})`}
-                      isAnimationActive={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
-    </motion.div>
-  );
-}
-
-// ─── Compliance pulse ────────────────────────────────────────────────────────
-
-function ScoreRing({ score }: { score: number }) {
-  const animated = useCountUp(score, 1200);
-  const r = 26;
-  const c = 2 * Math.PI * r;
-  const color =
-    score >= 80
-      ? "hsl(var(--success))"
-      : score >= 50
-        ? "hsl(var(--warning))"
-        : "hsl(var(--destructive))";
-  return (
-    <div
-      className="relative w-16 h-16 shrink-0"
-      role="img"
-      aria-label={`Audit readiness score ${score} out of 100`}
-    >
-      <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
-        <circle cx={32} cy={32} r={r} fill="none" stroke="hsl(var(--border))" strokeWidth={5} />
-        <circle
-          cx={32}
-          cy={32}
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={5}
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c - (Math.min(100, Math.max(0, animated)) / 100) * c}
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center font-mono font-semibold tabular-nums text-[15px] text-foreground">
-        {Math.round(animated)}
-      </div>
-    </div>
-  );
-}
-
-function FilingStatusBadge({
-  status,
-  t,
-}: {
-  status?: "up_to_date" | "due_soon" | "overdue";
-  t: Record<string, string>;
-}) {
-  if (status === "overdue")
-    return (
-      <Badge variant="danger" dot>
-        {t.overdue ?? "Overdue"}
-      </Badge>
-    );
-  if (status === "due_soon")
-    return (
-      <Badge variant="warning" dot>
-        {t.dueSoon ?? "Due soon"}
-      </Badge>
-    );
-  return (
-    <Badge variant="success" dot>
-      {t.onTrack ?? "On track"}
-    </Badge>
-  );
-}
-
-/**
- * Maps audit-readiness issue strings from /compliance/overview to the screen
- * where the user can resolve them. Strings must match the server exactly
- * (server/routes/compliance-dashboard.routes.ts).
- */
-const ISSUE_ACTIONS: Record<
-  string,
-  { href: string; cta: string; issueKey: string; ctaKey: string }
-> = {
-  "No VAT returns filed": {
-    href: "/vat-filing",
-    cta: "File VAT 201",
-    issueKey: "dashboard.checkNoVatReturns",
-    ctaKey: "dashboard.actionFileVat",
-  },
-  "No chart of accounts configured": {
-    href: "/chart-of-accounts",
-    cta: "Set up accounts",
-    issueKey: "dashboard.checkNoChartOfAccounts",
-    ctaKey: "dashboard.actionSetupAccounts",
-  },
-  "No journal entries in the last 90 days": {
-    href: "/journal",
-    cta: "Post an entry",
-    issueKey: "dashboard.checkNoJournalEntries",
-    ctaKey: "dashboard.actionPostEntry",
-  },
-  "No bank reconciliation rules configured": {
-    href: "/bank-reconciliation",
-    cta: "Set up reconciliation",
-    issueKey: "dashboard.checkNoReconRules",
-    ctaKey: "dashboard.actionSetupRecon",
-  },
-  "Bank reconciliation not set up": {
-    href: "/bank-reconciliation",
-    cta: "Set up reconciliation",
-    issueKey: "dashboard.checkReconNotSetUp",
-    ctaKey: "dashboard.actionSetupRecon",
-  },
-  "No completed data backups": {
-    href: "/backup-restore",
-    cta: "Run a backup",
-    issueKey: "dashboard.checkNoBackups",
-    ctaKey: "dashboard.actionRunBackup",
-  },
-};
-
-function FixItRow({ issue }: { issue: string }) {
-  const { t } = useTranslation();
-  const action = ISSUE_ACTIONS[issue];
-  return (
-    <div className="flex items-center justify-between gap-3 px-5 py-2.5">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
-        <span className="text-[13px] text-foreground/80 truncate">
-          {(action && t[action.issueKey]) || issue}
-        </span>
-      </div>
-      {action && (
-        <Link href={action.href}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 text-accent hover:text-accent shrink-0 -me-2"
-          >
-            {t[action.ctaKey] || action.cta} <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
-          </Button>
-        </Link>
-      )}
-    </div>
-  );
 }
 
 // ─── Dashboard comparison snapshot ──────────────────────────────────────────
@@ -672,69 +385,6 @@ function getDashboardRoleWorkdayPath(workspace: ReportPersonaWorkspace): Dashboa
       },
     ],
   };
-}
-
-// ─── Quick action ────────────────────────────────────────────────────────────
-
-function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay, ease: [0.4, 0, 0.2, 1] }}
-    >
-      <Link href={href}>
-        <div className="group relative h-full p-5 rounded-xl border border-card-border bg-card hover-lift cursor-pointer overflow-hidden transition-colors">
-          <div
-            aria-hidden
-            className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
-          />
-          <div className="relative">
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-foreground/5 text-foreground/80 ring-1 ring-border/60 group-hover:bg-accent/10 group-hover:text-accent group-hover:ring-accent/30 transition-colors">
-                <Icon className="w-4 h-4" strokeWidth={2} />
-              </div>
-              <ArrowUpRight className="ms-auto w-4 h-4 text-muted-foreground/50 group-hover:text-accent group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform duration-200" />
-            </div>
-            <div className="mt-4 font-semibold text-[14px] tracking-tight text-foreground">
-              {title}
-            </div>
-            <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
-              {description}
-            </div>
-          </div>
-        </div>
-      </Link>
-    </motion.div>
-  );
-}
-
-// ─── Section header ──────────────────────────────────────────────────────────
-
-function SectionHeader({
-  eyebrow,
-  title,
-  action,
-}: {
-  eyebrow?: string;
-  title: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-end justify-between gap-4 mb-4">
-      <div>
-        {eyebrow && (
-          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-muted-foreground">
-            {eyebrow}
-          </div>
-        )}
-        <h2 className="mt-1 font-display text-[22px] md:text-[26px] leading-none text-foreground tracking-tight">
-          {title}
-        </h2>
-      </div>
-      {action}
-    </div>
-  );
 }
 
 // ─── Customer dashboard ──────────────────────────────────────────────────────
@@ -1299,8 +949,16 @@ function CustomerDashboard() {
       : undefined;
   }, [preferredReportWorkspace.persona, reportAutomationPreferencesQuery.data?.preferences]);
 
-  const { data: stats, isLoading: statsLoading } = useQuery<any>({
-    queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
+  const {
+    choice: periodChoice,
+    setChoice: setPeriodChoice,
+    query: periodQuery,
+  } = useDashboardPeriod();
+
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
+    queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats", periodQuery],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/dashboard/stats${periodQuery}`),
     enabled: !!selectedCompanyId,
     retry: 1,
   });
@@ -1316,7 +974,12 @@ function CustomerDashboard() {
   });
 
   const { data: expenseData, isLoading: expenseLoading } = useQuery<any[]>({
-    queryKey: ["/api/companies", selectedCompanyId, "dashboard/expense-breakdown"],
+    queryKey: ["/api/companies", selectedCompanyId, "dashboard/expense-breakdown", periodQuery],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/dashboard/expense-breakdown${periodQuery}`
+      ),
     enabled: !!selectedCompanyId,
   });
 
@@ -1417,11 +1080,20 @@ function CustomerDashboard() {
     };
 
     return {
-      revenue: { series: revenueSeries, delta: pctChange(revenueSeries) },
-      expenses: { series: expenseSeries, delta: pctChange(expenseSeries) },
-      profit: { series: profitSeries, delta: pctChange(profitSeries) },
+      revenue: {
+        series: revenueSeries,
+        delta: stats?.changes?.vsPrior?.revenue ?? pctChange(revenueSeries),
+      },
+      expenses: {
+        series: expenseSeries,
+        delta: stats?.changes?.vsPrior?.expenses ?? pctChange(expenseSeries),
+      },
+      profit: {
+        series: profitSeries,
+        delta: stats?.changes?.vsPrior?.netProfit ?? pctChange(profitSeries),
+      },
     };
-  }, [monthlyTrends]);
+  }, [monthlyTrends, stats]);
 
   const dashboardComparisonRows = useMemo(() => {
     const trends = monthlyTrends ?? [];
@@ -1941,9 +1613,28 @@ function CustomerDashboard() {
     !acknowledgedDashboardReportDeliveryHandoffGaps[preferredAutomationNextAction.subscriptionId]
   );
 
-  const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
-  const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
-  const margin = stats?.revenue > 0 ? (profit / stats.revenue) * 100 : 0;
+  const monthLabel =
+    stats && stats.period.preset !== "month"
+      ? `${stats.period.from} – ${stats.period.to}`
+      : new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
+  const profit = stats?.netProfit ?? 0;
+  const margin = stats?.margin ?? 0;
+  const heroPeriodLabel =
+    !stats || stats.period.preset === "month"
+      ? ((t as any).netProfitThisMonth ?? "Net Profit · This Month")
+      : `${locale === "ar" ? "صافي الربح" : "Net Profit"} · ${
+          stats.period.preset === "quarter"
+            ? locale === "ar"
+              ? "هذا الربع"
+              : "This quarter"
+            : stats.period.preset === "ytd"
+              ? locale === "ar"
+                ? "منذ بداية السنة"
+                : "Year to date"
+              : locale === "ar"
+                ? "فترة مخصصة"
+                : "Custom period"
+        }`;
   const animatedProfit = useCountUp(statsLoading ? 0 : profit);
 
   return (
@@ -1976,7 +1667,7 @@ function CustomerDashboard() {
             <div className="rounded-2xl border border-card-border bg-card/70 p-5 backdrop-blur-xl shadow-lg">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                  {(t as any).netProfitThisMonth ?? "Net Profit · This Month"}
+                  {heroPeriodLabel}
                 </div>
                 <Badge variant={profit >= 0 ? "success" : "danger"} dot>
                   {profit >= 0
@@ -2027,6 +1718,9 @@ function CustomerDashboard() {
           </div>
         </div>
       </motion.section>
+
+      {/* ── Period selector (R13-19) ─────────────────────────────────────── */}
+      <PeriodSelector choice={periodChoice} onChange={setPeriodChoice} locale={locale} />
 
       {/* ── First-invoice guide / draft explainer (R18-07, R18-12, R18-13) ──── */}
       {!invoicesLoading && (recentInvoices?.length ?? 0) === 0 && (
@@ -2132,6 +1826,18 @@ function CustomerDashboard() {
           delay={0.2}
         />
       </section>
+
+      {/* ── Planning: comparison, drill-through, cash, overdue, tax, budget ── */}
+      <PeriodComparison stats={stats} loading={statsLoading} locale={locale} />
+      <DrillThroughTiles stats={stats} loading={statsLoading} locale={locale} />
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <CashMovement stats={stats} loading={statsLoading} locale={locale} />
+        <div className="space-y-6">
+          <OverdueSummary stats={stats} loading={statsLoading} locale={locale} />
+          <BudgetVsActualWidget companyId={selectedCompanyId} asOf={stats?.asOf} locale={locale} />
+        </div>
+      </section>
+      <TaxWidgets stats={stats} loading={statsLoading} locale={locale} />
 
       {/* ── Compliance pulse ─────────────────────────────────────────────── */}
       {compliance && (
@@ -4260,42 +3966,6 @@ function CustomerDashboard() {
           </Card>
         </div>
       </section>
-    </div>
-  );
-}
-
-// ─── Empty state ─────────────────────────────────────────────────────────────
-
-function EmptyState({
-  icon: Icon,
-  title,
-  body,
-  actionLabel,
-  actionHref,
-}: {
-  icon: any;
-  title: string;
-  body: string;
-  actionLabel?: string;
-  actionHref?: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center text-center py-10 px-4">
-      <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-muted/60 ring-1 ring-border text-muted-foreground mb-3">
-        <Icon className="w-5 h-5" strokeWidth={1.75} />
-      </div>
-      <div className="text-[14px] font-medium text-foreground tracking-tight">{title}</div>
-      <div className="text-[12.5px] text-muted-foreground mt-0.5 max-w-xs leading-relaxed">
-        {body}
-      </div>
-      {actionLabel && actionHref && (
-        <Link href={actionHref}>
-          <Button variant="outline" size="sm" className="gap-1.5 mt-4">
-            <Plus className="w-3.5 h-3.5" />
-            {actionLabel}
-          </Button>
-        </Link>
-      )}
     </div>
   );
 }

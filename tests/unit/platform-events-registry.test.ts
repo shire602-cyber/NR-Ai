@@ -54,6 +54,7 @@ describe("domain events", () => {
       "compliance.deadline_due",
       "task.due",
       "receipt.posted",
+      "budget.variance_alert",
     ]);
     expect(Object.isFrozen(DOMAIN_EVENT_TYPES)).toBe(true);
   });

@@ -56,6 +56,7 @@ import { registerBudgetRoutes } from "./routes/budgets.routes";
 import { registerExpenseClaimRoutes } from "./routes/expense-claims.routes";
 import { registerCashFlowRoutes } from "./routes/cashflow.routes";
 import { registerAnomalyRoutes } from "./routes/anomaly.routes";
+import { registerNewsRoutes } from "./routes/news.routes";
 import { registerAutoReconcileRoutes } from "./routes/auto-reconcile.routes";
 import { registerAIGLRoutes } from "./routes/ai-gl.routes";
 import { registerMonthEndRoutes } from "./routes/month-end.routes";
@@ -136,6 +137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerOCRRoutes(app);
   registerCashFlowRoutes(app);
   registerAnomalyRoutes(app);
+  registerNewsRoutes(app);
   registerAutoReconcileRoutes(app);
   registerAIGLRoutes(app);
 

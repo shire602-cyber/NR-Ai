@@ -72,8 +72,10 @@ interface BudgetVsActual {
   accountType: string;
   budgeted: number;
   actual: number;
+  /** Positive = favourable (income above budget, expense below budget). */
   variance: number;
   variancePercent: number;
+  favourable: boolean;
 }
 
 interface FinancialKPI {
@@ -168,7 +170,7 @@ export default function AdvancedAnalytics() {
       });
       toast({
         title: "Forecast Generated",
-        description: "AI has generated new cash flow predictions",
+        description: "Cash flow projected from open invoices, vendor bills and scheduled items",
       });
     },
     onError: (error: any) => {
@@ -288,11 +290,15 @@ export default function AdvancedAnalytics() {
         <TabsList className="grid w-full grid-cols-4 lg:w-fit">
           <TabsTrigger value="forecasts" className="gap-2" data-testid="tab-forecasts">
             <TrendingUp className="w-4 h-4" />
-            <span className="hidden sm:inline"><T k="pages.cashFlow" /></span>
+            <span className="hidden sm:inline">
+              <T k="pages.cashFlow" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="budget" className="gap-2" data-testid="tab-budget">
             <Target className="w-4 h-4" />
-            <span className="hidden sm:inline"><T k="pages.budget" /></span>
+            <span className="hidden sm:inline">
+              <T k="pages.budget" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="kpis" className="gap-2" data-testid="tab-kpis">
             <Activity className="w-4 h-4" />
@@ -300,7 +306,9 @@ export default function AdvancedAnalytics() {
           </TabsTrigger>
           <TabsTrigger value="insights" className="gap-2" data-testid="tab-insights">
             <Brain className="w-4 h-4" />
-            <span className="hidden sm:inline"><T k="pages.aiInsights" /></span>
+            <span className="hidden sm:inline">
+              <T k="pages.aiInsights" />
+            </span>
           </TabsTrigger>
         </TabsList>
 
@@ -329,7 +337,7 @@ export default function AdvancedAnalytics() {
               ) : (
                 <Sparkles className="w-4 h-4 mr-2" />
               )}
-              Generate AI Forecast
+              Generate Forecast
             </Button>
           </div>
 
@@ -382,7 +390,9 @@ export default function AdvancedAnalytics() {
           {/* Forecast Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base"><T k="pages.cashFlowForecast" /></CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.cashFlowForecast" />
+              </CardTitle>
               <CardDescription>
                 AI-predicted inflows and outflows with confidence bands
               </CardDescription>
@@ -438,29 +448,19 @@ export default function AdvancedAnalytics() {
             </CardContent>
           </Card>
 
-          {/* AI Confidence */}
+          {/* Forecast basis */}
           <Card className="bg-primary/5 border-primary/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                AI Forecast Confidence
+                How this forecast is built
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">
-                  {hasForecastRows
-                    ? "Based on generated forecast history"
-                    : "Needs transaction history before confidence is meaningful"}
-                </span>
-                <span className="font-mono font-bold text-primary">
-                  {averageForecastConfidence}%
-                </span>
-              </div>
-              <Progress value={averageForecastConfidence} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-2">
-                Confidence increases with more transaction history. Empty demo data is not shown as
-                a real forecast.
+              <p className="text-sm text-muted-foreground">
+                {hasForecastRows
+                  ? "Monthly totals of open invoices by due date, approved vendor bills, payroll, tax dates and scheduled items. No averages are extrapolated and no confidence score is claimed."
+                  : "Add invoices, vendor bills or scheduled items to build a forecast. Without them nothing is projected."}
               </p>
             </CardContent>
           </Card>
@@ -514,7 +514,9 @@ export default function AdvancedAnalytics() {
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium"><T k="pages.totalActual" /></CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.totalActual" />
+                </CardTitle>
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -532,12 +534,14 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold font-mono ${budgetSummary.variance > 0 ? "text-destructive " : "text-success "}`}
+                  className={`text-2xl font-bold font-mono ${budgetSummary.variance < 0 ? "text-destructive " : "text-success "}`}
                 >
                   {formatCurrency(budgetSummary.variance, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {budgetSummary.variance > 0 ? "Over budget" : "Under or on budget"}
+                  {budgetSummary.variance < 0
+                    ? "Unfavourable to budget"
+                    : "Favourable or on budget"}
                 </p>
               </CardContent>
             </Card>
@@ -593,7 +597,7 @@ export default function AdvancedAnalytics() {
                   </div>
                 )}
                 {budgetRows.map((item, idx) => {
-                  const isOverBudget = item.variance > 0;
+                  const isOverBudget = item.variance < 0; // unfavourable
                   const variancePercent =
                     item.budgeted > 0 ? Math.abs((item.variance / item.budgeted) * 100) : 0;
 
@@ -623,7 +627,11 @@ export default function AdvancedAnalytics() {
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {variancePercent.toFixed(1)}%{" "}
-                          {isOverBudget ? "over" : item.variance === 0 ? "on target" : "under"}
+                          {isOverBudget
+                            ? "unfavourable"
+                            : item.variance === 0
+                              ? "on target"
+                              : "favourable"}
                         </p>
                       </div>
                     </div>
@@ -689,17 +697,11 @@ export default function AdvancedAnalytics() {
                       )}
                     </div>
                     {meetsOrExceedsBenchmark ? (
-                      <Badge
-                        variant="secondary"
-                        className="bg-success-subtle text-success "
-                      >
+                      <Badge variant="secondary" className="bg-success-subtle text-success ">
                         On Track
                       </Badge>
                     ) : (
-                      <Badge
-                        variant="secondary"
-                        className="bg-warning-subtle text-warning "
-                      >
+                      <Badge variant="secondary" className="bg-warning-subtle text-warning ">
                         Below Target
                       </Badge>
                     )}
@@ -751,7 +753,7 @@ export default function AdvancedAnalytics() {
         <TabsContent value="insights" className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              AI-generated insights based on your financial data patterns
+              Rule-based insights computed from your posted ledger and open invoices
             </p>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
               <Sparkles className="w-3 h-3 mr-1" />
@@ -768,7 +770,7 @@ export default function AdvancedAnalytics() {
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground">
                   <Brain className="w-8 h-8 mx-auto mb-3" />
-                  <p className="font-medium">No AI insights yet</p>
+                  <p className="font-medium">No insights yet</p>
                   <p className="text-sm">
                     Insights will appear when real invoices, expenses, and patterns exist.
                   </p>
@@ -778,8 +780,7 @@ export default function AdvancedAnalytics() {
             {insightRows.map((insight) => {
               const priorityColors = {
                 high: "border-destructive/30 bg-danger-subtle/50 ",
-                medium:
-                  "border-warning/30 bg-warning-subtle/50 ",
+                medium: "border-warning/30 bg-warning-subtle/50 ",
                 low: "border-info/30 bg-info-subtle/50 ",
               };
 
@@ -829,14 +830,14 @@ export default function AdvancedAnalytics() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                How AI Insights Work
+                How insights are computed
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Our AI analyzes your transaction patterns, compares against industry benchmarks, and
-                identifies opportunities and risks. Insights are updated daily as new data comes in.
-                More transaction history improves accuracy.
+                Insights are fixed rules over your posted ledger (profit margin, fiscal year to
+                date) and the remaining balances of issued invoices. They use the same figures as
+                the dashboard and the profit and loss report, and they make no benchmark claims.
               </p>
             </CardContent>
           </Card>

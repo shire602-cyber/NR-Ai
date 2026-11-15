@@ -2763,6 +2763,12 @@ export const anomalyAlerts = pgTable(
     resolvedBy: uuid("resolved_by").references(() => users.id),
     resolvedAt: timestamp("resolved_at"),
     resolutionNote: text("resolution_note"),
+    // W3-E: the real transaction facts, the rule that fired, and a stable key so
+    // re-scans never create duplicates.
+    amount: money("amount"),
+    transactionDate: pgDate("transaction_date", { mode: "string" }),
+    rule: text("rule"),
+    dedupeKey: text("dedupe_key"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -4461,6 +4467,8 @@ export const newsItems = pgTable("news_items", {
   imageUrl: text("image_url"),
   publishedAt: timestamp("published_at").notNull(),
   isActive: boolean("is_active").default(true),
+  externalId: text("external_id"), // W3-E: feed item guid, unique per source
+  curatedBy: uuid("curated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

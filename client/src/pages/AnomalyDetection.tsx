@@ -42,7 +42,8 @@ interface Anomaly {
   type: string;
   severity: RawAnomalySeverity;
   description: string;
-  amount?: number;
+  rule?: string | null;
+  amount?: number | null;
   date?: string | null;
   relatedId?: string | null;
   relatedType?: string | null;
@@ -58,7 +59,8 @@ interface AnomalySummary {
 interface AnomalyResult {
   anomalies: Anomaly[];
   summary: AnomalySummary;
-  scannedAt: string;
+  scannedAt: string | null;
+  newAlerts?: number;
 }
 
 const severityConfig: Record<
@@ -87,6 +89,24 @@ const typeIcons: Record<string, typeof Copy> = {
   round_number: Hash,
   duplicate_vendor: UserX,
   expense_spike: TrendingUp,
+  cross_period_baseline: TrendingUp,
+  duplicate_supplier_invoice: Copy,
+  vat_rate_mismatch: Hash,
+  trn_missing: UserX,
+  trn_malformed: UserX,
+};
+
+const RULE_LABELS: Record<string, { en: string; ar: string }> = {
+  duplicate_amount: { en: "Duplicate amount", ar: "مبلغ مكرر" },
+  unusual_amount: { en: "Unusual amount", ar: "مبلغ غير معتاد" },
+  weekend_transaction: { en: "Weekend entry", ar: "قيد في عطلة نهاية الأسبوع" },
+  round_number: { en: "Round number", ar: "مبلغ مقرّب" },
+  duplicate_vendor: { en: "Possible duplicate charge", ar: "احتمال رسوم مكررة" },
+  duplicate_supplier_invoice: { en: "Duplicate supplier invoice", ar: "فاتورة مورد مكررة" },
+  vat_rate_mismatch: { en: "VAT rate mismatch", ar: "عدم تطابق نسبة الضريبة" },
+  trn_missing: { en: "Supplier TRN missing", ar: "الرقم الضريبي للمورد مفقود" },
+  trn_malformed: { en: "Malformed TRN", ar: "رقم ضريبي غير صالح" },
+  cross_period_baseline: { en: "Above trailing average", ar: "أعلى من المتوسط السابق" },
 };
 
 const severityAliases: Record<string, AnomalySeverity> = {
@@ -108,15 +128,29 @@ export default function AnomalyDetection() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [severityFilter, setSeverityFilter] = useState<string>("all");
 
-  const {
-    data: result,
-    isLoading,
-    refetch,
-    isFetching,
-  } = useQuery<AnomalyResult>({
+  // Reading the list never scans; "Run scan" is an explicit POST (R13-15).
+  const { data: result, isLoading } = useQuery<AnomalyResult>({
     queryKey: [`/api/companies/${companyId}/anomalies`],
     enabled: !!companyId,
   });
+
+  const scanMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/anomalies/scan`),
+    onSuccess: (scanned: AnomalyResult) => {
+      queryClient.setQueryData([`/api/companies/${companyId}/anomalies`], scanned);
+      toast({
+        title: locale === "ar" ? "اكتمل الفحص" : "Scan complete",
+        description:
+          locale === "ar"
+            ? `تنبيهات جديدة: ${scanned.newAlerts ?? 0}`
+            : `${scanned.newAlerts ?? 0} new alert(s) recorded.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+  const isFetching = scanMutation.isPending;
 
   const dismissMutation = useMutation({
     mutationFn: async (anomalyId: string) => {
@@ -193,10 +227,12 @@ export default function AnomalyDetection() {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              <T k="pages.aiAnomalyDetection" />
+              {locale === "ar" ? "كشف الشذوذ المحاسبي" : "Accounting anomaly checks"}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Automatically scan transactions for irregularities and potential issues
+              {locale === "ar"
+                ? "فحوصات قائمة على القواعد: التكرار والمبالغ غير المعتادة وضريبة القيمة المضافة والأرقام الضريبية والمقارنة بالأشهر السابقة. تُجرى يومياً أو عند الطلب."
+                : "Rule-based checks: duplicates, unusual amounts, VAT rate, TRNs and comparison with trailing months. They run daily or on demand."}
             </p>
           </div>
         </div>
@@ -204,10 +240,15 @@ export default function AnomalyDetection() {
           {result?.scannedAt && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              Last scanned: {new Date(result.scannedAt).toLocaleString()}
+              {locale === "ar" ? "آخر تنبيه مسجّل: " : "Latest alert recorded: "}
+              {new Date(result.scannedAt).toLocaleString()}
             </span>
           )}
-          <Button onClick={() => refetch()} disabled={isFetching}>
+          <Button
+            onClick={() => scanMutation.mutate()}
+            disabled={isFetching}
+            data-testid="button-run-scan"
+          >
             {isFetching ? (
               <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
             ) : (
@@ -325,7 +366,7 @@ export default function AnomalyDetection() {
             const severity = normalizeSeverity(anomaly.severity);
             const config = severityConfig[severity];
             const SeverityIcon = config.icon;
-            const anomalyType = anomaly.type || "anomaly";
+            const anomalyType = anomaly.rule || anomaly.type || "anomaly";
             const TypeIcon = typeIcons[anomalyType] || Info;
 
             return (
@@ -346,7 +387,11 @@ export default function AnomalyDetection() {
                           </Badge>
                           <Badge variant="outline" className="text-xs flex items-center gap-1">
                             <TypeIcon className="h-3 w-3" />
-                            {anomalyType.replace(/_/g, " ")}
+                            {RULE_LABELS[anomalyType]
+                              ? locale === "ar"
+                                ? RULE_LABELS[anomalyType].ar
+                                : RULE_LABELS[anomalyType].en
+                              : anomalyType.replace(/_/g, " ")}
                           </Badge>
                           {typeof anomaly.amount === "number" && anomaly.amount > 0 && (
                             <span className="text-sm font-medium">
@@ -396,7 +441,9 @@ export default function AnomalyDetection() {
               <p className="text-muted-foreground text-sm">
                 {severityFilter !== "all"
                   ? `No ${severityFilter} anomalies detected. Try changing the filter.`
-                  : "Your transactions look clean. No irregularities detected in the latest scan."}
+                  : locale === "ar"
+                    ? "لا توجد تنبيهات مفتوحة. شغّل الفحص للتحقق من أحدث المعاملات."
+                    : "No open alerts. Run a scan to check the latest transactions."}
               </p>
             </div>
           </CardContent>
