@@ -171,6 +171,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "developerSettings", url: "/developer-settings" },
       { titleKey: "notificationPreferences", url: "/notification-preferences" },
       { titleKey: "subscription", url: "/subscription" },
+      { titleKey: "commercial.navImportData", url: "/import" },
       { titleKey: "backupRestore", url: "/backup-restore" },
       { titleKey: "history", url: "/history" },
     ],

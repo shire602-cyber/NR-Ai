@@ -52,12 +52,15 @@ import {
   Database,
   FileText,
 } from "lucide-react";
-import { SiStripe, SiShopify, SiSalesforce } from "react-icons/si";
+import { SiStripe, SiShopify } from "react-icons/si";
+import { Link } from "wouter";
 
 interface EcommerceIntegration {
   id: string;
   platform: string;
   isActive: boolean;
+  connectionStatus?: "not_connected" | "connected" | "error";
+  externalAccountName?: string | null;
   lastSyncAt: string | null;
   syncStatus: string;
   syncError: string | null;
@@ -84,38 +87,50 @@ interface IntegrationConfig {
   accessToken?: string;
 }
 
+// W5-B (R19-03, R19-09, R19-14): only integrations with real adapters are listed here.
+// Accounting and POS connectors are shown separately with their honest status.
 const PLATFORMS = [
   {
-    id: "stripe",
+    id: "stripe_payouts",
     name: "Stripe",
-    description: "Accept payments and automatically import transactions",
+    description: "Import charges, fees, refunds and payouts as bank lines for reconciliation",
     icon: SiStripe,
     color: "text-[#635BFF]",
     bgColor: "bg-[#635BFF]/10",
-    features: ["Payment processing", "Automatic reconciliation", "Refund tracking", "Invoice sync"],
+    features: ["Balance transactions", "Fee lines", "Payout matching", "Idempotent import"],
     status: "available",
   },
   {
     id: "shopify",
     name: "Shopify",
-    description: "Sync orders, products, and customer data from your store",
+    description: "Import store orders as draft invoices and refunds as draft credit notes",
     icon: SiShopify,
     color: "text-[#95BF47]",
     bgColor: "bg-[#95BF47]/10",
-    features: ["Order import", "Product catalog sync", "Customer data", "Inventory tracking"],
+    features: ["Orders to draft invoices", "Refunds to credit notes", "VAT per line", "No duplicates"],
     status: "available",
   },
-  {
-    id: "salesforce",
-    name: "Salesforce",
-    description: "Connect your CRM for customer and sales data synchronization",
-    icon: SiSalesforce,
-    color: "text-[#00A1E0]",
-    bgColor: "bg-[#00A1E0]/10",
-    features: ["Contact sync", "Opportunity tracking", "Invoice generation", "Sales reports"],
-    status: "coming_soon",
-  },
 ];
+
+const HUB_COPY = {
+  en: {
+    syncDone: "Sync complete",
+    connectorsTitle: "Accounting and POS connectors",
+    connectorsHelp:
+      "Direct connections need an app registered with each provider. Until then, bring data in with the CSV import.",
+    requiresRegistration: "Requires app registration",
+    oauthConfigured: "OAuth configured",
+    useImport: "Use CSV import",
+  },
+  ar: {
+    syncDone: "اكتملت المزامنة",
+    connectorsTitle: "موصلات المحاسبة ونقاط البيع",
+    connectorsHelp: "تتطلب الاتصالات المباشرة تسجيل تطبيق لدى كل مزود. حتى ذلك الحين استورد البيانات عبر CSV.",
+    requiresRegistration: "يتطلب تسجيل تطبيق",
+    oauthConfigured: "تم إعداد OAuth",
+    useImport: "استخدم الاستيراد عبر CSV",
+  },
+};
 
 export default function IntegrationsHub() {
   const { t, locale } = useTranslation();
@@ -127,6 +142,16 @@ export default function IntegrationsHub() {
   const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: "" });
 
   // Fetch integrations
+  const hubCopy = HUB_COPY[isRTL ? "ar" : "en"];
+  const { data: integrationStatus } = useQuery<{
+    connectors: Array<{
+      id: string;
+      label: { en: string; ar: string };
+      purpose: { en: string; ar: string };
+      status: "requires_external" | "sandbox";
+    }>;
+  }>({ queryKey: ["/api/integrations/status"] });
+
   const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
     queryKey: ["/api/integrations/ecommerce", companyId],
     queryFn: () => {
@@ -184,7 +209,7 @@ export default function IntegrationsHub() {
       queryClient.invalidateQueries({
         queryKey: ["/api/integrations/ecommerce/transactions", companyId],
       });
-      toast({ title: "Sync Started", description: "Data synchronization is in progress" });
+      toast({ title: hubCopy.syncDone });
     },
     onError: (error: any) => {
       toast({
@@ -380,8 +405,10 @@ export default function IntegrationsHub() {
             {PLATFORMS.map((platform) => {
               const integration = getIntegration(platform.id);
               const Icon = platform.icon;
-              const isConnected = integration?.isActive;
-              const isComingSoon = platform.status === "coming_soon";
+              // W5-B (R19-03): "connected" only after the platform accepted the credentials.
+              const isConnected =
+                !!integration?.isActive && integration?.connectionStatus === "connected";
+              const isComingSoon = false;
 
               return (
                 <Card
@@ -499,6 +526,38 @@ export default function IntegrationsHub() {
               );
             })}
           </div>
+
+          {/* Accounting / POS connectors (R19-09): honest status, no "coming soon" */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{hubCopy.connectorsTitle}</CardTitle>
+              <CardDescription>{hubCopy.connectorsHelp}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {(integrationStatus?.connectors ?? []).map((cn) => (
+                <div
+                  key={cn.id}
+                  className="flex items-start justify-between gap-3 rounded-lg border p-3"
+                  data-testid={`connector-${cn.id}`}
+                >
+                  <div>
+                    <p className="font-medium">{isRTL ? cn.label.ar : cn.label.en}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isRTL ? cn.purpose.ar : cn.purpose.en}
+                    </p>
+                    <Link href="/import" className="mt-1 inline-block text-xs underline">
+                      {hubCopy.useImport}
+                    </Link>
+                  </div>
+                  <Badge variant="outline" className="shrink-0">
+                    {cn.status === "requires_external"
+                      ? hubCopy.requiresRegistration
+                      : hubCopy.oauthConfigured}
+                  </Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
           {/* Benefits Section */}
           <Card className="border-primary/20">
@@ -786,13 +845,13 @@ export default function IntegrationsHub() {
 
           <form onSubmit={handleSubmitConnect}>
             <div className="space-y-4 py-4">
-              {selectedPlatform?.id === "stripe" && (
+              {selectedPlatform?.id === "stripe_payouts" && (
                 <div className="space-y-2">
                   <Label htmlFor="apiKey">Stripe Secret Key</Label>
                   <Input
                     id="apiKey"
                     type="password"
-                    placeholder="sk_live_..."
+                    placeholder="rk_live_..."
                     value={configForm.apiKey || ""}
                     onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })}
                     data-testid="input-api-key"

@@ -1,15 +1,28 @@
 import type { Express, Request, Response } from "express";
+import { parsedBody } from "../http/parsed-body";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
-import { getAllPlanDefinitions, getTierLimits } from "../middleware/featureGate";
 import {
+  billingEnforced,
+  getAllPlanDefinitions,
+  getTierLimits,
+  getUsage,
+  usagePeriod,
+} from "../middleware/featureGate";
+import {
+  changeSubscriptionPlan,
   createCheckoutSession,
   createPortalSession,
   handleWebhookEvent,
   getStripe,
   isStripeConfigured,
+  trialDays,
 } from "../services/stripe.service";
+import { requirePermission } from "../middleware/companyRolePolicy";
+import { strictBody } from "../http/strict-body";
+import { pq } from "../services/connectors/pq";
+import { z } from "zod";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("billing");
@@ -50,8 +63,8 @@ export function registerBillingRoutes(app: Express) {
       // Mirrors server/middleware/featureGate.ts: until BILLING_ENFORCEMENT=true
       // the client paywall must fail open too, or the UI blocks features the
       // API happily serves.
-      const enforcement = process.env.BILLING_ENFORCEMENT === "true";
-      res.json({ subscription, limits, enforcement });
+      const enforcement = billingEnforced();
+      res.json({ subscription, limits, enforcement, trialDays: trialDays() });
     })
   );
 
@@ -77,27 +90,91 @@ export function registerBillingRoutes(app: Express) {
       };
 
       const limits = getTierLimits(subscription.planId);
-      const userCount = await storage.getUserCountByCompanyId(companyId);
+      const [invoices, receipts, aiCalls, users] = await Promise.all([
+        getUsage(companyId, "invoices"),
+        getUsage(companyId, "receipts"),
+        getUsage(companyId, "ai_calls"),
+        getUsage(companyId, "team_members"),
+      ]);
 
       res.json({
         plan: subscription.planId,
+        period: usagePeriod(),
+        enforcement: billingEnforced(),
         usage: {
-          invoices: {
-            used: subscription.invoicesCreatedThisMonth || 0,
-            limit: limits.maxInvoicesPerMonth,
-          },
-          receipts: {
-            used: subscription.receiptsCreatedThisMonth || 0,
-            limit: limits.maxReceiptsPerMonth,
-          },
-          aiCredits: {
-            used: subscription.aiCreditsUsedThisMonth || 0,
-            limit: limits.aiCreditsPerMonth,
-          },
-          users: { used: userCount, limit: limits.maxUsers },
-          storage: { used: 0, limit: limits.maxStorageMb }, // TODO: calculate actual storage
+          invoices: { used: invoices, limit: limits.maxInvoicesPerMonth },
+          receipts: { used: receipts, limit: limits.maxReceiptsPerMonth },
+          aiCredits: { used: aiCalls, limit: limits.aiCreditsPerMonth },
+          users: { used: users, limit: limits.maxUsers },
+          storage: { used: null, limit: limits.maxStorageMb },
         },
       });
+    })
+  );
+
+  // VAT-inclusive subscription invoices and receipts (R19-16).
+  app.get(
+    "/api/companies/:companyId/billing/documents",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("billing.manage"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { rows } = await pq(
+        `SELECT id, kind, number, stripe_invoice_id AS "stripeInvoiceId", plan_id AS "planId",
+                billing_cycle AS "billingCycle", seat_count AS "seatCount", period_start AS "periodStart",
+                period_end AS "periodEnd", subtotal_fils AS "subtotalFils", vat_fils AS "vatFils",
+                discount_fils AS "discountFils", total_fils AS "totalFils", currency, status,
+                issued_at AS "issuedAt", paid_at AS "paidAt"
+           FROM billing_documents WHERE company_id = $1 ORDER BY issued_at DESC LIMIT 200`,
+        [req.params.companyId]
+      );
+      res.json(rows);
+    })
+  );
+
+  // Referral and other credits on this company (R19-11).
+  app.get(
+    "/api/companies/:companyId/billing/credits",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("billing.manage"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { rows } = await pq(
+        `SELECT id, beneficiary, source, kind, amount_fils AS "amountFils", percent_off AS "percentOff",
+                currency, status, stripe_ref AS "stripeRef", note, created_at AS "createdAt",
+                applied_at AS "appliedAt"
+           FROM billing_credits WHERE company_id = $1 ORDER BY created_at DESC`,
+        [req.params.companyId]
+      );
+      res.json(rows);
+    })
+  );
+
+  // Plan / cycle / seat change with proration (R19-16).
+  const changePlanBody = z
+    .object({
+      planId: z.enum(["starter", "professional", "enterprise"]).optional(),
+      billingCycle: z.enum(["monthly", "yearly"]).optional(),
+      seats: z.number().int().min(1).max(1000).optional(),
+    })
+    .strict();
+  app.post(
+    "/api/companies/:companyId/billing/change-plan",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("billing.manage"),
+    strictBody(changePlanBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      if (!isStripeConfigured()) {
+        return res
+          .status(503)
+          .json({ message: "Payment processing not configured", code: "STRIPE_NOT_CONFIGURED" });
+      }
+      const result = await changeSubscriptionPlan(
+        req.params.companyId,
+        parsedBody<z.output<typeof changePlanBody>>(req)
+      );
+      res.json({ ...result, proration: "create_prorations" });
     })
   );
 

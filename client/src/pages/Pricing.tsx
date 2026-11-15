@@ -132,6 +132,8 @@ const tiers: PricingTier[] = [
 type FeatureKey = string;
 interface FeatureRow {
   key: FeatureKey;
+  /** TIER_FEATURES flag enforced by server/middleware/featureGate.ts (kept in sync by a test). */
+  gate?: string;
   free: boolean;
   starter: boolean;
   professional: boolean;
@@ -159,6 +161,7 @@ const featureMatrix: FeatureCategory[] = [
       { key: "vatFiling", free: true, starter: true, professional: true, enterprise: true },
       {
         key: "recurringInvoices",
+        gate: "recurringInvoices",
         free: false,
         starter: true,
         professional: true,
@@ -173,7 +176,38 @@ const featureMatrix: FeatureCategory[] = [
         enterprise: true,
       },
       { key: "monthEndClose", free: false, starter: false, professional: true, enterprise: true },
-      { key: "fixedAssets", free: false, starter: false, professional: true, enterprise: true },
+      {
+        key: "fixedAssets",
+        gate: "fixedAssets",
+        free: false,
+        starter: false,
+        professional: true,
+        enterprise: true,
+      },
+      {
+        key: "multiCurrency",
+        gate: "multiCurrency",
+        free: false,
+        starter: true,
+        professional: true,
+        enterprise: true,
+      },
+      {
+        key: "onlinePayments",
+        gate: "invoicePayment",
+        free: false,
+        starter: true,
+        professional: true,
+        enterprise: true,
+      },
+      {
+        key: "bulkOps",
+        gate: "bulkOps",
+        free: false,
+        starter: false,
+        professional: true,
+        enterprise: true,
+      },
       { key: "budgeting", free: false, starter: false, professional: true, enterprise: true },
       { key: "expenseClaims", free: false, starter: false, professional: true, enterprise: true },
     ],
@@ -218,7 +252,14 @@ const featureMatrix: FeatureCategory[] = [
   {
     categoryKey: "hrPayroll",
     features: [
-      { key: "payrollWPS", free: false, starter: false, professional: true, enterprise: true },
+      {
+        key: "payrollWPS",
+        gate: "payroll",
+        free: false,
+        starter: false,
+        professional: true,
+        enterprise: true,
+      },
     ],
   },
   {
@@ -268,7 +309,22 @@ const featureMatrix: FeatureCategory[] = [
         enterprise: true,
       },
       { key: "multiBranch", free: false, starter: false, professional: false, enterprise: true },
-      { key: "apiAccess", free: false, starter: false, professional: false, enterprise: true },
+      {
+        key: "apiAccess",
+        gate: "apiAccess",
+        free: false,
+        starter: false,
+        professional: false,
+        enterprise: true,
+      },
+      {
+        key: "webhooks",
+        gate: "webhooks",
+        free: false,
+        starter: false,
+        professional: false,
+        enterprise: true,
+      },
     ],
   },
 ];
@@ -496,6 +552,10 @@ export default function Pricing() {
       advancedAnalytics: locale === "en" ? "Advanced Analytics" : "تحليلات متقدمة",
       multiBranch: locale === "en" ? "Multi-Branch Support" : "دعم متعدد الفروع",
       apiAccess: locale === "en" ? "API Access" : "وصول API",
+      webhooks: locale === "en" ? "Signed Webhooks" : "خطافات ويب موقّعة",
+      multiCurrency: locale === "en" ? "Multi-Currency Documents" : "مستندات متعددة العملات",
+      onlinePayments: locale === "en" ? "Online Invoice Payment Links" : "روابط دفع الفواتير عبر الإنترنت",
+      bulkOps: locale === "en" ? "Bulk Operations" : "العمليات المجمّعة",
     },
     faq: {
       title: locale === "en" ? "Frequently Asked Questions" : "الأسئلة الشائعة",
@@ -515,8 +575,8 @@ export default function Pricing() {
           q: locale === "en" ? "Is there a free trial?" : "هل توجد فترة تجريبية مجانية؟",
           a:
             locale === "en"
-              ? "Yes! We offer a 14-day free trial on both the Starter and Professional plans. No credit card required to start. You can also use the Free plan indefinitely."
-              : "نعم! نقدم فترة تجريبية مجانية لمدة 14 يوماً على خطتي المبتدئ والاحترافي. لا حاجة لبطاقة ائتمان للبدء. كما يمكنك استخدام الخطة المجانية بدون قيود زمنية.",
+              ? "Yes. Your first paid subscription starts with a 14-day free trial; your card is charged only when the trial ends, and you can cancel before then. You can also use the Free plan indefinitely."
+              : "نعم. يبدأ أول اشتراك مدفوع بفترة تجريبية مجانية لمدة 14 يوماً؛ لا تُخصم البطاقة إلا عند انتهاء الفترة التجريبية ويمكنك الإلغاء قبل ذلك. كما يمكنك استخدام الخطة المجانية بدون قيود زمنية.",
         },
         {
           q: locale === "en" ? "What payment methods do you accept?" : "ما طرق الدفع المقبولة؟",

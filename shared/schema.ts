@@ -13,6 +13,8 @@ import {
   jsonb,
   date as pgDate,
   uniqueIndex,
+  bigint,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -2180,10 +2182,15 @@ export const apiKeys = pgTable(
     lastUsedAt: timestamp("last_used_at"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // W5-B (0106, R19-01): per-key rate limit, expiry and revocation.
+    rateLimitPerMinute: integer("rate_limit_per_minute").notNull().default(120),
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
   },
   (table) => ({
     companyIdIdx: index("idx_api_keys_company_id").on(table.companyId),
     keyHashIdx: index("idx_api_keys_key_hash").on(table.keyHash),
+    keyPrefixIdx: index("idx_api_keys_key_prefix").on(table.keyPrefix),
   })
 );
 
@@ -2240,9 +2247,20 @@ export const webhookDeliveries = pgTable(
     success: boolean("success").notNull().default(false),
     attemptNumber: integer("attempt_number").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // W5-B (0106, R19-02): durable delivery queue.
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+    eventId: text("event_id"),
+    status: text("status").notNull().default("delivered"), // pending | retrying | delivered | dead
+    nextAttemptAt: timestamp("next_attempt_at"),
+    maxAttempts: integer("max_attempts").notNull().default(6),
+    signature: text("signature"),
+    lastError: text("last_error"),
+    deliveredAt: timestamp("delivered_at"),
+    updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => ({
     endpointIdx: index("idx_webhook_deliveries_endpoint").on(table.webhookEndpointId),
+    dueIdx: index("idx_webhook_deliveries_due").on(table.status, table.nextAttemptAt),
   })
 );
 
@@ -3904,6 +3922,10 @@ export const ecommerceIntegrations = pgTable(
     settings: text("settings"), // JSON config for mapping
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    // W5-B (0106, R19-03): set only after the platform API accepted the credentials.
+    connectionStatus: text("connection_status").notNull().default("not_connected"), // not_connected | connected | error
+    verifiedAt: timestamp("verified_at"),
+    externalAccountName: text("external_account_name"),
   },
   (table) => ({
     companyIdIdx: index("idx_ecommerce_integrations_company_id").on(table.companyId),
@@ -3951,10 +3973,15 @@ export const ecommerceTransactions = pgTable(
     journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
     invoiceId: uuid("invoice_id").references(() => invoices.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    bankTransactionId: uuid("bank_transaction_id"), // W5-B: Stripe payout -> bank-style row
   },
   (table) => ({
     companyIdIdx: index("idx_ecommerce_transactions_company_id").on(table.companyId),
     integrationIdIdx: index("idx_ecommerce_transactions_integration_id").on(table.integrationId),
+    externalUnique: uniqueIndex("uq_ecommerce_transactions_integration_external").on(
+      table.integrationId,
+      table.externalId
+    ),
   })
 );
 
@@ -4437,6 +4464,29 @@ export const referrals = pgTable("referrals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at"),
 });
+
+// W5-B (0106, R19-11): referral rewards ledger. Applied as a Stripe credit on the referred
+// customer's first paid invoice; recorded here (status "ledgered") when Stripe is not configured.
+export const billingCredits = pgTable("billing_credits", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+  referralId: uuid("referral_id").references(() => referrals.id, { onDelete: "set null" }),
+  beneficiary: text("beneficiary").notNull().default("referee"), // referee | referrer
+  source: text("source").notNull().default("referral"),
+  kind: text("kind").notNull().default("credit"), // credit | percent_off
+  amountFils: bigint("amount_fils", { mode: "number" }).notNull().default(0),
+  percentOff: numeric("percent_off", { precision: 5, scale: 2 }),
+  currency: text("currency").notNull().default("AED"),
+  status: text("status").notNull().default("ledgered"), // ledgered | applied_stripe | applied
+  stripeRef: text("stripe_ref"),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  appliedAt: timestamp("applied_at"),
+});
+export type BillingCredit = typeof billingCredits.$inferSelect;
 
 export const insertReferralSchema = createInsertSchema(referrals).omit({
   id: true,
@@ -6017,6 +6067,12 @@ export const subscriptions = pgTable(
     maxReceipts: integer("max_receipts").default(100),
     aiCreditsRemaining: integer("ai_credits_remaining").default(100),
 
+    // W5-B (0106, R19-16): trial, seats and dunning.
+    trialEndsAt: timestamp("trial_ends_at"),
+    seatCount: integer("seat_count").notNull().default(1),
+    dunningStage: integer("dunning_stage").notNull().default(0),
+    lastPaymentFailedAt: timestamp("last_payment_failed_at"),
+
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -6033,6 +6089,58 @@ export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
 
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
+
+// W5-B (0106, R19-04): monthly usage meter (period "YYYY-MM").
+export const usageCounters = pgTable(
+  "usage_counters",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    period: text("period").notNull(),
+    metric: text("metric").notNull(), // invoices | receipts | ai_calls | team_members
+    count: integer("count").notNull().default(0),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniq: uniqueIndex("uq_usage_counters_company_period_metric").on(
+      table.companyId,
+      table.period,
+      table.metric
+    ),
+  })
+);
+export type UsageCounter = typeof usageCounters.$inferSelect;
+
+// W5-B (0106, R19-16): VAT-inclusive subscription invoices and receipts.
+export const billingDocuments = pgTable("billing_documents", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("invoice"), // invoice | receipt
+  number: text("number").notNull().unique(),
+  stripeInvoiceId: text("stripe_invoice_id"),
+  planId: text("plan_id"),
+  billingCycle: text("billing_cycle"),
+  seatCount: integer("seat_count").notNull().default(1),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  subtotalFils: bigint("subtotal_fils", { mode: "number" }).notNull().default(0),
+  vatFils: bigint("vat_fils", { mode: "number" }).notNull().default(0),
+  discountFils: bigint("discount_fils", { mode: "number" }).notNull().default(0),
+  totalFils: bigint("total_fils", { mode: "number" }).notNull().default(0),
+  currency: text("currency").notNull().default("AED"),
+  status: text("status").notNull().default("issued"),
+  issuedAt: timestamp("issued_at").defaultNow().notNull(),
+  paidAt: timestamp("paid_at"),
+});
+export type BillingDocument = typeof billingDocuments.$inferSelect;
 
 // ===========================
 // Data Backups (Financial Records Safeguard)
@@ -6061,9 +6169,15 @@ export const backups = pgTable(
     vatReturnsCount: integer("vat_returns_count").default(0),
 
     // Storage
-    dataSnapshot: text("data_snapshot"), // JSON stringified backup data
-    checksum: text("checksum"), // SHA256 for integrity verification
+    dataSnapshot: text("data_snapshot"), // W5-B: secret-vault ciphertext of the JSON snapshot
+    checksum: text("checksum"), // SHA256 of the plaintext snapshot, verified before restore
     sizeBytes: integer("size_bytes").default(0),
+    // W5-B (0106, R19-06, R17-22): encrypted full-company snapshot metadata.
+    encrypted: boolean("encrypted").notNull().default(false),
+    formatVersion: text("format_version").notNull().default("1.0"),
+    tableCounts: text("table_counts"), // JSON { table: rowCount }
+    lastRestoreMode: text("last_restore_mode"), // merge | replace
+    lastRestoredAt: timestamp("last_restored_at"),
 
     // Timestamps
     createdBy: uuid("created_by").references(() => users.id),
@@ -6083,6 +6197,64 @@ export const insertBackupSchema = createInsertSchema(backups).omit({
 
 export type InsertBackup = z.infer<typeof insertBackupSchema>;
 export type Backup = typeof backups.$inferSelect;
+
+// W5-B (0106, R19-17): scheduled backups (job registry "backups.scheduled").
+export const backupSchedules = pgTable(
+  "backup_schedules",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    frequency: text("frequency").notNull().default("weekly"), // daily | weekly | monthly
+    retentionDays: integer("retention_days").notNull().default(90),
+    isActive: boolean("is_active").notNull().default(true),
+    lastRunAt: timestamp("last_run_at"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyUnique: uniqueIndex("uq_backup_schedules_company").on(table.companyId),
+  })
+);
+export type BackupSchedule = typeof backupSchedules.$inferSelect;
+
+// W5-B (0106, R19-13, R02-16b): migration import jobs (preview -> validate -> commit).
+export const importJobs = pgTable(
+  "import_jobs",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    // chart_of_accounts | trial_balance | customers | vendors | items | open_invoices | open_bills
+    kind: text("kind").notNull(),
+    sourceSystem: text("source_system").notNull().default("generic"), // xero | quickbooks | zoho | wafeq | generic
+    status: text("status").notNull().default("previewed"), // previewed | validated | committed | failed
+    fileName: text("file_name"),
+    cutOverDate: pgDate("cut_over_date", { mode: "string" }),
+    arApMode: text("ar_ap_mode"), // balance | documents (trial balance only)
+    rows: text("rows").notNull().default("[]"),
+    issues: text("issues").notNull().default("[]"),
+    summary: text("summary").notNull().default("{}"),
+    result: text("result"),
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id, {
+      onDelete: "set null",
+    }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    validatedAt: timestamp("validated_at"),
+    committedAt: timestamp("committed_at"),
+  },
+  (table) => ({
+    companyKindIdx: index("idx_import_jobs_company").on(table.companyId, table.kind),
+  })
+);
+export type ImportJob = typeof importJobs.$inferSelect;
 
 // ===========================
 // AI Conversations (Chat History)

@@ -1,0 +1,161 @@
+/**
+ * W5-B (R19-05): TIER_FEATURES, the central gate table and the Pricing page
+ * matrix agree; import mappers parse the four export layouts' money and dates.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../server/services/stripe.service", () => ({ isStripeConfigured: () => false }));
+
+import {
+  PLAN_FEATURE_RULES,
+  USAGE_LIMIT_RULES,
+  centrallyGatedFeatures,
+  getTierFeatures,
+  matchGateRule,
+  usagePeriod,
+} from "../../server/middleware/featureGate";
+import {
+  mapAccountType,
+  moneyToFils,
+  parseImportCsv,
+  parseImportDate,
+  splitCodeAndName,
+} from "../../server/services/migration-import/mappers";
+
+const TIERS = ["free", "starter", "professional", "enterprise"] as const;
+
+function pricingGates(): Array<{ gate: string; tiers: Record<string, boolean> }> {
+  const src = fs.readFileSync(path.join(__dirname, "../../client/src/pages/Pricing.tsx"), "utf8");
+  const out: Array<{ gate: string; tiers: Record<string, boolean> }> = [];
+  const rx =
+    /gate:\s*"([a-zA-Z]+)",\s*free:\s*(true|false),\s*starter:\s*(true|false),\s*professional:\s*(true|false),\s*enterprise:\s*(true|false)/g;
+  for (const m of src.matchAll(rx)) {
+    out.push({
+      gate: m[1],
+      tiers: {
+        free: m[2] === "true",
+        starter: m[3] === "true",
+        professional: m[4] === "true",
+        enterprise: m[5] === "true",
+      },
+    });
+  }
+  return out;
+}
+
+describe("W5-B plan matrix", () => {
+  it("[R19-05] every centrally gated feature is on the Pricing page with the same tiers as TIER_FEATURES", () => {
+    const gates = pricingGates();
+    const onPage = new Set(gates.map((g) => g.gate));
+    for (const f of [
+      "payroll",
+      "fixedAssets",
+      "bulkOps",
+      "recurringInvoices",
+      "multiCurrency",
+      "invoicePayment",
+      "webhooks",
+      "apiAccess",
+    ]) {
+      expect(centrallyGatedFeatures(), f).toContain(f);
+      expect(onPage, f).toContain(f);
+    }
+    for (const g of gates) {
+      for (const tier of TIERS) {
+        expect(`${g.gate}@${tier}=${g.tiers[tier]}`).toBe(
+          `${g.gate}@${tier}=${!!getTierFeatures(tier)[g.gate]}`
+        );
+      }
+    }
+  });
+
+  it("[R19-05] the gate table maps routes to features (webhook provider callbacks never match)", () => {
+    const f = (m: string, p: string, body?: unknown) =>
+      matchGateRule(PLAN_FEATURE_RULES, m, p, { body } as never)?.feature ?? null;
+    expect(f("GET", "/api/companies/c1/payroll-runs")).toBe("payroll");
+    expect(f("POST", "/api/payroll-runs/x/approve")).toBe("payroll");
+    expect(f("GET", "/api/companies/c1/fixed-assets")).toBe("fixedAssets");
+    expect(f("POST", "/api/companies/c1/invoices", { currency: "USD" })).toBe("multiCurrency");
+    expect(f("POST", "/api/companies/c1/invoices", { currency: "AED" })).toBeNull();
+    expect(f("POST", "/api/webhooks/stripe")).toBeNull();
+    expect(f("POST", "/api/webhooks/invoice-payments/stripe")).toBeNull();
+    expect(f("POST", "/api/webhooks/0b8f7f7a-2f6e-4d7a-9a83-2d4f3c1b1a11/test")).toBe("webhooks");
+    expect(f("GET", "/api/companies/c1/api-keys")).toBe("apiAccess");
+  });
+
+  it("[R19-04] metered creates and the UAE usage month", () => {
+    const m = (meth: string, p: string) =>
+      matchGateRule(USAGE_LIMIT_RULES, meth, p)?.metric ?? null;
+    expect(m("POST", "/api/companies/c1/invoices")).toBe("invoices");
+    expect(m("GET", "/api/companies/c1/invoices")).toBeNull();
+    expect(m("POST", "/api/companies/c1/invoices/x/payments")).toBeNull();
+    expect(m("POST", "/api/companies/c1/receipts")).toBe("receipts");
+    expect(m("POST", "/api/ai/categorize")).toBe("ai_calls");
+    expect(m("POST", "/api/companies/c1/team/invitations")).toBe("team_members");
+    // 2026-01-31 21:00 UTC is already February in Dubai.
+    expect(usagePeriod(new Date("2026-01-31T21:00:00Z"))).toBe("2026-02");
+  });
+});
+
+describe("W5-B import mappers", () => {
+  it("[R19-13] money and dates in each system's export style", () => {
+    expect(moneyToFils("1,234.50")).toBe(123450);
+    expect(moneyToFils("(1,234.50)")).toBe(-123450);
+    expect(moneyToFils("AED 10")).toBe(1000);
+    expect(moneyToFils("1.005")).toBeNull();
+    expect(moneyToFils("")).toBeNull();
+    expect(parseImportDate("15/11/2025", "xero")).toBe("2025-11-15");
+    expect(parseImportDate("12/01/2025", "quickbooks")).toBe("2025-12-01");
+    expect(parseImportDate("31 Dec 2025", "zoho")).toBe("2025-12-31");
+    expect(parseImportDate("2025-12-31", "wafeq")).toBe("2025-12-31");
+    expect(parseImportDate("31/02/2025", "xero")).toBeNull();
+  });
+
+  it("[R19-13] account types and codes from Xero / QuickBooks / Zoho / Wafeq", () => {
+    expect(mapAccountType("Accounts receivable (A/R)")).toEqual({
+      type: "asset",
+      subType: "receivable",
+    });
+    expect(mapAccountType("Current Asset", "Accounts Receivable")).toEqual({
+      type: "asset",
+      subType: "receivable",
+    });
+    expect(mapAccountType("Other Current Liability")).toEqual({
+      type: "liability",
+      subType: "current_liability",
+    });
+    expect(mapAccountType("Cost of Goods Sold")).toEqual({
+      type: "expense",
+      subType: "cost_of_sales",
+    });
+    expect(mapAccountType("Direct Costs")).toEqual({ type: "expense", subType: "cost_of_sales" });
+    expect(mapAccountType("Revenue")).toEqual({ type: "income", subType: "operating_revenue" });
+    expect(mapAccountType("Equity")).toEqual({ type: "equity", subType: "owner_equity" });
+    expect(mapAccountType("nonsense")).toBeNull();
+    expect(splitCodeAndName("Bank Accounts (1020)", undefined)).toEqual({
+      code: "1020",
+      name: "Bank Accounts",
+    });
+    expect(splitCodeAndName("1020 Bank Accounts", undefined)).toEqual({
+      code: "1020",
+      name: "Bank Accounts",
+    });
+  });
+
+  it("[R19-13] header matching ignores *, case and spacing and finds the header row under report titles", () => {
+    const p = parseImportCsv(
+      "trial_balance",
+      "Trial Balance\nCo\nAccount,Debit - Year to date,Credit - Year to date\nBank (1020),5,\n"
+    );
+    expect(p.mapping).toMatchObject({
+      code: "Account",
+      debit: "Debit - Year to date",
+      credit: "Credit - Year to date",
+    });
+    expect(p.records).toHaveLength(1);
+    const c = parseImportCsv("customers", "*ContactName,EmailAddress\nA,a@x.example\n");
+    expect(c.mapping).toMatchObject({ name: "*ContactName", email: "EmailAddress" });
+  });
+});

@@ -5,6 +5,7 @@ import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/em
 import { isOpenBankingConfigured } from "../services/open-banking.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
+import { connectorStatuses } from "../services/connectors/oauth";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -115,18 +116,38 @@ export function registerIntegrationStatusRoutes(app: Express) {
           key: "webhooks",
           name: "Outbound webhooks",
           configured: true,
-          detail: "per-endpoint secrets, no global config needed",
+          detail: "signed (HMAC-SHA256), queued, retried with backoff; per-endpoint secrets",
           requiredEnv: [],
-          unlocks: "Event delivery to customer systems (configure in Developer Settings)",
+          unlocks: "Domain-event delivery to customer systems (configure in Developer Settings)",
         },
         {
           key: "apiKeys",
-          name: "Public API keys",
+          name: "Public API (/api/v1)",
           configured: true,
-          detail: "no global config needed",
+          detail: "scoped, rate-limited keys; OpenAPI at /api/v1/openapi.json",
           requiredEnv: [],
           unlocks: "Scoped API access (manage in Developer Settings)",
         },
+        {
+          key: "ecommerce",
+          name: "Shopify and Stripe payouts import",
+          configured: true,
+          detail:
+            "per-merchant credentials verified on connect; needs outbound HTTPS to the platform",
+          requiredEnv: [],
+          unlocks: "Orders -> draft invoices, refunds -> draft credit notes, Stripe balance lines",
+        },
+        ...connectorStatuses().map((c) => ({
+          key: `connector_${c.id}`,
+          name: `${c.label.en} connector`,
+          configured: c.status !== "requires_external",
+          detail:
+            c.status === "requires_external"
+              ? "requires app registration"
+              : "OAuth configured (sync via CSV import)",
+          requiredEnv: c.envVars,
+          unlocks: c.purpose.en,
+        })),
       ];
       res.json({ integrations });
     })

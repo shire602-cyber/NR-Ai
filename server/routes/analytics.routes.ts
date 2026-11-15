@@ -1,14 +1,24 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
-import { adminMiddleware, authMiddleware } from "../middleware/auth";
+import { adminMiddleware, authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { zText, zUuid } from "../../shared/validators/primitives";
 import { z } from "zod";
-import type { EcommerceIntegration } from "../../shared/schema";
-import { pool } from "../db";
+import { and, desc, eq } from "drizzle-orm";
+import { db, pool } from "../db";
+import { ecommerceIntegrations, ecommerceTransactions } from "../../shared/schema";
+import { requirePermission } from "../middleware/companyRolePolicy";
+import { connectIntegration, syncIntegration } from "../services/ecommerce";
+import {
+  companyQuery,
+  connectBody,
+  integrationFor,
+  maskIntegrationSecrets,
+  toggleBody,
+} from "../services/ecommerce/routes";
 import {
   addDays,
   agedReceivables,
@@ -25,21 +35,6 @@ import {
   findApprovedPlan,
   varianceFor,
 } from "../services/budget-variance.service";
-
-/**
- * Credentials never leave the server once stored — responses carry presence
- * flags only. The client write-only form never needs them back.
- */
-function maskIntegrationSecrets(integration: EcommerceIntegration) {
-  const { apiKey, accessToken, refreshToken, webhookSecret, ...rest } = integration;
-  return {
-    ...rest,
-    hasApiKey: !!apiKey,
-    hasAccessToken: !!accessToken,
-    hasRefreshToken: !!refreshToken,
-    hasWebhookSecret: !!webhookSecret,
-  };
-}
 
 const analyticsEventBody = z.object({
   eventType: z.enum(["page_view", "feature_use", "error", "conversion", "custom"]),
@@ -312,146 +307,8 @@ export function registerAnalyticsRoutes(app: Express) {
     })
   );
 
-  // =====================================
-  // E-Commerce Integration Routes
-  // =====================================
-
-  // Get e-commerce integrations
-  app.get(
-    "/api/integrations/ecommerce",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.query;
-
-      if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
-      }
-
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const integrations = await storage.getEcommerceIntegrations(companyId as string);
-      res.json((integrations || []).map(maskIntegrationSecrets));
-    })
-  );
-
-  // Get e-commerce transactions (MUST be before :integrationId route)
-  app.get(
-    "/api/integrations/ecommerce/transactions",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.query;
-
-      if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
-      }
-
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const transactions = await storage.getEcommerceTransactions(companyId as string);
-      res.json(transactions || []);
-    })
-  );
-
-  // Connect e-commerce integration
-  app.post(
-    "/api/integrations/ecommerce/connect",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId, platform, apiKey, shopDomain, accessToken } = req.body;
-
-      if (!companyId || !platform) {
-        return res.status(400).json({ message: "Company ID and platform required" });
-      }
-
-      // Verify access
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const integration = await storage.createEcommerceIntegration({
-        companyId,
-        platform,
-        isActive: true,
-        apiKey: apiKey || null,
-        shopDomain: shopDomain || null,
-        accessToken: accessToken || null,
-        syncStatus: "never",
-      });
-
-      res.json(maskIntegrationSecrets(integration));
-    })
-  );
-
-  // Sync e-commerce integration
-  app.post(
-    "/api/integrations/ecommerce/:integrationId/sync",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { integrationId } = req.params;
-      const userId = (req as any).user?.id;
-
-      // Verify integration exists and user has access
-      const integration = await storage.getEcommerceIntegrationById(integrationId);
-      if (!integration) {
-        return res.status(404).json({ message: "Integration not found" });
-      }
-
-      const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Update sync status
-      await storage.updateEcommerceIntegration(integrationId, {
-        syncStatus: "syncing",
-        lastSyncAt: new Date(),
-      });
-
-      // In a real implementation, this would fetch data from the platform
-      // For now, we'll simulate a successful sync
-      setTimeout(async () => {
-        await storage.updateEcommerceIntegration(integrationId, {
-          syncStatus: "success",
-        });
-      }, 2000);
-
-      res.json({ message: "Sync started" });
-    })
-  );
-
-  // Toggle e-commerce integration
-  app.patch(
-    "/api/integrations/ecommerce/:integrationId/toggle",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { integrationId } = req.params;
-      const userId = (req as any).user?.id;
-      const { isActive } = req.body;
-
-      const integration = await storage.getEcommerceIntegrationById(integrationId);
-      if (!integration) {
-        return res.status(404).json({ message: "Integration not found" });
-      }
-
-      const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.updateEcommerceIntegration(integrationId, { isActive });
-      res.json({ message: "Integration updated" });
-    })
-  );
+  // E-Commerce integrations: real adapters in server/services/ecommerce (W5-B, R19-03).
+  registerEcommerceRoutes(app);
 
   // =====================================
   // ANALYTICS
@@ -667,6 +524,117 @@ export function registerAnalyticsRoutes(app: Express) {
           receiptCount: r.receipt_count,
         }))
       );
+    })
+  );
+}
+
+/** E-commerce integrations: real adapters in server/services/ecommerce (W5-B, R19-03, R19-08). */
+function registerEcommerceRoutes(app: Express) {
+  app.get(
+    "/api/integrations/ecommerce",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = companyQuery.parse(req.query);
+      const rows = await db
+        .select()
+        .from(ecommerceIntegrations)
+        .where(eq(ecommerceIntegrations.companyId, companyId))
+        .orderBy(desc(ecommerceIntegrations.createdAt));
+      res.json(rows.map(maskIntegrationSecrets));
+    })
+  );
+
+  // MUST be before :integrationId routes
+  app.get(
+    "/api/integrations/ecommerce/transactions",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = companyQuery.parse(req.query);
+      const rows = await db
+        .select()
+        .from(ecommerceTransactions)
+        .where(eq(ecommerceTransactions.companyId, companyId))
+        .orderBy(desc(ecommerceTransactions.transactionDate))
+        .limit(500);
+      res.json(rows);
+    })
+  );
+
+  app.post(
+    "/api/integrations/ecommerce/connect",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("settings.company"),
+    // companyId names the tenant (checked by requirePermission above), not a client-owned field.
+    strictBody(connectBody, { allowServerOwned: ["companyId"] }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const body = parsedBody<z.output<typeof connectBody>>(req);
+      const integration = await connectIntegration(body.companyId, body);
+      res.status(201).json(maskIntegrationSecrets(integration));
+    })
+  );
+
+  app.post(
+    "/api/integrations/ecommerce/:integrationId/sync",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const integration = await integrationFor(req, "settings.company");
+      const result = await syncIntegration(integration, req.user!.id);
+      res.json(result);
+    })
+  );
+
+  app.patch(
+    "/api/integrations/ecommerce/:integrationId/toggle",
+    authMiddleware,
+    requireCustomer,
+    strictBody(toggleBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const integration = await integrationFor(req, "settings.company");
+      const { isActive } = parsedBody<z.output<typeof toggleBody>>(req);
+      if (isActive && integration.connectionStatus !== "connected") {
+        throw new DomainError(
+          "INTEGRATION_NOT_CONNECTED",
+          409,
+          undefined,
+          "Reconnect with valid credentials before enabling this integration."
+        );
+      }
+      await db
+        .update(ecommerceIntegrations)
+        .set({ isActive, updatedAt: new Date() })
+        .where(
+          and(
+            eq(ecommerceIntegrations.id, integration.id),
+            eq(ecommerceIntegrations.companyId, integration.companyId)
+          )
+        );
+      res.json({ message: "Integration updated" });
+    })
+  );
+
+  // Disconnect: credentials are destroyed; imported documents stay.
+  app.delete(
+    "/api/integrations/ecommerce/:integrationId",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const integration = await integrationFor(req, "settings.company");
+      await db
+        .update(ecommerceIntegrations)
+        .set({
+          isActive: false,
+          accessToken: null,
+          apiKey: null,
+          refreshToken: null,
+          connectionStatus: "not_connected",
+          updatedAt: new Date(),
+        })
+        .where(eq(ecommerceIntegrations.id, integration.id));
+      res.json({ message: "Integration disconnected" });
     })
   );
 }

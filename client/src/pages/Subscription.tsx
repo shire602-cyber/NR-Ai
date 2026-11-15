@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useI18n } from "@/lib/i18n";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
@@ -325,7 +326,7 @@ export default function Subscription() {
               limit={usage?.users?.limit ?? currentPlan.limits.users}
               icon={Users}
             />
-            {usage?.storage && (
+            {usage?.storage && usage.storage.used != null && (
               <UsageMeter
                 label="Storage"
                 used={usage.storage.used}
@@ -336,6 +337,8 @@ export default function Subscription() {
           </CardContent>
         </Card>
       </div>
+
+      {companyId && <BillingDocuments companyId={companyId} />}
 
       {/* Billing Cycle Toggle */}
       <div className="flex items-center justify-center gap-4 pt-4">
@@ -526,5 +529,70 @@ export default function Subscription() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ─── W5-B (R19-16): VAT-inclusive subscription invoices and receipts ──────────
+
+const DOC_COPY = {
+  en: {
+    title: "Billing documents",
+    help: "Tax invoices and receipts for your subscription. Prices include 5% UAE VAT.",
+    none: "No paid invoices yet.",
+    invoice: "Tax invoice",
+    receipt: "Receipt",
+    vat: "VAT",
+    total: "Total",
+  },
+  ar: {
+    title: "مستندات الفوترة",
+    help: "الفواتير الضريبية والإيصالات لاشتراكك. الأسعار تشمل ضريبة القيمة المضافة 5%.",
+    none: "لا توجد فواتير مدفوعة بعد.",
+    invoice: "فاتورة ضريبية",
+    receipt: "إيصال",
+    vat: "الضريبة",
+    total: "الإجمالي",
+  },
+};
+
+function BillingDocuments({ companyId }: { companyId: string }) {
+  const { locale } = useI18n();
+  const c = DOC_COPY[locale === "ar" ? "ar" : "en"];
+  const { data } = useQuery<
+    Array<{
+      id: string;
+      kind: "invoice" | "receipt";
+      number: string;
+      vatFils: number;
+      totalFils: number;
+      currency: string;
+      issuedAt: string;
+    }>
+  >({ queryKey: ["/api/companies", companyId, "billing", "documents"], retry: false });
+  const money = (fils: number, cur: string) =>
+    `${cur} ${(Number(fils) / 100).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE", { minimumFractionDigits: 2 })}`;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{c.title}</CardTitle>
+        <CardDescription>{c.help}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {!data?.length ? (
+          <p className="text-muted-foreground">{c.none}</p>
+        ) : (
+          data.map((d) => (
+            <div key={d.id} className="flex flex-wrap justify-between gap-2 border-b pb-2">
+              <span>
+                {d.kind === "invoice" ? c.invoice : c.receipt} · {d.number}
+              </span>
+              <span className="text-muted-foreground">
+                {c.vat} {money(d.vatFils, d.currency)} · {c.total} {money(d.totalFils, d.currency)}
+              </span>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }

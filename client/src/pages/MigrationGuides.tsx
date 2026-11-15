@@ -26,8 +26,8 @@ const migrationPaths = [
     title: "Move from Wafeq",
     steps: [
       "Export customers, suppliers, invoices, bills, chart of accounts, and VAT reports from Wafeq.",
-      "Import contacts through the customer contacts template.",
-      "Set opening balances in the chart of accounts before posting new transactions.",
+      "Load the Wafeq chart of accounts, trial balance, contacts and items CSVs in the Import data wizard (preview, validate, commit).",
+      "Post opening balances as one balanced opening entry on your cut-over date, with open invoices and bills tied to A/R and A/P.",
       "Import current-period bank statements and reconcile from the migration date forward.",
       "Keep historical Wafeq exports in Document Vault for audit reference.",
     ],
@@ -36,6 +36,7 @@ const migrationPaths = [
     title: "Move from Zoho Books",
     steps: [
       "Export customers, vendors, items, invoices, bills, credit notes, and account balances from Zoho.",
+      "Import the Zoho trial balance, contacts, vendors, items, open invoices and open bills through the Import data wizard.",
       "Map Zoho tax codes to UAE VAT treatment before importing live transactions.",
       "Use Muhasib.ai for future-period VAT workflows; keep prior Zoho filings as archived support.",
       "Recreate recurring invoices and payment reminders after the opening balance date.",
@@ -50,6 +51,18 @@ const migrationPaths = [
       "Create the company and review the default UAE chart of accounts.",
       "Import contacts and start new invoices/receipts from the go-live date.",
       "Attach prior spreadsheets in Document Vault for continuity.",
+    ],
+  },
+];
+
+const importedSystems = [
+  {
+    title: "Move from Xero or QuickBooks Online",
+    steps: [
+      "Export the chart of accounts, trial balance at your cut-over date, contacts, items, aged receivables and aged payables as CSV.",
+      "Open Import data after signing in and pick the source system: column layouts are mapped automatically.",
+      "Validate shows unknown accounts, unbalanced totals and control-account differences before anything is posted.",
+      "Commit posts one balanced opening entry and creates open invoices and bills so A/R and A/P tie to the control accounts.",
     ],
   },
 ];
@@ -104,8 +117,8 @@ export default function MigrationGuides() {
         </section>
 
         <section className="container mx-auto max-w-6xl px-4 py-14">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {migrationPaths.map((path) => (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {[...importedSystems, ...migrationPaths].map((path) => (
               <Card key={path.title}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
@@ -163,8 +176,10 @@ export default function MigrationGuides() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm leading-6 text-muted-foreground">
-                Customer/contact imports support .xlsx and CSV. Bank reconciliation supports CSV
-                formats from Emirates NBD, ADCB, FAB, Mashreq, and generic statement layouts.
+                The Import data wizard loads CSV exports from Xero, QuickBooks Online, Zoho Books and
+                Wafeq: chart of accounts, opening trial balance, customers, vendors, items, open
+                invoices and open bills. Bank reconciliation supports CSV formats from Emirates NBD,
+                ADCB, FAB, Mashreq, and generic statement layouts.
                 Prior-system report packs from mazeed, Wafeq, Zoho Books, or Excel should be stored
                 in Document Vault as read-only support files.
               </CardContent>

@@ -131,6 +131,7 @@ const TaskCenter = lazyWithReload(() => import("@/pages/TaskCenter"));
 const UAENewsFeed = lazyWithReload(() => import("@/pages/UAENewsFeed"));
 const History = lazyWithReload(() => import("@/pages/History"));
 const BackupRestore = lazyWithReload(() => import("@/pages/BackupRestore"));
+const ImportWizard = lazyWithReload(() => import("@/pages/ImportWizard"));
 const CashFlowForecast = lazyWithReload(() => import("@/pages/CashFlowForecast"));
 const AnomalyDetection = lazyWithReload(() => import("@/pages/AnomalyDetection"));
 const AutoReconcile = lazyWithReload(() => import("@/pages/AutoReconcile"));
@@ -685,6 +686,7 @@ function Router() {
             <Route path="/team" component={TeamManagement} />
             <Route path="/history" component={History} />
             <Route path="/backup-restore" component={BackupRestore} />
+            <Route path="/import" component={ImportWizard} />
             <Route path="/advanced-reports">
               <RedirectTo to="/analytics?view=reports" />
             </Route>
