@@ -134,6 +134,8 @@ import type {
   InsertNewsItem,
   Invitation,
   InsertInvitation,
+  CompanyInvitation,
+  InsertCompanyInvitation,
   ActivityLog,
   InsertActivityLog,
   ClientNote,
@@ -243,6 +245,7 @@ import {
   messages,
   newsItems,
   invitations,
+  companyInvitations,
   activityLogs,
   clientNotes,
   engagements,
@@ -276,6 +279,14 @@ import { decryptSecret, encryptSecret } from "./services/secret-vault";
 import { createJournalEntryCompat, legacyLinesToInput } from "./ledger/legacy";
 import { previewEntryNumber } from "./ledger/numbering";
 import { DomainError } from "./errors";
+import { scopedDelete, scopedGet, scopedUpdate } from "./tenancy";
+
+/** R01-05: canonical form of an email address (trimmed, lower-cased). */
+export function normalizeEmail(email: string): string {
+  return String(email ?? "")
+    .trim()
+    .toLowerCase();
+}
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
@@ -772,8 +783,13 @@ export interface IStorage {
   ): Promise<CorporateTaxReturn>;
 
   // Team Management
-  updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
-  deleteCompanyUser(id: string): Promise<void>;
+  updateCompanyUser(
+    companyId: string,
+    id: string,
+    data: Pick<Partial<InsertCompanyUser>, "role">
+  ): Promise<CompanyUser | undefined>;
+  deleteCompanyUser(companyId: string, id: string): Promise<boolean>;
+  getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined>;
   getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
 
   // Admin Stats
@@ -1099,8 +1115,17 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
+  // R01-05: emails are stored lower-cased and compared case-insensitively
+  // (0092 adds a unique index on lower(email)).
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    if (typeof email !== "string" || !email.trim()) return undefined;
+    const normalized = normalizeEmail(email);
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${normalized}`)
+      .orderBy(users.createdAt)
+      .limit(1);
     return user || undefined;
   }
 
@@ -1109,6 +1134,7 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values({
         ...insertUser,
+        email: normalizeEmail(insertUser.email),
         passwordHash: (insertUser as any).passwordHash || "",
       })
       .returning();
@@ -1116,7 +1142,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
-    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+    await db
+      .update(users)
+      .set({ passwordHash, passwordChangedAt: new Date() })
+      .where(eq(users.id, userId));
   }
 
   // Password reset tokens
@@ -4076,17 +4105,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Team Management
-  async updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser> {
-    const [companyUser] = await db
-      .update(companyUsers)
-      .set(data)
-      .where(eq(companyUsers.id, id))
-      .returning();
-    return companyUser;
+  // R01-01: membership writes are always scoped by (membership id, company id);
+  // a membership of another company is "not found".
+  async updateCompanyUser(
+    companyId: string,
+    id: string,
+    data: Pick<Partial<InsertCompanyUser>, "role">
+  ): Promise<CompanyUser | undefined> {
+    return scopedUpdate(companyUsers, companyId, id, data);
   }
 
-  async deleteCompanyUser(id: string): Promise<void> {
-    await db.delete(companyUsers).where(eq(companyUsers.id, id));
+  async deleteCompanyUser(companyId: string, id: string): Promise<boolean> {
+    return scopedDelete(companyUsers, companyId, id);
+  }
+
+  async getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined> {
+    return scopedGet(companyUsers, companyId, id);
   }
 
   async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
@@ -4249,7 +4283,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInvitationByEmail(email: string): Promise<Invitation | undefined> {
-    const [invitation] = await db.select().from(invitations).where(eq(invitations.email, email));
+    const [invitation] = await db
+      .select()
+      .from(invitations)
+      .where(sql`lower(${invitations.email}) = ${normalizeEmail(email)}`);
     return invitation || undefined;
   }
 
@@ -4269,6 +4306,78 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInvitation(id: string): Promise<void> {
     await db.delete(invitations).where(eq(invitations.id, id));
+  }
+
+  // Company team invitations (W2-C, R01-04/R01-15). Every lookup by id is
+  // scoped to the company; lookups by token use the SHA-256 digest only.
+  async listCompanyInvitations(companyId: string): Promise<CompanyInvitation[]> {
+    return db
+      .select()
+      .from(companyInvitations)
+      .where(eq(companyInvitations.companyId, companyId))
+      .orderBy(desc(companyInvitations.createdAt));
+  }
+
+  async getCompanyInvitation(
+    companyId: string,
+    id: string
+  ): Promise<CompanyInvitation | undefined> {
+    return scopedGet(companyInvitations, companyId, id);
+  }
+
+  async getPendingCompanyInvitationByEmail(
+    companyId: string,
+    email: string
+  ): Promise<CompanyInvitation | undefined> {
+    const [row] = await db
+      .select()
+      .from(companyInvitations)
+      .where(
+        and(
+          eq(companyInvitations.companyId, companyId),
+          eq(companyInvitations.status, "pending"),
+          sql`lower(${companyInvitations.email}) = ${normalizeEmail(email)}`
+        )
+      )
+      .limit(1);
+    return row;
+  }
+
+  async getCompanyInvitationByTokenHash(tokenHash: string): Promise<CompanyInvitation | undefined> {
+    const [row] = await db
+      .select()
+      .from(companyInvitations)
+      .where(eq(companyInvitations.tokenHash, tokenHash))
+      .limit(1);
+    return row;
+  }
+
+  async createCompanyInvitation(input: InsertCompanyInvitation): Promise<CompanyInvitation> {
+    const [row] = await db
+      .insert(companyInvitations)
+      .values({ ...input, email: normalizeEmail(input.email) })
+      .returning();
+    return row;
+  }
+
+  async updateCompanyInvitation(
+    companyId: string,
+    id: string,
+    data: Partial<
+      Pick<
+        CompanyInvitation,
+        | "status"
+        | "tokenHash"
+        | "expiresAt"
+        | "acceptedAt"
+        | "acceptedUserId"
+        | "revokedAt"
+        | "lastSentAt"
+        | "sendCount"
+      >
+    >
+  ): Promise<CompanyInvitation | undefined> {
+    return scopedUpdate(companyInvitations, companyId, id, data);
   }
 
   // Activity Logs (Admin)
@@ -4354,7 +4463,8 @@ export class DatabaseStorage implements IStorage {
     id: string,
     data: { name?: string; email?: string; isAdmin?: boolean }
   ): Promise<User> {
-    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    const patch = data.email !== undefined ? { ...data, email: normalizeEmail(data.email) } : data;
+    const [user] = await db.update(users).set(patch).where(eq(users.id, id)).returning();
     return user;
   }
 

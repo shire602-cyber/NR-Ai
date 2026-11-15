@@ -1,10 +1,53 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
 import { establishAuthenticatedSession } from "@/lib/authSession";
+import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+
+interface SsoStatus {
+  providers: Array<{ id: string; label: string; configured: boolean }>;
+  saml: { status: string; implemented: boolean };
+}
+
+/** R01-15: honest SSO availability, from GET /api/auth/sso/status. */
+const SSO_COPY = {
+  samlUnavailable: {
+    en: "Enterprise SSO (SAML) is not available yet: it needs your identity provider's metadata. Contact support to set it up.",
+    ar: "الدخول الموحد للمؤسسات (SAML) غير متاح بعد: يتطلب بيانات مزود الهوية لديكم. تواصل مع الدعم لإعداده.",
+  },
+  noSocial: {
+    en: "Google and Microsoft sign-in are not configured on this server.",
+    ar: "تسجيل الدخول عبر Google وMicrosoft غير مُعد على هذا الخادم.",
+  },
+};
+
+function SsoStatusNote() {
+  const { locale } = useTranslation();
+  const [status, setStatus] = useState<SsoStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(apiUrl("/api/auth/sso/status"), { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => alive && setStatus(body))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!status) return null;
+  const pick = (b: { en: string; ar: string }) => (locale === "ar" ? b.ar : b.en);
+  const anySocial = status.providers.some((p) => p.configured);
+  return (
+    <div className="mt-4 space-y-1 text-xs text-muted-foreground" data-testid="sso-status">
+      {!anySocial && <p>{pick(SSO_COPY.noSocial)}</p>}
+      {!status.saml.implemented && <p>{pick(SSO_COPY.samlUnavailable)}</p>}
+    </div>
+  );
+}
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);
@@ -79,7 +122,10 @@ export default function Login() {
       }
       subline="Sign back in to a real-time portrait of your revenue, expenses, and filings — every number where you left it."
     >
-      <LoginForm onSuccess={handleSuccess} />
+      <div className="w-full max-w-md">
+        <LoginForm onSuccess={handleSuccess} />
+        <SsoStatusNote />
+      </div>
     </AuthLayout>
   );
 }

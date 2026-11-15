@@ -10,10 +10,12 @@ import { Router } from "express";
 import type { Express } from "express";
 
 import { storage } from "../storage";
-import { authMiddleware, adminMiddleware } from "../middleware/auth";
+import { authMiddleware, adminMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
-import { pool } from "../db";
+import { getPoolStats, pingDb, pool } from "../db";
+import { monitoringConfigured } from "../services/monitoring";
+import { ssoStatus } from "./auth.routes";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import * as schema from "../../shared/schema";
 
@@ -341,6 +343,57 @@ export function registerAdminHealthRoutes(app: Express): void {
     })
   );
 
+  // =========================================
+  // GET /api/admin/auth/sso-status (R01-15)
+  // OAuth provider configuration and the SAML capability (requires_external).
+  // =========================================
+  router.get(
+    "/admin/auth/sso-status",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(ssoStatus());
+    })
+  );
+
   // Mount under /api
   app.use("/api", router);
+}
+
+/**
+ * GET /health (R17-13). Anonymous callers (load balancers, uptime checks)
+ * get only `{ status }`; node version, pid, memory and pool internals are
+ * returned to authenticated platform admins only.
+ */
+export function createHealthHandler(environment: string) {
+  return async (req: Request, res: Response): Promise<void> => {
+    const ping = await pingDb();
+    const status = ping.ok ? "ok" : "degraded";
+    const code = ping.ok ? 200 : 503;
+    const viewer = await optionalAuthUser(req).catch(() => null);
+    if (!viewer?.isAdmin) {
+      res.status(code).json({ status });
+      return;
+    }
+    const mem = process.memoryUsage();
+    res.status(code).json({
+      status,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment,
+      version: process.env.APP_VERSION || "1.0.0",
+      node: process.version,
+      pid: process.pid,
+      memory: {
+        rssMB: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      checks: {
+        database: ping.ok ? "ok" : "error",
+        databaseLatencyMs: ping.latencyMs,
+        databaseError: ping.error,
+        pool: getPoolStats(),
+        errorTracking: monitoringConfigured() ? "configured" : "logs-only",
+      },
+    });
+  };
 }

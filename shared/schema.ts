@@ -90,6 +90,12 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   emailVerified: boolean("email_verified").notNull().default(false),
   lastLoginAt: timestamp("last_login_at"),
+  // W2-C (0092): bumped on password reset/change and "log out all devices".
+  // Access and refresh JWTs carry the version they were issued under (`tv`)
+  // and are refused once it no longer matches. Emails are stored lower-cased;
+  // 0092 adds a unique index on lower(email).
+  tokenVersion: integer("token_version").notNull().default(0),
+  passwordChangedAt: timestamp("password_changed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -99,6 +105,8 @@ export const insertUserSchema = createInsertSchema(users)
     passwordHash: true,
     createdAt: true,
     emailVerified: true,
+    tokenVersion: true,
+    passwordChangedAt: true,
   })
   .extend({
     password: z.string().min(8, "Password must be at least 8 characters"),
@@ -421,7 +429,8 @@ export const companyUsers = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    role: text("role").notNull().default("owner"), // owner | accountant | cfo | employee
+    // shared/permissions.ts COMPANY_ROLES; 0092 adds company_users_role_check.
+    role: text("role").notNull().default("owner"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -3944,6 +3953,44 @@ export const insertInvitationSchema = createInsertSchema(invitations).omit({
 
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 export type Invitation = typeof invitations.$inferSelect;
+
+// ===========================
+// Company team invitations (W2-C, 0092)
+// ===========================
+// An owner/admin invites a person into ONE company with a company role. Only
+// the SHA-256 of the token is stored; the raw token lives in the emailed link
+// (or is shown to the inviter when no email provider is configured).
+// Accepting attaches an existing account or creates one with the invitee's
+// own password, so no placeholder users are created.
+export const companyInvitations = pgTable(
+  "company_invitations",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").notNull().default("employee"),
+    tokenHash: text("token_hash").notNull().unique(),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("pending"), // pending | accepted | revoked | expired
+    expiresAt: timestamp("expires_at").notNull(),
+    acceptedAt: timestamp("accepted_at"),
+    acceptedUserId: uuid("accepted_user_id").references(() => users.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at"),
+    lastSentAt: timestamp("last_sent_at"),
+    sendCount: integer("send_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyStatusIdx: index("idx_company_invitations_company").on(table.companyId, table.status),
+  })
+);
+
+export type CompanyInvitation = typeof companyInvitations.$inferSelect;
+export type InsertCompanyInvitation = typeof companyInvitations.$inferInsert;
 
 // ===========================
 // Activity Logs (Audit Trail)

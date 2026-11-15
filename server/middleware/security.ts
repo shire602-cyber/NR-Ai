@@ -3,7 +3,7 @@ import cors from "cors";
 import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
-import { buildLimiter, limiterProfiles } from "./rateLimit";
+import { buildLimiter, clientIp, limiterProfiles } from "./rateLimit";
 import {
   cspNonce,
   buildCspDirectives,
@@ -16,13 +16,68 @@ import {
  * brute-force. Only these consume the strict auth rate-limit budget.
  * `path` is relative to the /api/auth mount (e.g. '/login').
  */
-const CREDENTIAL_AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+const CREDENTIAL_AUTH_PATHS = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/change-password",
+];
 
 export function isCredentialAuthPath(path: string): boolean {
   return CREDENTIAL_AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
 const log = createLogger("security");
+
+export type TrustProxySetting = number | false | string;
+
+/**
+ * R01-09: how many reverse-proxy hops to trust for req.ip.
+ *
+ * TRUST_PROXY_HOPS = "1" (Railway/Render: one load balancer), "2" (CDN + LB),
+ * "0"/"false" (directly reachable, ignore X-Forwarded-For entirely), or an
+ * Express trust list such as "loopback, 10.0.0.0/8". With N hops Express takes
+ * the N-th address from the right of X-Forwarded-For, so entries a client
+ * prepends (spoofed) never become req.ip and never create new rate-limit
+ * buckets. "true" (trust everything) is refused because it makes req.ip
+ * attacker-controlled. Unset defaults to 1, with a warning in production.
+ */
+export function parseTrustProxy(raw: string | undefined): {
+  value: TrustProxySetting;
+  warning?: string;
+} {
+  const v = (raw ?? "").trim();
+  if (!v) {
+    return {
+      value: 1,
+      warning:
+        "TRUST_PROXY_HOPS is not set; trusting one proxy hop. Set it to the number of reverse proxies in front of the app (0 if none) so X-Forwarded-For cannot be spoofed.",
+    };
+  }
+  if (/^(false|no|off)$/i.test(v)) return { value: false };
+  if (/^\d+$/.test(v)) {
+    const n = parseInt(v, 10);
+    return { value: n === 0 ? false : n };
+  }
+  if (/^true$/i.test(v)) {
+    return {
+      value: 1,
+      warning: "TRUST_PROXY_HOPS=true would trust any X-Forwarded-For value; using 1 hop instead.",
+    };
+  }
+  return { value: v };
+}
+
+export function configureTrustProxy(
+  app: Express,
+  raw: string | undefined = process.env.TRUST_PROXY_HOPS
+): TrustProxySetting {
+  const { value, warning } = parseTrustProxy(raw);
+  app.set("trust proxy", value);
+  if (warning && (isProduction() || raw)) log.warn({ trustProxy: value }, warning);
+  return value;
+}
 
 /**
  * Resolve the CORS allowlist from env: FRONTEND_URL (first-party default)
@@ -70,6 +125,9 @@ export function resolveAllowedOrigins(
  */
 export function applySecurityMiddleware(app: Express): void {
   const env = getEnv();
+
+  // ─── Trust proxy (R01-09) — before anything reads req.ip ──
+  configureTrustProxy(app);
 
   // ─── Per-request CSP nonce (must run before helmet) ───────
   app.use(cspNonce);
@@ -152,20 +210,24 @@ export function applySecurityMiddleware(app: Express): void {
 
   // ─── Rate Limiting (sliding window, configurable per route) ──
   // Each limiter has its own in-memory sliding-window store, sized via
-  // env vars (RL_*). Composite key (ip+userId) prevents NAT collisions.
+  // env vars (RL_*). Requests carrying a valid access token count against
+  // `userId:companyId`; anonymous traffic counts against the client IP
+  // (R01-10). Requests rejected with 429 are not counted (R17-06).
   // Order matters: more specific paths must be registered before /api/.
-  app.use("/api/auth/oauth/", buildLimiter(limiterProfiles.authOAuth));
-  // Brute-force guard for credential-bearing attempts ONLY. Session reads
-  // (/me, /refresh, /oauth/providers, /logout) fire on every page load, so
-  // counting them here used to exhaust the 5/min budget before the user even
-  // submitted the login form — locking the whole app behind 429s. Those
-  // routes fall through to the general /api limiter below instead.
-  // Successful attempts refund their hit, so legitimate sign-ins on a shared
-  // office IP never throttle each other; only failures accumulate.
+  app.use(
+    "/api/auth/oauth/",
+    buildLimiter({ ...limiterProfiles.authOAuth, keyGenerator: clientIp })
+  );
+  // Pre-auth brute-force tier for credential-bearing attempts ONLY, keyed by
+  // IP. Session reads and token plumbing (/me, /refresh, /oauth/providers,
+  // /logout) fire on every page load and are excluded, so several tabs
+  // refreshing cannot lock a user out. Successful attempts refund their hit;
+  // per-email progressive lockout lives in auth.routes (R01-12).
   app.use(
     "/api/auth/",
     buildLimiter({
       ...limiterProfiles.auth,
+      keyGenerator: clientIp,
       skipSuccessfulRequests: true,
       skipIf: (req) => !isCredentialAuthPath(req.path),
     })

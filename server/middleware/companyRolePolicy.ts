@@ -1,0 +1,475 @@
+/**
+ * Central company-role enforcement (R01-02, R01-14).
+ *
+ * Mounted once in server/routes.ts on /api, BEFORE every route module, so
+ * route files owned by other workstreams do not have to change. For each
+ * request it:
+ *
+ *   1. resolves the permission from POLICY_RULES (method + path; first match
+ *      wins). Unlisted company-scoped requests default to `reports.read` for
+ *      GET/HEAD/OPTIONS and `documents.write` for mutations, so a viewer is
+ *      read-only everywhere unless a rule says otherwise;
+ *   2. resolves the company: `/companies/:companyId/...`, a tenant row id in
+ *      the path (`/invoices/:id/...` → invoices.company_id, see RESOURCES),
+ *      or a `companyId` in the body/query;
+ *   3. authenticates with the same memoised check authMiddleware uses (a
+ *      request with no or a bad credential passes through and the route's
+ *      own authMiddleware answers 401);
+ *   4. loads the caller's company_users role and answers 403
+ *      PERMISSION_DENIED when the role lacks the permission, or 403
+ *      COMPANY_ACCESS_DENIED when the caller is not a member at all.
+ *
+ * Platform admins and NR firm staff (users.firm_role) are not company
+ * members in the RBAC sense; they pass through to the route's existing
+ * firm-aware checks (hasCompanyAccess / requireNraAccess).
+ *
+ * Rollout: RBAC_ENFORCE=enforce (default; also "true"/"on"), "report" (log
+ * what would be denied, deny nothing) or "off". See .env.example.
+ *
+ * Later workstreams: use `requirePermission(...)` on new routes for
+ * belt-and-braces checks and `assertDifferentActor(maker, checker)` for
+ * maker-checker approvals.
+ */
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { pool } from "../db";
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
+import { DomainError } from "../errors";
+import { authenticateRequest } from "./auth";
+import { isNraFirmRole } from "../../shared/access";
+import {
+  normalizeCompanyRole,
+  roleHasAnyPermission,
+  type CompanyRole,
+  type Permission,
+} from "../../shared/permissions";
+
+const log = createLogger("rbac-policy");
+
+// ─── Mode ────────────────────────────────────────────────────────────────
+
+export type RbacMode = "enforce" | "report" | "off";
+
+export function rbacMode(raw: string | undefined = process.env.RBAC_ENFORCE): RbacMode {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "report" || v === "log" || v === "dry-run") return "report";
+  if (v === "off" || v === "false" || v === "0" || v === "no") return "off";
+  return "enforce";
+}
+
+// ─── Policy table ────────────────────────────────────────────────────────
+
+type MethodSpec = "*" | "READ" | "MUT" | string; // "POST|PUT" etc.
+
+export interface PolicyRule {
+  methods: MethodSpec;
+  /** Path under /api, "/"-separated; "*" = one segment, "**" = the rest. */
+  pattern: string;
+  /** Any one of these is sufficient. */
+  permission: Permission | readonly Permission[];
+}
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+const r = (
+  methods: MethodSpec,
+  pattern: string,
+  permission: Permission | readonly Permission[]
+): PolicyRule => ({ methods, pattern, permission });
+
+const PAYROLL_READ: readonly Permission[] = ["payroll.manage", "payroll.approve"];
+
+/**
+ * Explicit entries. Order matters (first match wins), so specific actions sit
+ * above the broad prefix they belong to.
+ */
+export const POLICY_RULES: readonly PolicyRule[] = [
+  // Company record and settings
+  r("PUT|PATCH", "companies/*", "settings.company"),
+  r("DELETE", "companies/*", "company.delete"),
+  r("MUT", "companies/*/preferences/**", "settings.company"),
+  r("POST", "companies/*/seed-accounts", "settings.company"),
+  r("DELETE", "companies/*/customer-contacts/clear-all", "settings.company"),
+  r("MUT", "companies/*/ai-gl/settings", "settings.company"),
+  r("MUT", "companies/*/reminder-settings/**", "settings.company"),
+  r("MUT", "reminder-settings/**", "settings.company"),
+  r("MUT", "companies/*/report-delivery/subscriptions/*/settings", "settings.company"),
+  r("*", "companies/*/api-keys/**", "settings.company"),
+  r("*", "api-keys/**", "settings.company"),
+  r("MUT", "companies/*/webhooks/**", "settings.company"),
+  r("MUT", "webhooks/*/**", "settings.company"),
+  r("POST", "companies/*/bank-connections/*/import", "documents.write"),
+  r("POST", "bank-connections/*/sync", "documents.write"),
+  r("MUT", "companies/*/bank-connections/**", "settings.company"),
+  r("MUT", "bank-connections/**", "settings.company"),
+  r("MUT", "companies/*/bank-accounts/**", "settings.company"),
+  r("MUT", "companies/*/invoice-templates/**", "settings.company"),
+  r("MUT", "invoice-templates/**", "settings.company"),
+
+  // Team, billing, backups
+  r("*", "companies/*/team/invitations/**", "team.manage"),
+  r("MUT", "companies/*/team/**", "team.manage"),
+  r("MUT", "companies/*/billing/**", "billing.manage"),
+  r("*", "companies/*/backups/**", "backups.manage"),
+  r("*", "backups/**", "backups.manage"),
+
+  // Period lock / unlock
+  r("POST", "companies/*/month-end/lock-period", "period.lock"),
+  r("POST", "period-lock/unlock", "period.unlock"),
+
+  // Ledger posting and chart of accounts
+  r("MUT", "companies/*/accounts/**", "ledger.post"),
+  r("MUT", "accounts/**", "ledger.post"),
+  r("MUT", "companies/*/journal/**", "ledger.post"),
+  r("MUT", "journal/**", "ledger.post"),
+  r("POST", "invoices/*/post", "ledger.post"),
+  r("POST", "receipts/*/post", "ledger.post"),
+  r("POST", "companies/*/bills/backfill-gl", "ledger.post"),
+  r("POST", "companies/*/month-end/generate-closing-entries", "ledger.post"),
+  r("POST", "companies/*/vat-workpapers/*/rows/*/post", "ledger.post"),
+  r("POST", "companies/*/bank-statements/*/create-entry", "ledger.post"),
+  r("POST", "companies/*/exchange-rates/revalue", "ledger.post"),
+  r("POST", "companies/*/fixed-assets/run-depreciation", "ledger.post"),
+  r("POST", "fixed-assets/*/depreciate", "ledger.post"),
+  r("POST", "fixed-assets/*/dispose", "ledger.post"),
+
+  // Approvals
+  r("POST", "bills/*/approve", "documents.approve"),
+  r("POST", "purchase-orders/*/approve", "documents.approve"),
+  r("POST", "expense-claims/*/approve", "documents.approve"),
+  r("POST", "expense-claims/*/reject", "documents.approve"),
+  r("POST", "budget-plans/*/approve", "documents.approve"),
+  r("POST", "companies/*/receipts/*/review-decision", "documents.approve"),
+  r("POST", "companies/*/ai-gl/queue/*/*", "documents.approve"),
+
+  // Payment release
+  r("POST", "bills/*/payments", "payments.release"),
+  r("POST", "expense-claims/*/mark-paid", "payments.release"),
+
+  // Payroll (salary data is not general reporting data)
+  r("POST", "payroll-runs/*/approve", "payroll.approve"),
+  r("MUT", "companies/*/payroll-runs/**", "payroll.manage"),
+  r("MUT", "payroll-runs/**", "payroll.manage"),
+  r("MUT", "payroll-items/**", "payroll.manage"),
+  r("MUT", "companies/*/employees/**", "payroll.manage"),
+  r("MUT", "employees/**", "payroll.manage"),
+  r("*", "companies/*/payroll/**", PAYROLL_READ),
+  r("*", "companies/*/payroll-runs/**", PAYROLL_READ),
+  r("*", "payroll-runs/**", PAYROLL_READ),
+  r("*", "payroll-items/**", PAYROLL_READ),
+  r("*", "companies/*/employees/**", PAYROLL_READ),
+  r("*", "employees/**", PAYROLL_READ),
+
+  // Tax filing
+  r("POST", "vat-returns/*/submit", "tax.submit"),
+  r("PATCH", "vat/autopilot/periods/*/status", "tax.submit"),
+
+  // Read-only computations and exports sent as POST
+  r("POST", "companies/*/receipts/export-excel", "reports.read"),
+  r("POST", "companies/*/invoices/check-similar", "reports.read"),
+  r("POST", "companies/*/receipts/check-similar", "reports.read"),
+  r("POST", "export/excel", "reports.read"),
+  r("POST", "ocr/export-excel", "reports.read"),
+];
+
+/**
+ * Prefixes that are never company-role checked here: identity endpoints,
+ * NR firm/admin surfaces (own gates), public portals, signed webhooks and
+ * per-user preferences. `POST /api/companies` creates a company (no role yet).
+ */
+const SKIP_PREFIXES = [
+  "auth",
+  "firm",
+  "admin",
+  "nra",
+  "portal",
+  "client-portal",
+  "team-invitations",
+  "invitations",
+  "notifications",
+  "notification-preferences",
+  "onboarding",
+  "push",
+  "feedback",
+  "client-errors",
+  "analytics/event",
+  "waitlist",
+  "referrals",
+  "csrf-token",
+  "version",
+  "webhooks/email-intake",
+  "webhooks/stripe",
+  "csp-report",
+];
+
+function splitPath(path: string): string[] {
+  return path.split("?")[0].split("/").filter(Boolean);
+}
+
+function matchSegments(pattern: string[], segs: string[]): boolean {
+  let i = 0;
+  for (const tok of pattern) {
+    if (tok === "**") return true;
+    if (i >= segs.length) return false;
+    if (tok !== "*" && tok !== segs[i]) return false;
+    i++;
+  }
+  return i === segs.length;
+}
+
+function methodMatches(spec: MethodSpec, method: string): boolean {
+  if (spec === "*") return true;
+  if (spec === "READ") return READ_METHODS.has(method);
+  if (spec === "MUT") return !READ_METHODS.has(method);
+  return spec.split("|").includes(method);
+}
+
+const COMPILED = POLICY_RULES.map((rule) => ({ ...rule, segs: rule.pattern.split("/") }));
+
+export function isPolicyExempt(path: string): boolean {
+  const p = splitPath(path).join("/");
+  if (p === "companies" || p === "") return true;
+  return SKIP_PREFIXES.some((s) => p === s || p.startsWith(`${s}/`));
+}
+
+/**
+ * Permission(s) required for `method path` (path relative to /api, e.g.
+ * "/companies/<id>/team/<memberId>"). Returns null for exempt paths.
+ */
+export function resolvePermission(method: string, path: string): readonly Permission[] | null {
+  if (isPolicyExempt(path)) return null;
+  const m = method.toUpperCase();
+  const segs = splitPath(path);
+  for (const rule of COMPILED) {
+    if (methodMatches(rule.methods, m) && matchSegments(rule.segs, segs)) {
+      return typeof rule.permission === "string" ? [rule.permission] : rule.permission;
+    }
+  }
+  return READ_METHODS.has(m) ? ["reports.read"] : ["documents.write"];
+}
+
+// ─── Company resolution ──────────────────────────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** First path segment → SQL resolving the owning company of row $1. */
+const RESOURCES: Record<string, string> = {
+  accounts: "SELECT company_id FROM accounts WHERE id = $1",
+  invoices: "SELECT company_id FROM invoices WHERE id = $1",
+  receipts: "SELECT company_id FROM receipts WHERE id = $1",
+  journal: "SELECT company_id FROM journal_entries WHERE id = $1",
+  products: "SELECT company_id FROM products WHERE id = $1",
+  employees: "SELECT company_id FROM employees WHERE id = $1",
+  "payroll-runs": "SELECT company_id FROM payroll_runs WHERE id = $1",
+  "payroll-items":
+    "SELECT r.company_id FROM payroll_items i JOIN payroll_runs r ON r.id = i.payroll_run_id WHERE i.id = $1",
+  "expense-claims": "SELECT company_id FROM expense_claims WHERE id = $1",
+  bills: "SELECT company_id FROM vendor_bills WHERE id = $1",
+  "fixed-assets": "SELECT company_id FROM fixed_assets WHERE id = $1",
+  "budget-plans": "SELECT company_id FROM budget_plans WHERE id = $1",
+  "budget-lines":
+    "SELECT p.company_id FROM budget_lines l JOIN budget_plans p ON p.id = l.budget_id WHERE l.id = $1",
+  "anomaly-alerts": "SELECT company_id FROM anomaly_alerts WHERE id = $1",
+  "bank-transactions": "SELECT company_id FROM bank_transactions WHERE id = $1",
+  quotes: "SELECT company_id FROM quotes WHERE id = $1",
+  "credit-notes": "SELECT company_id FROM credit_notes WHERE id = $1",
+  "purchase-orders": "SELECT company_id FROM purchase_orders WHERE id = $1",
+  "cost-centers": "SELECT company_id FROM cost_centers WHERE id = $1",
+  "reconciliation-rules": "SELECT company_id FROM reconciliation_rules WHERE id = $1",
+  "invoice-templates": "SELECT company_id FROM invoice_templates WHERE id = $1",
+  "bank-connections": "SELECT company_id FROM bank_connections WHERE id = $1",
+  "api-keys": "SELECT company_id FROM api_keys WHERE id = $1",
+  webhooks: "SELECT company_id FROM webhook_endpoints WHERE id = $1",
+  "recurring-invoices": "SELECT company_id FROM recurring_invoices WHERE id = $1",
+  "reminder-settings": "SELECT company_id FROM reminder_settings WHERE id = $1",
+  backups: "SELECT company_id FROM backups WHERE id = $1",
+  "vat-returns": "SELECT company_id FROM vat_returns WHERE id = $1",
+  "compliance-tasks": "SELECT company_id FROM compliance_tasks WHERE id = $1",
+  documents: "SELECT company_id FROM documents WHERE id = $1",
+};
+
+/** Deeper resource shapes: [path prefix segments, SQL]. The id follows the prefix. */
+const NESTED_RESOURCES: Array<[string[], string]> = [
+  [["corporate-tax", "returns"], "SELECT company_id FROM corporate_tax_returns WHERE id = $1"],
+  [["chasing", "send"], "SELECT company_id FROM invoices WHERE id = $1"],
+  [["chasing", "invoice"], "SELECT company_id FROM invoices WHERE id = $1"],
+  [["integrations", "ecommerce"], "SELECT company_id FROM ecommerce_integrations WHERE id = $1"],
+  [["vat", "autopilot", "periods"], "SELECT company_id FROM vat_return_periods WHERE id = $1"],
+];
+
+/** Routes that carry the company id as a later path parameter. */
+const COMPANY_PARAM_PREFIXES: string[][] = [
+  ["chasing", "bulk-send"],
+  ["chasing", "config"],
+  ["chasing", "templates"],
+];
+
+async function lookupCompany(sqlText: string, id: string): Promise<string | null> {
+  try {
+    const result = await pool.query(sqlText, [id]);
+    const row = result?.rows?.[0] as { company_id?: string | null } | undefined;
+    return row?.company_id ?? null;
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, "company lookup failed");
+    return null;
+  }
+}
+
+function startsWith(segs: string[], prefix: string[]): boolean {
+  return prefix.every((p, i) => segs[i] === p);
+}
+
+/** The company a request acts on, or null if it cannot be determined. */
+export async function resolveRequestCompany(req: Request, path: string): Promise<string | null> {
+  const segs = splitPath(path);
+  if (segs[0] === "companies" && segs[1]) {
+    return UUID_RE.test(segs[1]) ? segs[1].toLowerCase() : null;
+  }
+  for (const prefix of COMPANY_PARAM_PREFIXES) {
+    const id = segs[prefix.length];
+    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return id.toLowerCase();
+  }
+  for (const [prefix, sqlText] of NESTED_RESOURCES) {
+    const id = segs[prefix.length];
+    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return lookupCompany(sqlText, id);
+  }
+  const resource = RESOURCES[segs[0]];
+  if (resource && segs[1] && UUID_RE.test(segs[1])) return lookupCompany(resource, segs[1]);
+
+  const fromBody = (req.body as Record<string, unknown> | undefined)?.companyId;
+  if (typeof fromBody === "string" && UUID_RE.test(fromBody)) return fromBody.toLowerCase();
+  const fromQuery = (req.query as Record<string, unknown> | undefined)?.companyId;
+  if (typeof fromQuery === "string" && UUID_RE.test(fromQuery)) return fromQuery.toLowerCase();
+  return null;
+}
+
+// ─── Membership ──────────────────────────────────────────────────────────
+
+/** The caller's normalised role in a company, or null when not a member. */
+export async function getCompanyRole(
+  userId: string,
+  companyId: string
+): Promise<CompanyRole | null> {
+  const membership = await storage.getUserRole(companyId, userId);
+  return membership ? normalizeCompanyRole(membership.role) : null;
+}
+
+function bypassesCompanyRoles(user: Express.User): boolean {
+  return user.isAdmin === true || isNraFirmRole(user.firmRole);
+}
+
+function deny(
+  res: Response,
+  code: "PERMISSION_DENIED" | "COMPANY_ACCESS_DENIED",
+  details: Record<string, unknown>
+): void {
+  res.status(403).json({
+    message:
+      code === "PERMISSION_DENIED"
+        ? "Your role in this company does not allow this action"
+        : "Access denied to this company",
+    code,
+    details,
+  });
+}
+
+// ─── Central middleware ──────────────────────────────────────────────────
+
+export async function companyRolePolicy(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const mode = rbacMode();
+    if (mode === "off") return next();
+    const permissions = resolvePermission(req.method, req.path);
+    if (!permissions) return next();
+
+    const auth = await authenticateRequest(req);
+    if (!auth || "code" in auth) return next(); // route's authMiddleware answers 401
+    const user = auth.user;
+    if (bypassesCompanyRoles(user)) return next();
+
+    const companyId = await resolveRequestCompany(req, req.path);
+    if (!companyId) return next();
+
+    const role = await getCompanyRole(user.id, companyId);
+    const allowed = !!role && roleHasAnyPermission(role, permissions);
+    if (allowed) {
+      req.companyRole = role!;
+      return next();
+    }
+    const details = { permission: permissions[0], permissions, role, companyId };
+    if (mode === "report") {
+      log.warn(
+        { userId: user.id, method: req.method, path: req.path, ...details },
+        "RBAC (report mode): request would be denied"
+      );
+      return next();
+    }
+    log.info({ userId: user.id, method: req.method, path: req.path, ...details }, "RBAC denied");
+    deny(res, role ? "PERMISSION_DENIED" : "COMPANY_ACCESS_DENIED", details);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Route-level guard: `router.post(path, authMiddleware, requirePermission("payments.release"), h)`.
+ * Reads the company from the URL (`:companyId`), else the body/query. Always
+ * enforced (independent of RBAC_ENFORCE); admins and NR firm staff pass.
+ */
+export function requirePermission(...permissions: [Permission, ...Permission[]]): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    (async () => {
+      if (!req.user) {
+        res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
+        return;
+      }
+      if (bypassesCompanyRoles(req.user)) return next();
+      const raw =
+        req.params?.companyId ??
+        (req.body as Record<string, unknown> | undefined)?.companyId ??
+        (req.query as Record<string, unknown> | undefined)?.companyId;
+      if (typeof raw !== "string" || !UUID_RE.test(raw)) {
+        res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
+        return;
+      }
+      const role = await getCompanyRole(req.user.id, raw.toLowerCase());
+      if (!role) return deny(res, "COMPANY_ACCESS_DENIED", { companyId: raw });
+      if (!roleHasAnyPermission(role, permissions)) {
+        return deny(res, "PERMISSION_DENIED", { permission: permissions[0], permissions, role });
+      }
+      req.companyRole = role;
+      next();
+    })().catch(next);
+  };
+}
+
+/**
+ * Maker-checker: the approver must not be the person who prepared the item.
+ * `allowSingleOwner` lets a company with a single member approve its own
+ * work (callers decide that with companyHasSingleMember). Throws
+ * DomainError("SAME_ACTOR_APPROVAL", 403).
+ */
+export function assertDifferentActor(
+  makerId: string | null | undefined,
+  checkerId: string,
+  opts: { allowSingleOwner?: boolean } = {}
+): void {
+  if (!makerId || makerId !== checkerId) return;
+  if (opts.allowSingleOwner) return;
+  throw new DomainError(
+    "SAME_ACTOR_APPROVAL",
+    403,
+    { makerId, checkerId },
+    "The person who prepared this item cannot also approve it"
+  );
+}
+
+/** True when exactly one user belongs to the company (solo-owner businesses). */
+export async function companyHasSingleMember(companyId: string): Promise<boolean> {
+  const members = await storage.getCompanyUsersByCompanyId(companyId);
+  return members.length === 1;
+}

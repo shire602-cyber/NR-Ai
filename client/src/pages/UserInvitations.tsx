@@ -58,6 +58,13 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, formatDistanceToNow, isAfter } from "date-fns";
 import type { Invitation, Company } from "@shared/schema";
 
+const SSO_LABELS = {
+  title: "Single sign-on",
+  configured: "configured",
+  notConfigured: "not configured",
+  saml: "SAML",
+};
+
 export default function UserInvitations() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -71,6 +78,15 @@ export default function UserInvitations() {
 
   const { data: clients = [] } = useQuery<Company[]>({
     queryKey: ["/api/admin/clients"],
+  });
+
+  // R01-15: single sign-on configuration status (OAuth providers; SAML is
+  // reported as requires_external until IdP metadata and a SAML flow exist).
+  const { data: sso } = useQuery<{
+    providers: Array<{ id: string; label: string; configured: boolean }>;
+    saml: { status: string; implemented: boolean; externalAction: { en: string; ar: string } };
+  }>({
+    queryKey: ["/api/admin/auth/sso-status"],
   });
 
   const createInvitationMutation = useMutation({
@@ -230,6 +246,23 @@ export default function UserInvitations() {
           </Button>
         }
       />
+      {sso && (
+        <Card data-testid="card-sso-status">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{SSO_LABELS.title}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2 text-sm">
+            {sso.providers.map((p) => (
+              <Badge key={p.id} variant={p.configured ? "default" : "secondary"}>
+                {p.label}: {p.configured ? SSO_LABELS.configured : SSO_LABELS.notConfigured}
+              </Badge>
+            ))}
+            <Badge variant="outline" title={sso.saml.externalAction.en}>
+              {SSO_LABELS.saml}: {sso.saml.status}
+            </Badge>
+          </CardContent>
+        </Card>
+      )}
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>

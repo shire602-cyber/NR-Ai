@@ -5,7 +5,7 @@ import { storage } from "../storage";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
-import { isTokenBlacklisted } from "../services/auth-tokens.service";
+import { isSessionActive, isTokenBlacklisted } from "../services/auth-tokens.service";
 
 const log = createLogger("auth");
 
@@ -34,19 +34,149 @@ declare global {
     }
     interface Request {
       subscription?: any; // Cached subscription for feature gating
+      /** refresh_sessions.id the access token was issued under (null for legacy tokens). */
+      authSessionId?: string | null;
+      /** Normalised company_users.role, set by companyRolePolicy on company-scoped routes. */
+      companyRole?: string;
     }
   }
 }
 
+export type TokenType = "access" | "refresh";
+
 /**
  * JWT token payload shape.
  */
-interface JwtPayload {
+export interface JwtPayload {
   userId: string;
   email: string;
+  /** R17-04: "access" for API credentials; "refresh" is only valid at /auth/refresh. */
+  type?: TokenType;
+  /** refresh_sessions.id (R01-13). */
+  sid?: string;
+  /** users.token_version at issue time (R01-06). Missing means 0. */
+  tv?: number;
   jti?: string;
   iat?: number;
   exp?: number;
+}
+
+export type AuthFailureCode =
+  | "TOKEN_EXPIRED"
+  | "TOKEN_INVALID"
+  | "TOKEN_TYPE_INVALID"
+  | "TOKEN_REVOKED"
+  | "SESSION_REVOKED"
+  | "USER_NOT_FOUND"
+  | "AUTH_FAILED";
+
+export interface AuthFailure {
+  status: 401;
+  code: AuthFailureCode;
+  message: string;
+}
+
+export interface AuthSuccess {
+  user: Express.User;
+  sessionId: string | null;
+}
+
+const AUTH_RESULT = Symbol.for("muhasib.authResult");
+
+function isFailure(r: AuthSuccess | AuthFailure): r is AuthFailure {
+  return "code" in r;
+}
+
+/** The credential this request presents: httpOnly cookie first, then Bearer. */
+export function getRequestToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+  return getAccessTokenFromRequest(req) || bearerToken;
+}
+
+async function verifyAccessCredential(token: string): Promise<AuthSuccess | AuthFailure> {
+  let decoded: JwtPayload;
+  try {
+    decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload;
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      return { status: 401, code: "TOKEN_EXPIRED", message: "Token expired" };
+    }
+    return { status: 401, code: "TOKEN_INVALID", message: "Invalid token" };
+  }
+
+  // R17-04: a refresh token (or any other JWT signed with the same key) must
+  // never authenticate an API call. Access tokens minted before the `type`
+  // claim existed are refused as well; clients recover through /auth/refresh.
+  if (decoded.type !== "access" || typeof decoded.userId !== "string") {
+    return { status: 401, code: "TOKEN_TYPE_INVALID", message: "Access token required" };
+  }
+
+  // Revocation check: a token presented at logout is on the denylist.
+  if (await isTokenBlacklisted(token)) {
+    return { status: 401, code: "TOKEN_REVOKED", message: "Token has been revoked" };
+  }
+
+  // Always fetch user from DB — never trust JWT claims for authorization
+  const user = await storage.getUser(decoded.userId);
+  if (!user) {
+    return { status: 401, code: "USER_NOT_FOUND", message: "User not found" };
+  }
+
+  // R01-06: password reset/change and "log out all devices" bump the version.
+  if ((decoded.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+    return { status: 401, code: "TOKEN_REVOKED", message: "Token has been revoked" };
+  }
+
+  // R01-13: revoking a device session revokes its access token too.
+  if (decoded.sid && !(await isSessionActive(decoded.sid))) {
+    return { status: 401, code: "SESSION_REVOKED", message: "Session has been revoked" };
+  }
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin === true,
+      userType: (user.userType as AuthUser["userType"]) || "customer",
+      firmRole: (user.firmRole as AuthUser["firmRole"]) ?? null,
+    },
+    sessionId: decoded.sid ?? null,
+  };
+}
+
+/**
+ * Authenticate the request without writing a response. Returns null when no
+ * credential is presented. The result is memoised on the request so the
+ * central company policy and the route's own authMiddleware share a single
+ * verification.
+ */
+export async function authenticateRequest(req: Request): Promise<AuthSuccess | AuthFailure | null> {
+  const cached = (req as any)[AUTH_RESULT] as AuthSuccess | AuthFailure | null | undefined;
+  if (cached !== undefined) return cached;
+  const token = getRequestToken(req);
+  let result: AuthSuccess | AuthFailure | null = null;
+  if (token) {
+    try {
+      result = await verifyAccessCredential(token);
+    } catch (error) {
+      log.error({ error }, "Auth middleware error");
+      result = { status: 401, code: "AUTH_FAILED", message: "Authentication failed" };
+    }
+  }
+  (req as any)[AUTH_RESULT] = result;
+  return result;
+}
+
+/** The authenticated user, or null (no credential, or a rejected one). */
+export async function optionalAuthUser(req: Request): Promise<Express.User | null> {
+  const result = await authenticateRequest(req);
+  return result && !isFailure(result) ? result.user : null;
+}
+
+/** Forget a memoised authentication result (after issuing new tokens). */
+export function clearAuthenticationCache(req: Request): void {
+  delete (req as any)[AUTH_RESULT];
 }
 
 /**
@@ -58,56 +188,19 @@ export async function authMiddleware(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const authHeader = req.headers.authorization;
-  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-  const cookieToken = getAccessTokenFromRequest(req);
-  const token = cookieToken || bearerToken;
-
-  if (!token) {
-    res.status(401).json({ message: "Authentication required" });
+  const result = await authenticateRequest(req);
+  if (!result) {
+    res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
     return;
   }
-
-  try {
-    const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload;
-
-    // Revocation check — a token that was present at logout (or during a
-    // password change, or admin-revoked) is refused here even though its
-    // signature is still valid. Tokens issued before we added the jti
-    // claim have no `jti` and skip the check; they'll naturally expire.
-    if (await isTokenBlacklisted(token)) {
-      res.status(401).json({ message: "Token has been revoked" });
-      return;
-    }
-
-    // Always fetch user from DB — never trust JWT claims for authorization
-    const user = await storage.getUser(decoded.userId);
-    if (!user) {
-      res.status(401).json({ message: "User not found" });
-      return;
-    }
-
-    // Use server-side data (prevents privilege escalation via JWT tampering)
-    req.user = {
-      id: user.id,
-      email: user.email,
-      isAdmin: user.isAdmin === true,
-      userType: (user.userType as AuthUser["userType"]) || "customer",
-      firmRole: (user.firmRole as AuthUser["firmRole"]) ?? null,
-    };
-    next();
-  } catch (error) {
-    if (error instanceof jwt.TokenExpiredError) {
-      res.status(401).json({ message: "Token expired" });
-      return;
-    }
-    if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({ message: "Invalid token" });
-      return;
-    }
-    log.error({ error }, "Auth middleware error");
-    res.status(401).json({ message: "Authentication failed" });
+  if (isFailure(result)) {
+    res.status(result.status).json({ message: result.message, code: result.code });
+    return;
   }
+  // Use server-side data (prevents privilege escalation via JWT tampering)
+  req.user = result.user;
+  req.authSessionId = result.sessionId;
+  next();
 }
 
 /**
@@ -216,16 +309,23 @@ export function requireCompanyAccess(paramSource?: "params" | "body" | "query") 
   };
 }
 
-/**
- * Generate a JWT token for a user.
- */
-export function generateToken(user: {
+export const ACCESS_TOKEN_TTL = "24h";
+export const REFRESH_TOKEN_TTL = "7d";
+export const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface TokenSubject {
   id: string;
   email: string;
   isAdmin?: boolean;
   userType?: string;
   firmRole?: string | null;
-}): string {
+  tokenVersion?: number | null;
+}
+
+/**
+ * Generate an access JWT (type "access") bound to a session and token version.
+ */
+export function generateToken(user: TokenSubject, sessionId?: string): string {
   const env = getEnv();
   return jwt.sign(
     {
@@ -234,22 +334,32 @@ export function generateToken(user: {
       isAdmin: user.isAdmin === true,
       userType: user.userType || "customer",
       firmRole: user.firmRole ?? null,
+      type: "access",
+      tv: user.tokenVersion ?? 0,
+      ...(sessionId ? { sid: sessionId } : {}),
       jti: randomUUID(),
     },
     env.JWT_SECRET,
-    { expiresIn: "24h" }
+    { expiresIn: ACCESS_TOKEN_TTL }
   );
 }
 
 /**
- * Generate a refresh token (longer-lived).
+ * Generate a refresh token (longer-lived). Only /auth/refresh accepts it.
  */
-export function generateRefreshToken(user: { id: string; email: string }): string {
+export function generateRefreshToken(user: TokenSubject, sessionId?: string): string {
   const env = getEnv();
   return jwt.sign(
-    { userId: user.id, email: user.email, type: "refresh", jti: randomUUID() },
+    {
+      userId: user.id,
+      email: user.email,
+      type: "refresh",
+      tv: user.tokenVersion ?? 0,
+      ...(sessionId ? { sid: sessionId } : {}),
+      jti: randomUUID(),
+    },
     env.JWT_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: REFRESH_TOKEN_TTL }
   );
 }
 
@@ -268,15 +378,20 @@ export function decodeTokenUnsafe(token: string): JwtPayload | null {
   }
 }
 
+/** Verify any token signed with JWT_SECRET (signature + expiry only). */
+export function verifySignedToken(token: string): JwtPayload | null {
+  try {
+    return jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Verify a refresh token and return the payload.
  */
 export function verifyRefreshToken(token: string): JwtPayload | null {
-  try {
-    const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload & { type?: string };
-    if (decoded.type !== "refresh") return null;
-    return decoded;
-  } catch {
-    return null;
-  }
+  const decoded = verifySignedToken(token);
+  if (!decoded || decoded.type !== "refresh") return null;
+  return decoded;
 }
