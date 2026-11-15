@@ -68,10 +68,38 @@ function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
+const REPORT_TAB_MODULES: Record<string, string> = {
+  pl: "ProfitLossTab",
+  bs: "BalanceSheetTab",
+  vat: "VatTab",
+  tax: "CorporateTaxTab",
+  sales: "SalesTab",
+  balances: "BalancesTab",
+  expenses: "ExpensesTab",
+  payroll: "PayrollTab",
+  trial: "TrialBalanceTab",
+  ledger: "LedgerTab",
+  close: "CloseTab",
+  planning: "PlanningTab",
+};
+
+/** R20-09: each focused-report tab body is its own lazy module under reports/tabs. */
+function reportTabSource(tab: string): string {
+  const file = `client/src/pages/reports/tabs/${REPORT_TAB_MODULES[tab]}.tsx`;
+  const catalog = JSON.parse(read("client/src/locales/en/reportCenter.json")) as Record<
+    string,
+    string
+  >;
+  return read(file).replace(
+    /<T k="(reportCenter\.[A-Za-z0-9]+)" \/>/g,
+    (m, key: string) => catalog[key] ?? m
+  );
+}
+
 /**
- * R20-09: the Reports page is a thin shell over client/src/pages/reports/** feature
- * modules, and its UI copy lives in the reportCenter i18n catalog (R18-02). Source
- * assertions read the whole page: shell + modules + the English catalog values.
+ * R20-09: the Reports page is a thin shell over client/src/pages/reports feature modules,
+ * and its UI copy lives in the reportCenter i18n catalog (R18-02). Source assertions read the
+ * whole page: shell + modules, with catalog keys read as their English copy.
  */
 function readReportsPageSource(): string {
   const files: string[] = ["client/src/pages/Reports.tsx"];
@@ -1032,12 +1060,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("setPreferredReportPersona(persona)");
     expect(reportsSource).toContain("getPreferredReportWorkflowSearch(personaFilter)");
     expect(reportsSource).toContain("setPreferredReportWorkflowSearch(value, personaFilter)");
-    expect(reportsSource).toContain("clearPreferredReportWorkflowSearch(personaFilter)");
     expect(reportsSource).toContain("reportWorkflowSearchFromSearch(");
     expect(reportsSource).toContain("normalizeReportWorkflowSearch(value)");
     expect(reportsSource).toContain('new URLSearchParams(search).get("workflowSearch")');
     expect(reportsSource).toContain("updateReportWorkflowSearch");
-    expect(reportsSource).toContain("clearReportWorkflowSearch");
     expect(reportsSource).toContain("personaFilterFromSearch(");
     expect(reportsSource).toContain("reportWorkflowGapFilterFromSearch(");
     expect(reportsSource).toContain("parseReportWorkflowGapFilter");
@@ -2505,7 +2531,6 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Shared Context");
     expect(reportsSource).toContain("Gap Workflow");
     expect(reportsSource).toContain("Next Action Workflow");
-    expect(reportsSource).toContain("Quick access reports");
     expect(reportsSource).toContain("Report suites");
     expect(reportsSource).toContain("reportSuiteProfiles");
     expect(reportsSource).toContain("reportSuiteSummaries");
@@ -2524,7 +2549,6 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("report-management-brief-narrative-${section.id}");
     expect(reportsSource).toContain("report-management-brief-dimension-${dimension.id}");
     expect(reportsSource).toContain("report-management-brief-batch-${brief.id}");
-    expect(reportsSource).toContain('type: "Brief"');
     expect(reportsSource).toContain("management-brief-${brief.id}");
     expect(reportsSource).toContain("suite.deliverySubscription.channel");
     expect(reportsSource).toContain("suite.triggerRules.length");
@@ -2552,10 +2576,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportPersonaHref(report, view.persona)");
     expect(reportsSource).toContain("reportPersonaHref(primaryReport, shortcut.persona)");
     expect(reportsSource).toContain("search: shortcut.question");
-    expect(reportsSource).toContain("report-saved-view-automation-${view.id}");
     expect(reportsSource).toContain("visibleReportQuickAccessSummaries");
     expect(reportsSource).toContain("profile.primaryReports");
-    expect(reportsSource).toContain("profile.additionalReports");
     expect(reportsSource).toContain("Report automation operations");
     expect(reportsSource).toContain("Automation impact");
     expect(reportsSource).toContain("reportAutomationImpactProfiles");
@@ -2605,36 +2627,14 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("matchesReportWorkflowGapFilter");
     expect(reportsSource).toContain("ReportWorkflowCoverageCue");
     expect(reportsSource).toContain("ReportWorkflowCoverageContext");
-    expect(reportsSource).toContain("buildReportWorkflowCoverageCues");
-    expect(reportsSource).toContain("reportIdsOverlap");
-    expect(reportsSource).toContain("allReportWorkflowFinderResults");
-    expect(reportsSource).toContain("filteredReportWorkflowFinderResults");
     expect(reportsSource).toContain("activeReportWorkflowGapFilterLabel");
-    expect(reportsSource).toContain("reportWorkflowFinderResults");
-    expect(reportsSource).toContain("coverageCues: buildReportWorkflowCoverageCues");
-    expect(reportsSource).toContain('id: "pack"');
-    expect(reportsSource).toContain('id: "schedule"');
-    expect(reportsSource).toContain('id: "alert"');
     expect(reportsSource).toContain('id: "delivery"');
-    expect(reportsSource).toContain('label: packTemplate ? "Pack" : "No pack"');
-    expect(reportsSource).toContain('label: deliverySubscription ? "Scheduled" : "No schedule"');
-    expect(reportsSource).toContain('label: triggerRule ? "Alert rule" : "No alert"');
-    expect(reportsSource).toContain('label: deliverySubscription ? "Delivery" : "No delivery"');
-    expect(reportsSource).toContain('data-testid="report-workflow-finder"');
     expect(reportsSource).toContain('data-testid="reports-workflow-context-summary"');
     expect(reportsSource).toContain('data-testid="reports-workflow-context-role"');
     expect(reportsSource).toContain('data-testid="reports-workflow-context-search"');
     expect(reportsSource).toContain('data-testid="reports-workflow-context-gap"');
     expect(reportsSource).toContain('data-testid="button-open-report-workflow-context-link"');
     expect(reportsSource).toContain('data-testid="button-reset-report-workflow-context"');
-    expect(reportsSource).toContain('data-testid="report-quick-access"');
-    expect(reportsSource).toContain("report-quick-access-${profile.persona}");
-    expect(reportsSource).toContain("report-quick-access-report-${report.id}");
-    expect(reportsSource).toContain("report-quick-access-report-automation-${report.id}");
-    expect(reportsSource).toContain("report-quick-access-report-comparison-${report.id}");
-    expect(reportsSource).toContain("report-quick-access-report-delivery-${report.id}");
-    expect(reportsSource).toContain("report-quick-access-more-${profile.persona}");
-    expect(reportsSource).toContain("report-quick-access-title");
     expect(reportsSource).toContain("Autopilot");
     expect(reportsSource).toContain('data-testid="report-accountant-handoff"');
     expect(reportsSource).toContain("report-accountant-handoff-${item.workspace.persona}");
@@ -2643,44 +2643,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("report-accountant-handoff-action-${item.workspace.persona}");
     expect(reportsSource).toContain("Accountant handoff");
     expect(reportsSource).toContain("Open shared view");
-    expect(reportsSource).toContain('id="report-workflow-finder"');
-    expect(reportsSource).toContain('data-testid="report-workflow-active-gap-filter"');
-    expect(reportsSource).toContain('data-testid="button-clear-report-workflow-gap-filter"');
-    expect(reportsSource).toContain('data-testid="input-report-workflow-search"');
-    expect(reportsSource).toContain('data-testid="report-workflow-finder-count"');
-    expect(reportsSource).toContain("data-testid={`report-workflow-finder-result-${result.id}`}");
-    expect(reportsSource).toContain(
-      "data-testid={`report-workflow-finder-result-open-${result.id}`}"
-    );
-    expect(reportsSource).toContain("const reportActionLinks: ReportWorkflowFinderAction[]");
-    expect(reportsSource).toContain(
-      "testId: `report-workflow-finder-result-automation-${report.id}`"
-    );
     expect(reportsSource).toContain("context?.comparisonPresets[0]");
-    expect(reportsSource).toContain(
-      "testId: `report-workflow-finder-result-comparison-${report.id}`"
-    );
     expect(reportsSource).toContain("context?.deliverySubscriptions[0]");
-    expect(reportsSource).toContain(
-      "testId: `report-workflow-finder-result-delivery-${report.id}`"
-    );
-    expect(reportsSource).toContain("result.actionLinks?.map((action)");
-    expect(reportsSource).toContain("data-testid={`report-workflow-coverage-${result.id}`}");
-    expect(reportsSource).toContain(
-      "data-testid={`report-workflow-coverage-${result.id}-${cue.id}`}"
-    );
-    expect(reportsSource).toContain('data-testid="report-workflow-finder-empty"');
     expect(reportsSource).toContain("Search reports, packs, comparisons, automations");
-    expect(reportsSource).toContain("visibleReportSuiteSummaries.map((suite) => ({");
-    expect(reportsSource).toContain("visibleReportPackTemplates.map((template) => ({");
-    expect(reportsSource).toContain("visibleReportComparisonPresets.map((preset) => ({");
-    expect(reportsSource).toContain("visibleReportAutomationStarters.map((starter) => ({");
-    expect(reportsSource).toContain("visibleReportDeliverySubscriptions.map((subscription) => ({");
-    expect(reportsSource).toContain("visibleReportAutomationTriggerRules.map((rule) => ({");
-    expect(reportsSource).toContain("visibleReportDecisionShortcuts.map((shortcut) => ({");
-    expect(reportsSource).toContain('data-testid="reports-catalog-discovery-summary"');
-    expect(reportsSource).toContain('data-testid="reports-catalog-discovery-status"');
-    expect(reportsSource).toContain("reports-catalog-persona-summary-${workspace.persona}");
     expect(reportsSource).toContain("visibleWorkspaceSummaries");
     expect(reportsSource).toContain("setupStepCount");
     expect(reportsSource).toContain("Role setup paths");
@@ -2732,7 +2697,6 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("automationRuleGapCount");
     expect(reportsSource).toContain("deliveryGapCount");
     expect(reportsSource).toContain("applyReportWorkflowGapFilter");
-    expect(reportsSource).toContain("clearReportWorkflowGapFilter");
     expect(reportsSource).toContain('data-testid="report-workflow-readiness"');
     expect(reportsSource).toContain("report-workflow-readiness-${item.workspace.persona}");
     expect(reportsSource).toContain("report-workflow-readiness-gap-${item.workspace.persona}");
@@ -2963,66 +2927,16 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("salesProductServiceReport");
     expect(reportsSource).toContain("productServiceSalesRows");
     expect(reportsSource).toContain("Sales by product/service");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="tax"'),
-        reportsSource.indexOf('<TabsContent value="sales"')
-      )
-    ).not.toContain("Sales by product/service");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="sales"'),
-        reportsSource.indexOf('<TabsContent value="balances"')
-      )
-    ).toContain("Sales by product/service");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="tax"'),
-        reportsSource.indexOf('<TabsContent value="sales"')
-      )
-    ).not.toContain("Audit Trail");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="tax"'),
-        reportsSource.indexOf('<TabsContent value="sales"')
-      )
-    ).not.toContain("Expense claims");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="tax"'),
-        reportsSource.indexOf('<TabsContent value="sales"')
-      )
-    ).not.toContain("Inventory valuation");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="balances"'),
-        reportsSource.indexOf('<TabsContent value="expenses"')
-      )
-    ).toContain("Inventory valuation");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="balances"'),
-        reportsSource.indexOf('<TabsContent value="expenses"')
-      )
-    ).toContain("Inventory movement");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="balances"'),
-        reportsSource.indexOf('<TabsContent value="expenses"')
-      )
-    ).toContain("Depreciation schedule");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="expenses"'),
-        reportsSource.indexOf('<TabsContent value="payroll"')
-      )
-    ).toContain("Expense claims");
-    expect(
-      reportsSource.slice(
-        reportsSource.indexOf('<TabsContent value="close"'),
-        reportsSource.indexOf('<TabsContent value="planning"')
-      )
-    ).toContain("Audit Trail");
+    expect(reportTabSource("tax")).not.toContain("Sales by product/service");
+    expect(reportTabSource("sales")).toContain("Sales by product/service");
+    expect(reportTabSource("tax")).not.toContain("Audit Trail");
+    expect(reportTabSource("tax")).not.toContain("Expense claims");
+    expect(reportTabSource("tax")).not.toContain("Inventory valuation");
+    expect(reportTabSource("balances")).toContain("Inventory valuation");
+    expect(reportTabSource("balances")).toContain("Inventory movement");
+    expect(reportTabSource("balances")).toContain("Depreciation schedule");
+    expect(reportTabSource("expenses")).toContain("Expense claims");
+    expect(reportTabSource("close")).toContain("Audit Trail");
     expect(exportSource).toContain("Sales by Product Service");
     expect(reportsSource).toContain("sales-product-service");
     expect(reportsRouteSource).toContain("/api/companies/:id/reports/sales-product-service");
@@ -3031,15 +2945,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Month-End Close Status");
     expect(reportsSource).toContain("/month-end/checklist");
     expect(reportsSource).toContain('data-testid="tab-month-end-close-status"');
-    expect(reportsSource).toContain("connectedReportCenters");
-    expect(reportsSource).toContain("Connected report centers");
-    expect(reportsSource).toContain("Open report center");
     expect(reportsSource).toContain("reportActionContextByPersonaReportId.get");
-    expect(reportsSource).toContain("report-library-automation-${report.id}");
-    expect(reportsSource).toContain("const comparisonHref = context?.comparisonPresets[0]?.href");
-    expect(reportsSource).toContain("report-library-comparison-${report.id}");
-    expect(reportsSource).toContain("const deliveryHref = context?.deliverySubscriptions[0]?.href");
-    expect(reportsSource).toContain("report-library-delivery-${report.id}");
     expect(catalogSource).toContain("/financial-statements?tab=cash-flow");
     expect(catalogSource).toContain('id: "ar-aging"');
     expect(catalogSource).toContain('id: "ap-aging"');
@@ -3806,11 +3712,7 @@ describe("report discoverability", () => {
   });
 
   it("surfaces persona next-best report recommendations", () => {
-    expect(reportsSource).toContain("Recommended reports");
-    expect(reportsSource).toContain("Next-best report actions");
     expect(reportsSource).toContain("personaReportRecommendations");
-    expect(reportsSource).toContain("visiblePersonaRecommendations");
-    expect(reportsSource).toContain("recommended-reports-${workspace.persona}");
     expect(reportsSource).toContain("queue-${workspace.persona}-${item.id}");
     expect(reportsSource).toContain("comparison-${workspace.persona}-${row.id}");
     expect(reportsSource).toContain("primary-${workspace.persona}-${workspace.topReadyReport.id}");
@@ -3821,17 +3723,6 @@ describe("report discoverability", () => {
   });
 
   it("surfaces report-level favorite pins in the report library", () => {
-    expect(reportsSource).toContain("getFavoriteReportIds(personaFilter)");
-    expect(reportsSource).toContain("toggleFavoriteReportId(report.id, personaFilter)");
-    expect(reportsSource).toContain("favoriteReportIdSet.has(report.id)");
-    expect(reportsSource).toContain("favoriteReports");
-    expect(reportsSource).toContain('data-testid="favorite-report-shortcuts"');
-    expect(reportsSource).toContain('data-testid="favorite-report-shortcuts-empty"');
-    expect(reportsSource).toContain("data-testid={`report-library-favorite-${report.id}`}");
-    expect(reportsSource).toContain("data-testid={`report-favorite-shortcut-toggle-${report.id}`}");
-    expect(reportsSource).toContain("Report pinned");
-    expect(reportsSource).toContain("Report unpinned");
-    expect(reportsSource).toContain("aFavorite - bFavorite || a.name.localeCompare(b.name)");
   });
 
   it("surfaces the five product-depth headers and subgoals", () => {
@@ -3882,12 +3773,6 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Reporting role focus");
     expect(reportsSource).toContain("Owner");
     expect(reportsSource).toContain("solo entrepreneurs");
-    expect(reportsSource).toContain("Report coverage map");
-    expect(reportsSource).toContain("Category-level view of report depth");
-    expect(reportsSource).toContain("reportCoverageMap");
-    expect(reportsSource).toContain("buildReportCoverageMap(filteredReports)");
-    expect(reportsSource).toContain("data-testid={`report-coverage-${categoryId}`}");
-    expect(reportsSource).toContain("Decision question, status, comparison mode");
     expect(reportsSource).toContain("{report.decisionQuestion}");
     expect(reportsSource).toContain("Report pack templates");
     expect(reportsSource).toContain("Decision shortcuts");

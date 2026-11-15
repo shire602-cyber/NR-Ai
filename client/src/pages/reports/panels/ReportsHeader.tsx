@@ -1,0 +1,335 @@
+// Reports > header (always shown).
+// Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  X,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Link } from "wouter";
+import { PageHeader } from "@/components/ui/page-header";
+import { ReportWorkspaceTab, personaFilters, reportWorkspaceTabs } from "../shared";
+import { SiGooglesheets } from "react-icons/si";
+import { T } from "@/components/layout/T";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { evidenceSectionHref } from "@/lib/evidenceLinks";
+import { useReportsPageContext } from "../context";
+
+export default function ReportsHeader() {
+  const {
+    activeReportViewerOption,
+    activeReportWorkflowGapFilterLabel,
+    activeReportWorkspaceTab,
+    backToReportsHref,
+    dateRange,
+    handleExportExcel,
+    handleExportGoogleSheets,
+    hasFocusedReportSelection,
+    hasReportWorkflowContextFilters,
+    isExporting,
+    openReportViewerOption,
+    personaFilter,
+    personaFilterLabel,
+    personaScopeDescription,
+    reportViewerDescription,
+    reportViewerGroups,
+    reportViewerMenuDescription,
+    reportViewerMenuLabel,
+    reportViewerTitle,
+    reportWorkflowContextSearchLabel,
+    reportWorkflowContextShareHref,
+    resetReportWorkflowContext,
+    setDateRange,
+    setReportPersonaFilter,
+    setReportWorkspaceTab,
+    t,
+  } = useReportsPageContext();
+  return (
+    <>
+      <PageHeader
+        eyebrow="Insights"
+        title={t.reports}
+        description={
+          (t as any).financialReportsSubtitle ??
+          "Financial reports, comparisons, and automation-ready workspaces"
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" data-testid="button-report-proof-trail">
+              <Link href={evidenceSectionHref("proof-drilldown")}>
+                <FileText className="w-4 h-4 mr-2" />
+                {(t as any).viewProof ?? "View proof"}
+              </Link>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={isExporting} data-testid="button-export">
+                  <Download className="w-4 h-4 mr-2" />
+                  {isExporting ? "Exporting..." : t.export}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <T k="reportCenter.exportToExcel" />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleExportGoogleSheets}
+                  data-testid="menu-export-sheets"
+                >
+                  <SiGooglesheets className="w-4 h-4 mr-2" />
+                  <T k="reportCenter.exportToGoogleSheets" />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
+      />
+      {activeReportWorkspaceTab === "reports" ? (
+        <section
+          className="rounded-lg border border-border/70 bg-card p-4 shadow-sm"
+          aria-labelledby="report-viewer-title"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+                {hasFocusedReportSelection ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    data-testid="button-back-to-report-center"
+                  >
+                    <Link href={backToReportsHref}>
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      <T k="reportCenter.backToReports" />
+                    </Link>
+                  </Button>
+                ) : null}
+                {hasFocusedReportSelection && activeReportViewerOption?.categoryLabel ? (
+                  <span>{activeReportViewerOption.categoryLabel}</span>
+                ) : null}
+              </div>
+              <div>
+                <h2 id="report-viewer-title" className="text-2xl font-semibold tracking-tight">
+                  {reportViewerTitle}
+                </h2>
+                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  {reportViewerDescription}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
+            <div className="space-y-1.5">
+              <Label>{(t as any).reportCenter ?? "Report Center"}</Label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-left"
+                    data-testid="button-report-viewer-menu"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">
+                        {reportViewerMenuLabel}
+                      </span>
+                      <span className="block truncate text-xs font-normal text-muted-foreground">
+                        {reportViewerMenuDescription}
+                      </span>
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-72"
+                  data-testid="menu-report-viewer"
+                >
+                  <DropdownMenuLabel>
+                    {(t as any).reportCenter ?? "Report Center"}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {reportViewerGroups.map((group) => (
+                    <DropdownMenuSub key={group.category}>
+                      <DropdownMenuSubTrigger>
+                        <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                        <span className="mr-2 text-xs font-normal text-muted-foreground">
+                          {group.options.length}
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-80 overflow-y-auto">
+                        {group.options.map((option) => (
+                          <DropdownMenuItem
+                            key={option.id}
+                            disabled={!option.href && !option.tab}
+                            onSelect={() => openReportViewerOption(option.id)}
+                            className="items-start py-2"
+                            data-testid={`menu-report-viewer-${option.id}`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{option.label}</span>
+                              <span className="block line-clamp-2 text-xs leading-snug text-muted-foreground">
+                                {option.description}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{(t as any).period ?? "Period"}</Label>
+              <div className="rounded-md border bg-background p-2">
+                <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      {activeReportWorkspaceTab !== "reports" ? (
+        <>
+          <section className="space-y-3" aria-labelledby="role-focus-title">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 id="role-focus-title" className="text-xl font-semibold">
+                  <T k="reportCenter.roleFocus" />
+                </h2>
+                <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
+              </div>
+              <Badge
+                variant={personaFilter === "all" ? "outline" : "info"}
+                className="hidden sm:inline-flex"
+              >
+                {personaFilterLabel}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
+              {personaFilters.map((filter) => (
+                <Button
+                  key={filter.id}
+                  type="button"
+                  size="sm"
+                  variant={personaFilter === filter.id ? "default" : "outline"}
+                  onClick={() => setReportPersonaFilter(filter.id)}
+                  data-testid={`button-role-focus-${filter.id}`}
+                >
+                  {filter.label}
+                </Button>
+              ))}
+            </div>
+            <div
+              className="rounded-md border border-border/70 bg-muted/20 p-3"
+              data-testid="reports-workflow-context-summary"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    <T k="reportCenter.savedReportingContext" />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge variant="info" data-testid="reports-workflow-context-role">
+                      Role: {personaFilterLabel}
+                    </Badge>
+                    {reportWorkflowContextSearchLabel ? (
+                      <Badge variant="outline" data-testid="reports-workflow-context-search">
+                        <span className="max-w-[14rem] truncate">
+                          Search: {reportWorkflowContextSearchLabel}
+                        </span>
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">
+                        <T k="reportCenter.noSavedSearch" />
+                      </Badge>
+                    )}
+                    {activeReportWorkflowGapFilterLabel ? (
+                      <Badge variant="outline" data-testid="reports-workflow-context-gap">
+                        <span className="max-w-[14rem] truncate">
+                          Gap: {activeReportWorkflowGapFilterLabel}
+                        </span>
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">
+                        <T k="reportCenter.noGapFilter" />
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {hasReportWorkflowContextFilters ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={reportWorkflowContextShareHref}
+                        data-testid="button-open-report-workflow-context-link"
+                      >
+                        <T k="reportCenter.openShareLink" />
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={resetReportWorkflowContext}
+                      data-testid="button-reset-report-workflow-context"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <T k="reportCenter.resetContext" />
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <Tabs
+              value={activeReportWorkspaceTab}
+              onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
+            >
+              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
+                {reportWorkspaceTabs.map((tab) => (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="h-10 min-w-[7.25rem] flex-none px-3 py-2 text-center lg:min-w-0 lg:flex-1 xl:h-auto xl:flex-col xl:gap-0.5"
+                    data-testid={`reports-workspace-tab-${tab.id}`}
+                  >
+                    <span className="text-sm font-semibold">{tab.label}</span>
+                    <span className="hidden text-[11px] font-normal text-muted-foreground xl:block">
+                      {tab.description}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        </>
+      ) : null}
+    </>
+  );
+}
