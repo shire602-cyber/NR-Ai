@@ -374,6 +374,20 @@ function initialBillPayTab(): BillPayTab {
   return billPayTabs.includes(tab as BillPayTab) ? (tab as BillPayTab) : "bills";
 }
 
+// R13-21: dashboard drill-through opens /bill-pay?tab=bills&status=open|overdue|<status>.
+const billStatusFilters = ["all", "open", "pending", "approved", "partial", "paid", "overdue"];
+const PAYABLE_STATUSES = ["approved", "overdue", "partial"];
+
+function initialBillStatusFilter(): string {
+  const status = new URLSearchParams(window.location.search).get("status");
+  return status && billStatusFilters.includes(status) ? status : "all";
+}
+
+function isPastDue(bill: { due_date: string | null }): boolean {
+  if (!bill.due_date) return false;
+  return bill.due_date.slice(0, 10) < new Date().toISOString().slice(0, 10);
+}
+
 export default function BillPay() {
   const { t, locale } = useTranslation();
   const c: Copy = COPY[locale === "ar" ? "ar" : "en"];
@@ -385,7 +399,7 @@ export default function BillPay() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
   const [payingBill, setPayingBill] = useState<VendorBill | null>(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(initialBillStatusFilter);
   const [vendorSearch, setVendorSearch] = useState("");
 
   // ===========================
@@ -454,7 +468,13 @@ export default function BillPay() {
 
   const filteredBills = useMemo(() => {
     let filtered = [...bills];
-    if (statusFilter !== "all") {
+    if (statusFilter === "open") {
+      filtered = filtered.filter((b) => PAYABLE_STATUSES.includes(b.status));
+    } else if (statusFilter === "overdue") {
+      filtered = filtered.filter(
+        (b) => b.status === "overdue" || (PAYABLE_STATUSES.includes(b.status) && isPastDue(b))
+      );
+    } else if (statusFilter !== "all") {
       filtered = filtered.filter((b) => b.status === statusFilter);
     }
     if (vendorSearch.trim()) {
@@ -913,6 +933,9 @@ export default function BillPay() {
                     <SelectContent>
                       <SelectItem value="all">
                         <T k="pages.allStatuses" />
+                      </SelectItem>
+                      <SelectItem value="open">
+                        <T k="pages.billsOpenUnpaid" />
                       </SelectItem>
                       <SelectItem value="pending">
                         <T k="pages.pending" />

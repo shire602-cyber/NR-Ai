@@ -1872,6 +1872,8 @@ function BankLineActions({
   });
   const { data: invoices } = useQuery<OpenDocument[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
+    // R20-05: the list endpoint paginates by default; split matching needs every open invoice.
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
     enabled: mode === "split" && inflow,
   });
   const contraAccounts = (glAccounts ?? []).filter(

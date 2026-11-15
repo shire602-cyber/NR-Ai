@@ -395,6 +395,37 @@ describe("W3-A sales cycle", () => {
     expect((await balances(t))["1040"]).toBe(1050 + 42);
   });
 
+  it("[W3-A RBAC] /api/credit-notes/:id resolves its company from invoices: other tenants get 404, a viewer gets 403", async () => {
+    const t = await h.createTenant();
+    const b = await h.createSecondTenant();
+    const inv = await mkIssued(t);
+    const draft = await t.as.post(`/api/companies/${t.company.id}/credit-notes`, {
+      invoiceId: inv.id,
+      lines: [{ description: "Damaged", quantity: 1, unitPrice: 100, vatRate: 5 }],
+      reason: "Damaged goods",
+    });
+    expect(draft.status, draft.text).toBe(201);
+    const id = draft.body.id as string;
+    // The policy row lookup must hit the invoices row (credit_notes has no such id).
+    expect(await h.sql(`SELECT 1 FROM credit_notes WHERE id = $1`, [id])).toEqual([]);
+    expect((await b.as.get(`/api/credit-notes/${id}`)).status).toBe(404);
+    expect((await b.as.post(`/api/credit-notes/${id}/issue`, {})).status).toBe(404);
+    expect((await b.as.post(`/api/credit-notes/${id}/void`, {})).status).toBe(404);
+
+    const viewer = await h.createTenant({ name: "CnViewer" });
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      t.company.id,
+      viewer.user.id,
+    ]);
+    expect((await viewer.as.get(`/api/credit-notes/${id}`)).status).toBe(200);
+    expect((await viewer.as.post(`/api/credit-notes/${id}/issue`, {})).status).toBe(403);
+    const still = await h.sql<{ status: string }>(`SELECT status FROM invoices WHERE id = $1`, [
+      id,
+    ]);
+    expect(still[0].status).toBe("draft");
+    expect((await t.as.get(`/api/credit-notes/${id}`)).status).toBe(200);
+  });
+
   it("[R03-10][R03-25] invoice for a contact with TRN and net30 fills customerTrn, address and dueDate", async () => {
     const t = await h.createTenant();
     const created = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
@@ -576,6 +607,13 @@ describe("W3-A sales cycle", () => {
     expect(new Set(ids).size).toBe(7);
     const def = await t.as.get(`/api/companies/${t.company.id}/invoices?cursor=`);
     expect(def.body.limit).toBe(50);
+    // No paging params: paginated by default (R20-05 complete), never the full array.
+    const bare = await t.as.get(`/api/companies/${t.company.id}/invoices`);
+    expect(bare.status).toBe(200);
+    expect(Array.isArray(bare.body)).toBe(false);
+    expect(bare.body.limit).toBe(50);
+    expect(bare.body.items.length).toBe(7);
+    expect(bare.body.nextCursor).toBeNull();
     const all = await t.as.get(`/api/companies/${t.company.id}/invoices?all=true`);
     expect(Array.isArray(all.body)).toBe(true);
     expect(all.body.length).toBe(7);

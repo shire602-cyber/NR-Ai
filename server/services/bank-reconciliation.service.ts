@@ -6,9 +6,10 @@
  *   unmatchTransaction(...) reverses exactly what the match created (R06-02)
  *
  * Targets (R06-03, R06-05, R06-13, R06-21):
- *   invoice  -> resolve("invoices.recordPayment") (falls back to storage.recordInvoicePayment,
- *               the same function W3-A registers): Dr bank / Cr AR, invoice paid or partial
- *   bill     -> resolve("bills.recordPayment"); 503 BILL_MATCH_UNAVAILABLE when not registered
+ *   invoice  -> resolve("invoices.recordPayment") / unmatch resolve("invoices.reversePayment")
+ *               (W3-A invoice-payment.service): Dr bank / Cr AR, invoice paid or partial
+ *   bill     -> resolve("bills.recordPayment") / unmatch resolve("bills.reversePayment")
+ *               (W3-B bill-payment.service); a missing service is a 503 SERVICE_UNAVAILABLE
  *   journal  -> link only when the entry has a line on THIS bank GL account for the same amount
  *               and direction (a revenue/AR entry never qualifies)
  *   receipt  -> link the receipt's posted entry under the same cash-side rule
@@ -26,7 +27,14 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { postJournal, postDraft, reverseBySource, reverseEntry, withLedgerTx } from "../ledger";
+import {
+  deleteDraft,
+  postJournal,
+  postDraft,
+  reverseBySource,
+  reverseEntry,
+  withLedgerTx,
+} from "../ledger";
 import type { LedgerTx, PostJournalLineInput } from "../ledger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { has, resolve } from "../platform/service-registry";
@@ -402,10 +410,18 @@ async function assertCashSideEntry(
     );
 }
 
-type RecordInvoicePayment = (input: Parameters<typeof storage.recordInvoicePayment>[0]) => Promise<{
-  payment: { id: string };
-  journalEntryId: string;
-}>;
+type RecordInvoicePayment = (input: {
+  invoiceId: string;
+  companyId: string;
+  amount: number;
+  date: Date;
+  method?: string;
+  reference?: string | null;
+  notes?: string | null;
+  paymentAccountId: string;
+  paymentExchangeRate?: number | null;
+  createdBy: string;
+}) => Promise<{ payment: { id: string }; journalEntryId: string }>;
 
 interface BillPaymentResult {
   payment?: { id?: string; journalEntryId?: string | null } | null;
@@ -432,12 +448,14 @@ type ReverseBillPayment = (input: {
   billId: string | null;
   actorId: string;
   reason: string;
+  tx?: LedgerTx;
 }) => Promise<unknown>;
 type ReverseInvoicePayment = (input: {
   companyId: string;
   paymentId: string;
   actorId: string;
   reason: string;
+  tx?: LedgerTx;
 }) => Promise<unknown>;
 
 async function recordInvoicePaymentFor(
@@ -449,19 +467,7 @@ async function recordInvoicePaymentFor(
   actorId: string,
   exchangeRate?: number
 ): Promise<{ paymentId: string; journalEntryId: string }> {
-  const ar = (await storage.getAccountsByCompanyId(companyId)).find(
-    (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-  );
-  if (!ar)
-    throw new DomainError(
-      "AR_ACCOUNT_MISSING",
-      422,
-      undefined,
-      "Accounts Receivable (1040) is missing"
-    );
-  const record: RecordInvoicePayment = has("invoices.recordPayment")
-    ? resolve<RecordInvoicePayment>("invoices.recordPayment")
-    : (input) => storage.recordInvoicePayment(input);
+  const record = resolve<RecordInvoicePayment>("invoices.recordPayment");
   try {
     const result = await record({
       invoiceId,
@@ -472,9 +478,7 @@ async function recordInvoicePaymentFor(
       reference: txn.reference,
       notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),
       paymentAccountId: bank.glAccountId,
-      paymentAccountCurrency: bank.currency,
       paymentExchangeRate: exchangeRate ?? null,
-      receivableAccountId: ar.id,
       createdBy: actorId,
     });
     return { paymentId: result.payment.id, journalEntryId: result.journalEntryId };
@@ -516,8 +520,9 @@ async function recordBillPaymentFor(
 }
 
 /**
- * Undo an invoice payment created by a bank match: reverse its journal through the kernel,
- * remove the payment row and restore the invoice status. Prefers W3-A's service when present.
+ * Undo an invoice payment created by a bank match through W3-A's "invoices.reversePayment"
+ * (kernel reversal of the payment journal, payment row removed, invoice status restored), inside
+ * the caller's ledger transaction.
  */
 async function reverseInvoicePayment(
   tx: LedgerTx,
@@ -526,53 +531,32 @@ async function reverseInvoicePayment(
   actorId: string,
   reason: string
 ): Promise<void> {
-  if (has("invoices.reversePayment")) {
-    await resolve<ReverseInvoicePayment>("invoices.reversePayment")({
-      companyId,
-      paymentId,
-      actorId,
-      reason,
-    });
-    return;
-  }
-  const [payment] = await tx
-    .select()
-    .from(invoicePayments)
-    .where(and(eq(invoicePayments.id, paymentId), eq(invoicePayments.companyId, companyId)))
-    .for("update");
-  if (!payment) return; // already removed
-  if (payment.journalEntryId) {
-    const [je] = await tx
-      .select({ reversedBy: journalEntries.reversedByEntryId, status: journalEntries.status })
-      .from(journalEntries)
-      .where(eq(journalEntries.id, payment.journalEntryId));
-    if (je && je.status === "posted" && !je.reversedBy) {
-      await reverseEntry(
-        payment.journalEntryId,
-        { reason, source: "payment_reversal", sourceId: payment.invoiceId },
-        { actorId, tx, companyId }
-      );
-    }
-  }
-  await tx.delete(invoicePayments).where(eq(invoicePayments.id, paymentId));
-  const [inv] = await tx
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.id, payment.invoiceId), eq(invoices.companyId, companyId)))
-    .for("update");
-  if (!inv) return;
-  const sumRes: { rows?: Array<{ paid: string }> } = await tx.execute(
-    sql`SELECT COALESCE(SUM(amount), 0)::text AS paid FROM invoice_payments WHERE invoice_id = ${payment.invoiceId}`
-  );
-  const paidFils = dbFils(sumRes.rows?.[0]?.paid ?? "0");
-  const totalFils = dbFils(inv.total);
-  let status = inv.status;
-  if (inv.status === "paid" || inv.status === "partial") {
-    status = paidFils <= 0 ? "sent" : paidFils >= totalFils ? "paid" : "partial";
-  }
-  if (status !== inv.status) {
-    await tx.update(invoices).set({ status }).where(eq(invoices.id, inv.id));
-  }
+  await resolve<ReverseInvoicePayment>("invoices.reversePayment")({
+    companyId,
+    paymentId,
+    actorId,
+    reason,
+    tx,
+  });
+}
+
+/** Undo a bill payment created by a bank match through W3-B's "bills.reversePayment". */
+async function reverseBillPayment(
+  tx: LedgerTx | undefined,
+  companyId: string,
+  paymentId: string,
+  billId: string | null,
+  actorId: string,
+  reason: string
+): Promise<void> {
+  await resolve<ReverseBillPayment>("bills.reversePayment")({
+    companyId,
+    paymentId,
+    billId,
+    actorId,
+    reason,
+    tx,
+  });
 }
 
 // ─── Entry builder (R06-21: VAT split, bank fee, FX difference) ────────────
@@ -914,14 +898,6 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
           [a.id, companyId]
         );
         if (!rows[0]) throw notFound("BILL_NOT_FOUND", "Bill not found");
-        if (!has("bills.recordPayment")) {
-          throw new DomainError(
-            "BILL_MATCH_UNAVAILABLE",
-            503,
-            undefined,
-            "Matching to vendor bills needs the bill payment service, which is not available"
-          );
-        }
       }
     }
     return applyPaymentAllocations(input, txn, bank, allocs, groupId, idem);
@@ -1245,14 +1221,17 @@ async function applyPaymentAllocations(
               "Bank match rolled back"
             )
           );
-        } else if (a.targetType === "bill" && a.paymentId && has("bills.reversePayment")) {
-          await resolve<ReverseBillPayment>("bills.reversePayment")({
-            companyId,
-            paymentId: a.paymentId,
-            billId: a.targetId,
-            actorId,
-            reason: "Bank match rolled back",
-          });
+        } else if (a.targetType === "bill" && a.paymentId) {
+          await withLedgerTx((tx) =>
+            reverseBillPayment(
+              tx,
+              companyId,
+              a.paymentId as string,
+              a.targetId,
+              actorId,
+              "Bank match rolled back"
+            )
+          );
         }
       } catch (err) {
         log.error(
@@ -1484,14 +1463,6 @@ export async function unmatchTransaction(input: {
     const other = await loadTxn(companyId, id);
     await assertPeriodNotLocked(companyId, other.transactionDate);
   }
-  if (group.some((m) => m.targetType === "bill" && m.paymentId) && !has("bills.reversePayment")) {
-    throw new DomainError(
-      "BILL_UNMATCH_UNAVAILABLE",
-      503,
-      undefined,
-      "Reversing a bill payment needs the bill payment service, which is not available"
-    );
-  }
 
   const reversedEntryIds: string[] = [];
   const reversedPayments: string[] = [];
@@ -1515,20 +1486,23 @@ export async function unmatchTransaction(input: {
     for (const m of group) {
       if (m.status === "pending" && m.journalEntryId) {
         // A draft created for review has no ledger effect: remove it so it cannot be posted later.
-        await tx
-          .delete(journalLines)
+        // A draft someone has since posted is reversed instead.
+        const [je] = await tx
+          .select({ status: journalEntries.status })
+          .from(journalEntries)
           .where(
-            sql`${journalLines.entryId} IN (SELECT id FROM journal_entries WHERE id = ${m.journalEntryId} AND company_id = ${companyId} AND status = 'draft')`
+            and(eq(journalEntries.id, m.journalEntryId), eq(journalEntries.companyId, companyId))
           );
-        await tx
-          .delete(journalEntries)
-          .where(
-            and(
-              eq(journalEntries.id, m.journalEntryId),
-              eq(journalEntries.companyId, companyId),
-              eq(journalEntries.status, "draft")
-            )
+        if (je?.status === "draft") {
+          await deleteDraft(m.journalEntryId, { actorId, tx, companyId, req: input.req });
+        } else if (je?.status === "posted") {
+          await reverseEntry(
+            m.journalEntryId,
+            { reason },
+            { actorId, tx, companyId, req: input.req }
           );
+          reversedEntryIds.push(m.journalEntryId);
+        }
       } else if (m.createdJournal && m.journalEntryId) {
         const [je] = await tx
           .select({ source: journalEntries.source, sourceId: journalEntries.sourceId })
@@ -1551,14 +1525,9 @@ export async function unmatchTransaction(input: {
         reversedPayments.push(m.paymentId);
         if (m.journalEntryId) reversedEntryIds.push(m.journalEntryId);
       } else if (m.targetType === "bill" && m.paymentId) {
-        await resolve<ReverseBillPayment>("bills.reversePayment")({
-          companyId,
-          paymentId: m.paymentId,
-          billId: m.targetId,
-          actorId,
-          reason,
-        });
+        await reverseBillPayment(tx, companyId, m.paymentId, m.targetId, actorId, reason);
         reversedPayments.push(m.paymentId);
+        if (m.journalEntryId) reversedEntryIds.push(m.journalEntryId);
       }
       await tx
         .update(bankTransactionMatches)

@@ -499,6 +499,31 @@ e2e:benchmark-audit`; it uses the report fixture by default, refuses production 
   use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
   (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
   linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.
+- Draft journals are removed with the kernel's `deleteDraft(entryId, ctx)` (conditional on
+  `status = 'draft'`, audited); never `DELETE FROM journal_entries` directly.
+- Cash settlement seams are late-bound through `server/platform/service-registry.ts`:
+  `invoices.recordPayment` / `invoices.reversePayment` (`server/services/invoice-payment.service.ts`)
+  and `bills.recordPayment` / `bills.reversePayment` (`server/services/bill-payment.service.ts`;
+  reverse = `voidBillPayment`). Both reverse functions take an optional `tx` so a caller can run
+  them inside its own `withLedgerTx`. Do not call `storage.recordInvoicePayment` or write
+  `invoice_payments` / `bill_payments` from other modules.
+- Bank reconciliation state changes only through `server/services/bank-reconciliation.service.ts`:
+  `applyMatch` (row lock, `is_reconciled` guard, period lock, idempotency key, allocations in
+  `bank_transaction_matches`) and `unmatchTransaction` (reverses exactly what the match created:
+  kernel reversal, payment reversal through the seams above, draft removal via `deleteDraft`).
+  Verify with `tests/db/banking-reconciliation.test.ts`.
+- Payroll lives in `server/services/payroll/` (`runs.ts` state machine calculate → approve → pay
+  with kernel accrual/payment entries and unapprove/unpay reversals, `settlement.ts` final
+  settlement, `wps.ts` + `server/services/wps-sif.service.ts` SIF generation/pre-validation,
+  `leave.ts`, `payslip.ts`, `legal-params.ts`; legal defaults in `docs/payroll-legal-parameters.md`).
+  Run status is server-owned; verify with `tests/db/payroll-runs.test.ts`.
+- Vendors are a master table (`server/services/vendor.service.ts`, `/api/companies/:companyId/vendors`):
+  bills resolve/link a vendor by TRN or name; statements and aging read it.
+- `GET /api/companies/:companyId/invoices` is cursor-paginated by default
+  (`{ items, nextCursor, limit }`, default 50, max 200; `status` also accepts derived `open` /
+  `overdue`). Callers that aggregate over every invoice must pass `?all=true` (Dashboard, Reports,
+  CreditNotes, BankReconciliation) and keep the `["/api/companies", id, "invoices"]` query key so
+  invalidations still match. Invoices and BillPay read the dashboard drill-through `?status=`.
 - Statements, trial balance, aging, cash flow and corporate-tax figures read the reporting kernel in
   `server/reporting/` (see its README); other ledger readers should use it or `NOT_CLOSING_SQL`.
 - Tenant-owned rows are loaded with `server/tenancy` (`scopedGet` / `scopedUpdate` /

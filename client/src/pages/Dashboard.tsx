@@ -965,6 +965,8 @@ function CustomerDashboard() {
 
   const { data: recentInvoices, isLoading: invoicesLoading } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+    // R20-05: the list endpoint paginates by default; dashboard aggregates need all rows.
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`),
     enabled: !!selectedCompanyId,
   });
 

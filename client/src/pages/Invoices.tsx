@@ -96,6 +96,7 @@ import {
   DollarSign,
   RefreshCw,
   RotateCcw,
+  X,
 } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
 import type { Invoice, Company, InvoicePayment } from "@shared/schema";
@@ -214,16 +215,36 @@ export default function Invoices() {
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
 
+  // R13-21: dashboard drill-through links open /invoices?status=open|overdue|<status>; the
+  // filter is applied server-side so the paginated list stays correct.
+  const [statusFilter, setStatusFilter] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const v = new URLSearchParams(window.location.search).get("status");
+    return v && /^[a-z_]{1,40}$/.test(v) ? v : null;
+  });
+  const clearStatusFilter = () => {
+    setStatusFilter(null);
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("status");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
+    );
+  };
+
   // R20-05: cursor-paginated list (50 per page) with infinite scroll; exports
   // fetch the full list explicitly with all=true.
   const invoicePages = useInfiniteQuery<{ items: Invoice[]; nextCursor: string | null }>({
-    queryKey: ["/api/companies", selectedCompanyId, "invoices", "paged"],
+    queryKey: ["/api/companies", selectedCompanyId, "invoices", "paged", statusFilter ?? "all"],
     queryFn: ({ pageParam }) =>
       apiRequest(
         "GET",
         `/api/companies/${selectedCompanyId}/invoices?limit=50${
-          pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""
-        }`
+          statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ""
+        }${pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""}`
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
@@ -942,6 +963,21 @@ export default function Invoices() {
                     {(t as any).filterByDate ?? "Filter by date:"}
                   </span>
                   <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+                  {statusFilter && (
+                    <Badge variant="secondary" className="gap-2" data-testid="badge-status-filter">
+                      {formatMessage(t["invoices.statusFilter"], {
+                        status: t[`invoices.statusFilter.${statusFilter}`] ?? statusFilter,
+                      })}
+                      <button
+                        type="button"
+                        onClick={clearStatusFilter}
+                        aria-label={t["invoices.clearStatusFilter"]}
+                        data-testid="button-clear-status-filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <DropdownMenu>

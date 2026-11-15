@@ -10,6 +10,7 @@ export {
   reverseBySource,
   submitForApproval,
   updateDraftEntry,
+  deleteDraft,
   describeReversal,
 } from "./kernel";
 export { withLedgerTx, type LedgerTxHooks } from "./tx";

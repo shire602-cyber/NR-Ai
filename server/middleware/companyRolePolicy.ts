@@ -274,7 +274,9 @@ const RESOURCES: Record<string, string> = {
   "anomaly-alerts": "SELECT company_id FROM anomaly_alerts WHERE id = $1",
   "bank-transactions": "SELECT company_id FROM bank_transactions WHERE id = $1",
   quotes: "SELECT company_id FROM quotes WHERE id = $1",
-  "credit-notes": "SELECT company_id FROM credit_notes WHERE id = $1",
+  // Credit notes live in `invoices` (invoice_type = 'credit_note'); the legacy credit_notes table
+  // is no longer what /api/credit-notes/:id addresses.
+  "credit-notes": "SELECT company_id FROM invoices WHERE id = $1",
   "purchase-orders": "SELECT company_id FROM purchase_orders WHERE id = $1",
   "cost-centers": "SELECT company_id FROM cost_centers WHERE id = $1",
   "reconciliation-rules": "SELECT company_id FROM reconciliation_rules WHERE id = $1",

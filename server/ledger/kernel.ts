@@ -794,6 +794,49 @@ export async function updateDraftEntry(
   }, ctx.tx);
 }
 
+/**
+ * Delete a DRAFT entry and its lines (a draft has no ledger effect, so removing it is the inverse
+ * of creating it). Conditional on `status = 'draft'` and the company; returns false when the entry
+ * is already gone, 409 ENTRY_NOT_DRAFT when it has been posted (reverse it instead). Audited.
+ */
+export async function deleteDraft(entryId: string, ctx: LedgerContext): Promise<boolean> {
+  actorOf(ctx);
+  return withLedgerTx(async (tx) => {
+    const pre = await loadEntry(tx, entryId, ctx.companyId, true);
+    if (!pre) return false;
+    if (pre.status !== "draft") {
+      throw new DomainError(
+        "ENTRY_NOT_DRAFT",
+        409,
+        { status: pre.status },
+        "Only draft entries can be deleted; reverse a posted entry instead"
+      );
+    }
+    await tx.delete(journalLines).where(eq(journalLines.entryId, entryId));
+    const rows = await tx
+      .delete(journalEntries)
+      .where(
+        and(
+          eq(journalEntries.id, entryId),
+          eq(journalEntries.companyId, pre.companyId),
+          eq(journalEntries.status, "draft")
+        )
+      )
+      .returning({ id: journalEntries.id });
+    if (!rows[0]) throw new DomainError("ENTRY_NOT_DRAFT", 409);
+    await writeAudit(
+      tx,
+      ctx,
+      pre.companyId,
+      "journal.delete_draft",
+      entryId,
+      { entryNumber: pre.entryNumber, status: pre.status, source: pre.source },
+      null
+    );
+    return true;
+  }, ctx.tx);
+}
+
 /** Lifecycle view of an entry for API responses (both sides of a reversal). */
 export function describeReversal(entry: JournalEntry): {
   reversedByEntryId: string | null;

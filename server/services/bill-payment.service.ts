@@ -13,7 +13,7 @@
  */
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
-import { pool } from "../db";
+import { db, pool } from "../db";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
@@ -856,6 +856,8 @@ export async function voidBillPayment(args: {
   actorId: string;
   reason?: string | null;
   req?: Request;
+  /** Run inside the caller's ledger transaction (bank unmatch / compensation). */
+  tx?: LedgerTx;
 }): Promise<{ billStatus: BillState; amountPaid: number }> {
   const result = await withLedgerTx(async (tx) => {
     const bill = await lockBill(tx, args.billId, args.companyId);
@@ -922,7 +924,7 @@ export async function voidBillPayment(args: {
     }
     const settled = await settleStatus(tx, bill);
     return { billStatus: settled.status, amountPaid: Number(fromFils(settled.paidFils)) };
-  });
+  }, args.tx);
   await recordAudit({
     userId: args.actorId,
     companyId: args.companyId,
@@ -1561,8 +1563,43 @@ export type BillsRecordPayment = typeof recordBillPayment;
 export type BillsCreateDraftFromInbound = typeof createDraftFromInbound;
 
 /** Idempotent: safe to call on every app build. */
+/**
+ * "bills.reversePayment" — the bank-unmatch seam (W3-C): void the payment through
+ * voidBillPayment (kernel reversal + reversal row + status restore), optionally inside the
+ * caller's ledger transaction. The bill id is looked up when the caller does not know it.
+ */
+export async function reverseBillPayment(input: {
+  companyId: string;
+  paymentId: string;
+  billId?: string | null;
+  actorId: string;
+  reason: string;
+  tx?: LedgerTx;
+}): Promise<{ billStatus: BillState; amountPaid: number } | null> {
+  let billId = input.billId ?? null;
+  if (!billId) {
+    const rows = await txRows<{ bill_id: string }>(
+      input.tx ?? db,
+      `SELECT bp.bill_id FROM bill_payments bp JOIN vendor_bills vb ON vb.id = bp.bill_id
+        WHERE bp.id = $1 AND vb.company_id = $2`,
+      [input.paymentId, input.companyId]
+    );
+    billId = rows[0]?.bill_id ?? null;
+    if (!billId) throw new DomainError("PAYMENT_NOT_FOUND", 404);
+  }
+  return voidBillPayment({
+    billId,
+    paymentId: input.paymentId,
+    companyId: input.companyId,
+    actorId: input.actorId,
+    reason: input.reason,
+    tx: input.tx,
+  });
+}
+
 export function registerBillServices(): void {
   if (!has("bills.recordPayment")) provide("bills.recordPayment", recordBillPayment);
+  if (!has("bills.reversePayment")) provide("bills.reversePayment", reverseBillPayment);
   if (!has("bills.createDraftFromInbound"))
     provide("bills.createDraftFromInbound", createDraftFromInbound);
   if (!listJobs().some((j) => j.name === "bills.recurring")) {

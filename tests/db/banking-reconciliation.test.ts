@@ -604,28 +604,87 @@ describe("W3-C banking: split, transfer, VAT, fee", () => {
     expect(await glBalance(t.company.id, ba.glAccountId)).toBe(-1065);
   });
 
-  it("[R06-21] matching a vendor bill without the bill payment service is 503 BILL_MATCH_UNAVAILABLE", async () => {
+  it("[R06-21][R06-02] bank match -> unmatch of a vendor bill pays it through bills.recordPayment and reverses through bills.reversePayment", async () => {
+    const { has } = await import("../../server/platform/service-registry");
+    for (const name of [
+      "invoices.recordPayment",
+      "invoices.reversePayment",
+      "bills.recordPayment",
+      "bills.reversePayment",
+    ]) {
+      expect(has(name), name).toBe(true);
+    }
     const t = await vatTenant();
     const ba = await bankAccount(t);
-    const billRows = await h.sql<{ id: string }>(
-      `INSERT INTO vendor_bills (company_id, vendor_name, bill_date, total_amount, status)
-       VALUES ($1, 'Vendor', '2026-10-01', 500, 'approved') RETURNING id`,
-      [t.company.id]
-    );
-    await importCsv(t, ba.id, [["2026-10-18", "VENDOR PAY", "500.00", ""]]);
-    const tt = (await lines(t, ba.id))[0];
-    const { has } = await import("../../server/platform/service-registry");
-    const r = await t.as.post(`${base(t)}/bank-statements/${tt.id}/match`, {
-      matchedType: "bill",
-      matchedId: billRows[0].id,
+    const created = await t.as.post(`${base(t)}/bills`, {
+      vendor_name: "Acme Hosting LLC",
+      vendor_trn: "100000000000003",
+      bill_number: `B-${randomUUID().slice(0, 6)}`,
+      bill_date: "2026-10-01",
+      due_date: "2026-10-31",
+      line_items: [{ description: "Hosting", quantity: 1, unit_price: 1000, vat_rate: 5 }],
     });
-    if (has("bills.recordPayment")) {
-      expect(r.status, r.text).toBe(201);
-    } else {
-      expect(r.status).toBe(503);
-      expect(r.body.code).toBe("BILL_MATCH_UNAVAILABLE");
-      expect((await lines(t, ba.id))[0].isReconciled).toBe(false);
-    }
+    expect(created.status, created.text).toBe(200);
+    const billId = created.body.id as string;
+    const appr = await t.as.post(`/api/bills/${billId}/approve`, {});
+    expect(appr.status, appr.text).toBe(200);
+    const ap = await accountByCode(t, "2010");
+    const apBefore = await glBalance(t.company.id, ap.id);
+    expect(apBefore).toBe(-1050);
+
+    await importCsv(t, ba.id, [["2026-10-18", "VENDOR PAY ACME", "1050.00", ""]]);
+    const tt = (await lines(t, ba.id))[0];
+    const m = await t.as.post(`${base(t)}/bank-statements/${tt.id}/match`, {
+      matchedType: "bill",
+      matchedId: billId,
+    });
+    expect(m.status, m.text).toBe(201);
+    const billStatus = async () =>
+      (
+        await h.sql<{ status: string }>(`SELECT status FROM vendor_bills WHERE id = $1`, [billId])
+      )[0].status;
+    expect(await billStatus()).toBe("paid");
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(-1050);
+    expect(await glBalance(t.company.id, ap.id)).toBe(0);
+    expect((await lines(t, ba.id))[0].isReconciled).toBe(true);
+    const match = await h.sql<{ payment_id: string; target_type: string }>(
+      `SELECT payment_id, target_type FROM bank_transaction_matches
+        WHERE bank_transaction_id = $1 AND status = 'active'`,
+      [tt.id]
+    );
+    expect(match).toHaveLength(1);
+    expect(match[0].target_type).toBe("bill");
+    expect(match[0].payment_id).toBeTruthy();
+
+    const un = await t.as.delete(`${base(t)}/bank-statements/${tt.id}/match`);
+    expect(un.status, un.text).toBe(200);
+    expect(un.body.reversedPayments).toEqual([match[0].payment_id]);
+    expect(await billStatus()).toBe("approved");
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(0);
+    expect(await glBalance(t.company.id, ap.id)).toBe(-1050);
+    expect((await lines(t, ba.id))[0].isReconciled).toBe(false);
+    const pays = await h.sql<{ kind: string; status: string; amount: string }>(
+      `SELECT kind, status, amount::text AS amount FROM bill_payments WHERE bill_id = $1 ORDER BY created_at`,
+      [billId]
+    );
+    expect(pays.map((p) => [p.kind, p.status])).toEqual([
+      ["payment", "voided"],
+      ["reversal", "active"],
+    ]);
+    const net = await h.sql<{ paid: string }>(
+      `SELECT COALESCE(SUM(amount), 0)::text AS paid FROM bill_payments WHERE bill_id = $1`,
+      [billId]
+    );
+    expect(Number(net[0].paid)).toBe(0);
+
+    // Re-match settles again with exactly one live bill payment entry.
+    const again = await t.as.post(`${base(t)}/bank-statements/${tt.id}/match`, {
+      matchedType: "bill",
+      matchedId: billId,
+    });
+    expect(again.status, again.text).toBe(201);
+    expect(await billStatus()).toBe("paid");
+    expect(await glBalance(t.company.id, ba.glAccountId)).toBe(-1050);
   });
 });
 

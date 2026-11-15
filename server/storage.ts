@@ -2196,7 +2196,21 @@ export class DatabaseStorage implements IStorage {
     nextCursor: string | null;
   }> {
     const conds = [eq(invoices.companyId, companyId)];
-    if (opts.status) conds.push(eq(invoices.status, opts.status));
+    // Derived filters used by dashboard drill-through links (R13-21):
+    //   open    = issued, not fully settled (sent | posted | partial)
+    //   overdue = open with a due date before today (UAE calendar day)
+    const OPEN_STATUSES = ["sent", "posted", "partial"];
+    if (opts.status === "open" || opts.status === "overdue") {
+      conds.push(inArray(invoices.status, OPEN_STATUSES));
+      if (!opts.type) conds.push(eq(invoices.invoiceType, "invoice"));
+      if (opts.status === "overdue") {
+        conds.push(
+          sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate}::date < (now() AT TIME ZONE 'Asia/Dubai')::date`
+        );
+      }
+    } else if (opts.status) {
+      conds.push(eq(invoices.status, opts.status));
+    }
     if (opts.type) conds.push(eq(invoices.invoiceType, opts.type));
     if (opts.cursor) {
       let createdAt: Date | null = null;
@@ -2882,8 +2896,14 @@ export class DatabaseStorage implements IStorage {
     return alert;
   }
 
-  async createAnomalyAlertIfNew(insertAlert: InsertAnomalyAlert): Promise<AnomalyAlert | undefined> {
-    const [alert] = await db.insert(anomalyAlerts).values(insertAlert).onConflictDoNothing().returning();
+  async createAnomalyAlertIfNew(
+    insertAlert: InsertAnomalyAlert
+  ): Promise<AnomalyAlert | undefined> {
+    const [alert] = await db
+      .insert(anomalyAlerts)
+      .values(insertAlert)
+      .onConflictDoNothing()
+      .returning();
     return alert;
   }
 

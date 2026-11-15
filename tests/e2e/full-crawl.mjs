@@ -348,7 +348,7 @@ async function main() {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
     const invoices = await (
-      await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)
+      await page.request.get(`${BASE}/api/companies/${companyId}/invoices?all=true`)
     ).json();
     const sourceInvoice = invoices?.find?.((invoice) => invoice?.invoiceType !== "credit_note");
     if (!sourceInvoice?.id) {
@@ -376,7 +376,9 @@ async function main() {
           .innerText()
           .catch(() => "");
         if (!cnText.includes(cnNumber)) {
-          await fail("credit-note-flow render", { detail: "created credit note not visible in UI" });
+          await fail("credit-note-flow render", {
+            detail: "created credit note not visible in UI",
+          });
         }
         const detail = await (await page.request.get(`${BASE}/api/credit-notes/${note.id}`)).json();
         if (detail?.status !== "issued" || detail?.invoiceId !== sourceInvoice.id) {
@@ -976,7 +978,7 @@ async function main() {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
     const invoices = await (
-      await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)
+      await page.request.get(`${BASE}/api/companies/${companyId}/invoices?all=true`)
     ).json();
     const targetInvoice = invoices?.[0];
     if (targetInvoice) {

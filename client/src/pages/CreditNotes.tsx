@@ -128,6 +128,8 @@ export default function CreditNotes() {
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+    // R20-05: the list endpoint paginates by default; the picker needs every invoice.
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`),
     enabled: !!selectedCompanyId,
   });
 

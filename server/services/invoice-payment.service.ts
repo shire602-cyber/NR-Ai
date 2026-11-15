@@ -20,12 +20,20 @@ import {
   accounts,
   customerCreditAllocations,
   customerCredits,
+  invoicePayments,
+  journalEntries,
   type CustomerCredit,
   type Invoice,
 } from "../../shared/schema";
 import { storage } from "../storage";
 import { DomainError } from "../errors";
-import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } from "../ledger";
+import {
+  postJournal,
+  reverseEntry,
+  withLedgerTx,
+  type LedgerTx,
+  type PostJournalLineInput,
+} from "../ledger";
 import { fromFils, mulRate, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { has, provide } from "../platform/service-registry";
@@ -201,9 +209,68 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
 
 export type RecordInvoicePaymentService = typeof recordInvoicePayment;
 
-/** Register "invoices.recordPayment" (idempotent). */
+export interface ReverseInvoicePaymentInput {
+  companyId: string;
+  paymentId: string;
+  actorId: string;
+  reason: string;
+  /** Run inside the caller's ledger transaction (bank unmatch, compensation). */
+  tx?: LedgerTx;
+}
+
+/**
+ * Undo one invoice payment: reverse its own journal entry through the kernel (by entry id — the
+ * payment journal's source id is the invoice, so reverseBySource would hit every payment), delete
+ * the payment row and recompute the settlement status through the invoice state machine.
+ * Idempotent: an already-removed payment is a no-op. Registered as "invoices.reversePayment".
+ */
+export async function reverseInvoicePayment(
+  input: ReverseInvoicePaymentInput
+): Promise<{ reversed: boolean; invoice: Invoice | null }> {
+  return withLedgerTx(async (tx) => {
+    const where = and(
+      eq(invoicePayments.id, input.paymentId),
+      eq(invoicePayments.companyId, input.companyId)
+    );
+    const [peek] = await tx
+      .select({ invoiceId: invoicePayments.invoiceId })
+      .from(invoicePayments)
+      .where(where);
+    if (!peek) return { reversed: false, invoice: null };
+    // Same lock order as recordInvoicePayment: invoice first, then the payment row.
+    const invoice = await lockInvoice(tx, peek.invoiceId, input.companyId);
+    const [payment] = await tx.select().from(invoicePayments).where(where).for("update");
+    if (!payment) return { reversed: false, invoice: null };
+    if (payment.journalEntryId) {
+      const [je] = await tx
+        .select({ reversedBy: journalEntries.reversedByEntryId, status: journalEntries.status })
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.id, payment.journalEntryId),
+            eq(journalEntries.companyId, input.companyId)
+          )
+        );
+      if (je && je.status === "posted" && !je.reversedBy) {
+        await reverseEntry(
+          payment.journalEntryId,
+          { reason: input.reason, source: "payment_reversal", sourceId: payment.invoiceId },
+          { actorId: input.actorId, tx, companyId: input.companyId }
+        );
+      }
+    }
+    await tx.delete(invoicePayments).where(eq(invoicePayments.id, payment.id));
+    const updated = await refreshSettlementStatus(tx, invoice.id);
+    return { reversed: true, invoice: (updated as Invoice) ?? null };
+  }, input.tx);
+}
+
+export type ReverseInvoicePaymentService = typeof reverseInvoicePayment;
+
+/** Register "invoices.recordPayment" and "invoices.reversePayment" (idempotent). */
 export function registerInvoicePaymentService(): void {
   if (!has("invoices.recordPayment")) provide("invoices.recordPayment", recordInvoicePayment);
+  if (!has("invoices.reversePayment")) provide("invoices.reversePayment", reverseInvoicePayment);
 }
 
 // ─── Customer credits ───────────────────────────────────────────────────────

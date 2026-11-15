@@ -264,11 +264,10 @@ async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
 export function registerInvoiceRoutes(app: Express) {
   registerInvoicePaymentService();
 
-  // ── List (R20-05: cursor pagination) ─────────────────────────────────────
-  //   ?limit=50&cursor=<opaque>  → { items, nextCursor, limit }   (default 50, max 200)
-  //   ?all=true                  → full array (exports)
-  //   no paging params           → legacy full array (deprecated; Dashboard/Reports
-  //                                 aggregate over it — FOLLOW-UP: move them to all=true)
+  // ── List (R20-05: cursor pagination by default) ─────────────────────────
+  //   (no params) | ?limit=50&cursor=<opaque> → { items, nextCursor, limit } (default 50, max 200)
+  //   ?all=true                               → full array (exports, Dashboard/Reports aggregates,
+  //                                             credit-note / bank-match pickers)
   app.get(
     "/api/companies/:companyId/invoices",
     authMiddleware,
@@ -277,23 +276,21 @@ export function registerInvoiceRoutes(app: Express) {
       const { companyId } = req.params;
       await assertCompanyAccess(req, companyId);
       const q = invoiceListQuerySchema.parse(req.query);
-      const paged = q.limit !== undefined || q.cursor !== undefined;
-      if (paged && q.all !== "true") {
-        const limit = q.limit ?? 50;
-        const page = await storage.getInvoicesPage(companyId, {
-          limit,
-          cursor: q.cursor ?? null,
-          status: q.status,
-          type: q.type,
+      if (q.all === "true") {
+        const invoices = await storage.getInvoicesSummaryByCompanyId(companyId, {
+          limit: 100_000,
+          offset: 0,
         });
-        return res.json({ items: page.items, nextCursor: page.nextCursor, limit });
+        return res.json(invoices);
       }
-      if (q.all !== "true") res.setHeader("Deprecation", "true");
-      const invoices = await storage.getInvoicesSummaryByCompanyId(companyId, {
-        limit: q.all === "true" ? 100_000 : 1000,
-        offset: 0,
+      const limit = q.limit ?? 50;
+      const page = await storage.getInvoicesPage(companyId, {
+        limit,
+        cursor: q.cursor ?? null,
+        status: q.status,
+        type: q.type,
       });
-      res.json(invoices);
+      res.json({ items: page.items, nextCursor: page.nextCursor, limit });
     })
   );
 

@@ -115,6 +115,13 @@ revise flows). Returns `[]` when nothing is left to reverse, so it is safe to ca
 Replace a draft's header and lines with the same validation (conditional on `status = 'draft'`), and
 mark a draft `approval_status = 'pending'`.
 
+### `deleteDraft(entryId, ctx) -> boolean`
+
+Deletes a draft entry and its lines in one transaction, conditional on `status = 'draft'` and the
+company (`ctx.companyId`). Returns `false` when the entry is already gone and 409
+`ENTRY_NOT_DRAFT` once it is posted (reverse it instead). Writes a `journal.delete_draft` audit row.
+Used by bank unmatch to remove an unposted rule draft.
+
 ### State machines
 
 ```ts

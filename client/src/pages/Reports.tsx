@@ -4140,6 +4140,8 @@ export default function Reports() {
 
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery<InvoiceReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+    // R20-05: the list endpoint paginates by default; report aggregates need all rows.
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`),
     ...reportQueryOptions,
     enabled: shouldLoadReportData(
       "ar-aging",

@@ -76,7 +76,7 @@ const SEGMENT_TABLES: Record<string, string> = {
   anomalies: "anomaly_alerts",
   "bank-transactions": "bank_transactions",
   quotes: "quotes",
-  "credit-notes": "credit_notes",
+  "credit-notes": "invoices", // credit notes are invoices rows (invoice_type credit_note)
   "purchase-orders": "purchase_orders",
   "cost-centers": "cost_centers",
   "reconciliation-rules": "reconciliation_rules",
