@@ -10,7 +10,7 @@ import {
   sendInvoiceEmail,
   sendPaymentReminderEmail,
 } from "../services/email.service";
-import { findInvoiceForUser } from "./invoices.routes";
+import { findInvoiceForUser, invoicePdfOptions } from "./invoices.routes";
 
 // Share-link, PDF and send-email endpoints moved verbatim from
 // invoices.routes.ts (W3-A structure split, no behaviour change).
@@ -68,7 +68,12 @@ export function registerInvoiceShareRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
-      const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+      const pdfBuffer = await generateInvoicePDF(
+        invoice,
+        lines,
+        company,
+        await invoicePdfOptions(invoice)
+      );
 
       res.set({
         "Content-Type": "application/pdf",
@@ -101,6 +106,7 @@ export function registerInvoiceShareRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
+      const pdfOpts = await invoicePdfOptions(invoice);
       // Return sanitized data (no internal IDs exposed except what's needed)
       res.json({
         invoice: {
@@ -113,6 +119,29 @@ export function registerInvoiceShareRoutes(app: Express) {
           vatAmount: invoice.vatAmount,
           total: invoice.total,
           status: invoice.status,
+          // R03-14: what the customer needs to act on the document.
+          invoiceType: invoice.invoiceType,
+          isTaxInvoice: !!company.trnVatNumber,
+          dueDate: invoice.dueDate,
+          supplyDate: invoice.supplyDate,
+          paymentTerms: invoice.paymentTerms,
+          reverseCharge: invoice.reverseCharge,
+          discountAmount: invoice.discountAmount,
+          amountPaid: pdfOpts.amountPaid ?? 0,
+          amountDue: Math.max(
+            0,
+            Math.round((Number(invoice.total) - Number(pdfOpts.amountPaid ?? 0)) * 100) / 100
+          ),
+          paymentStatus:
+            invoice.status === "void" || invoice.status === "cancelled"
+              ? "void"
+              : invoice.status === "paid"
+                ? "paid"
+                : Number(pdfOpts.amountPaid ?? 0) > 0
+                  ? "partially_paid"
+                  : invoice.dueDate && new Date(invoice.dueDate) < new Date()
+                    ? "overdue"
+                    : "unpaid",
         },
         lines: lines.map((l) => ({
           description: l.description,
@@ -155,7 +184,12 @@ export function registerInvoiceShareRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
-      const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+      const pdfBuffer = await generateInvoicePDF(
+        invoice,
+        lines,
+        company,
+        await invoicePdfOptions(invoice)
+      );
 
       res.set({
         "Content-Type": "application/pdf",
@@ -212,7 +246,12 @@ export function registerInvoiceShareRoutes(app: Express) {
       }
 
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
-      const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+      const pdfBuffer = await generateInvoicePDF(
+        invoice,
+        lines,
+        company,
+        await invoicePdfOptions(invoice)
+      );
 
       await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message);
 
@@ -281,7 +320,12 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const newReminderCount = (invoice.reminderCount || 0) + 1;
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
-      const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+      const pdfBuffer = await generateInvoicePDF(
+        invoice,
+        lines,
+        company,
+        await invoicePdfOptions(invoice)
+      );
 
       await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount);
 

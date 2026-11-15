@@ -1,6 +1,0 @@
-{
-  "issue": "R03-11",
-  "owner": "W3-A",
-  "reason": "Quote update passes the raw body to storage; companyId in the body moves the quote into another tenant.",
-  "routes": ["PUT /api/quotes/:id#inject"]
-}

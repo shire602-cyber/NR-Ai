@@ -23,7 +23,22 @@ export interface GenerateInvoicePdfOptions {
   supplyDate?: Date | string | null;
   /** Customer details from the linked contact, used when the invoice has none stored. */
   customer?: { name?: string | null; trn?: string | null; address?: string | null };
+  /** W3-A (R03-24): invoice-template branding applied to the standard layout. */
+  branding?: InvoicePdfBranding | null;
 }
+
+export interface InvoicePdfBranding {
+  primaryColor?: string | null;
+  headerText?: string | null;
+  footerText?: string | null;
+  termsText?: string | null;
+  bankDetails?: string | null;
+  /** Only raster data: URLs are embedded (no network fetch while rendering). */
+  logoUrl?: string | null;
+  showLogo?: boolean | null;
+}
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 export function invoicePdfTemplateForCompany(company: Company): InvoicePdfTemplate {
   return company.companyType === "client" ? "nra" : "standard";
@@ -191,8 +206,31 @@ async function generateStandardInvoicePDF(
         ? L("Tax Invoice", "فاتورة ضريبية")
         : L("Invoice", "فاتورة");
 
+      const brand = options.branding ?? null;
+      const bandColor =
+        brand?.primaryColor && HEX_COLOR.test(brand.primaryColor) ? brand.primaryColor : "#1E40AF";
+
       // Header band
-      doc.rect(0, 0, pageWidth, 110).fill("#1E40AF");
+      doc.rect(0, 0, pageWidth, 110).fill(bandColor);
+      if (
+        brand?.showLogo !== false &&
+        brand?.logoUrl &&
+        /^data:image\/(png|jpe?g);base64,/i.test(brand.logoUrl)
+      ) {
+        try {
+          const b64 = brand.logoUrl.slice(brand.logoUrl.indexOf(",") + 1);
+          doc.image(Buffer.from(b64, "base64"), px(margin, 60), 50, { fit: [60, 50] });
+        } catch {
+          // An undecodable logo must never break the tax invoice.
+        }
+      }
+      if (brand?.headerText) {
+        doc.fontSize(8).fillColor("#DBEAFE").font("Helvetica");
+        doc.text(brand.headerText, px(margin + 70, contentWidth * 0.4), 92, {
+          width: contentWidth * 0.4,
+          align: START,
+        });
+      }
 
       doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
       doc.text(company.name, px(margin, contentWidth * 0.5), 20, {
@@ -345,7 +383,7 @@ async function generateStandardInvoicePDF(
 
       const drawTableHeader = () => {
         const headerH = 38;
-        doc.rect(margin, y, contentWidth, headerH).fill("#1E40AF");
+        doc.rect(margin, y, contentWidth, headerH).fill(bandColor);
         doc.fontSize(6.5).fillColor("#FFFFFF").font("Helvetica-Bold");
         for (const c of cols) {
           doc.text(c.label, c.x + 2, y + 5, { width: c.w - 4, align: c.align });
@@ -357,7 +395,13 @@ async function generateStandardInvoicePDF(
       lines.forEach((line, index) => {
         const treatment = vatTreatmentForLine(line, !!invoice.reverseCharge);
         const label = TREATMENT_LABELS[treatment];
-        const net = line.quantity * line.unitPrice;
+        // Net after line + allocated document discount (W3-A); legacy rows
+        // without net_amount fall back to quantity × unit price.
+        const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
+        const net =
+          storedNet !== null && storedNet !== undefined
+            ? Math.abs(Number(storedNet))
+            : line.quantity * line.unitPrice;
         const rate = line.vatRate ?? UAE_VAT_RATE;
         const vat = net * rate;
         doc.fontSize(8).font("Helvetica");
@@ -460,6 +504,12 @@ async function generateStandardInvoicePDF(
         y += 15;
       };
       const money = (n: number) => `${totals.currency} ${formatNumber(n)}`;
+      const discountAmount = Number(
+        (invoice as Invoice & { discountAmount?: number | null }).discountAmount ?? 0
+      );
+      if (discountAmount > 0) {
+        totalsRow(L("Discount", "الخصم"), `- ${money(discountAmount)}`);
+      }
       totalsRow(L("Subtotal (excl. VAT)", "المجموع قبل الضريبة"), money(totals.subtotal));
       totalsRow(
         invoice.reverseCharge
@@ -526,6 +576,12 @@ async function generateStandardInvoicePDF(
         );
         y += 14;
       }
+      for (const extra of [brand?.termsText, brand?.bankDetails]) {
+        if (!extra) continue;
+        doc.fontSize(7.5).fillColor("#374151").font("Helvetica");
+        doc.text(extra, margin, y, { width: contentWidth - qrReserve - 10, align: START });
+        y += doc.heightOfString(extra, { width: contentWidth - qrReserve - 10 }) + 6;
+      }
 
       const qrSize = 72;
       const qrX = px(margin + contentWidth - qrSize, qrSize);
@@ -550,10 +606,15 @@ async function generateStandardInvoicePDF(
         .lineTo(margin + contentWidth, footerY - 8)
         .stroke("#E5E7EB");
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      doc.text(L("Thank you for your business.", "شكراً لتعاملكم معنا."), margin, footerY, {
-        width: contentWidth,
-        align: "center",
-      });
+      doc.text(
+        brand?.footerText || L("Thank you for your business.", "شكراً لتعاملكم معنا."),
+        margin,
+        footerY,
+        {
+          width: contentWidth,
+          align: "center",
+        }
+      );
       if (isVATRegistered) {
         doc.fontSize(7).fillColor("#9CA3AF");
         doc.text(
@@ -819,7 +880,11 @@ function aggregateVatBuckets(lines: InvoiceLine[], reverseCharge: boolean): VatB
   for (const line of lines) {
     const rate = line.vatRate ?? UAE_VAT_RATE;
     const treatment = vatTreatmentForLine(line, reverseCharge);
-    const taxable = line.quantity * line.unitPrice;
+    const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
+    const taxable =
+      storedNet !== null && storedNet !== undefined
+        ? Math.abs(Number(storedNet))
+        : line.quantity * line.unitPrice;
     const vat = taxable * rate;
     const key = `${treatment}:${rate}`;
     const existing = buckets.get(key);
@@ -951,4 +1016,119 @@ function formatNraPlainAmount(amount: number): string {
 
 function formatNraTotalAmount(amount: number, currency: string = "AED"): string {
   return `${currency} ${formatNraPlainAmount(amount)}`;
+}
+
+/**
+ * Delivery note derived from an invoice (W3-A, R03-24): goods and quantities
+ * only — no prices or VAT — with receiver signature boxes. Not a tax document.
+ */
+export async function generateDeliveryNotePDF(
+  invoice: Invoice,
+  lines: InvoiceLine[],
+  company: Company,
+  options: { locale?: PdfLocale } = {}
+): Promise<Buffer> {
+  const locale = options.locale ?? pdfLocale(company);
+  const rtl = locale === "ar";
+  const L = (en: string, ar: string) => bilingual(locale, en, ar);
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: "A4",
+        margin: 50,
+        info: {
+          Title: `Delivery Note ${invoice.number}`,
+          Author: company.name,
+          Creator: "Muhasib.ai",
+        },
+      });
+      preparePdfDocument(doc);
+      const chunks: Buffer[] = [];
+      doc.on("data", (c: Buffer) => chunks.push(c));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+      const margin = 50;
+      const contentWidth = PAGE_WIDTH - 2 * margin;
+      const START: "left" | "right" = rtl ? "right" : "left";
+      const END: "left" | "right" = rtl ? "left" : "right";
+
+      doc.fontSize(18).fillColor("#111827").font("Helvetica-Bold");
+      doc.text(L("Delivery Note", "إشعار تسليم"), margin, 50, { width: contentWidth, align: END });
+      doc.fontSize(12).text(company.legalName || company.name, margin, 50, {
+        width: contentWidth / 2,
+        align: START,
+      });
+      doc.fontSize(9).font("Helvetica").fillColor("#374151");
+      let y = 80;
+      for (const [label, value] of [
+        [L("Reference invoice", "الفاتورة المرجعية"), invoice.number],
+        [L("Date", "التاريخ"), formatDate(invoice.supplyDate ?? invoice.date)],
+        [L("Deliver to", "التسليم إلى"), invoice.customerName],
+        [L("Address", "العنوان"), invoice.customerAddress || "—"],
+      ] as Array<[string, string]>) {
+        doc.text(`${label}: ${value}`, margin, y, { width: contentWidth, align: START });
+        y += 14;
+      }
+      y += 10;
+      doc.rect(margin, y, contentWidth, 22).fill(HEADER_FILL);
+      doc.fillColor("#111827").font("Helvetica-Bold").fontSize(9);
+      doc.text("#", margin + 6, y + 6, { width: 24, align: START });
+      doc.text(L("Description", "الوصف"), margin + 34, y + 6, {
+        width: contentWidth - 140,
+        align: START,
+      });
+      doc.text(L("Quantity", "الكمية"), margin + contentWidth - 100, y + 6, {
+        width: 94,
+        align: END,
+      });
+      y += 26;
+      doc.font("Helvetica").fontSize(9);
+      lines.forEach((line, i) => {
+        const h = Math.max(
+          18,
+          doc.heightOfString(line.description, { width: contentWidth - 140 }) + 6
+        );
+        if (y + h > 700) {
+          doc.addPage();
+          y = 50;
+        }
+        doc.text(String(i + 1), margin + 6, y, { width: 24, align: START });
+        doc.text(line.description, margin + 34, y, { width: contentWidth - 140, align: START });
+        doc.text(formatQuantity(Math.abs(line.quantity)), margin + contentWidth - 100, y, {
+          width: 94,
+          align: END,
+        });
+        y += h;
+        doc
+          .moveTo(margin, y - 2)
+          .lineTo(margin + contentWidth, y - 2)
+          .stroke("#E5E7EB");
+      });
+      y = Math.max(y + 40, 620);
+      const boxW = contentWidth / 2 - 10;
+      for (const [i, label] of [
+        L("Delivered by", "سُلّم بواسطة"),
+        L("Received by (name, signature, date)", "استلم بواسطة (الاسم، التوقيع، التاريخ)"),
+      ].entries()) {
+        const x = margin + i * (boxW + 20);
+        doc.rect(x, y, boxW, 70).stroke(BORDER);
+        doc
+          .fontSize(8)
+          .fillColor("#6B7280")
+          .text(label, x + 6, y + 6, { width: boxW - 12, align: START });
+      }
+      doc
+        .fontSize(7)
+        .fillColor("#9CA3AF")
+        .text(
+          L("This delivery note is not a tax invoice.", "إشعار التسليم هذا ليس فاتورة ضريبية."),
+          margin,
+          y + 90,
+          { width: contentWidth, align: "center" }
+        );
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
 }

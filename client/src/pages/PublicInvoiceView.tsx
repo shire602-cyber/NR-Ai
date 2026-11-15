@@ -26,6 +26,14 @@ interface PublicInvoiceData {
     vatAmount: number;
     total: number;
     status: string;
+    // R03-14: tax-invoice label, due date and payment status for the customer.
+    invoiceType?: string;
+    isTaxInvoice?: boolean;
+    dueDate?: string | null;
+    supplyDate?: string | null;
+    amountPaid?: number;
+    amountDue?: number;
+    paymentStatus?: "paid" | "partially_paid" | "unpaid" | "overdue" | "void";
   };
   lines: {
     description: string;
@@ -162,7 +170,15 @@ export default function PublicInvoiceView() {
                 )}
               </div>
               <div className="text-right">
-                <h2 className="text-lg font-bold">{isVATRegistered ? "TAX INVOICE" : "INVOICE"}</h2>
+                <h2 className="text-lg font-bold uppercase" data-testid="public-invoice-title">
+                  {invoice.invoiceType === "credit_note" ? (
+                    <T k="invoices.publicCreditNote" />
+                  ) : (invoice.isTaxInvoice ?? isVATRegistered) ? (
+                    <T k="invoices.publicTaxInvoice" />
+                  ) : (
+                    <T k="invoices.publicInvoice" />
+                  )}
+                </h2>
                 {isVATRegistered && company.trnVatNumber && (
                   <p className="text-info-foreground text-sm mt-1">TRN: {company.trnVatNumber}</p>
                 )}
@@ -174,15 +190,70 @@ export default function PublicInvoiceView() {
             {/* Invoice Details */}
             <div className="flex flex-wrap gap-6 justify-between bg-muted p-4 rounded-lg">
               <div>
-                <p className="text-sm text-muted-foreground">Invoice Number</p>
+                <p className="text-sm text-muted-foreground">
+                  {(invoice.isTaxInvoice ?? isVATRegistered) ? (
+                    <T k="invoices.publicTaxInvoice" />
+                  ) : (
+                    <T k="invoices.publicInvoice" />
+                  )}
+                </p>
                 <p className="font-semibold text-lg">{invoice.number}</p>
               </div>
+              {invoice.supplyDate && (
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="invoices.publicSupplyDate" />
+                  </p>
+                  <p className="font-semibold">{formatDate(invoice.supplyDate)}</p>
+                </div>
+              )}
+              {invoice.dueDate && (
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="invoices.publicDueDate" />
+                  </p>
+                  <p className="font-semibold" data-testid="public-invoice-due-date">
+                    {formatDate(invoice.dueDate)}
+                  </p>
+                </div>
+              )}
+              {invoice.paymentStatus && (
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="invoices.publicPaymentStatus" />
+                  </p>
+                  <Badge
+                    className={getStatusColor(
+                      invoice.paymentStatus === "partially_paid"
+                        ? "partial"
+                        : invoice.paymentStatus === "unpaid"
+                          ? "sent"
+                          : invoice.paymentStatus
+                    )}
+                    data-testid="public-invoice-payment-status"
+                  >
+                    <T k={`invoices.payStatus.${invoice.paymentStatus}`} />
+                  </Badge>
+                </div>
+              )}
+              {invoice.amountDue !== undefined && invoice.invoiceType !== "credit_note" && (
+                <div className="text-end">
+                  <p className="text-sm text-muted-foreground">
+                    <T k="invoices.publicAmountDue" />
+                  </p>
+                  <p className="font-bold text-2xl" data-testid="public-invoice-amount-due">
+                    {formatCurrency(invoice.amountDue, invoice.currency)}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-muted-foreground">Date</p>
                 <p className="font-semibold">{formatDate(invoice.date)}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground"><T k="pages.status" /></p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.status" />
+                </p>
                 <Badge className={getStatusColor(invoice.status)}>
                   {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                 </Badge>
@@ -203,13 +274,17 @@ export default function PublicInvoiceView() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-info hover:bg-info">
-                    <TableHead className="text-white font-semibold"><T k="pages.description" /></TableHead>
+                    <TableHead className="text-white font-semibold">
+                      <T k="pages.description" />
+                    </TableHead>
                     <TableHead className="text-white font-semibold text-center">Qty</TableHead>
                     <TableHead className="text-white font-semibold text-center">
                       <T k="pages.unitPrice" />
                     </TableHead>
                     <TableHead className="text-white font-semibold text-center">VAT</TableHead>
-                    <TableHead className="text-white font-semibold text-right"><T k="pages.amount" /></TableHead>
+                    <TableHead className="text-white font-semibold text-right">
+                      <T k="pages.amount" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -238,7 +313,9 @@ export default function PublicInvoiceView() {
             <div className="flex justify-end">
               <div className="w-64 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground"><T k="pages.subtotal" /></span>
+                  <span className="text-muted-foreground">
+                    <T k="pages.subtotal" />
+                  </span>
                   <span>{formatCurrency(invoice.subtotal, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -246,7 +323,9 @@ export default function PublicInvoiceView() {
                   <span>{formatCurrency(invoice.vatAmount, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg pt-2 border-t bg-info text-white -mx-3 px-3 py-2 rounded-lg">
-                  <span><T k="pages.total2" /></span>
+                  <span>
+                    <T k="pages.total2" />
+                  </span>
                   <span>{formatCurrency(invoice.total, invoice.currency)}</span>
                 </div>
               </div>
@@ -254,11 +333,7 @@ export default function PublicInvoiceView() {
 
             {/* Download PDF */}
             <div className="flex justify-center pt-4 border-t">
-              <Button
-                onClick={handleDownloadPDF}
-                className="bg-info hover:bg-info"
-                size="lg"
-              >
+              <Button onClick={handleDownloadPDF} className="bg-info hover:bg-info" size="lg">
                 <Download className="w-5 h-5 mr-2" />
                 <T k="pages.downloadPdf" />
               </Button>

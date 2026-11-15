@@ -149,7 +149,7 @@ export default function Quotes() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: QuoteFormData) =>
+    mutationFn: (data: Record<string, unknown>) =>
       apiRequest("POST", `/api/companies/${selectedCompanyId}/quotes`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
@@ -168,7 +168,7 @@ export default function Quotes() {
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: QuoteFormData }) =>
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
       apiRequest("PUT", `/api/quotes/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
@@ -202,7 +202,7 @@ export default function Quotes() {
   });
 
   const convertMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/quotes/${id}/convert-to-invoice`),
+    mutationFn: (id: string) => apiRequest("POST", `/api/quotes/${id}/convert-to-invoice`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
       queryClient.invalidateQueries({
@@ -263,15 +263,24 @@ export default function Quotes() {
   };
 
   const onSubmit = async (data: QuoteFormData) => {
+    // R03-11: strict contract — number, status and totals are server-owned.
     const quoteData = {
-      ...data,
-      companyId: selectedCompanyId!,
-      lines: fields.map((_, index) => ({
-        description: data.lines[index].description,
-        quantity: Number(data.lines[index].quantity),
-        unitPrice: Number(data.lines[index].unitPrice),
-        vatRate: Number(data.lines[index].vatRate),
-      })),
+      customerName: data.customerName,
+      customerTrn: data.customerTrn || null,
+      date: format(data.date, "yyyy-MM-dd"),
+      expiryDate: data.expiryDate ? format(data.expiryDate, "yyyy-MM-dd") : null,
+      currency: data.currency,
+      notes: data.notes || null,
+      lines: fields.map((_, index) => {
+        const vat = Number(data.lines[index].vatRate) > 0 ? 0.05 : 0;
+        return {
+          description: data.lines[index].description,
+          quantity: Number(data.lines[index].quantity),
+          unitPrice: Math.round(Number(data.lines[index].unitPrice) * 100) / 100,
+          vatRate: vat,
+          vatSupplyType: vat > 0 ? "standard_rated" : "zero_rated",
+        };
+      }),
     };
 
     if (editingQuote) {

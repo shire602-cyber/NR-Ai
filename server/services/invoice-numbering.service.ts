@@ -1,11 +1,14 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 
-export type InvoiceDocType = "invoice" | "credit_note" | "quote";
+export type InvoiceDocType = "invoice" | "credit_note" | "debit_note" | "quote";
 
 const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
   credit_note: "CN",
+  // W3-A: debit notes (additional charges on an issued invoice) are tax
+  // documents with their own gap-free sequence.
+  debit_note: "DN",
   // Quotes are not tax documents, so FTA gap-free numbering does not apply to
   // them — but they still need a unique, sequential, server-allocated number.
   // `quotes.number` is NOT NULL, and the create route used to leave it unset,

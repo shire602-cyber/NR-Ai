@@ -41,6 +41,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useTranslation } from "@/lib/i18n";
 import { Plus, Layout, Loader2, Check, Trash2, Edit, Star } from "lucide-react";
 
 const templateSchema = z.object({
@@ -50,6 +51,9 @@ const templateSchema = z.object({
   layout: z.enum(["standard", "modern", "minimal"]).default("standard"),
   headerText: z.string().optional(),
   footerText: z.string().optional(),
+  // R03-24: printed on the invoice PDF under the totals.
+  termsText: z.string().max(2000).optional(),
+  bankDetails: z.string().max(1000).optional(),
   showLogo: z.boolean().default(true),
   showStamp: z.boolean().default(false),
 });
@@ -65,6 +69,8 @@ interface InvoiceTemplate {
   layout: string;
   headerText?: string;
   footerText?: string;
+  termsText?: string | null;
+  bankDetails?: string | null;
   showLogo: boolean;
   showStamp: boolean;
   isDefault: boolean;
@@ -72,6 +78,7 @@ interface InvoiceTemplate {
 
 export default function InvoiceTemplates() {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -204,6 +211,8 @@ export default function InvoiceTemplates() {
       layout: template.layout as "standard" | "modern" | "minimal",
       headerText: template.headerText || "",
       footerText: template.footerText || "",
+      termsText: template.termsText || "",
+      bankDetails: template.bankDetails || "",
       showLogo: template.showLogo ?? true,
       showStamp: template.showStamp ?? false,
     });
@@ -407,6 +416,34 @@ export default function InvoiceTemplates() {
                           placeholder="Optional footer note (e.g., payment terms, thank you message)"
                           rows={3}
                         />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="termsText"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["invoices.templateTerms"]}</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} rows={2} data-testid="input-template-terms" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="bankDetails"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["invoices.templateBankDetails"]}</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} rows={2} data-testid="input-template-bank" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

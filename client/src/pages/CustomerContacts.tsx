@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -119,6 +120,16 @@ async function downloadContactTemplate(companyId: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+const CONTACT_EMIRATES = [
+  "abu_dhabi",
+  "dubai",
+  "sharjah",
+  "ajman",
+  "umm_al_quwain",
+  "ras_al_khaimah",
+  "fujairah",
+] as const;
+
 function ContactForm({
   contact,
   onSubmit,
@@ -136,7 +147,11 @@ function ContactForm({
     address: contact?.address || "",
     city: contact?.city || "",
     country: contact?.country || "UAE",
+    // R03-10: invoices to this contact default their place of supply and due date from here.
+    emirate: contact?.emirate || "",
+    paymentTerms: contact?.paymentTerms ?? 30,
   });
+  const { t } = useTranslation();
 
   return (
     <div className="space-y-4">
@@ -182,7 +197,37 @@ function ContactForm({
             data-testid="input-contact-trn"
           />
         </div>
-        <div />
+        <div className="space-y-2">
+          <Label>{t["invoices.placeOfSupply"]}</Label>
+          <select
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            value={formData.emirate}
+            onChange={(e) => setFormData({ ...formData, emirate: e.target.value })}
+            data-testid="select-contact-emirate"
+          >
+            <option value="">{t["invoices.placeOfSupplyDefault"]}</option>
+            {CONTACT_EMIRATES.map((e) => (
+              <option key={e} value={e}>
+                {t[`invoices.emirate.${e}`]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{t["invoices.contactPaymentTermsDays"]}</Label>
+          <Input
+            type="number"
+            min={0}
+            max={365}
+            value={formData.paymentTerms}
+            onChange={(e) =>
+              setFormData({ ...formData, paymentTerms: Math.max(0, Number(e.target.value) || 0) })
+            }
+            data-testid="input-contact-payment-terms"
+          />
+        </div>
       </div>
       <div className="space-y-2">
         <Label>Address</Label>
@@ -218,7 +263,7 @@ function ContactForm({
           <T k="pages.cancel" />
         </Button>
         <Button
-          onClick={() => onSubmit(formData)}
+          onClick={() => onSubmit({ ...formData, emirate: formData.emirate || null })}
           disabled={!formData.name || !formData.email}
           data-testid="button-save-contact"
         >
