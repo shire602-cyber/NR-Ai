@@ -145,7 +145,12 @@ function makeClient(baseUrl: string, token: string | null): ApiClient {
       headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
       payload = JSON.stringify(body);
     }
-    const res = await fetch(baseUrl + url, { method, headers, body: payload as any });
+    const res = await fetch(baseUrl + url, {
+      method,
+      headers,
+      body: payload as any,
+      redirect: "manual",
+    });
     const text = await res.text();
     let parsed: any = text;
     try {
