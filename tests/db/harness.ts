@@ -174,7 +174,13 @@ async function preparePgliteDatabase(): Promise<{ url: string; stop: () => Promi
   const { PGlite } = await import("@electric-sql/pglite");
   const { PGLiteSocketServer } = await import("@electric-sql/pglite-socket");
   const db = await PGlite.create();
-  const server = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1" } as any);
+  // PGlite is single-session; the socket server multiplexes connections onto it.
+  const server = new PGLiteSocketServer({
+    db,
+    port: 0,
+    host: "127.0.0.1",
+    maxConnections: 16,
+  } as any);
   await server.start();
   const addr: any = (server as any).server?.address?.() ?? (server as any).address?.();
   const port = typeof addr === "object" && addr ? addr.port : Number(addr);
