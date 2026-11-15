@@ -1,6 +1,0 @@
-{
-  "issue": "W1A-01",
-  "owner": "W2-D",
-  "reason": "NEW (found by the route matrix): PUT /api/purchase-orders/:id spreads req.body into updatePurchaseOrder; companyId in the body moves the PO into another tenant.",
-  "routes": ["PUT /api/purchase-orders/:id#inject"]
-}

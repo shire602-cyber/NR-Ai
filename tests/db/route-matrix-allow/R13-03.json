@@ -1,6 +1,0 @@
-{
-  "issue": "R13-03",
-  "owner": "W2-D",
-  "reason": "Analytics dashboard / feature-usage are not scoped by tenant or admin; any user sees all users' events.",
-  "routes": ["GET /api/analytics/dashboard#global", "GET /api/analytics/feature-usage#global"]
-}

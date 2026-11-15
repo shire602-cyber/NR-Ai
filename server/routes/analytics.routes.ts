@@ -1,7 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
-import { authMiddleware } from "../middleware/auth";
+import { adminMiddleware, authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import { zText, zUuid } from "../../shared/validators/primitives";
 import { z } from "zod";
 import type { EcommerceIntegration } from "../../shared/schema";
 
@@ -17,6 +21,47 @@ function maskIntegrationSecrets(integration: EcommerceIntegration) {
     hasAccessToken: !!accessToken,
     hasRefreshToken: !!refreshToken,
     hasWebhookSecret: !!webhookSecret,
+  };
+}
+
+const analyticsEventBody = z.object({
+  eventType: z.enum(["page_view", "feature_use", "error", "conversion", "custom"]),
+  eventName: zText(100, { min: 1 }),
+  companyId: zUuid.optional().nullable(),
+  pageUrl: zText(2000).optional().nullable(),
+  pageTitle: zText(500).optional().nullable(),
+  properties: z
+    .record(z.unknown())
+    .refine((v) => JSON.stringify(v).length <= 5000, "properties is too large")
+    .optional()
+    .nullable(),
+  value: z.number().finite().optional().nullable(),
+  deviceType: zText(50).optional().nullable(),
+  browser: zText(100).optional().nullable(),
+  language: zText(10).optional().nullable(),
+});
+
+type AnalyticsEventRow = Awaited<ReturnType<typeof storage.getAnalyticsEvents>>[number];
+
+function summariseEvents(events: AnalyticsEventRow[]) {
+  const eventsByName: Record<string, number> = {};
+  const pagesByUrl: Record<string, number> = {};
+  for (const e of events) {
+    eventsByName[e.eventName] = (eventsByName[e.eventName] || 0) + 1;
+    if (e.eventType === "page_view" && e.pageUrl) {
+      pagesByUrl[e.pageUrl] = (pagesByUrl[e.pageUrl] || 0) + 1;
+    }
+  }
+  return {
+    summary: {
+      totalPageViews: events.filter((e) => e.eventType === "page_view").length,
+      totalFeatureUses: events.filter((e) => e.eventType === "feature_use").length,
+      totalErrors: events.filter((e) => e.eventType === "error").length,
+      totalEvents: events.length,
+    },
+    eventsByName,
+    pagesByUrl,
+    recentEvents: events.slice(0, 50),
   };
 }
 
@@ -440,30 +485,24 @@ export function registerAnalyticsRoutes(app: Express) {
   // ANALYTICS
   // =====================================
 
-  // Track analytics event
+  // Track analytics event. The caller's user id is always recorded; a companyId is stored only
+  // when the caller has access to that company.
   app.post(
     "/api/analytics/event",
     authMiddleware,
+    // companyId is accepted here but only stored after an access check below.
+    strictBody(analyticsEventBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
+      const validated = parsedBody<z.output<typeof analyticsEventBody>>(req);
 
-      // Validate input with comprehensive schema
-      const validationSchema = z.object({
-        eventType: z.enum(["page_view", "feature_use", "error", "conversion", "custom"]),
-        eventName: z.string().min(1).max(100),
-        pageUrl: z.string().max(2000).optional().nullable(),
-        pageTitle: z.string().max(500).optional().nullable(),
-        properties: z.record(z.unknown()).optional().nullable(),
-        value: z.number().optional().nullable(),
-        deviceType: z.string().max(50).optional().nullable(),
-        browser: z.string().max(100).optional().nullable(),
-        language: z.string().max(10).optional().nullable(),
-      });
-
-      const validated = validationSchema.parse(req.body);
+      if (validated.companyId && !(await storage.hasCompanyAccess(userId, validated.companyId))) {
+        throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
+      }
 
       const event = await storage.createAnalyticsEvent({
         userId,
+        companyId: validated.companyId ?? null,
         eventType: validated.eventType,
         eventName: validated.eventName,
         pageUrl: validated.pageUrl,
@@ -479,60 +518,49 @@ export function registerAnalyticsRoutes(app: Express) {
     })
   );
 
-  // Get analytics dashboard data
+  // PLATFORM-WIDE analytics dashboard: platform admins only (R13-03). Customers use
+  // /api/analytics/my-dashboard, which is scoped to their own companies.
   app.get(
     "/api/analytics/dashboard",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { startDate, endDate } = req.query;
-
-      // Get all events (in production, filter by date range)
-      const events = await storage.getAnalyticsEvents();
+    adminMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      const events = await storage.getAnalyticsEvents({ limit: 5000 });
       const metrics = await storage.getFeatureUsageMetrics();
-
-      // Aggregate data for dashboard
-      const pageViews = events.filter((e) => e.eventType === "page_view").length;
-      const featureUses = events.filter((e) => e.eventType === "feature_use").length;
-      const errors = events.filter((e) => e.eventType === "error").length;
-
-      // Group by event name
-      const eventsByName: Record<string, number> = {};
-      events.forEach((e) => {
-        eventsByName[e.eventName] = (eventsByName[e.eventName] || 0) + 1;
-      });
-
-      // Group by page
-      const pagesByUrl: Record<string, number> = {};
-      events
-        .filter((e) => e.eventType === "page_view")
-        .forEach((e) => {
-          if (e.pageUrl) {
-            pagesByUrl[e.pageUrl] = (pagesByUrl[e.pageUrl] || 0) + 1;
-          }
-        });
-
-      res.json({
-        summary: {
-          totalPageViews: pageViews,
-          totalFeatureUses: featureUses,
-          totalErrors: errors,
-          totalEvents: events.length,
-        },
-        eventsByName,
-        pagesByUrl,
-        recentEvents: events.slice(0, 50),
-        featureMetrics: metrics,
-      });
+      res.json({ ...summariseEvents(events), featureMetrics: metrics });
     })
   );
 
-  // Get feature usage report
+  // User-scoped variant: only events recorded for the caller's accessible companies or by the
+  // caller. Platform-wide feature metrics are not included.
+  app.get(
+    "/api/analytics/my-dashboard",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const companies = await storage.getAccessibleCompanies(userId, firmRole, false);
+      const companyIds = companies.map((c) => c.id);
+      const [byCompany, byUser] = await Promise.all([
+        storage.getAnalyticsEvents({ companyIds, limit: 5000 }),
+        storage.getAnalyticsEvents({ userId, limit: 5000 }),
+      ]);
+      const merged = new Map<string, AnalyticsEventRow>();
+      for (const e of [...byCompany, ...byUser]) merged.set(e.id, e);
+      const events = [...merged.values()].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      res.json({ ...summariseEvents(events), featureMetrics: [] });
+    })
+  );
+
+  // Platform-wide feature usage: platform admins only (R13-03).
   app.get(
     "/api/analytics/feature-usage",
     authMiddleware,
+    adminMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { feature } = req.query;
-      const metrics = await storage.getFeatureUsageMetrics(feature as string | undefined);
+      const feature = typeof req.query.feature === "string" ? req.query.feature : undefined;
+      const metrics = await storage.getFeatureUsageMetrics(feature);
       res.json(metrics);
     })
   );

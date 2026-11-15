@@ -1,6 +1,0 @@
-{
-  "issue": "W1A-02",
-  "owner": "W2-D",
-  "reason": "NEW (found by the route matrix): AI-GL queue reject checks access to :companyId but processUserFeedback(id) loads the queue row by id only; a user of company B can reject company A's queue items (accept/correct share the pattern).",
-  "routes": ["POST /api/companies/:companyId/ai-gl/queue/:id/reject#mixed"]
-}

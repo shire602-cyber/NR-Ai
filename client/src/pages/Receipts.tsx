@@ -485,7 +485,6 @@ export default function Receipts() {
         vatAmount: data.vatAmount,
         category: data.category,
         currency: data.currency,
-        status: "pending",
       });
     },
     onSuccess: () => {
@@ -1164,20 +1163,17 @@ export default function Receipts() {
     // Save each receipt sequentially with status updates
     for (const { receipt, index } of completedIndices) {
       try {
+        // The server derives companyId/uploader from the session and URL and rejects unknown
+        // fields (W2-D), so only the fields the receipt contract accepts are sent.
         const receiptData = {
-          companyId: companyId,
           merchant: receipt.data!.merchant || "Unknown",
           date: receipt.data!.date || new Date().toISOString().split("T")[0],
-          invoiceNumber: receipt.data!.invoiceNumber || null,
           amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
           vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
-          vatPercentage: receipt.data!.vatPercentage ?? 5,
-          total: Number(receipt.data!.total) || 0,
           category: receipt.data!.category || "Uncategorized",
           currency: receipt.data!.currency || "AED",
           imageData: receipt.preview,
           rawText: receipt.data!.rawText,
-          lineItems: receipt.data!.lineItems || [],
           suggestedCategory: receipt.data!.suggestedCategory ?? null,
           classifierMethod: receipt.data!.classifier?.method ?? null,
           classifierConfidence: receipt.data!.classifier?.confidence ?? null,

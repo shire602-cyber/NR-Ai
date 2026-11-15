@@ -2,7 +2,15 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { z } from "zod";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import {
+  createReminderSettingBody,
+  updateReminderSettingBody,
+  type CreateReminderSettingBody,
+  type UpdateReminderSettingBody,
+} from "../../shared/validators/reminders";
 
 export function registerReminderRoutes(app: Express) {
   // =====================================
@@ -31,6 +39,7 @@ export function registerReminderRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/reminder-settings",
     authMiddleware,
+    strictBody(createReminderSettingBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user?.id;
@@ -40,31 +49,7 @@ export function registerReminderRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Validate input
-      const validationSchema = z.object({
-        reminderType: z.enum([
-          "invoice_overdue",
-          "invoice_due_soon",
-          "vat_deadline",
-          "payment_followup",
-        ]),
-        isEnabled: z.boolean().default(true),
-        daysBeforeDue: z.number().min(0).max(90).optional(),
-        daysAfterDue: z.number().min(0).max(365).optional(),
-        repeatIntervalDays: z.number().min(1).max(30).optional(),
-        maxReminders: z.number().min(1).max(10).optional(),
-        sendEmail: z.boolean().optional(),
-        sendSms: z.boolean().optional(),
-        sendInApp: z.boolean().optional(),
-        sendWhatsapp: z.boolean().optional(),
-        emailSubject: z.string().max(200).optional(),
-        emailTemplate: z.string().max(5000).optional(),
-        smsTemplate: z.string().max(5000).optional(),
-        whatsappTemplate: z.string().max(5000).optional(),
-      });
-
-      const validated = validationSchema.parse(req.body);
-
+      const validated = parsedBody<CreateReminderSettingBody>(req);
       const setting = await storage.createReminderSetting({
         ...validated,
         companyId,
@@ -73,14 +58,56 @@ export function registerReminderRoutes(app: Express) {
     })
   );
 
-  // Update reminder setting
+  // Update reminder setting. The row is loaded by id, the caller's access to ITS company is
+  // verified, and companyId is immutable (R16-01): another tenant gets a 404 and the row is
+  // untouched.
   app.patch(
+    "/api/reminder-settings/:id",
+    authMiddleware,
+    strictBody(updateReminderSettingBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user?.id;
+      const existing = await storage.getReminderSetting(id);
+      if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
+        throw new DomainError(
+          "REMINDER_SETTING_NOT_FOUND",
+          404,
+          undefined,
+          "Reminder setting not found"
+        );
+      }
+      const patch = parsedBody<UpdateReminderSettingBody>(req);
+      const setting = await storage.updateReminderSettingForCompany(id, existing.companyId, patch);
+      if (!setting) {
+        throw new DomainError(
+          "REMINDER_SETTING_NOT_FOUND",
+          404,
+          undefined,
+          "Reminder setting not found"
+        );
+      }
+      res.json(setting);
+    })
+  );
+
+  app.delete(
     "/api/reminder-settings/:id",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const setting = await storage.updateReminderSetting(id, req.body);
-      res.json(setting);
+      const userId = (req as any).user?.id;
+      const existing = await storage.getReminderSetting(id);
+      if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
+        throw new DomainError(
+          "REMINDER_SETTING_NOT_FOUND",
+          404,
+          undefined,
+          "Reminder setting not found"
+        );
+      }
+      await storage.deleteReminderSettingForCompany(id, existing.companyId);
+      res.json({ success: true });
     })
   );
 

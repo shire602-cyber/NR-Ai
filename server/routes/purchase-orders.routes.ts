@@ -5,7 +5,29 @@ import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { generatePurchaseOrderPDF } from "../services/pdf-purchase-order.service";
 import { createLogger } from "../config/logger";
-import { calculateDocumentTotals } from "../services/document-totals.service";
+import { calculateDocumentTotals, normaliseVatRate } from "../services/document-totals.service";
+import { z } from "zod";
+import { zCurrency, zText } from "../../shared/validators/primitives";
+
+// W1A-01: PUT used to spread the raw body into updatePurchaseOrder, so companyId / status /
+// number / totals could be set by the client. Only these fields are accepted; anything else
+// (including server-owned keys the legacy form still sends) is dropped, never written.
+const poLineUpdate = z.object({
+  description: zText(500, { min: 1 }),
+  quantity: z.coerce.number().positive().max(1e9),
+  unitPrice: z.coerce.number().min(0).max(1e12),
+  vatRate: z.coerce.number().min(0).max(100).optional().nullable(),
+  vatSupplyType: z.string().trim().max(40).optional().nullable(),
+});
+const poUpdateBody = z.object({
+  vendorName: zText(255, { min: 1 }).optional(),
+  vendorTrn: zText(40).optional().nullable(),
+  date: z.coerce.date().optional(),
+  expectedDeliveryDate: z.coerce.date().optional().nullable(),
+  currency: zCurrency.optional(),
+  notes: zText(2000).optional().nullable(),
+  lines: z.array(poLineUpdate).min(1).max(500).optional(),
+});
 
 const logger = createLogger("purchase-orders-routes");
 
@@ -110,7 +132,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...updateData } = req.body;
+      const { lines, ...updateData } = poUpdateBody.parse(req.body ?? {});
 
       const po = await storage.getPurchaseOrder(id);
       if (!po) {
@@ -138,7 +160,14 @@ export function registerPurchaseOrderRoutes(app: Express) {
       if (lines && Array.isArray(lines)) {
         await storage.deletePurchaseOrderLinesByPurchaseOrderId(id);
         for (const line of lines) {
-          await storage.createPurchaseOrderLine({ ...line, purchaseOrderId: id });
+          await storage.createPurchaseOrderLine({
+            description: line.description,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            vatRate: normaliseVatRate(line.vatRate),
+            ...(line.vatSupplyType ? { vatSupplyType: line.vatSupplyType } : {}),
+            purchaseOrderId: id,
+          });
         }
       }
 

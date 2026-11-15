@@ -1,6 +1,0 @@
-{
-  "issue": "R17-02",
-  "owner": "W2-D",
-  "reason": "PUT /api/receipts/:id passes raw req.body to updateReceipt; companyId in the body moves the receipt into another tenant.",
-  "routes": ["PUT /api/receipts/:id#inject"]
-}

@@ -2,14 +2,21 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import {
-  insertCompanySchema,
-  companyPreferencesSchema,
-  insertBankAccountSchema,
-} from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
 import { checkCompanyQuota } from "../middleware/featureGate";
-import { ZodError } from "zod";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import {
+  createCompanyBody,
+  updateCompanyBody,
+  LOGO_MAX_BYTES,
+  type CreateCompanyBody,
+  type UpdateCompanyBody,
+} from "../../shared/validators/companies";
+import { recordAudit } from "../services/audit.service";
+import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
+import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../services/fileStorage";
+import { z } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
@@ -181,20 +188,41 @@ export function registerCompanyRoutes(app: Express) {
     // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
     // simply creating another company. maxCompanies is now actually enforced.
     checkCompanyQuota(),
+    strictBody(createCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
-      const validated = insertCompanySchema.parse(req.body);
+      const { vatRegistered: _legacyVatRegistered, ...validated } =
+        parsedBody<CreateCompanyBody>(req);
 
-      // Check if company name exists
-      const existing = await storage.getCompanyByName(validated.name);
-      if (existing) {
-        return res.status(400).json({ message: "Company name already exists" });
+      // companyType decides the access model (customer SaaS vs NRA-managed client): only a
+      // platform admin may create anything other than a customer company (R17-05).
+      if (
+        validated.companyType !== undefined &&
+        validated.companyType !== "customer" &&
+        (req as any).user?.isAdmin !== true
+      ) {
+        throw new DomainError(
+          "COMPANY_TYPE_ADMIN_ONLY",
+          403,
+          undefined,
+          "Only a platform admin can set the company type."
+        );
+      }
+
+      // Names are unique per owner (case-insensitive), not across tenants (R14-09).
+      if (await storage.ownerHasCompanyNamed(userId, validated.name)) {
+        throw new DomainError(
+          "COMPANY_NAME_TAKEN",
+          409,
+          { field: "name" },
+          "You already have a company with this name."
+        );
       }
 
       let company;
       try {
         company = await withCompanySchemaRepair({ route: "POST /api/companies", userId }, () =>
-          storage.createCompany(validated)
+          storage.createCompany(validated as never)
         );
       } catch (err: any) {
         if (handleCompanyWriteError(err, { route: "POST /api/companies", userId }, res)) {
@@ -239,151 +267,210 @@ export function registerCompanyRoutes(app: Express) {
     })
   );
 
+  /**
+   * Single write path for PUT, PATCH and PATCH /preferences (R14-07, R14-20): the body was
+   * validated by `updateCompanyBody`; this applies the business rules and writes.
+   */
+  async function updateCompanyHandler(route: string, req: Request, res: Response) {
+    const { id } = req.params;
+    const { id: userId, firmRole } = (req as any).user;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
+    if (!hasAccess) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const current = await storage.getCompany(id);
+    if (!current) {
+      return res.status(404).json({ message: "Company not found" });
+    }
+
+    const updateData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(req.body as UpdateCompanyBody)) {
+      if (value !== undefined && key !== "vatRegistered") updateData[key] = value;
+    }
+
+    // PRIVILEGE ESCALATION GUARD (R17-05). `companyType` decides whether a company is a
+    // self-serve customer or an accounting-firm/NRA tenant, which gates entire route families.
+    // Only a platform admin may change it; re-sending the current value is a no-op.
+    if ("companyType" in updateData) {
+      if (updateData.companyType === current.companyType) {
+        delete updateData.companyType;
+      } else if ((req as any).user?.isAdmin !== true) {
+        throw new DomainError(
+          "COMPANY_TYPE_ADMIN_ONLY",
+          403,
+          undefined,
+          "Only a platform admin can change the company type."
+        );
+      }
+    }
+
+    // Base currency is part of every posted amount's meaning: freeze it once books exist (R14-08).
+    if (
+      typeof updateData.baseCurrency === "string" &&
+      updateData.baseCurrency !== current.baseCurrency
+    ) {
+      if (await storage.companyHasPostedJournal(id)) {
+        throw new DomainError(
+          "BASE_CURRENCY_LOCKED",
+          409,
+          { currentBaseCurrency: current.baseCurrency },
+          "Base currency cannot change after journal entries have been posted."
+        );
+      }
+    }
+
+    if (
+      typeof updateData.name === "string" &&
+      updateData.name.trim().toLowerCase() !== current.name.trim().toLowerCase() &&
+      (await storage.ownerHasCompanyNamed(userId, updateData.name, id))
+    ) {
+      throw new DomainError(
+        "COMPANY_NAME_TAKEN",
+        409,
+        { field: "name" },
+        "You already have a company with this name."
+      );
+    }
+
+    // Nothing updatable survived (e.g. only a no-op companyType): return the company unchanged
+    // rather than issuing an UPDATE with no columns, which the driver rejects.
+    if (Object.keys(updateData).length === 0) {
+      return res.json(withNrClientVatGroup(current));
+    }
+
+    try {
+      const company = await withCompanySchemaRepair({ route, id, userId }, () =>
+        storage.updateCompany(id, updateData as never)
+      );
+      await recordAudit({
+        userId,
+        companyId: id,
+        action: "company.update",
+        entityType: "company",
+        entityId: id,
+        before: {
+          baseCurrency: current.baseCurrency,
+          trnVatNumber: current.trnVatNumber,
+          fiscalYearStartMonth: current.fiscalYearStartMonth,
+        },
+        after: {
+          baseCurrency: company.baseCurrency,
+          trnVatNumber: company.trnVatNumber,
+          fiscalYearStartMonth: company.fiscalYearStartMonth,
+        },
+        req,
+        extra: { fields: Object.keys(updateData).filter((k) => k !== "logoUrl") },
+      });
+      log.info({ id: company.id, route }, "Company updated");
+      res.json(withNrClientVatGroup(company));
+    } catch (err: any) {
+      if (handleCompanyWriteError(err, { route, id, userId }, res)) {
+        return;
+      }
+      throw err;
+    }
+  }
+
   // PUT is an alias for PATCH — some clients send PUT for full updates
   app.put(
     "/api/companies/:id",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // S-M1: allowlist columns (strips id/createdAt/unknown) so a client can't
-      // set arbitrary real columns (firmId, isActive, subscription/tax fields)
-      // beyond what the form exposes.
-      const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
-      if (updateData.taxRegistrationDate) {
-        if (typeof updateData.taxRegistrationDate === "string") {
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        } else if (!(updateData.taxRegistrationDate instanceof Date)) {
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        }
-      } else {
-        delete updateData.taxRegistrationDate;
-      }
-
-      try {
-        const company = await withCompanySchemaRepair(
-          { route: "PUT /api/companies/:id", id, userId },
-          () => storage.updateCompany(id, updateData)
-        );
-        res.json(withNrClientVatGroup(company));
-      } catch (err: any) {
-        if (handleCompanyWriteError(err, { route: "PUT /api/companies/:id", id, userId }, res)) {
-          return;
-        }
-        throw err;
-      }
-    })
+    strictBody(updateCompanyBody),
+    asyncHandler((req: Request, res: Response) =>
+      updateCompanyHandler("PUT /api/companies/:id", req, res)
+    )
   );
 
   app.patch(
     "/api/companies/:id",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
-
-      // Check if user has access to this company (or via firm role)
-      const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Prepare update data with proper type conversions.
-      // S-M1: allowlist columns before the spread (see PUT handler above).
-      const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
-
-      // PRIVILEGE ESCALATION GUARD.
-      // `companyType` decides whether a company is a self-serve customer or an
-      // accounting-firm/NRA tenant, which gates entire route families. It was in
-      // the allowlist, so any customer could PATCH their own company to
-      // companyType: "nra" and self-promote. It is set at creation and may only
-      // be changed by a platform admin.
-      if ("companyType" in updateData && (req as any).user?.isAdmin !== true) {
-        delete updateData.companyType;
-      }
-
-      // Convert taxRegistrationDate to Date if it exists and is not already a Date
-      if (updateData.taxRegistrationDate) {
-        if (typeof updateData.taxRegistrationDate === "string") {
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        } else if (!(updateData.taxRegistrationDate instanceof Date)) {
-          // If it's not a string or Date, try to coerce it
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        }
-      } else {
-        // If taxRegistrationDate is undefined or null, ensure it's properly set
-        delete updateData.taxRegistrationDate;
-      }
-
-      // Nothing updatable survived the allowlist (e.g. the body contained only
-      // fields the caller is not permitted to change). Return the company
-      // unchanged rather than issuing an UPDATE with no columns, which the
-      // driver rejects and which surfaced as a 500.
-      if (Object.keys(updateData).length === 0) {
-        const unchanged = await storage.getCompany(id);
-        if (!unchanged) return res.status(404).json({ message: "Company not found" });
-        return res.json(withNrClientVatGroup(unchanged));
-      }
-
-      try {
-        const company = await withCompanySchemaRepair(
-          { route: "PATCH /api/companies/:id", id, userId },
-          () => storage.updateCompany(id, updateData)
-        );
-        log.info({ id: company.id }, "Company profile updated");
-        res.json(withNrClientVatGroup(company));
-      } catch (err: any) {
-        if (handleCompanyWriteError(err, { route: "PATCH /api/companies/:id", id, userId }, res)) {
-          return;
-        }
-        throw err;
-      }
-    })
+    strictBody(updateCompanyBody),
+    asyncHandler((req: Request, res: Response) =>
+      updateCompanyHandler("PATCH /api/companies/:id", req, res)
+    )
   );
 
-  // QuickBooks-style company preferences page — strictly validated PATCH.
-  // Kept separate from PATCH /api/companies/:id so other callers that send
-  // unrelated fields (e.g. tax registration date, company type) keep working.
+  // QuickBooks-style company preferences page. Same contract as PATCH /api/companies/:id.
   app.patch(
     "/api/companies/:id/preferences",
     authMiddleware,
+    strictBody(updateCompanyBody),
+    asyncHandler((req: Request, res: Response) =>
+      updateCompanyHandler("PATCH /api/companies/:id/preferences", req, res)
+    )
+  );
+
+  // Logo upload: bytes are validated (magic-byte sniff, 1 MB cap, raster only) and stored
+  // through fileStorage; only the storage key lives on the company row (R14-13).
+  app.post(
+    "/api/companies/:id/logo",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({ imageData: z.string().min(1).max(2_000_000) })),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, id);
-      if (!hasAccess) {
+      if (!(await storage.hasCompanyAccess(userId, id))) {
         return res.status(403).json({ message: "Access denied" });
       }
-
-      let validated;
+      let inspected;
       try {
-        validated = companyPreferencesSchema.parse(req.body);
+        inspected = await inspectUpload((req.body as { imageData: string }).imageData);
       } catch (err) {
-        if (err instanceof ZodError) {
-          return res.status(400).json({
-            message: "Invalid company preferences",
-            errors: err.flatten().fieldErrors,
-          });
+        if (err instanceof UploadRejectedError) {
+          return res.status(err.status).json({ message: err.message, code: err.code });
         }
         throw err;
       }
-
-      // Strip undefined keys so we never overwrite existing values with NULL
-      const updateData: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(validated)) {
-        if (value !== undefined) updateData[key] = value;
+      if (!/^image\/(png|jpeg|webp|gif)$/.test(inspected.mime)) {
+        throw new DomainError(
+          "LOGO_TYPE_UNSUPPORTED",
+          400,
+          undefined,
+          "Logo must be PNG, JPEG, WebP or GIF"
+        );
       }
+      if (inspected.size > LOGO_MAX_BYTES) {
+        throw new DomainError("LOGO_TOO_LARGE", 413, undefined, "Logo must be 1 MB or smaller");
+      }
+      const previous = await storage.getCompany(id);
+      const key = await saveReceiptFile(inspected.buffer, {
+        mime: inspected.mime,
+        ext: inspected.ext,
+      });
+      const company = await storage.updateCompany(id, { logoPath: key } as never);
+      if (previous?.logoPath) await deleteReceiptImage(previous.logoPath).catch(() => undefined);
+      await recordAudit({
+        userId,
+        companyId: id,
+        action: "company.logo_upload",
+        entityType: "company",
+        entityId: id,
+        before: null,
+        after: { mime: inspected.mime, size: inspected.size },
+        req,
+      });
+      res.json({ logoPath: company.logoPath, mime: inspected.mime, size: inspected.size });
+    })
+  );
 
-      const company = await storage.updateCompany(id, updateData as any);
-      log.info({ id: company.id }, "Company preferences updated");
-      res.json(withNrClientVatGroup(company));
+  app.get(
+    "/api/companies/:id/logo",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const { id: userId, firmRole } = (req as any).user;
+      if (!(await storage.hasCompanyAccess(userId, id, firmRole))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const company = await storage.getCompany(id);
+      if (!company?.logoPath) return res.status(404).json({ message: "No logo uploaded" });
+      const image = await readReceiptImage(company.logoPath);
+      if (!image) return res.status(404).json({ message: "No logo uploaded" });
+      res.setHeader("Content-Type", image.contentType);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.send(image.buffer);
     })
   );
 

@@ -72,7 +72,10 @@ const companyProfileSchema = z.object({
     .optional(),
 
   // Tax & Compliance
-  trnVatNumber: z.string().min(1, "TRN/VAT Number is required"),
+  trnVatNumber: z
+    .string()
+    .min(1, "TRN/VAT Number is required")
+    .regex(/^\d{15}$/, "TRN must be exactly 15 digits"),
   taxRegistrationType: z.string().min(1, "Tax registration type is required"),
   vatFilingFrequency: z.string().min(1, "VAT filing frequency is required"),
   taxRegistrationDate: z
@@ -186,6 +189,16 @@ export default function CompanyProfile() {
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Same cap as CompanySettings / the server (1 MB of data URL, ~750 KB of image).
+      if (file.size > 700 * 1024 || !/^image\/(png|jpe?g|gif|webp)$/.test(file.type)) {
+        toast({
+          variant: "destructive",
+          title: "Invalid logo",
+          description: "Choose a PNG, JPEG, GIF or WebP image under 700 KB.",
+        });
+        e.target.value = "";
+        return;
+      }
       setLogoFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {

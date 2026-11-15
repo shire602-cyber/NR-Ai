@@ -42,8 +42,12 @@ describe("migrations", () => {
     }
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
-      expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
-      expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      if (body.replace(/^--.*$/gm, "").trim() === "SELECT 1;") {
+        expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
+      } else {
+        // A workstream replaced its placeholder with real, idempotent SQL: its header names it.
+        expect(body).toMatch(/^-- \d{4}_\w+ \(W\d-[A-E]\)/m);
+      }
     }
   });
 

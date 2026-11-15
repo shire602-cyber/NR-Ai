@@ -53,7 +53,7 @@ export default function Analytics() {
   const [activeTab, setActiveTab] = useState("overview");
 
   const { data: analytics, isLoading } = useQuery<AnalyticsDashboard>({
-    queryKey: ["/api/analytics/dashboard"],
+    queryKey: ["/api/analytics/my-dashboard"],
   });
 
   const eventChartData = analytics?.eventsByName

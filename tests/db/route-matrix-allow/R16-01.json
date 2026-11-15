@@ -1,6 +1,0 @@
-{
-  "issue": "R16-01",
-  "owner": "W2-D",
-  "reason": "PATCH /api/reminder-settings/:id has no ownership check and mass-assigns the body (companyId included).",
-  "routes": ["PATCH /api/reminder-settings/:id", "PATCH /api/reminder-settings/:id#inject"]
-}

@@ -174,11 +174,12 @@ export default function CompanySettings() {
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 1024 * 1024) {
+    // The server caps an inline logo at 1 MB of data URL (base64 adds a third), i.e. ~750 KB.
+    if (file.size > 700 * 1024) {
       toast({
         variant: "destructive",
         title: "Image too large",
-        description: "Please choose an image under 1 MB.",
+        description: "Please choose an image under 700 KB.",
       });
       return;
     }

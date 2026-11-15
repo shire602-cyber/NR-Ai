@@ -2,8 +2,67 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertAccountSchema, type Account } from "../../shared/schema";
+import type { Account } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import {
+  archiveAccountBody,
+  createAccountBody,
+  isSubTypeForType,
+  updateAccountBody,
+  type CreateAccountBody,
+  type UpdateAccountBody,
+} from "../../shared/validators/accounts";
+
+/**
+ * A parent must be in the same company, of the same account type, and must not be the account
+ * itself or one of its descendants (cycle check walks up from the candidate parent).
+ */
+async function assertValidParent(
+  companyId: string,
+  type: string,
+  parentId: string,
+  selfId?: string
+): Promise<void> {
+  if (selfId && parentId === selfId) {
+    throw new DomainError(
+      "ACCOUNT_PARENT_CYCLE",
+      400,
+      undefined,
+      "An account cannot be its own parent"
+    );
+  }
+  const all = await storage.getAccountsByCompanyId(companyId);
+  const byId = new Map(all.map((a) => [a.id, a]));
+  const parent = byId.get(parentId);
+  if (!parent)
+    throw new DomainError("ACCOUNT_PARENT_NOT_FOUND", 404, undefined, "Parent account not found");
+  if (parent.type !== type) {
+    throw new DomainError(
+      "ACCOUNT_PARENT_TYPE_MISMATCH",
+      400,
+      undefined,
+      "A parent account must have the same account type"
+    );
+  }
+  const seen = new Set<string>();
+  let cursor: Account | undefined = parent;
+  while (cursor) {
+    if (selfId && cursor.id === selfId) {
+      throw new DomainError(
+        "ACCOUNT_PARENT_CYCLE",
+        400,
+        undefined,
+        "Account hierarchy cannot contain a cycle"
+      );
+    }
+    if (seen.has(cursor.id)) break;
+    seen.add(cursor.id);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+  }
+}
 
 // Walk the user's companies and return the first match. Storage queries are
 // already tenant-scoped, so this also enforces the access check — if no
@@ -47,6 +106,7 @@ export function registerAccountRoutes(app: Express) {
     "/api/companies/:companyId/accounts",
     authMiddleware,
     requireCustomer,
+    strictBody(createAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -57,9 +117,16 @@ export function registerAccountRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const validated = insertAccountSchema.parse({ ...req.body, companyId });
+      const body = parsedBody<CreateAccountBody>(req);
+      if (body.parentId) await assertValidParent(companyId, body.type, body.parentId);
 
-      const account = await storage.createAccount(validated);
+      const account = await storage.createAccount({
+        ...body,
+        subType: body.subType ?? null,
+        parentId: body.parentId ?? null,
+        companyId,
+        isSystemAccount: false,
+      });
 
       await recordAudit({
         userId,
@@ -81,9 +148,11 @@ export function registerAccountRoutes(app: Express) {
     "/api/accounts/:id",
     authMiddleware,
     requireCustomer,
+    strictBody(updateAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
+      const body = parsedBody<UpdateAccountBody>(req);
 
       // Find which of the user's companies owns this account.
       const account = await findAccountForUser(userId, id);
@@ -91,10 +160,24 @@ export function registerAccountRoutes(app: Express) {
         return res.status(404).json({ message: "Account not found" });
       }
 
+      // System accounts are wired into posting logic: their identity cannot change.
+      if (
+        account.isSystemAccount &&
+        ((body.type !== undefined && body.type !== account.type) ||
+          (body.code !== undefined && body.code !== account.code))
+      ) {
+        throw new DomainError(
+          "SYSTEM_ACCOUNT_LOCKED",
+          409,
+          undefined,
+          "System accounts cannot change code or type."
+        );
+      }
+
       // Block account type changes once the account has any journal lines.
       // Switching e.g. an asset to an income account would silently invert all
       // historical balances on every report.
-      if (req.body?.type !== undefined && req.body.type !== account.type) {
+      if (body.type !== undefined && body.type !== account.type) {
         const hasTransactions = await storage.accountHasTransactions(id);
         if (hasTransactions) {
           return res.status(422).json({
@@ -103,12 +186,27 @@ export function registerAccountRoutes(app: Express) {
         }
       }
 
-      const updatedAccount = await storage.updateAccount(id, account.companyId, req.body);
+      const nextType = body.type ?? account.type;
+      const nextSubType = body.subType === undefined ? account.subType : body.subType;
+      if (nextSubType && !isSubTypeForType(nextType, nextSubType)) {
+        throw new DomainError(
+          "ACCOUNT_SUB_TYPE_MISMATCH",
+          400,
+          { subType: nextSubType, type: nextType },
+          `Sub type "${nextSubType}" is not valid for a ${nextType} account`
+        );
+      }
+      if (body.parentId) await assertValidParent(account.companyId, nextType, body.parentId, id);
+
+      const updatedAccount = await storage.updateAccount(id, account.companyId, {
+        ...body,
+        updatedAt: new Date(),
+      });
 
       // Account-type changes are especially sensitive — they re-classify how
       // every existing balance rolls into the trial balance / financial
       // statements — so log them with extra emphasis.
-      const typeChanged = req.body.type && req.body.type !== account.type;
+      const typeChanged = body.type && body.type !== account.type;
       await recordAudit({
         userId,
         companyId: account.companyId,
@@ -133,6 +231,7 @@ export function registerAccountRoutes(app: Express) {
     "/api/accounts/:id/archive",
     authMiddleware,
     requireCustomer,
+    strictBody(archiveAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -151,7 +250,18 @@ export function registerAccountRoutes(app: Express) {
       }
 
       try {
-        const archivedAccount = await storage.archiveAccount(id);
+        const archivedAccount = await storage.archiveAccountForCompany(id, account.companyId);
+        await recordAudit({
+          userId,
+          companyId: account.companyId,
+          action: "account.archive",
+          entityType: "account",
+          entityId: id,
+          before: { code: account.code, isArchived: false, isActive: account.isActive },
+          after: { code: account.code, isArchived: true, isActive: false },
+          req,
+          extra: { reason: (req.body as { reason?: string | null }).reason ?? null },
+        });
         res.json(archivedAccount);
       } catch (archiveError: any) {
         // Handle race condition where account was marked as system between read and update
@@ -171,6 +281,7 @@ export function registerAccountRoutes(app: Express) {
     "/api/accounts/:id/unarchive",
     authMiddleware,
     requireCustomer,
+    strictBody(archiveAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -183,6 +294,17 @@ export function registerAccountRoutes(app: Express) {
       const unarchivedAccount = await storage.updateAccount(id, account.companyId, {
         isArchived: false,
         isActive: true,
+        updatedAt: new Date(),
+      });
+      await recordAudit({
+        userId,
+        companyId: account.companyId,
+        action: "account.unarchive",
+        entityType: "account",
+        entityId: id,
+        before: { code: account.code, isArchived: account.isArchived },
+        after: { code: account.code, isArchived: false, isActive: true },
+        req,
       });
       res.json(unarchivedAccount);
     })
@@ -218,7 +340,27 @@ export function registerAccountRoutes(app: Express) {
         });
       }
 
+      const siblings = await storage.getAccountsByCompanyId(account.companyId);
+      if (siblings.some((a) => a.parentId === id)) {
+        throw new DomainError(
+          "ACCOUNT_HAS_CHILDREN",
+          409,
+          undefined,
+          "Cannot delete an account that has child accounts. Move or delete them first."
+        );
+      }
+
       await storage.deleteAccount(id, account.companyId);
+      await recordAudit({
+        userId,
+        companyId: account.companyId,
+        action: "account.delete",
+        entityType: "account",
+        entityId: id,
+        before: { code: account.code, type: account.type, nameEn: account.nameEn },
+        after: null,
+        req,
+      });
       res.json({ message: "Account deleted successfully" });
     })
   );

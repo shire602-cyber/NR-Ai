@@ -1,60 +1,21 @@
 import type { Express, Request, Response } from "express";
-import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { validate } from "../middleware/validate";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
-import { insertProductSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
+import {
+  createProductBody,
+  inventoryMovementBody,
+  updateProductBody,
+  type CreateProductBody,
+  type InventoryMovementBody,
+  type UpdateProductBody,
+} from "../../shared/validators/products";
 
 const log = createLogger("inventory");
-
-// =====================================
-// Zod schemas
-// =====================================
-
-const decimalString = z
-  .union([z.string(), z.number()])
-  .transform((v) => (typeof v === "number" ? v.toString() : v))
-  .refine((v) => /^-?\d+(\.\d+)?$/.test(v), { message: "Must be a valid decimal number" });
-
-const productCreateSchema = z.object({
-  name: z.string().min(1, "Name is required").max(255),
-  nameAr: z.string().max(255).optional().nullable(),
-  sku: z.string().max(64).optional().nullable(),
-  description: z.string().max(2000).optional().nullable(),
-  unitPrice: decimalString,
-  costPrice: decimalString.optional().nullable(),
-  vatRate: decimalString.optional(),
-  unit: z.string().min(1).max(32).optional(),
-  currentStock: z.number().int().optional(),
-  lowStockThreshold: z.number().int().nonnegative().optional().nullable(),
-  isActive: z.boolean().optional(),
-});
-
-const productUpdateSchema = productCreateSchema.partial();
-
-const inventoryMovementSchema = z.object({
-  type: z.enum(["purchase", "sale", "adjustment", "return"]),
-  quantity: z
-    .number({ invalid_type_error: "Quantity must be a number" })
-    .int("Quantity must be an integer")
-    .refine((n) => n !== 0, { message: "Quantity must not be zero" }),
-  unitCost: decimalString.optional().nullable(),
-  reference: z.string().max(255).optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-})
-  // Direction is carried by `type`, not by the sign of the quantity: the handler
-  // applies Math.abs() for purchase/sale/return, so a negative quantity there was
-  // silently accepted and then ignored — "purchase -50" increased stock by 50.
-  // Only an explicit stock adjustment may be signed.
-  .refine((v) => v.type === "adjustment" || v.quantity > 0, {
-    message:
-      "Quantity must be positive — the movement type sets the direction. Use type 'adjustment' for a signed stock-take correction.",
-    path: ["quantity"],
-  });
 
 export function registerInventoryRoutes(app: Express) {
   // =====================================
@@ -110,7 +71,7 @@ export function registerInventoryRoutes(app: Express) {
     "/api/companies/:companyId/products",
     authMiddleware,
     requireCustomer,
-    validate({ body: productCreateSchema }),
+    strictBody(createProductBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -120,11 +81,13 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // S-M1: allowlist body fields, then pin the tenant scope.
+      // SKU uniqueness per company is enforced by uq_products_company_sku (23505 -> 409).
+      const body = parsedBody<CreateProductBody>(req);
       const product = await storage.createProduct({
-        ...pickAllowed(req.body, insertProductSchema, ["companyId"]),
+        ...body,
+        sku: body.sku ?? null,
         companyId,
-      } as any);
+      });
 
       log.info({ productId: product.id, companyId }, "Product created");
       res.json(product);
@@ -136,7 +99,7 @@ export function registerInventoryRoutes(app: Express) {
     "/api/products/:id",
     authMiddleware,
     requireCustomer,
-    validate({ body: productUpdateSchema }),
+    strictBody(updateProductBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -151,7 +114,7 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updated = await storage.updateProduct(id, req.body);
+      const updated = await storage.updateProduct(id, req.body as UpdateProductBody);
       log.info({ productId: id }, "Product updated");
       res.json(updated);
     })
@@ -191,7 +154,7 @@ export function registerInventoryRoutes(app: Express) {
     "/api/products/:id/movements",
     authMiddleware,
     requireCustomer,
-    validate({ body: inventoryMovementSchema }),
+    strictBody(inventoryMovementBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -206,54 +169,24 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { type, quantity, unitCost, reference, notes } = req.body;
+      const { type, quantity, unitCost, reference, notes } = req.body as InventoryMovementBody;
 
       // Inventory movements change stock value (and COGS for sales) as of today —
       // refuse if today falls inside a closed period.
       await assertPeriodNotLocked(product.companyId, new Date());
 
-      // Create the movement
-      const movement = await storage.createInventoryMovement({
+      // Stock check, movement insert and stock update are ONE transaction on a locked product
+      // row (R10-03): a rejected sale (422 INSUFFICIENT_STOCK) writes no movement row, and two
+      // concurrent sales cannot both pass the check.
+      const { movement, newStock } = await storage.applyInventoryMovement({
         productId: id,
         companyId: product.companyId,
         type,
         quantity,
-        unitCost: unitCost || null,
-        reference: reference || null,
-        notes: notes || null,
+        unitCost: unitCost ?? null,
+        reference: reference ?? null,
+        notes: notes ?? null,
       });
-
-      // Update product stock based on movement type
-      let stockChange = 0;
-      switch (type) {
-        case "purchase":
-        case "return":
-          stockChange = Math.abs(quantity);
-          break;
-        case "sale":
-          stockChange = -Math.abs(quantity);
-          break;
-        case "adjustment":
-          stockChange = quantity; // Can be positive or negative
-          break;
-      }
-
-      const newStock = product.currentStock + stockChange;
-
-      // You cannot sell stock you do not hold. Selling 999 units of a product
-      // with 10 on hand used to return 200 and leave currentStock at -989 —
-      // which then flows into inventory valuation and cost of goods sold as a
-      // negative asset. An explicit stock-take correction is what `adjustment`
-      // is for, so only that type may drive the balance negative.
-      if (newStock < 0 && type !== "adjustment") {
-        return res.status(422).json({
-          message: `Insufficient stock: ${product.currentStock} on hand, ${Math.abs(stockChange)} requested. Record a stock adjustment if the on-hand figure is wrong.`,
-          code: "INSUFFICIENT_STOCK",
-          details: { onHand: product.currentStock, requested: Math.abs(stockChange) },
-        });
-      }
-
-      await storage.updateProduct(id, { currentStock: newStock });
 
       log.info({ productId: id, type, quantity, newStock }, "Inventory movement recorded");
       res.json({ movement, newStock });

@@ -4,7 +4,26 @@ import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
-import { insertInvoiceSchema, type Account, type Receipt } from "../../shared/schema";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import { filsToNumber, mulRate, sumFils, toFils } from "../../shared/money";
+import {
+  createReceiptBody,
+  postReceiptBody,
+  receiptDateToDate,
+  reviseReceiptBody,
+  splitReceiptBody,
+  updateReceiptBody,
+  type CreateReceiptBody,
+  type PostReceiptBody,
+  type ReceiptLineInput,
+  type ReviseReceiptBody,
+  type SplitReceiptBody,
+  type UpdateReceiptBody,
+} from "../../shared/validators/receipts";
+import { postReceipt, reviseReceipt } from "../services/receipt-posting.service";
+import { insertInvoiceSchema, type Receipt } from "../../shared/schema";
 import {
   saveReceiptFile,
   deleteReceiptImage,
@@ -58,6 +77,58 @@ async function findReceiptForUser(userId: string, receiptId: string): Promise<Re
   if (!receipt) return undefined;
   const hasAccess = await storage.hasCompanyAccess(userId, receipt.companyId);
   return hasAccess ? receipt : undefined;
+}
+
+/** VAT + FX derived columns shared by create / update / revise. */
+function baseCurrencyAmountOf(amount: number, vat: number, rate: number): number {
+  const total = toFils(amount) + toFils(vat);
+  return filsToNumber(rate === 1 ? total : mulRate(total, rate));
+}
+
+/** Accounts referenced by a receipt write must belong to the receipt's company. */
+async function assertReceiptAccounts(
+  companyId: string,
+  refs: {
+    accountId?: string | null;
+    paymentAccountId?: string | null;
+    lines?: ReceiptLineInput[] | null;
+  }
+): Promise<void> {
+  const ids = new Set<string>();
+  if (refs.accountId) ids.add(refs.accountId);
+  if (refs.paymentAccountId) ids.add(refs.paymentAccountId);
+  for (const l of refs.lines ?? []) ids.add(l.accountId);
+  if (ids.size === 0) return;
+  const owned = new Set((await storage.getAccountsByCompanyId(companyId)).map((a) => a.id));
+  for (const id of ids) {
+    if (!owned.has(id)) {
+      throw new DomainError("ACCOUNT_NOT_FOUND", 404, { accountId: id }, "Account not found");
+    }
+  }
+}
+
+/** Sum split lines into receipt-level amount / VAT (integer fils, then back to major units). */
+function totalsOfLines(lines: ReceiptLineInput[]): { amount: number; vatAmount: number } {
+  return {
+    amount: filsToNumber(sumFils(lines.map((l) => toFils(l.amount)))),
+    vatAmount: filsToNumber(sumFils(lines.map((l) => toFils(l.vatAmount ?? 0)))),
+  };
+}
+
+function validateSupplierTrn(raw: string | null | undefined): string | null | undefined {
+  if (raw === undefined || raw === null) return raw;
+  const trimmed = String(raw).trim();
+  if (trimmed === "") return null;
+  const trn = validateUaeTrn(trimmed);
+  if (!trn.valid) {
+    throw new DomainError(
+      "INVALID_TRN",
+      400,
+      undefined,
+      trn.issue || "Supplier TRN must be a 15-digit UAE TRN"
+    );
+  }
+  return trn.trn;
 }
 
 export function registerReceiptRoutes(app: Express) {
@@ -209,6 +280,7 @@ export function registerReceiptRoutes(app: Express) {
     "/api/companies/:companyId/receipts",
     authMiddleware,
     requireCustomer,
+    strictBody(createReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -219,6 +291,7 @@ export function registerReceiptRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const body = parsedBody<CreateReceiptBody>(req);
       const {
         imageData,
         suggestedCategory,
@@ -226,24 +299,59 @@ export function registerReceiptRoutes(app: Express) {
         classifierConfidence,
         classifierReason,
         confirmDuplicate,
-        ...receiptData
-      } = req.body;
+      } = body;
 
-      // The client sends date as an ISO string; the Drizzle timestamp column
-      // needs a Date object (string input crashes mapToDriverValue).
-      if (receiptData.date && typeof receiptData.date === "string") {
-        const parsed = new Date(receiptData.date);
-        if (Number.isNaN(parsed.getTime())) {
-          return res.status(400).json({ message: "Invalid receipt date" });
-        }
-        receiptData.date = parsed;
+      // Split lines define the totals; otherwise amount is required (enforced by the schema).
+      const split = body.lines && body.lines.length > 0 ? body.lines : null;
+      const derived = split ? totalsOfLines(split) : null;
+      const amount = derived ? derived.amount : (body.amount as number);
+      const vatAmount = derived ? derived.vatAmount : (body.vatAmount ?? 0);
+      if (vatAmount > amount) {
+        throw new DomainError("VALIDATION_ERROR", 400, undefined, "VAT cannot exceed the amount");
       }
+      const currency = body.currency ?? "AED";
+      const exchangeRate = body.exchangeRate ?? 1;
+      await assertReceiptAccounts(companyId, {
+        accountId: body.accountId,
+        paymentAccountId: body.paymentAccountId,
+        lines: split,
+      });
+
+      const receiptData: {
+        merchant: string | null;
+        date: Date;
+        amount: number;
+        vatAmount: number;
+        currency: string;
+        exchangeRate: number;
+        baseCurrencyAmount: number;
+        category: string | null;
+        accountId: string | null;
+        paymentAccountId: string | null;
+        reverseCharge: boolean;
+        rawText: string | null;
+        supplierTrn: string | null | undefined;
+        lines: ReceiptLineInput[] | null;
+      } = {
+        merchant: body.merchant ?? null,
+        date: receiptDateToDate(body.date),
+        amount,
+        vatAmount,
+        currency,
+        exchangeRate,
+        baseCurrencyAmount: baseCurrencyAmountOf(amount, vatAmount, exchangeRate),
+        category: body.category ?? null,
+        accountId: body.accountId ?? null,
+        paymentAccountId: body.paymentAccountId ?? null,
+        reverseCharge: body.reverseCharge ?? false,
+        rawText: body.rawText ?? null,
+        supplierTrn: body.supplierTrn,
+        lines: split,
+      };
 
       // Block receipt creation in a locked period — receipts are eventually
       // posted as journal entries dated on receipt.date.
-      if (receiptData.date) {
-        await assertPeriodNotLocked(companyId, receiptData.date);
-      }
+      await assertPeriodNotLocked(companyId, receiptData.date);
 
       log.info(
         {
@@ -263,20 +371,13 @@ export function registerReceiptRoutes(app: Express) {
       let fileMeta: { contentSha256: string; fileMime: string; fileSize: number } | null = null;
       let duplicateWarnings: unknown[] = [];
 
-      if (receiptData.supplierTrn !== undefined && receiptData.supplierTrn !== null) {
-        const rawTrn = String(receiptData.supplierTrn).trim();
-        if (rawTrn === "") {
-          receiptData.supplierTrn = null;
-        } else {
-          const trn = validateUaeTrn(rawTrn);
-          if (!trn.valid) {
-            return res.status(400).json({
-              message: trn.issue || "Supplier TRN must be a 15-digit UAE TRN",
-              code: "INVALID_TRN",
-            });
-          }
-          receiptData.supplierTrn = trn.trn;
+      try {
+        receiptData.supplierTrn = validateSupplierTrn(receiptData.supplierTrn);
+      } catch (err) {
+        if (err instanceof DomainError && err.code === "INVALID_TRN") {
+          return res.status(400).json({ message: err.message, code: "INVALID_TRN" });
         }
+        throw err;
       }
 
       if (imageData) {
@@ -338,6 +439,7 @@ export function registerReceiptRoutes(app: Express) {
 
       const receipt = await storage.createReceipt({
         ...receiptData,
+        supplierTrn: receiptData.supplierTrn ?? null,
         companyId,
         uploadedBy: userId,
         imagePath: imagePath ?? null,
@@ -494,34 +596,112 @@ export function registerReceiptRoutes(app: Express) {
     })
   );
 
-  // Customer-only: Update receipt
+  /**
+   * Resolve an update/revise body into receipt columns plus the merged (after) values, enforcing
+   * the cross-field rules against what is already stored (VAT <= amount, split totals).
+   */
+  async function resolveReceiptPatch(
+    before: Receipt,
+    body: UpdateReceiptBody | ReviseReceiptBody
+  ): Promise<{ patch: Partial<Receipt>; merged: Receipt }> {
+    const patch: Partial<Receipt> = {};
+    const split = body.lines === undefined ? undefined : body.lines;
+    if (split !== undefined) patch.lines = split && split.length > 0 ? split : null;
+
+    let amount = body.amount ?? before.amount ?? 0;
+    let vatAmount = body.vatAmount === undefined ? (before.vatAmount ?? 0) : (body.vatAmount ?? 0);
+    if (split && split.length > 0) {
+      const totals = totalsOfLines(split);
+      if (body.amount !== undefined && toFils(body.amount) !== toFils(totals.amount)) {
+        throw new DomainError(
+          "RECEIPT_LINES_MISMATCH",
+          400,
+          undefined,
+          "Lines must add up to amount"
+        );
+      }
+      amount = totals.amount;
+      vatAmount = totals.vatAmount;
+    } else if (split === undefined && Array.isArray(before.lines) && before.lines.length > 0) {
+      if (body.amount !== undefined || body.vatAmount !== undefined) {
+        throw new DomainError(
+          "RECEIPT_LINES_MISMATCH",
+          400,
+          undefined,
+          "This receipt is split across accounts: send the updated lines to change its amount"
+        );
+      }
+    }
+    if (toFils(vatAmount) > toFils(amount)) {
+      throw new DomainError("VALIDATION_ERROR", 400, undefined, "VAT cannot exceed the amount");
+    }
+    if (toFils(amount) <= 0) {
+      throw new DomainError("VALIDATION_ERROR", 400, undefined, "Amount must be greater than zero");
+    }
+
+    if (body.merchant !== undefined) patch.merchant = body.merchant ?? null;
+    if (body.date !== undefined) patch.date = receiptDateToDate(body.date);
+    if (body.category !== undefined) patch.category = body.category ?? null;
+    if (body.accountId !== undefined) patch.accountId = body.accountId ?? null;
+    if (body.paymentAccountId !== undefined) patch.paymentAccountId = body.paymentAccountId ?? null;
+    if (body.reverseCharge !== undefined) patch.reverseCharge = body.reverseCharge;
+    if (body.currency !== undefined) patch.currency = body.currency;
+    if (body.exchangeRate !== undefined) patch.exchangeRate = body.exchangeRate;
+    if ("supplierTrn" in body && body.supplierTrn !== undefined) {
+      patch.supplierTrn = validateSupplierTrn(body.supplierTrn) ?? null;
+    }
+    if (
+      body.amount !== undefined ||
+      body.vatAmount !== undefined ||
+      (split && split.length > 0) ||
+      body.exchangeRate !== undefined
+    ) {
+      patch.amount = amount;
+      patch.vatAmount = vatAmount;
+    }
+    const rate = Number(patch.exchangeRate ?? before.exchangeRate) || 1;
+    patch.baseCurrencyAmount = baseCurrencyAmountOf(amount, vatAmount, rate);
+
+    await assertReceiptAccounts(before.companyId, {
+      accountId: patch.accountId,
+      paymentAccountId: patch.paymentAccountId,
+      lines: split && split.length > 0 ? split : null,
+    });
+    return { patch, merged: { ...before, ...patch } as Receipt };
+  }
+
+  // Customer-only: Update an UNPOSTED receipt. Posted receipts are immutable (R05-01):
+  // use POST /api/receipts/:id/revise, which reverses and re-posts.
   app.put(
     "/api/receipts/:id",
     authMiddleware,
     requireCustomer,
+    strictBody(updateReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-
-      // Convert empty category string to null (UUID field cannot accept empty strings)
-      if (req.body.category === "") {
-        req.body.category = null;
-      }
-
-      // ISO date string → Date for the Drizzle timestamp column.
-      if (req.body.date && typeof req.body.date === "string") {
-        const parsed = new Date(req.body.date);
-        if (Number.isNaN(parsed.getTime())) {
-          return res.status(400).json({ message: "Invalid receipt date" });
-        }
-        req.body.date = parsed;
-      }
+      const body = parsedBody<UpdateReceiptBody>(req);
 
       const before = await findReceiptForUser(userId, id);
       if (!before) {
         return res.status(404).json({ message: "Receipt not found" });
       }
-      const updatedReceipt = await storage.updateReceipt(id, before.companyId, req.body);
+      if (before.posted) {
+        throw new DomainError(
+          "RECEIPT_POSTED",
+          409,
+          { receiptId: id, journalEntryId: before.journalEntryId },
+          "This receipt is posted and cannot be edited. Use POST /api/receipts/:id/revise."
+        );
+      }
+
+      const { patch } = await resolveReceiptPatch(before, body);
+      // Receipts become journal entries dated on receipt.date: respect closed periods for both
+      // the stored date and the new one.
+      if (before.date) await assertPeriodNotLocked(before.companyId, before.date);
+      if (patch.date) await assertPeriodNotLocked(before.companyId, patch.date as Date);
+
+      const updatedReceipt = await storage.updateReceiptIfUnposted(id, before.companyId, patch);
       await recordAudit({
         userId,
         companyId: updatedReceipt.companyId,
@@ -538,6 +718,110 @@ export function registerReceiptRoutes(app: Express) {
       });
       log.info({ id }, "Receipt updated successfully");
       res.json(updatedReceipt);
+    })
+  );
+
+  // Customer-only: Revise a POSTED receipt. Reverses the original journal entry and posts the
+  // corrected one in one transaction; the pair nets the books to the new amount.
+  app.post(
+    "/api/receipts/:id/revise",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reviseReceiptBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const { reason, ...fields } = req.body as ReviseReceiptBody;
+
+      const before = await findReceiptForUser(userId, id);
+      if (!before) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      if (!before.posted) {
+        throw new DomainError(
+          "RECEIPT_NOT_POSTED",
+          409,
+          { receiptId: id },
+          "Only a posted receipt can be revised. Edit unposted receipts with PUT."
+        );
+      }
+      const { patch, merged } = await resolveReceiptPatch(before, fields);
+      const result = await reviseReceipt(before, userId, merged, patch, reason ?? null);
+
+      await recordAudit({
+        userId,
+        companyId: before.companyId,
+        action: "receipt.revise",
+        entityType: "receipt",
+        entityId: id,
+        before: {
+          amount: before.amount,
+          vatAmount: before.vatAmount,
+          journalEntryId: before.journalEntryId,
+        },
+        after: {
+          amount: result.receipt.amount,
+          vatAmount: result.receipt.vatAmount,
+          journalEntryId: result.entry.id,
+          reversalEntryId: result.reversal.id,
+        },
+        req,
+        extra: { reason: reason ?? null },
+      });
+      res.json({
+        ...result.receipt,
+        revision: { reversalEntryId: result.reversal.id, journalEntryId: result.entry.id },
+      });
+    })
+  );
+
+  // Customer-only: Split an unposted multi-receipt upload into separate receipts.
+  app.post(
+    "/api/receipts/:id/split",
+    authMiddleware,
+    requireCustomer,
+    strictBody(splitReceiptBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const { parts } = req.body as SplitReceiptBody;
+
+      const source = await findReceiptForUser(userId, id);
+      if (!source) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      for (const part of parts) {
+        if (part.date) await assertPeriodNotLocked(source.companyId, receiptDateToDate(part.date));
+      }
+      const created = await storage.splitReceiptAtomic({
+        receiptId: id,
+        companyId: source.companyId,
+        parts: parts.map((part) => {
+          const amount = part.amount;
+          const vat = part.vatAmount ?? 0;
+          const rate = Number(source.exchangeRate) || 1;
+          return {
+            merchant: part.merchant ?? source.merchant,
+            date: part.date ? receiptDateToDate(part.date) : source.date,
+            amount,
+            vatAmount: vat,
+            category: part.category ?? source.category,
+            baseCurrencyAmount: baseCurrencyAmountOf(amount, vat, rate),
+          };
+        }),
+      });
+      await recordAudit({
+        userId,
+        companyId: source.companyId,
+        action: "receipt.split",
+        entityType: "receipt",
+        entityId: id,
+        before: { amount: source.amount, merchant: source.merchant },
+        after: null,
+        req,
+        extra: { newReceiptIds: created.map((r) => r.id) },
+      });
+      res.status(201).json({ receipts: created });
     })
   );
 
@@ -558,6 +842,14 @@ export function registerReceiptRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
+      }
+      if (existing.posted) {
+        throw new DomainError(
+          "RECEIPT_POSTED",
+          409,
+          { receiptId: id, journalEntryId: existing.journalEntryId },
+          "A posted receipt cannot be deleted. Revise it or reverse its journal entry."
+        );
       }
       // FTA 5-year retention.
       assertRetentionExpired(
@@ -586,301 +878,35 @@ export function registerReceiptRoutes(app: Express) {
     })
   );
 
-  // Customer-only: Post receipt to journal entry
+  // Customer-only: Post receipt to journal entry (once: the claim is a conditional UPDATE).
   app.post(
     "/api/receipts/:id/post",
     authMiddleware,
     requireCustomer,
+    strictBody(postReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { accountId, paymentAccountId } = req.body;
-
-      // Validate required fields
-      if (!accountId || !paymentAccountId) {
-        return res
-          .status(400)
-          .json({ message: "Expense account and payment account are required" });
-      }
+      const body = parsedBody<PostReceiptBody>(req);
 
       // Get receipt — findReceiptForUser also enforces tenant access.
       const receipt = await findReceiptForUser(userId, id);
       if (!receipt) {
         return res.status(404).json({ message: "Receipt not found" });
       }
-
-      // Check if already posted
-      if (receipt.posted) {
-        return res.status(400).json({ message: "Receipt has already been posted" });
-      }
-
-      // Validate amount is present and positive
-      const subtotalForeign = receipt.amount || 0;
-      const vatAmountForeign = receipt.vatAmount || 0;
-      const totalAmountForeign = subtotalForeign + vatAmountForeign;
-      if (totalAmountForeign <= 0) {
-        return res.status(400).json({ message: "Receipt amount must be greater than zero" });
-      }
-
-      // FX: convert foreign-currency receipt amounts to AED for the journal,
-      // since journal lines are stored in base currency (AED). Receipts created
-      // before FX support default to currency='AED' and exchangeRate=1, so this
-      // is a no-op for AED receipts.
-      const receiptCurrency = receipt.currency || "AED";
-      const isForeign = receiptCurrency !== "AED";
-      const fxRate = Number(receipt.exchangeRate) || 1;
-      if (isForeign && fxRate <= 0) {
+      const hasLines = Array.isArray(receipt.lines) && receipt.lines.length > 0;
+      if (!hasLines && !body.accountId) {
         return res
           .status(400)
-          .json({ message: "Foreign-currency receipt is missing a valid exchange rate" });
-      }
-      const round2 = (n: number) => Math.round(n * 100) / 100;
-      const subtotal = isForeign ? round2(subtotalForeign * fxRate) : subtotalForeign;
-      const vatAmount = isForeign ? round2(vatAmountForeign * fxRate) : vatAmountForeign;
-      // Recompute the total from rounded components so debits/credits balance
-      // exactly (avoids 1-cent rounding drift that would fail the JE balance check).
-      const totalAmount = subtotal + vatAmount;
-
-      // Get accounts (tenant-scoped to the receipt's company — cross-tenant
-      // accounts simply won't be found) and validate they exist and are correct types.
-      const expenseAccount = await storage.getAccount(accountId, receipt.companyId);
-      const paymentAccount = await storage.getAccount(paymentAccountId, receipt.companyId);
-
-      if (!expenseAccount || !paymentAccount) {
-        return res.status(404).json({ message: "Account not found" });
+          .json({ message: "Expense account and payment account are required" });
       }
 
-      // Validate account types
-      if (expenseAccount.type !== "expense") {
-        return res.status(400).json({ message: "Selected account must be an expense account" });
-      }
-
-      if (paymentAccount.type !== "asset") {
-        return res
-          .status(400)
-          .json({ message: "Payment account must be a cash or bank account (asset)" });
-      }
-
-      // Look up Input VAT (recoverable) and, for reverse-charge receipts, Output
-      // VAT (payable) accounts by vatType to avoid hardcoded name matching.
-      const isReverseCharge = !!(receipt as any).reverseCharge;
-      let vatRecoverableAccount: Account | null = null;
-      let vatPayableAccount: Account | null = null;
-      if (vatAmount > 0) {
-        const companyAccounts = await storage.getAccountsByCompanyId(receipt.companyId);
-        vatRecoverableAccount =
-          companyAccounts.find((a) => a.isVatAccount && a.vatType === "input" && a.isActive) ||
-          null;
-        if (isReverseCharge) {
-          vatPayableAccount =
-            companyAccounts.find((a) => a.isVatAccount && a.vatType === "output" && a.isActive) ||
-            null;
-          if (!vatRecoverableAccount || !vatPayableAccount) {
-            return res.status(400).json({
-              message:
-                "Reverse-charge posting requires both Input VAT and Output VAT accounts in the chart of accounts",
-            });
-          }
-        }
-      }
-
-      // Parse date safely
-      let entryDate: Date;
-      try {
-        const parsed = new Date(receipt.date || new Date());
-        if (isNaN(parsed.getTime())) {
-          entryDate = new Date();
-        } else {
-          entryDate = parsed;
-        }
-      } catch (e) {
-        entryDate = new Date();
-      }
-
-      // Block posting receipts into a locked period.
-      await assertPeriodNotLocked(receipt.companyId, entryDate);
-
-      // Generate entry number atomically via storage helper
-      const entryNumber = await storage.generateEntryNumber(receipt.companyId, entryDate);
-
-      // Build journal lines. Three shapes:
-      //  - Reverse-charge with VAT: 4-line entry. The vendor doesn't charge VAT,
-      //    so cash payable = subtotal. The buyer self-assesses both sides:
-      //    Dr Expense, Dr Input VAT, Cr Output VAT, Cr Cash.
-      //  - Standard with VAT: 3-line entry (Dr Expense, Dr Input VAT, Cr Cash).
-      //  - No VAT (or no Input VAT account): 2-line entry (Dr Expense, Cr Cash).
-      type JournalLineInput = {
-        accountId: string;
-        debit: number;
-        credit: number;
-        description: string;
-        foreignCurrency?: string | null;
-        foreignDebit?: number;
-        foreignCredit?: number;
-        exchangeRate?: number;
-      };
-      const journalLineInputs: JournalLineInput[] = [];
-
-      // Helper to attach foreign-currency tracking to a line when the receipt
-      // is in a non-AED currency, so the original amount and rate are preserved.
-      const withFx = (
-        line: JournalLineInput,
-        foreignDebit: number,
-        foreignCredit: number
-      ): JournalLineInput => {
-        if (!isForeign) return line;
-        return {
-          ...line,
-          foreignCurrency: receiptCurrency,
-          foreignDebit: round2(foreignDebit),
-          foreignCredit: round2(foreignCredit),
-          exchangeRate: fxRate,
-        };
-      };
-
-      if (isReverseCharge && vatAmount > 0 && vatRecoverableAccount && vatPayableAccount) {
-        // Reverse-charge: vendor charges no VAT, buyer self-assesses both legs.
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: expenseAccount.id,
-              debit: subtotal,
-              credit: 0,
-              description: `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`,
-            },
-            subtotalForeign,
-            0
-          )
-        );
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: vatRecoverableAccount.id,
-              debit: vatAmount,
-              credit: 0,
-              description: `Input VAT (reverse-charge) - ${receipt.merchant || "expense"}`,
-            },
-            vatAmountForeign,
-            0
-          )
-        );
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: vatPayableAccount.id,
-              debit: 0,
-              credit: vatAmount,
-              description: `Output VAT (reverse-charge) - ${receipt.merchant || "expense"}`,
-            },
-            0,
-            vatAmountForeign
-          )
-        );
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: paymentAccount.id,
-              debit: 0,
-              credit: subtotal,
-              description: `Payment for ${receipt.merchant || "expense"}`,
-            },
-            0,
-            subtotalForeign
-          )
-        );
-      } else if (vatAmount > 0 && vatRecoverableAccount) {
-        // 3-line entry: Debit Expense (subtotal), Debit VAT Recoverable (VAT), Credit Cash (total)
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: expenseAccount.id,
-              debit: subtotal,
-              credit: 0,
-              description: `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`,
-            },
-            subtotalForeign,
-            0
-          )
-        );
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: vatRecoverableAccount.id,
-              debit: vatAmount,
-              credit: 0,
-              description: `Input VAT - ${receipt.merchant || "expense"}`,
-            },
-            vatAmountForeign,
-            0
-          )
-        );
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: paymentAccount.id,
-              debit: 0,
-              credit: totalAmount,
-              description: `Payment for ${receipt.merchant || "expense"}`,
-            },
-            0,
-            totalAmountForeign
-          )
-        );
-      } else {
-        // 2-line entry: Debit Expense (total), Credit Cash (total)
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: expenseAccount.id,
-              debit: totalAmount,
-              credit: 0,
-              description: `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`,
-            },
-            totalAmountForeign,
-            0
-          )
-        );
-        journalLineInputs.push(
-          withFx(
-            {
-              accountId: paymentAccount.id,
-              debit: 0,
-              credit: totalAmount,
-              description: `Payment for ${receipt.merchant || "expense"}`,
-            },
-            0,
-            totalAmountForeign
-          )
-        );
-      }
-
-      // Create journal entry with lines atomically (validates balance & wraps in transaction)
-      const entry = await storage.createJournalEntry(
-        {
-          companyId: receipt.companyId,
-          date: entryDate,
-          memo: `Receipt: ${receipt.merchant || "Expense"} - ${receipt.category || "General"}`,
-          entryNumber,
-          status: "posted",
-          source: "receipt",
-          sourceId: receipt.id,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: new Date(),
-        },
-        journalLineInputs
-      );
-
-      // Update receipt with posting information
-      const updatedReceipt = await storage.updateReceipt(id, receipt.companyId, {
-        accountId,
-        paymentAccountId,
-        posted: true,
-        journalEntryId: entry.id,
+      const result = await postReceipt(receipt, userId, {
+        accountId: body.accountId ?? null,
+        paymentAccountId: body.paymentAccountId,
       });
-
-      log.info({ id, journalEntryId: entry.id }, "Receipt posted successfully");
-      res.json(updatedReceipt);
+      log.info({ id, journalEntryId: result.entryId }, "Receipt posted successfully");
+      res.json(result.receipt);
     })
   );
 

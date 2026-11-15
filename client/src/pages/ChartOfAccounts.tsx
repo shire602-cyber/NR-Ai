@@ -37,6 +37,41 @@ interface AccountWithBalance {
 
 const ACCOUNT_TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"];
 
+/**
+ * Depth-first order for a flat account list using `account.parentId` (W2-D, R02-16c). A child
+ * follows its parent and is indented by `depth`; a child whose parent is filtered out (or
+ * missing) is shown at the top level. A cycle guard keeps bad data from looping.
+ */
+function orderByHierarchy(
+  items: AccountWithBalance[]
+): Array<AccountWithBalance & { depth: number }> {
+  const ids = new Set(items.map((i) => i.account.id));
+  const children = new Map<string, AccountWithBalance[]>();
+  const roots: AccountWithBalance[] = [];
+  for (const item of items) {
+    const parentId = item.account.parentId;
+    if (parentId && ids.has(parentId) && parentId !== item.account.id) {
+      const list = children.get(parentId) ?? [];
+      list.push(item);
+      children.set(parentId, list);
+    } else {
+      roots.push(item);
+    }
+  }
+  const out: Array<AccountWithBalance & { depth: number }> = [];
+  const seen = new Set<string>();
+  const visit = (item: AccountWithBalance, depth: number) => {
+    if (seen.has(item.account.id)) return;
+    seen.add(item.account.id);
+    out.push({ ...item, depth });
+    for (const child of children.get(item.account.id) ?? []) visit(child, depth + 1);
+  };
+  for (const root of roots) visit(root, 0);
+  // Anything unreachable (a parent cycle) is appended flat rather than dropped.
+  for (const item of items) visit(item, 0);
+  return out;
+}
+
 const ACCOUNT_TYPE_CONFIG: Record<
   string,
   {
@@ -108,9 +143,9 @@ export default function ChartOfAccounts() {
       );
     });
 
-    const grouped: Record<string, AccountWithBalance[]> = {};
+    const grouped: Record<string, Array<AccountWithBalance & { depth: number }>> = {};
     ACCOUNT_TYPE_ORDER.forEach((type) => {
-      const accounts = filtered.filter((item) => item.account.type === type);
+      const accounts = orderByHierarchy(filtered.filter((item) => item.account.type === type));
       if (accounts.length > 0) {
         grouped[type] = accounts;
       }
@@ -292,6 +327,11 @@ export default function ChartOfAccounts() {
                                 animate={{ opacity: 1 }}
                                 transition={{ delay: index * 0.05 }}
                                 className="flex items-center justify-between p-4 hover-elevate cursor-pointer group"
+                                style={
+                                  item.depth > 0
+                                    ? { paddingInlineStart: `${1 + item.depth * 1.5}rem` }
+                                    : undefined
+                                }
                                 onClick={() => handleAccountClick(item.account.id)}
                                 data-testid={`row-account-${item.account.id}`}
                               >

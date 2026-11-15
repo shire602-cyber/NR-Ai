@@ -1,7 +1,185 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { z } from "zod";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { DomainError } from "../errors";
+import { zDate, zMoney, zText, zUuid } from "../../shared/validators/primitives";
+import { recordAudit } from "../services/audit.service";
+
+// ─── Validators (W2-D: R08-10, R16-13, R17-09) ───────────────────────────────
+
+/** "" means "not provided" for optional text inputs sent by the portal forms. */
+const optText = (max: number) =>
+  z
+    .union([z.literal(""), zText(max), z.null()])
+    .transform((v) => (v === "" ? null : v))
+    .optional();
+
+/**
+ * File reference: an https:// URL, or an internal storage key (`/uploads/<name>` or
+ * `receipts/<name>`). Never javascript:, data:, file: or protocol-relative URLs.
+ */
+function hasControlChars(value: string): boolean {
+  for (let i = 0; i < value.length; i++) if (value.charCodeAt(i) < 32) return true;
+  return false;
+}
+
+const fileRef = z
+  .union([z.literal(""), z.string().trim().max(1000), z.null()])
+  .transform((v, ctx) => {
+    if (v === "" || v === null) return null;
+    if (/^https:\/\/[^\s/]+/i.test(v)) {
+      try {
+        if (new URL(v).protocol === "https:") return v;
+      } catch {
+        // fall through
+      }
+    } else if (
+      /^\/?(uploads|receipts|documents)\/[^\\]+$/.test(v) &&
+      !hasControlChars(v) &&
+      !v.split("/").includes("..")
+    ) {
+      return v;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "File reference must be an https:// URL or an internal storage key",
+    });
+    return z.NEVER;
+  })
+  .optional();
+
+const DOC_CATEGORIES = [
+  "trade_license",
+  "contract",
+  "tax_certificate",
+  "audit_report",
+  "bank_statement",
+  "insurance",
+  "visa",
+  "other",
+] as const;
+
+const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
+
+const documentBody = z.object({
+  name: zText(255, { min: 1 }).optional(),
+  nameAr: optText(255),
+  category: z.enum(DOC_CATEGORIES).optional(),
+  description: optText(2000),
+  fileUrl: fileRef,
+  fileName: zText(255, { min: 1 }).optional(),
+  fileSize: z.number().int().min(0).max(MAX_DOC_SIZE).optional().nullable(),
+  mimeType: z.string().trim().toLowerCase().optional(),
+  expiryDate: z
+    .union([z.literal(""), zDate, z.null()])
+    .transform((v) => (v === "" || v === null ? null : v))
+    .optional(),
+  reminderDays: z.number().int().min(0).max(365).optional(),
+  tags: z
+    .union([zText(1000), z.array(zText(50)).max(50)])
+    .transform((v) => (Array.isArray(v) ? JSON.stringify(v) : v))
+    .optional()
+    .nullable(),
+});
+
+const RETURN_TYPES = ["vat", "corporate_tax", "excise_tax"] as const;
+const PAYMENT_STATUSES = ["paid", "partial", "unpaid"] as const;
+
+const archiveFields = {
+  returnType: z.enum(RETURN_TYPES),
+  periodLabel: zText(100, { min: 1 }),
+  periodStart: zDate,
+  periodEnd: zDate,
+  filingDate: zDate,
+  ftaReferenceNumber: optText(100),
+  taxAmount: zMoney.transform((v) => Number(v)),
+  paymentStatus: z.enum(PAYMENT_STATUSES),
+  fileUrl: fileRef,
+  fileName: optText(255),
+  notes: optText(2000),
+};
+
+function refineArchivePeriod(
+  v: { periodStart?: string; periodEnd?: string },
+  ctx: z.RefinementCtx
+) {
+  if (v.periodStart && v.periodEnd && v.periodEnd < v.periodStart) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["periodEnd"],
+      message: "Period end cannot be before period start",
+    });
+  }
+}
+
+const createArchiveBody = z
+  .object({
+    ...archiveFields,
+    taxAmount: archiveFields.taxAmount.optional(),
+    paymentStatus: archiveFields.paymentStatus.optional(),
+    returnType: archiveFields.returnType.optional(),
+  })
+  .superRefine(refineArchivePeriod);
+const updateArchiveBody = z.object(archiveFields).partial().superRefine(refineArchivePeriod);
+
+const TASK_CATEGORIES = [
+  "vat_filing",
+  "corporate_tax",
+  "document_upload",
+  "payment",
+  "review",
+  "other",
+] as const;
+const TASK_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+const TASK_STATUSES = ["pending", "in_progress", "completed", "overdue", "cancelled"] as const;
+
+const optDate = z
+  .union([z.literal(""), zDate, z.null()])
+  .transform((v) => (v === "" || v === null ? null : v))
+  .optional();
+
+const createTaskBody = z.object({
+  title: zText(255, { min: 1 }),
+  titleAr: optText(255),
+  description: optText(2000),
+  category: z.enum(TASK_CATEGORIES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
+  dueDate: zDate,
+  reminderDate: optDate,
+  isRecurring: z.boolean().optional(),
+  recurrencePattern: z
+    .union([z.literal(""), z.enum(["monthly", "quarterly", "yearly"]), z.null()])
+    .transform((v) => (v === "" ? null : v))
+    .optional(),
+  assignedTo: zUuid.optional().nullable(),
+  relatedDocumentId: zUuid.optional().nullable(),
+  relatedVatReturnId: zUuid.optional().nullable(),
+  notes: optText(2000),
+});
+
+const updateTaskBody = z.object({
+  status: z.enum(TASK_STATUSES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
+  dueDate: zDate.optional(),
+  notes: optText(2000),
+});
+
+const createMessageBody = z.object({
+  threadId: zUuid.optional().nullable(),
+  subject: optText(255),
+  content: zText(10_000, { min: 1 }),
+  recipientId: zUuid.optional().nullable(),
+  attachmentUrl: fileRef,
+  attachmentName: optText(255),
+  messageType: z.enum(["general", "inquiry", "update", "urgent"]).optional(),
+});
+
+const toDate = (iso: string | null | undefined): Date | null =>
+  iso ? new Date(`${iso}T00:00:00.000Z`) : null;
 
 export function registerPortalRoutes(app: Express) {
   // =====================================
@@ -65,9 +243,11 @@ export function registerPortalRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/documents",
     authMiddleware,
+    strictBody(documentBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
+      const body = parsedBody<z.output<typeof documentBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -75,39 +255,30 @@ export function registerPortalRoutes(app: Express) {
       }
 
       // Validate MIME type — never trust the filename extension alone.
-      const mimeType: string = (req.body.mimeType || "application/pdf").toString().toLowerCase();
+      const mimeType = body.mimeType || "application/pdf";
       if (!ALLOWED_DOC_MIME_TYPES.includes(mimeType)) {
         return res.status(400).json({
           message: "Invalid file type. Allowed: PDF, images, Word, Excel, and text files.",
         });
       }
 
-      // Validate file size (max 50MB)
-      const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
-      const fileSize = Number(req.body.fileSize) || 0;
-      if (fileSize > MAX_DOC_SIZE) {
-        return res.status(400).json({ message: "File too large. Maximum size is 50MB." });
-      }
-
-      const documentData = {
+      const document = await storage.createDocument({
         companyId,
-        name: req.body.name || "Uploaded Document",
-        nameAr: req.body.nameAr || null,
-        category: req.body.category || "other",
-        description: req.body.description || null,
-        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: req.body.fileName || "document.pdf",
-        fileSize: fileSize || null,
+        name: body.name || "Uploaded Document",
+        nameAr: body.nameAr ?? null,
+        category: body.category || "other",
+        description: body.description ?? null,
+        fileUrl: body.fileUrl || "/uploads/placeholder.pdf",
+        fileName: body.fileName || "document.pdf",
+        fileSize: body.fileSize || null,
         mimeType,
-        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-        reminderDays: req.body.reminderDays || 30,
+        expiryDate: toDate(body.expiryDate),
+        reminderDays: body.reminderDays ?? 30,
         reminderSent: false,
-        tags: req.body.tags || null,
+        tags: body.tags ?? null,
         isArchived: false,
         uploadedBy: userId,
-      };
-
-      const document = await storage.createDocument(documentData);
+      });
       res.status(201).json(document);
     })
   );
@@ -152,37 +323,123 @@ export function registerPortalRoutes(app: Express) {
     })
   );
 
-  // Add tax return to archive
+  // Add tax return to archive. Never a 500: every field is validated (R08-10).
   app.post(
     "/api/companies/:companyId/tax-returns-archive",
     authMiddleware,
+    requireCustomer,
+    strictBody(createArchiveBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
+      const body = parsedBody<z.output<typeof createArchiveBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const returnData = {
+      const taxReturn = await storage.createTaxReturnArchive({
         companyId,
-        returnType: req.body.returnType || "vat",
-        periodLabel: req.body.periodLabel,
-        periodStart: new Date(req.body.periodStart),
-        periodEnd: new Date(req.body.periodEnd),
-        filingDate: new Date(req.body.filingDate),
-        ftaReferenceNumber: req.body.ftaReferenceNumber || null,
-        taxAmount: parseFloat(req.body.taxAmount) || 0,
-        paymentStatus: req.body.paymentStatus || "paid",
-        fileUrl: req.body.fileUrl || null,
-        fileName: req.body.fileName || null,
-        notes: req.body.notes || null,
+        returnType: body.returnType ?? "vat",
+        periodLabel: body.periodLabel,
+        periodStart: toDate(body.periodStart)!,
+        periodEnd: toDate(body.periodEnd)!,
+        filingDate: toDate(body.filingDate)!,
+        ftaReferenceNumber: body.ftaReferenceNumber ?? null,
+        taxAmount: body.taxAmount ?? 0,
+        paymentStatus: body.paymentStatus ?? "paid",
+        fileUrl: body.fileUrl ?? null,
+        fileName: body.fileName ?? null,
+        notes: body.notes ?? null,
         filedBy: userId,
-      };
-
-      const taxReturn = await storage.createTaxReturnArchive(returnData);
+      });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "tax_return_archive.create",
+        entityType: "tax_return_archive",
+        entityId: taxReturn.id,
+        before: null,
+        after: { returnType: taxReturn.returnType, periodLabel: taxReturn.periodLabel },
+        req,
+      });
       res.status(201).json(taxReturn);
+    })
+  );
+
+  app.put(
+    "/api/tax-returns-archive/:id",
+    authMiddleware,
+    requireCustomer,
+    strictBody(updateArchiveBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const body = parsedBody<z.output<typeof updateArchiveBody>>(req);
+
+      const existing = await storage.getTaxReturnArchiveItem(id);
+      if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
+        throw new DomainError("TAX_RETURN_NOT_FOUND", 404, undefined, "Tax return not found");
+      }
+      const patch: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (value === undefined) continue;
+        patch[key] = ["periodStart", "periodEnd", "filingDate"].includes(key)
+          ? toDate(value as string)
+          : value;
+      }
+      const start = (patch.periodStart as Date | undefined) ?? existing.periodStart;
+      const end = (patch.periodEnd as Date | undefined) ?? existing.periodEnd;
+      if (end.getTime() < start.getTime()) {
+        throw new DomainError(
+          "VALIDATION_ERROR",
+          400,
+          undefined,
+          "Period end cannot be before period start"
+        );
+      }
+      const updated = await storage.updateTaxReturnArchive(id, existing.companyId, patch as never);
+      if (!updated) {
+        throw new DomainError("TAX_RETURN_NOT_FOUND", 404, undefined, "Tax return not found");
+      }
+      await recordAudit({
+        userId,
+        companyId: existing.companyId,
+        action: "tax_return_archive.update",
+        entityType: "tax_return_archive",
+        entityId: id,
+        before: { periodLabel: existing.periodLabel, paymentStatus: existing.paymentStatus },
+        after: { periodLabel: updated.periodLabel, paymentStatus: updated.paymentStatus },
+        req,
+      });
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    "/api/tax-returns-archive/:id",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const existing = await storage.getTaxReturnArchiveItem(id);
+      if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
+        throw new DomainError("TAX_RETURN_NOT_FOUND", 404, undefined, "Tax return not found");
+      }
+      await storage.deleteTaxReturnArchive(id, existing.companyId);
+      await recordAudit({
+        userId,
+        companyId: existing.companyId,
+        action: "tax_return_archive.delete",
+        entityType: "tax_return_archive",
+        entityId: id,
+        before: { periodLabel: existing.periodLabel, returnType: existing.returnType },
+        after: null,
+        req,
+      });
+      res.json({ success: true });
     })
   );
 
@@ -210,38 +467,52 @@ export function registerPortalRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/compliance-tasks",
     authMiddleware,
+    strictBody(createTaskBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
+      const body = parsedBody<z.output<typeof createTaskBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (body.assignedTo && !(await storage.hasCompanyAccess(body.assignedTo, companyId))) {
+        throw new DomainError(
+          "ASSIGNEE_NOT_IN_COMPANY",
+          400,
+          undefined,
+          "Assignee must belong to this company"
+        );
+      }
+      if (body.relatedDocumentId) {
+        const doc = await storage.getDocument(body.relatedDocumentId);
+        if (!doc || doc.companyId !== companyId) {
+          throw new DomainError("DOCUMENT_NOT_FOUND", 404, undefined, "Related document not found");
+        }
+      }
 
-      const taskData = {
+      const task = await storage.createComplianceTask({
         companyId,
-        title: req.body.title,
-        titleAr: req.body.titleAr || null,
-        description: req.body.description || null,
-        category: req.body.category || "other",
-        priority: req.body.priority || "medium",
+        title: body.title,
+        titleAr: body.titleAr ?? null,
+        description: body.description ?? null,
+        category: body.category || "other",
+        priority: body.priority || "medium",
         status: "pending",
-        dueDate: new Date(req.body.dueDate),
-        reminderDate: req.body.reminderDate ? new Date(req.body.reminderDate) : null,
+        dueDate: toDate(body.dueDate)!,
+        reminderDate: toDate(body.reminderDate),
         reminderSent: false,
-        isRecurring: req.body.isRecurring || false,
-        recurrencePattern: req.body.recurrencePattern || null,
+        isRecurring: body.isRecurring || false,
+        recurrencePattern: body.recurrencePattern ?? null,
         completedAt: null,
         completedBy: null,
-        assignedTo: req.body.assignedTo || null,
+        assignedTo: body.assignedTo ?? null,
         createdBy: userId,
-        relatedDocumentId: req.body.relatedDocumentId || null,
-        relatedVatReturnId: req.body.relatedVatReturnId || null,
-        notes: req.body.notes || null,
-      };
-
-      const task = await storage.createComplianceTask(taskData);
+        relatedDocumentId: body.relatedDocumentId ?? null,
+        relatedVatReturnId: body.relatedVatReturnId ?? null,
+        notes: body.notes ?? null,
+      });
       res.status(201).json(task);
     })
   );
@@ -250,9 +521,11 @@ export function registerPortalRoutes(app: Express) {
   app.patch(
     "/api/compliance-tasks/:taskId",
     authMiddleware,
+    strictBody(updateTaskBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const { taskId } = req.params;
       const userId = (req as any).user.id;
+      const body = parsedBody<z.output<typeof updateTaskBody>>(req);
 
       const existing = await storage.getComplianceTask(taskId);
       if (!existing) {
@@ -263,19 +536,19 @@ export function registerPortalRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updates: any = {};
-      if (req.body.status) {
-        updates.status = req.body.status;
-        if (req.body.status === "completed") {
+      const updates: Record<string, unknown> = {};
+      if (body.status) {
+        updates.status = body.status;
+        if (body.status === "completed") {
           updates.completedAt = new Date();
           updates.completedBy = userId;
         }
       }
-      if (req.body.priority) updates.priority = req.body.priority;
-      if (req.body.dueDate) updates.dueDate = new Date(req.body.dueDate);
-      if (req.body.notes !== undefined) updates.notes = req.body.notes;
+      if (body.priority) updates.priority = body.priority;
+      if (body.dueDate) updates.dueDate = toDate(body.dueDate);
+      if (body.notes !== undefined) updates.notes = body.notes;
 
-      const task = await storage.updateComplianceTask(taskId, updates);
+      const task = await storage.updateComplianceTask(taskId, updates as never);
       res.json(task);
     })
   );
@@ -324,31 +597,40 @@ export function registerPortalRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/messages",
     authMiddleware,
+    strictBody(createMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
+      const body = parsedBody<z.output<typeof createMessageBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      // A recipient must be someone who can see this company's messages (R16-13).
+      if (body.recipientId && !(await storage.hasCompanyAccess(body.recipientId, companyId))) {
+        throw new DomainError(
+          "RECIPIENT_NOT_IN_COMPANY",
+          400,
+          { field: "recipientId" },
+          "Recipient must belong to this company"
+        );
+      }
 
-      const messageData = {
+      const message = await storage.createMessage({
         companyId,
-        threadId: req.body.threadId || null,
-        subject: req.body.subject || null,
-        content: req.body.content,
+        threadId: body.threadId ?? null,
+        subject: body.subject ?? null,
+        content: body.content,
         senderId: userId,
-        recipientId: req.body.recipientId || null,
+        recipientId: body.recipientId ?? null,
         isRead: false,
         readAt: null,
-        attachmentUrl: req.body.attachmentUrl || null,
-        attachmentName: req.body.attachmentName || null,
-        messageType: req.body.messageType || "general",
+        attachmentUrl: body.attachmentUrl ?? null,
+        attachmentName: body.attachmentName ?? null,
+        messageType: body.messageType || "general",
         isArchived: false,
-      };
-
-      const message = await storage.createMessage(messageData);
+      });
       res.status(201).json(message);
     })
   );
