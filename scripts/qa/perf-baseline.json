@@ -1,0 +1,12 @@
+{
+  "source": "Audit report 20 section 4 (300 invoices, 200 requests per endpoint, concurrency 20, 4-core box); upper p95 of the observed range.",
+  "p95Ms": {
+    "/api/companies/:cid/invoices": 376,
+    "/api/companies/:cid/dashboard/stats": 247,
+    "/api/companies/:cid/dashboard/monthly-trends": 184,
+    "/api/companies/:cid/reports/balance-sheet": 126,
+    "/api/companies/:cid/reports/trial-balance": 124,
+    "/api/companies/:cid/accounts": 101,
+    "/api/companies/:cid/bills/aging": 67
+  }
+}

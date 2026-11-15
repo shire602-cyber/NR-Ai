@@ -1,0 +1,9 @@
+{
+  "issue": "R01-01",
+  "owner": "W2-C",
+  "reason": "Team role change / member removal load company_users by membership id only; the owner of company B can demote/remove members of company A.",
+  "routes": [
+    "PUT /api/companies/:companyId/team/:memberId#mixed",
+    "DELETE /api/companies/:companyId/team/:memberId#mixed"
+  ]
+}

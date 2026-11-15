@@ -6,17 +6,12 @@
 //   RL_API_MAX=100000 RL_READ_MAX=100000 RL_AUTH_MAX=1000 npm start &
 //   BASE_URL=http://127.0.0.1:5000 node tests/integration/uncovered-modules.test.mjs
 
+import { fail as abort, rateLimitRetries, throttledFetch } from "./_http.mjs";
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0,
-  fail = 0,
-  skipped = 0;
+  fail = 0;
 const fails = [];
 const ok = (name, cond, detail) => {
-  if (!cond && detail && (detail.status === 429 || detail.s === 429)) {
-    skipped++;
-    console.log("SKIP  " + name + "  (rate-limited)");
-    return;
-  }
   if (cond) {
     pass++;
     console.log("PASS  " + name);
@@ -30,7 +25,7 @@ const note = (name, detail) => console.log("NOTE  " + name + "  " + JSON.stringi
 async function api(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
-  const r = await fetch(BASE + p, {
+  const r = await throttledFetch(BASE + p, {
     method: m,
     headers: h,
     body: o.body === undefined ? undefined : JSON.stringify(o.body),
@@ -81,8 +76,7 @@ async function main() {
     body: { name: "Uncov", email: `uncov_${s}@e.com`, password: "Password123!" },
   });
   if (!reg.j?.token) {
-    console.log("SKIP: registration rate-limited");
-    process.exit(0);
+    abort("registration failed (after rate-limit retries)", { status: reg.s, body: reg.t?.slice(0, 200) });
   }
   T = { token: reg.j.token, cid: reg.j.company.id };
   await api("PATCH", `/api/companies/${T.cid}`, {
@@ -467,7 +461,7 @@ async function main() {
   const eq = n(bs.totalEquity ?? bs.equity?.total);
   ok("FINAL: balance sheet A = L + E", close(assets, liab + eq, 0.05), { assets, liab, eq });
 
-  console.log(`\n==== ${pass} passed, ${fail} failed, ${skipped} skipped ====`);
+  console.log(`\n==== ${pass} passed, ${fail} failed (${rateLimitRetries} rate-limit retries) ====`);
   if (fails.length) console.log("FAILURES:\n - " + fails.join("\n - "));
   process.exit(fail ? 1 : 0);
 }

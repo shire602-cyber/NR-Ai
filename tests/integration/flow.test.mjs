@@ -11,6 +11,7 @@
 //   Box 8 output VAT 750 ; Box 12 due 750 ; Box 14 payable 750
 // Expected P&L revenue: 18,000 (15,000 standard + 3,000 zero-rated)
 
+import { throttledFetch } from "./_http.mjs";
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0; const fails = [];
 const ok = (name, cond, detail) => {
@@ -20,7 +21,7 @@ const ok = (name, cond, detail) => {
 async function api(method, path, { body, token } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  const res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await throttledFetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text(); let json = null; try { json = JSON.parse(text); } catch {}
   return { status: res.status, json, text };
 }

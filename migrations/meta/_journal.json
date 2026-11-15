@@ -617,6 +617,153 @@
    "when": 1781430030000,
    "tag": "0088_emirate_no_default",
    "breakpoints": false
+  },
+  {
+   "idx": 88,
+   "version": "7",
+   "when": 1781430040000,
+   "tag": "0089_platform_foundation",
+   "breakpoints": false
+  },
+  {
+   "idx": 89,
+   "version": "7",
+   "when": 1781430050000,
+   "tag": "0090_w2a_ledger_kernel",
+   "breakpoints": false
+  },
+  {
+   "idx": 90,
+   "version": "7",
+   "when": 1781430060000,
+   "tag": "0091_w2b_reporting_close",
+   "breakpoints": false
+  },
+  {
+   "idx": 91,
+   "version": "7",
+   "when": 1781430070000,
+   "tag": "0092_w2c_identity",
+   "breakpoints": false
+  },
+  {
+   "idx": 92,
+   "version": "7",
+   "when": 1781430080000,
+   "tag": "0093_w2d_write_sweep",
+   "breakpoints": false
+  },
+  {
+   "idx": 93,
+   "version": "7",
+   "when": 1781430090000,
+   "tag": "0094_w2e_fx_core",
+   "breakpoints": false
+  },
+  {
+   "idx": 94,
+   "version": "7",
+   "when": 1781430100000,
+   "tag": "0095_w3a_sales",
+   "breakpoints": false
+  },
+  {
+   "idx": 95,
+   "version": "7",
+   "when": 1781430110000,
+   "tag": "0096_w3b_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 96,
+   "version": "7",
+   "when": 1781430120000,
+   "tag": "0097_w3c_banking",
+   "breakpoints": false
+  },
+  {
+   "idx": 97,
+   "version": "7",
+   "when": 1781430130000,
+   "tag": "0098_w3d_payroll",
+   "breakpoints": false
+  },
+  {
+   "idx": 98,
+   "version": "7",
+   "when": 1781430140000,
+   "tag": "0099_w3e_dashboard_planning",
+   "breakpoints": false
+  },
+  {
+   "idx": 99,
+   "version": "7",
+   "when": 1781430150000,
+   "tag": "0100_w4a_corporate_tax_compliance",
+   "breakpoints": false
+  },
+  {
+   "idx": 100,
+   "version": "7",
+   "when": 1781430160000,
+   "tag": "0101_w4b_inventory_assets",
+   "breakpoints": false
+  },
+  {
+   "idx": 101,
+   "version": "7",
+   "when": 1781430170000,
+   "tag": "0102_w4c_einvoicing",
+   "breakpoints": false
+  },
+  {
+   "idx": 102,
+   "version": "7",
+   "when": 1781430180000,
+   "tag": "0103_w4d_portals_comms",
+   "breakpoints": false
+  },
+  {
+   "idx": 103,
+   "version": "7",
+   "when": 1781430190000,
+   "tag": "0104_w4e_vat_engine",
+   "breakpoints": false
+  },
+  {
+   "idx": 104,
+   "version": "7",
+   "when": 1781430200000,
+   "tag": "0105_w5a_reports",
+   "breakpoints": false
+  },
+  {
+   "idx": 105,
+   "version": "7",
+   "when": 1781430210000,
+   "tag": "0106_w5b_commercial",
+   "breakpoints": false
+  },
+  {
+   "idx": 106,
+   "version": "7",
+   "when": 1781430220000,
+   "tag": "0107_w5c_multi_entity",
+   "breakpoints": false
+  },
+  {
+   "idx": 107,
+   "version": "7",
+   "when": 1781430230000,
+   "tag": "0108_w5d_firm",
+   "breakpoints": false
+  },
+  {
+   "idx": 108,
+   "version": "7",
+   "when": 1781430240000,
+   "tag": "0109_w5e_security",
+   "breakpoints": false
   }
  ]
 }

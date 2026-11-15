@@ -1,0 +1,11 @@
+{
+  "description": "Coverage ratchet for `npm run test:coverage` (read by vitest.config.ts). Values only go up. Plan (council PLAN.md, R20-15): statements/lines 25 after wave 3, 40 after wave 4, 50 at the end; branches/functions follow proportionally. Raise in the same PR that adds the tests.",
+  "baseline": "2026-06-13 clean audit",
+  "plan": { "afterWave3": 25, "afterWave4": 40, "final": 50 },
+  "thresholds": {
+    "statements": 12,
+    "branches": 10,
+    "functions": 14,
+    "lines": 12
+  }
+}

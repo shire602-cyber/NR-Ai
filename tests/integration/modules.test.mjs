@@ -8,19 +8,17 @@
 //   RL_API_MAX=100000 RL_READ_MAX=100000 RL_AUTH_MAX=1000 npm start &
 //   BASE_URL=http://127.0.0.1:5000 node tests/integration/modules.test.mjs
 
+import { fail as abort, rateLimitRetries, throttledFetch } from "./_http.mjs";
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
-let pass = 0, fail = 0, skipped = 0; const fails = [];
+let pass = 0, fail = 0; const fails = [];
 const ok = (name, cond, detail) => {
-  if (!cond && detail && (detail.status === 429 || detail.s === 429)) {
-    skipped++; console.log("SKIP  " + name + "  (rate-limited)"); return;
-  }
   if (cond) { pass++; console.log("PASS  " + name); }
   else { fail++; fails.push(name + " :: " + JSON.stringify(detail)); console.log("FAIL  " + name + "  " + JSON.stringify(detail)); }
 };
 async function api(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
-  const r = await fetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
+  const r = await throttledFetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
   return { s: r.status, j, t };
 }
@@ -42,7 +40,7 @@ async function tb() {
 async function main() {
   const s = Math.random().toString(36).slice(2, 8);
   const reg = await api("POST", "/api/auth/register", { body: { name: "Mod", email: `mod_${s}@e.com`, password: "Password123!" } });
-  if (!reg.j?.token) { console.log("SKIP: registration rate-limited"); process.exit(0); }
+  if (!reg.j?.token) abort("registration failed (after rate-limit retries)", { status: reg.s, body: reg.t?.slice(0, 200) });
   T = { token: reg.j.token, cid: reg.j.company.id };
   await api("PATCH", `/api/companies/${T.cid}`, { token: T.token, body: { trnVatNumber: "100123456700003", vatRegistered: true, emirate: "dubai" } });
   ACC = (await api("GET", `/api/companies/${T.cid}/accounts`, { token: T.token })).j || [];
@@ -269,7 +267,7 @@ async function main() {
     ok("FINAL: balance sheet A = L + E", close(A, L + E, 0.02), { A, L, E, diff: Math.round((A - L - E) * 100) / 100 });
   }
 
-  console.log(`\n==== ${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ""} ====`);
+  console.log(`\n==== ${pass} passed, ${fail} failed (${rateLimitRetries} rate-limit retries) ====`);
   if (fail) { console.log("FAILURES:\n - " + fails.join("\n - ")); process.exit(1); }
 }
 main().catch((e) => { console.error("CRASH", e); process.exit(2); });

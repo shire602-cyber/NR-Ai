@@ -1,0 +1,6 @@
+{
+  "issue": "R16-11",
+  "owner": "W4-D",
+  "reason": "Push unsubscribe deactivates by subscription id/endpoint without a user filter; another user's subscription can be disabled.",
+  "routes": ["DELETE /api/push/unsubscribe#global"]
+}
