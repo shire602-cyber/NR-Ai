@@ -67,6 +67,8 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 
 // ─── Types ───────────────────────────────────────────────
@@ -82,6 +84,7 @@ interface BudgetPlan {
   notes: string | null;
   created_at: string;
   total_budget?: string;
+  version?: number;
 }
 
 interface BudgetLine {
@@ -141,13 +144,29 @@ interface VarianceData {
 
 // ─── Schemas ─────────────────────────────────────────────
 
-const budgetFormSchema = z.object({
-  name: z.string().min(1, "Budget name is required"),
-  fiscalYear: z.coerce.number().int().min(2000).max(2100),
-  startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().min(1, "End date is required"),
-  notes: z.string().optional().nullable(),
-});
+const budgetFormSchema = z
+  .object({
+    name: z.string().min(1, "Budget name is required"),
+    fiscalYear: z.coerce.number().int().min(2000).max(2100),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().min(1, "End date is required"),
+    notes: z.string().optional().nullable(),
+  })
+  .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
+    path: ["endDate"],
+    message: "End date must be on or after the start date",
+  })
+  .refine(
+    (v) => {
+      if (!v.startDate || !v.endDate || v.endDate < v.startDate) return true;
+      const months =
+        (Number(v.endDate.slice(0, 4)) - Number(v.startDate.slice(0, 4))) * 12 +
+        (Number(v.endDate.slice(5, 7)) - Number(v.startDate.slice(5, 7))) +
+        1;
+      return months <= 12;
+    },
+    { path: ["endDate"], message: "A budget plan covers at most 12 months" }
+  );
 
 type BudgetFormData = z.infer<typeof budgetFormSchema>;
 
@@ -216,6 +235,8 @@ const BUDGET_CATEGORIES = [
 ];
 
 // ─── Component ───────────────────────────────────────────
+
+const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
 export default function Budgets() {
   const { t, locale } = useTranslation();
@@ -337,6 +358,91 @@ export default function Budgets() {
       toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
+
+  const refreshBudgets = () =>
+    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+
+  const newVersionMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/new-version`, {}),
+    onSuccess: () => {
+      refreshBudgets();
+      toast({
+        title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
+        description: tr(
+          locale,
+          "Edit the draft, then have a different approver approve it.",
+          "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
+        ),
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const copyBudgetMutation = useMutation({
+    mutationFn: ({ id, fiscalYear }: { id: string; fiscalYear: number }) =>
+      apiRequest("POST", `/api/budget-plans/${id}/copy`, { fiscalYear }),
+    onSuccess: () => {
+      refreshBudgets();
+      toast({
+        title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
+        description: tr(
+          locale,
+          "A draft for the next year was created.",
+          "تم إنشاء مسودة للسنة التالية."
+        ),
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const importLinesMutation = useMutation({
+    mutationFn: ({ id, csv }: { id: string; csv: string }) =>
+      apiRequest("POST", `/api/budget-plans/${id}/import`, { csv }),
+    onSuccess: (result: { imported: number }) => {
+      queryClient.invalidateQueries({
+        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
+      });
+      refreshBudgets();
+      toast({
+        title: tr(locale, "Import complete", "اكتمل الاستيراد"),
+        description: `${result.imported} ${tr(locale, "lines imported", "سطر تم استيراده")}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const downloadBudgetExport = async (budget: BudgetPlan, format: "xlsx" | "csv") => {
+    try {
+      const response = await fetch(
+        apiUrl(`/api/budget-plans/${budget.id}/export?format=${format}`),
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      if (!response.ok) throw new Error((await response.json())?.message || "Export failed");
+      const url = URL.createObjectURL(await response.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `budget-${budget.name}-v${budget.version ?? 1}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file || !selectedBudget) return;
+    importLinesMutation.mutate({ id: selectedBudget.id, csv: await file.text() });
+  };
 
   const addLineMutation = useMutation({
     mutationFn: (data: BudgetLineFormData) =>
@@ -495,11 +601,23 @@ export default function Budgets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return <Badge variant="secondary"><T k="pages.draft" /></Badge>;
+        return (
+          <Badge variant="secondary">
+            <T k="pages.draft" />
+          </Badge>
+        );
       case "approved":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle"><T k="pages.approved" /></Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            <T k="pages.approved" />
+          </Badge>
+        );
       case "closed":
-        return <Badge className="bg-muted text-foreground hover:bg-muted"><T k="pages.closed" /></Badge>;
+        return (
+          <Badge className="bg-muted text-foreground hover:bg-muted">
+            <T k="pages.closed" />
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -542,7 +660,9 @@ export default function Budgets() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground"><T k="pages.pleaseCreateACompanyFirst" /></div>
+        <div className="text-muted-foreground">
+          <T k="pages.pleaseCreateACompanyFirst" />
+        </div>
       </div>
     );
   }
@@ -604,7 +724,9 @@ export default function Budgets() {
         <TabsContent value="budgets">
           <Card>
             <CardHeader>
-              <CardTitle><T k="pages.budgetPlans" /></CardTitle>
+              <CardTitle>
+                <T k="pages.budgetPlans" />
+              </CardTitle>
               <CardDescription>
                 {budgetPlans.length} budget plan{budgetPlans.length !== 1 ? "s" : ""}
               </CardDescription>
@@ -625,9 +747,15 @@ export default function Budgets() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Year</TableHead>
-                        <TableHead><T k="pages.period" /></TableHead>
-                        <TableHead><T k="pages.status" /></TableHead>
-                        <TableHead className="text-right"><T k="pages.totalBudget" /></TableHead>
+                        <TableHead>
+                          <T k="pages.period" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.status" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.totalBudget" />
+                        </TableHead>
                         <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -667,22 +795,62 @@ export default function Budgets() {
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>
                               )}
+                              {budget.status === "draft" ? (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleOpenEditBudget(budget)}
+                                    title="Edit"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setBudgetToDelete(budget.id)}
+                                    title="Delete"
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => newVersionMutation.mutate(budget.id)}
+                                  data-testid={`button-new-version-${budget.id}`}
+                                >
+                                  {tr(locale, "New version", "نسخة جديدة")}
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleOpenEditBudget(budget)}
-                                title="Edit"
+                                onClick={() =>
+                                  copyBudgetMutation.mutate({
+                                    id: budget.id,
+                                    fiscalYear: budget.fiscal_year + 1,
+                                  })
+                                }
+                                title={tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
                               >
-                                <Edit className="w-4 h-4" />
+                                {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setBudgetToDelete(budget.id)}
-                                title="Delete"
-                                className="text-destructive hover:text-destructive"
+                                onClick={() => downloadBudgetExport(budget, "xlsx")}
                               >
-                                <Trash2 className="w-4 h-4" />
+                                xlsx
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => downloadBudgetExport(budget, "csv")}
+                              >
+                                csv
                               </Button>
                             </div>
                           </TableCell>
@@ -708,10 +876,35 @@ export default function Budgets() {
                       <T k="pages.monthlyBudgetAllocationByCategoryClickARowToEdit" />
                     </CardDescription>
                   </div>
-                  <Button onClick={handleOpenAddLine} className="flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
-                    <T k="pages.addLine" />
-                  </Button>
+                  {selectedBudget.status === "draft" ? (
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-accent cursor-pointer">
+                        {tr(locale, "Import CSV", "استيراد CSV")}
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          className="sr-only"
+                          data-testid="input-import-budget"
+                          onChange={(e) => {
+                            void handleImportFile(e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <Button onClick={handleOpenAddLine} className="flex items-center gap-2">
+                        <Plus className="w-4 h-4" />
+                        <T k="pages.addLine" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge variant="secondary" data-testid="badge-budget-frozen">
+                      {tr(
+                        locale,
+                        "Locked after approval. Create a new version to change it.",
+                        "مقفلة بعد الاعتماد. أنشئ نسخة جديدة لتعديلها."
+                      )}
+                    </Badge>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -788,7 +981,9 @@ export default function Budgets() {
                         ))}
                         {/* Totals Row */}
                         <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="sticky left-0 bg-muted/50 z-10"><T k="pages.total" /></TableCell>
+                          <TableCell className="sticky left-0 bg-muted/50 z-10">
+                            <T k="pages.total" />
+                          </TableCell>
                           {MONTH_KEYS.map((key) => (
                             <TableCell key={key} className="text-right font-mono text-sm">
                               {formatCurrency(lineTotals()[key], "AED", locale)}
@@ -841,17 +1036,27 @@ export default function Budgets() {
                             <TableHead key={label} className="text-center min-w-[200px]">
                               <div>{label}</div>
                               <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-right pr-1"><T k="pages.budget" /></span>
-                                <span className="flex-1 text-right pr-1"><T k="pages.actual" /></span>
+                                <span className="flex-1 text-right pr-1">
+                                  <T k="pages.budget" />
+                                </span>
+                                <span className="flex-1 text-right pr-1">
+                                  <T k="pages.actual" />
+                                </span>
                                 <span className="flex-1 text-right">Var</span>
                               </div>
                             </TableHead>
                           ))}
                           <TableHead className="text-center min-w-[200px]">
-                            <div><T k="pages.annual" /></div>
+                            <div>
+                              <T k="pages.annual" />
+                            </div>
                             <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-right pr-1"><T k="pages.budget" /></span>
-                              <span className="flex-1 text-right pr-1"><T k="pages.actual" /></span>
+                              <span className="flex-1 text-right pr-1">
+                                <T k="pages.budget" />
+                              </span>
+                              <span className="flex-1 text-right pr-1">
+                                <T k="pages.actual" />
+                              </span>
                               <span className="flex-1 text-right">Var %</span>
                             </div>
                           </TableHead>
@@ -919,7 +1124,9 @@ export default function Budgets() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium"><T k="pages.totalBudget" /></CardTitle>
+                        <CardTitle className="text-sm font-medium">
+                          <T k="pages.totalBudget" />
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -933,7 +1140,9 @@ export default function Budgets() {
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium"><T k="pages.totalActual" /></CardTitle>
+                        <CardTitle className="text-sm font-medium">
+                          <T k="pages.totalActual" />
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -947,7 +1156,9 @@ export default function Budgets() {
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium"><T k="pages.totalVariance" /></CardTitle>
+                        <CardTitle className="text-sm font-medium">
+                          <T k="pages.totalVariance" />
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
                         {(() => {
@@ -1056,7 +1267,9 @@ export default function Budgets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><T k="pages.notes" /></FormLabel>
+                    <FormLabel>
+                      <T k="pages.notes" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
                     </FormControl>
@@ -1130,7 +1343,9 @@ export default function Budgets() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel><T k="pages.description" /></FormLabel>
+                      <FormLabel>
+                        <T k="pages.description" />
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="Optional detail" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1201,14 +1416,18 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle><T k="pages.deleteBudgetPlan" /></AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pages.deleteBudgetPlan" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this budget plan and all its lines. This action cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (budgetToDelete) {
@@ -1232,13 +1451,17 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle><T k="pages.deleteBudgetLine" /></AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pages.deleteBudgetLine" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this budget line. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (lineToDelete) {

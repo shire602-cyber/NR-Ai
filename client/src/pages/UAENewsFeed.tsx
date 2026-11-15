@@ -57,65 +57,11 @@ const SOURCE_LABELS: Record<string, { en: string; ar: string }> = {
   other: { en: "Other", ar: "أخرى" },
 };
 
-const SAMPLE_NEWS: NewsItem[] = [
-  {
-    id: "1",
-    title: "FTA Announces Updated VAT Return Filing Deadlines for 2025",
-    titleAr:
-      "الهيئة الاتحادية للضرائب تعلن عن مواعيد جديدة لتقديم إقرارات ضريبة القيمة المضافة لعام 2025",
-    summary:
-      "The Federal Tax Authority has released updated guidelines for VAT return submission deadlines, with changes taking effect from Q1 2025.",
-    summaryAr:
-      "أصدرت الهيئة الاتحادية للضرائب إرشادات محدثة لمواعيد تقديم إقرارات ضريبة القيمة المضافة، مع دخول التغييرات حيز التنفيذ اعتباراً من الربع الأول 2025.",
-    source: "fta",
-    sourceUrl: "https://tax.gov.ae",
-    category: "vat",
-    imageUrl: null,
-    publishedAt: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    title: "Corporate Tax: Small Business Relief Extended to 2026",
-    titleAr: "ضريبة الشركات: تمديد إعفاء الشركات الصغيرة حتى 2026",
-    summary:
-      "The Ministry of Finance confirms that small business relief provisions under the Corporate Tax law will be extended, benefiting thousands of UAE businesses.",
-    summaryAr:
-      "تؤكد وزارة المالية أن أحكام إعفاء الشركات الصغيرة بموجب قانون ضريبة الشركات ستُمدد، مما يعود بالنفع على آلاف الشركات الإماراتية.",
-    source: "mof",
-    sourceUrl: "https://mof.gov.ae",
-    category: "corporate_tax",
-    imageUrl: null,
-    publishedAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: "3",
-    title: "UAE E-Invoicing Mandate: What Businesses Need to Know",
-    titleAr: "الفوترة الإلكترونية في الإمارات: ما تحتاج الشركات معرفته",
-    summary:
-      "With e-invoicing becoming mandatory for B2B transactions by 2027, businesses should start preparing their systems for compliance.",
-    summaryAr:
-      "مع إلزامية الفوترة الإلكترونية للمعاملات بين الشركات بحلول 2027، يجب على الشركات البدء في إعداد أنظمتها للامتثال.",
-    source: "gulf_news",
-    sourceUrl: "https://gulfnews.com",
-    category: "regulation",
-    imageUrl: null,
-    publishedAt: new Date(Date.now() - 172800000).toISOString(),
-  },
-  {
-    id: "4",
-    title: "UAE Economy Shows Strong Growth in Q3 2024",
-    titleAr: "الاقتصاد الإماراتي يُظهر نمواً قوياً في الربع الثالث 2024",
-    summary:
-      "Non-oil sectors continue to drive economic expansion, with tourism and trade leading the growth indicators.",
-    summaryAr:
-      "تواصل القطاعات غير النفطية دفع التوسع الاقتصادي، حيث تقود السياحة والتجارة مؤشرات النمو.",
-    source: "khaleej_times",
-    sourceUrl: "https://khaleejtimes.com",
-    category: "economy",
-    imageUrl: null,
-    publishedAt: new Date(Date.now() - 259200000).toISOString(),
-  },
-];
+interface NewsFeedStatus {
+  status: "live" | "requires_external";
+  feedCount: number;
+  externalAction: { en: string; ar: string };
+}
 
 export default function UAENewsFeed() {
   const { t, locale } = useTranslation();
@@ -127,7 +73,12 @@ export default function UAENewsFeed() {
     refetch,
   } = useQuery<NewsItem[]>({
     queryKey: ["/api/news"],
-    initialData: SAMPLE_NEWS,
+  });
+
+  // No sample items: an empty feed is shown as empty, with the reason when the
+  // external feed has not been configured yet.
+  const { data: feedStatus } = useQuery<NewsFeedStatus>({
+    queryKey: ["/api/news/status"],
   });
 
   const filteredNews =
@@ -201,6 +152,13 @@ export default function UAENewsFeed() {
               <CardContent className="py-12 text-center text-muted-foreground">
                 <Newspaper className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>{locale === "ar" ? "لا توجد أخبار حالياً" : "No news available"}</p>
+                {feedStatus?.status === "requires_external" && (
+                  <p className="mt-2 text-xs" data-testid="news-feed-not-configured">
+                    {locale === "ar"
+                      ? "لم يتم ربط مصدر أخبار خارجي بعد. " + feedStatus.externalAction.ar
+                      : "No external news feed is connected yet. " + feedStatus.externalAction.en}
+                  </p>
+                )}
               </CardContent>
             </Card>
           ) : (

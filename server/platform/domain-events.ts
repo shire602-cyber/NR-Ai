@@ -35,6 +35,7 @@ export const DOMAIN_EVENT_TYPES = [
   "compliance.deadline_due",
   "task.due",
   "receipt.posted",
+  "budget.variance_alert",
 ] as const;
 Object.freeze(DOMAIN_EVENT_TYPES);
 
@@ -70,6 +71,12 @@ export interface DomainEventExtras {
   "compliance.deadline_due": { obligation?: string; dueDate?: string };
   "task.due": { dueDate?: string };
   "receipt.posted": { journalEntryId?: string };
+  "budget.variance_alert": {
+    budgetId?: string;
+    lineId?: string;
+    period?: string;
+    variancePct?: number;
+  };
 }
 
 export type DomainEventPayload<T extends DomainEventType> = DomainEventBase & DomainEventExtras[T];

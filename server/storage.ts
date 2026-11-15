@@ -629,6 +629,8 @@ export interface IStorage {
 
   // AI Anomaly Alerts
   createAnomalyAlert(alert: InsertAnomalyAlert): Promise<AnomalyAlert>;
+  /** Insert unless an alert with the same (company, dedupeKey) exists; undefined when it already did. */
+  createAnomalyAlertIfNew(alert: InsertAnomalyAlert): Promise<AnomalyAlert | undefined>;
   getAnomalyAlertById(id: string): Promise<AnomalyAlert | undefined>;
   getAnomalyAlertsByCompanyId(companyId: string): Promise<AnomalyAlert[]>;
   getUnresolvedAnomalyAlerts(companyId: string): Promise<AnomalyAlert[]>;
@@ -2824,6 +2826,11 @@ export class DatabaseStorage implements IStorage {
   // AI Anomaly Alerts
   async createAnomalyAlert(insertAlert: InsertAnomalyAlert): Promise<AnomalyAlert> {
     const [alert] = await db.insert(anomalyAlerts).values(insertAlert).returning();
+    return alert;
+  }
+
+  async createAnomalyAlertIfNew(insertAlert: InsertAnomalyAlert): Promise<AnomalyAlert | undefined> {
+    const [alert] = await db.insert(anomalyAlerts).values(insertAlert).onConflictDoNothing().returning();
     return alert;
   }
 
