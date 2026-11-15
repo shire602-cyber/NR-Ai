@@ -69,11 +69,20 @@ export type ReportCommandIcon =
   | "wallet";
 export type ReportWorkspaceIcon = "briefcase" | "clipboardCheck" | "users";
 
+/**
+ * Where a report's figures come from (R12-13): `ledger` = posted journal lines through
+ * server/reporting (or the VAT engine); `documents` = invoice/bill/receipt/payroll rows by
+ * their current status; `snapshot_proxy` = a current-state snapshot or forecast that is not
+ * a historical ledger figure. UI badges every non-ledger report as an "Indicator".
+ */
+export type ReportDataBasis = "ledger" | "documents" | "snapshot_proxy";
+
 export interface ReportCatalogItem {
   id: string;
   name: string;
   category: string;
   status: ReportStatus;
+  dataBasis: ReportDataBasis;
   personas: ReportPersona[];
   comparison: string;
   automation: string;
@@ -349,7 +358,13 @@ export interface ReportDeliverySubscription {
   title: string;
   audience: string;
   cadence: string;
+  /** Delivery always emails a server-rendered PDF + XLSX pack (server/services/report-render). */
   channel: string;
+  /**
+   * Also write a Google Sheets copy. Honoured (and mentioned in the channel label) only when
+   * the google_sheets capability is live; otherwise the channel is email only.
+   */
+  googleSheetsCopy?: boolean;
   format: string;
   recipients: string;
   packTemplateId: string;
@@ -1565,6 +1580,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Profit & Loss",
     category: "Financial Statements",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Date range",
     automation: "Net loss review",
@@ -1578,6 +1594,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Balance Sheet",
     category: "Financial Statements",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "As of date",
     automation: "Balance review",
@@ -1591,6 +1608,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "VAT Summary",
     category: "Tax",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Date range",
     automation: "VAT readiness",
@@ -1604,6 +1622,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Cash Flow Statement",
     category: "Financial Statements",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Monthly/quarterly/yearly",
     automation: "Cash pressure",
@@ -1617,6 +1636,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "A/R Aging",
     category: "Sales",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Aging buckets",
     automation: "Payment chasing",
@@ -1630,6 +1650,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "A/P Aging",
     category: "Purchases",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Aging buckets",
     automation: "Payment timing",
@@ -1643,6 +1664,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Trial Balance",
     category: "Accountant Tools",
     status: "live",
+    dataBasis: "ledger",
     personas: ["accountant"],
     comparison: "Date range",
     automation: "Difference flags",
@@ -1656,6 +1678,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "VAT Return",
     category: "Tax",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Tax period",
     automation: "Filing checklist",
@@ -1669,6 +1692,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Period Comparison",
     category: "Management",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Prior period",
     automation: "Variance review",
@@ -1682,6 +1706,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "FX Gains and Losses",
     category: "Financial Statements",
     status: "live",
+    dataBasis: "snapshot_proxy",
     personas: ["accountant"],
     comparison: "As of date",
     automation: "Exposure flags",
@@ -1695,6 +1720,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "General Ledger",
     category: "Accountant Tools",
     status: "live",
+    dataBasis: "ledger",
     personas: ["accountant"],
     comparison: "Date range",
     automation: "Reclassification review",
@@ -1708,6 +1734,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Account Transactions",
     category: "Accountant Tools",
     status: "live",
+    dataBasis: "ledger",
     personas: ["accountant"],
     comparison: "Account drilldown",
     automation: "Missing source review",
@@ -1721,6 +1748,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Corporate Tax Estimate",
     category: "Tax",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Tax year",
     automation: "Tax liability review",
@@ -1745,6 +1773,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Customer Balance Summary",
     category: "Sales",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Open balance",
     automation: "Collections queue",
@@ -1758,6 +1787,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Vendor Balance Summary",
     category: "Purchases",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Open balance",
     automation: "Bill pay queue",
@@ -1771,6 +1801,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Invoice Status",
     category: "Sales",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Status and overdue",
     automation: "Reminder routing",
@@ -1784,6 +1815,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Budget vs Actual",
     category: "Management",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Budget variance",
     automation: "Spend alerts",
@@ -1797,6 +1829,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Cash Flow Forecast",
     category: "Management",
     status: "live",
+    dataBasis: "snapshot_proxy",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Forecast",
     automation: "Cash warnings",
@@ -1810,6 +1843,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Revenue by Customer",
     category: "Sales",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Prior period",
     automation: "Client concentration",
@@ -1823,6 +1857,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Sales by Product/Service",
     category: "Sales",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Sales mix",
     automation: "Service concentration",
@@ -1836,6 +1871,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Expenses by Vendor",
     category: "Purchases",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Prior period",
     automation: "Spend review",
@@ -1849,6 +1885,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Expenses by Category",
     category: "Purchases",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Budget",
     automation: "Cost alerts",
@@ -1862,6 +1899,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Cost Center P&L",
     category: "Management",
     status: "live",
+    dataBasis: "ledger",
     personas: ["owner", "accountant"],
     comparison: "Cost center / department",
     automation: "Cost variance review",
@@ -1875,6 +1913,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Inventory Valuation",
     category: "Inventory",
     status: "live",
+    dataBasis: "snapshot_proxy",
     personas: ["owner", "accountant"],
     comparison: "As of date",
     automation: "Stock risk",
@@ -1888,6 +1927,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Inventory Movement",
     category: "Inventory",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "accountant"],
     comparison: "Period movement",
     automation: "Reorder alerts",
@@ -1901,6 +1941,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Fixed Asset Register",
     category: "Assets",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "As of date",
     automation: "Capitalization review",
@@ -1914,6 +1955,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Depreciation Schedule",
     category: "Assets",
     status: "live",
+    dataBasis: "snapshot_proxy",
     personas: ["freelancer", "accountant"],
     comparison: "Period",
     automation: "Posting suggestions",
@@ -1927,6 +1969,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Payroll Summary",
     category: "Payroll",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "accountant"],
     comparison: "Pay period",
     automation: "Variance checks",
@@ -1940,6 +1983,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "WPS / SIF Summary",
     category: "Payroll",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "accountant"],
     comparison: "Pay run",
     automation: "WPS readiness",
@@ -1953,6 +1997,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Expense Claims",
     category: "Purchases",
     status: "live",
+    dataBasis: "documents",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Claim status",
     automation: "Approval routing",
@@ -1966,6 +2011,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Month-End Close Status",
     category: "Accountant Tools",
     status: "live",
+    dataBasis: "snapshot_proxy",
     personas: ["accountant"],
     comparison: "Close period",
     automation: "Close checklist",
@@ -1979,6 +2025,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Audit Trail",
     category: "Accountant Tools",
     status: "live",
+    dataBasis: "documents",
     personas: ["accountant"],
     comparison: "Activity period",
     automation: "Risk summary",
@@ -1992,6 +2039,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     name: "Management Roll-up",
     category: "Management",
     status: "live",
+    dataBasis: "snapshot_proxy",
     personas: ["accountant"],
     comparison: "Multi-entity roll-up",
     automation: "Review flags",
@@ -4322,7 +4370,8 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     title: "Owner weekly executive delivery",
     audience: "Business owner, solo entrepreneur, and finance admin",
     cadence: "Every Monday at 8:00 AM after bank, invoice, and receipt refresh",
-    channel: "Google Sheets plus email summary",
+    channel: "Email with PDF and Excel attachments",
+    googleSheetsCopy: true,
     format: "Management pack workbook",
     recipients: "Owner, finance admin, and tax preparer when tax warnings are open",
     packTemplateId: "owner-weekly-command-pack",
@@ -4348,7 +4397,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     deliveryGuardrail:
       "Hold delivery until cash, collections, and spend alerts are reviewed or explicitly approved.",
     commandKeywords:
-      "owner weekly executive delivery subscription scheduled send email google sheets cash profit",
+      "owner weekly executive delivery subscription scheduled send email pdf excel cash profit",
   },
   {
     id: "owner-tax-deadline-delivery",
@@ -4356,7 +4405,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     title: "Owner tax deadline delivery",
     audience: "Owner and tax preparer",
     cadence: "Monthly plus 14 days before VAT or corporate tax deadlines",
-    channel: "Excel workbook with email checklist",
+    channel: "Email with PDF and Excel attachments",
     format: "Tax-ready workbook pack",
     recipients: "Owner, tax preparer, and finance admin",
     packTemplateId: "owner-tax-cash-pack",
@@ -4389,7 +4438,8 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     title: "Freelancer client chase delivery",
     audience: "Freelancer or solo operator",
     cadence: "Every weekday morning while invoices are overdue, otherwise weekly",
-    channel: "Mobile Google Sheets link and email nudge",
+    channel: "Email with PDF and Excel attachments",
+    googleSheetsCopy: true,
     format: "Client follow-up digest",
     recipients: "Freelancer or solo operator",
     packTemplateId: "freelancer-client-income-pack",
@@ -4411,7 +4461,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     deliveryGuardrail:
       "Send only after invoice status refresh confirms current balances and no draft reminders are pending.",
     commandKeywords:
-      "freelancer client chase delivery subscription invoices overdue mobile google sheets",
+      "freelancer client chase delivery subscription invoices overdue mobile pdf excel",
   },
   {
     id: "freelancer-monthly-close-delivery",
@@ -4419,7 +4469,8 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     title: "Freelancer monthly close delivery",
     audience: "Freelancer and bookkeeper",
     cadence: "Month-end plus three days before tax-close cutoff",
-    channel: "Google Sheets close pack",
+    channel: "Email with PDF and Excel attachments",
+    googleSheetsCopy: true,
     format: "Monthly tax-close pack",
     recipients: "Freelancer and bookkeeper",
     packTemplateId: "freelancer-monthly-tax-pack",
@@ -4444,7 +4495,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     deliveryGuardrail:
       "Hold delivery while receipt gaps, VAT-ready expense support, or material client concentration notes are open.",
     commandKeywords:
-      "freelancer monthly close delivery subscription receipts expenses vat google sheets",
+      "freelancer monthly close delivery subscription receipts expenses vat pdf excel",
   },
   {
     id: "accountant-close-workpaper-delivery",
@@ -4452,7 +4503,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     title: "Accountant close workpaper delivery",
     audience: "Accountant, reviewer, and controller",
     cadence: "Daily during close and final send after reviewer sign-off",
-    channel: "Excel workpaper pack",
+    channel: "Email with PDF and Excel attachments",
     format: "Close review workbook",
     recipients: "Accountant, reviewer, and controller",
     packTemplateId: "accountant-close-workpaper-pack",
@@ -4493,7 +4544,8 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     title: "Accountant advisory pack delivery",
     audience: "Accountant and client owner",
     cadence: "Monthly after close plus one business day before advisory review",
-    channel: "Google Sheets advisory pack with email summary",
+    channel: "Email with PDF and Excel attachments",
+    googleSheetsCopy: true,
     format: "Client advisory pack",
     recipients: "Accountant, reviewer, and client owner",
     packTemplateId: "accountant-advisory-review-pack",
@@ -4518,7 +4570,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
     deliveryGuardrail:
       "Hold client delivery until advisory movement notes and close exceptions have owner-ready explanations.",
     commandKeywords:
-      "accountant advisory delivery subscription client pack google sheets email comparison",
+      "accountant advisory delivery subscription client pack pdf excel email comparison",
   },
 ];
 
@@ -5766,6 +5818,93 @@ export const reportProductDepthAreas: ReportProductDepthArea[] = [
 
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 export const readyReportCatalog = reportCatalog.filter((report) => report.status !== "planned");
+
+/** Data basis of a catalog report (R12-13); unknown ids are treated as indicators. */
+export function reportCatalogDataBasis(reportId: string): ReportDataBasis {
+  return reportCatalog.find((report) => report.id === reportId)?.dataBasis ?? "snapshot_proxy";
+}
+
+/** True when a report or metric is an indicator (not a posted-ledger figure). */
+export function isIndicatorDataBasis(basis: ReportDataBasis): boolean {
+  return basis !== "ledger";
+}
+
+/**
+ * Comparison metrics computed from posted ledger figures (P&L, balance sheet, cash-flow
+ * statement, ledger activity, VAT/CT engines, cost-centre journal lines, budget variance).
+ */
+const LEDGER_COMPARISON_METRICS: ReadonlySet<string> = new Set([
+  "revenue",
+  "net-profit",
+  "net-margin",
+  "expense-ratio",
+  "revenue-expense-coverage",
+  "break-even-gap",
+  "liability-asset-ratio",
+  "debt-to-equity-ratio",
+  "operating-cash-flow",
+  "budget-actual-variance",
+  "ledger-automation-share",
+  "manual-ledger-activity",
+  "automated-ledger-activity",
+  "manual-ledger-share",
+  "ledger-activity",
+  "cost-center-net-income",
+  "cost-center-expenses",
+  "vat-due",
+  "corporate-tax-payable",
+  "total-tax-exposure",
+  "tax-exposure-rate",
+]);
+
+/**
+ * Metrics that compare a current snapshot or forecast against a zero/100% baseline (or a
+ * roll-up without eliminations); AGENTS.md documents each as a current-state signal.
+ */
+const SNAPSHOT_COMPARISON_METRICS: ReadonlySet<string> = new Set([
+  "burn-rate",
+  "cash-runway-days",
+  "projected-cash-shortfall",
+  "cash-risk-week-count",
+  "tax-reserve-coverage",
+  "tax-funding-gap",
+  "tax-adjusted-runway-days",
+  "inventory-review-items",
+  "inventory-review-share",
+  "inventory-review-value",
+  "fixed-asset-review-items",
+  "fixed-asset-review-share",
+  "fixed-asset-review-value",
+  "depreciation-review-items",
+  "depreciation-review-value",
+  "depreciation-ready-items",
+  "depreciation-ready-share",
+  "depreciation-estimate",
+  "consolidated-revenue",
+  "consolidated-expenses",
+  "consolidated-net-profit",
+  "consolidated-margin",
+  "consolidation-review-items",
+  "month-end-open-checks",
+  "month-end-readiness",
+  "fx-unrealized-exposure",
+  "automation-adoption-index",
+  "automation-value-adoption-index",
+  "working-capital-proxy",
+]);
+
+/** Data basis of a comparison metric (R12-13, R12-15); everything else is document-based. */
+export function reportComparisonMetricBasis(metricId: string): ReportDataBasis {
+  if (LEDGER_COMPARISON_METRICS.has(metricId)) return "ledger";
+  if (SNAPSHOT_COMPARISON_METRICS.has(metricId)) return "snapshot_proxy";
+  return "documents";
+}
+
+export const reportDataBasisLabels: Record<ReportDataBasis, { en: string; ar: string }> = {
+  ledger: { en: "Ledger", ar: "دفتر الأستاذ" },
+  documents: { en: "Indicator", ar: "مؤشر" },
+  snapshot_proxy: { en: "Indicator", ar: "مؤشر" },
+};
 
 export const REPORT_PERSONA_PREFERENCE_KEY = "nr_ai.report_persona";
 export const REPORT_WORKFLOW_SEARCH_PREFERENCE_KEY = "nr_ai.report_workflow_search";

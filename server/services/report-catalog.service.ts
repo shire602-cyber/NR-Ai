@@ -7,6 +7,7 @@ import {
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
   reportCatalog,
+  reportComparisonMetricBasis,
   reportComparisonPresetHref,
   reportComparisonPresets,
   reportDecisionShortcutHref,
@@ -294,6 +295,8 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
       apiReportCount: reports.filter((report) => report.status === "api").length,
       readyReportCount: reports.filter((report) => report.status !== "planned").length,
       plannedReportCount: reports.filter((report) => report.status === "planned").length,
+      ledgerReportCount: reports.filter((report) => report.dataBasis === "ledger").length,
+      indicatorReportCount: reports.filter((report) => report.dataBasis !== "ledger").length,
       personaCount: reportPersonas.length,
       workspaceCount: workspaces.length,
       reportTabCount: reportTabs.length,
@@ -338,6 +341,7 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
     reportActionContexts,
     reports: reports.map((report) => ({
       ...report,
+      indicator: report.dataBasis !== "ledger",
       href: (persona ? reportPersonaHref(report, persona) : reportHref(report)) ?? null,
     })),
     workspaces: workspaces.map((workspace) => ({
@@ -411,6 +415,10 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
     })),
     comparisonPresets: comparisonPresets.map((preset) => ({
       ...preset,
+      metricBases: preset.metricIds.map((metricId) => ({
+        metricId,
+        basis: reportComparisonMetricBasis(metricId),
+      })),
       href: reportComparisonPresetHref(preset),
     })),
     reportSuites: reportSuites.map((suite) => ({

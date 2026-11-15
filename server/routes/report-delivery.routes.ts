@@ -5,14 +5,31 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { createAndEmitNotification } from "../services/socket.service";
+import { strictBody } from "../http/strict-body";
+import { requirePermission } from "../middleware/companyRolePolicy";
+import { isCapabilityLive } from "../../shared/capabilities";
+import { activeProviderName } from "../outbox";
 import {
   buildReportDeliveryHandoffReview,
+  buildReportDeliveryNotificationForPlan,
   buildReportDeliveryNotificationInput,
   buildReportDeliveryRunInput,
   getReportDeliveryPlan,
   getReportDeliveryPlans,
   isReportDeliveryPersona,
+  mentionsGoogleSheets,
+  type ReportDeliveryPlan,
 } from "../services/report-delivery.service";
+import {
+  cancelPendingRunEmails,
+  executeReportDeliveryRun,
+  getRunArtifact,
+  listRunArtifacts,
+  parseRecipientEmails,
+  refreshReportDeliveryRuns,
+  setRunNotification,
+} from "../services/report-render/delivery";
+import type { CompanyReportDeliveryRun } from "../../shared/schema";
 
 const log = createLogger("report-delivery-routes");
 
@@ -57,8 +74,40 @@ const reportDeliveryQueueSchema = z.object({
   acknowledgeHandoffGaps: z.boolean().optional(),
 });
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Report delivery failed";
+/**
+ * Execute a just-created run (render -> store -> email) and add the outcome notification.
+ * The notification is an extra signal; the run row is the delivery record.
+ */
+async function executeAndNotify(input: {
+  userId: string;
+  companyId: string;
+  plan: ReportDeliveryPlan;
+  run: CompanyReportDeliveryRun;
+  scheduledFor?: Date;
+}): Promise<{ run: CompanyReportDeliveryRun; notification: unknown }> {
+  const executed = await executeReportDeliveryRun({
+    companyId: input.companyId,
+    runId: input.run.id,
+    plan: input.plan,
+  });
+  let notification: { id?: string } | null = null;
+  try {
+    notification = (await createAndEmitNotification(
+      buildReportDeliveryNotificationForPlan({
+        userId: input.userId,
+        companyId: input.companyId,
+        plan: input.plan,
+        scheduledFor: input.scheduledFor,
+        run: executed,
+      })
+    )) as { id?: string };
+  } catch (error) {
+    log.warn({ err: error, runId: executed.id }, "Report delivery notification failed");
+  }
+  const run = notification?.id
+    ? await setRunNotification(input.companyId, executed.id, notification.id)
+    : executed;
+  return { run: run ?? executed, notification };
 }
 
 function optionalReportDeliveryStorageErrorCode(error: unknown): string | null {
@@ -135,11 +184,13 @@ export function registerReportDeliveryRoutes(app: Express) {
 
       const runs = await readOptionalReportDeliveryStorage(
         "delivery runs",
-        () =>
-          storage.getReportDeliveryRuns(companyId, {
-            subscriptionId: query.subscriptionId,
-            limit: query.limit,
-          }),
+        async () =>
+          refreshReportDeliveryRuns(
+            await storage.getReportDeliveryRuns(companyId, {
+              subscriptionId: query.subscriptionId,
+              limit: query.limit,
+            })
+          ),
         []
       );
 
@@ -237,6 +288,27 @@ export function registerReportDeliveryRoutes(app: Express) {
       }
 
       const body = reportDeliverySettingsSchema.parse(req.body);
+      if (
+        body.channel &&
+        mentionsGoogleSheets(body.channel) &&
+        !isCapabilityLive("google_sheets")
+      ) {
+        return res.status(422).json({
+          code: "GOOGLE_SHEETS_NOT_CONFIGURED",
+          message:
+            "Google Sheets delivery is not available: the Google Sheets integration is not configured. Reports are delivered by email with PDF and Excel attachments.",
+        });
+      }
+      if (
+        body.recipients &&
+        body.recipients.includes("@") &&
+        !parseRecipientEmails(body.recipients).length
+      ) {
+        return res.status(422).json({
+          code: "INVALID_RECIPIENTS",
+          message: "Recipients must be valid email addresses separated by commas.",
+        });
+      }
       const setting = await storage.upsertReportDeliverySubscriptionSetting({
         companyId,
         subscriptionId,
@@ -259,6 +331,7 @@ export function registerReportDeliveryRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/report-delivery/subscriptions/:subscriptionId/queue",
     authMiddleware,
+    strictBody(reportDeliveryQueueSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       const { companyId, subscriptionId } = req.params;
@@ -299,30 +372,21 @@ export function registerReportDeliveryRoutes(app: Express) {
         });
       }
 
-      let notification;
-      let run;
-      try {
-        notification = await createAndEmitNotification(delivery.notification);
-        run = await storage.createReportDeliveryRun(
-          buildReportDeliveryRunInput({
-            companyId,
-            queuedBy: userId,
-            plan: delivery.plan,
-            notificationId: notification.id,
-          })
-        );
-      } catch (error) {
-        await storage.createReportDeliveryRun(
-          buildReportDeliveryRunInput({
-            companyId,
-            queuedBy: userId,
-            plan: delivery.plan,
-            status: "failed",
-            errorMessage: errorMessage(error),
-          })
-        );
-        throw error;
-      }
+      const queuedRun = await storage.createReportDeliveryRun(
+        buildReportDeliveryRunInput({
+          companyId,
+          queuedBy: userId,
+          plan: delivery.plan,
+          scheduledFor: new Date(),
+        })
+      );
+      const { run, notification } = await executeAndNotify({
+        userId,
+        companyId,
+        plan: delivery.plan,
+        run: queuedRun,
+        scheduledFor: new Date(),
+      });
 
       res.status(201).json({
         subscription: delivery.plan,
@@ -344,8 +408,10 @@ export function registerReportDeliveryRoutes(app: Express) {
 
       const failedRun = await storage.getReportDeliveryRun(companyId, runId);
       if (!failedRun) return res.status(404).json({ message: "Report delivery run not found" });
-      if (failedRun.status !== "failed") {
-        return res.status(409).json({ message: "Only failed report delivery runs can be retried" });
+      if (failedRun.status !== "failed" && failedRun.status !== "blocked") {
+        return res
+          .status(409)
+          .json({ message: "Only failed or blocked report delivery runs can be retried" });
       }
 
       const settings = await storage.getReportDeliverySubscriptionSettings(companyId);
@@ -369,17 +435,24 @@ export function registerReportDeliveryRoutes(app: Express) {
         return res.status(409).json({ message: "Report delivery subscription needs setup" });
       }
 
-      const notification = await createAndEmitNotification(delivery.notification);
-      const run = await storage.createReportDeliveryRun(
+      // A manual retry supersedes the outbox's own retries of the old run (no double send).
+      await cancelPendingRunEmails(failedRun);
+      const queuedRun = await storage.createReportDeliveryRun(
         buildReportDeliveryRunInput({
           companyId,
           queuedBy: userId,
           plan: delivery.plan,
-          notificationId: notification.id,
           retriedFromRunId: failedRun.id,
-          scheduledFor: delivery.notification.scheduledFor ?? new Date(),
+          scheduledFor: new Date(),
         })
       );
+      const { run, notification } = await executeAndNotify({
+        userId,
+        companyId,
+        plan: delivery.plan,
+        run: queuedRun,
+        scheduledFor: new Date(),
+      });
 
       res.status(201).json({
         subscription: delivery.plan,
@@ -387,6 +460,58 @@ export function registerReportDeliveryRoutes(app: Express) {
         run,
         retriedFromRun: failedRun,
       });
+    })
+  );
+
+  // Delivery channels the server can really use right now (R12-01).
+  app.get(
+    "/api/companies/:companyId/report-delivery/channels",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (_req: Request, res: Response) => {
+      const provider = activeProviderName();
+      res.json({
+        email: { available: !!provider, provider: provider ?? null },
+        googleSheets: { available: isCapabilityLive("google_sheets") },
+      });
+    })
+  );
+
+  // Rendered files of a run (delivery log): list and download.
+  app.get(
+    "/api/companies/:companyId/report-delivery/runs/:runId/artifacts",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, runId } = req.params;
+      const run = await storage.getReportDeliveryRun(companyId, runId);
+      if (!run) return res.status(404).json({ code: "NOT_FOUND", message: "Not found" });
+      const artifacts = await listRunArtifacts(companyId, runId);
+      res.json({
+        artifacts: artifacts.map((a) => ({
+          ...a,
+          href: `/api/companies/${companyId}/report-delivery/runs/${runId}/artifacts/${a.id}`,
+        })),
+      });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/report-delivery/runs/:runId/artifacts/:artifactId",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, runId, artifactId } = req.params;
+      const artifact = await getRunArtifact(companyId, runId, artifactId);
+      if (!artifact) return res.status(404).json({ code: "NOT_FOUND", message: "Not found" });
+      res.setHeader("Content-Type", artifact.contentType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${artifact.filename.replace(/[^A-Za-z0-9._-]+/g, "-")}"`
+      );
+      res.send(
+        Buffer.isBuffer(artifact.content) ? artifact.content : Buffer.from(artifact.content)
+      );
     })
   );
 }

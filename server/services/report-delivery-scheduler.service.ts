@@ -11,6 +11,7 @@ import {
   type ReportDeliveryPlan,
 } from "./report-delivery.service";
 import type { CompanyReportDeliveryRun } from "../../shared/schema";
+import { executeReportDeliveryRun, setRunNotification } from "./report-render/delivery";
 
 const log = createLogger("report-delivery-scheduler");
 
@@ -284,27 +285,46 @@ export async function scanDueReportDeliveries(
           continue;
         }
 
+        let createdRunId: string | null = null;
         try {
-          const notification = await createAndEmitNotification(
-            buildReportDeliveryNotificationForPlan({
-              userId: actorUserId,
-              companyId: company.id,
-              plan,
-              scheduledFor: decision.scheduledFor,
-            })
-          );
-
-          await storage.createReportDeliveryRun(
+          const queuedRun = await storage.createReportDeliveryRun(
             buildReportDeliveryRunInput({
               companyId: company.id,
               queuedBy: actorUserId,
               plan,
-              notificationId: notification.id,
               scheduledFor: decision.scheduledFor,
             })
           );
+          createdRunId = queuedRun.id;
+
+          // W5-A (R12-01): render the pack and email it; the run records what happened.
+          const executed = await executeReportDeliveryRun({
+            companyId: company.id,
+            runId: queuedRun.id,
+            plan,
+            now,
+          });
           companyResult.queuedRuns += 1;
           companyResult.queuedSubscriptionIds.push(plan.id);
+          try {
+            const notification = await createAndEmitNotification(
+              buildReportDeliveryNotificationForPlan({
+                userId: actorUserId,
+                companyId: company.id,
+                plan,
+                scheduledFor: decision.scheduledFor,
+                run: executed,
+              })
+            );
+            if (notification?.id) {
+              await setRunNotification(company.id, executed.id, notification.id);
+            }
+          } catch (notifyErr) {
+            log.warn(
+              { err: notifyErr, companyId: company.id, subscriptionId: plan.id },
+              "Scheduled report delivery notification failed"
+            );
+          }
         } catch (err) {
           const message = errorMessage(err);
           companyResult.status = "error";
@@ -316,16 +336,19 @@ export async function scanDueReportDeliveries(
           );
 
           try {
-            await storage.createReportDeliveryRun(
-              buildReportDeliveryRunInput({
-                companyId: company.id,
-                queuedBy: actorUserId,
-                plan,
-                status: "failed",
-                errorMessage: message,
-                scheduledFor: decision.scheduledFor,
-              })
-            );
+            // The executor records its own failures on the run it was given; only a run
+            // that was never created needs a failed row here.
+            if (!createdRunId)
+              await storage.createReportDeliveryRun(
+                buildReportDeliveryRunInput({
+                  companyId: company.id,
+                  queuedBy: actorUserId,
+                  plan,
+                  status: "failed",
+                  errorMessage: message,
+                  scheduledFor: decision.scheduledFor,
+                })
+              );
           } catch (recordErr) {
             log.error(
               { err: recordErr, companyId: company.id, subscriptionId: plan.id },

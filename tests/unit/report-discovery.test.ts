@@ -3495,8 +3495,10 @@ describe("report discoverability", () => {
     expect(reportDeliveryRouteSource).toContain("reportDeliveryQueueSchema");
     expect(reportDeliveryRouteSource).toContain("acknowledgeHandoffGaps");
     expect(reportDeliveryRouteSource).toContain("handoffReview");
-    expect(reportDeliveryRouteSource).toContain("Only failed report delivery runs can be retried");
-    expect(reportDeliveryRouteSource).toContain("errorMessage(error)");
+    expect(reportDeliveryRouteSource).toContain(
+      "Only failed or blocked report delivery runs can be retried"
+    );
+    expect(reportDeliveryRouteSource).toContain("executeReportDeliveryRun");
     expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptions");
     expect(reportDeliveryServiceSource).toContain("reportSuiteProfiles");
     expect(reportDeliveryServiceSource).toContain("reportSuiteHref(suite)");
@@ -3510,7 +3512,7 @@ describe("report discoverability", () => {
     expect(reportDeliveryServiceSource).toContain("reportSuites: plan.reportSuites");
     expect(reportDeliveryServiceSource).toContain("suiteTitles");
     expect(reportDeliveryServiceSource).toContain(
-      'status?: "queued" | "failed" | "sent" | "cancelled"'
+      'status?: "queued" | "rendering" | "failed" | "sent" | "blocked" | "cancelled"'
     );
     expect(reportDeliveryServiceSource).toContain("retriedFromRunId");
     expect(reportDeliveryServiceSource).toContain("errorMessage");
