@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO, differenceInDays, isBefore } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,54 @@ interface ComplianceTask {
   completedAt: string | null;
   notes: string | null;
   createdAt: string;
+  /** W4-A (R13-34): generated from the compliance calendar, not a manual task. */
+  generated?: boolean;
+  statusDerived?: boolean;
+  legalSource?: string | null;
+}
+
+interface CalendarObligation {
+  id: string;
+  source: "manual" | "generated";
+  obligationType: string | null;
+  title: string;
+  titleAr: string | null;
+  dueDate: string;
+  status: "upcoming" | "completed" | "overdue" | "dismissed";
+  statusDerived: boolean;
+  legalSource: string | null;
+  description: string;
+  completedAt: string | null;
+}
+
+function obligationTaskCategory(type: string | null): string {
+  if (type === "vat_return") return "vat_filing";
+  if (type === "corporate_tax_return" || type === "ct_registration") return "corporate_tax";
+  if (type === "wps_payroll" || type === "excise_return") return "payment";
+  return "other";
+}
+
+function obligationToTask(o: CalendarObligation, companyId: string): ComplianceTask {
+  return {
+    id: o.id,
+    companyId,
+    title: o.title,
+    titleAr: o.titleAr,
+    description: o.legalSource,
+    category: obligationTaskCategory(o.obligationType),
+    priority: o.status === "overdue" ? "urgent" : "high",
+    status: o.status === "completed" ? "completed" : "pending",
+    dueDate: o.dueDate,
+    reminderDate: null,
+    isRecurring: false,
+    recurrencePattern: null,
+    completedAt: o.completedAt,
+    notes: null,
+    createdAt: o.dueDate,
+    generated: true,
+    statusDerived: o.statusDerived,
+    legalSource: o.legalSource,
+  };
 }
 
 const CATEGORIES = [
@@ -81,9 +130,24 @@ const CATEGORIES = [
 
 const PRIORITIES = [
   { value: "low", labelEn: "Low", labelAr: "منخفض", color: "bg-muted text-foreground" },
-  { value: "medium", labelEn: "Medium", labelAr: "متوسط", color: "bg-info-subtle text-info-subtle-foreground" },
-  { value: "high", labelEn: "High", labelAr: "مرتفع", color: "bg-warning-subtle text-warning-subtle-foreground" },
-  { value: "urgent", labelEn: "Urgent", labelAr: "عاجل", color: "bg-danger-subtle text-danger-subtle-foreground" },
+  {
+    value: "medium",
+    labelEn: "Medium",
+    labelAr: "متوسط",
+    color: "bg-info-subtle text-info-subtle-foreground",
+  },
+  {
+    value: "high",
+    labelEn: "High",
+    labelAr: "مرتفع",
+    color: "bg-warning-subtle text-warning-subtle-foreground",
+  },
+  {
+    value: "urgent",
+    labelEn: "Urgent",
+    labelAr: "عاجل",
+    color: "bg-danger-subtle text-danger-subtle-foreground",
+  },
 ];
 
 export default function TaskCenter() {
@@ -108,9 +172,41 @@ export default function TaskCenter() {
     notes: "",
   });
 
-  const { data: tasks, isLoading } = useQuery<ComplianceTask[]>({
+  const { data: manualTasks, isLoading } = useQuery<ComplianceTask[]>({
     queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
+  });
+  // R13-34: generated obligations (VAT, CT, UBO, licence, excise, e-invoicing,
+  // WPS) appear alongside manual tasks.
+  const { data: obligations } = useQuery<CalendarObligation[]>({
+    queryKey: ["/api/companies", companyId, "compliance-calendar"],
+    enabled: !!companyId,
+  });
+  const tasks = useMemo<ComplianceTask[]>(
+    () => [
+      ...(manualTasks ?? []),
+      ...(obligations ?? [])
+        .filter((o) => o.source === "generated" && o.status !== "dismissed")
+        .map((o) => obligationToTask(o, companyId ?? "")),
+    ],
+    [manualTasks, obligations, companyId]
+  );
+
+  const obligationMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "completed" | "upcoming" }) =>
+      apiRequest("PATCH", `/api/companies/${companyId}/compliance-calendar/${id}`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "compliance-calendar"],
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: t["compliance.updateFailed"],
+        description: error?.message,
+      });
+    },
   });
 
   const createMutation = useMutation({
@@ -389,7 +485,16 @@ export default function TaskCenter() {
                   >
                     <Checkbox
                       checked={task.status === "completed"}
+                      disabled={task.statusDerived === true}
+                      title={task.statusDerived ? t["compliance.statusFollowsReturn"] : undefined}
                       onCheckedChange={(checked) => {
+                        if (task.generated) {
+                          obligationMutation.mutate({
+                            id: task.id,
+                            status: checked ? "completed" : "upcoming",
+                          });
+                          return;
+                        }
                         updateStatusMutation.mutate({
                           taskId: task.id,
                           status: checked ? "completed" : "pending",
@@ -411,6 +516,11 @@ export default function TaskCenter() {
                         <Badge className={`text-xs ${priority?.color}`}>
                           {locale === "ar" ? priority?.labelAr : priority?.labelEn}
                         </Badge>
+                        {task.generated && (
+                          <Badge variant="secondary" className="text-xs">
+                            <T k="compliance.generatedBadge" />
+                          </Badge>
+                        )}
                       </div>
                       {task.description && (
                         <p className="text-sm text-muted-foreground truncate mt-1">
@@ -451,32 +561,34 @@ export default function TaskCenter() {
                         )}
                       </div>
 
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  locale === "ar"
-                                    ? "هل أنت متأكد من الحذف؟"
-                                    : "Are you sure you want to delete?"
-                                )
-                              ) {
-                                deleteMutation.mutate(task.id);
-                              }
-                            }}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {locale === "ar" ? "حذف" : "Delete"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {!task.generated && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    locale === "ar"
+                                      ? "هل أنت متأكد من الحذف؟"
+                                      : "Are you sure you want to delete?"
+                                  )
+                                ) {
+                                  deleteMutation.mutate(task.id);
+                                }
+                              }}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              {locale === "ar" ? "حذف" : "Delete"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
                   </div>
                 );

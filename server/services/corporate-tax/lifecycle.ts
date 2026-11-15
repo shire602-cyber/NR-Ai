@@ -1,0 +1,376 @@
+/**
+ * Corporate-tax return lifecycle (W4-A: R08-04, R08-09, R08-19).
+ *
+ *   draft ──compute──▶ computed ──review──▶ reviewed ──file──▶ filed ──▶ paid
+ *     │                  ▲   │                 │                 │        │
+ *     └──void            │   └──void           └──(un-review)────┘        │
+ *                        │                                     amend (copy)
+ *
+ * - Every transition is one conditional UPDATE (status = from) and one audit
+ *   row; a lost race answers 409.
+ * - Filed / paid / amended / void returns are immutable. Amending copies the
+ *   return into a new draft that references the original; the original
+ *   becomes `amended` and its CT provision entry is reversed.
+ * - The reviewer must differ from the preparer (single-member companies may
+ *   self-review; the audit row records it).
+ * - Filing optionally posts the CT provision (Dr tax expense / Cr CT payable)
+ *   through server/ledger. Nothing here submits anything to the FTA.
+ */
+import type { Request } from "express";
+import { pool } from "../../db";
+import { DomainError } from "../../errors";
+import { defineMachine, assertTransition, postJournal, reverseBySource } from "../../ledger";
+import { recordAudit } from "../audit.service";
+import { storage } from "../../storage";
+import { assertDifferentActor, companyHasSingleMember } from "../../middleware/companyRolePolicy";
+import type { CorporateTaxReturn } from "../../../shared/schema";
+import { computeReturnState, uaeIsoDate, type ComputeOverrides } from "./engine";
+import { ensureCtTagAccounts } from "./repository";
+
+export const CT_RETURN_STATES = [
+  "draft",
+  "computed",
+  "reviewed",
+  "filed",
+  "paid",
+  "amended",
+  "void",
+] as const;
+export type CtReturnStatus = (typeof CT_RETURN_STATES)[number];
+
+export const ctReturnMachine = defineMachine<CtReturnStatus>({
+  states: CT_RETURN_STATES,
+  transitions: {
+    draft: ["computed", "void"],
+    computed: ["reviewed", "void"],
+    reviewed: ["computed", "filed"],
+    filed: ["paid", "amended"],
+    paid: ["amended"],
+  },
+});
+
+/** Statuses whose figures may still change. */
+export const CT_EDITABLE_STATUSES: readonly CtReturnStatus[] = ["draft", "computed"];
+
+export const CT_PROVISION_SOURCE = "corporate_tax";
+
+export function assertEditable(ctReturn: Pick<CorporateTaxReturn, "status" | "id">): void {
+  if (!(CT_EDITABLE_STATUSES as readonly string[]).includes(ctReturn.status)) {
+    throw new DomainError(
+      "CT_RETURN_IMMUTABLE",
+      409,
+      { status: ctReturn.status },
+      ctReturn.status === "reviewed"
+        ? "This return has been reviewed. Send it back to computed before editing."
+        : `A ${ctReturn.status} return cannot be changed. Amend it to create a new version.`
+    );
+  }
+}
+
+function snapshot(r: CorporateTaxReturn) {
+  return {
+    status: r.status,
+    taxableIncome: r.taxableIncome,
+    taxPayable: r.taxPayable,
+    filedAt: r.filedAt,
+    filedBy: r.filedBy,
+    reviewedBy: r.reviewedBy,
+    provisionEntryId: r.provisionEntryId,
+  };
+}
+
+async function audit(
+  action: string,
+  userId: string,
+  before: CorporateTaxReturn | null,
+  after: CorporateTaxReturn,
+  req?: Request,
+  extra?: Record<string, unknown>
+): Promise<void> {
+  await recordAudit({
+    userId,
+    companyId: after.companyId,
+    action: `corporate_tax_return.${action}`,
+    entityType: "corporate_tax_return",
+    entityId: after.id,
+    before: before ? snapshot(before) : null,
+    after: snapshot(after),
+    req,
+    extra,
+  });
+}
+
+export async function auditCtReturn(
+  action: string,
+  userId: string,
+  before: CorporateTaxReturn | null,
+  after: CorporateTaxReturn,
+  req?: Request,
+  extra?: Record<string, unknown>
+): Promise<void> {
+  await audit(action, userId, before, after, req, extra);
+}
+
+/**
+ * Conditional update: only applies while the row is still in one of `from`.
+ * Returns the updated row or throws 409 when it lost a race / wrong state.
+ */
+export async function updateIfStatus(
+  id: string,
+  companyId: string,
+  from: readonly string[],
+  data: Partial<CorporateTaxReturn>
+): Promise<CorporateTaxReturn> {
+  const current = await storage.getCorporateTaxReturn(id);
+  if (!current || current.companyId !== companyId) {
+    throw new DomainError("CT_RETURN_NOT_FOUND", 404);
+  }
+  if (!from.includes(current.status)) {
+    throw new DomainError("CT_RETURN_IMMUTABLE", 409, { status: current.status });
+  }
+  const columns: Record<string, string> = {
+    status: "status",
+    totalRevenue: "total_revenue",
+    totalExpenses: "total_expenses",
+    totalDeductions: "total_deductions",
+    taxableIncome: "taxable_income",
+    taxPayable: "tax_payable",
+    exemptionThreshold: "exemption_threshold",
+    taxRate: "tax_rate",
+    lossBroughtForward: "loss_brought_forward",
+    lossCarriedForward: "loss_carried_forward",
+    interestCarriedForward: "interest_carried_forward",
+    smallBusinessRelief: "small_business_relief",
+    relatedPartyNotes: "related_party_notes",
+    notes: "notes",
+    workpaper: "workpaper",
+    taxPeriodStart: "tax_period_start",
+    taxPeriodEnd: "tax_period_end",
+    preparedBy: "prepared_by",
+    computedAt: "computed_at",
+    reviewedBy: "reviewed_by",
+    reviewedAt: "reviewed_at",
+    filedAt: "filed_at",
+    filedBy: "filed_by",
+    filingReference: "filing_reference",
+    supersededById: "superseded_by_id",
+    provisionEntryId: "provision_entry_id",
+    provisionReversalEntryId: "provision_reversal_entry_id",
+  };
+  const sets: string[] = [];
+  const values: unknown[] = [id, companyId, from as unknown as string[]];
+  for (const [key, value] of Object.entries(data)) {
+    const col = columns[key];
+    if (!col || value === undefined) continue;
+    values.push(key === "workpaper" ? JSON.stringify(value) : value);
+    sets.push(`${col} = $${values.length}${key === "workpaper" ? "::jsonb" : ""}`);
+  }
+  sets.push("updated_at = now()");
+  const r = await pool.query(
+    `UPDATE corporate_tax_returns SET ${sets.join(", ")}
+      WHERE id = $1 AND company_id = $2 AND status = ANY($3::text[])
+      RETURNING id`,
+    values
+  );
+  if (r.rowCount === 0) {
+    throw new DomainError("CT_RETURN_CONFLICT", 409, undefined, "The return changed; reload it");
+  }
+  const updated = await storage.getCorporateTaxReturn(id);
+  return updated!;
+}
+
+/** Recompute an editable return and persist; status becomes `computed` when asked. */
+export async function recomputeAndSave(
+  ctReturn: CorporateTaxReturn,
+  userId: string,
+  overrides: ComputeOverrides & {
+    extra?: Partial<CorporateTaxReturn>;
+    markComputed?: boolean;
+  },
+  req?: Request,
+  action = "recompute"
+) {
+  assertEditable(ctReturn);
+  const { computation, update } = await computeReturnState(ctReturn, overrides);
+  const data: Partial<CorporateTaxReturn> = {
+    ...update,
+    ...(overrides.extra ?? {}),
+    preparedBy: userId,
+    computedAt: new Date(),
+  };
+  if (overrides.markComputed && ctReturn.status === "draft") data.status = "computed";
+  const updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, CT_EDITABLE_STATUSES, data);
+  await audit(action, userId, ctReturn, updated, req);
+  return { return: updated, computation };
+}
+
+export interface TransitionInput {
+  to: "computed" | "reviewed" | "filed" | "paid" | "void";
+  filingReference?: string;
+  postProvision?: boolean;
+  note?: string;
+}
+
+async function postProvision(
+  ctReturn: CorporateTaxReturn,
+  userId: string,
+  req?: Request
+): Promise<string | null> {
+  const fils = Math.round((Number(ctReturn.taxPayable) || 0) * 100);
+  if (fils <= 0) return null;
+  const accounts = await ensureCtTagAccounts(ctReturn.companyId, [
+    "corporate_tax_expense",
+    "corporate_tax_payable",
+  ]);
+  const expense = accounts.get("corporate_tax_expense");
+  const payable = accounts.get("corporate_tax_payable");
+  if (!expense || !payable) throw new DomainError("CT_PROVISION_ACCOUNTS_MISSING", 500);
+  const periodEnd = uaeIsoDate(ctReturn.taxPeriodEnd);
+  const result = await postJournal(
+    {
+      companyId: ctReturn.companyId,
+      date: periodEnd,
+      memo: `Corporate tax provision ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
+      source: CT_PROVISION_SOURCE,
+      sourceId: ctReturn.id,
+      idempotencyKey: `ct-return:${ctReturn.id}:provision`,
+      status: "posted",
+      lines: [
+        { accountId: expense.id, debitFils: fils, description: "Corporate tax expense" },
+        { accountId: payable.id, creditFils: fils, description: "Corporate tax payable" },
+      ],
+    },
+    { actorId: userId, req, audit: true }
+  );
+  return result.entry.id;
+}
+
+/** Apply a lifecycle transition. Permission checks happen in the route. */
+export async function transitionCtReturn(
+  ctReturn: CorporateTaxReturn,
+  input: TransitionInput,
+  userId: string,
+  req?: Request
+): Promise<CorporateTaxReturn> {
+  assertTransition(ctReturnMachine, ctReturn.status, input.to);
+  const from = [ctReturn.status];
+  let updated: CorporateTaxReturn;
+  const extra: Record<string, unknown> = {};
+  switch (input.to) {
+    case "computed": {
+      if (ctReturn.status === "draft") {
+        return (await recomputeAndSave(ctReturn, userId, { markComputed: true }, req, "computed"))
+          .return;
+      }
+      // reviewed -> computed: send back for changes; the review is cleared.
+      updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, {
+        status: "computed",
+        reviewedBy: null,
+        reviewedAt: null,
+      });
+      extra.note = input.note ?? null;
+      break;
+    }
+    case "reviewed": {
+      const single = await companyHasSingleMember(ctReturn.companyId);
+      assertDifferentActor(ctReturn.preparedBy, userId, { allowSingleOwner: single });
+      updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, {
+        status: "reviewed",
+        reviewedBy: userId,
+        reviewedAt: new Date(),
+      });
+      extra.selfReviewed = ctReturn.preparedBy === userId;
+      break;
+    }
+    case "filed": {
+      updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, {
+        status: "filed",
+        filedAt: new Date(),
+        filedBy: userId,
+        filingReference: input.filingReference ?? null,
+      });
+      if (input.postProvision) {
+        const entryId = await postProvision(updated, userId, req);
+        if (entryId) {
+          await pool.query(
+            `UPDATE corporate_tax_returns SET provision_entry_id = $2 WHERE id = $1`,
+            [updated.id, entryId]
+          );
+          updated = (await storage.getCorporateTaxReturn(updated.id))!;
+          extra.provisionEntryId = entryId;
+        }
+      }
+      extra.manualFiling = "Recorded as filed in EmaraTax by the user; Muhasib does not submit.";
+      break;
+    }
+    case "paid":
+    case "void": {
+      updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, { status: input.to });
+      break;
+    }
+    default:
+      throw new DomainError("INVALID_TRANSITION", 409);
+  }
+  await audit(input.to, userId, ctReturn, updated, req, extra);
+  return updated;
+}
+
+/**
+ * Amend a filed (or paid) return by copy: the original becomes `amended`
+ * (immutable, superseded_by_id set) and its CT provision is reversed; the new
+ * draft references it and is recomputed.
+ */
+export async function amendCtReturn(
+  original: CorporateTaxReturn,
+  userId: string,
+  reason: string,
+  req?: Request
+): Promise<{ original: CorporateTaxReturn; amendment: CorporateTaxReturn }> {
+  assertTransition(ctReturnMachine, original.status, "amended");
+  const copy = await pool.query(
+    `INSERT INTO corporate_tax_returns
+       (company_id, tax_period_start, tax_period_end, total_revenue, total_expenses,
+        total_deductions, taxable_income, exemption_threshold, tax_rate, tax_payable,
+        loss_brought_forward, loss_carried_forward, small_business_relief, related_party_notes,
+        status, workpaper, notes, prepared_by, amends_return_id, amendment_number,
+        interest_carried_forward)
+     SELECT company_id, tax_period_start, tax_period_end, total_revenue, total_expenses,
+            total_deductions, taxable_income, exemption_threshold, tax_rate, tax_payable,
+            loss_brought_forward, loss_carried_forward, small_business_relief, related_party_notes,
+            'draft', workpaper, notes, $2, id, amendment_number + 1, interest_carried_forward
+       FROM corporate_tax_returns WHERE id = $1 AND company_id = $3
+     RETURNING id`,
+    [original.id, userId, original.companyId]
+  );
+  const amendmentId = copy.rows[0]?.id as string | undefined;
+  if (!amendmentId) throw new DomainError("CT_RETURN_NOT_FOUND", 404);
+
+  let reversalId: string | null = null;
+  if (original.provisionEntryId) {
+    const reversals = await reverseBySource(
+      original.companyId,
+      CT_PROVISION_SOURCE,
+      original.id,
+      { reason: `Amended corporate tax return: ${reason}` },
+      { actorId: userId, req, companyId: original.companyId }
+    );
+    reversalId = reversals[0]?.reversal.id ?? null;
+  }
+  const amendedOriginal = await updateIfStatus(original.id, original.companyId, ["filed", "paid"], {
+    status: "amended",
+    supersededById: amendmentId,
+    ...(reversalId ? { provisionReversalEntryId: reversalId } : {}),
+  });
+  let amendment = (await storage.getCorporateTaxReturn(amendmentId))!;
+  amendment = (await recomputeAndSave(amendment, userId, {}, req, "amendment_recompute")).return;
+  await audit("amended", userId, original, amendedOriginal, req, {
+    reason,
+    amendmentId,
+    provisionReversalEntryId: reversalId,
+  });
+  await audit("created_amendment", userId, null, amendment, req, {
+    reason,
+    amendsReturnId: original.id,
+  });
+  return { original: amendedOriginal, amendment };
+}

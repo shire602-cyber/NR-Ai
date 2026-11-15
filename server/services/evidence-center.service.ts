@@ -7,6 +7,9 @@ import PDFDocument from "pdfkit";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { getCloseChecklist } from "./month-end.service";
+import { buildCtReturnWorkbook } from "./ct-workpaper-export.service";
+import { ctFilingDeadline } from "./corporate-tax/deadlines";
+import { getCtProfile, listRelatedParties } from "./corporate-tax/repository";
 import { getVatWorkpaperDetail, listVatWorkpapers } from "./firm-vat-workspace.service";
 import type {
   EvidenceAuditEntry,
@@ -846,10 +849,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     latestVatWorkpaper?.totalsSnapshot ??
     {}) as AnyRecord;
 
-  const latestCtReturn = [...ctReturns].sort(
-    (a: AnyRecord, b: AnyRecord) =>
-      new Date(b.taxPeriodEnd).getTime() - new Date(a.taxPeriodEnd).getTime()
-  )[0] as AnyRecord | undefined;
+  const latestCtReturn = latestLiveCtReturn(ctReturns as AnyRecord[]);
 
   const closeChecklist = await getCloseChecklist(
     companyId,
@@ -1280,12 +1280,13 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
   }
 
   if (latestCtReturn) {
-    const ctDueDate = new Date(latestCtReturn.taxPeriodEnd);
-    ctDueDate.setUTCMonth(ctDueDate.getUTCMonth() + 9);
+    // R08-03: 9 months after period end with end-of-month clamping
+    // (31 Dec 2025 -> 30 Sep 2026; setUTCMonth overflowed to 1 Oct).
+    const ctDueDate = ctFilingDeadline(ctIsoDay(latestCtReturn.taxPeriodEnd));
     timeline.push({
       id: `ct:${latestCtReturn.id}`,
       title: "Corporate tax filing deadline",
-      dueDate: ctDueDate.toISOString(),
+      dueDate: `${ctDueDate}T00:00:00.000Z`,
       category: "corporate_tax",
       status: latestCtReturn.status,
       consequence: "Unreviewed taxable-profit adjustments can create incorrect CT exposure.",
@@ -1953,4 +1954,266 @@ export async function buildEvidenceRefundPackZip(center: EvidenceCenterResponse)
   ];
 
   return buildStoredZip(entries);
+}
+
+// ─── Corporate tax evidence pack (W4-A, R08-22) ─────────────────────────────
+
+export interface CtEvidenceAdjustment {
+  id: string;
+  category: string;
+  label: string;
+  amount: number;
+  source: "manual" | "ledger";
+  support: "ledger_account" | "notes" | "missing";
+  notes: string | null;
+}
+
+export interface CtEvidencePack {
+  companyId: string;
+  companyName: string;
+  generatedAt: string;
+  ctReturn: {
+    id: string;
+    status: string;
+    taxPeriodStart: string;
+    taxPeriodEnd: string;
+    filingDeadline: string;
+    taxableIncome: number;
+    taxPayable: number;
+    amendmentNumber: number;
+    reviewedBy: string | null;
+    filedAt: string | null;
+  } | null;
+  workpaperRowCount: number;
+  adjustments: CtEvidenceAdjustment[];
+  relatedParties: Array<{
+    id: string;
+    name: string;
+    relationship: string;
+    jurisdiction: string | null;
+    transactionValue: number;
+  }>;
+  transferPricing: {
+    disclosureFormRequired: boolean;
+    masterLocalFileRequired: boolean;
+    relatedPartyTransactionsTotal: number;
+  } | null;
+  deferredTax: { net: number; itemCount: number } | null;
+  checks: Array<{ key: string; label: string; passed: boolean; detail: string }>;
+  readinessScore: number;
+  adviserReviewPending: boolean;
+  workbookFilename: string;
+  filingNotice: string;
+}
+
+function ctIsoDay(value: unknown): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(d.getTime())
+    ? ""
+    : new Date(d.getTime() + 4 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** The live (non-void, non-superseded) CT return for the latest period. */
+function latestLiveCtReturn(ctReturns: AnyRecord[]): AnyRecord | undefined {
+  return [...ctReturns]
+    .filter((r) => r.status !== "void" && r.status !== "amended")
+    .sort(
+      (a, b) =>
+        new Date(b.taxPeriodEnd).getTime() - new Date(a.taxPeriodEnd).getTime() ||
+        (Number(b.amendmentNumber) || 0) - (Number(a.amendmentNumber) || 0)
+    )[0];
+}
+
+export async function buildCtEvidencePack(companyId: string): Promise<CtEvidencePack> {
+  const company = await storage.getCompany(companyId);
+  if (!company) throw new Error("Company not found");
+  const [ctReturns, relatedParties, profile] = await Promise.all([
+    storage.getCorporateTaxReturnsByCompanyId(companyId).catch(() => []),
+    listRelatedParties(companyId),
+    getCtProfile(companyId),
+  ]);
+  const latest = latestLiveCtReturn(ctReturns as AnyRecord[]);
+  const wp = (latest?.workpaper ?? {}) as AnyRecord;
+  const rawAdjustments = [
+    ...((Array.isArray(wp.ledgerAdjustments) ? wp.ledgerAdjustments : []) as AnyRecord[]),
+    ...((Array.isArray(wp.adjustments) ? wp.adjustments : []) as AnyRecord[]),
+  ];
+  const adjustments: CtEvidenceAdjustment[] = rawAdjustments.map((a) => {
+    const source = a.source === "ledger" ? "ledger" : "manual";
+    const notes = typeof a.notes === "string" && a.notes.trim() ? a.notes.trim() : null;
+    return {
+      id: String(a.id),
+      category: String(a.category),
+      label: String(a.label ?? a.category),
+      amount: Number(a.amount) || 0,
+      source,
+      support: source === "ledger" && a.accountId ? "ledger_account" : notes ? "notes" : "missing",
+      notes,
+    };
+  });
+  const tp = wp.transferPricing as AnyRecord | undefined;
+  const periodEnd = latest ? ctIsoDay(latest.taxPeriodEnd) : "";
+  const checks: CtEvidencePack["checks"] = [];
+  checks.push({
+    key: "return_exists",
+    label: "Corporate tax return prepared for the latest period",
+    passed: Boolean(latest),
+    detail: latest ? `Status: ${latest.status}` : "No corporate tax return yet",
+  });
+  checks.push({
+    key: "computed",
+    label: "Computation run on the books",
+    passed: Boolean(wp.computation),
+    detail: wp.computedAt ? `Computed ${String(wp.computedAt).slice(0, 10)}` : "Not computed",
+  });
+  checks.push({
+    key: "reviewed",
+    label: "Reviewed by a second person",
+    passed: Boolean(latest?.reviewedBy),
+    detail: latest?.reviewedBy ? "Reviewer recorded" : "No reviewer recorded",
+  });
+  const unsupported = adjustments.filter((a) => a.support === "missing").length;
+  checks.push({
+    key: "adjustments_supported",
+    label: "Every adjustment has support (ledger account or notes)",
+    passed: unsupported === 0,
+    detail:
+      adjustments.length === 0
+        ? "No adjustments"
+        : `${adjustments.length - unsupported} of ${adjustments.length} adjustments supported`,
+  });
+  const needsRegister =
+    Boolean(tp?.disclosureFormRequired) || Number(tp?.relatedPartyTransactionsTotal) > 0;
+  checks.push({
+    key: "related_party_register",
+    label: "Related-party register maintained",
+    passed: !needsRegister || relatedParties.length > 0,
+    detail: needsRegister
+      ? `${relatedParties.length} related parties recorded`
+      : "No related-party activity found",
+  });
+  const readinessScore = Math.round((checks.filter((c) => c.passed).length / checks.length) * 100);
+  const slug =
+    String(company.name ?? "company")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "company";
+  return {
+    companyId,
+    companyName: company.name,
+    generatedAt: new Date().toISOString(),
+    ctReturn: latest
+      ? {
+          id: latest.id,
+          status: latest.status,
+          taxPeriodStart: ctIsoDay(latest.taxPeriodStart),
+          taxPeriodEnd: periodEnd,
+          filingDeadline: ctFilingDeadline(periodEnd),
+          taxableIncome: Number(latest.taxableIncome) || 0,
+          taxPayable: Number(latest.taxPayable) || 0,
+          amendmentNumber: Number(latest.amendmentNumber) || 0,
+          reviewedBy: latest.reviewedBy ?? null,
+          filedAt: latest.filedAt ? new Date(latest.filedAt).toISOString() : null,
+        }
+      : null,
+    workpaperRowCount: Array.isArray(wp.rows) ? wp.rows.length : 0,
+    adjustments,
+    relatedParties: relatedParties.map((p) => ({
+      id: p.id,
+      name: p.name,
+      relationship: p.relationship,
+      jurisdiction: p.jurisdiction,
+      transactionValue: p.transactionValue,
+    })),
+    transferPricing: tp
+      ? {
+          disclosureFormRequired: tp.disclosureFormRequired === true,
+          masterLocalFileRequired: tp.masterLocalFileRequired === true,
+          relatedPartyTransactionsTotal: Number(tp.relatedPartyTransactionsTotal) || 0,
+        }
+      : null,
+    deferredTax: wp.deferredTax
+      ? {
+          net: Number((wp.deferredTax as AnyRecord).net) || 0,
+          itemCount: ((wp.deferredTax as AnyRecord).items ?? []).length,
+        }
+      : null,
+    checks,
+    readinessScore,
+    adviserReviewPending: profile.adviserReviewPending,
+    workbookFilename: `ct-evidence-pack-${slug}-${periodEnd || "no-return"}.xlsx`,
+    filingNotice:
+      "Evidence pack for review. Muhasib does not file or submit corporate tax returns to the FTA.",
+  };
+}
+
+/** CT evidence workbook: the return workbook plus support and register sheets. */
+export async function buildCtEvidencePackWorkbook(pack: CtEvidencePack): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  if (pack.ctReturn) {
+    const ctReturn = await storage.getCorporateTaxReturn(pack.ctReturn.id);
+    const company = await storage.getCompany(pack.companyId);
+    if (ctReturn) {
+      const base = await buildCtReturnWorkbook(ctReturn, company ?? null);
+      await workbook.xlsx.load(base as unknown as ArrayBuffer);
+    }
+  }
+  const summary = workbook.addWorksheet("CT Evidence Summary");
+  summary.columns = [
+    { key: "a", width: 52 },
+    { key: "b", width: 18 },
+    { key: "c", width: 60 },
+  ];
+  summary.addRow([`Corporate tax evidence pack — ${pack.companyName}`]).font = { bold: true };
+  summary.addRow([pack.filingNotice]);
+  summary.addRow([
+    "Readiness score",
+    pack.readinessScore,
+    pack.adviserReviewPending ? "Adviser review pending" : "Adviser confirmation recorded",
+  ]);
+  summary.addRow([]);
+  summary.addRow(["Check", "Passed", "Detail"]).font = { bold: true };
+  for (const c of pack.checks) summary.addRow([c.label, c.passed ? "Yes" : "No", c.detail]);
+
+  const adj = workbook.addWorksheet("Adjustments Support");
+  adj.columns = [
+    { key: "label", width: 44 },
+    { key: "category", width: 26 },
+    { key: "amount", width: 18 },
+    { key: "source", width: 12 },
+    { key: "support", width: 18 },
+    { key: "notes", width: 50 },
+  ];
+  adj.addRow(["Adjustment", "Category", "Amount (AED)", "Source", "Support", "Notes"]).font = {
+    bold: true,
+  };
+  for (const a of pack.adjustments) {
+    adj.addRow([a.label, a.category, a.amount, a.source, a.support, a.notes ?? ""]);
+  }
+
+  const rp = workbook.addWorksheet("Related Parties");
+  rp.columns = [
+    { key: "name", width: 40 },
+    { key: "relationship", width: 20 },
+    { key: "jurisdiction", width: 20 },
+    { key: "value", width: 20 },
+  ];
+  rp.addRow(["Name", "Relationship", "Jurisdiction", "Transactions (AED)"]).font = { bold: true };
+  for (const p of pack.relatedParties) {
+    rp.addRow([p.name, p.relationship, p.jurisdiction ?? "", p.transactionValue]);
+  }
+  if (pack.transferPricing) {
+    rp.addRow([]);
+    rp.addRow([
+      "TP disclosure form required",
+      pack.transferPricing.disclosureFormRequired ? "Yes" : "No",
+    ]);
+    rp.addRow([
+      "Master File / Local File required",
+      pack.transferPricing.masterLocalFileRequired ? "Yes" : "No",
+    ]);
+  }
+  const out = await workbook.xlsx.writeBuffer();
+  return Buffer.from(out as ArrayBuffer);
 }

@@ -1,0 +1,22 @@
+{
+  "compliance.closeApproveReopen": "الموافقة وإعادة الفتح",
+  "compliance.closeRejectReopen": "رفض",
+  "compliance.closeReopenDescription": "تتطلب إعادة فتح فترة مقفلة سبباً وموافقة المالك (أو موظفي المكتب) من غير مقدم الطلب.",
+  "compliance.closeReopenReasonLabel": "سبب إعادة فتح {date}",
+  "compliance.closeReopenRequested": "تم إرسال طلب إعادة الفتح للموافقة",
+  "compliance.closeReopenTitle": "طلبات إعادة الفتح",
+  "compliance.closeRequestReopen": "طلب إعادة الفتح",
+  "compliance.closeSignOff": "اعتماد",
+  "compliance.closeSignedOffBy": "اعتمده {user} في {time}",
+  "compliance.closeSubmitReopen": "إرسال الطلب",
+  "compliance.closeWithdrawSignOff": "سحب الاعتماد",
+  "compliance.ctPackAdviserPending": "إعداد ضريبة الشركات بانتظار مراجعة المستشار.",
+  "compliance.ctPackDescription": "ورقة العمل والمستندات المؤيدة لكل تعديل وسجل الأطراف ذات العلاقة لآخر إقرار لضريبة الشركات. لا يقدّم محاسب الإقرارات إلى الهيئة الاتحادية للضرائب.",
+  "compliance.ctPackDownload": "تنزيل ملف ضريبة الشركات",
+  "compliance.ctPackDue": "الاستحقاق",
+  "compliance.ctPackNoReturn": "لم يتم إعداد إقرار لضريبة الشركات بعد.",
+  "compliance.ctPackTitle": "ملف أدلة ضريبة الشركات",
+  "compliance.generatedBadge": "من تقويم الامتثال",
+  "compliance.statusFollowsReturn": "يكتمل تلقائياً عند تقديم الإقرار",
+  "compliance.updateFailed": "تعذر تحديث الالتزام"
+}

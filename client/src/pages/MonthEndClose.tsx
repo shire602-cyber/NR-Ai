@@ -57,11 +57,36 @@ import {
 
 interface ChecklistItem {
   id: number;
+  key?: string;
   title: string;
   description: string;
   status: "complete" | "incomplete";
   details?: string;
+  requiresSignOff?: boolean;
+  actionHref?: string;
+  actionEndpoint?: string;
+  signOff?: {
+    stepKey: string;
+    signedOffBy: string;
+    signedOffByEmail: string | null;
+    signedOffAt: string;
+    note: string | null;
+  } | null;
+  effectiveStatus?: "complete" | "incomplete";
 }
+
+interface ReopenRequest {
+  id: string;
+  periodEnd: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  requestedBy: string;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
+
+const stepDone = (item: ChecklistItem) => (item.effectiveStatus ?? item.status) === "complete";
 
 interface ChecklistResponse {
   period: string;
@@ -176,6 +201,66 @@ export default function MonthEndClose() {
   const { data: closeSettings } = useQuery<CloseSettingsResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/settings`],
     enabled: !!companyId,
+  });
+
+  // W4-A (R08-23): per-step sign-off and the reopen workflow.
+  const { data: reopenRequests } = useQuery<ReopenRequest[]>({
+    queryKey: [`/api/companies/${companyId}/month-end/reopen-requests`],
+    enabled: !!companyId,
+  });
+  const [reopenTarget, setReopenTarget] = useState<string | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
+  const signOffMutation = useMutation({
+    mutationFn: async ({ stepKey, withdraw }: { stepKey: string; withdraw?: boolean }) =>
+      withdraw
+        ? apiRequest(
+            "DELETE",
+            `/api/companies/${companyId}/month-end/steps/${stepKey}/sign-off?period=${period}`
+          )
+        : apiRequest("POST", `/api/companies/${companyId}/month-end/steps/${stepKey}/sign-off`, {
+            period,
+          }),
+    onSuccess: () => {
+      refetchChecklist();
+    },
+    onError: (error: Error) => {
+      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+    },
+  });
+  const reopenRequestMutation = useMutation({
+    mutationFn: async ({ periodEnd, reason }: { periodEnd: string; reason: string }) =>
+      apiRequest("POST", `/api/companies/${companyId}/month-end/reopen-requests`, {
+        periodEnd,
+        reason,
+      }),
+    onSuccess: () => {
+      toast({ title: t["compliance.closeReopenRequested"] });
+      setReopenTarget(null);
+      setReopenReason("");
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/reopen-requests`],
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+    },
+  });
+  const reopenDecisionMutation = useMutation({
+    mutationFn: async ({ id, decision }: { id: string; decision: "approve" | "reject" }) =>
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/month-end/reopen-requests/${id}/${decision}`,
+        {}
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/reopen-requests`],
+      });
+      invalidateClose();
+    },
+    onError: (error: Error) => {
+      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+    },
   });
 
   // Lock form state (R08-05 / R02-19): lock type, checklist override + reason.
@@ -356,8 +441,7 @@ export default function MonthEndClose() {
     ) ||
     false;
 
-  const completedCount =
-    checklistData?.checklist.filter((i) => i.status === "complete").length || 0;
+  const completedCount = checklistData?.checklist.filter((i) => stepDone(i)).length || 0;
   const totalCount = checklistData?.checklist.length || 7;
 
   // ---- Loading state ----
@@ -484,13 +568,13 @@ export default function MonthEndClose() {
                 <div
                   key={item.id}
                   className={`flex items-center justify-between p-3 rounded-lg border ${
-                    item.status === "complete"
+                    stepDone(item)
                       ? "bg-success-subtle border-success/30"
                       : "bg-danger-subtle border-destructive/30"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    {item.status === "complete" ? (
+                    {stepDone(item) ? (
                       <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
                     ) : (
                       <XCircle className="h-5 w-5 text-destructive shrink-0" />
@@ -500,19 +584,47 @@ export default function MonthEndClose() {
                       <p className="text-xs text-muted-foreground">
                         {item.details || item.description}
                       </p>
+                      {item.signOff && (
+                        <p className="text-xs text-success" data-testid={`signoff-${item.key}`}>
+                          {formatMessage(t["compliance.closeSignedOffBy"], {
+                            user: item.signOff.signedOffByEmail ?? item.signOff.signedOffBy,
+                            time: formatDate(item.signOff.signedOffAt),
+                          })}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {item.status === "incomplete" && fixRoutes[item.id] && (
-                    <a href={fixRoutes[item.id]}>
+                  <div className="flex items-center gap-1">
+                    {item.key && closeSettings?.permissions.canLock && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        onClick={() =>
+                          signOffMutation.mutate({
+                            stepKey: item.key!,
+                            withdraw: Boolean(item.signOff),
+                          })
+                        }
+                        disabled={signOffMutation.isPending}
+                        data-testid={`button-signoff-${item.key}`}
                       >
-                        Fix <ArrowRight className="h-3 w-3 ml-1" />
+                        {item.signOff
+                          ? t["compliance.closeWithdrawSignOff"]
+                          : t["compliance.closeSignOff"]}
                       </Button>
-                    </a>
-                  )}
+                    )}
+                    {item.status === "incomplete" && (item.actionHref ?? fixRoutes[item.id]) && (
+                      <a href={item.actionHref ?? fixRoutes[item.id]}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          Fix <ArrowRight className="h-3 w-3 ml-1" />
+                        </Button>
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -840,6 +952,17 @@ export default function MonthEndClose() {
                       {formatDate(record.closedAt)}
                     </TableCell>
                     <TableCell>
+                      {record.status === "locked" && closeSettings?.permissions.canLock && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="mr-2"
+                          onClick={() => setReopenTarget(String(record.periodEnd).slice(0, 10))}
+                          data-testid={`button-reopen-${String(record.periodEnd).slice(0, 10)}`}
+                        >
+                          <T k="compliance.closeRequestReopen" />
+                        </Button>
+                      )}
                       {record.status === "locked" && closeSettings?.permissions.canUnlock && (
                         <Button
                           size="sm"
@@ -863,6 +986,86 @@ export default function MonthEndClose() {
           )}
         </CardContent>
       </Card>
+
+      {/* Reopen workflow (W4-A, R08-23) */}
+      {(reopenTarget || (reopenRequests ?? []).some((r) => r.status === "pending")) && (
+        <Card data-testid="reopen-requests">
+          <CardHeader>
+            <CardTitle className="text-lg">
+              <T k="compliance.closeReopenTitle" />
+            </CardTitle>
+            <CardDescription>
+              <T k="compliance.closeReopenDescription" />
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {reopenTarget && (
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1 flex-1 min-w-[240px]">
+                  <Label htmlFor="reopen-reason">
+                    {formatMessage(t["compliance.closeReopenReasonLabel"], { date: reopenTarget })}
+                  </Label>
+                  <Input
+                    id="reopen-reason"
+                    value={reopenReason}
+                    onChange={(e) => setReopenReason(e.target.value)}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  disabled={reopenReason.trim().length < 3 || reopenRequestMutation.isPending}
+                  onClick={() =>
+                    reopenRequestMutation.mutate({
+                      periodEnd: reopenTarget,
+                      reason: reopenReason.trim(),
+                    })
+                  }
+                >
+                  <T k="compliance.closeSubmitReopen" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setReopenTarget(null)}>
+                  <T k="pages.cancel" />
+                </Button>
+              </div>
+            )}
+            {(reopenRequests ?? [])
+              .filter((r) => r.status === "pending")
+              .map((r) => (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"
+                >
+                  <span>
+                    {String(r.periodEnd).slice(0, 10)} · {r.reason}
+                  </span>
+                  {closeSettings?.permissions.canUnlock && (
+                    <span className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          reopenDecisionMutation.mutate({ id: r.id, decision: "approve" })
+                        }
+                        disabled={reopenDecisionMutation.isPending}
+                      >
+                        <T k="compliance.closeApproveReopen" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          reopenDecisionMutation.mutate({ id: r.id, decision: "reject" })
+                        }
+                        disabled={reopenDecisionMutation.isPending}
+                      >
+                        <T k="compliance.closeRejectReopen" />
+                      </Button>
+                    </span>
+                  )}
+                </div>
+              ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Year-end close (R11-14) */}
       {closeSettings?.permissions.canLock && (

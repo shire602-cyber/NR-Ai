@@ -7,10 +7,18 @@ import { DomainError } from "../errors";
 import { strictBody } from "../http/strict-body";
 import { zText, zUuid } from "../../shared/validators/primitives";
 import {
+  CLOSE_STEP_KEYS,
   aiValidation,
   closeFiscalYear,
+  createReopenRequest,
+  decideReopenRequest,
+  getChecklistWithSignOffs,
+  getReopenRequest,
+  listReopenRequests,
+  signOffStep,
+  withdrawStepSignOff,
+  type CloseStepKey,
   generateClosingEntries,
-  getCloseChecklist,
   getCloseHistory,
   getCloseSettings,
   listFiscalYearCloses,
@@ -30,6 +38,18 @@ import {
   type CloseActor,
 } from "../services/period-lock.service";
 import { fiscalYearStart, loadCompany, monthEnd, monthStart, parseReportDate } from "../reporting";
+import { assertDifferentActor, companyHasSingleMember } from "../middleware/companyRolePolicy";
+
+function parseStepKey(raw: unknown): CloseStepKey {
+  if (typeof raw === "string" && (CLOSE_STEP_KEYS as readonly string[]).includes(raw)) {
+    return raw as CloseStepKey;
+  }
+  throw new DomainError("UNKNOWN_CLOSE_STEP", 404, undefined, "Unknown close step");
+}
+
+const signOffBody = z.object({ period: z.string().max(20), note: zText(500).optional() });
+const reopenRequestBody = z.object({ periodEnd: z.unknown(), reason: zText(500, { min: 3 }) });
+const reopenDecisionBody = z.object({ note: zText(500).optional() });
 
 /** Derive periodStart and periodEnd from a YYYY-MM value; 400 on garbage (R08-11). */
 function parsePeriod(period: unknown): { periodStart: string; periodEnd: string } {
@@ -77,8 +97,9 @@ async function enforceChecklist(
   override: { overrideChecklist?: boolean; reason?: string | null }
 ): Promise<{ checklist: ChecklistItem[]; overridden: boolean }> {
   const settings = await getCloseSettings(companyId);
-  const checklist = await getCloseChecklist(companyId, monthStart(periodEnd), periodEnd);
-  const incomplete = checklist.filter((c) => c.status !== "complete");
+  // W4-A: a judgment step signed off by a preparer counts as complete.
+  const checklist = await getChecklistWithSignOffs(companyId, monthStart(periodEnd), periodEnd);
+  const incomplete = checklist.filter((c) => (c.effectiveStatus ?? c.status) !== "complete");
   if (!settings.requireChecklistToLock || incomplete.length === 0) {
     return { checklist, overridden: false };
   }
@@ -230,7 +251,7 @@ export function registerMonthEndRoutes(app: Express) {
       const { companyId } = req.params;
       const { periodStart, periodEnd } = parsePeriod(req.query.period);
       await requireAccess(req, companyId);
-      const checklist = await getCloseChecklist(companyId, periodStart, periodEnd);
+      const checklist = await getChecklistWithSignOffs(companyId, periodStart, periodEnd);
       res.json({ period: req.query.period, periodStart, periodEnd, checklist });
     })
   );
@@ -282,6 +303,7 @@ export function registerMonthEndRoutes(app: Express) {
         title: c.title,
         status: c.status,
         details: c.details,
+        signOff: c.signOff ?? null,
       }));
       const record = await lockPeriod(companyId, periodEnd, userId, {
         lockType: body.lockType ?? "hard",
@@ -312,6 +334,172 @@ export function registerMonthEndRoutes(app: Express) {
       });
 
       res.json(record);
+    })
+  );
+
+  // ── W4-A (R08-23): per-step sign-off ────────────────────────────────────
+  app.post(
+    "/api/companies/:companyId/month-end/steps/:stepKey/sign-off",
+    authMiddleware,
+    requireCustomer,
+    strictBody(signOffBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const stepKey = parseStepKey(req.params.stepKey);
+      const { periodEnd } = parsePeriod(req.body.period);
+      await requireCloseRole(req, companyId);
+      const signOff = await signOffStep(
+        companyId,
+        periodEnd,
+        stepKey,
+        req.user!.id,
+        req.body.note ?? null
+      );
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "close.step_sign_off",
+        entityType: "period",
+        entityId: periodEnd,
+        after: signOff,
+        req,
+      });
+      res.status(201).json(signOff);
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/month-end/steps/:stepKey/sign-off",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const stepKey = parseStepKey(req.params.stepKey);
+      const { periodEnd } = parsePeriod(req.query.period);
+      await requireCloseRole(req, companyId);
+      const removed = await withdrawStepSignOff(companyId, periodEnd, stepKey);
+      if (!removed) throw new DomainError("SIGN_OFF_NOT_FOUND", 404);
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "close.step_sign_off_withdrawn",
+        entityType: "period",
+        entityId: periodEnd,
+        before: { stepKey },
+        req,
+      });
+      res.status(204).end();
+    })
+  );
+
+  // ── W4-A (R08-23): reopen workflow (request with reason → approval) ─────
+  app.get(
+    "/api/companies/:companyId/month-end/reopen-requests",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listReopenRequests(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/month-end/reopen-requests",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reopenRequestBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireCloseRole(req, companyId);
+      const periodEnd = parseReportDate(req.body.periodEnd, "periodEnd");
+      if (!periodEnd) throw new DomainError("PERIOD_REQUIRED", 400);
+      const request = await createReopenRequest(
+        companyId,
+        periodEnd,
+        req.body.reason,
+        req.user!.id
+      );
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "period.reopen_requested",
+        entityType: "period",
+        entityId: periodEnd,
+        after: request,
+        req,
+      });
+      res.status(201).json(request);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/month-end/reopen-requests/:requestId/:decision",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reopenDecisionBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, requestId, decision } = req.params;
+      if (decision !== "approve" && decision !== "reject") {
+        throw new DomainError("NOT_FOUND", 404);
+      }
+      if (!zUuid.safeParse(requestId).success) throw new DomainError("NOT_FOUND", 404);
+      await requireAccess(req, companyId);
+      const request = await getReopenRequest(companyId, requestId);
+      if (!request) throw new DomainError("NOT_FOUND", 404);
+      // Approver: owner/admin or firm staff (same policy as unlock), and not the requester.
+      const actor = await authorizeUnlock(req, companyId, request.periodEnd, request.reason);
+      const single = await companyHasSingleMember(companyId);
+      assertDifferentActor(request.requestedBy, req.user!.id, {
+        allowSingleOwner: single || isFirmOrAdmin(actor),
+      });
+      const note = (req.body.note as string | undefined) ?? null;
+      const decided = await decideReopenRequest(
+        companyId,
+        requestId,
+        decision === "approve" ? "approved" : "rejected",
+        req.user!.id,
+        note
+      );
+      const { recordAudit } = await import("../services/audit.service");
+      let unlocked = null;
+      if (decided.status === "approved") {
+        unlocked = await unlockPeriod(companyId, decided.periodEnd, {
+          userId: req.user!.id,
+          reason: `Reopen approved: ${decided.reason}`,
+        });
+        await recordAudit({
+          userId: req.user!.id,
+          companyId,
+          action: "period.unlock",
+          entityType: "period",
+          entityId: decided.periodEnd,
+          before: { periodEnd: decided.periodEnd, status: "locked" },
+          after: {
+            periodEnd: decided.periodEnd,
+            status: "open",
+            reopenRequestId: decided.id,
+            requestedBy: decided.requestedBy,
+            approvedBy: req.user!.id,
+            reason: decided.reason,
+          },
+          req,
+        });
+      }
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: `period.reopen_${decided.status}`,
+        entityType: "period",
+        entityId: decided.periodEnd,
+        before: { status: "pending" },
+        after: decided,
+        req,
+      });
+      res.json({ request: decided, period: unlocked });
     })
   );
 

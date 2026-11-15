@@ -7,19 +7,16 @@ import { asyncHandler } from "../middleware/errorHandler";
 import {
   CHASE_CHANNELS,
   CHASE_LEVELS,
-  COMPLIANCE_EVENT_TYPES,
   DOCUMENT_TYPES,
   REQUIREMENT_STATUSES,
   type ChaseLevel,
 } from "@shared/schema";
 import {
   buildChaseQueue,
-  createComplianceEvent,
   createRequirement,
   effectivenessReport,
   getRequirement,
   listChasesForRequirement,
-  listComplianceEvents,
   listRequirements,
   markRequirementReceived,
   recordChaseSend,
@@ -56,7 +53,6 @@ const documentTypeSchema = z.enum(DOCUMENT_TYPES);
 const requirementStatusSchema = z.enum(REQUIREMENT_STATUSES);
 const chaseChannelSchema = z.enum(CHASE_CHANNELS);
 const chaseLevelSchema = z.enum(CHASE_LEVELS);
-const complianceEventTypeSchema = z.enum(COMPLIANCE_EVENT_TYPES);
 
 const createRequirementSchema = z.object({
   documentType: documentTypeSchema,
@@ -92,17 +88,6 @@ const sendChaseSchema = z.object({
   overrideLevel: chaseLevelSchema.optional(),
 });
 
-const createComplianceEventSchema = z.object({
-  eventType: complianceEventTypeSchema,
-  description: z.string().min(1).max(500),
-  eventDate: z
-    .string()
-    .datetime()
-    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
-  reminderDays: z.array(z.number().int().min(0).max(365)).optional(),
-  linkedRequirementId: z.string().uuid().nullable().optional(),
-});
-
 // Path-param schemas. Drizzle parameterizes, but invalid UUIDs reach Postgres
 // and surface as 500 (22P02). Validate at the edge so malformed input returns
 // 400 deterministically and never touches the DB.
@@ -114,22 +99,6 @@ const companyIdAndIdParams = z.object({
 const companyIdAndRequirementIdParams = z.object({
   companyId: z.string().uuid(),
   requirementId: z.string().uuid(),
-});
-
-// Query-param schema for the compliance-calendar range. Reject anything that
-// isn't a full ISO datetime or YYYY-MM-DD date instead of silently coercing
-// "abc" to Invalid Date and dropping the filter.
-const calendarRangeQuerySchema = z.object({
-  from: z
-    .string()
-    .datetime()
-    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/))
-    .optional(),
-  to: z
-    .string()
-    .datetime()
-    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/))
-    .optional(),
 });
 
 // Parse path params via the given Zod schema; on failure write a 400 and
@@ -345,54 +314,5 @@ export function registerDocumentChasingRoutes(app: Express) {
       res.json(report);
     })
   );
-
-  // ─── Compliance Calendar ──────────────────────────────────────────
-  app.get(
-    "/api/companies/:companyId/compliance-calendar",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const params = parsePathParams(companyIdParams, req.params, res);
-      if (!params) return;
-      const { companyId } = params;
-      const company = await requireCompanyAccess(req, res, companyId);
-      if (!company) return;
-      const range = calendarRangeQuerySchema.parse(req.query);
-      const fromQ = range.from ? new Date(range.from) : undefined;
-      const toQ = range.to ? new Date(range.to) : undefined;
-      const events = await listComplianceEvents(companyId, { from: fromQ, to: toQ });
-      res.json(events);
-    })
-  );
-
-  app.post(
-    "/api/companies/:companyId/compliance-calendar",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const params = parsePathParams(companyIdParams, req.params, res);
-      if (!params) return;
-      const { companyId } = params;
-      const company = await requireCompanyAccess(req, res, companyId);
-      if (!company) return;
-      const validated = createComplianceEventSchema.parse(req.body);
-      // Cross-tenant guard: a UUID-shaped linkedRequirementId is no proof of
-      // ownership. Resolve it scoped to companyId so callers can never link
-      // a calendar event in their tenant to a requirement row in another.
-      if (validated.linkedRequirementId) {
-        const linked = await getRequirement(companyId, validated.linkedRequirementId);
-        if (!linked) {
-          res.status(400).json({ message: "linkedRequirementId does not belong to this company" });
-          return;
-        }
-      }
-      const row = await createComplianceEvent({
-        companyId,
-        eventType: validated.eventType,
-        description: validated.description,
-        eventDate: validated.eventDate,
-        reminderDays: validated.reminderDays,
-        linkedRequirementId: validated.linkedRequirementId ?? null,
-      });
-      res.status(201).json(row);
-    })
-  );
+  // Compliance calendar endpoints moved to compliance-calendar.routes.ts (W4-A, R15-10).
 }

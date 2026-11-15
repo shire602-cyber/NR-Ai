@@ -147,6 +147,20 @@ function getSourceFilter(search: string) {
   };
 }
 
+interface CtEvidencePackSummary {
+  readinessScore: number;
+  adviserReviewPending: boolean;
+  workbookFilename: string;
+  ctReturn: {
+    id: string;
+    status: string;
+    taxPeriodStart: string;
+    taxPeriodEnd: string;
+    filingDeadline: string;
+  } | null;
+  checks: Array<{ key: string; label: string; passed: boolean; detail: string }>;
+}
+
 export default function EvidenceCenter() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { toast } = useToast();
@@ -168,6 +182,11 @@ export default function EvidenceCenter() {
 
   const { data, isLoading, error } = useQuery<EvidenceCenterResponse>({
     queryKey: evidenceQueryKey,
+    enabled: !!companyId,
+  });
+  // W4-A (R08-22): corporate tax evidence pack next to the VAT refund pack.
+  const { data: ctPack } = useQuery<CtEvidencePackSummary>({
+    queryKey: ["/api/companies", companyId, "evidence-center", "ct-pack"],
     enabled: !!companyId,
   });
 
@@ -405,6 +424,75 @@ export default function EvidenceCenter() {
             </Badge>
           </div>
         </section>
+      ) : null}
+
+      {ctPack ? (
+        <Card data-testid="ct-evidence-pack">
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+            <div>
+              <CardTitle className="text-base">
+                <T k="compliance.ctPackTitle" />
+              </CardTitle>
+              <CardDescription>
+                <T k="compliance.ctPackDescription" />
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant={ctPack.readinessScore >= 80 ? "default" : "secondary"}>
+                {ctPack.readinessScore}%
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={exportingPack !== null || !ctPack.ctReturn}
+                onClick={() =>
+                  void downloadEvidenceArtifact(
+                    `/api/companies/${companyId}/evidence-center/ct-pack.xlsx`,
+                    ctPack.workbookFilename,
+                    "xlsx"
+                  )
+                }
+                data-testid="button-download-ct-pack"
+              >
+                <T k="compliance.ctPackDownload" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {ctPack.ctReturn ? (
+              <p className="text-muted-foreground">
+                {ctPack.ctReturn.taxPeriodStart} – {ctPack.ctReturn.taxPeriodEnd} ·{" "}
+                {ctPack.ctReturn.status} · <T k="compliance.ctPackDue" />{" "}
+                {ctPack.ctReturn.filingDeadline}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                <T k="compliance.ctPackNoReturn" />
+              </p>
+            )}
+            <ul className="grid gap-1 md:grid-cols-2">
+              {ctPack.checks.map((check) => (
+                <li key={check.key} className="flex items-start gap-2">
+                  <span
+                    aria-hidden
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                      check.passed ? "bg-success" : "bg-warning"
+                    }`}
+                  />
+                  <span>
+                    {check.label}
+                    <span className="block text-xs text-muted-foreground">{check.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {ctPack.adviserReviewPending ? (
+              <p className="text-xs text-warning">
+                <T k="compliance.ctPackAdviserPending" />
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
 
       <section className="grid gap-3 md:grid-cols-4" data-testid="evidence-center-summary">
