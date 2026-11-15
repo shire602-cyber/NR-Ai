@@ -10,6 +10,7 @@
 // Runs with NO key on purpose. If OPENAI_API_KEY *is* set, the AI paths return
 // 200 and the "must not 500" assertion still holds.
 
+import { fail as abort, throttledFetch } from "./_http.mjs";
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0; const fails = [];
 const ok = (name, cond, detail) => {
@@ -19,7 +20,7 @@ const ok = (name, cond, detail) => {
 async function api(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
-  const r = await fetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
+  const r = await throttledFetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
   return { s: r.status, j, t };
 }
@@ -27,7 +28,7 @@ async function api(m, p, o = {}) {
 async function main() {
   const s = Math.random().toString(36).slice(2, 8);
   const reg = await api("POST", "/api/auth/register", { body: { name: "AID", email: `aid_${s}@e.com`, password: "Password123!" } });
-  if (!reg.j?.token) { console.log("SKIP: registration rate-limited"); process.exit(0); }
+  if (!reg.j?.token) abort("registration failed (after rate-limit retries)", { status: reg.s, body: reg.t?.slice(0, 200) });
   const token = reg.j.token, cid = reg.j.company.id;
   await api("PATCH", `/api/companies/${cid}`, { token, body: { trnVatNumber: "100123456700003", vatRegistered: true, emirate: "dubai" } });
 

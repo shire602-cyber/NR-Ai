@@ -20,13 +20,11 @@ export default tseslint.config(
       ".claire/**",
       // Vendored side projects and audit evidence — not product code.
       // They were contributing 361 lint errors that drowned real signal.
-      "najma-al-raeda-website/**",
-      "najma-raeda-site/**",
+      "sites/**",
+      "docs/archive/**",
       "najma-raeda-logo/**",
-      "teardown-evidence/**",
       "node_modules.*/**",
       "brand/**",
-      "artifacts/**",
       "tools/**",
       "extensions/**",
       "tmp/**",

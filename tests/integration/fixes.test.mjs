@@ -11,6 +11,7 @@
 //   - H4  absurd VAT return period is rejected  (only asserted if 1.6 is implemented)
 //   - ledger integrity: issue posts a balanced entry; TB balances
 
+import { throttledFetch } from "./_http.mjs";
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const fails = [];
@@ -21,7 +22,7 @@ function ok(name, cond, detail) {
 async function api(method, path, { body, token } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  const res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await throttledFetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   let json = null; try { json = JSON.parse(text); } catch {}
   return { status: res.status, json, text };

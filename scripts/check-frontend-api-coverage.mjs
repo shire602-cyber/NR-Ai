@@ -71,6 +71,52 @@ for (const file of serverRouteFiles) {
   }
 }
 
+/**
+ * Extract `/api/...` and `/nra/...` template literals from source text,
+ * collapsing every `${...}` expression (balanced braces, any number of lines)
+ * to `${x}` so normalizeApiPath turns it into a :param segment.
+ */
+export function templateLiteralApiPaths(source) {
+  const out = [];
+  const starts = /`(?=\/(?:api|nra)\/)/g;
+  let m;
+  while ((m = starts.exec(source))) {
+    let i = m.index + 1;
+    let text = '';
+    let closed = false;
+    while (i < source.length) {
+      const ch = source[i];
+      if (ch === '\\') {
+        text += source.slice(i, i + 2);
+        i += 2;
+        continue;
+      }
+      if (ch === '`') {
+        closed = true;
+        break;
+      }
+      if (ch === '$' && source[i + 1] === '{') {
+        let depth = 1;
+        i += 2;
+        while (i < source.length && depth > 0) {
+          if (source[i] === '{') depth++;
+          else if (source[i] === '}') depth--;
+          i++;
+        }
+        text += '${x}';
+        continue;
+      }
+      text += ch;
+      i++;
+    }
+    if (!closed) continue;
+    // Same terminators the single-line scanner stops at.
+    out.push(text.split(/[\s'"),>]/)[0]);
+    starts.lastIndex = i + 1;
+  }
+  return out;
+}
+
 const clientFiles = walk('client/src', (file) => /\.(ts|tsx)$/.test(file));
 const apiReferences = [];
 
@@ -110,8 +156,13 @@ for (const file of clientFiles) {
       continue;
     }
 
-    const matches = [...line.matchAll(/[`'"]((?:\/api|\/nra)\/[^`'"\s),>]*)/g)];
+    // Quoted strings are single-line; template literals are parsed from the
+    // whole file below because `${...}` expressions can span lines (R20-04).
+    const matches = [...line.matchAll(/['"]((?:\/api|\/nra)\/[^`'"\s),>]*)/g)];
     for (const match of matches) apiReferences.push({ file, ref: normalizeApiPath(match[1]), raw: match[1] });
+  }
+  for (const raw of templateLiteralApiPaths(lines.join('\n'))) {
+    apiReferences.push({ file, ref: normalizeApiPath(raw), raw });
   }
 }
 
