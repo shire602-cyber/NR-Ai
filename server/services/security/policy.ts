@@ -62,7 +62,10 @@ function matchSegs(pattern: string[], s: string[]): boolean {
 function matchRule(rules: readonly PathRule[], req: Request, path: string): boolean {
   const s = segs(path);
   return rules.some(
-    (r) => r.methods.includes(req.method.toUpperCase()) && matchSegs(r.pattern, s) && (!r.when || r.when(req))
+    (r) =>
+      r.methods.includes(req.method.toUpperCase()) &&
+      matchSegs(r.pattern, s) &&
+      (!r.when || r.when(req))
   );
 }
 
@@ -260,7 +263,8 @@ export async function securityPolicyMiddleware(
           const role = await getCompanyRole(user.id, companyId);
           if (policyCoversRole(policy, role)) {
             res.status(403).json({
-              message: "This company requires two-factor authentication. Set it up in Security settings.",
+              message:
+                "This company requires two-factor authentication. Set it up in Security settings.",
               code: "MFA_ENROLLMENT_REQUIRED",
               details: { companyId, policy, setupUrl: "/settings/security" },
             });

@@ -96,9 +96,9 @@ describe("R17-15 DNS pinning", () => {
         { address: "127.0.0.2", family: 4 },
       ],
     });
-    await expect(safeOutboundFetch(`http://mixed.test:${port}/x`, { method: "GET" })).rejects.toBeInstanceOf(
-      OutboundUrlBlockedError
-    );
+    await expect(
+      safeOutboundFetch(`http://mixed.test:${port}/x`, { method: "GET" })
+    ).rejects.toBeInstanceOf(OutboundUrlBlockedError);
     expect(seen).toHaveLength(0);
     const verdict = await validateOutboundUrl(`http://mixed.test:${port}/x`);
     expect(verdict.ok).toBe(false);

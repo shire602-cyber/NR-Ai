@@ -137,7 +137,9 @@ export function normalizeRecoveryCode(code: string): string {
 }
 
 export function hashRecoveryCode(code: string): string {
-  return createHash("sha256").update(`mfa-recovery:${normalizeRecoveryCode(code)}`).digest("hex");
+  return createHash("sha256")
+    .update(`mfa-recovery:${normalizeRecoveryCode(code)}`)
+    .digest("hex");
 }
 
 export async function regenerateRecoveryCodes(userId: string): Promise<string[]> {

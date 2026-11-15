@@ -121,9 +121,13 @@ END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_audit_logs_chain_seq" ON "audit_logs" ("chain_key", "seq");
 
--- New rows: chained in the inserting transaction under a per-chain advisory lock, so
--- concurrent inserts (from any writer: storage, the ledger kernel, raw SQL) form one
--- unbroken chain.
+-- New rows are chained in the inserting transaction under a per-chain advisory
+-- transaction lock (any writer: storage, the ledger kernel, raw SQL). The lock is TRIED,
+-- never waited for: a transaction that already holds it (e.g. a ledger posting that wrote
+-- its own audit row) must not deadlock against an audit insert made on another
+-- connection while it is still open. Such a row is stored unsealed (seq/hash NULL) and
+-- audit_seal_pending() appends it to the chain as soon as the lock is free (right after
+-- the insert, from the minute job, and before every verification).
 CREATE OR REPLACE FUNCTION audit_logs_chain_insert() RETURNS trigger LANGUAGE plpgsql AS $fn$
 DECLARE
   v_key text;
@@ -136,12 +140,20 @@ BEGIN
   v_key := COALESCE(NEW."company_id"::text, 'global');
   NEW."chain_key" := v_key;
   NEW."created_at" := date_trunc('milliseconds', COALESCE(NEW."created_at", now()::timestamp));
-  PERFORM pg_advisory_xact_lock(hashtextextended('audit_logs_chain:' || v_key, 0));
+  NEW."legacy" := false;
+  NEW."seq" := NULL;
+  NEW."prev_hash" := NULL;
+  NEW."hash" := NULL;
+  IF NOT pg_try_advisory_xact_lock(hashtextextended('audit_logs_chain:' || v_key, 0)) THEN
+    RETURN NEW; -- sealed later by audit_seal_pending()
+  END IF;
+  IF EXISTS (SELECT 1 FROM "audit_logs" WHERE "chain_key" = v_key AND "seq" IS NULL) THEN
+    RETURN NEW; -- older unsealed rows go first; keep chain order = sealing order
+  END IF;
   SELECT "seq", "hash" INTO v_prev_seq, v_prev_hash FROM "audit_logs"
-   WHERE "chain_key" = v_key ORDER BY "seq" DESC LIMIT 1;
+   WHERE "chain_key" = v_key AND "seq" IS NOT NULL ORDER BY "seq" DESC LIMIT 1;
   NEW."seq" := COALESCE(v_prev_seq, 0) + 1;
   NEW."prev_hash" := COALESCE(v_prev_hash, repeat('0', 64));
-  NEW."legacy" := false;
   NEW."hash" := audit_log_hash(v_key, NEW."seq", NEW."id", NEW."user_id", NEW."action",
     NEW."resource_type", NEW."resource_id", NEW."details", NEW."ip_address", NEW."user_agent",
     NEW."created_at", NEW."prev_hash");
@@ -153,13 +165,65 @@ DROP TRIGGER IF EXISTS "audit_logs_chain_insert" ON "audit_logs";
 CREATE TRIGGER "audit_logs_chain_insert" BEFORE INSERT ON "audit_logs"
   FOR EACH ROW EXECUTE FUNCTION audit_logs_chain_insert();
 
--- Append-only: UPDATE/DELETE are refused unless a maintenance session explicitly sets
--- muhasib.audit_maintenance = 'on' (SET LOCAL inside a reviewed transaction). Any such
--- change still breaks the hash chain and is reported by the verify endpoint.
+-- Seal committed unsealed rows of one chain in (created_at, id) order. Returns the number
+-- sealed, or -1 when another transaction holds the chain lock (try again later).
+CREATE OR REPLACE FUNCTION audit_seal_pending(p_chain text) RETURNS integer
+  LANGUAGE plpgsql AS $fn$
+DECLARE
+  r record;
+  v_seq bigint;
+  v_prev text;
+  v_hash text;
+  n integer := 0;
+BEGIN
+  IF NOT pg_try_advisory_xact_lock(hashtextextended('audit_logs_chain:' || p_chain, 0)) THEN
+    RETURN -1;
+  END IF;
+  SELECT "seq", "hash" INTO v_seq, v_prev FROM "audit_logs"
+   WHERE "chain_key" = p_chain AND "seq" IS NOT NULL ORDER BY "seq" DESC LIMIT 1;
+  v_seq := COALESCE(v_seq, 0);
+  v_prev := COALESCE(v_prev, repeat('0', 64));
+  PERFORM set_config('muhasib.audit_sealing', 'on', true);
+  FOR r IN
+    SELECT * FROM "audit_logs" WHERE "chain_key" = p_chain AND "seq" IS NULL
+     ORDER BY "created_at", "id"
+  LOOP
+    v_seq := v_seq + 1;
+    v_hash := audit_log_hash(p_chain, v_seq, r."id", r."user_id", r."action", r."resource_type",
+      r."resource_id", r."details", r."ip_address", r."user_agent", r."created_at", v_prev);
+    UPDATE "audit_logs" SET "seq" = v_seq, "prev_hash" = v_prev, "hash" = v_hash WHERE "id" = r."id";
+    v_prev := v_hash;
+    n := n + 1;
+  END LOOP;
+  PERFORM set_config('muhasib.audit_sealing', 'off', true);
+  RETURN n;
+END
+$fn$;
+
+-- Append-only: UPDATE/DELETE are refused, except (a) the sealer filling seq/prev_hash/hash
+-- of an unsealed row without touching its content, and (b) a maintenance session that sets
+-- muhasib.audit_maintenance = 'on' (SET LOCAL inside a reviewed transaction). Any change of
+-- type (b) still breaks the hash chain and is reported by the verify endpoint.
 CREATE OR REPLACE FUNCTION audit_logs_append_only() RETURNS trigger LANGUAGE plpgsql AS $fn$
 BEGIN
   IF COALESCE(current_setting('muhasib.audit_maintenance', true), '') = 'on' THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND COALESCE(current_setting('muhasib.audit_sealing', true), '') = 'on'
+     AND OLD."seq" IS NULL AND OLD."hash" IS NULL
+     AND NEW."id" = OLD."id"
+     AND NEW."user_id" IS NOT DISTINCT FROM OLD."user_id"
+     AND NEW."action" IS NOT DISTINCT FROM OLD."action"
+     AND NEW."resource_type" IS NOT DISTINCT FROM OLD."resource_type"
+     AND NEW."resource_id" IS NOT DISTINCT FROM OLD."resource_id"
+     AND NEW."details" IS NOT DISTINCT FROM OLD."details"
+     AND NEW."ip_address" IS NOT DISTINCT FROM OLD."ip_address"
+     AND NEW."user_agent" IS NOT DISTINCT FROM OLD."user_agent"
+     AND NEW."created_at" IS NOT DISTINCT FROM OLD."created_at"
+     AND NEW."company_id" IS NOT DISTINCT FROM OLD."company_id"
+     AND NEW."chain_key" IS NOT DISTINCT FROM OLD."chain_key" THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'audit_logs is append-only (% refused)', TG_OP USING ERRCODE = '42501';

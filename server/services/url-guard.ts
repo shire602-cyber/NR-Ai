@@ -344,7 +344,10 @@ export async function safeOutboundFetch(
       delete headers.authorization;
       delete headers.cookie;
     }
-    if (result.status === 303 || ((result.status === 301 || result.status === 302) && method === "POST")) {
+    if (
+      result.status === 303 ||
+      ((result.status === 301 || result.status === 302) && method === "POST")
+    ) {
       method = "GET";
       body = null;
       delete headers["content-type"];

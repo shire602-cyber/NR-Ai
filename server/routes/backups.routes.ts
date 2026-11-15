@@ -384,10 +384,7 @@ export function registerBackupRoutes(app: Express) {
         const plainSnapshot = decryptSecret(backup.dataSnapshot) ?? "";
         const snapshot = JSON.parse(plainSnapshot || "{}");
         if (backup.checksum) {
-          const actual = crypto
-            .createHash("sha256")
-            .update(plainSnapshot)
-            .digest("hex");
+          const actual = crypto.createHash("sha256").update(plainSnapshot).digest("hex");
           if (actual !== backup.checksum) {
             return res
               .status(409)

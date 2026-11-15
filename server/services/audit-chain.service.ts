@@ -79,6 +79,34 @@ export function chainKeyFor(companyId: string | null | undefined): string {
   return companyId ? companyId.toLowerCase() : "global";
 }
 
+/**
+ * Append committed unsealed rows to their chain (audit_seal_pending in migration 0109).
+ * Never waits for the chain lock: returns -1 when another transaction holds it, so it is
+ * safe to call from inside a request that is itself inside an open transaction.
+ */
+export async function sealAuditChain(chainKey: string): Promise<number> {
+  const { rows } = await sql<{ n: number }>(`SELECT audit_seal_pending($1) AS n`, [chainKey]);
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** Seal every chain that has pending rows (minute job "audit.sealChains"). */
+export async function sealAllAuditChains(): Promise<{ chains: number; sealed: number }> {
+  const { rows } = await sql<{ chain_key: string }>(
+    `SELECT DISTINCT chain_key FROM audit_logs WHERE seq IS NULL AND chain_key IS NOT NULL`
+  );
+  let sealed = 0;
+  for (const r of rows) sealed += Math.max(0, await sealAuditChain(r.chain_key));
+  return { chains: rows.length, sealed };
+}
+
+async function pendingCount(chainKey: string): Promise<number> {
+  const { rows } = await sql<{ n: string }>(
+    `SELECT count(*)::text AS n FROM audit_logs WHERE chain_key = $1 AND seq IS NULL`,
+    [chainKey]
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 const ROW_COLUMNS = `id::text AS id, chain_key, seq::text AS seq, user_id::text AS user_id, action,
   resource_type, resource_id, details, ip_address, user_agent,
   ((extract(epoch from created_at) * 1000)::bigint)::text AS created_ms, created_at,
@@ -98,6 +126,8 @@ export interface ChainVerification {
   headSeq: number;
   headHash: string | null;
   firstBroken: { seq: number; id: string; reason: ChainBreakReason } | null;
+  /** Rows written while the chain lock was busy and not yet appended (sealed within a minute). */
+  pendingRows: number;
   verifiedAt: string;
 }
 
@@ -107,6 +137,7 @@ export async function verifyAuditChain(
   opts: { batchSize?: number } = {}
 ): Promise<ChainVerification> {
   const chainKey = chainKeyFor(companyId);
+  await sealAuditChain(chainKey).catch(() => -1);
   const batch = opts.batchSize ?? 1000;
   let expectedSeq = 1;
   let prev = GENESIS_HASH;
@@ -160,6 +191,7 @@ export async function verifyAuditChain(
     headSeq: expectedSeq - 1,
     headHash,
     firstBroken,
+    pendingRows: await pendingCount(chainKey),
     verifiedAt: new Date().toISOString(),
   };
 }
@@ -197,7 +229,8 @@ export async function exportAuditChain(
   range: { from?: Date | null; to?: Date | null; limit?: number } = {}
 ): Promise<AuditExportRow[]> {
   const params: unknown[] = [chainKeyFor(companyId)];
-  const where: string[] = ["chain_key = $1"];
+  await sealAuditChain(chainKeyFor(companyId)).catch(() => -1);
+  const where: string[] = ["chain_key = $1", "audit_logs.seq IS NOT NULL"];
   if (range.from) {
     params.push(range.from);
     where.push(`created_at >= $${params.length}`);

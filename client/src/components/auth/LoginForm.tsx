@@ -35,7 +35,8 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 interface LoginFormProps {
-  onSuccess: (user: any) => void | Promise<void>;
+  /** W5-E: `result` is the full login body (it may be an MFA challenge without a user). */
+  onSuccess: (user: any, result?: Record<string, unknown>) => void | Promise<void>;
 }
 
 function currentEpochMs(): number {
@@ -103,7 +104,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       }
 
       const result = await response.json();
-      await onSuccess(result.user);
+      await onSuccess(result.user, result);
+      if (result?.mfaRequired) return; // the page asks for the second factor
 
       toast({
         title: "Welcome back!",

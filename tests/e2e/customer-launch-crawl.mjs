@@ -371,8 +371,8 @@ async function main() {
   });
   const registration = await loginRes.json().catch(() => ({}));
   const companiesRes = await page.request.get(`${BASE}/api/companies`);
-  const companies = await companiesRes.json().catch(() => []);
-  const firstCompany = Array.isArray(companies) ? companies[0] : null;
+  const registeredCompanies = await companiesRes.json().catch(() => []);
+  const firstCompany = Array.isArray(registeredCompanies) ? registeredCompanies[0] : null;
   runState.email = email;
   runState.userId = registration?.user?.id ?? null;
   runState.companyId = firstCompany?.id ?? null;

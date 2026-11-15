@@ -80,9 +80,7 @@ describe("W5-E audit hash chain", () => {
       `SELECT id, seq FROM audit_logs WHERE company_id = $1 ORDER BY seq OFFSET 1 LIMIT 1`,
       [t.company.id]
     );
-    await tamper(`UPDATE audit_logs SET action = action || '-edited' WHERE id = $1`, [
-      second.id,
-    ]);
+    await tamper(`UPDATE audit_logs SET action = action || '-edited' WHERE id = $1`, [second.id]);
     const verify = await t.as.get(`/api/companies/${t.company.id}/audit-log/verify`);
     expect(verify.body.ok).toBe(false);
     expect(verify.body.firstBroken).toMatchObject({
@@ -130,9 +128,10 @@ describe("W5-E audit hash chain", () => {
       [t.company.id]
     );
     expect(rows).toHaveLength(40);
-    const all = await h.sql(`SELECT seq::int AS seq FROM audit_logs WHERE company_id = $1 ORDER BY seq`, [
-      t.company.id,
-    ]);
+    const all = await h.sql(
+      `SELECT seq::int AS seq FROM audit_logs WHERE company_id = $1 ORDER BY seq`,
+      [t.company.id]
+    );
     expect(all.map((r) => r.seq)).toEqual(all.map((_, i) => i + 1));
     const verify = await t.as.get(`/api/companies/${t.company.id}/audit-log/verify`);
     expect(verify.body, JSON.stringify(verify.body)).toMatchObject({ ok: true, firstBroken: null });
@@ -174,16 +173,71 @@ describe("W5-E audit hash chain", () => {
   });
 });
 
+describe("W5-E audit chain lock never deadlocks", () => {
+  it("[R02-17] an audit insert on another connection while a transaction holds the chain lock completes and is sealed after commit", async () => {
+    const t = await h.createTenant({ name: "NoDeadlock" });
+    const { pool } = await import("../../server/db");
+    const { recordAudit } = await import("../../server/services/audit.service");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Like a ledger posting: the open transaction writes its own audit row first.
+      await client.query(
+        `INSERT INTO audit_logs (user_id, company_id, action, resource_type, resource_id, details)
+         VALUES ($1, $2, 'journal.create_posted', 'journal_entry', 'je-1', '{}')`,
+        [t.user.id, t.company.id]
+      );
+      // ...then something inside it calls recordAudit on the shared pool.
+      const started = Date.now();
+      await recordAudit({
+        userId: t.user.id,
+        companyId: t.company.id,
+        action: "test.inside_open_tx",
+        entityType: "test",
+        entityId: "x",
+      });
+      expect(Date.now() - started).toBeLessThan(3000);
+      const [pending] = await h.sql(
+        `SELECT seq, hash FROM audit_logs WHERE company_id = $1 AND action = 'test.inside_open_tx'`,
+        [t.company.id]
+      );
+      expect(pending.seq).toBeNull();
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+    const verify = await t.as.get(`/api/companies/${t.company.id}/audit-log/verify`);
+    expect(verify.body).toMatchObject({ ok: true, firstBroken: null, pendingRows: 0 });
+    const [sealed] = await h.sql(
+      `SELECT seq, hash FROM audit_logs WHERE company_id = $1 AND action = 'test.inside_open_tx'`,
+      [t.company.id]
+    );
+    expect(sealed.hash).toMatch(/^[0-9a-f]{64}$/);
+    // The sealer cannot be abused to rewrite content.
+    await expect(
+      h.sql(
+        `BEGIN; SET LOCAL muhasib.audit_sealing = 'on';
+         UPDATE audit_logs SET action = 'forged' WHERE company_id = '${t.company.id}'; COMMIT;`
+      )
+    ).rejects.toThrow(/append-only/);
+    await h.sql("ROLLBACK").catch(() => undefined);
+  });
+});
+
 describe("W5-E security events", () => {
   it("[R01-16] sign-in success/failure, lockout and password change are recorded; a new device+network raises a suspicious-login alert", async () => {
     const t = await h.createTenant({ name: "Events" });
-    const { onDomainEvent, drainDomainEvents } = await import("../../server/platform/domain-events");
+    const { onDomainEvent, drainDomainEvents } =
+      await import("../../server/platform/domain-events");
     const alerts: string[] = [];
     const off = onDomainEvent("security.suspicious_login", (e) => {
       alerts.push(e.payload.entityId);
     });
 
-    const failed = await h.anon.post("/api/auth/login", { email: t.email, password: "Wrong9Pass!" });
+    const failed = await h.anon.post("/api/auth/login", {
+      email: t.email,
+      password: "Wrong9Pass!",
+    });
     expect(failed.status).toBe(401);
     // Same device (node fetch) and network: not suspicious.
     const again = await h.anon.post("/api/auth/login", { email: t.email, password: t.password });
@@ -202,7 +256,10 @@ describe("W5-E security events", () => {
     expect(strange.status).toBe(200);
     await drainDomainEvents();
     off();
-    const dbg = await h.sql(`SELECT action, ip_address, user_agent FROM audit_logs WHERE user_id = $1`, [t.user.id]);
+    const dbg = await h.sql(
+      `SELECT action, ip_address, user_agent FROM audit_logs WHERE user_id = $1`,
+      [t.user.id]
+    );
     expect(alerts, JSON.stringify(dbg)).toEqual([t.user.id]);
 
     const actions = (

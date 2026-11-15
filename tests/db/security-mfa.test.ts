@@ -26,13 +26,18 @@ function codeAt(secret: string, base: number, steps: number): string {
   return generateSync({ secret, epoch: Math.floor(at / 1000) });
 }
 
-async function enrol(t: Tenant, base: number): Promise<{ secret: string; recoveryCodes: string[] }> {
+async function enrol(
+  t: Tenant,
+  base: number
+): Promise<{ secret: string; recoveryCodes: string[] }> {
   const start = await t.as.post("/api/auth/mfa/enroll", {});
   expect(start.status, start.text).toBe(200);
   expect(start.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\//);
   expect(start.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
   const secret = start.body.secret as string;
-  const confirm = await t.as.post("/api/auth/mfa/enroll/confirm", { code: codeAt(secret, base, 0) });
+  const confirm = await t.as.post("/api/auth/mfa/enroll/confirm", {
+    code: codeAt(secret, base, 0),
+  });
   expect(confirm.status, confirm.text).toBe(200);
   return { secret, recoveryCodes: confirm.body.recoveryCodes };
 }
@@ -157,7 +162,10 @@ describe("W5-E MFA login", () => {
     });
     expect(noPw.status).toBe(400);
     expect(noPw.body.code).toBe("CURRENT_PASSWORD_INVALID");
-    const noCode = await t.as.post("/api/auth/mfa/disable", { password: t.password, code: "000000" });
+    const noCode = await t.as.post("/api/auth/mfa/disable", {
+      password: t.password,
+      code: "000000",
+    });
     expect(noCode.status).toBe(400);
     const ok = await t.as.post("/api/auth/mfa/disable", {
       password: t.password,
@@ -285,9 +293,12 @@ describe("W5-E company MFA policy and step-up", () => {
     const key = await owner.as.post(`/api/companies/${owner.company.id}/api-keys`, { name: "k" });
     expect(key.status).toBe(403);
     expect(key.body.code).toBe("MFA_STEP_UP_REQUIRED");
-    const restore = await owner.as.post(`/api/backups/00000000-0000-4000-8000-000000000000/restore`, {
-      confirmRestore: true,
-    });
+    const restore = await owner.as.post(
+      `/api/backups/00000000-0000-4000-8000-000000000000/restore`,
+      {
+        confirmRestore: true,
+      }
+    );
     expect([403, 404]).toContain(restore.status);
     if (restore.status === 403) expect(restore.body.code).toBe("MFA_STEP_UP_REQUIRED");
   });

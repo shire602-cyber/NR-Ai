@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { RegisterForm } from "@/components/auth/RegisterForm";
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { establishAuthenticatedSession } from "@/lib/authSession";
@@ -179,6 +180,8 @@ export default function Register() {
       .catch(() => {});
   }, [setLocation, teamInvite]);
 
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+
   const handleSuccess = async (user: any) => {
     // R17-14: an email that is already registered gets a generic answer with
     // no session; tell the person what to do instead of failing silently.
@@ -218,7 +221,8 @@ export default function Register() {
               {notice}
             </p>
           )}
-          <RegisterForm onSuccess={handleSuccess} />
+          <TurnstileWidget onToken={setCaptchaToken} />
+          <RegisterForm onSuccess={handleSuccess} captchaToken={captchaToken} />
         </div>
       )}
     </AuthLayout>

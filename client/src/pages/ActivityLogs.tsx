@@ -19,6 +19,7 @@ import {
   LogIn,
   LogOut,
   Download,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,11 +43,27 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import type { ActivityLog, User as UserType, Company } from "@shared/schema";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { securityFetch } from "@/lib/securityApi";
 
 export default function ActivityLogs() {
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
+  const { t } = useTranslation();
+  // W5-E: verify the account-level ("global") tamper-evident audit chain.
+  const [chainStatus, setChainStatus] = useState<{
+    ok: boolean;
+    checked: number;
+    firstBroken: { seq: number; reason: string } | null;
+  } | null>(null);
+  const verifyGlobalChain = async () => {
+    try {
+      setChainStatus(await securityFetch("GET", "/api/admin/audit-log/verify"));
+    } catch {
+      setChainStatus(null);
+    }
+  };
 
   const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
     queryKey: ["/api/admin/activity-logs"],
@@ -160,12 +177,37 @@ export default function ActivityLogs() {
         testId="text-logs-title"
         description="Complete audit trail of all system activities"
         actions={
-          <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
-            <Download className="w-4 h-4 mr-2" />
-            <T k="pages.exportLogs" />
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={verifyGlobalChain}
+              data-testid="button-verify-global-chain"
+            >
+              <ShieldCheck className="w-4 h-4 me-2" />
+              <T k="security.auditVerify" />
+            </Button>
+            <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
+              <Download className="w-4 h-4 mr-2" />
+              <T k="pages.exportLogs" />
+            </Button>
+          </div>
         }
       />
+      {chainStatus && (
+        <p
+          className={`text-sm ${chainStatus.ok ? "" : "text-destructive"}`}
+          role="status"
+          data-testid="text-global-chain"
+        >
+          {chainStatus.ok
+            ? formatMessage(t["security.auditVerified"], { count: chainStatus.checked })
+            : formatMessage(t["security.auditBroken"], {
+                seq: chainStatus.firstBroken?.seq ?? "?",
+                reason: chainStatus.firstBroken?.reason ?? "",
+              })}
+        </p>
+      )}
 
       <Card>
         <CardHeader>

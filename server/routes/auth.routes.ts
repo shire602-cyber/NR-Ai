@@ -432,7 +432,15 @@ export function registerAuthRoutes(app: Express): void {
 
   /** Body of a successful sign-in (password, or password + second factor). */
   async function loginResponse(
-    user: { id: string; email: string; name: string; isAdmin: unknown; userType: string | null; emailVerified: boolean; createdAt: Date },
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      isAdmin: unknown;
+      userType: string | null;
+      emailVerified: boolean;
+      createdAt: Date;
+    },
     token: string,
     refreshToken: string
   ) {
@@ -646,9 +654,8 @@ export function registerAuthRoutes(app: Express): void {
     "/auth/mfa/verify-login",
     strictBody(mfaVerifyLoginSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const body = req.body as z.output<typeof mfaVerifyLoginSchema>;
-      const { code } = body;
-      const mfaToken = body.mfaToken ?? readCookie(req, mfaPendingCookie()) ?? "";
+      const { code, mfaToken: bodyToken } = req.body as z.output<typeof mfaVerifyLoginSchema>;
+      const mfaToken = bodyToken ?? readCookie(req, mfaPendingCookie()) ?? "";
       const pending = mfaToken ? verifyMfaPendingToken(mfaToken) : null;
       if (!pending || (await isTokenBlacklisted(mfaToken))) {
         return res.status(401).json({
@@ -1188,9 +1195,10 @@ export function registerAuthRoutes(app: Express): void {
     strictBody(z.object({})),
     asyncHandler(async (req: Request, res: Response) => {
       if (await isMfaEnabled(req.user!.id)) {
-        return res
-          .status(409)
-          .json({ message: "Two-factor authentication is already on", code: "MFA_ALREADY_ENABLED" });
+        return res.status(409).json({
+          message: "Two-factor authentication is already on",
+          code: "MFA_ALREADY_ENABLED",
+        });
       }
       const start = await beginEnrollment(req.user!.id, req.user!.email);
       res.json(start);
@@ -1207,7 +1215,9 @@ export function registerAuthRoutes(app: Express): void {
       const result = await confirmEnrollment(req.user!.id, code);
       if (!result.ok) {
         const status = result.code === "MFA_ALREADY_ENABLED" ? 409 : 400;
-        return res.status(status).json({ message: "Could not turn on two-factor authentication", code: result.code });
+        return res
+          .status(status)
+          .json({ message: "Could not turn on two-factor authentication", code: result.code });
       }
       await auditSecurityEvent(req, "mfa.enrolled", req.user!.id, {});
       const user = (await storage.getUser(req.user!.id))!;
@@ -1342,11 +1352,19 @@ export function registerAuthRoutes(app: Express): void {
         res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
         return res
           .status(429)
-          .json(retryAfterBody("Please wait before requesting another link.", "RATE_LIMITED", budget.retryAfterMs));
+          .json(
+            retryAfterBody(
+              "Please wait before requesting another link.",
+              "RATE_LIMITED",
+              budget.retryAfterMs
+            )
+          );
       }
       forgotPasswordBudget.recordFailure(key);
       const mail = await sendVerificationEmail(user);
-      await auditSecurityEvent(req, "auth.email_verification_sent", user.id, { status: mail.status });
+      await auditSecurityEvent(req, "auth.email_verification_sent", user.id, {
+        status: mail.status,
+      });
       res.json({ verified: false, sent: mail.status === "sent", status: mail.status });
     })
   );

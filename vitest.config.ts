@@ -10,6 +10,9 @@ const coverageRatchet = JSON.parse(
 ) as { thresholds: { statements: number; branches: number; functions: number; lines: number } };
 
 export default defineConfig({
+  // R20-14: tsconfig keeps `jsx: preserve` for Vite; client behaviour tests render real
+  // components, so tests transform JSX with the automatic runtime.
+  oxc: { jsx: { runtime: "automatic" } },
   test: {
     globals: true,
     environment: "node",

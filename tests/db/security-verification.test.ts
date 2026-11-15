@@ -37,9 +37,8 @@ afterEach(async () => {
   setEmailTransportOverride(null);
   const { __setCaptchaFetchForTests } = await import("../../server/services/security/captcha");
   __setCaptchaFetchForTests(null);
-  const { __setBreachedPasswordFetchForTests } = await import(
-    "../../server/services/security/breached-password"
-  );
+  const { __setBreachedPasswordFetchForTests } =
+    await import("../../server/services/security/breached-password");
   __setBreachedPasswordFetchForTests(null);
 });
 
@@ -108,7 +107,9 @@ describe("W5-E email verification", () => {
     // No email provider: never locked out, status reports enforcement off.
     restoreTime = freezeTime(Date.now() + 30 * 24 * 3600_000);
     const t2 = await h.createTenant({ name: "Grace2" });
-    await h.sql(`UPDATE users SET created_at = now() - interval '60 days' WHERE id = $1`, [t2.user.id]);
+    await h.sql(`UPDATE users SET created_at = now() - interval '60 days' WHERE id = $1`, [
+      t2.user.id,
+    ]);
     const overview = await t2.as.get("/api/auth/security/overview");
     expect(overview.body.emailVerification).toMatchObject({ enforced: false, verified: false });
     const allowed = await t2.as.post(`/api/companies/${t2.company.id}/team/invite`, {
@@ -216,9 +217,8 @@ describe("W5-E CAPTCHA adapter", () => {
 describe("W5-E breached-password adapter", () => {
   it("[R17-24] range API (k-anonymity) refuses a breached password and sends only a 5-char prefix", async () => {
     const { createHash } = await import("node:crypto");
-    const { __setBreachedPasswordFetchForTests } = await import(
-      "../../server/services/security/breached-password"
-    );
+    const { __setBreachedPasswordFetchForTests } =
+      await import("../../server/services/security/breached-password");
     const breached = "Breached9Password!";
     const sha = createHash("sha1").update(breached).digest("hex").toUpperCase();
     const urls: string[] = [];

@@ -19,10 +19,12 @@ import { adminMiddleware, authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
+import { listJobs, registerJob } from "../platform/job-registry";
 import { storage } from "../storage";
 import {
   auditRowsToCsv,
   exportAuditChain,
+  sealAllAuditChains,
   verifyAuditChain,
 } from "../services/audit-chain.service";
 import {
@@ -66,7 +68,9 @@ const CATEGORY_PREFIX: Record<string, string | undefined> = {
 
 function toDate(value: string | undefined, endOfDay = false): Date | undefined {
   if (!value) return undefined;
-  const d = new Date(value.length === 10 ? `${value}T${endOfDay ? "23:59:59.999" : "00:00:00"}Z` : value);
+  const d = new Date(
+    value.length === 10 ? `${value}T${endOfDay ? "23:59:59.999" : "00:00:00"}Z` : value
+  );
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
@@ -107,7 +111,21 @@ function presentRow(row: AuditLog, emails: Map<string, string>) {
   };
 }
 
+/** Minute job: append audit rows written while their chain lock was busy. Idempotent. */
+export function registerAuditSealJob(): void {
+  if (listJobs().some((j) => j.name === "audit.sealChains")) return;
+  registerJob({
+    name: "audit.sealChains",
+    cron: "* * * * *",
+    description: "Append pending audit-log rows to their tamper-evident hash chain",
+    run: async () => {
+      await sealAllAuditChains();
+    },
+  });
+}
+
 export function registerAuditRoutes(app: Express): void {
+  registerAuditSealJob();
   const router = Router();
 
   router.get(
@@ -119,8 +137,11 @@ export function registerAuditRoutes(app: Express): void {
       if (!parsed.success) return badQuery(res);
       const q = parsed.data;
       const rows = await storage.getCompanyAuditLogs(req.params.companyId, {
-        actions:
-          q.action ? [q.action] : q.category === "security" ? [...SECURITY_EVENT_ACTIONS] : undefined,
+        actions: q.action
+          ? [q.action]
+          : q.category === "security"
+            ? [...SECURITY_EVENT_ACTIONS]
+            : undefined,
         actionPrefix: q.action ? undefined : CATEGORY_PREFIX[q.category ?? "all"],
         userId: q.userId,
         from: toDate(q.from),
@@ -172,7 +193,11 @@ export function registerAuditRoutes(app: Express): void {
         companyId,
         resourceType: "audit_log",
         resourceId: companyId,
-        details: { operation: "audit_log.export", format: parsed.data.format ?? "csv", rows: rows.length },
+        details: {
+          operation: "audit_log.export",
+          format: parsed.data.format ?? "csv",
+          rows: rows.length,
+        },
       });
       const stamp = new Date().toISOString().slice(0, 10);
       if (parsed.data.format === "json") {
@@ -199,7 +224,12 @@ export function registerAuditRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const requireMfa = await getCompanyMfaPolicy(companyId);
-      const { rows } = await sql<{ user_id: string; email: string; role: string; mfa_enabled: boolean }>(
+      const { rows } = await sql<{
+        user_id: string;
+        email: string;
+        role: string;
+        mfa_enabled: boolean;
+      }>(
         `SELECT cu.user_id::text AS user_id, u.email, cu.role, u.mfa_enabled
            FROM company_users cu JOIN users u ON u.id = cu.user_id
           WHERE cu.company_id = $1

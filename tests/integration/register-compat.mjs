@@ -10,7 +10,12 @@ export function withRegisterLogin(rawApi, shape = { status: "status", body: "jso
   return async function api(method, path, opts = {}) {
     const r = await rawApi(method, path, opts);
     const body = r[shape.body];
-    if (method === "POST" && path === "/api/auth/register" && r[shape.status] === 200 && !body?.token) {
+    if (
+      method === "POST" &&
+      path === "/api/auth/register" &&
+      r[shape.status] === 200 &&
+      !body?.token
+    ) {
       const login = await rawApi("POST", "/api/auth/login", {
         body: { email: opts.body?.email, password: opts.body?.password },
       });
