@@ -2,18 +2,19 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
 import bcrypt from "bcryptjs";
-import rateLimit from "express-rate-limit";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes, createHash, randomUUID } from "crypto";
 import { z } from "zod";
 
 import { storage } from "../storage";
 import { getEnv } from "../config/env";
 import {
   authMiddleware,
+  clearAuthenticationCache,
   generateToken,
   generateRefreshToken,
   verifyRefreshToken,
-  decodeTokenUnsafe,
+  verifySignedToken,
+  REFRESH_TOKEN_TTL_MS,
 } from "../middleware/auth";
 import {
   clearAuthCookies,
@@ -21,14 +22,34 @@ import {
   getRefreshTokenFromRequest,
   setAuthCookies,
 } from "../services/auth-cookies.service";
-import { blacklistToken, isTokenBlacklisted } from "../services/auth-tokens.service";
-import { hasEmailProvider, sendPasswordResetEmail } from "../services/email.service";
+import {
+  blacklistToken,
+  createRefreshSession,
+  getRefreshSession,
+  hashToken,
+  isTokenBlacklisted,
+  listActiveSessions,
+  revokeAllUserTokens,
+  revokeRefreshSession,
+  rotateRefreshSession,
+} from "../services/auth-tokens.service";
+import { hasEmailProvider, sendEmail, sendPasswordResetEmail } from "../services/email.service";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
-import { insertUserSchema } from "../../shared/schema";
+import { strictBody } from "../http/strict-body";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
+import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
+import { getCapability } from "../../shared/capabilities";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
+import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
+import {
+  LockoutTracker,
+  clientIp,
+  credentialKey,
+  loginLockoutRules,
+  type LockoutStatus,
+} from "../middleware/rateLimit";
 import {
   consumeOAuthState,
   createOAuthAuthorizationUrl,
@@ -48,11 +69,74 @@ import {
 const log = createLogger("auth");
 
 function publicUser(user: any) {
-  const { passwordHash: _passwordHash, password: _password, ...safeUser } = user;
+  const {
+    passwordHash: _passwordHash,
+    password: _password,
+    tokenVersion: _tokenVersion,
+    ...safeUser
+  } = user;
   return safeUser;
 }
 
-async function createOAuthCustomer(profile: OAuthIdentityProfile) {
+// =============================================
+// Sessions and tokens
+// =============================================
+
+interface TokenUser {
+  id: string;
+  email: string;
+  isAdmin?: boolean;
+  userType?: string;
+  firmRole?: string | null;
+  tokenVersion?: number | null;
+}
+
+function sessionMeta(req: Request) {
+  return { userAgent: req.get("user-agent") ?? null, ipAddress: clientIp(req) };
+}
+
+/**
+ * Start a new device session: one refresh_sessions row, an access token and
+ * a refresh token that both carry its id (`sid`) and the user's current
+ * token version (`tv`).
+ */
+export async function issueAuthTokens(req: Request, res: Response, user: TokenUser) {
+  const sessionId = randomUUID();
+  const refreshToken = generateRefreshToken(user, sessionId);
+  await createRefreshSession(
+    user.id,
+    refreshToken,
+    new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+    sessionMeta(req),
+    sessionId
+  );
+  const token = generateToken(user, sessionId);
+  setAuthCookies(res, token, refreshToken);
+  return { token, refreshToken, sessionId };
+}
+
+async function auditSecurityEvent(
+  req: Request,
+  action: string,
+  userId: string | null,
+  details: Record<string, unknown>
+): Promise<void> {
+  try {
+    await storage.createAuditLog({
+      userId,
+      action,
+      resourceType: "user",
+      resourceId: userId,
+      details: JSON.stringify(details),
+      ipAddress: clientIp(req),
+      userAgent: req.get("user-agent") ?? null,
+    });
+  } catch (err) {
+    log.warn({ err, action }, "Failed to write security audit log");
+  }
+}
+
+async function createOAuthCustomer(req: Request, profile: OAuthIdentityProfile) {
   const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), 10);
   const user = await storage.createUser({
     name: profile.name,
@@ -63,43 +147,12 @@ async function createOAuthCustomer(profile: OAuthIdentityProfile) {
     emailVerified: true,
     avatarUrl: profile.picture,
   } as any);
-
-  const timestamp = Date.now().toString(36);
-  const company = await storage.createCompany({
-    name: `${profile.name}'s Company (${timestamp})`,
-    baseCurrency: "AED",
-    locale: "en",
-    companyType: "customer",
-  });
-
-  await storage.createCompanyUser({
-    companyId: company.id,
-    userId: user.id,
-    role: "owner",
-  });
-
-  await seedChartOfAccounts(company.id);
-
-  const now = new Date();
-  const periodEnd = new Date(now);
-  periodEnd.setFullYear(periodEnd.getFullYear() + 100);
-  await storage.createSubscription({
-    companyId: company.id,
-    planId: "free",
-    planName: "Free",
-    status: "active",
-    currentPeriodStart: now,
-    currentPeriodEnd: periodEnd,
-    maxUsers: 1,
-    maxInvoices: 20,
-    maxReceipts: 20,
-    aiCreditsRemaining: 10,
-  } as any);
-
+  await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
   return user;
 }
 
 async function resolveOAuthUser(
+  req: Request,
   profile: OAuthIdentityProfile
 ): Promise<{ user: any; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
   const identity = await getAuthIdentity(profile);
@@ -120,7 +173,7 @@ async function resolveOAuthUser(
     };
   }
 
-  const createdUser = await createOAuthCustomer(profile);
+  const createdUser = await createOAuthCustomer(req, profile);
   await linkAuthIdentity(createdUser.id, profile);
   await markOAuthLogin(createdUser.id, profile);
   return { user: (await storage.getUser(createdUser.id)) ?? createdUser, mode: "created_customer" };
@@ -138,56 +191,6 @@ function callbackUrlFromRequest(req: Request, provider: "google" | "microsoft"):
     }
   }
   return url;
-}
-
-async function auditOAuthLogin(
-  req: Request,
-  userId: string,
-  profile: OAuthIdentityProfile,
-  mode: string
-): Promise<void> {
-  try {
-    await storage.createAuditLog({
-      userId,
-      action: "login",
-      resourceType: "user",
-      resourceId: userId,
-      details: JSON.stringify({
-        method: "oauth",
-        provider: profile.provider,
-        mode,
-        email: profile.email,
-      }),
-      ipAddress: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    });
-  } catch (err) {
-    log.warn({ err, userId, provider: profile.provider }, "Failed to write OAuth audit log");
-  }
-}
-
-function issueAuthTokens(
-  res: Response,
-  user: { id: string; email: string; isAdmin?: boolean; userType?: string }
-) {
-  const token = generateToken(user);
-  const refreshToken = generateRefreshToken(user);
-  setAuthCookies(res, token, refreshToken);
-  return { token, refreshToken };
-}
-
-function loginRateLimitKey(req: Request): string {
-  const rawEmail = (req.body as { email?: unknown } | undefined)?.email;
-  const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "unknown";
-  return `${req.ip || "unknown"}:${email || "unknown"}`;
-}
-
-function retryAfterSeconds(req: Request, fallbackSeconds: number): number {
-  const resetTime = (req as any).rateLimit?.resetTime;
-  if (resetTime instanceof Date) {
-    return Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000));
-  }
-  return fallbackSeconds;
 }
 
 // =============================================
@@ -223,14 +226,94 @@ async function seedChartOfAccounts(
   }
 }
 
-// Stronger password validation for a financial system:
-// 8+ characters, at least one uppercase, one lowercase, one digit
-const passwordSchema = z
-  .string()
-  .min(8, "Password must be at least 8 characters")
-  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-  .regex(/[0-9]/, "Password must contain at least one digit");
+/** Company + owner membership + chart of accounts + free plan for a new customer. */
+async function provisionCustomerCompany(
+  userId: string,
+  companyName: string,
+  extra: { trnVatNumber?: string } = {}
+) {
+  const company = await storage.createCompany({
+    name: companyName,
+    baseCurrency: "AED",
+    locale: "en",
+    companyType: "customer", // Self-signup companies are customer type (not managed by NR)
+    ...(extra.trnVatNumber ? { trnVatNumber: extra.trnVatNumber } : {}),
+  } as any);
+
+  await storage.createCompanyUser({ companyId: company.id, userId, role: "owner" });
+  await seedChartOfAccounts(company.id);
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setFullYear(periodEnd.getFullYear() + 100); // Free tier never expires
+  await storage.createSubscription({
+    companyId: company.id,
+    planId: "free",
+    planName: "Free",
+    status: "active",
+    currentPeriodStart: now,
+    currentPeriodEnd: periodEnd,
+    maxUsers: 1,
+    maxInvoices: 20,
+    maxReceipts: 20,
+    aiCreditsRemaining: 10,
+  } as any);
+  return company;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "23505";
+}
+
+// ─── Request schemas ──────────────────────────────────────────────────────
+
+const registerBodySchema = z.object({
+  name: zText(100, { min: 1 }),
+  email: zEmail,
+  password: passwordPolicySchema,
+  companyName: zText(200).optional(),
+  trn: z
+    .string()
+    .trim()
+    .regex(/^\d{15}$/, "TRN must be exactly 15 digits")
+    .optional(),
+  phone: zText(40).optional(),
+});
+type RegisterBody = z.output<typeof registerBodySchema>;
+
+const loginBodySchema = z.object({
+  email: z.string().max(320),
+  password: z.string().max(1024),
+});
+
+const changePasswordBodySchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: passwordPolicySchema,
+});
+
+const acceptAdminInvitationSchema = z.object({
+  name: zText(100, { min: 1 }),
+  password: passwordPolicySchema,
+});
+
+/**
+ * R17-14: registration answers the same way whether or not the email is
+ * already registered: 200 with this message. A NEW address additionally
+ * gets a signed-in session (so login-after-register keeps working); an
+ * existing address gets no session and its owner is told by email when a
+ * provider is configured. The remaining signal (session present or not) is
+ * a documented trade-off until email verification gates sessions.
+ */
+const GENERIC_REGISTER_MESSAGE =
+  "If this email can be used, your account is ready. Check your inbox if you already have an account.";
+
+function retryAfterBody(message: string, code: string, retryAfterMs: number) {
+  return {
+    message,
+    code,
+    details: { retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) },
+  };
+}
 
 // =============================================
 // Route registration
@@ -239,6 +322,52 @@ const passwordSchema = z
 export function registerAuthRoutes(app: Express): void {
   const router = Router();
 
+  // Per-app trackers (rebuilt with the app; in-memory per instance).
+  const loginLockout = new LockoutTracker(loginLockoutRules());
+  const changePasswordLockout = new LockoutTracker(loginLockoutRules());
+  const forgotPasswordBudget = new LockoutTracker(loginLockoutRules());
+  const resetPasswordLockout = new LockoutTracker(loginLockoutRules());
+
+  // Dummy bcrypt hash generated once at startup. Used when the email is
+  // unknown so we still spend CPU on a comparison — this removes the
+  // timing signal that distinguishes "no such user" from "wrong password".
+  const DUMMY_HASH = bcrypt.hashSync("account_enumeration_placeholder", 10);
+
+  async function onLockout(
+    req: Request,
+    email: string,
+    user: { id: string; email: string } | undefined,
+    status: LockoutStatus
+  ): Promise<void> {
+    const retryAfterSeconds = Math.ceil(status.retryAfterMs / 1000);
+    await auditSecurityEvent(req, "auth.lockout", user?.id ?? null, {
+      email,
+      failures: status.failures,
+      retryAfterSeconds,
+    });
+    if (!user) return;
+    try {
+      await storage.createNotification({
+        userId: user.id,
+        companyId: null,
+        type: "system",
+        title: "Sign-in temporarily locked",
+        message: `Several failed sign-in attempts were made on your account. Sign-in is paused for about ${Math.ceil(retryAfterSeconds / 60)} minute(s). If this was not you, reset your password.`,
+        priority: "high",
+        actionUrl: "/settings",
+      } as any);
+    } catch (err) {
+      log.warn({ err, userId: user.id }, "Failed to create lockout notification");
+    }
+    if (hasEmailProvider()) {
+      void sendEmail(
+        user.email,
+        "Failed sign-in attempts on your account",
+        "We paused sign-in to your account after several failed password attempts. If this was not you, reset your password now."
+      ).catch(() => undefined);
+    }
+  }
+
   // =====================================
   // Auth Routes
   // =====================================
@@ -246,81 +375,70 @@ export function registerAuthRoutes(app: Express): void {
   // Customer self-signup (SaaS customers only - clients must use invitation)
   router.post(
     "/auth/register",
+    strictBody(registerBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const validated = insertUserSchema.parse(req.body);
+      const { ...body } = req.body as RegisterBody;
+      const existingUser = await storage.getUserByEmail(body.email);
+      const claimable =
+        !!existingUser &&
+        isPlaceholderPasswordHash(existingUser.passwordHash) &&
+        (await storage.getCompaniesByUserId(existingUser.id)).length === 0;
 
-      // Strengthen password validation (8+ chars)
-      passwordSchema.parse(validated.password);
+      // Hash first in every branch so timing does not reveal the outcome.
+      const passwordHash = await bcrypt.hash(body.password, 10);
 
-      // Check if user exists
-      const existingUser = await storage.getUserByEmail(validated.email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
+      if (existingUser && !claimable) {
+        await auditSecurityEvent(req, "auth.register_existing", existingUser.id, {
+          email: body.email,
+        });
+        if (hasEmailProvider()) {
+          void sendEmail(
+            existingUser.email,
+            "Someone tried to create an account with your email",
+            "Someone tried to register a new Muhasib account with this email address. You already have an account: sign in, or use 'Forgot password' if you cannot."
+          ).catch(() => undefined);
+        }
+        return res.json({ message: GENERIC_REGISTER_MESSAGE });
       }
 
-      // Hash password
-      const passwordHash = await bcrypt.hash(validated.password, 10);
+      // SECURITY: Force userType to 'customer' - never trust client-supplied userType.
+      let user;
+      try {
+        if (claimable && existingUser) {
+          await storage.updateUserPassword(existingUser.id, passwordHash);
+          user = await storage.updateUser(existingUser.id, { name: body.name });
+        } else {
+          user = await storage.createUser({
+            name: body.name,
+            email: body.email,
+            phone: body.phone,
+            userType: "customer", // FORCED: Self-signup users are always customers
+            isAdmin: false, // FORCED: Self-signup users cannot be admins
+            passwordHash,
+          } as any);
+        }
+      } catch (err) {
+        if (isUniqueViolation(err)) return res.json({ message: GENERIC_REGISTER_MESSAGE });
+        throw err;
+      }
 
-      // SECURITY: Force userType to 'customer' - never trust client-supplied userType
-      // Self-signup users can only be customers. Clients/admins must use invitation flow.
-      // NOTE: Do NOT pass raw password to storage - only pass the hash
-      const user = await storage.createUser({
-        name: validated.name,
-        email: validated.email,
-        userType: "customer", // FORCED: Self-signup users are always customers
-        isAdmin: false, // FORCED: Self-signup users cannot be admins
-        passwordHash,
-      } as any);
-
-      // Auto-create a default company for this user (marked as 'customer' type)
-      // Add timestamp to ensure uniqueness if user re-registers
-      const timestamp = Date.now().toString(36);
-      const companyName = `${validated.name}'s Company`;
-      const uniqueCompanyName = `${companyName} (${timestamp})`;
-      const company = await storage.createCompany({
-        name: uniqueCompanyName,
-        baseCurrency: "AED",
-        locale: "en",
-        companyType: "customer", // Self-signup companies are customer type (not managed by NR)
+      // R01-07: honour the supplied company name.
+      const companyName = body.companyName?.trim() || `${body.name}'s Company`;
+      const company = await provisionCustomerCompany(user.id, companyName, {
+        trnVatNumber: body.trn,
       });
 
-      // Associate user with company as owner
-      await storage.createCompanyUser({
-        companyId: company.id,
-        userId: user.id,
-        role: "owner",
-      });
-
-      // Seed Chart of Accounts for new company
-      await seedChartOfAccounts(company.id);
-
-      // Create free tier subscription for new customer
-      const now = new Date();
-      const periodEnd = new Date(now);
-      periodEnd.setFullYear(periodEnd.getFullYear() + 100); // Free tier never expires
-
-      await storage.createSubscription({
-        companyId: company.id,
-        planId: "free",
-        planName: "Free",
-        status: "active",
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEnd,
-        maxUsers: 1,
-        maxInvoices: 20,
-        maxReceipts: 20,
-        aiCreditsRemaining: 10,
-      });
-
-      const { token, refreshToken } = issueAuthTokens(res, user);
+      const fresh = (await storage.getUser(user.id)) ?? user;
+      const { token, refreshToken } = await issueAuthTokens(req, res, fresh);
 
       res.json({
+        message: GENERIC_REGISTER_MESSAGE,
         token,
         refreshToken,
         user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
+          id: fresh.id,
+          email: fresh.email,
+          name: fresh.name,
           isAdmin: false,
           userType: "customer",
         },
@@ -332,52 +450,50 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Login
-  // Dummy bcrypt hash generated once at startup. Used when the email is
-  // unknown so we still spend CPU on a comparison — this removes the
-  // timing signal that distinguishes "no such user" from "wrong password"
-  // and prevents email enumeration via response-time measurement.
-  const DUMMY_HASH = bcrypt.hashSync("account_enumeration_placeholder", 10);
-  const loginLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 8,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skipSuccessfulRequests: true,
-    keyGenerator: loginRateLimitKey,
-    handler: (req, res) => {
-      const retryAfter = retryAfterSeconds(req, 60);
-      res.setHeader("Retry-After", String(retryAfter));
-      res.status(429).json({
-        message: "Too many login attempts for this email. Please wait before trying again.",
-        details: { retryAfterSeconds: retryAfter },
-      });
-    },
-  });
-
+  // Login with per email+IP progressive lockout (R01-12): 5 failures in 15
+  // minutes, then 10 in an hour. Attempts made while locked are refused with
+  // 429 and are not counted, so retrying never extends the lockout.
   router.post(
     "/auth/login",
-    loginLimiter,
+    strictBody(loginBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { email, password } = req.body;
+      const { email, password } = req.body as z.output<typeof loginBodySchema>;
+      const key = credentialKey(req, email);
+      const lock = loginLockout.status(key);
+      if (lock.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(
+            retryAfterBody(
+              "Too many failed sign-in attempts for this email. Please wait before trying again.",
+              "ACCOUNT_LOCKED",
+              lock.retryAfterMs
+            )
+          );
+      }
 
       const user = await storage.getUserByEmail(email);
-
+      const usable = user && !isPlaceholderPasswordHash(user.passwordHash);
       // Always compare against *some* hash so the timing is constant.
-      const passwordToCheck = typeof password === "string" ? password : "";
-      const isValid = user
-        ? await bcrypt.compare(passwordToCheck, user.passwordHash)
-        : (await bcrypt.compare(passwordToCheck, DUMMY_HASH), false);
+      const isValid = usable
+        ? await bcrypt.compare(password, user.passwordHash)
+        : (await bcrypt.compare(password, DUMMY_HASH), false);
 
       if (!user || !isValid) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        const after = loginLockout.recordFailure(key);
+        if (after.lockedNow) await onLockout(req, email.trim().toLowerCase(), user, after);
+        return res
+          .status(401)
+          .json({ message: "Invalid credentials", code: "INVALID_CREDENTIALS" });
       }
+      loginLockout.reset(key);
 
       // Ensure isAdmin is a proper boolean
       const isAdminBoolean =
         user.isAdmin === true || (user.isAdmin as any) === "true" || (user.isAdmin as any) === 1;
 
-      const { token, refreshToken } = issueAuthTokens(res, user);
+      const { token, refreshToken } = await issueAuthTokens(req, res, user);
 
       res.json({
         token,
@@ -397,6 +513,15 @@ export function registerAuthRoutes(app: Express): void {
     "/auth/oauth/providers",
     asyncHandler(async (_req: Request, res: Response) => {
       res.json({ providers: getOAuthProviderInfo() });
+    })
+  );
+
+  // R01-15: SSO configuration status for the login page. SAML is not
+  // implemented; it is reported as requiring external IdP metadata.
+  router.get(
+    "/auth/sso/status",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(ssoStatus());
     })
   );
 
@@ -434,10 +559,15 @@ export function registerAuthRoutes(app: Express): void {
           callbackUrlFromRequest(req, provider),
           state
         );
-        const { user, mode } = await resolveOAuthUser(profile);
+        const { user, mode } = await resolveOAuthUser(req, profile);
 
-        issueAuthTokens(res, user);
-        await auditOAuthLogin(req, user.id, profile, mode);
+        await issueAuthTokens(req, res, user);
+        await auditSecurityEvent(req, "login", user.id, {
+          method: "oauth",
+          provider: profile.provider,
+          mode,
+          email: profile.email,
+        });
         log.info({ provider, userId: user.id, mode }, "OAuth login completed");
 
         return res.redirect(oauthCallbackSuccessUrl(state.nextPath));
@@ -449,9 +579,12 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Refresh token endpoint
+  // Refresh token endpoint. Rotates within the same device session; reusing
+  // a superseded refresh token revokes the whole session (theft detection).
   const handleRefreshToken = asyncHandler(async (req: Request, res: Response) => {
-    const refreshToken = req.body?.refreshToken || getRefreshTokenFromRequest(req);
+    const bodyToken = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
+    const refreshToken =
+      (typeof bodyToken === "string" && bodyToken) || getRefreshTokenFromRequest(req);
 
     if (!refreshToken) {
       return res.status(400).json({ message: "Refresh token is required" });
@@ -462,11 +595,11 @@ export function registerAuthRoutes(app: Express): void {
       return res.status(401).json({ message: "Invalid or expired refresh token" });
     }
 
-    // Revocation check — refresh tokens are long-lived (7d), so a
-    // denylist hit here is the main defence against a stolen refresh
-    // token being replayed after logout.
     if (await isTokenBlacklisted(refreshToken)) {
-      return res.status(401).json({ message: "Refresh token has been revoked" });
+      if (payload.sid) await revokeRefreshSession(payload.sid, { reuse: true });
+      return res
+        .status(401)
+        .json({ message: "Refresh token has been revoked", code: "TOKEN_REVOKED" });
     }
 
     // Verify user still exists in DB
@@ -474,12 +607,59 @@ export function registerAuthRoutes(app: Express): void {
     if (!user) {
       return res.status(401).json({ message: "User not found" });
     }
+    if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+      return res
+        .status(401)
+        .json({ message: "Refresh token has been revoked", code: "TOKEN_REVOKED" });
+    }
 
-    // Refresh-token rotation: revoke the one we just consumed so it
-    // cannot be replayed, and issue a fresh pair.
+    const meta = sessionMeta(req);
+    let sessionId = payload.sid;
+    if (sessionId) {
+      const session = await getRefreshSession(sessionId);
+      const presented = hashToken(refreshToken);
+      if (!session || session.userId !== user.id || session.revokedAt) {
+        return res
+          .status(401)
+          .json({ message: "Session has been revoked", code: "SESSION_REVOKED" });
+      }
+      if (session.tokenHash !== presented) {
+        if (session.replacedByTokenHash === presented) {
+          await revokeRefreshSession(sessionId, { reuse: true });
+          log.warn({ userId: user.id, sessionId }, "Refresh token reuse detected; session revoked");
+        }
+        return res
+          .status(401)
+          .json({ message: "Refresh token has been revoked", code: "TOKEN_REVOKED" });
+      }
+    }
+
+    // Rotation: the consumed token can never be replayed.
     await blacklistToken(refreshToken);
-    const newToken = generateToken(user);
-    const newRefreshToken = generateRefreshToken(user);
+    if (!sessionId) {
+      // Legacy refresh token (issued before sessions): start a session now.
+      sessionId = randomUUID();
+      const newRefresh = generateRefreshToken(user, sessionId);
+      await createRefreshSession(
+        user.id,
+        newRefresh,
+        new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+        meta,
+        sessionId
+      );
+      const newToken = generateToken(user, sessionId);
+      setAuthCookies(res, newToken, newRefresh);
+      return res.json({ token: newToken, refreshToken: newRefresh });
+    }
+    const newRefreshToken = generateRefreshToken(user, sessionId);
+    await rotateRefreshSession(
+      sessionId,
+      refreshToken,
+      newRefreshToken,
+      new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      meta
+    );
+    const newToken = generateToken(user, sessionId);
     setAuthCookies(res, newToken, newRefreshToken);
 
     res.json({
@@ -499,12 +679,29 @@ export function registerAuthRoutes(app: Express): void {
     createHash("sha256").update(token).digest("hex");
 
   // Request a password reset link. Always returns 200 so callers cannot
-  // discover whether a specific email is registered.
+  // discover whether a specific email is registered. Every request counts
+  // against an email+IP budget (5 per 15 minutes).
   router.post(
     "/auth/forgot-password",
     validate({ body: forgotPasswordSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { email } = req.body as { email: string };
+      const key = credentialKey(req, email);
+      const budget = forgotPasswordBudget.status(key);
+      if (budget.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(budget.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(
+            retryAfterBody(
+              "Too many reset requests for this email. Please wait before trying again.",
+              "RATE_LIMITED",
+              budget.retryAfterMs
+            )
+          );
+      }
+      forgotPasswordBudget.recordFailure(key);
+
       const user = await storage.getUserByEmail(email);
       const genericResponse = {
         message: "If that email is registered, a reset link has been sent.",
@@ -527,7 +724,7 @@ export function registerAuthRoutes(app: Express): void {
       const appUrl = (env.FRONTEND_URL || env.AUTH_PUBLIC_URL || "").replace(/\/+$/, "");
       const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
 
-      log.info({ userId: user.id, email }, "Password reset requested");
+      log.info({ userId: user.id }, "Password reset requested");
 
       if (env.NODE_ENV !== "production") {
         return res.json({ ...genericResponse, devResetUrl: resetUrl });
@@ -558,14 +755,30 @@ export function registerAuthRoutes(app: Express): void {
     validate({ body: resetPasswordSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { token, password } = req.body as { token: string; password: string };
-      passwordSchema.parse(password);
+      const key = `reset|${clientIp(req)}`;
+      const lock = resetPasswordLockout.status(key);
+      if (lock.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(
+            retryAfterBody(
+              "Too many invalid reset attempts. Please wait before trying again.",
+              "RATE_LIMITED",
+              lock.retryAfterMs
+            )
+          );
+      }
+      passwordPolicySchema.parse(password);
 
       const tokenHash = hashResetToken(token);
       const record = await storage.findValidPasswordResetToken(tokenHash);
 
       if (!record) {
+        resetPasswordLockout.recordFailure(key);
         return res.status(400).json({
           message: "This reset link is invalid or has expired. Please request a new one.",
+          code: "RESET_TOKEN_INVALID",
         });
       }
 
@@ -573,12 +786,118 @@ export function registerAuthRoutes(app: Express): void {
       await storage.updateUserPassword(record.userId, passwordHash);
       await storage.markPasswordResetTokenUsed(record.id);
       await storage.deletePasswordResetTokensForUser(record.userId);
+      // R01-06: every device signed in before the reset is signed out.
+      await revokeAllUserTokens(record.userId);
+      await auditSecurityEvent(req, "auth.password_reset", record.userId, {});
 
       log.info({ userId: record.userId }, "Password reset completed");
 
       res.json({
-        message: "Your password has been reset. You can now sign in with your new password.",
+        message:
+          "Your password has been reset and every other session was signed out. You can now sign in with your new password.",
       });
+    })
+  );
+
+  // R01-13: change password while signed in. Revokes every other session and
+  // token, then starts a fresh session for this device.
+  router.post(
+    "/auth/change-password",
+    authMiddleware as any,
+    strictBody(changePasswordBodySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = req.user!.id;
+      const { currentPassword, newPassword } = req.body as z.output<
+        typeof changePasswordBodySchema
+      >;
+      const key = `cp|${userId}`;
+      const lock = changePasswordLockout.status(key);
+      if (lock.locked) {
+        res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
+        return res
+          .status(429)
+          .json(
+            retryAfterBody(
+              "Too many failed attempts. Please wait before trying again.",
+              "ACCOUNT_LOCKED",
+              lock.retryAfterMs
+            )
+          );
+      }
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "User not found" });
+      const ok =
+        !isPlaceholderPasswordHash(user.passwordHash) &&
+        (await bcrypt.compare(currentPassword, user.passwordHash));
+      if (!ok) {
+        changePasswordLockout.recordFailure(key);
+        return res
+          .status(400)
+          .json({ message: "Current password is incorrect", code: "CURRENT_PASSWORD_INVALID" });
+      }
+      if (await bcrypt.compare(newPassword, user.passwordHash)) {
+        return res.status(400).json({
+          message: "Choose a password different from the current one",
+          code: "PASSWORD_UNCHANGED",
+        });
+      }
+      changePasswordLockout.reset(key);
+
+      await storage.updateUserPassword(userId, await bcrypt.hash(newPassword, 10));
+      await revokeAllUserTokens(userId);
+      await auditSecurityEvent(req, "auth.password_change", userId, {});
+      clearAuthenticationCache(req);
+
+      const fresh = (await storage.getUser(userId))!;
+      const { token, refreshToken } = await issueAuthTokens(req, res, fresh);
+      res.json({
+        message: "Password changed. Every other session was signed out.",
+        token,
+        refreshToken,
+      });
+    })
+  );
+
+  // R01-13: list and revoke device sessions.
+  router.get(
+    "/auth/sessions",
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      const sessions = await listActiveSessions(req.user!.id);
+      res.json({
+        sessions: sessions.map((s) => ({ ...s, current: s.id === req.authSessionId })),
+      });
+    })
+  );
+
+  router.delete(
+    "/auth/sessions/:sessionId",
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = zUuid.safeParse(req.params.sessionId);
+      if (!parsed.success) {
+        return res.status(404).json({ message: "Session not found", code: "NOT_FOUND" });
+      }
+      const revoked = await revokeRefreshSession(parsed.data, { userId: req.user!.id });
+      if (!revoked) {
+        return res.status(404).json({ message: "Session not found", code: "NOT_FOUND" });
+      }
+      await auditSecurityEvent(req, "auth.session_revoked", req.user!.id, {
+        sessionId: parsed.data,
+      });
+      if (parsed.data === req.authSessionId) clearAuthCookies(res);
+      res.json({ ok: true, current: parsed.data === req.authSessionId });
+    })
+  );
+
+  router.post(
+    "/auth/logout-all",
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      await revokeAllUserTokens(req.user!.id);
+      await auditSecurityEvent(req, "auth.logout_all", req.user!.id, {});
+      clearAuthCookies(res);
+      res.json({ ok: true });
     })
   );
 
@@ -595,32 +914,32 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Logout endpoint — revokes both the access token (from Authorization
-  // header) and the refresh token (from body) by adding their jti to the
-  // denylist table. Expired tokens are skipped; malformed tokens are a
-  // no-op (we still return 200 so the client proceeds with its local
-  // cleanup). Subsequent requests using either revoked token are
-  // rejected in authMiddleware.
+  // Logout endpoint — revokes the device session plus the access and refresh
+  // tokens presented. Malformed tokens are a no-op (we still return 200 so
+  // the client proceeds with its local cleanup).
   router.post(
     "/auth/logout",
     asyncHandler(async (req: Request, res: Response) => {
-      const revokeIfValid = async (raw: string | undefined, reason: string) => {
+      const revokeIfValid = async (raw: string | undefined) => {
         if (!raw) return;
-        const decoded = decodeTokenUnsafe(raw);
-        if (!decoded?.exp) return;
-        if (decoded.exp * 1000 < Date.now()) return; // already expired
+        const decoded = verifySignedToken(raw);
+        if (!decoded?.exp) return; // invalid or already expired
         await blacklistToken(raw);
+        if (decoded.sid) await revokeRefreshSession(decoded.sid, { userId: decoded.userId });
       };
 
       const authHeader = req.headers.authorization;
       const accessToken =
         getAccessTokenFromRequest(req) ||
         (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : undefined);
+      const bodyToken = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
       const refreshToken: string | undefined =
-        req.body?.refreshToken || getRefreshTokenFromRequest(req) || undefined;
+        (typeof bodyToken === "string" && bodyToken) ||
+        getRefreshTokenFromRequest(req) ||
+        undefined;
 
-      await revokeIfValid(accessToken, "logout");
-      await revokeIfValid(refreshToken, "logout");
+      await revokeIfValid(accessToken);
+      await revokeIfValid(refreshToken);
       clearAuthCookies(res);
 
       res.json({ ok: true });
@@ -628,7 +947,7 @@ export function registerAuthRoutes(app: Express): void {
   );
 
   // =====================================
-  // PUBLIC - INVITATION ACCEPTANCE
+  // PUBLIC - INVITATION ACCEPTANCE (admin-created client invitations)
   // =====================================
 
   // Verify invitation token (public endpoint)
@@ -668,15 +987,10 @@ export function registerAuthRoutes(app: Express): void {
   // Accept invitation and create account (public endpoint)
   router.post(
     "/invitations/accept/:token",
+    strictBody(acceptAdminInvitationSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
-      const { name, password } = req.body;
-
-      const nameSchema = z.string().min(1, "Name is required").max(100, "Name too long");
-      nameSchema.parse(name);
-
-      // Strengthen password validation (8+ chars)
-      passwordSchema.parse(password);
+      const { name, password } = req.body as z.output<typeof acceptAdminInvitationSchema>;
 
       const invitation = await storage.getInvitationByToken(token);
 
@@ -741,7 +1055,7 @@ export function registerAuthRoutes(app: Express): void {
         description: `User registered via invitation: ${user.email}`,
       });
 
-      const { token: jwtToken, refreshToken } = issueAuthTokens(res, user);
+      const { token: jwtToken, refreshToken } = await issueAuthTokens(req, res, user);
 
       res.json({ user: publicUser(user), token: jwtToken, refreshToken });
     })
@@ -749,4 +1063,27 @@ export function registerAuthRoutes(app: Express): void {
 
   // Mount all auth routes under /api
   app.use("/api", router);
+}
+
+/** OAuth providers + SAML capability, for the login page and the admin endpoint. */
+export function ssoStatus() {
+  const saml = getCapability("saml");
+  return {
+    providers: getOAuthProviderInfo().map((p) => ({
+      id: p.id,
+      label: p.label,
+      configured: p.configured,
+      status: p.configured ? "live" : "disabled",
+    })),
+    saml: {
+      id: "saml",
+      // No SAML implementation exists yet: even with IdP metadata in env the
+      // flow is not built, so the status stays requires_external.
+      status: "requires_external" as const,
+      implemented: false,
+      configuredEnv: saml.status === "live",
+      label: saml.label,
+      externalAction: saml.externalAction,
+    },
+  };
 }

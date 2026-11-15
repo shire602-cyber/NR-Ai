@@ -1,6 +1,40 @@
 import { apiUrl } from "./api";
 import { clearCsrfToken, withCsrfHeader } from "./csrf";
 import { clearAllCaches, clearPwaSessionMarker, rotatePwaSessionMarker } from "./pwa";
+import type { CompanyRole, Permission } from "@shared/permissions";
+
+export {
+  COMPANY_ROLES,
+  COMPANY_ROLE_LABELS,
+  COMPANY_ROLE_DESCRIPTIONS,
+  roleHasPermission,
+} from "@shared/permissions";
+export type { CompanyRole, Permission } from "@shared/permissions";
+
+/**
+ * The signed-in user's access in one company, from
+ * GET /api/companies/:companyId/team/me. The server enforces every
+ * permission (server/middleware/companyRolePolicy.ts); the UI uses this only
+ * to hide or disable actions the user cannot take.
+ */
+export interface CompanyAccess {
+  role: CompanyRole | null;
+  permissions: Permission[];
+  grantableRoles: CompanyRole[];
+  viaFirmAccess: boolean;
+}
+
+/** UI gating helper: true when `access` includes `permission`. */
+export function canPerform(
+  access: CompanyAccess | null | undefined,
+  permission: Permission
+): boolean {
+  return !!access && access.permissions.includes(permission);
+}
+
+export function companyAccessQueryKey(companyId: string | null | undefined) {
+  return ["/api/companies", companyId, "team", "me"] as const;
+}
 
 const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";

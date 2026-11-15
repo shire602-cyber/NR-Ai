@@ -43,7 +43,11 @@ describe("migrations", () => {
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
       expect(body).toMatch(/^-- .*owned by workstream W\d-[A-E]/m);
-      expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      // Files still marked as a reserved placeholder must stay a no-op; a
+      // workstream that fills its file drops the marker.
+      if (/^-- .*reserved placeholder/m.test(body)) {
+        expect(body.replace(/^--.*$/gm, "").trim()).toBe("SELECT 1;");
+      }
     }
   });
 

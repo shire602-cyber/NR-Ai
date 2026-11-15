@@ -26,6 +26,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { ArrowLeft, Briefcase, CheckCircle2, KeyRound } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
+
+/** R01-06: a reset signs out every device that was signed in before it. */
+const RESET_COPY = {
+  signedOut: {
+    en: "For your security, every device that was signed in to your account has been signed out.",
+    ar: "لحماية حسابك، تم تسجيل الخروج من جميع الأجهزة التي كانت متصلة بحسابك.",
+  },
+};
 
 const resetSchema = z
   .object({
@@ -46,6 +55,7 @@ function getTokenFromUrl(): string {
 }
 
 export default function ResetPassword() {
+  const { locale } = useTranslation();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
@@ -137,8 +147,9 @@ export default function ResetPassword() {
               <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
               <div className="text-sm">
                 <p className="font-medium text-success-subtle-foreground ">Password reset</p>
-                <p className="text-success mt-0.5">
-                  Redirecting you to sign in…
+                <p className="text-success mt-0.5">Redirecting you to sign in…</p>
+                <p className="text-muted-foreground mt-1" data-testid="text-sessions-revoked">
+                  {locale === "ar" ? RESET_COPY.signedOut.ar : RESET_COPY.signedOut.en}
                 </p>
               </div>
             </div>

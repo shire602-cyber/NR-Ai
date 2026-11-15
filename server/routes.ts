@@ -11,6 +11,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createLogger } from "./config/logger";
+import { companyRolePolicy } from "./middleware/companyRolePolicy";
 
 // ─── Route modules ──────────────────────────────────────────
 import { registerAuthRoutes } from "./routes/auth.routes";
@@ -91,6 +92,12 @@ const log = createLogger("routes");
 
 export async function registerRoutes(app: Express): Promise<Server> {
   log.info("Registering route modules...");
+
+  // ─── Central company-role policy (W2-C, R01-02) ─────────
+  // Runs before every route module: resolves the permission for METHOD+path
+  // and the company the request acts on, then checks the caller's
+  // company_users role. See server/middleware/companyRolePolicy.ts.
+  app.use("/api", companyRolePolicy);
 
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);

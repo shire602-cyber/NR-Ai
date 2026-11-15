@@ -46,11 +46,36 @@ export async function withDocumentLock<T>(
   namespace: number,
   fn: (tx: typeof db) => Promise<T>
 ): Promise<T> {
-  return await db.transaction(async (tx: typeof db) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${namespace}, ${lockKey(documentId)})`);
-    return await fn(tx);
-  });
+  // Waiters must not hold a pool connection while they wait: `fn` may read
+  // through the global `db` (a second connection), so N callers blocked in
+  // pg_advisory_xact_lock could hold every connection while the lock holder
+  // waits for one (pool starvation). Try the lock, and if it is busy roll
+  // back (releasing the connection) and retry with a short jittered backoff.
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (let attempt = 0; ; attempt++) {
+    const result = await db.transaction(async (tx: typeof db) => {
+      const res: any = await tx.execute(
+        sql`SELECT pg_try_advisory_xact_lock(${namespace}, ${lockKey(documentId)}) AS locked`
+      );
+      const row = (res?.rows ?? res)?.[0];
+      if (!row?.locked) return LOCK_BUSY;
+      return { value: await fn(tx) };
+    });
+    if (result !== LOCK_BUSY) return (result as { value: T }).value;
+    if (Date.now() > deadline) {
+      throw Object.assign(new Error("Document is busy; please retry"), {
+        statusCode: 409,
+        code: "DOCUMENT_LOCK_TIMEOUT",
+      });
+    }
+    await new Promise((r) =>
+      setTimeout(r, Math.min(100, 5 * 2 ** Math.min(attempt, 4)) + Math.random() * 10)
+    );
+  }
 }
+
+const LOCK_BUSY = Symbol("document-lock-busy");
+const LOCK_WAIT_MS = 30_000;
 
 /** Lock namespaces — keep distinct so unrelated guards never collide. */
 export const LOCK_NS = {
