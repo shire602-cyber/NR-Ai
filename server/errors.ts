@@ -127,3 +127,33 @@ export class ExternalServiceError extends AppError {
     });
   }
 }
+
+/**
+ * Domain/business-rule failure with a stable machine code. Prefer this over
+ * ad-hoc `res.status(x).json(...)` in new code:
+ *
+ *   throw new DomainError("PERIOD_LOCKED", 409, { period: "2026-03" });
+ *
+ * The global error handler renders `{ message, code, details?, requestId }`
+ * with `httpStatus`. `code` is UPPER_SNAKE_CASE and part of the API contract.
+ */
+export class DomainError extends AppError {
+  constructor(code: string, httpStatus = 400, details?: unknown, message?: string) {
+    super({
+      message: message ?? humanizeCode(code),
+      statusCode: httpStatus,
+      code,
+      details,
+      isOperational: true,
+    });
+  }
+
+  get httpStatus(): number {
+    return this.statusCode;
+  }
+}
+
+function humanizeCode(code: string): string {
+  const words = code.toLowerCase().replace(/_/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Request failed";
+}

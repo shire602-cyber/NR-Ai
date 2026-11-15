@@ -1,4 +1,3 @@
-import cron from "node-cron";
 import { sql, eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
@@ -13,6 +12,7 @@ import { allocateInvoiceNumber } from "./invoice-numbering.service";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
+import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
 
 const log = createLogger("scheduler");
 
@@ -170,72 +170,86 @@ function buildWhatsAppLink(phone: string | undefined | null, message: string): s
 // Scheduler entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Built-in jobs owned by this module. Other modules call registerJob()
+ * themselves (server/platform/job-registry.ts); initScheduler only starts
+ * what is registered, each with per-job try/catch and overlap protection.
+ */
+function registerBuiltInJobs() {
+  const builtIns = [
+    {
+      // Hourly: scan for payment-related engagement triggers
+      name: "engagement.paymentReminderScan",
+      cron: "0 * * * *",
+      run: async () => {
+        log.info("Running hourly payment reminder scan...");
+        await scanPaymentReminders();
+        log.info("Hourly payment reminder scan complete");
+      },
+    },
+    {
+      // Every 30 minutes: autonomous GL classification scan
+      name: "gl.autonomousClassificationScan",
+      cron: "*/30 * * * *",
+      run: async () => {
+        log.info("Running autonomous GL classification scan...");
+        try {
+          const { scanAndClassifyAllCompanies } = await import("../services/autonomous-gl.service");
+          await scanAndClassifyAllCompanies();
+          log.info("Autonomous GL classification scan complete");
+        } catch (err: unknown) {
+          const code = (err as { code?: unknown } | null)?.code;
+          // If the module doesn't exist yet, log and skip gracefully
+          if (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") {
+            log.info("autonomous-gl.service not available yet — skipping GL scan");
+            return;
+          }
+          throw err;
+        }
+      },
+    },
+    {
+      // Daily at 06:00 UTC: generate recurring invoices that are due
+      name: "invoices.recurringGeneration",
+      cron: "0 6 * * *",
+      run: async () => {
+        log.info("Running daily recurring invoice generation...");
+        await generateDueRecurringInvoices();
+        log.info("Daily recurring invoice generation complete");
+      },
+    },
+    {
+      // Hourly: sweep expired auth tokens (blacklist, password reset, email verify)
+      name: "auth.expiredTokenSweep",
+      cron: "15 * * * *",
+      run: async () => {
+        const result = await purgeExpiredAuthTokens();
+        if (result.blacklist + result.passwordReset + result.emailVerification > 0) {
+          log.info(result, "Purged expired auth tokens");
+        }
+      },
+    },
+    {
+      // Hourly: queue due report delivery subscriptions after readiness checks
+      name: "reports.deliveryScan",
+      cron: "20 * * * *",
+      run: async () => {
+        log.info("Running report delivery subscription scan...");
+        await scanDueReportDeliveries();
+        log.info("Report delivery subscription scan complete");
+      },
+    },
+  ];
+  const already = new Set(listJobs().map((j) => j.name));
+  for (const job of builtIns) if (!already.has(job.name)) registerJob(job);
+}
+
 export function initScheduler() {
   log.info("Initializing background scheduler...");
-
-  // Run every hour: scan for payment-related engagement triggers
-  cron.schedule("0 * * * *", async () => {
-    try {
-      log.info("Running hourly payment reminder scan...");
-      await scanPaymentReminders();
-      log.info("Hourly payment reminder scan complete");
-    } catch (err) {
-      log.error({ err }, "Scheduler error during payment reminder scan");
-    }
-  });
-
-  // Run every 30 minutes: autonomous GL classification scan
-  cron.schedule("*/30 * * * *", async () => {
-    try {
-      log.info("Running autonomous GL classification scan...");
-      const { scanAndClassifyAllCompanies } = await import("../services/autonomous-gl.service");
-      await scanAndClassifyAllCompanies();
-      log.info("Autonomous GL classification scan complete");
-    } catch (err: any) {
-      // If the module doesn't exist yet, log and skip gracefully
-      if (err?.code === "MODULE_NOT_FOUND" || err?.code === "ERR_MODULE_NOT_FOUND") {
-        log.info("autonomous-gl.service not available yet — skipping GL scan");
-      } else {
-        log.error({ err }, "Scheduler error during autonomous GL scan");
-      }
-    }
-  });
-
-  // Run daily at 06:00 UTC: generate recurring invoices that are due
-  cron.schedule("0 6 * * *", async () => {
-    try {
-      log.info("Running daily recurring invoice generation...");
-      await generateDueRecurringInvoices();
-      log.info("Daily recurring invoice generation complete");
-    } catch (err) {
-      log.error({ err }, "Scheduler error during recurring invoice generation");
-    }
-  });
-
-  // Run hourly: sweep expired auth tokens (blacklist, password reset, email verify)
-  cron.schedule("15 * * * *", async () => {
-    try {
-      const result = await purgeExpiredAuthTokens();
-      if (result.blacklist + result.passwordReset + result.emailVerification > 0) {
-        log.info(result, "Purged expired auth tokens");
-      }
-    } catch (err) {
-      log.error({ err }, "Scheduler error during auth token sweep");
-    }
-  });
-
-  // Run hourly: queue due report delivery subscriptions after readiness checks
-  cron.schedule("20 * * * *", async () => {
-    try {
-      log.info("Running report delivery subscription scan...");
-      await scanDueReportDeliveries();
-      log.info("Report delivery subscription scan complete");
-    } catch (err) {
-      log.error({ err }, "Scheduler error during report delivery scan");
-    }
-  });
-
+  registerBuiltInJobs();
+  const started = startRegisteredJobs();
   log.info(
+    { jobs: started },
     "Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly, report delivery scan hourly"
   );
 }

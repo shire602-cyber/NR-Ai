@@ -15,6 +15,9 @@ import { generateSIFFile } from "../services/wps-sif.service";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import { strictBody } from "../http/strict-body";
+import { DomainError } from "../errors";
+import { zDate, zUuid } from "../../shared/validators/primitives";
 
 const log = createLogger("payroll");
 
@@ -73,21 +76,47 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-// Calendar-correct anniversary walk: how many full years elapsed between
+// R09-01: hard ceiling on service length. Nothing can iterate on it, but it
+// also bounds the arithmetic for absurd stored dates.
+const MAX_SERVICE_YEARS = 100;
+
+function isValidDate(d: unknown): d is Date {
+  return d instanceof Date && !Number.isNaN(d.getTime());
+}
+
+/**
+ * Calendar-correct completed anniversaries between `start` and `end`, by
+ * date arithmetic (no loop — R09-01: the old `while (true)` walk never
+ * terminated when either date was NaN). Returns the last anniversary reached
+ * so callers can count the trailing partial year. Invalid dates or
+ * end <= start → 0 years.
+ */
+export function completedAnniversaries(
+  start: Date,
+  end: Date
+): { years: number; lastAnniversary: Date } {
+  if (!isValidDate(start) || !isValidDate(end) || end.getTime() <= start.getTime()) {
+    return { years: 0, lastAnniversary: isValidDate(start) ? new Date(start) : new Date(NaN) };
+  }
+  const addYears = (n: number) => {
+    const d = new Date(start);
+    d.setFullYear(d.getFullYear() + n);
+    return d;
+  };
+  let years = Math.min(end.getFullYear() - start.getFullYear(), MAX_SERVICE_YEARS);
+  let anniversary = addYears(years);
+  if (anniversary.getTime() > end.getTime()) {
+    years -= 1;
+    anniversary = addYears(years);
+  }
+  years = Math.max(0, years);
+  return { years, lastAnniversary: years === 0 ? new Date(start) : anniversary };
+}
+
+// Calendar-correct anniversary count: how many full years elapsed between
 // `start` and `end`. Used to pick the 21-day vs 30-day gratuity tier.
 function completedYearsBetween(start: Date, end: Date): number {
-  if (!(start instanceof Date) || isNaN(start.getTime())) return 0;
-  if (end.getTime() <= start.getTime()) return 0;
-  let cursor = new Date(start);
-  let years = 0;
-  while (true) {
-    const next = new Date(cursor);
-    next.setFullYear(next.getFullYear() + 1);
-    if (next.getTime() > end.getTime()) break;
-    cursor = next;
-    years++;
-  }
-  return years;
+  return completedAnniversaries(start, end).years;
 }
 
 // Last day of the given (1-indexed) payroll period, in UTC. Day 0 of month
@@ -125,6 +154,17 @@ const employeeCreateSchema = z.object({
   otherAllowance: z.coerce.number().nonnegative().default(0),
   status: z.enum(["active", "inactive", "terminated"]).optional(),
 });
+
+// ─── Zod: gratuity calculator payload (R09-01) ─────────────
+const gratuityCalculatorBodySchema = z.object({
+  employeeId: zUuid,
+  // "" from an empty <input type="date"> means "today".
+  terminationDate: z.preprocess(
+    (v) => (v === "" || v === null ? undefined : v),
+    zDate.optional()
+  ),
+});
+type GratuityCalculatorBody = z.output<typeof gratuityCalculatorBodySchema>;
 
 interface PayrollLineCalc {
   basic: number;
@@ -213,7 +253,7 @@ function calculatePayrollLine(input: {
  * Year-counting uses calendar anniversaries (completed years) plus a
  * day-rated trailing partial year — the law does not use 365.25-day approx.
  */
-function calculateGratuityForEmployee(opts: {
+export function calculateGratuityForEmployee(opts: {
   joinDate: Date;
   endDate: Date;
   basicSalary: number;
@@ -239,16 +279,24 @@ function calculateGratuityForEmployee(opts: {
     };
   }
 
-  // Step 1: completed years via anniversary walk (calendar-correct).
-  let cursor = new Date(joinDate);
-  let completedYears = 0;
-  while (true) {
-    const next = new Date(cursor);
-    next.setFullYear(next.getFullYear() + 1);
-    if (next.getTime() > endDate.getTime()) break;
-    cursor = next;
-    completedYears++;
+  // R09-01: refuse invalid or inverted dates instead of computing on NaN.
+  if (!isValidDate(joinDate) || !isValidDate(endDate)) {
+    throw new DomainError("INVALID_DATE", 400, undefined, "Join and termination dates must be valid");
   }
+  if (endDate.getTime() < joinDate.getTime()) {
+    throw new DomainError(
+      "TERMINATION_BEFORE_JOIN",
+      400,
+      undefined,
+      "Termination date cannot be before the join date"
+    );
+  }
+
+  // Step 1: completed years via calendar anniversaries (bounded arithmetic).
+  const { years: completedYears, lastAnniversary: cursor } = completedAnniversaries(
+    joinDate,
+    endDate
+  );
 
   // Step 2: trailing partial-year days.
   const msPerDay = 1000 * 60 * 60 * 24;
@@ -1423,11 +1471,14 @@ export function registerPayrollRoutes(app: Express) {
   // GRATUITY CALCULATOR
   // =============================================
 
-  // Calculate end-of-service gratuity per UAE labor law
+  // Calculate end-of-service gratuity per UAE labor law.
+  // R09-01: the body is validated before any date arithmetic — "garbage",
+  // 2025-13-01, 11/13/2026 etc. answer 400 VALIDATION_ERROR immediately.
   app.post(
     "/api/companies/:companyId/payroll/gratuity-calculator",
     authMiddleware,
     requireCustomer,
+    strictBody(gratuityCalculatorBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -1437,11 +1488,7 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { employeeId, terminationDate } = req.body;
-
-      if (!employeeId) {
-        return res.status(400).json({ message: "employeeId is required" });
-      }
+      const { employeeId, terminationDate } = req.body as GratuityCalculatorBody;
 
       const employee = await queryOne("SELECT * FROM employees WHERE id = $1 AND company_id = $2", [
         employeeId,
@@ -1457,6 +1504,17 @@ export function registerPayrollRoutes(app: Express) {
 
       const joinDate = new Date(employee.join_date);
       const endDate = terminationDate ? new Date(terminationDate) : new Date();
+      if (!isValidDate(joinDate)) {
+        return res
+          .status(400)
+          .json({ message: "Employee join date is invalid", code: "INVALID_JOIN_DATE" });
+      }
+      if (endDate.getTime() < joinDate.getTime()) {
+        return res.status(400).json({
+          message: "Termination date cannot be before the join date",
+          code: "TERMINATION_BEFORE_JOIN",
+        });
+      }
       const basicSalary = parseFloat(employee.basic_salary) || 0;
       const housing = parseFloat(employee.housing_allowance) || 0;
       const transport = parseFloat(employee.transport_allowance) || 0;

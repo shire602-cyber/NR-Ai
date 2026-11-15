@@ -19,7 +19,11 @@ import { createLogger } from "./config/logger";
 import { applySecurityMiddleware } from "./middleware/security";
 import { requestId } from "./middleware/requestId";
 import { requestLogger } from "./middleware/requestLogger";
-import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
+import {
+  globalErrorHandler,
+  notFoundHandler,
+  requestTransportErrorHandler,
+} from "./middleware/errorHandler";
 import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from "./middleware/csrf";
 import { logBillingEnforcementStatus } from "./middleware/featureGate";
 import { registerRoutes } from "./routes";
@@ -77,6 +81,12 @@ app.use((req, res, next) => {
   return (useLarge ? largeJson : smallJson)(req, res, next);
 });
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
+// R17-12: malformed JSON (400 INVALID_JSON), oversize bodies (413) and CORS
+// rejections from applySecurityMiddleware, including preflight
+// (403 ORIGIN_NOT_ALLOWED), are client errors. Answer them here, before
+// session/auth/CSRF, instead of letting them surface as a 500.
+app.use(requestTransportErrorHandler);
 
 // ─── Cookie parser (must run before CSRF + session) ─────────
 app.use(cookieParser(env.SESSION_SECRET));
