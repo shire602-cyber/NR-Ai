@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,9 +20,9 @@ function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) 
   const due = new Date(vat.dueDate);
   const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
   if (vat.status === "filed" || vat.status === "submitted") {
-    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">Filed</Badge>;
+    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30"><T k="pages.filed" /></Badge>;
   }
-  if (days < 0) return <Badge variant="destructive">Overdue</Badge>;
+  if (days < 0) return <Badge variant="destructive"><T k="pages.overdue" /></Badge>;
   if (days <= 14)
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
@@ -52,7 +53,7 @@ export default function PortalDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Overview</h2>
+        <h2 className="text-xl font-semibold text-foreground"><T k="pages.overview" /></h2>
         <p className="text-sm text-muted-foreground mt-1">Your account summary at a glance.</p>
       </div>
 
@@ -82,7 +83,7 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Total Paid
+                  <T k="pages.totalPaid" />
                 </p>
                 <p className="text-2xl font-bold text-foreground mt-1">
                   {formatAed(inv.paidTotal ?? 0)}
@@ -101,7 +102,7 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Documents
+                  <T k="pages.documents" />
                 </p>
                 <p className="text-2xl font-bold text-foreground mt-1">
                   {data?.documents?.total ?? 0}
@@ -118,7 +119,7 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  VAT Status
+                  <T k="pages.vatStatus" />
                 </p>
                 <div className="mt-2">
                   <VatBadge vat={vatStatus} />
@@ -141,7 +142,7 @@ export default function PortalDashboard() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <FileText className="w-4 h-4" />
-            Recent Invoices
+            <T k="pages.recentInvoices" />
           </CardTitle>
         </CardHeader>
         <CardContent>

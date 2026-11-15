@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -231,7 +232,7 @@ export default function ExchangeRates() {
   if (!companyId) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">No company found. Please create a company first.</p>
+        <p className="text-muted-foreground"><T k="pages.noCompanyFoundPleaseCreateACompanyFirst" /></p>
       </div>
     );
   }
@@ -252,7 +253,7 @@ export default function ExchangeRates() {
               disabled={isLoadingFxReport || !fxReport}
             >
               <Download className="h-4 w-4 mr-2" />
-              Export
+              <T k="pages.export" />
             </Button>
             <Button onClick={() => setShowAddDialog(true)}>
               <Plus className="h-4 w-4 mr-2" />
@@ -328,9 +329,9 @@ export default function ExchangeRates() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Type</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Counterparty</TableHead>
-                      <TableHead>Currency</TableHead>
+                      <TableHead><T k="pages.reference" /></TableHead>
+                      <TableHead><T k="pages.counterparty" /></TableHead>
+                      <TableHead><T k="pages.currency" /></TableHead>
                       <TableHead className="text-right">Foreign amount</TableHead>
                       <TableHead className="text-right">Transaction rate</TableHead>
                       <TableHead className="text-right">Current rate</TableHead>
@@ -423,7 +424,7 @@ export default function ExchangeRates() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Amount</Label>
+              <Label><T k="pages.amount" /></Label>
               <Input
                 type="number"
                 step="0.01"
@@ -488,8 +489,8 @@ export default function ExchangeRates() {
                   <TableHead>From</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead className="text-right">Rate</TableHead>
-                  <TableHead>Effective Date</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead><T k="pages.effectiveDate" /></TableHead>
+                  <TableHead><T k="pages.source" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -565,7 +566,7 @@ export default function ExchangeRates() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label>Effective Date</Label>
+              <Label><T k="pages.effectiveDate" /></Label>
               <Input
                 type="date"
                 value={formEffectiveDate}
@@ -575,7 +576,7 @@ export default function ExchangeRates() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button onClick={handleAddRate} disabled={createMutation.isPending}>
               {createMutation.isPending ? "Adding..." : "Add Rate"}

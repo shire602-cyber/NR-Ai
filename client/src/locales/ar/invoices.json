@@ -1,0 +1,10 @@
+{
+  "invoices.nudgeBody": "{number} مسودة. لا تُحتسب المسودات إيرادًا حتى تُصدر الفاتورة.",
+  "invoices.nudgeIssueFailed": "تعذّر إصدار الفاتورة",
+  "invoices.nudgeIssueNow": "إصدار الآن",
+  "invoices.nudgeIssued": "تم إصدار الفاتورة",
+  "invoices.nudgeIssuedBody": "{number} تُحتسب الآن ضمن إيراداتك.",
+  "invoices.nudgeKeepDraft": "إبقاء كمسودة",
+  "invoices.nudgeTitle": "تم حفظ الفاتورة كمسودة",
+  "invoices.numberAssignedOnSave": "يُخصَّص عند الحفظ"
+}

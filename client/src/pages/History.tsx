@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -108,11 +109,23 @@ export default function History() {
   const getActionBadge = (action: string) => {
     switch (action) {
       case "create":
-        return <Badge className="bg-success/10 text-success border-success/20">Create</Badge>;
+        return (
+          <Badge className="bg-success/10 text-success border-success/20">
+            <T k="pages.create" />
+          </Badge>
+        );
       case "update":
-        return <Badge className="bg-info/10 text-info border-info/20">Update</Badge>;
+        return (
+          <Badge className="bg-info/10 text-info border-info/20">
+            <T k="pages.update" />
+          </Badge>
+        );
       case "delete":
-        return <Badge variant="destructive">Delete</Badge>;
+        return (
+          <Badge variant="destructive">
+            <T k="pages.delete" />
+          </Badge>
+        );
       case "view":
         return <Badge variant="secondary">View</Badge>;
       default:
@@ -166,10 +179,18 @@ export default function History() {
                   <SelectValue placeholder="Action" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Actions</SelectItem>
-                  <SelectItem value="create">Create</SelectItem>
-                  <SelectItem value="update">Update</SelectItem>
-                  <SelectItem value="delete">Delete</SelectItem>
+                  <SelectItem value="all">
+                    <T k="pages.allActions" />
+                  </SelectItem>
+                  <SelectItem value="create">
+                    <T k="pages.create" />
+                  </SelectItem>
+                  <SelectItem value="update">
+                    <T k="pages.update" />
+                  </SelectItem>
+                  <SelectItem value="delete">
+                    <T k="pages.delete" />
+                  </SelectItem>
                   <SelectItem value="view">View</SelectItem>
                 </SelectContent>
               </Select>
@@ -180,8 +201,12 @@ export default function History() {
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="account">Accounts</SelectItem>
-                  <SelectItem value="invoice">Invoices</SelectItem>
-                  <SelectItem value="journal_entry">Journal Entries</SelectItem>
+                  <SelectItem value="invoice">
+                    <T k="pages.invoices" />
+                  </SelectItem>
+                  <SelectItem value="journal_entry">
+                    <T k="pages.journalEntries" />
+                  </SelectItem>
                   <SelectItem value="receipt">Receipts</SelectItem>
                   <SelectItem value="backup">Backups</SelectItem>
                 </SelectContent>
@@ -206,10 +231,16 @@ export default function History() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>
+                      <T k="pages.description" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.action" />
+                    </TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Date & Time</TableHead>
+                    <TableHead>
+                      <T k="pages.dateTime" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -378,7 +379,13 @@ export default function Journal() {
                               data-testid="button-date-picker"
                             >
                               <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>
+                                  <T k="pages.pickADate" />
+                                </span>
+                              )}
                             </Button>
                           </FormControl>
                         </PopoverTrigger>
@@ -425,7 +432,7 @@ export default function Journal() {
                     data-testid="button-add-line"
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Line
+                    <T k="pages.addLine" />
                   </Button>
                 </div>
 
@@ -706,7 +713,9 @@ export default function Journal() {
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogCancel>
+                                  <T k="pages.cancel" />
+                                </AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => deleteMutation.mutate(entry.id)}
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -741,7 +750,9 @@ export default function Journal() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel>
+                                <T k="pages.cancel" />
+                              </AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() =>
                                   reverseMutation.mutate({

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -665,7 +666,9 @@ export default function TeamManagement() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (memberToRemove) {
@@ -675,7 +678,7 @@ export default function TeamManagement() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Remove
+              <T k="pages.remove" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

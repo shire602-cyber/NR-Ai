@@ -688,7 +688,11 @@ export default function BankReconciliation() {
                 value={selectedBankAccount || "all"}
                 onValueChange={(v) => setSelectedBankAccount(v === "all" ? "" : v)}
               >
-                <SelectTrigger className="w-44" data-testid="select-bank-account">
+                <SelectTrigger
+                  className="w-44"
+                  data-testid="select-bank-account"
+                  aria-label="Bank account"
+                >
                   <SelectValue placeholder="All accounts" />
                 </SelectTrigger>
                 <SelectContent>

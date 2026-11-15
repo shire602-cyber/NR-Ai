@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,7 +66,7 @@ function getStatusBadge(status: string) {
     case "sent":
       return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sent</Badge>;
     case "draft":
-      return <Badge className="bg-muted text-foreground hover:bg-muted">Draft</Badge>;
+      return <Badge className="bg-muted text-foreground hover:bg-muted"><T k="pages.draft" /></Badge>;
     case "void":
       return <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">Void</Badge>;
     default:
@@ -206,7 +207,7 @@ export default function CustomerPortal() {
                   <DollarSign className="w-5 h-5 text-destructive" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Outstanding</p>
+                  <p className="text-sm text-muted-foreground"><T k="pages.totalOutstanding" /></p>
                   <p className="text-xl font-bold text-destructive">
                     {formatCurrency(totalOutstanding, defaultCurrency)}
                   </p>
@@ -222,7 +223,7 @@ export default function CustomerPortal() {
                   <FileCheck className="w-5 h-5 text-success" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Paid</p>
+                  <p className="text-sm text-muted-foreground"><T k="pages.totalPaid" /></p>
                   <p className="text-xl font-bold text-success">
                     {formatCurrency(totalPaid, defaultCurrency)}
                   </p>
@@ -238,7 +239,7 @@ export default function CustomerPortal() {
                   <Receipt className="w-5 h-5 text-info" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Invoices</p>
+                  <p className="text-sm text-muted-foreground"><T k="pages.totalInvoices" /></p>
                   <p className="text-xl font-bold text-info">{invoiceCount}</p>
                 </div>
               </div>
@@ -251,7 +252,7 @@ export default function CustomerPortal() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Invoices
+              <T k="pages.invoices" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -274,9 +275,9 @@ export default function CustomerPortal() {
                     <TableRow>
                       <TableHead>Invoice #</TableHead>
                       <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="text-right"><T k="pages.amount" /></TableHead>
+                      <TableHead><T k="pages.status" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -292,7 +293,7 @@ export default function CustomerPortal() {
                           <TableCell>
                             {overdue ? (
                               <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">
-                                Overdue
+                                <T k="pages.overdue" />
                               </Badge>
                             ) : (
                               getStatusBadge(invoice.status)

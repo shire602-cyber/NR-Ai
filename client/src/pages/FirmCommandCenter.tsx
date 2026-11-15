@@ -4,6 +4,7 @@
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -395,7 +396,9 @@ export default function FirmCommandCenter() {
         className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
         data-testid="firm-command-center-error"
       >
-        <div className="font-medium mb-1">Failed to load firm dashboard.</div>
+        <div className="font-medium mb-1">
+          <T k="pages.failedToLoadFirmDashboard" />
+        </div>
         <div className="text-muted-foreground">
           {dashboardQuery.error instanceof Error
             ? dashboardQuery.error.message
@@ -407,7 +410,7 @@ export default function FirmCommandCenter() {
           className="mt-3"
           onClick={() => dashboardQuery.refetch()}
         >
-          Retry
+          <T k="pages.retry" />
         </Button>
       </div>
     );
@@ -468,7 +471,9 @@ export default function FirmCommandCenter() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Average health score</CardTitle>
+            <CardTitle className="text-sm">
+              <T k="pages.averageHealthScore" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold">{summary?.averageHealthScore ?? "—"}</div>
@@ -479,7 +484,7 @@ export default function FirmCommandCenter() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-destructive" />
-              Critical alerts
+              <T k="pages.criticalAlerts" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -492,7 +497,7 @@ export default function FirmCommandCenter() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <Bell className="w-4 h-4 text-warning" />
-              Warnings
+              <T k="pages.warnings" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -505,10 +510,18 @@ export default function FirmCommandCenter() {
 
       <Tabs defaultValue="clients" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="clients">Client health</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="staff">Staff workload</TabsTrigger>
-          <TabsTrigger value="comparison">Period comparison</TabsTrigger>
+          <TabsTrigger value="clients">
+            <T k="pages.clientHealth" />
+          </TabsTrigger>
+          <TabsTrigger value="alerts">
+            <T k="pages.alerts" />
+          </TabsTrigger>
+          <TabsTrigger value="staff">
+            <T k="pages.staffWorkload" />
+          </TabsTrigger>
+          <TabsTrigger value="comparison">
+            <T k="pages.periodComparison" />
+          </TabsTrigger>
         </TabsList>
 
         {/* ─── Client health tab ─── */}
@@ -530,10 +543,18 @@ export default function FirmCommandCenter() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="health">Sort by health</SelectItem>
-                    <SelectItem value="revenue">Sort by revenue</SelectItem>
-                    <SelectItem value="overdue">Sort by overdue AR</SelectItem>
-                    <SelectItem value="compliance">Sort by compliance</SelectItem>
+                    <SelectItem value="health">
+                      <T k="pages.sortByHealth" />
+                    </SelectItem>
+                    <SelectItem value="revenue">
+                      <T k="pages.sortByRevenue" />
+                    </SelectItem>
+                    <SelectItem value="overdue">
+                      <T k="pages.sortByOverdueAr" />
+                    </SelectItem>
+                    <SelectItem value="compliance">
+                      <T k="pages.sortByCompliance" />
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -577,15 +598,29 @@ export default function FirmCommandCenter() {
                         aria-label="Select all"
                       />
                     </TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Health</TableHead>
-                    <TableHead>Rating</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Overdue AR</TableHead>
-                    <TableHead>VAT</TableHead>
-                    <TableHead>Last activity</TableHead>
                     <TableHead>
-                      <span className="sr-only">Open client</span>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.health" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.rating" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.revenue" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.overdueAr" />
+                    </TableHead>
+                    <TableHead>VAT</TableHead>
+                    <TableHead>
+                      <T k="pages.lastActivity" />
+                    </TableHead>
+                    <TableHead>
+                      <span className="sr-only">
+                        <T k="pages.openClient" />
+                      </span>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -608,7 +643,9 @@ export default function FirmCommandCenter() {
                       <TableCell className="text-right">{formatAed(c.overdueBalance)}</TableCell>
                       <TableCell>
                         {c.factors.vatOverdue ? (
-                          <Badge variant="destructive">Overdue</Badge>
+                          <Badge variant="destructive">
+                            <T k="pages.overdue" />
+                          </Badge>
                         ) : (
                           <Badge variant="secondary">OK</Badge>
                         )}
@@ -648,7 +685,9 @@ export default function FirmCommandCenter() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Alert feed</CardTitle>
+                <CardTitle>
+                  <T k="pages.alertFeed" />
+                </CardTitle>
                 <Select
                   value={severityFilter}
                   onValueChange={(v) => setSeverityFilter(v as Severity | "all")}
@@ -657,9 +696,15 @@ export default function FirmCommandCenter() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All severities</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="all">
+                      <T k="pages.allSeverities" />
+                    </SelectItem>
+                    <SelectItem value="critical">
+                      <T k="pages.critical" />
+                    </SelectItem>
+                    <SelectItem value="warning">
+                      <T k="pages.warning" />
+                    </SelectItem>
                     <SelectItem value="info">Info</SelectItem>
                   </SelectContent>
                 </Select>
@@ -688,7 +733,7 @@ export default function FirmCommandCenter() {
                           disabled={markRead.isPending}
                           data-testid={`button-mark-read-${a.id}`}
                         >
-                          Mark read
+                          <T k="pages.markRead" />
                         </Button>
                       )}
                       {!a.resolvedAt && (
@@ -699,7 +744,7 @@ export default function FirmCommandCenter() {
                           disabled={resolveAlert.isPending}
                           data-testid={`button-resolve-${a.id}`}
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> Resolve
+                          <CheckCircle2 className="w-4 h-4 mr-1" /> <T k="pages.resolve" />
                         </Button>
                       )}
                     </div>
@@ -720,7 +765,7 @@ export default function FirmCommandCenter() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Users className="w-4 h-4" /> Staff workload distribution
+                <Users className="w-4 h-4" /> <T k="pages.staffWorkloadDistribution" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -742,10 +787,18 @@ export default function FirmCommandCenter() {
               <Table className="mt-4">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Staff</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead className="text-right">Clients</TableHead>
-                    <TableHead>Roles</TableHead>
+                    <TableHead>
+                      <T k="pages.staff" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.email" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.clients" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.roles" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -774,14 +827,20 @@ export default function FirmCommandCenter() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Period comparison</CardTitle>
+                <CardTitle>
+                  <T k="pages.periodComparison" />
+                </CardTitle>
                 <Select value={granularity} onValueChange={(v) => setGranularity(v as Granularity)}>
                   <SelectTrigger className="w-[160px]" data-testid="select-granularity">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="month">Month-over-month</SelectItem>
-                    <SelectItem value="quarter">Quarter-over-quarter</SelectItem>
+                    <SelectItem value="month">
+                      <T k="pages.monthOverMonth" />
+                    </SelectItem>
+                    <SelectItem value="quarter">
+                      <T k="pages.quarterOverQuarter" />
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -869,8 +928,12 @@ function BatchActionButton({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>Confirm</AlertDialogAction>
+          <AlertDialogCancel>
+            <T k="pages.cancel" />
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>
+            <T k="pages.confirm" />
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

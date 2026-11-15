@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -240,7 +241,9 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold">Batch OCR Processing</h3>
+        <h3 className="text-lg font-semibold">
+          <T k="pages.batchOcrProcessing" />
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
           Upload multiple receipt images and assign each to a client. Processing runs one at a time.
         </p>
@@ -262,7 +265,9 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
         onClick={() => inputRef.current?.click()}
       >
         <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-        <p className="font-medium">Drop receipt images here, or click to browse</p>
+        <p className="font-medium">
+          <T k="pages.dropReceiptImagesHereOrClickToBrowse" />
+        </p>
         <p className="text-sm text-muted-foreground mt-1">
           JPEG, PNG, WebP — multiple files supported
         </p>
@@ -313,8 +318,12 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>File</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -343,11 +352,15 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                         </Select>
                       </TableCell>
                       <TableCell>
-                        {item.status === "pending" && <Badge variant="outline">Pending</Badge>}
+                        {item.status === "pending" && (
+                          <Badge variant="outline">
+                            <T k="pages.pending" />
+                          </Badge>
+                        )}
                         {item.status === "processing" && (
                           <Badge className="bg-info-subtle text-info">
                             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Processing
+                            <T k="pages.processing" />
                           </Badge>
                         )}
                         {item.status === "success" && (
@@ -359,7 +372,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                         {item.status === "error" && (
                           <Badge variant="destructive" title={item.error}>
                             <XCircle className="w-3 h-3 mr-1" />
-                            Failed
+                            <T k="pages.failed" />
                           </Badge>
                         )}
                       </TableCell>
@@ -408,7 +421,9 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-lg font-semibold">VAT Filing Queue</h3>
+          <h3 className="text-lg font-semibold">
+            <T k="pages.vatFilingQueue" />
+          </h3>
           <p className="text-sm text-muted-foreground mt-1">
             Review VAT period data across all clients. Use this to prepare returns before manual
             submission on the FTA portal.
@@ -429,19 +444,25 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Clients in Queue</p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.clientsInQueue" />
+                </p>
                 <p className="text-2xl font-bold mt-1">{queue.length}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Total VAT Payable</p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.totalVatPayable" />
+                </p>
                 <p className="text-2xl font-bold mt-1">{formatAed(totalVatPayable)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Ready to File</p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.readyToFile" />
+                </p>
                 <p className="text-2xl font-bold mt-1">
                   {queue.filter((e) => e.status === "submitted" || e.status === "filed").length}
                 </p>
@@ -455,13 +476,25 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Company</TableHead>
+                      <TableHead>
+                        <T k="pages.company" />
+                      </TableHead>
                       <TableHead>TRN</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead className="text-right">Sales</TableHead>
-                      <TableHead className="text-right">Purchases</TableHead>
-                      <TableHead className="text-right">VAT Payable</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>
+                        <T k="pages.period" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.sales" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.purchases" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.vatPayable" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="pages.status" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -577,7 +610,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold">Bulk Invoicing</h3>
+        <h3 className="text-lg font-semibold">
+          <T k="pages.bulkInvoicing" />
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
           Generate NRA service invoices to multiple clients in one action. Each invoice is created
           as a draft.
@@ -588,11 +623,15 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
         {/* Left: form */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Invoice Details</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pages.invoiceDetails" />
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Service Description</Label>
+              <Label>
+                <T k="pages.serviceDescription" />
+              </Label>
               <Input
                 className="mt-1"
                 placeholder="e.g. Monthly accounting services — April 2026"
@@ -614,7 +653,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                 />
               </div>
               <div>
-                <Label>VAT Rate</Label>
+                <Label>
+                  <T k="pages.vatRate" />
+                </Label>
                 <Select value={vatRate} onValueChange={setVatRate}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
@@ -630,7 +671,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
             {numAmount > 0 && (
               <div className="bg-muted/40 rounded-lg p-3 text-sm space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">
+                    <T k="pages.subtotal" />
+                  </span>
                   <span>{formatAed(numAmount)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -640,7 +683,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                   <span>{formatAed(vatAmount)}</span>
                 </div>
                 <div className="flex justify-between font-semibold border-t pt-1">
-                  <span>Total per invoice</span>
+                  <span>
+                    <T k="pages.totalPerInvoice" />
+                  </span>
                   <span>{formatAed(total)}</span>
                 </div>
                 {selectedIds.size > 0 && (
@@ -658,7 +703,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Select Clients</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.selectClients" />
+              </CardTitle>
               <Button variant="ghost" size="sm" onClick={toggleAll}>
                 {allSelected ? (
                   <CheckSquare className="w-4 h-4 mr-1" />
@@ -707,15 +754,21 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
       {results.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Results</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pages.results" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Company</TableHead>
+                  <TableHead>
+                    <T k="pages.company" />
+                  </TableHead>
                   <TableHead>Invoice #</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -727,12 +780,12 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                       {r.success ? (
                         <Badge className="bg-success-subtle text-success">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Created
+                          <T k="pages.created" />
                         </Badge>
                       ) : (
                         <Badge variant="destructive" title={r.error}>
                           <XCircle className="w-3 h-3 mr-1" />
-                          Failed
+                          <T k="pages.failed" />
                         </Badge>
                       )}
                     </TableCell>
@@ -803,7 +856,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold">Period-End Close</h3>
+        <h3 className="text-lg font-semibold">
+          <T k="pages.periodEndClose" />
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
           Run a pre-close checklist across selected clients to identify outstanding items before
           closing the period.
@@ -812,7 +867,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 
       <div className="flex items-end gap-4">
         <div>
-          <Label>Period</Label>
+          <Label>
+            <T k="pages.period" />
+          </Label>
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="mt-1 w-36">
               <SelectValue />
@@ -883,17 +940,23 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
         {statuses.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Summary</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.summary" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Ready to close</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.readyToClose" />
+                </span>
                 <span className="font-semibold text-success">
                   {statuses.filter((s) => s.readyToClose).length}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Issues found</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.issuesFound" />
+                </span>
                 <span className="font-semibold text-warning">
                   {statuses.filter((s) => !s.readyToClose).length}
                 </span>
@@ -918,7 +981,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                     <p className="text-sm text-muted-foreground">{s.period}</p>
                   </div>
                   {s.readyToClose ? (
-                    <Badge className="bg-success-subtle text-success">Ready</Badge>
+                    <Badge className="bg-success-subtle text-success">
+                      <T k="pages.ready" />
+                    </Badge>
                   ) : (
                     <Badge className="bg-warning-subtle text-warning">
                       {s.issues.length} issue{s.issues.length !== 1 ? "s" : ""}
@@ -988,19 +1053,19 @@ export default function BulkOperations() {
           <TabsList className="grid w-full grid-cols-4 min-w-[500px]">
             <TabsTrigger value="ocr">
               <ReceiptIcon className="w-4 h-4 mr-2" />
-              Batch OCR
+              <T k="pages.batchOcr" />
             </TabsTrigger>
             <TabsTrigger value="vat">
               <FileText className="w-4 h-4 mr-2" />
-              VAT Queue
+              <T k="pages.vatQueue" />
             </TabsTrigger>
             <TabsTrigger value="invoices">
               <Building2 className="w-4 h-4 mr-2" />
-              Invoicing
+              <T k="pages.invoicing" />
             </TabsTrigger>
             <TabsTrigger value="close">
               <CheckCircle2 className="w-4 h-4 mr-2" />
-              Period Close
+              <T k="pages.periodClose" />
             </TabsTrigger>
           </TabsList>
         </div>

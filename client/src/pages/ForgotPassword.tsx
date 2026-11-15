@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -84,7 +85,7 @@ export default function ForgotPassword() {
         <Link href="/login">
           <Button variant="ghost" className="gap-2" data-testid="button-back-login">
             <ArrowLeft className="w-4 h-4" />
-            Back to sign in
+            <T k="pages.backToSignIn" />
           </Button>
         </Link>
       </div>
@@ -142,7 +143,9 @@ export default function ForgotPassword() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel>
+                        <T k="pages.email" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -156,15 +157,31 @@ export default function UserInvitations() {
     const isExpired = invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
 
     if (invitation.status === "accepted") {
-      return <Badge className="bg-success/10 text-success border-success/20">Accepted</Badge>;
+      return (
+        <Badge className="bg-success/10 text-success border-success/20">
+          <T k="pages.accepted" />
+        </Badge>
+      );
     }
     if (invitation.status === "revoked") {
-      return <Badge variant="destructive">Revoked</Badge>;
+      return (
+        <Badge variant="destructive">
+          <T k="pages.revoked" />
+        </Badge>
+      );
     }
     if (isExpired) {
-      return <Badge variant="secondary">Expired</Badge>;
+      return (
+        <Badge variant="secondary">
+          <T k="pages.expired" />
+        </Badge>
+      );
     }
-    return <Badge className="bg-info/10 text-info border-info/20">Pending</Badge>;
+    return (
+      <Badge className="bg-info/10 text-info border-info/20">
+        <T k="pages.pending" />
+      </Badge>
+    );
   };
 
   const handleSendInvitation = (e: React.FormEvent<HTMLFormElement>) => {
@@ -285,7 +302,7 @@ export default function UserInvitations() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>
-                Cancel
+                <T k="pages.cancel" />
               </Button>
               <Button
                 type="submit"
@@ -311,7 +328,9 @@ export default function UserInvitations() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.pending" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-info">{pendingCount}</div>
@@ -319,7 +338,9 @@ export default function UserInvitations() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Accepted</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.accepted" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success">{acceptedCount}</div>
@@ -347,10 +368,18 @@ export default function UserInvitations() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="accepted">Accepted</SelectItem>
-                  <SelectItem value="revoked">Revoked</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="pending">
+                    <T k="pages.pending" />
+                  </SelectItem>
+                  <SelectItem value="accepted">
+                    <T k="pages.accepted" />
+                  </SelectItem>
+                  <SelectItem value="revoked">
+                    <T k="pages.revoked" />
+                  </SelectItem>
+                  <SelectItem value="expired">
+                    <T k="pages.expired" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -361,13 +390,21 @@ export default function UserInvitations() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Client</TableHead>
+                  <TableHead>
+                    <T k="pages.email" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.client" />
+                  </TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead>Sent</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -461,7 +498,7 @@ export default function UserInvitations() {
                               }}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                              <T k="pages.delete" />
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

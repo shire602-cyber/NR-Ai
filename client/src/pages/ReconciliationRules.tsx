@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -332,15 +333,29 @@ export default function ReconciliationRules() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[60px]">Priority</TableHead>
+                  <TableHead className="w-[60px]">
+                    <T k="pages.priority" />
+                  </TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Match Field</TableHead>
-                  <TableHead>Match Type</TableHead>
-                  <TableHead>Match Value</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>
+                    <T k="pages.matchField" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.matchType" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.matchValue" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.category" />
+                  </TableHead>
                   <TableHead className="text-center">Applied</TableHead>
-                  <TableHead className="text-center">Active</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-center">
+                    <T k="pages.active" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -428,7 +443,9 @@ export default function ReconciliationRules() {
                 name="priority"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Priority</FormLabel>
+                    <FormLabel>
+                      <T k="pages.priority" />
+                    </FormLabel>
                     <FormControl>
                       <Input type="number" min={0} placeholder="0" {...field} />
                     </FormControl>
@@ -443,7 +460,9 @@ export default function ReconciliationRules() {
                   name="matchField"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Match Field</FormLabel>
+                      <FormLabel>
+                        <T k="pages.matchField" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
@@ -451,9 +470,15 @@ export default function ReconciliationRules() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="description">Description</SelectItem>
-                          <SelectItem value="reference">Reference</SelectItem>
-                          <SelectItem value="amount">Amount</SelectItem>
+                          <SelectItem value="description">
+                            <T k="pages.description" />
+                          </SelectItem>
+                          <SelectItem value="reference">
+                            <T k="pages.reference" />
+                          </SelectItem>
+                          <SelectItem value="amount">
+                            <T k="pages.amount" />
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -466,7 +491,9 @@ export default function ReconciliationRules() {
                   name="matchType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Match Type</FormLabel>
+                      <FormLabel>
+                        <T k="pages.matchType" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
@@ -491,7 +518,9 @@ export default function ReconciliationRules() {
                 name="matchValue"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Match Value</FormLabel>
+                    <FormLabel>
+                      <T k="pages.matchValue" />
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g. RENT or ^SALARY.*" {...field} />
                     </FormControl>
@@ -534,7 +563,9 @@ export default function ReconciliationRules() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div>
-                      <FormLabel className="text-base">Active</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pages.active" />
+                      </FormLabel>
                       <p className="text-sm text-muted-foreground">
                         Enable this rule for auto-matching
                       </p>
@@ -548,7 +579,7 @@ export default function ReconciliationRules() {
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={closeDialog}>
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button
                   type="submit"

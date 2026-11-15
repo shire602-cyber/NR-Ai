@@ -1,0 +1,20 @@
+{
+  "dashboard.actionFileVat": "File VAT 201",
+  "dashboard.actionPostEntry": "Post an entry",
+  "dashboard.actionRunBackup": "Run a backup",
+  "dashboard.actionSetupAccounts": "Set up accounts",
+  "dashboard.actionSetupRecon": "Set up reconciliation",
+  "dashboard.checkNoBackups": "No completed data backups",
+  "dashboard.checkNoChartOfAccounts": "No chart of accounts configured",
+  "dashboard.checkNoJournalEntries": "No journal entries in the last 90 days",
+  "dashboard.checkNoReconRules": "No bank reconciliation rules configured",
+  "dashboard.checkNoVatReturns": "No VAT returns filed",
+  "dashboard.checkReconNotSetUp": "Bank reconciliation not set up",
+  "dashboard.draftNotRevenueBody": "{count} draft invoice(s) are waiting. Issue them to see revenue and profit update here.",
+  "dashboard.draftNotRevenueCta": "Review drafts",
+  "dashboard.draftNotRevenueTitle": "Draft invoices are not counted as revenue yet",
+  "dashboard.emptyRevenueHint": "Revenue appears after you issue an invoice. Drafts are not counted.",
+  "dashboard.firstInvoiceBody": "Pick a customer, add a line item and save. We assign the invoice number and apply 5% VAT for you.",
+  "dashboard.firstInvoiceCta": "Create first invoice",
+  "dashboard.firstInvoiceTitle": "Create your first invoice"
+}

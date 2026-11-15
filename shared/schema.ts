@@ -2770,6 +2770,9 @@ export const userOnboarding = pgTable(
     // UI preferences
     showTips: boolean("show_tips").notNull().default(true),
     showTour: boolean("show_tour").notNull().default(true),
+    // R18-03: set once when the welcome tour is shown/dismissed so it appears at
+    // most once per user (column added by migration 0089).
+    tourDismissedAt: timestamp("tour_dismissed_at"),
     dismissedTips: text("dismissed_tips"), // JSON array of dismissed tip IDs
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

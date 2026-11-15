@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -274,7 +275,7 @@ export default function AdminDocuments() {
             data-testid="button-upload-client-document"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Upload Document
+            <T k="pages.uploadDocument" />
           </Button>
         }
       />
@@ -283,9 +284,11 @@ export default function AdminDocuments() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="w-5 h-5" />
-            Select Client
+            <T k="pages.selectClient" />
           </CardTitle>
-          <CardDescription>Choose a client to view or upload documents for them</CardDescription>
+          <CardDescription>
+            <T k="pages.chooseAClientToViewOrUploadDocumentsForThem" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
@@ -316,7 +319,9 @@ export default function AdminDocuments() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.totalDocuments" />
+                </CardTitle>
                 <FolderOpen className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -326,7 +331,9 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Invoices</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.invoices" />
+                </CardTitle>
                 <FileText className="w-4 h-4 text-info" />
               </CardHeader>
               <CardContent>
@@ -350,7 +357,9 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.expiringSoon" />
+                </CardTitle>
                 <Clock className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
@@ -384,7 +393,9 @@ export default function AdminDocuments() {
                     <SelectValue placeholder="Filter by category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="all">
+                      <T k="pages.allCategories" />
+                    </SelectItem>
                     {DOCUMENT_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
                         {cat.labelEn}
@@ -406,7 +417,7 @@ export default function AdminDocuments() {
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>No documents found for {selectedCompany?.name}</p>
                   <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                    Upload a document
+                    <T k="pages.uploadADocument" />
                   </Button>
                 </div>
               ) : (
@@ -414,12 +425,22 @@ export default function AdminDocuments() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Document Name</TableHead>
-                        <TableHead>Category</TableHead>
+                        <TableHead>
+                          <T k="pages.documentName" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.category" />
+                        </TableHead>
                         <TableHead>File</TableHead>
-                        <TableHead>Expiry</TableHead>
-                        <TableHead>Uploaded</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>
+                          <T k="pages.expiry" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.uploaded" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.actions" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -525,7 +546,7 @@ export default function AdminDocuments() {
               Upload Document for {selectedCompany?.name}
             </DialogTitle>
             <DialogDescription>
-              Add an invoice, bill, or other document for this client
+              <T k="pages.addAnInvoiceBillOrOtherDocumentForThisClient" />
             </DialogDescription>
           </DialogHeader>
 
@@ -562,7 +583,9 @@ export default function AdminDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">
+                <T k="pages.description" />
+              </Label>
               <Textarea
                 id="description"
                 placeholder="Brief description of this document..."
@@ -601,7 +624,9 @@ export default function AdminDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label>Upload File</Label>
+              <Label>
+                <T k="pages.uploadFile" />
+              </Label>
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
@@ -625,7 +650,9 @@ export default function AdminDocuments() {
                   ) : (
                     <div className="text-muted-foreground">
                       <Upload className="w-8 h-8 mx-auto mb-2" />
-                      <p>Click to upload or drag and drop</p>
+                      <p>
+                        <T k="pages.clickToUploadOrDragAndDrop" />
+                      </p>
                       <p className="text-xs">PDF, DOC, XLS, JPG, PNG (max 10MB)</p>
                     </div>
                   )}
@@ -636,7 +663,7 @@ export default function AdminDocuments() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={handleUpload}
@@ -646,12 +673,12 @@ export default function AdminDocuments() {
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  <T k="pages.uploading" />
                 </>
               ) : (
                 <>
                   <Upload className="w-4 h-4 mr-2" />
-                  Upload Document
+                  <T k="pages.uploadDocument" />
                 </>
               )}
             </Button>

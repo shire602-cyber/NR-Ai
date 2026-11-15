@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -702,28 +703,28 @@ function OperationsBriefDialog({
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <div className="rounded-md border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Priority</p>
+                <p className="text-xs text-muted-foreground"><T k="pages.priority" /></p>
                 <div className="mt-1">
                   <PriorityBadge priority={client.priority} />
                 </div>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Owner</p>
+                <p className="text-xs text-muted-foreground"><T k="pages.owner" /></p>
                 <p className="text-sm font-medium mt-1 truncate">
                   {ownerPreview(client.assignedStaff.map((staff) => staff.name))}
                 </p>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Last activity</p>
+                <p className="text-xs text-muted-foreground"><T k="pages.lastActivity" /></p>
                 <p className="text-sm font-medium mt-1">{formatDateShort(client.lastActivity)}</p>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Open AR</p>
+                <p className="text-xs text-muted-foreground"><T k="pages.openAr" /></p>
                 <p className="text-sm font-medium mt-1">{formatAed(client.bookkeeping.openAr)}</p>
               </div>
             </div>
             <div className="rounded-md border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground mb-2">NR services for this client</p>
+              <p className="text-xs text-muted-foreground mb-2"><T k="pages.nrServicesForThisClient" /></p>
               <ServiceScopeBadges services={client.serviceScope} />
             </div>
 
@@ -744,17 +745,17 @@ function OperationsBriefDialog({
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
                       <div>
-                        <p className="text-xs text-muted-foreground">Timing</p>
+                        <p className="text-xs text-muted-foreground"><T k="pages.timing" /></p>
                         <p className="font-medium">{lane.due}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Metric</p>
+                        <p className="text-xs text-muted-foreground"><T k="pages.metric" /></p>
                         <p className="font-medium truncate">{lane.metric}</p>
                       </div>
                     </div>
                     <div className="mt-3 space-y-1">
                       {lane.blockers.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No blockers.</p>
+                        <p className="text-xs text-muted-foreground"><T k="pages.noBlockers" /></p>
                       ) : (
                         lane.blockers.slice(0, 4).map((blocker) => (
                           <div key={blocker} className="flex items-start gap-2 text-xs">
@@ -778,11 +779,11 @@ function OperationsBriefDialog({
             disabled={!client}
           >
             <ChevronRight className="w-4 h-4 mr-2" />
-            Profile
+            <T k="pages.profile" />
           </Button>
           <Button onClick={() => client && onOpenBooks(client.companyId)} disabled={!client}>
             <BookOpen className="w-4 h-4 mr-2" />
-            Open Books
+            <T k="pages.openBooks" />
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1088,7 +1089,7 @@ function BookkeeperCommandCenter({
     <section className="space-y-4" data-testid="bookkeeper-command-center">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">NR Bookkeeper Command Center</h2>
+          <h2 className="text-lg font-semibold tracking-tight"><T k="pages.nrBookkeeperCommandCenter" /></h2>
           <p className="text-sm text-muted-foreground">
             VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review
             across the client portfolio.
@@ -1108,7 +1109,7 @@ function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Critical</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide"><T k="pages.critical" /></p>
               <AlertTriangle className="w-4 h-4 text-destructive" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.critical ?? 0}</p>
@@ -1137,7 +1138,7 @@ function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Close blocked</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide"><T k="pages.closeBlocked" /></p>
               <FileText className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.bookkeepingBlocked ?? 0}</p>
@@ -1151,7 +1152,7 @@ function BookkeeperCommandCenter({
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <Target className="w-4 h-4 text-primary" />
-                Client Service Matrix
+                <T k="pages.clientServiceMatrix" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 Scope every client by service before planning VAT, corporate tax, bookkeeping, or
@@ -1191,7 +1192,7 @@ function BookkeeperCommandCenter({
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" />
-              Production Planner
+              <T k="pages.productionPlanner" />
             </CardTitle>
             <Badge variant="outline">
               {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible
@@ -1215,7 +1216,7 @@ function BookkeeperCommandCenter({
                   <div className="mt-3 space-y-2 min-h-[132px]">
                     {bucket.items.length === 0 && (
                       <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
-                        Clear
+                        <T k="pages.clear" />
                       </div>
                     )}
                     {bucket.items.map((item) => (
@@ -1253,7 +1254,7 @@ function BookkeeperCommandCenter({
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <UserCheck className="w-4 h-4 text-primary" />
-                Staff Capacity Planner
+                <T k="pages.staffCapacityPlanner" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 Balance owners before VAT, CT, and close work becomes a bottleneck.
@@ -1261,7 +1262,7 @@ function BookkeeperCommandCenter({
             </div>
             <Button size="sm" variant="outline" onClick={onManageStaff}>
               <Users className="w-4 h-4 mr-2" />
-              Manage Staff
+              <T k="pages.manageStaff" />
             </Button>
           </div>
         </CardHeader>
@@ -1269,7 +1270,7 @@ function BookkeeperCommandCenter({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Unassigned Intake</p>
+                <p className="text-sm font-medium"><T k="pages.unassignedIntake" /></p>
                 <Badge variant={capacityPlanner.unassigned.length > 0 ? "destructive" : "outline"}>
                   {capacityPlanner.unassigned.length}
                 </Badge>
@@ -1277,7 +1278,7 @@ function BookkeeperCommandCenter({
               <div className="mt-3 space-y-2 min-h-[128px]">
                 {capacityPlanner.unassigned.length === 0 && (
                   <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
-                    No unassigned clients
+                    <T k="pages.noUnassignedClients" />
                   </div>
                 )}
                 {capacityPlanner.unassigned.map((client) => (
@@ -1300,10 +1301,10 @@ function BookkeeperCommandCenter({
                         variant="outline"
                         onClick={() => onOpenBrief(client.companyId)}
                       >
-                        Brief
+                        <T k="pages.brief" />
                       </Button>
                       <Button size="sm" variant="outline" onClick={onManageStaff}>
-                        Assign
+                        <T k="pages.assign" />
                       </Button>
                     </div>
                   </div>
@@ -1313,7 +1314,7 @@ function BookkeeperCommandCenter({
 
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Overloaded Owners</p>
+                <p className="text-sm font-medium"><T k="pages.overloadedOwners" /></p>
                 <Badge variant={capacityPlanner.overloaded.length > 0 ? "secondary" : "outline"}>
                   {capacityPlanner.overloaded.length}
                 </Badge>
@@ -1321,7 +1322,7 @@ function BookkeeperCommandCenter({
               <div className="mt-3 space-y-2 min-h-[128px]">
                 {capacityPlanner.overloaded.length === 0 && (
                   <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
-                    No capacity pressure
+                    <T k="pages.noCapacityPressure" />
                   </div>
                 )}
                 {capacityPlanner.overloaded.map((owner) => (
@@ -1352,13 +1353,13 @@ function BookkeeperCommandCenter({
 
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Available Capacity</p>
+                <p className="text-sm font-medium"><T k="pages.availableCapacity" /></p>
                 <Badge variant="outline">{capacityPlanner.openCapacity.length}</Badge>
               </div>
               <div className="mt-3 space-y-2 min-h-[128px]">
                 {capacityPlanner.openCapacity.length === 0 && (
                   <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
-                    No low-load owner found
+                    <T k="pages.noLowLoadOwnerFound" />
                   </div>
                 )}
                 {capacityPlanner.openCapacity.map((owner) => (
@@ -1373,7 +1374,7 @@ function BookkeeperCommandCenter({
                           {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
                         </p>
                       </div>
-                      <Badge variant="outline">Can take work</Badge>
+                      <Badge variant="outline"><T k="pages.canTakeWork" /></Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       {owner.vatDue28Days} VAT due · {owner.bookkeepingBlocked} close blocked
@@ -1392,7 +1393,7 @@ function BookkeeperCommandCenter({
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <Target className="w-4 h-4 text-primary" />
-                Intervention Radar
+                <T k="pages.interventionRadar" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 Prioritize files by deadline pressure, source-document gaps, owner gaps, and
@@ -1420,7 +1421,7 @@ function BookkeeperCommandCenter({
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Escalate Today</p>
+                <p className="text-sm font-medium"><T k="pages.escalateToday" /></p>
                 <Badge variant={interventionRadar.high.length > 0 ? "destructive" : "outline"}>
                   {interventionRadar.high.length}
                 </Badge>
@@ -1428,7 +1429,7 @@ function BookkeeperCommandCenter({
               <div className="mt-3 space-y-2 min-h-[154px]">
                 {interventionRadar.high.length === 0 && (
                   <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
-                    No high-risk interventions
+                    <T k="pages.noHighRiskInterventions" />
                   </div>
                 )}
                 {interventionRadar.high.map((client) => {
@@ -1459,7 +1460,7 @@ function BookkeeperCommandCenter({
                           variant="outline"
                           onClick={() => onOpenBrief(client.companyId)}
                         >
-                          Brief
+                          <T k="pages.brief" />
                         </Button>
                         <Button size="sm" onClick={() => onOpenBooks(client.companyId)}>
                           Open
@@ -1473,13 +1474,13 @@ function BookkeeperCommandCenter({
 
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Watchlist</p>
+                <p className="text-sm font-medium"><T k="pages.watchlist" /></p>
                 <Badge variant="secondary">{interventionRadar.watchlist.length}</Badge>
               </div>
               <div className="mt-3 space-y-2 min-h-[154px]">
                 {interventionRadar.watchlist.length === 0 && (
                   <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
-                    No medium-risk watchlist
+                    <T k="pages.noMediumRiskWatchlist" />
                   </div>
                 )}
                 {interventionRadar.watchlist.map((client) => {
@@ -1513,13 +1514,13 @@ function BookkeeperCommandCenter({
 
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Collection Exposure</p>
+                <p className="text-sm font-medium"><T k="pages.collectionExposure" /></p>
                 <Badge variant="outline">{interventionRadar.exposure.length}</Badge>
               </div>
               <div className="mt-3 space-y-2 min-h-[154px]">
                 {interventionRadar.exposure.length === 0 && (
                   <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
-                    No open exposure in radar
+                    <T k="pages.noOpenExposureInRadar" />
                   </div>
                 )}
                 {interventionRadar.exposure.map((client) => {
@@ -1547,14 +1548,14 @@ function BookkeeperCommandCenter({
                           variant="outline"
                           onClick={() => onOpenBrief(client.companyId)}
                         >
-                          Brief
+                          <T k="pages.brief" />
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => onViewProfile(client.companyId)}
                         >
-                          Profile
+                          <T k="pages.profile" />
                         </Button>
                       </div>
                     </div>
@@ -1572,7 +1573,7 @@ function BookkeeperCommandCenter({
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-primary" />
-                Service Lane Forecast
+                <T k="pages.serviceLaneForecast" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
                 One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting
@@ -1628,7 +1629,7 @@ function BookkeeperCommandCenter({
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Target className="w-4 h-4 text-primary" />
-                Action Queues
+                <T k="pages.actionQueues" />
               </CardTitle>
               <Badge variant="outline">{activeQueueItems.length} active</Badge>
             </div>
@@ -1658,8 +1659,8 @@ function BookkeeperCommandCenter({
             <div className="space-y-2">
               {activeQueueItems.length === 0 && (
                 <div className="rounded-md border border-dashed bg-muted/20 px-3 py-6 text-center">
-                  <p className="text-sm font-medium">No active queue items</p>
-                  <p className="text-xs text-muted-foreground mt-1">This lane is clear for now.</p>
+                  <p className="text-sm font-medium"><T k="pages.noActiveQueueItems" /></p>
+                  <p className="text-xs text-muted-foreground mt-1"><T k="pages.thisLaneIsClearForNow" /></p>
                 </div>
               )}
               {activeQueueItems.slice(0, 6).map((item) => (
@@ -1692,7 +1693,7 @@ function BookkeeperCommandCenter({
                         variant="outline"
                         onClick={() => onOpenBrief(item.companyId)}
                       >
-                        Brief
+                        <T k="pages.brief" />
                       </Button>
                       <Button
                         size="sm"
@@ -1700,7 +1701,7 @@ function BookkeeperCommandCenter({
                         onClick={() => onViewProfile(item.companyId)}
                       >
                         <ChevronRight className="w-3.5 h-3.5 mr-1" />
-                        Profile
+                        <T k="pages.profile" />
                       </Button>
                       <Button size="sm" onClick={() => onOpenBooks(item.companyId)}>
                         <BookOpen className="w-3.5 h-3.5 mr-1" />
@@ -1719,7 +1720,7 @@ function BookkeeperCommandCenter({
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Users className="w-4 h-4 text-primary" />
-                Workload Ownership
+                <T k="pages.workloadOwnership" />
               </CardTitle>
               {(dashboard?.workload?.unassignedClients ?? 0) > 0 && (
                 <Badge variant="destructive">
@@ -1730,7 +1731,7 @@ function BookkeeperCommandCenter({
           </CardHeader>
           <CardContent className="space-y-2">
             {workloadOwners.length === 0 && (
-              <p className="text-sm text-muted-foreground">No staff workload yet.</p>
+              <p className="text-sm text-muted-foreground"><T k="pages.noStaffWorkloadYet" /></p>
             )}
             {workloadOwners.slice(0, 6).map((owner) => (
               <div key={owner.staffId ?? "unassigned"} className="rounded-md border px-3 py-2">
@@ -1775,7 +1776,7 @@ function BookkeeperCommandCenter({
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-base">VAT Production Board</CardTitle>
+            <CardTitle className="text-base"><T k="pages.vatProductionBoard" /></CardTitle>
             <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
           </div>
         </CardHeader>
@@ -1803,7 +1804,7 @@ function BookkeeperCommandCenter({
                 <div className="space-y-2 min-h-[132px]">
                   {cohort.clients.length === 0 && (
                     <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-sm text-muted-foreground text-center">
-                      No clients in this cohort
+                      <T k="pages.noClientsInThisCohort" />
                     </div>
                   )}
                   {cohort.clients.slice(0, 4).map((client) => (
@@ -1839,12 +1840,12 @@ function BookkeeperCommandCenter({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-destructive" />
-              Priority Queue
+              <T k="pages.priorityQueue" />
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {priorityClients.length === 0 && (
-              <p className="text-sm text-muted-foreground">No clients yet.</p>
+              <p className="text-sm text-muted-foreground"><T k="pages.noClientsYet" /></p>
             )}
             {priorityClients.map((client) => (
               <button
@@ -1869,12 +1870,12 @@ function BookkeeperCommandCenter({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Calculator className="w-4 h-4 text-info" />
-              Corporate Tax
+              <T k="pages.corporateTax" />
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {ctClients.length === 0 && (
-              <p className="text-sm text-muted-foreground">No CT deadlines requiring action.</p>
+              <p className="text-sm text-muted-foreground"><T k="pages.noCtDeadlinesRequiringAction" /></p>
             )}
             {ctClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
@@ -1896,12 +1897,12 @@ function BookkeeperCommandCenter({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-warning" />
-              Bookkeeping Close
+              <T k="pages.bookkeepingClose" />
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {closeClients.length === 0 && (
-              <p className="text-sm text-muted-foreground">Monthly close is on track.</p>
+              <p className="text-sm text-muted-foreground"><T k="pages.monthlyCloseIsOnTrack" /></p>
             )}
             {closeClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
@@ -1927,12 +1928,12 @@ function BookkeeperCommandCenter({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-success" />
-              Accounting Review
+              <T k="pages.accountingReview" />
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {accountingClients.length === 0 && (
-              <p className="text-sm text-muted-foreground">Trial balances are clean.</p>
+              <p className="text-sm text-muted-foreground"><T k="pages.trialBalancesAreClean" /></p>
             )}
             {accountingClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
@@ -2019,7 +2020,7 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <Target className="w-4 h-4 text-primary" />
-              Revenue Growth
+              <T k="pages.revenueGrowth" />
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               Internal opportunity queue for service AR, cleanup work, advisory packs, and
@@ -2033,32 +2034,32 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
             disabled={refreshMutation.isPending}
           >
             <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh Signals
+            <T k="pages.refreshSignals" />
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Open pipeline</p>
+            <p className="text-xs text-muted-foreground"><T k="pages.openPipeline" /></p>
             <p className="text-lg font-semibold">{formatAed(summary.estimated)}</p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Accepted</p>
+            <p className="text-xs text-muted-foreground"><T k="pages.accepted" /></p>
             <p className="text-lg font-semibold">{formatAed(summary.accepted)}</p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Completed</p>
+            <p className="text-xs text-muted-foreground"><T k="pages.completed" /></p>
             <p className="text-lg font-semibold">{formatAed(summary.completed)}</p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Open count</p>
+            <p className="text-xs text-muted-foreground"><T k="pages.openCount" /></p>
             <p className="text-lg font-semibold">{summary.openCount}</p>
           </div>
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading revenue signals...</p>
+          <p className="text-sm text-muted-foreground"><T k="pages.loadingRevenueSignals" /></p>
         ) : active.length === 0 ? (
           <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
             No active revenue opportunities yet. Refresh signals after new AR, cleanup, or
@@ -2094,7 +2095,7 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                     variant="outline"
                     onClick={() => onOpenClient(opportunity.companyId)}
                   >
-                    Client
+                    <T k="pages.client" />
                   </Button>
                   <Button
                     size="sm"
@@ -2107,7 +2108,7 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                     }
                     disabled={updateMutation.isPending}
                   >
-                    Accept
+                    <T k="pages.accept" />
                   </Button>
                   <Button
                     size="sm"
@@ -2121,7 +2122,7 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                     }
                     disabled={updateMutation.isPending}
                   >
-                    Complete
+                    <T k="pages.complete" />
                   </Button>
                   <Button
                     size="sm"
@@ -2136,7 +2137,7 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                     }
                     disabled={updateMutation.isPending}
                   >
-                    Dismiss
+                    <T k="pages.dismiss" />
                   </Button>
                 </div>
               </div>
@@ -2177,7 +2178,7 @@ function VatWorkspacePanel({
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <Calculator className="w-4 h-4 text-primary" />
-              VAT Submission Workspace
+              <T k="pages.vatSubmissionWorkspace" />
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               VAT-only workpapers for invoice rows, OCR drafts, evidence, and copy-ready VAT 201
@@ -2190,14 +2191,14 @@ function VatWorkspacePanel({
       <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">VAT queue</p>
+            <p className="text-sm font-medium"><T k="pages.vatQueue2" /></p>
             <span className="text-xs text-muted-foreground">
               {dashboard?.summary.vatDue28Days ?? 0} due in 28d
             </span>
           </div>
           {dueClients.length === 0 ? (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              No VAT queue items need action.
+              <T k="pages.noVatQueueItemsNeedAction" />
             </div>
           ) : (
             dueClients.map((client) => (
@@ -2218,7 +2219,7 @@ function VatWorkspacePanel({
                   variant="outline"
                   onClick={() => onOpenWorkspace(client.companyId)}
                 >
-                  Workspace
+                  <T k="pages.workspace" />
                 </Button>
               </div>
             ))
@@ -2227,7 +2228,7 @@ function VatWorkspacePanel({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Recent workpapers</p>
+            <p className="text-sm font-medium"><T k="pages.recentWorkpapers" /></p>
             <span className="text-xs text-muted-foreground">{workpapers.length} total</span>
           </div>
           {recentWorkpapers.length === 0 ? (
@@ -2258,7 +2259,7 @@ function VatWorkspacePanel({
           )}
           {clients.length > 0 && dueClients.length === 0 && (
             <Button size="sm" variant="outline" onClick={() => onOpenWorkspace(clients[0].id)}>
-              Create for first client
+              <T k="pages.createForFirstClient" />
             </Button>
           )}
         </div>
@@ -2825,7 +2826,7 @@ function VatWorkspaceDialog({
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3">
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <div className="grid gap-1">
-                <Label>Period start</Label>
+                <Label><T k="pages.periodStart2" /></Label>
                 <Input
                   type="date"
                   value={periodStart}
@@ -2833,7 +2834,7 @@ function VatWorkspaceDialog({
                 />
               </div>
               <div className="grid gap-1">
-                <Label>Period end</Label>
+                <Label><T k="pages.periodEnd2" /></Label>
                 <Input
                   type="date"
                   value={periodEnd}
@@ -2841,11 +2842,11 @@ function VatWorkspaceDialog({
                 />
               </div>
               <div className="grid gap-1">
-                <Label>Due date</Label>
+                <Label><T k="pages.dueDate2" /></Label>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </div>
               <div className="grid gap-1">
-                <Label>Workpaper</Label>
+                <Label><T k="pages.workpaper" /></Label>
                 <Select value={selectedWorkpaperId ?? ""} onValueChange={setSelectedWorkpaperId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select workpaper" />
@@ -2901,13 +2902,13 @@ function VatWorkspaceDialog({
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Status</p>
+                  <p className="text-xs text-muted-foreground"><T k="pages.status" /></p>
                   <p className="font-semibold">
                     {detail?.workpaper.status ?? selectedSummary?.status}
                   </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Approved rows</p>
+                  <p className="text-xs text-muted-foreground"><T k="pages.approvedRows" /></p>
                   <p className="font-semibold">{approvedRows.length}</p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
@@ -2926,13 +2927,13 @@ function VatWorkspaceDialog({
                         data-testid="button-approve-all-drafts"
                       >
                         <Check className="w-3 h-3 mr-1" />
-                        Approve all
+                        <T k="pages.approveAll" />
                       </Button>
                     )}
                   </div>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Evidence-backed</p>
+                  <p className="text-xs text-muted-foreground"><T k="pages.evidenceBacked" /></p>
                   <p className="font-semibold">{sourceBackedRows.length}</p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
@@ -2942,17 +2943,17 @@ function VatWorkspaceDialog({
                   </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Net payable</p>
+                  <p className="text-xs text-muted-foreground"><T k="pages.netPayable" /></p>
                   <p className="font-semibold">{formatAed(payableVat)}</p>
                 </div>
               </div>
 
               <Tabs value={workspaceTab} onValueChange={setWorkspaceTab} className="space-y-4">
                 <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="grid">Entry Grid</TabsTrigger>
-                  <TabsTrigger value="drafts">OCR Drafts</TabsTrigger>
+                  <TabsTrigger value="grid"><T k="pages.entryGrid" /></TabsTrigger>
+                  <TabsTrigger value="drafts"><T k="pages.ocrDrafts" /></TabsTrigger>
                   <TabsTrigger value="return">VAT 201 Review</TabsTrigger>
-                  <TabsTrigger value="evidence">Evidence</TabsTrigger>
+                  <TabsTrigger value="evidence"><T k="pages.evidence" /></TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="grid" className="space-y-4 mt-0">
@@ -2960,7 +2961,7 @@ function VatWorkspaceDialog({
                     <div className="rounded-md border overflow-hidden">
                       <div className="flex flex-col gap-2 border-b bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="font-medium">Invoice and bill entry grid</p>
+                          <p className="font-medium"><T k="pages.invoiceAndBillEntryGrid" /></p>
                           <p className="text-xs text-muted-foreground">
                             Edit rows, approve drafts, exclude mistakes, then review totals in VAT
                             201 Review.
@@ -2974,19 +2975,19 @@ function VatWorkspaceDialog({
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="min-w-28">Source</TableHead>
-                              <TableHead className="min-w-36">Invoice</TableHead>
+                              <TableHead className="min-w-28"><T k="pages.source" /></TableHead>
+                              <TableHead className="min-w-36"><T k="pages.invoice" /></TableHead>
                               <TableHead className="min-w-36">Date</TableHead>
                               <TableHead className="min-w-56">Customer / vendor</TableHead>
                               <TableHead className="min-w-36">TRN</TableHead>
-                              <TableHead className="min-w-40">Category</TableHead>
-                              <TableHead className="min-w-32">Emirate</TableHead>
-                              <TableHead className="min-w-28 text-right">Taxable</TableHead>
+                              <TableHead className="min-w-40"><T k="pages.category" /></TableHead>
+                              <TableHead className="min-w-32"><T k="pages.emirate" /></TableHead>
+                              <TableHead className="min-w-28 text-right"><T k="pages.taxable" /></TableHead>
                               <TableHead className="min-w-28 text-right">VAT</TableHead>
-                              <TableHead className="min-w-28 text-right">Gross</TableHead>
-                              <TableHead className="min-w-32">Status</TableHead>
+                              <TableHead className="min-w-28 text-right"><T k="pages.gross" /></TableHead>
+                              <TableHead className="min-w-32"><T k="pages.status" /></TableHead>
                               <TableHead className="min-w-36 text-right sticky right-0 bg-background z-20 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
-                                Actions
+                                <T k="pages.actions" />
                               </TableHead>
                             </TableRow>
                           </TableHeader>
@@ -3143,9 +3144,9 @@ function VatWorkspaceDialog({
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="approved">Approved</SelectItem>
-                                    <SelectItem value="draft">Draft</SelectItem>
-                                    <SelectItem value="excluded">Excluded</SelectItem>
+                                    <SelectItem value="approved"><T k="pages.approved" /></SelectItem>
+                                    <SelectItem value="draft"><T k="pages.draft" /></SelectItem>
+                                    <SelectItem value="excluded"><T k="pages.excluded" /></SelectItem>
                                   </SelectContent>
                                 </Select>
                               </TableCell>
@@ -3169,7 +3170,7 @@ function VatWorkspaceDialog({
                                     </Button>
                                   )}
                                   <Button size="sm" variant="outline" onClick={resetRowForm}>
-                                    Clear
+                                    <T k="pages.clear" />
                                   </Button>
                                 </div>
                               </TableCell>
@@ -3256,7 +3257,7 @@ function VatWorkspaceDialog({
                                           title="Posted to the general ledger"
                                         >
                                           <CheckCircle2 className="w-3.5 h-3.5" />
-                                          Posted
+                                          <T k="pages.posted" />
                                         </Badge>
                                       ) : row.sourceMethod === "manual" &&
                                         POSTABLE_VAT_CATEGORIES.includes(row.rowCategory) ? (
@@ -3285,7 +3286,7 @@ function VatWorkspaceDialog({
                                             }
                                           >
                                             <Check className="w-3.5 h-3.5" />
-                                            <span className="sr-only">Approve draft row</span>
+                                            <span className="sr-only"><T k="pages.approveDraftRow" /></span>
                                           </Button>
                                           <Button
                                             size="sm"
@@ -3300,7 +3301,7 @@ function VatWorkspaceDialog({
                                             }
                                           >
                                             <XCircle className="w-3.5 h-3.5" />
-                                            <span className="sr-only">Exclude draft row</span>
+                                            <span className="sr-only"><T k="pages.excludeDraftRow" /></span>
                                           </Button>
                                         </>
                                       ) : (
@@ -3336,7 +3337,7 @@ function VatWorkspaceDialog({
                                         }}
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
-                                        <span className="sr-only">Delete row</span>
+                                        <span className="sr-only"><T k="pages.deleteRow" /></span>
                                       </Button>
                                     </div>
                                   </TableCell>
@@ -3351,7 +3352,7 @@ function VatWorkspaceDialog({
                     <div className="space-y-4">
                       <div className="rounded-md border p-3 space-y-3">
                         <div>
-                          <p className="font-medium">Row notes and override reason</p>
+                          <p className="font-medium"><T k="pages.rowNotesAndOverrideReason" /></p>
                           <p className="text-xs text-muted-foreground">
                             Manual adjustments must explain the audit reason before they can be
                             saved.
@@ -3396,7 +3397,7 @@ function VatWorkspaceDialog({
                       <div className="rounded-md border p-3 space-y-3">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <p className="font-medium">Paste rows from Excel</p>
+                            <p className="font-medium"><T k="pages.pasteRowsFromExcel" /></p>
                             <p className="text-xs text-muted-foreground">
                               Headers are supported: category, invoice number, date,
                               customer/vendor, TRN, emirate, taxable amount, VAT amount, gross
@@ -3440,7 +3441,7 @@ function VatWorkspaceDialog({
                             }
                           >
                             <Upload className="w-4 h-4 mr-2" />
-                            Add pasted rows
+                            <T k="pages.addPastedRows" />
                           </Button>
                           <Button
                             size="sm"
@@ -3449,7 +3450,7 @@ function VatWorkspaceDialog({
                             data-testid="button-vat-template"
                           >
                             <Download className="w-4 h-4 mr-2" />
-                            Excel template
+                            <T k="pages.excelTemplate" />
                           </Button>
                           <input
                             ref={importFileInputRef}
@@ -3484,7 +3485,7 @@ function VatWorkspaceDialog({
                     <div className="rounded-md border p-3 space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="font-medium">Upload invoice or receipt evidence</p>
+                          <p className="font-medium"><T k="pages.uploadInvoiceOrReceiptEvidence" /></p>
                           <p className="text-xs text-muted-foreground">
                             Uploaded files create draft OCR rows. They do not count until approved.
                           </p>
@@ -3514,7 +3515,7 @@ function VatWorkspaceDialog({
                               setEvidenceInputKey((key) => key + 1);
                             }}
                           >
-                            Remove
+                            <T k="pages.remove" />
                           </Button>
                         </div>
                       ) : null}
@@ -3525,13 +3526,13 @@ function VatWorkspaceDialog({
                         disabled={!selectedWorkpaperId || scanMutation.isPending}
                       >
                         <ScanLine className="w-4 h-4 mr-2" />
-                        Log OCR Draft
+                        <T k="pages.logOcrDraft" />
                       </Button>
                     </div>
 
                     <div className="rounded-md border overflow-hidden">
                       <div className="border-b bg-muted/30 px-3 py-2">
-                        <p className="font-medium">Draft review queue</p>
+                        <p className="font-medium"><T k="pages.draftReviewQueue" /></p>
                         <p className="text-xs text-muted-foreground">
                           Approve only after the bookkeeper has checked the scanned values against
                           evidence.
@@ -3540,11 +3541,11 @@ function VatWorkspaceDialog({
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Invoice</TableHead>
-                            <TableHead>Counterparty</TableHead>
-                            <TableHead>Category</TableHead>
+                            <TableHead><T k="pages.invoice" /></TableHead>
+                            <TableHead><T k="pages.counterparty" /></TableHead>
+                            <TableHead><T k="pages.category" /></TableHead>
                             <TableHead className="text-right">VAT</TableHead>
-                            <TableHead className="text-right">Review</TableHead>
+                            <TableHead className="text-right"><T k="pages.review" /></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -3554,7 +3555,7 @@ function VatWorkspaceDialog({
                                 colSpan={5}
                                 className="text-sm text-muted-foreground text-center py-8"
                               >
-                                No OCR drafts waiting for review.
+                                <T k="pages.noOcrDraftsWaitingForReview" />
                               </TableCell>
                             </TableRow>
                           ) : (
@@ -3647,7 +3648,7 @@ function VatWorkspaceDialog({
                           disabled={!selectedWorkpaperId || recalculateMutation.isPending}
                         >
                           <RefreshCw className="w-4 h-4 mr-2" />
-                          Recalculate
+                          <T k="pages.recalculate" />
                         </Button>
                         <Button
                           size="sm"
@@ -3655,7 +3656,7 @@ function VatWorkspaceDialog({
                           disabled={!selectedWorkpaperId || generateMutation.isPending}
                         >
                           <FileText className="w-4 h-4 mr-2" />
-                          Generate Return
+                          <T k="pages.generateReturn" />
                         </Button>
                       </div>
                     </div>
@@ -3692,7 +3693,7 @@ function VatWorkspaceDialog({
                   <div className="rounded-md border p-3 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="font-medium">Evidence files</p>
+                        <p className="font-medium"><T k="pages.evidenceFiles" /></p>
                         <p className="text-xs text-muted-foreground">
                           Uploaded invoices and receipts stay linked to VAT rows for refund support
                           and later review.
@@ -3704,7 +3705,7 @@ function VatWorkspaceDialog({
                     </div>
                     {attachments.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        No invoice evidence uploaded yet.
+                        <T k="pages.noInvoiceEvidenceUploadedYet" />
                       </p>
                     ) : (
                       <div className="grid gap-2">
@@ -3726,7 +3727,7 @@ function VatWorkspaceDialog({
                               onClick={() => void downloadAttachment(attachment)}
                               disabled={!attachment.filePath}
                             >
-                              Download
+                              <T k="pages.download" />
                             </Button>
                           </div>
                         ))}
@@ -3745,7 +3746,7 @@ function VatWorkspaceDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
+            <T k="pages.close" />
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -3754,16 +3755,16 @@ function VatWorkspaceDialog({
 }
 
 function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"] }) {
-  if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
+  if (!vatStatus) return <Badge variant="outline"><T k="pages.noVat" /></Badge>;
   const due = new Date(vatStatus.dueDate);
   const now = new Date();
   const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
   if (vatStatus.status === "filed" || vatStatus.status === "submitted") {
-    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">Filed</Badge>;
+    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30"><T k="pages.filed" /></Badge>;
   }
   if (daysUntilDue < 0) {
-    return <Badge variant="destructive">Overdue</Badge>;
+    return <Badge variant="destructive"><T k="pages.overdue" /></Badge>;
   }
   if (daysUntilDue <= 14) {
     return (
@@ -3777,9 +3778,9 @@ function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"]
 
 function StatusBadge({ active }: { active: boolean }) {
   return active ? (
-    <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">Active</Badge>
+    <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30"><T k="pages.active" /></Badge>
   ) : (
-    <Badge variant="secondary">Inactive</Badge>
+    <Badge variant="secondary"><T k="pages.inactive" /></Badge>
   );
 }
 
@@ -4047,7 +4048,7 @@ export default function ClientPortfolio() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading client portfolio...</div>
+        <div className="text-muted-foreground"><T k="pages.loadingClientPortfolio" /></div>
       </div>
     );
   }
@@ -4057,7 +4058,7 @@ export default function ClientPortfolio() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight"><T k="pages.clientPortfolio" /></h1>
           <p className="text-muted-foreground mt-1">
             {clients.length} client{clients.length !== 1 ? "s" : ""} managed by NRA
           </p>
@@ -4072,11 +4073,11 @@ export default function ClientPortfolio() {
             }}
           >
             <Upload className="w-4 h-4 mr-2" />
-            Import Clients
+            <T k="pages.importClients" />
           </Button>
           <Button onClick={() => setAddOpen(true)} data-testid="button-add-client">
             <Plus className="w-4 h-4 mr-2" />
-            Add Client
+            <T k="pages.addClient" />
           </Button>
         </div>
       </div>
@@ -4086,7 +4087,7 @@ export default function ClientPortfolio() {
         <Card data-testid="card-total-clients">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Clients</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide"><T k="pages.totalClients" /></p>
               <Users className="w-4 h-4 text-muted-foreground" />
             </div>
             <p className="text-2xl font-bold mt-1">{overview?.totalClients ?? clients.length}</p>
@@ -4104,7 +4105,7 @@ export default function ClientPortfolio() {
         <Card data-testid="card-overdue-ar">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Overdue AR</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide"><T k="pages.overdueAr" /></p>
               <Receipt className="w-4 h-4 text-destructive" />
             </div>
             <p className="text-2xl font-bold mt-1">{formatAed(overview?.overdueAr ?? 0)}</p>
@@ -4114,7 +4115,7 @@ export default function ClientPortfolio() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Needs Attention
+                <T k="pages.needsAttention" />
               </p>
               <AlertTriangle className="w-4 h-4 text-warning" />
             </div>
@@ -4220,7 +4221,7 @@ export default function ClientPortfolio() {
           data-testid="filter-no-docs"
         >
           <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
-          Missing Documents
+          <T k="pages.missingDocuments" />
         </Button>
       </div>
 
@@ -4271,7 +4272,7 @@ export default function ClientPortfolio() {
           {clients.length === 0 && (
             <Button onClick={() => setAddOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
-              Add First Client
+              <T k="pages.addFirstClient" />
             </Button>
           )}
         </div>
@@ -4283,7 +4284,7 @@ export default function ClientPortfolio() {
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-primary" />
-                Portfolio Production Matrix
+                <T k="pages.portfolioProductionMatrix" />
               </CardTitle>
               <Badge variant="outline">{filtered.length} shown</Badge>
             </div>
@@ -4292,14 +4293,14 @@ export default function ClientPortfolio() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Services</TableHead>
-                  <TableHead>Priority</TableHead>
+                  <TableHead><T k="pages.client" /></TableHead>
+                  <TableHead><T k="pages.owner" /></TableHead>
+                  <TableHead><T k="pages.services" /></TableHead>
+                  <TableHead><T k="pages.priority" /></TableHead>
                   <TableHead>VAT</TableHead>
-                  <TableHead>Corporate Tax</TableHead>
-                  <TableHead>Close</TableHead>
-                  <TableHead>Next Action</TableHead>
+                  <TableHead><T k="pages.corporateTax" /></TableHead>
+                  <TableHead><T k="pages.close" /></TableHead>
+                  <TableHead><T k="pages.nextAction2" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -4348,7 +4349,7 @@ export default function ClientPortfolio() {
                             <p className="text-xs text-muted-foreground">{ops.vat.cohortLabel}</p>
                           </div>
                         ) : (
-                          <Badge variant="outline">Not scoped</Badge>
+                          <Badge variant="outline"><T k="pages.notScoped" /></Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -4388,7 +4389,7 @@ export default function ClientPortfolio() {
                                 variant="outline"
                                 onClick={() => setBriefClientId(client.id)}
                               >
-                                Brief
+                                <T k="pages.brief" />
                               </Button>
                             )}
                             {(!ops || hasClientService(ops, "vat")) && (
@@ -4464,7 +4465,7 @@ export default function ClientPortfolio() {
                     <div className="rounded-md border bg-muted/20 p-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">Next action</p>
+                          <p className="text-xs text-muted-foreground"><T k="pages.nextAction" /></p>
                           <p className="text-sm font-medium truncate">{ops.nextBestAction}</p>
                         </div>
                         <span className="text-xs font-medium shrink-0">
@@ -4483,13 +4484,13 @@ export default function ClientPortfolio() {
                   {/* Key metrics */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-muted/40 rounded-md p-2">
-                      <p className="text-xs text-muted-foreground">Outstanding AR</p>
+                      <p className="text-xs text-muted-foreground"><T k="pages.outstandingAr" /></p>
                       <p className="font-semibold text-sm mt-0.5">
                         {formatAed(client.outstandingAr)}
                       </p>
                     </div>
                     <div className="bg-muted/40 rounded-md p-2">
-                      <p className="text-xs text-muted-foreground">Invoices</p>
+                      <p className="text-xs text-muted-foreground"><T k="pages.invoices" /></p>
                       <p className="font-semibold text-sm mt-0.5">{client.invoiceCount}</p>
                     </div>
                   </div>
@@ -4498,12 +4499,12 @@ export default function ClientPortfolio() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
-                      VAT Status
+                      <T k="pages.vatStatus" />
                     </span>
                     {ops && hasClientService(ops, "vat") ? (
                       <PriorityBadge priority={ops.vat.status} />
                     ) : (
-                      <Badge variant="outline">Not scoped</Badge>
+                      <Badge variant="outline"><T k="pages.notScoped" /></Badge>
                     )}
                   </div>
 
@@ -4524,7 +4525,7 @@ export default function ClientPortfolio() {
 
                   {/* Last activity */}
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Last receipt</span>
+                    <span><T k="pages.lastReceipt" /></span>
                     <span>
                       {client.lastReceiptDate
                         ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
@@ -4550,7 +4551,7 @@ export default function ClientPortfolio() {
                         variant="outline"
                         onClick={() => setBriefClientId(client.id)}
                       >
-                        Brief
+                        <T k="pages.brief" />
                       </Button>
                     )}
                     {(!ops || hasClientService(ops, "vat")) && (
@@ -4570,7 +4571,7 @@ export default function ClientPortfolio() {
                       data-testid={`button-open-books-${client.id}`}
                     >
                       <BookOpen className="w-3.5 h-3.5 mr-1.5" />
-                      Open Books
+                      <T k="pages.openBooks" />
                     </Button>
                     <Button
                       size="sm"
@@ -4593,15 +4594,15 @@ export default function ClientPortfolio() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Client</TableHead>
-                <TableHead>Services</TableHead>
+                <TableHead><T k="pages.client" /></TableHead>
+                <TableHead><T k="pages.services" /></TableHead>
                 <TableHead>TRN</TableHead>
-                <TableHead>Outstanding AR</TableHead>
-                <TableHead>Invoices</TableHead>
-                <TableHead>VAT Status</TableHead>
-                <TableHead>Close</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead><T k="pages.outstandingAr" /></TableHead>
+                <TableHead><T k="pages.invoices" /></TableHead>
+                <TableHead><T k="pages.vatStatus" /></TableHead>
+                <TableHead><T k="pages.close" /></TableHead>
+                <TableHead><T k="pages.owner" /></TableHead>
+                <TableHead className="text-right"><T k="pages.actions" /></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -4638,7 +4639,7 @@ export default function ClientPortfolio() {
                           <p className="text-xs text-muted-foreground">{ops.vat.cohortLabel}</p>
                         </div>
                       ) : (
-                        <Badge variant="outline">Not scoped</Badge>
+                        <Badge variant="outline"><T k="pages.notScoped" /></Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -4666,7 +4667,7 @@ export default function ClientPortfolio() {
                             variant="outline"
                             onClick={() => setBriefClientId(client.id)}
                           >
-                            Brief
+                            <T k="pages.brief" />
                           </Button>
                         )}
                         {(!ops || hasClientService(ops, "vat")) && (
@@ -4707,7 +4708,7 @@ export default function ClientPortfolio() {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add New Client</DialogTitle>
+            <DialogTitle><T k="pages.addNewClient" /></DialogTitle>
             <DialogDescription>
               Create a new client company. A UAE chart of accounts will be seeded automatically.
             </DialogDescription>
@@ -4724,7 +4725,7 @@ export default function ClientPortfolio() {
             </div>
             <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
               <div>
-                <Label>NR services for this client</Label>
+                <Label><T k="pages.nrServicesForThisClient" /></Label>
                 <p className="text-xs text-muted-foreground mt-1">
                   Choose only the services NRA is contracted to deliver for this client.
                 </p>
@@ -4769,7 +4770,7 @@ export default function ClientPortfolio() {
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="emirate">Emirate</Label>
+                <Label htmlFor="emirate"><T k="pages.emirate" /></Label>
                 <Select
                   value={form.emirate}
                   onValueChange={(v) => setForm((f) => ({ ...f, emirate: v }))}
@@ -4778,20 +4779,20 @@ export default function ClientPortfolio() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="abu_dhabi">Abu Dhabi</SelectItem>
-                    <SelectItem value="dubai">Dubai</SelectItem>
-                    <SelectItem value="sharjah">Sharjah</SelectItem>
-                    <SelectItem value="ajman">Ajman</SelectItem>
-                    <SelectItem value="umm_al_quwain">Umm Al Quwain</SelectItem>
-                    <SelectItem value="ras_al_khaimah">Ras Al Khaimah</SelectItem>
-                    <SelectItem value="fujairah">Fujairah</SelectItem>
+                    <SelectItem value="abu_dhabi"><T k="pages.abuDhabi" /></SelectItem>
+                    <SelectItem value="dubai"><T k="pages.dubai" /></SelectItem>
+                    <SelectItem value="sharjah"><T k="pages.sharjah" /></SelectItem>
+                    <SelectItem value="ajman"><T k="pages.ajman" /></SelectItem>
+                    <SelectItem value="umm_al_quwain"><T k="pages.ummAlQuwain" /></SelectItem>
+                    <SelectItem value="ras_al_khaimah"><T k="pages.rasAlKhaimah" /></SelectItem>
+                    <SelectItem value="fujairah"><T k="pages.fujairah" /></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="legalStructure">Legal Structure</Label>
+                <Label htmlFor="legalStructure"><T k="pages.legalStructure" /></Label>
                 <Select
                   value={form.legalStructure}
                   onValueChange={(v) => setForm((f) => ({ ...f, legalStructure: v }))}
@@ -4801,15 +4802,15 @@ export default function ClientPortfolio() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="LLC">LLC</SelectItem>
-                    <SelectItem value="Sole Proprietorship">Sole Proprietorship</SelectItem>
-                    <SelectItem value="Partnership">Partnership</SelectItem>
-                    <SelectItem value="Corporation">Corporation</SelectItem>
-                    <SelectItem value="Free Zone">Free Zone</SelectItem>
+                    <SelectItem value="Sole Proprietorship"><T k="pages.soleProprietorship" /></SelectItem>
+                    <SelectItem value="Partnership"><T k="pages.partnership" /></SelectItem>
+                    <SelectItem value="Corporation"><T k="pages.corporation" /></SelectItem>
+                    <SelectItem value="Free Zone"><T k="pages.freeZone" /></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="vatFrequency">VAT Frequency</Label>
+                <Label htmlFor="vatFrequency"><T k="pages.vatFrequency" /></Label>
                 <Select
                   value={form.vatFilingFrequency}
                   onValueChange={(v) => setForm((f) => ({ ...f, vatFilingFrequency: v }))}
@@ -4818,15 +4819,15 @@ export default function ClientPortfolio() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="monthly"><T k="pages.monthly" /></SelectItem>
+                    <SelectItem value="quarterly"><T k="pages.quarterly" /></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="vatCloseGroup">VAT Close Group</Label>
+                <Label htmlFor="vatCloseGroup"><T k="pages.vatCloseGroup" /></Label>
                 <Select
                   value={form.vatPeriodStartMonth}
                   onValueChange={(v) => setForm((f) => ({ ...f, vatPeriodStartMonth: v }))}
@@ -4835,7 +4836,7 @@ export default function ClientPortfolio() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Auto from NR client group</SelectItem>
+                    <SelectItem value="auto"><T k="pages.autoFromNrClientGroup" /></SelectItem>
                     <SelectItem value="11">Jan / Apr / Jul / Oct</SelectItem>
                     <SelectItem value="12">Feb / May / Aug / Nov</SelectItem>
                     <SelectItem value="1">Mar / Jun / Sep / Dec</SelectItem>
@@ -4843,7 +4844,7 @@ export default function ClientPortfolio() {
                 </Select>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="fiscalYearStart">Financial Year Start</Label>
+                <Label htmlFor="fiscalYearStart"><T k="pages.financialYearStart" /></Label>
                 <Select
                   value={form.fiscalYearStartMonth}
                   onValueChange={(v) => setForm((f) => ({ ...f, fiscalYearStartMonth: v }))}
@@ -4852,24 +4853,24 @@ export default function ClientPortfolio() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="1"><T k="pages.january" /></SelectItem>
+                    <SelectItem value="2"><T k="pages.february" /></SelectItem>
+                    <SelectItem value="3"><T k="pages.march" /></SelectItem>
+                    <SelectItem value="4"><T k="pages.april" /></SelectItem>
                     <SelectItem value="5">May</SelectItem>
                     <SelectItem value="6">June</SelectItem>
                     <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
+                    <SelectItem value="8"><T k="pages.august" /></SelectItem>
+                    <SelectItem value="9"><T k="pages.september" /></SelectItem>
+                    <SelectItem value="10"><T k="pages.october" /></SelectItem>
+                    <SelectItem value="11"><T k="pages.november" /></SelectItem>
+                    <SelectItem value="12"><T k="pages.december" /></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="industry">Industry</Label>
+              <Label htmlFor="industry"><T k="pages.industry" /></Label>
               <Input
                 id="industry"
                 value={form.industry}
@@ -4878,7 +4879,7 @@ export default function ClientPortfolio() {
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="corporateTaxId">Corporate Tax Registration</Label>
+              <Label htmlFor="corporateTaxId"><T k="pages.corporateTaxRegistration" /></Label>
               <Input
                 id="corporateTaxId"
                 value={form.corporateTaxId}
@@ -4888,7 +4889,7 @@ export default function ClientPortfolio() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="contactEmail">Email</Label>
+                <Label htmlFor="contactEmail"><T k="pages.email" /></Label>
                 <Input
                   id="contactEmail"
                   type="email"
@@ -4898,7 +4899,7 @@ export default function ClientPortfolio() {
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="contactPhone">Phone</Label>
+                <Label htmlFor="contactPhone"><T k="pages.phone" /></Label>
                 <Input
                   id="contactPhone"
                   value={form.contactPhone}
@@ -4908,7 +4909,7 @@ export default function ClientPortfolio() {
               </div>
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="businessAddress">Business Address</Label>
+              <Label htmlFor="businessAddress"><T k="pages.businessAddress" /></Label>
               <Input
                 id="businessAddress"
                 value={form.businessAddress}
@@ -4919,7 +4920,7 @@ export default function ClientPortfolio() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => createMutation.mutate(form)}
@@ -4936,7 +4937,7 @@ export default function ClientPortfolio() {
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Import Clients</DialogTitle>
+            <DialogTitle><T k="pages.importClients" /></DialogTitle>
             <DialogDescription>
               Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
               accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate, VAT
@@ -4960,11 +4961,11 @@ export default function ClientPortfolio() {
             {importResult && (
               <div className="rounded border p-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="font-medium">Imported</span>
+                  <span className="font-medium"><T k="pages.imported" /></span>
                   <span className="text-success">{importResult.created.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="font-medium">Errors</span>
+                  <span className="font-medium"><T k="pages.errors" /></span>
                   <span className={importResult.errors.length > 0 ? "text-destructive" : ""}>
                     {importResult.errors.length}
                   </span>
@@ -4984,7 +4985,7 @@ export default function ClientPortfolio() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportOpen(false)}>
-              Close
+              <T k="pages.close" />
             </Button>
             <Button
               onClick={() => importFile && importMutation.mutate(importFile)}

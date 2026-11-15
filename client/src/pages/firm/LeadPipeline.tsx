@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -254,7 +255,9 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Lead</DialogTitle>
+          <DialogTitle>
+            <T k="pages.addLead" />
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -267,7 +270,9 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Stage</Label>
+              <Label>
+                <T k="pages.stage" />
+              </Label>
               <Select value={stage} onValueChange={(v) => setStage(v as Stage)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -282,16 +287,26 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Source</Label>
+              <Label>
+                <T k="pages.source" />
+              </Label>
               <Select value={source} onValueChange={(v) => setSource(v as Source)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="saas_signup">SaaS Signup</SelectItem>
-                  <SelectItem value="referral">Referral</SelectItem>
-                  <SelectItem value="website">Website</SelectItem>
+                  <SelectItem value="manual">
+                    <T k="pages.manual" />
+                  </SelectItem>
+                  <SelectItem value="saas_signup">
+                    <T k="pages.saasSignup" />
+                  </SelectItem>
+                  <SelectItem value="referral">
+                    <T k="pages.referral" />
+                  </SelectItem>
+                  <SelectItem value="website">
+                    <T k="pages.website" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -307,7 +322,9 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label>
+              <T k="pages.notes" />
+            </Label>
             <Textarea
               placeholder="Optional notes..."
               value={notes}
@@ -318,7 +335,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            <T k="pages.cancel" />
           </Button>
           <Button onClick={handleSubmit} disabled={mutation.isPending || !userId.trim()}>
             {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
@@ -376,7 +393,9 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Stage</Label>
+            <Label>
+              <T k="pages.stage" />
+            </Label>
             <Select value={stage} onValueChange={(v) => setStage(v as Stage)}>
               <SelectTrigger>
                 <SelectValue />
@@ -401,7 +420,9 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label>
+              <T k="pages.notes" />
+            </Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
           </div>
         </div>
@@ -417,7 +438,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>
@@ -466,7 +487,7 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2 text-warning">
             <Sparkles className="w-4 h-4" />
-            Auto-discovered SaaS Prospects
+            <T k="pages.autoDiscoveredSaasProspects" />
           </CardTitle>
           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose}>
             <X className="w-4 h-4" />
@@ -483,7 +504,7 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
           </div>
         ) : prospects.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No high-activity prospects found right now.
+            <T k="pages.noHighActivityProspectsFoundRightNow" />
           </p>
         ) : (
           <div className="space-y-2">
@@ -605,7 +626,7 @@ export default function LeadPipeline() {
             </Button>
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="w-4 h-4 mr-1.5" />
-              Add Lead
+              <T k="pages.addLead" />
             </Button>
           </>
         }

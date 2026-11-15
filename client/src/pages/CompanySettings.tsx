@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -206,7 +207,9 @@ export default function CompanySettings() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <Building2 className="w-12 h-12 mx-auto mb-4" />
-              <p>No company selected.</p>
+              <p>
+                <T k="pages.noCompanySelected" />
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -306,7 +309,9 @@ export default function CompanySettings() {
                   name="industry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Industry</FormLabel>
+                      <FormLabel>
+                        <T k="pages.industry" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -322,7 +327,9 @@ export default function CompanySettings() {
               </div>
 
               <FormItem>
-                <FormLabel>Company Logo</FormLabel>
+                <FormLabel>
+                  <T k="pages.companyLogo" />
+                </FormLabel>
                 <div className="flex items-center gap-4">
                   {logoPreview && (
                     <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0 bg-muted">
@@ -483,7 +490,9 @@ export default function CompanySettings() {
                   name="locale"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Language</FormLabel>
+                      <FormLabel>
+                        <T k="pages.language" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "en"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-locale">
@@ -612,7 +621,9 @@ export default function CompanySettings() {
                   name="contactPhone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phone</FormLabel>
+                      <FormLabel>
+                        <T k="pages.phone" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -632,7 +643,9 @@ export default function CompanySettings() {
                   name="contactEmail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel>
+                        <T k="pages.email" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -658,7 +671,7 @@ export default function CompanySettings() {
               disabled={!form.formState.isDirty || updateMutation.isPending}
               data-testid="button-reset"
             >
-              Reset
+              <T k="pages.reset" />
             </Button>
             <Button
               type="submit"
@@ -671,7 +684,7 @@ export default function CompanySettings() {
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  Save Changes
+                  <T k="pages.saveChanges" />
                 </>
               )}
             </Button>

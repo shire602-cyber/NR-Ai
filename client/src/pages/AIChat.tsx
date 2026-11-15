@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -369,11 +370,11 @@ export default function AIChat() {
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
                   <History className="h-4 w-4 mr-2" />
-                  History
+                  <T k="pages.history" />
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowSettings(!showSettings)}>
                   <Settings className="h-4 w-4 mr-2" />
-                  Settings
+                  <T k="pages.settings" />
                 </Button>
               </div>
             </div>
@@ -544,7 +545,9 @@ export default function AIChat() {
           <Card className="w-full lg:w-80 flex-shrink-0 animate-slide-in-right">
             <CardHeader className="flex-shrink-0 border-b">
               <div className="flex items-center justify-between">
-                <CardTitle>History</CardTitle>
+                <CardTitle>
+                  <T k="pages.history" />
+                </CardTitle>
                 <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>
                   <X className="h-4 w-4" />
                 </Button>

@@ -132,8 +132,20 @@ describe("Public SaaS launch surface", () => {
     const onboardingWizardSource = readRepoFile("client/src/components/Onboarding.tsx");
     const onboardingPageSource = readRepoFile("client/src/pages/Onboarding.tsx");
 
-    expect(appSource).toContain("UAE Tax Ready");
+    // The header badge copy lives in the shell i18n catalog (R18-02).
+    const shellCatalog = readRepoFile("client/src/locales/en/shell.json");
+    expect(appSource).toContain('t["shell.uaeTaxReady"]');
+    expect(shellCatalog).toContain("UAE Tax Ready");
     for (const [file, source] of [
+      ["client/src/locales/en/shell.json", shellCatalog],
+      [
+        "client/src/locales/en/onboarding.json",
+        readRepoFile("client/src/locales/en/onboarding.json"),
+      ],
+      [
+        "client/src/locales/en/dashboard.json",
+        readRepoFile("client/src/locales/en/dashboard.json"),
+      ],
       ["client/src/App.tsx", appSource],
       ["client/src/pages/Dashboard.tsx", dashboardSource],
       ["client/src/components/Onboarding.tsx", onboardingWizardSource],

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -152,7 +153,7 @@ export default function AnomalyDetection() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-muted-foreground text-center">
-              Please create a company first to use anomaly detection.
+              <T k="pages.pleaseCreateACompanyFirstToUseAnomalyDetection" />
             </p>
           </CardContent>
         </Card>
@@ -191,7 +192,9 @@ export default function AnomalyDetection() {
             <ShieldAlert className="h-6 w-6 text-destructive" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Anomaly Detection</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              <T k="pages.aiAnomalyDetection" />
+            </h1>
             <p className="text-muted-foreground text-sm">
               Automatically scan transactions for irregularities and potential issues
             </p>
@@ -229,7 +232,9 @@ export default function AnomalyDetection() {
             onClick={() => setSeverityFilter("all")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs">Total Anomalies</CardDescription>
+              <CardDescription className="text-xs">
+                <T k="pages.totalAnomalies" />
+              </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <div className="text-3xl font-bold">{result.summary.total}</div>
@@ -242,7 +247,7 @@ export default function AnomalyDetection() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <AlertCircle className="h-3 w-3 text-destructive" />
-                Critical
+                <T k="pages.critical" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -256,7 +261,7 @@ export default function AnomalyDetection() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3 text-warning" />
-                Warning
+                <T k="pages.warning" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -288,15 +293,21 @@ export default function AnomalyDetection() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Severities</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="warning">Warning</SelectItem>
+            <SelectItem value="all">
+              <T k="pages.allSeverities" />
+            </SelectItem>
+            <SelectItem value="critical">
+              <T k="pages.critical" />
+            </SelectItem>
+            <SelectItem value="warning">
+              <T k="pages.warning" />
+            </SelectItem>
             <SelectItem value="info">Info</SelectItem>
           </SelectContent>
         </Select>
         {severityFilter !== "all" && (
           <Button variant="ghost" size="sm" onClick={() => setSeverityFilter("all")}>
-            Clear filter
+            <T k="pages.clearFilter" />
           </Button>
         )}
       </div>
@@ -366,7 +377,7 @@ export default function AnomalyDetection() {
                       className="shrink-0"
                     >
                       <X className="h-4 w-4 mr-1" />
-                      Dismiss
+                      <T k="pages.dismiss" />
                     </Button>
                   </div>
                 </CardContent>
@@ -379,7 +390,9 @@ export default function AnomalyDetection() {
           <CardContent className="pt-6">
             <div className="text-center py-8 space-y-3">
               <ShieldAlert className="h-12 w-12 text-success mx-auto" />
-              <h3 className="text-lg font-semibold">No Anomalies Found</h3>
+              <h3 className="text-lg font-semibold">
+                <T k="pages.noAnomaliesFound" />
+              </h3>
               <p className="text-muted-foreground text-sm">
                 {severityFilter !== "all"
                   ? `No ${severityFilter} anomalies detected. Try changing the filter.`

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -149,7 +150,7 @@ export default function ChartOfAccounts() {
           You need a company before you can configure your Chart of Accounts.
         </p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
-          Create your company
+          <T k="pages.createYourCompany" />
         </Button>
       </div>
     );
@@ -238,6 +239,14 @@ export default function ChartOfAccounts() {
                         <CardHeader
                           className={`py-4 cursor-pointer hover-elevate ${config.bgClass}`}
                           data-testid={`button-toggle-${type}`}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(event: React.KeyboardEvent) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              toggleType(type);
+                            }
+                          }}
                         >
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-3">

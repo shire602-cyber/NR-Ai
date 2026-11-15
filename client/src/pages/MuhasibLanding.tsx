@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { motion, useInView, useScroll, useTransform } from "framer-motion";
 import {
   ArrowRight,
@@ -918,7 +919,7 @@ function Workflow() {
             style={{ color: C.emerald }}
           >
             <span className="h-px w-8" style={{ background: C.emerald }} />
-            How it works
+            <T k="pages.howItWorks" />
           </div>
           <h2
             className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"

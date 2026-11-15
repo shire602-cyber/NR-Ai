@@ -2,7 +2,7 @@ import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
 import { Switch, Route, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -10,7 +10,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
-import { useI18n, useTranslation } from "@/lib/i18n";
+import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canAccessNraCenter } from "@shared/access";
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,6 @@ const ValueOps = lazyWithReload(() => import("@/pages/firm/ValueOps"));
 const FirmCommandCenter = lazyWithReload(() => import("@/pages/FirmCommandCenter"));
 
 // Core accounting
-const Accounts = lazyWithReload(() => import("@/pages/Accounts"));
 const ChartOfAccounts = lazyWithReload(() => import("@/pages/ChartOfAccounts"));
 const AccountLedger = lazyWithReload(() => import("@/pages/AccountLedger"));
 const Invoices = lazyWithReload(() => import("@/pages/Invoices"));
@@ -77,18 +76,12 @@ const CompanySettings = lazyWithReload(() => import("@/pages/CompanySettings"));
 // Lazy-loaded pages (large or infrequently visited)
 const Admin = lazyWithReload(() => import("@/pages/Admin"));
 const AdminDashboard = lazyWithReload(() => import("@/pages/AdminDashboard"));
-const ClientManagement = lazyWithReload(() => import("@/pages/ClientManagement"));
-const ClientDetails = lazyWithReload(() => import("@/pages/ClientDetails"));
-const ClientDocuments = lazyWithReload(() => import("@/pages/ClientDocuments"));
-const ClientTasks = lazyWithReload(() => import("@/pages/ClientTasks"));
 const ClientImport = lazyWithReload(() => import("@/pages/ClientImport"));
+const AIHub = lazyWithReload(() => import("@/pages/AIHub"));
+const AnalyticsHub = lazyWithReload(() => import("@/pages/AnalyticsHub"));
 const UserInvitations = lazyWithReload(() => import("@/pages/UserInvitations"));
 const ActivityLogs = lazyWithReload(() => import("@/pages/ActivityLogs"));
 const AdminDocuments = lazyWithReload(() => import("@/pages/AdminDocuments"));
-
-const AdvancedReports = lazyWithReload(() => import("@/pages/AdvancedReports"));
-const AdvancedAnalytics = lazyWithReload(() => import("@/pages/AdvancedAnalytics"));
-const Analytics = lazyWithReload(() => import("@/pages/Analytics"));
 
 const Payroll = lazyWithReload(() => import("@/pages/Payroll"));
 const FixedAssets = lazyWithReload(() => import("@/pages/FixedAssets"));
@@ -112,14 +105,7 @@ const ExchangeRates = lazyWithReload(() => import("@/pages/ExchangeRates"));
 const RecurringInvoices = lazyWithReload(() => import("@/pages/RecurringInvoices"));
 const PaymentChasing = lazyWithReload(() => import("@/pages/PaymentChasing"));
 
-const AICFO = lazyWithReload(() => import("@/pages/AICFO"));
-const AIChat = lazyWithReload(() => import("@/pages/AIChat"));
-const AIFeatures = lazyWithReload(() => import("@/pages/AIFeatures"));
-const AIInbox = lazyWithReload(() => import("@/pages/AIInbox"));
-const SmartAssistant = lazyWithReload(() => import("@/pages/SmartAssistant"));
-
 const CustomerContacts = lazyWithReload(() => import("@/pages/CustomerContacts"));
-const Integrations = lazyWithReload(() => import("@/pages/Integrations"));
 const IntegrationsHub = lazyWithReload(() => import("@/pages/IntegrationsHub"));
 const Notifications = lazyWithReload(() => import("@/pages/Notifications"));
 const Reminders = lazyWithReload(() => import("@/pages/Reminders"));
@@ -200,11 +186,13 @@ import { OnboardingWizard } from "@/components/Onboarding";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
+import { RedirectTo } from "@/components/layout/RedirectTo";
 import { openCommandPalette } from "@/lib/commandPalette";
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
   const [, navigate] = useLocation();
+  const { t } = useTranslation();
 
   if (!isFirmContext || !company) return null;
 
@@ -220,19 +208,21 @@ function FirmContextBanner() {
     >
       <div className="flex items-center gap-2 min-w-0">
         <Building2 className="w-4 h-4 text-primary shrink-0" />
-        <span className="text-xs uppercase tracking-wide text-primary/80 shrink-0">Managing</span>
+        <span className="text-xs uppercase tracking-wide text-primary/80 shrink-0">
+          {t["shell.managing"]}
+        </span>
         <span className="font-semibold text-sm truncate" data-testid="firm-context-company-name">
           {company.name}
         </span>
         {company.trnVatNumber && (
           <span className="text-xs text-muted-foreground hidden sm:inline">
-            · TRN {company.trnVatNumber}
+            · {formatMessage(t["shell.trn"], { trn: company.trnVatNumber })}
           </span>
         )}
       </div>
       <Button size="sm" variant="outline" onClick={goBackToFirm} data-testid="button-back-to-firm">
-        <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-        Back to Firm
+        <ArrowLeft className="w-3.5 h-3.5 me-1.5 rtl:rotate-180" />
+        {t["shell.backToFirm"]}
       </Button>
     </div>
   );
@@ -243,6 +233,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
   const { isFirmContext } = useActiveCompany();
+  const companiesFetching = useIsFetching({ queryKey: ["/api/companies"] });
   const pathname = pathnameOnly(location);
 
   useEffect(() => {
@@ -253,24 +244,32 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     // problem to manage, not a hard redirect for the staff member.
     if (isFirmContext) return;
 
-    // Only auto-redirect once per session. If the user has dismissed the
-    // wizard (or already filled in company details) we must not trap them
-    // in a loop on every navigation — they can resume onboarding manually.
-    const REDIRECT_FLAG = "onboarding_redirect_seen";
-    if (sessionStorage.getItem(REDIRECT_FLAG)) return;
+    // R18-08: the redirect is deterministic per-user state, not a per-session
+    // flag. While the company has not finished onboarding the user is always
+    // sent to /onboarding; every exit from the wizard (express setup, "Save &
+    // continue later", finishing) marks the company complete server-side, so
+    // there is no loop. Wait for in-flight company refetches first so a
+    // just-completed wizard does not bounce back on stale data.
+    if (companiesFetching > 0) return;
 
     // No company yet — send the user to onboarding so they can create one.
     if (hasNoCompanies) {
-      sessionStorage.setItem(REDIRECT_FLAG, "1");
       navigate("/onboarding");
       return;
     }
 
     if (company && !company.onboardingCompleted) {
-      sessionStorage.setItem(REDIRECT_FLAG, "1");
       navigate("/onboarding");
     }
-  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
+  }, [
+    company,
+    hasNoCompanies,
+    companyLoading,
+    companiesFetching,
+    pathname,
+    navigate,
+    isFirmContext,
+  ]);
 
   const style = {
     "--sidebar-width": "16rem",
@@ -293,16 +292,18 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <SidebarTrigger
                 data-testid="button-sidebar-toggle"
-                aria-label="Toggle sidebar"
+                aria-label={t["shell.toggleSidebar"]}
                 className="text-muted-foreground hover:text-foreground"
               />
               <div className="hidden md:flex items-center gap-2 ps-2 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-subtle text-success-subtle-foreground text-[10px] font-semibold tracking-wide uppercase">
                   <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-dot" />
-                  UAE Tax Ready
+                  {t["shell.uaeTaxReady"]}
                 </span>
                 <span className="text-border">·</span>
-                <span className="font-mono text-[11px] tracking-tight">UAE · AED</span>
+                <span className="font-mono text-[11px] tracking-tight">
+                  {t["shell.regionCurrency"]}
+                </span>
               </div>
             </div>
 
@@ -311,12 +312,16 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={openCommandPalette}
                 data-testid="button-command-palette"
-                aria-label="Search and commands"
+                title={t["shell.searchAndCommands"]}
+                aria-keyshortcuts="Control+K Meta+K"
                 className="hidden md:flex items-center gap-2 h-8 ps-3 pe-2 rounded-full border border-border/70 bg-card/50 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border transition-colors"
               >
                 <Search className="w-3.5 h-3.5" />
-                <span className="text-[12.5px] font-medium pe-4">Search</span>
-                <kbd className="inline-flex items-center gap-0.5 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+                <span className="text-[12.5px] font-medium pe-4">{t["shell.search"]}</span>
+                <kbd
+                  aria-hidden="true"
+                  className="inline-flex items-center gap-0.5 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
+                >
                   ⌘K
                 </kbd>
               </button>
@@ -374,7 +379,7 @@ function AccessRedirect({
   title,
   description,
   redirectTo,
-  actionLabel = "Go to dashboard",
+  actionLabel,
 }: {
   title: string;
   description: string;
@@ -382,6 +387,7 @@ function AccessRedirect({
   actionLabel?: string;
 }) {
   const [, navigate] = useLocation();
+  const { t } = useTranslation();
   const redirect = useCallback(() => {
     navigate(redirectTo);
     if (redirectTo.startsWith("/login")) {
@@ -399,7 +405,7 @@ function AccessRedirect({
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="text-sm text-muted-foreground">{description}</p>
         <Button variant="outline" onClick={redirect}>
-          {actionLabel}
+          {actionLabel ?? t["shell.goToDashboard"]}
         </Button>
       </div>
     </div>
@@ -408,22 +414,23 @@ function AccessRedirect({
 
 function PortalRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
+  const { t } = useTranslation();
 
   if (isLoading) return null;
   if (!user)
     return (
       <AccessRedirect
-        title="Sign in required"
-        description="Please sign in to open the client portal."
+        title={t["shell.signInRequiredTitle"]}
+        description={t["shell.signInPortalDescription"]}
         redirectTo={loginRedirectForCurrentPath()}
-        actionLabel="Sign in"
+        actionLabel={t["shell.signIn"]}
       />
     );
   if (user.userType !== "client_portal" && !user.isAdmin) {
     return (
       <AccessRedirect
-        title="Client portal access required"
-        description="This area is only available to invited client portal users."
+        title={t["shell.portalAccessTitle"]}
+        description={t["shell.portalAccessDescription"]}
         redirectTo="/dashboard"
       />
     );
@@ -435,22 +442,23 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
 // model in shared/access.ts, mirrored server-side by requireNraAccess()).
 function FirmRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
+  const { t } = useTranslation();
 
   if (isLoading) return null;
   if (!user)
     return (
       <AccessRedirect
-        title="Sign in required"
-        description="Please sign in to open the firm workspace."
+        title={t["shell.signInRequiredTitle"]}
+        description={t["shell.signInFirmDescription"]}
         redirectTo={loginRedirectForCurrentPath()}
-        actionLabel="Sign in"
+        actionLabel={t["shell.signIn"]}
       />
     );
   if (!canAccessNraCenter(user)) {
     return (
       <AccessRedirect
-        title="NRA firm access required"
-        description="This workspace is available only to NRA firm owners and firm admins."
+        title={t["shell.firmAccessTitle"]}
+        description={t["shell.firmAccessDescription"]}
         redirectTo="/dashboard"
       />
     );
@@ -593,7 +601,10 @@ function Router() {
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/company-profile" component={CompanyProfile} />
             <Route path="/settings/company" component={CompanySettings} />
-            <Route path="/accounts" component={Accounts} />
+            {/* Consolidated routes (R18-09, R20-08, R15-09): legacy URLs redirect */}
+            <Route path="/accounts">
+              <RedirectTo to="/chart-of-accounts" />
+            </Route>
             <Route path="/chart-of-accounts" component={ChartOfAccounts} />
             <Route path="/accounts/:id/ledger" component={AccountLedger} />
             <Route path="/invoices" component={Invoices} />
@@ -626,21 +637,35 @@ function Router() {
             <Route path="/cashflow-forecast" component={CashFlowForecast} />
             <Route path="/anomaly-detection" component={AnomalyDetection} />
             <Route path="/auto-reconcile" component={AutoReconcile} />
-            <Route path="/ai-inbox" component={AIInbox} />
+            <Route path="/ai" component={AIHub} />
+            <Route path="/ai-inbox">
+              <RedirectTo to="/ai?tab=inbox" />
+            </Route>
             <Route path="/month-end" component={MonthEndClose} />
-            <Route path="/ai-cfo" component={AICFO} />
-            <Route path="/ai-features" component={AIFeatures} />
-            <Route path="/smart-assistant" component={SmartAssistant} />
-            <Route path="/ai-chat" component={AIChat} />
-            <Route path="/advanced-analytics" component={AdvancedAnalytics} />
-            <Route path="/integrations" component={Integrations} />
+            <Route path="/ai-cfo">
+              <RedirectTo to="/ai?tab=cfo" />
+            </Route>
+            <Route path="/ai-features">
+              <RedirectTo to="/ai?tab=features" />
+            </Route>
+            <Route path="/smart-assistant">
+              <RedirectTo to="/ai?tab=assistant" />
+            </Route>
+            <Route path="/ai-chat">
+              <RedirectTo to="/ai?tab=chat" />
+            </Route>
+            <Route path="/advanced-analytics">
+              <RedirectTo to="/analytics?view=advanced" />
+            </Route>
+            <Route path="/integrations">
+              <RedirectTo to="/integrations-hub" />
+            </Route>
             <Route path="/integrations-hub" component={IntegrationsHub} />
             <Route path="/notifications" component={Notifications} />
             <Route path="/reminders" component={Reminders} />
             <Route path="/referrals" component={Referrals} />
             <Route path="/feedback" component={Feedback} />
-            <Route path="/analytics" component={Analytics} />
-            <Route path="/admin" component={Admin} />
+            <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />
@@ -649,7 +674,9 @@ function Router() {
             <Route path="/team" component={TeamManagement} />
             <Route path="/history" component={History} />
             <Route path="/backup-restore" component={BackupRestore} />
-            <Route path="/advanced-reports" component={AdvancedReports} />
+            <Route path="/advanced-reports">
+              <RedirectTo to="/analytics?view=reports" />
+            </Route>
             <Route path="/document-vault" component={DocumentVault} />
             <Route path="/tax-return-archive" component={TaxReturnArchive} />
             <Route path="/compliance-calendar" component={ComplianceCalendar} />
@@ -658,16 +685,27 @@ function Router() {
 
             {/* Admin Routes */}
             <Route path="/admin/dashboard" component={AdminDashboard} />
-            <Route path="/admin/clients" component={ClientManagement} />
-            <Route path="/admin/clients/:id" component={ClientDetails} />
-            <Route path="/admin/clients/:id/documents" component={ClientDocuments} />
-            <Route path="/admin/clients/:id/tasks" component={ClientTasks} />
+            {/* Legacy admin client pages were replaced by the /firm/clients portfolio (R15-09) */}
+            <Route path="/admin/clients">
+              <RedirectTo to="/firm/clients" />
+            </Route>
+            <Route path="/admin/clients/:id/documents">
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+            </Route>
+            <Route path="/admin/clients/:id/tasks">
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+            </Route>
+            <Route path="/admin/clients/:id">
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+            </Route>
             <Route path="/admin/documents" component={AdminDocuments} />
             <Route path="/admin/invitations" component={UserInvitations} />
             <Route path="/admin/import" component={ClientImport} />
             <Route path="/admin/activity-logs" component={ActivityLogs} />
             <Route path="/admin/users" component={Admin} />
-            <Route path="/admin" component={Admin} />
+            <Route path="/admin">
+              <RedirectTo to="/admin/users" />
+            </Route>
 
             {/* NRA Firm Management Center */}
             <Route path="/firm/command-center">

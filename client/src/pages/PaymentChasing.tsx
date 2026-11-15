@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -918,7 +919,9 @@ export default function PaymentChasing() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Level</TableHead>
-                        <TableHead>Language</TableHead>
+                        <TableHead>
+                          <T k="pages.language" />
+                        </TableHead>
                         <TableHead>Source</TableHead>
                         <TableHead>Subject</TableHead>
                         <TableHead className="text-right">Edit</TableHead>
@@ -1220,7 +1223,7 @@ export default function PaymentChasing() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingTemplate(null)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => editingTemplate && saveTemplate.mutate(editingTemplate)}
@@ -1243,7 +1246,9 @@ export default function PaymentChasing() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               data-testid="button-confirm-bulk"
               onClick={() => {
@@ -1251,7 +1256,7 @@ export default function PaymentChasing() {
                 bulkSend.mutate();
               }}
             >
-              Send all
+              <T k="pages.sendAll" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

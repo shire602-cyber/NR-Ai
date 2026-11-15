@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -476,13 +477,29 @@ export default function ExpenseClaims() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return <StatusBadge tone="neutral">Draft</StatusBadge>;
+        return (
+          <StatusBadge tone="neutral">
+            <T k="pages.draft" />
+          </StatusBadge>
+        );
       case "submitted":
-        return <StatusBadge tone="info">Submitted</StatusBadge>;
+        return (
+          <StatusBadge tone="info">
+            <T k="pages.submitted" />
+          </StatusBadge>
+        );
       case "approved":
-        return <StatusBadge tone="success">Approved</StatusBadge>;
+        return (
+          <StatusBadge tone="success">
+            <T k="pages.approved" />
+          </StatusBadge>
+        );
       case "rejected":
-        return <StatusBadge tone="danger">Rejected</StatusBadge>;
+        return (
+          <StatusBadge tone="danger">
+            <T k="pages.rejected" />
+          </StatusBadge>
+        );
       case "paid":
         return <StatusBadge tone="accent">Paid</StatusBadge>;
       default:
@@ -572,7 +589,9 @@ export default function ExpenseClaims() {
           <TableHeader>
             <TableRow>
               <TableHead>Claim #</TableHead>
-              <TableHead>Title</TableHead>
+              <TableHead>
+                <T k="pages.title" />
+              </TableHead>
               <TableHead>{t.date || "Date"}</TableHead>
               <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
               <TableHead>{t.status || "Status"}</TableHead>
@@ -692,10 +711,10 @@ export default function ExpenseClaims() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Receipt className="w-8 h-8" />
-            Expense Claims
+            <T k="pages.expenseClaims" />
           </h1>
           <p className="text-muted-foreground mt-1">
-            Submit, track, and manage employee expense reimbursements
+            <T k="pages.submitTrackAndManageEmployeeExpenseReimbursement" />
           </p>
         </div>
       </div>
@@ -704,7 +723,9 @@ export default function ExpenseClaims() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending This Month</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.pendingThisMonth" />
+            </CardTitle>
             <Clock className="w-4 h-4 text-[hsl(var(--chart-1))]" />
           </CardHeader>
           <CardContent>
@@ -717,7 +738,9 @@ export default function ExpenseClaims() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approved This Month</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.approvedThisMonth" />
+            </CardTitle>
             <CheckCircle className="w-4 h-4 text-[hsl(var(--chart-5))]" />
           </CardHeader>
           <CardContent>
@@ -730,7 +753,9 @@ export default function ExpenseClaims() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Paid This Month</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.paidThisMonth" />
+            </CardTitle>
             <DollarSign className="w-4 h-4 text-[hsl(var(--chart-3))]" />
           </CardHeader>
           <CardContent>
@@ -747,7 +772,7 @@ export default function ExpenseClaims() {
         <TabsList>
           <TabsTrigger value="my-claims" className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
-            My Claims
+            <T k="pages.myClaims" />
           </TabsTrigger>
           <TabsTrigger value="review" className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4" />
@@ -760,7 +785,7 @@ export default function ExpenseClaims() {
           </TabsTrigger>
           <TabsTrigger value="all-claims" className="flex items-center gap-2">
             <Receipt className="w-4 h-4" />
-            All Claims
+            <T k="pages.allClaims" />
           </TabsTrigger>
         </TabsList>
 
@@ -770,14 +795,16 @@ export default function ExpenseClaims() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>My Expense Claims</CardTitle>
+                  <CardTitle>
+                    <T k="pages.myExpenseClaims" />
+                  </CardTitle>
                   <CardDescription>
                     {myClaims.length} claim{myClaims.length !== 1 ? "s" : ""} submitted
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  New Claim
+                  <T k="pages.newClaim" />
                 </Button>
               </div>
             </CardHeader>
@@ -800,7 +827,9 @@ export default function ExpenseClaims() {
         <TabsContent value="review">
           <Card>
             <CardHeader>
-              <CardTitle>Claims for Review</CardTitle>
+              <CardTitle>
+                <T k="pages.claimsForReview" />
+              </CardTitle>
               <CardDescription>
                 {submittedClaims.length} claim{submittedClaims.length !== 1 ? "s" : ""} pending
                 approval
@@ -825,7 +854,9 @@ export default function ExpenseClaims() {
         <TabsContent value="all-claims">
           <Card>
             <CardHeader>
-              <CardTitle>All Company Claims</CardTitle>
+              <CardTitle>
+                <T k="pages.allCompanyClaims" />
+              </CardTitle>
               <CardDescription>
                 {allClaims.length} total claim{allClaims.length !== 1 ? "s" : ""} across the
                 organization
@@ -898,7 +929,9 @@ export default function ExpenseClaims() {
               {/* Expense items */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Expense Items</h3>
+                  <h3 className="text-lg font-semibold">
+                    <T k="pages.expenseItems" />
+                  </h3>
                   <Button
                     type="button"
                     variant="outline"
@@ -916,7 +949,7 @@ export default function ExpenseClaims() {
                     }
                   >
                     <Plus className="w-4 h-4 mr-1" />
-                    Add Item
+                    <T k="pages.addItem" />
                   </Button>
                 </div>
 
@@ -984,7 +1017,9 @@ export default function ExpenseClaims() {
                         name={`items.${index}.merchant_name`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Merchant</FormLabel>
+                            <FormLabel>
+                              <T k="pages.merchant" />
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="e.g., Emirates Airlines"
@@ -1048,7 +1083,9 @@ export default function ExpenseClaims() {
                         name={`items.${index}.receipt_url`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Receipt</FormLabel>
+                            <FormLabel>
+                              <T k="pages.receipt" />
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="Receipt URL (upload coming soon)"
@@ -1105,7 +1142,9 @@ export default function ExpenseClaims() {
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Expense Claim Details</DialogTitle>
+            <DialogTitle>
+              <T k="pages.expenseClaimDetails" />
+            </DialogTitle>
             <DialogDescription>
               {viewingClaim?.claim_number} - {viewingClaim?.title}
             </DialogDescription>
@@ -1115,11 +1154,15 @@ export default function ExpenseClaims() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-sm text-muted-foreground">Status</span>
+                  <span className="text-sm text-muted-foreground">
+                    <T k="pages.status" />
+                  </span>
                   <div className="mt-1">{getStatusBadge(viewingClaim.status)}</div>
                 </div>
                 <div>
-                  <span className="text-sm text-muted-foreground">Total Amount</span>
+                  <span className="text-sm text-muted-foreground">
+                    <T k="pages.totalAmount" />
+                  </span>
                   <div className="mt-1 font-bold text-lg">
                     {formatCurrency(
                       parseFloat(String(viewingClaim.total_amount)) || 0,
@@ -1129,7 +1172,9 @@ export default function ExpenseClaims() {
                   </div>
                 </div>
                 <div>
-                  <span className="text-sm text-muted-foreground">Created</span>
+                  <span className="text-sm text-muted-foreground">
+                    <T k="pages.created" />
+                  </span>
                   <div className="mt-1">
                     {viewingClaim.created_at
                       ? format(new Date(viewingClaim.created_at), "MMM dd, yyyy HH:mm")
@@ -1138,7 +1183,9 @@ export default function ExpenseClaims() {
                 </div>
                 {viewingClaim.submitted_at && (
                   <div>
-                    <span className="text-sm text-muted-foreground">Submitted</span>
+                    <span className="text-sm text-muted-foreground">
+                      <T k="pages.submitted" />
+                    </span>
                     <div className="mt-1">
                       {format(new Date(viewingClaim.submitted_at), "MMM dd, yyyy HH:mm")}
                     </div>
@@ -1146,7 +1193,9 @@ export default function ExpenseClaims() {
                 )}
                 {viewingClaim.reviewed_at && (
                   <div>
-                    <span className="text-sm text-muted-foreground">Reviewed</span>
+                    <span className="text-sm text-muted-foreground">
+                      <T k="pages.reviewed" />
+                    </span>
                     <div className="mt-1">
                       {format(new Date(viewingClaim.reviewed_at), "MMM dd, yyyy HH:mm")}
                     </div>
@@ -1164,21 +1213,27 @@ export default function ExpenseClaims() {
 
               {viewingClaim.description && (
                 <div>
-                  <span className="text-sm text-muted-foreground">Description</span>
+                  <span className="text-sm text-muted-foreground">
+                    <T k="pages.description" />
+                  </span>
                   <p className="mt-1">{viewingClaim.description}</p>
                 </div>
               )}
 
               {viewingClaim.review_notes && (
                 <div>
-                  <span className="text-sm text-muted-foreground">Review Notes</span>
+                  <span className="text-sm text-muted-foreground">
+                    <T k="pages.reviewNotes" />
+                  </span>
                   <p className="mt-1 text-sm bg-muted p-2 rounded">{viewingClaim.review_notes}</p>
                 </div>
               )}
 
               {viewingClaim.payment_reference && (
                 <div>
-                  <span className="text-sm text-muted-foreground">Payment Reference</span>
+                  <span className="text-sm text-muted-foreground">
+                    <T k="pages.paymentReference" />
+                  </span>
                   <p className="mt-1 font-mono text-sm">{viewingClaim.payment_reference}</p>
                 </div>
               )}
@@ -1186,15 +1241,21 @@ export default function ExpenseClaims() {
               {/* Items table */}
               {viewingClaim.items && viewingClaim.items.length > 0 && (
                 <div>
-                  <h4 className="font-semibold mb-2">Expense Items</h4>
+                  <h4 className="font-semibold mb-2">
+                    <T k="pages.expenseItems" />
+                  </h4>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>{t.date || "Date"}</TableHead>
-                          <TableHead>Category</TableHead>
+                          <TableHead>
+                            <T k="pages.category" />
+                          </TableHead>
                           <TableHead>{t.description || "Description"}</TableHead>
-                          <TableHead>Merchant</TableHead>
+                          <TableHead>
+                            <T k="pages.merchant" />
+                          </TableHead>
                           <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
                           <TableHead className="text-right">VAT</TableHead>
                         </TableRow>
@@ -1298,9 +1359,11 @@ export default function ExpenseClaims() {
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Mark as Paid</DialogTitle>
+            <DialogTitle>
+              <T k="pages.markAsPaid" />
+            </DialogTitle>
             <DialogDescription>
-              Record the payment details for this approved expense claim.
+              <T k="pages.recordThePaymentDetailsForThisApprovedExpenseCla" />
             </DialogDescription>
           </DialogHeader>
 
@@ -1311,7 +1374,9 @@ export default function ExpenseClaims() {
                 name="payment_reference"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Reference</FormLabel>
+                    <FormLabel>
+                      <T k="pages.paymentReference" />
+                    </FormLabel>
                     <FormControl>
                       <Input
                         placeholder="e.g., Bank transfer ref, cheque number"
@@ -1345,13 +1410,17 @@ export default function ExpenseClaims() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Expense Claim?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pages.deleteExpenseClaim" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this expense claim. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (claimToDelete) {
@@ -1361,7 +1430,7 @@ export default function ExpenseClaims() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

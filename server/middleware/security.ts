@@ -103,6 +103,9 @@ export function applySecurityMiddleware(app: Express): void {
   app.use(
     helmet({
       contentSecurityPolicy: buildCspDirectives(),
+      // R17-18: CSP says frame-ancestors 'none', so the legacy header must agree
+      // (helmet defaults to SAMEORIGIN).
+      frameguard: { action: "deny" },
       crossOriginEmbedderPolicy: false, // Allow embedding (PDF viewers, etc.)
     })
   );

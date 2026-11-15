@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { getAuthHeaders, refreshSession } from "./auth";
+import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
@@ -148,11 +148,21 @@ export async function apiRequest(
   return parseResponseBody(res);
 }
 
+const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
+
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const url = apiUrl(queryKey.join("/") as string);
+    // R18-04: anonymous visitors have no session, so skip the bootstrap probes
+    // that would only produce 401 console noise. This resolves exactly as the
+    // 401 would have (null / thrown 401) WITHOUT caching a successful empty
+    // result, so the first query after sign-in still fetches the real data.
+    if (!hasAuthHint() && ANONYMOUS_SKIP_KEYS.has(queryKey.join("/") as string)) {
+      if (unauthorizedBehavior === "returnNull") return null as never;
+      throw new ApiError("Not signed in", 401);
+    }
     let res = await fetch(url, {
       credentials: "include",
       headers: getAuthHeaders(),

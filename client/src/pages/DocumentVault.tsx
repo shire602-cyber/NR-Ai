@@ -326,7 +326,11 @@ export default function DocumentVault() {
               />
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
+              <SelectTrigger
+                className="w-[200px]"
+                data-testid="select-category-filter"
+                aria-label="Filter by category"
+              >
                 <Filter className="w-4 h-4 mr-2" />
                 <SelectValue
                   placeholder={locale === "ar" ? "تصفية حسب الفئة" : "Filter by category"}
@@ -536,7 +540,10 @@ export default function DocumentVault() {
                 value={newDocument.category}
                 onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
               >
-                <SelectTrigger data-testid="select-document-category">
+                <SelectTrigger
+                  data-testid="select-document-category"
+                  aria-label="Document category"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

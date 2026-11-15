@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -149,9 +150,11 @@ export default function NotificationPreferences() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Bell className="w-5 h-5" />
-                Notification Channels
+                <T k="pages.notificationChannels" />
               </CardTitle>
-              <CardDescription>Choose how you want to receive notifications</CardDescription>
+              <CardDescription>
+                <T k="pages.chooseHowYouWantToReceiveNotifications" />
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -160,8 +163,12 @@ export default function NotificationPreferences() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Push Notifications</FormLabel>
-                      <FormDescription>Receive instant browser push notifications</FormDescription>
+                      <FormLabel className="text-base">
+                        <T k="pages.pushNotifications" />
+                      </FormLabel>
+                      <FormDescription>
+                        <T k="pages.receiveInstantBrowserPushNotifications" />
+                      </FormDescription>
                     </div>
                     <div className="flex items-center gap-2">
                       {!pushActive && (
@@ -171,7 +178,7 @@ export default function NotificationPreferences() {
                           size="sm"
                           onClick={handleEnablePush}
                         >
-                          Enable Push
+                          <T k="pages.enablePush" />
                         </Button>
                       )}
                       <FormControl>
@@ -201,9 +208,11 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <Mail className="w-4 h-4" />
-                        Email Notifications
+                        <T k="pages.emailNotifications" />
                       </FormLabel>
-                      <FormDescription>Receive notifications via email</FormDescription>
+                      <FormDescription>
+                        <T k="pages.receiveNotificationsViaEmail" />
+                      </FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -218,9 +227,11 @@ export default function NotificationPreferences() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
-                Notification Types
+                <T k="pages.notificationTypes" />
               </CardTitle>
-              <CardDescription>Select which types of events trigger notifications</CardDescription>
+              <CardDescription>
+                <T k="pages.selectWhichTypesOfEventsTriggerNotifications" />
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -231,10 +242,10 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        Invoice Reminders
+                        <T k="pages.invoiceReminders" />
                       </FormLabel>
                       <FormDescription>
-                        Get notified about overdue invoices and payment due dates
+                        <T k="pages.getNotifiedAboutOverdueInvoicesAndPaymentDueDate" />
                       </FormDescription>
                     </div>
                     <FormControl>
@@ -252,10 +263,10 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        VAT Deadlines
+                        <T k="pages.vatDeadlines" />
                       </FormLabel>
                       <FormDescription>
-                        Get reminded about upcoming VAT filing and payment deadlines
+                        <T k="pages.getRemindedAboutUpcomingVatFilingAndPaymentDeadl" />
                       </FormDescription>
                     </div>
                     <FormControl>
@@ -273,10 +284,10 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <CreditCard className="w-4 h-4" />
-                        Payment Received
+                        <T k="pages.paymentReceived" />
                       </FormLabel>
                       <FormDescription>
-                        Get notified when a payment is received for an invoice
+                        <T k="pages.getNotifiedWhenAPaymentIsReceivedForAnInvoice" />
                       </FormDescription>
                     </div>
                     <FormControl>
@@ -294,10 +305,10 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <BarChart3 className="w-4 h-4" />
-                        Weekly Digest
+                        <T k="pages.weeklyDigest" />
                       </FormLabel>
                       <FormDescription>
-                        Receive a weekly summary of your financial activity
+                        <T k="pages.receiveAWeeklySummaryOfYourFinancialActivity" />
                       </FormDescription>
                     </div>
                     <FormControl>

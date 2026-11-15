@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -572,17 +573,17 @@ export default function Payroll() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Active</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle"><T k="pages.active" /></Badge>;
       case "inactive":
-        return <Badge variant="secondary">Inactive</Badge>;
+        return <Badge variant="secondary"><T k="pages.inactive" /></Badge>;
       case "draft":
-        return <Badge variant="outline">Draft</Badge>;
+        return <Badge variant="outline"><T k="pages.draft" /></Badge>;
       case "calculated":
-        return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Calculated</Badge>;
+        return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle"><T k="pages.calculated" /></Badge>;
       case "approved":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle"><T k="pages.approved" /></Badge>;
       case "pending":
-        return <Badge variant="outline">Pending</Badge>;
+        return <Badge variant="outline"><T k="pages.pending" /></Badge>;
       case "paid":
         return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Paid</Badge>;
       default:
@@ -614,7 +615,7 @@ export default function Payroll() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <div className="text-muted-foreground"><T k="pages.pleaseCreateACompanyFirst" /></div>
       </div>
     );
   }
@@ -627,7 +628,7 @@ export default function Payroll() {
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => setViewingRunId(null)}>
             <ChevronLeft className="w-4 h-4 mr-1" />
-            Back to Payroll Runs
+            <T k="pages.backToPayrollRuns" />
           </Button>
         </div>
 
@@ -666,7 +667,7 @@ export default function Payroll() {
                       className="flex items-center gap-2"
                     >
                       <Calculator className="w-4 h-4" />
-                      Recalculate
+                      <T k="pages.recalculate" />
                     </Button>
                     <Button
                       onClick={() => approvePayrollMutation.mutate(viewingRunId)}
@@ -685,7 +686,7 @@ export default function Payroll() {
                     className="flex items-center gap-2"
                   >
                     <Download className="w-4 h-4" />
-                    Download SIF
+                    <T k="pages.downloadSif" />
                   </Button>
                 )}
               </div>
@@ -696,25 +697,25 @@ export default function Payroll() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Basic</div>
+                <div className="text-sm text-muted-foreground"><T k="pages.totalBasic" /></div>
                 <div className="text-lg font-semibold">
                   {formatCurrency(parseFloat(viewingRun.total_basic) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Allowances</div>
+                <div className="text-sm text-muted-foreground"><T k="pages.totalAllowances" /></div>
                 <div className="text-lg font-semibold">
                   {formatCurrency(parseFloat(viewingRun.total_allowances) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Deductions</div>
+                <div className="text-sm text-muted-foreground"><T k="pages.totalDeductions" /></div>
                 <div className="text-lg font-semibold text-destructive">
                   {formatCurrency(parseFloat(viewingRun.total_deductions) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Net Pay</div>
+                <div className="text-sm text-muted-foreground"><T k="pages.totalNetPay" /></div>
                 <div className="text-lg font-semibold text-success">
                   {formatCurrency(parseFloat(viewingRun.total_net) || 0, "AED", locale)}
                 </div>
@@ -725,7 +726,7 @@ export default function Payroll() {
 
             {/* Payroll items table */}
             {isLoadingItems ? (
-              <div className="text-center py-8 text-muted-foreground">Loading payroll items...</div>
+              <div className="text-center py-8 text-muted-foreground"><T k="pages.loadingPayrollItems" /></div>
             ) : payrollItems.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No payroll items yet. Click "Calculate" to auto-populate from active employees.
@@ -735,15 +736,15 @@ export default function Payroll() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead className="text-right">Basic</TableHead>
-                      <TableHead className="text-right">Allowances</TableHead>
-                      <TableHead className="text-right">Overtime</TableHead>
-                      <TableHead className="text-right">Deductions</TableHead>
-                      <TableHead className="text-right">Net Salary</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead><T k="pages.employee" /></TableHead>
+                      <TableHead><T k="pages.department" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.basic" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.allowances" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.overtime" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.deductions" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.netSalary" /></TableHead>
+                      <TableHead><T k="pages.status" /></TableHead>
+                      <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -809,9 +810,9 @@ export default function Payroll() {
         <Dialog open={editItemDialogOpen} onOpenChange={setEditItemDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Edit Payroll Item</DialogTitle>
+              <DialogTitle><T k="pages.editPayrollItem" /></DialogTitle>
               <DialogDescription>
-                Adjust overtime and deductions for this employee.
+                <T k="pages.adjustOvertimeAndDeductionsForThisEmployee" />
               </DialogDescription>
             </DialogHeader>
 
@@ -853,7 +854,7 @@ export default function Payroll() {
                   name="deductionNotes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Deduction Notes</FormLabel>
+                      <FormLabel><T k="pages.deductionNotes" /></FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Reason for deduction"
@@ -872,7 +873,7 @@ export default function Payroll() {
                     variant="outline"
                     onClick={() => setEditItemDialogOpen(false)}
                   >
-                    Cancel
+                    <T k="pages.cancel" />
                   </Button>
                   <Button type="submit" disabled={updatePayrollItemMutation.isPending}>
                     {updatePayrollItemMutation.isPending ? "Saving..." : "Save"}
@@ -894,7 +895,7 @@ export default function Payroll() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Banknote className="w-8 h-8" />
-            Payroll & WPS
+            <T k="pages.payrollWps" />
           </h1>
           <p className="text-muted-foreground mt-1">
             Manage employee payroll, WPS compliance, and end-of-service gratuity
@@ -906,15 +907,15 @@ export default function Payroll() {
         <TabsList>
           <TabsTrigger value="employees" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
-            Employees
+            <T k="pages.employees" />
           </TabsTrigger>
           <TabsTrigger value="payroll-runs" className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
-            Payroll Runs
+            <T k="pages.payrollRuns" />
           </TabsTrigger>
           <TabsTrigger value="gratuity" className="flex items-center gap-2">
             <Calculator className="w-4 h-4" />
-            Gratuity Calculator
+            <T k="pages.gratuityCalculator" />
           </TabsTrigger>
         </TabsList>
 
@@ -924,14 +925,14 @@ export default function Payroll() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Employees</CardTitle>
+                  <CardTitle><T k="pages.employees" /></CardTitle>
                   <CardDescription>
                     {employees.length} employee{employees.length !== 1 ? "s" : ""} registered
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  Add Employee
+                  <T k="pages.addEmployee" />
                 </Button>
               </div>
               <div className="mt-4">
@@ -945,7 +946,7 @@ export default function Payroll() {
             </CardHeader>
             <CardContent>
               {isLoadingEmployees ? (
-                <div className="text-center py-8 text-muted-foreground">Loading employees...</div>
+                <div className="text-center py-8 text-muted-foreground"><T k="pages.loadingEmployees" /></div>
               ) : filteredEmployees.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {employeeSearch
@@ -959,11 +960,11 @@ export default function Payroll() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Employee #</TableHead>
-                        <TableHead>Department</TableHead>
-                        <TableHead>Designation</TableHead>
-                        <TableHead className="text-right">Total Salary</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead><T k="pages.department" /></TableHead>
+                        <TableHead><T k="pages.designation" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.totalSalary" /></TableHead>
+                        <TableHead><T k="pages.status" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1025,7 +1026,7 @@ export default function Payroll() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Payroll Runs</CardTitle>
+                  <CardTitle><T k="pages.payrollRuns" /></CardTitle>
                   <CardDescription>
                     {payrollRuns.length} payroll run{payrollRuns.length !== 1 ? "s" : ""}
                   </CardDescription>
@@ -1035,14 +1036,14 @@ export default function Payroll() {
                   className="flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  New Payroll Run
+                  <T k="pages.newPayrollRun" />
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {isLoadingRuns ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Loading payroll runs...
+                  <T k="pages.loadingPayrollRuns" />
                 </div>
               ) : payrollRuns.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -1053,12 +1054,12 @@ export default function Payroll() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Period</TableHead>
-                        <TableHead className="text-right">Employees</TableHead>
-                        <TableHead className="text-right">Total Net</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead><T k="pages.period" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.employees" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.totalNet" /></TableHead>
+                        <TableHead><T k="pages.status" /></TableHead>
+                        <TableHead><T k="pages.created" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1139,7 +1140,7 @@ export default function Payroll() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calculator className="w-5 h-5" />
-                  End-of-Service Gratuity
+                  <T k="pages.endOfServiceGratuity" />
                 </CardTitle>
                 <CardDescription>
                   Calculate gratuity per UAE labor law. 21 days per year for the first 5 years, 30
@@ -1148,7 +1149,7 @@ export default function Payroll() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium">Select Employee</label>
+                  <label className="text-sm font-medium"><T k="pages.selectEmployee" /></label>
                   <Select
                     value={gratuityEmployeeId}
                     onValueChange={(v) => {
@@ -1178,7 +1179,7 @@ export default function Payroll() {
                     className="mt-1"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Leave empty to calculate as of today.
+                    <T k="pages.leaveEmptyToCalculateAsOfToday" />
                   </p>
                 </div>
 
@@ -1196,7 +1197,7 @@ export default function Payroll() {
             {gratuityResult && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Gratuity Breakdown</CardTitle>
+                  <CardTitle><T k="pages.gratuityBreakdown" /></CardTitle>
                   <CardDescription>For {gratuityResult.employeeName}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -1207,22 +1208,22 @@ export default function Payroll() {
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="text-muted-foreground">Join Date</div>
+                        <div className="text-muted-foreground"><T k="pages.joinDate" /></div>
                         <div className="font-medium">
                           {gratuityResult.joinDate
                             ? format(new Date(gratuityResult.joinDate), "MMM dd, yyyy")
                             : "-"}
                         </div>
 
-                        <div className="text-muted-foreground">Termination Date</div>
+                        <div className="text-muted-foreground"><T k="pages.terminationDate" /></div>
                         <div className="font-medium">
                           {format(new Date(gratuityResult.terminationDate), "MMM dd, yyyy")}
                         </div>
 
-                        <div className="text-muted-foreground">Years of Service</div>
+                        <div className="text-muted-foreground"><T k="pages.yearsOfService" /></div>
                         <div className="font-medium">{gratuityResult.yearsOfService} years</div>
 
-                        <div className="text-muted-foreground">Basic Salary</div>
+                        <div className="text-muted-foreground"><T k="pages.basicSalary" /></div>
                         <div className="font-medium">
                           {formatCurrency(gratuityResult.basicSalary, "AED", locale)}
                         </div>
@@ -1254,7 +1255,7 @@ export default function Payroll() {
                       <Separator />
 
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="text-lg font-semibold">Total Gratuity</div>
+                        <div className="text-lg font-semibold"><T k="pages.totalGratuity" /></div>
                         <div className="text-lg font-bold text-success">
                           {formatCurrency(gratuityResult.totalGratuity, "AED", locale)}
                         </div>
@@ -1291,7 +1292,7 @@ export default function Payroll() {
             <form onSubmit={employeeForm.handleSubmit(handleEmployeeSubmit)} className="space-y-4">
               {/* Personal Information */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Personal Information
+                <T k="pages.personalInformation" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1333,7 +1334,7 @@ export default function Payroll() {
                   name="employeeNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Employee Number</FormLabel>
+                      <FormLabel><T k="pages.employeeNumber" /></FormLabel>
                       <FormControl>
                         <Input placeholder="EMP-001" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1346,7 +1347,7 @@ export default function Payroll() {
                   name="nationality"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Nationality</FormLabel>
+                      <FormLabel><T k="pages.nationality" /></FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., UAE" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1359,7 +1360,7 @@ export default function Payroll() {
                   name="joinDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Join Date</FormLabel>
+                      <FormLabel><T k="pages.joinDate" /></FormLabel>
                       <FormControl>
                         <Input type="date" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1371,7 +1372,7 @@ export default function Payroll() {
 
               {/* Work Information */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Work Information
+                <T k="pages.workInformation" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1379,7 +1380,7 @@ export default function Payroll() {
                   name="department"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Department</FormLabel>
+                      <FormLabel><T k="pages.department" /></FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., Finance" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1392,7 +1393,7 @@ export default function Payroll() {
                   name="designation"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Designation</FormLabel>
+                      <FormLabel><T k="pages.designation" /></FormLabel>
                       <FormControl>
                         <Input
                           placeholder="e.g., Accountant"
@@ -1408,7 +1409,7 @@ export default function Payroll() {
 
               {/* Identity Documents */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Identity & Documents
+                <T k="pages.identityDocuments" />
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <FormField
@@ -1416,7 +1417,7 @@ export default function Payroll() {
                   name="passportNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Passport Number</FormLabel>
+                      <FormLabel><T k="pages.passportNumber" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Passport #" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1429,7 +1430,7 @@ export default function Payroll() {
                   name="visaNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Visa Number</FormLabel>
+                      <FormLabel><T k="pages.visaNumber" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Visa #" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1442,7 +1443,7 @@ export default function Payroll() {
                   name="laborCardNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Labor Card Number</FormLabel>
+                      <FormLabel><T k="pages.laborCardNumber" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Labor Card #" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1454,7 +1455,7 @@ export default function Payroll() {
 
               {/* Banking Details */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Banking Details
+                <T k="pages.bankingDetails" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1462,7 +1463,7 @@ export default function Payroll() {
                   name="bankName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bank Name</FormLabel>
+                      <FormLabel><T k="pages.bankName" /></FormLabel>
                       <FormControl>
                         <Input
                           placeholder="e.g., Emirates NBD"
@@ -1479,7 +1480,7 @@ export default function Payroll() {
                   name="bankAccountNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Account Number</FormLabel>
+                      <FormLabel><T k="pages.accountNumber" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Account #" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1507,7 +1508,7 @@ export default function Payroll() {
                   name="routingCode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Routing Code</FormLabel>
+                      <FormLabel><T k="pages.routingCode" /></FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Bank routing code"
@@ -1544,7 +1545,7 @@ export default function Payroll() {
                   name="housingAllowance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Housing Allowance</FormLabel>
+                      <FormLabel><T k="pages.housingAllowance" /></FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1559,7 +1560,7 @@ export default function Payroll() {
                   name="transportAllowance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Transport Allowance</FormLabel>
+                      <FormLabel><T k="pages.transportAllowance" /></FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1572,7 +1573,7 @@ export default function Payroll() {
                   name="otherAllowance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Other Allowance</FormLabel>
+                      <FormLabel><T k="pages.otherAllowance" /></FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1588,7 +1589,7 @@ export default function Payroll() {
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Status</FormLabel>
+                    <FormLabel><T k="pages.status" /></FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -1596,8 +1597,8 @@ export default function Payroll() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
+                        <SelectItem value="active"><T k="pages.active" /></SelectItem>
+                        <SelectItem value="inactive"><T k="pages.inactive" /></SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1611,7 +1612,7 @@ export default function Payroll() {
                   variant="outline"
                   onClick={() => setEmployeeDialogOpen(false)}
                 >
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button
                   type="submit"
@@ -1633,7 +1634,7 @@ export default function Payroll() {
       <Dialog open={payrollRunDialogOpen} onOpenChange={setPayrollRunDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>New Payroll Run</DialogTitle>
+            <DialogTitle><T k="pages.newPayrollRun" /></DialogTitle>
             <DialogDescription>
               Create a new payroll run for a specific month and year.
             </DialogDescription>
@@ -1692,7 +1693,7 @@ export default function Payroll() {
                   variant="outline"
                   onClick={() => setPayrollRunDialogOpen(false)}
                 >
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button type="submit" disabled={createPayrollRunMutation.isPending}>
                   {createPayrollRunMutation.isPending ? "Creating..." : "Create Run"}
@@ -1717,7 +1718,7 @@ export default function Payroll() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (employeeToDelete) {
@@ -1727,7 +1728,7 @@ export default function Payroll() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

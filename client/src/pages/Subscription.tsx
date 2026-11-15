@@ -171,6 +171,7 @@ function UsageMeter({
       {!isUnlimited && (
         <Progress
           value={percentage}
+          aria-label={label}
           className={`h-2 ${isAtLimit ? "[&>div]:bg-destructive" : isNearLimit ? "[&>div]:bg-warning" : ""}`}
         />
       )}
@@ -344,6 +345,7 @@ export default function Subscription() {
           Monthly
         </span>
         <Switch
+          aria-label="Yearly billing"
           checked={billingCycle === "yearly"}
           onCheckedChange={(checked) => setBillingCycle(checked ? "yearly" : "monthly")}
         />

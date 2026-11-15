@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
@@ -215,7 +216,7 @@ export default function AICategorize() {
                       variant="outline"
                       className="bg-success-subtle text-success "
                     >
-                      High Confidence
+                      <T k="pages.highConfidence" />
                     </Badge>
                   )}
                   {result.confidence >= 0.5 && result.confidence < 0.8 && (

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
@@ -77,7 +78,7 @@ export default function PortalDocuments() {
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-foreground">Documents</h2>
+          <h2 className="text-xl font-semibold text-foreground"><T k="pages.documents" /></h2>
           <p className="text-sm text-muted-foreground mt-1">
             Upload receipts and documents for NR Accounting to process.
           </p>

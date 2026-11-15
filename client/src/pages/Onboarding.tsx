@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -866,7 +867,9 @@ function CompanyStep({
         </div>
 
         <div className="space-y-1.5">
-          <Label>Business Address</Label>
+          <Label>
+            <T k="pages.businessAddress" />
+          </Label>
           <Input
             value={form.businessAddress}
             onChange={(e) => onChange({ businessAddress: e.target.value })}
@@ -1067,7 +1070,7 @@ function BankStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>
-              Account Number
+              <T k="pages.accountNumber" />
               <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
             </Label>
             <Input

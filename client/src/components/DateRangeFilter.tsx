@@ -95,7 +95,11 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <Select value={preset} onValueChange={handlePresetChange}>
-        <SelectTrigger className="w-[140px]" data-testid="select-date-preset">
+        <SelectTrigger
+          className="w-[140px]"
+          data-testid="select-date-preset"
+          aria-label={tt.dateRange ?? "Date range"}
+        >
           <SelectValue placeholder={tt.dateRange ?? "Date range"} />
         </SelectTrigger>
         <SelectContent>

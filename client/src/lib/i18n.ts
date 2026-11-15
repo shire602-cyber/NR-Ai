@@ -1,6 +1,7 @@
 // Internationalization utilities for English/Arabic support
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { extendedTranslations } from "./i18n-extended";
 
 export type Locale = "en" | "ar";
 
@@ -25,8 +26,10 @@ export const useI18n = create<I18nStore>()(
   )
 );
 
-// Translation dictionary
-export const t = {
+// Base translation dictionary (legacy flat keys). New strings belong in the
+// per-namespace catalogs under client/src/locales/{en,ar}/<namespace>.json,
+// which are merged over this object below.
+const baseT = {
   en: {
     // Navigation
     dashboard: "Dashboard",
@@ -910,6 +913,49 @@ export const t = {
     communications: "التواصل",
   },
 };
+
+type TranslationCatalog = Record<string, string>;
+
+// Namespace catalogs: client/src/locales/<locale>/<namespace>.json. Every
+// workstream appends to its own namespace file so catalogs never collide.
+// Key convention: "<namespace>.<camelCaseKey>".
+const namespaceFiles = {
+  en: import.meta.glob("../locales/en/*.json", { eager: true, import: "default" }),
+  ar: import.meta.glob("../locales/ar/*.json", { eager: true, import: "default" }),
+} as Record<Locale, Record<string, TranslationCatalog>>;
+
+function mergeNamespaces(locale: Locale): TranslationCatalog {
+  const merged: TranslationCatalog = {};
+  for (const path of Object.keys(namespaceFiles[locale]).sort()) {
+    Object.assign(merged, namespaceFiles[locale][path]);
+  }
+  return merged;
+}
+
+// Order: extended (fills gaps) < base (existing behaviour wins) < namespaces.
+export const t = {
+  en: {
+    ...(extendedTranslations.en as TranslationCatalog),
+    ...baseT.en,
+    ...mergeNamespaces("en"),
+  } as typeof baseT.en & TranslationCatalog,
+  ar: {
+    ...(extendedTranslations.ar as TranslationCatalog),
+    ...baseT.ar,
+    ...mergeNamespaces("ar"),
+  } as typeof baseT.ar & TranslationCatalog,
+};
+
+/**
+ * Interpolate `{name}` placeholders. Use this instead of concatenating
+ * translated fragments so word order stays correct in Arabic
+ * (e.g. "{done}/{total} completed" instead of "{done}/{total}" + " completed").
+ */
+export function formatMessage(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? String(values[key]) : match
+  );
+}
 
 export function useTranslation() {
   const { locale } = useI18n();

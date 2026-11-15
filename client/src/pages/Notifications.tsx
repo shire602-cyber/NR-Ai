@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -253,7 +254,9 @@ export default function Notifications() {
                         <div className="flex items-center gap-2">
                           {getNewsBadge(news.category)}
                           {news.importance === "critical" && (
-                            <Badge variant="destructive">Critical</Badge>
+                            <Badge variant="destructive">
+                              <T k="pages.critical" />
+                            </Badge>
                           )}
                           {news.importance === "high" && (
                             <Badge className="bg-warning">Important</Badge>

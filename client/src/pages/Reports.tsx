@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -13144,7 +13145,7 @@ export default function Reports() {
                       href={item.nextAction.href}
                       data-testid={`report-accountant-handoff-action-${item.workspace.persona}`}
                     >
-                      Next action
+                      <T k="pages.nextAction" />
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </Button>
@@ -13336,7 +13337,7 @@ export default function Reports() {
               data-testid="button-clear-report-workflow-gap-filter"
             >
               <X className="h-3.5 w-3.5" />
-              Clear filter
+              <T k="pages.clearFilter" />
             </Button>
           </div>
         ) : null}
@@ -13857,7 +13858,7 @@ export default function Reports() {
                     <div className="rounded-md border p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-medium uppercase text-muted-foreground">
-                          Next action
+                          <T k="pages.nextAction" />
                         </div>
                         <Badge variant={item.nextAction.badgeVariant} dot>
                           {item.nextAction.badge}
@@ -15241,7 +15242,7 @@ export default function Reports() {
                             onClick={() => setEditingReportDeliverySubscriptionId(null)}
                           >
                             <X className="h-4 w-4" />
-                            Cancel
+                            <T k="pages.cancel" />
                           </Button>
                         </div>
                       </div>
@@ -17105,7 +17106,9 @@ export default function Reports() {
                       <TableHead className="text-right">Current</TableHead>
                       <TableHead className="text-right">Baseline</TableHead>
                       <TableHead className="text-right">Change</TableHead>
-                      <TableHead>Roles</TableHead>
+                      <TableHead>
+                        <T k="pages.roles" />
+                      </TableHead>
                       <TableHead className="text-right">Open</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -17991,7 +17994,9 @@ export default function Reports() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="pages.totalRevenue" />
+                    </CardTitle>
                     <div className="w-8 h-8 rounded-md bg-success-subtle flex items-center justify-center">
                       <TrendingUp className="w-4 h-4 text-success " />
                     </div>
@@ -18012,7 +18017,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="pages.totalExpenses" />
+                    </CardTitle>
                     <div className="w-8 h-8 rounded-md bg-danger-subtle flex items-center justify-center">
                       <TrendingDown className="w-4 h-4 text-destructive " />
                     </div>
@@ -18081,7 +18088,7 @@ export default function Reports() {
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Revenue
+                                <T k="pages.totalRevenue" />
                               </TableCell>
                               <TableCell className="text-right font-mono font-semibold">
                                 {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
@@ -18108,7 +18115,7 @@ export default function Reports() {
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Expenses
+                                <T k="pages.totalExpenses" />
                               </TableCell>
                               <TableCell className="text-right font-mono font-semibold">
                                 {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
@@ -18166,7 +18173,7 @@ export default function Reports() {
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Assets
+                                <T k="pages.totalAssets" />
                               </TableCell>
                               <TableCell className="text-right font-mono font-semibold">
                                 {formatCurrency(balanceSheet?.totalAssets || 0, "AED", locale)}
@@ -18193,7 +18200,7 @@ export default function Reports() {
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Liabilities
+                                <T k="pages.totalLiabilities" />
                               </TableCell>
                               <TableCell className="text-right font-mono font-semibold">
                                 {formatCurrency(balanceSheet?.totalLiabilities || 0, "AED", locale)}
@@ -18220,7 +18227,7 @@ export default function Reports() {
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Equity
+                                <T k="pages.totalEquity" />
                               </TableCell>
                               <TableCell className="text-right font-mono font-semibold">
                                 {formatCurrency(balanceSheet?.totalEquity || 0, "AED", locale)}
@@ -18318,7 +18325,9 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Tax Payable</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="pages.taxPayable" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18339,7 +18348,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Taxable Income</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <T k="pages.taxableIncome" />
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21234,7 +21245,9 @@ export default function Reports() {
                     <>
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Events</div>
+                          <div className="text-xs text-muted-foreground">
+                            <T k="pages.events" />
+                          </div>
                           <div className="font-mono text-xl font-semibold">
                             {auditTrailReport.logCount}
                           </div>
@@ -21267,7 +21280,9 @@ export default function Reports() {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Action</TableHead>
-                                  <TableHead className="text-right">Events</TableHead>
+                                  <TableHead className="text-right">
+                                    <T k="pages.events" />
+                                  </TableHead>
                                   <TableHead>Latest</TableHead>
                                 </TableRow>
                               </TableHeader>
@@ -21299,7 +21314,9 @@ export default function Reports() {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Record type</TableHead>
-                                  <TableHead className="text-right">Events</TableHead>
+                                  <TableHead className="text-right">
+                                    <T k="pages.events" />
+                                  </TableHead>
                                   <TableHead>Latest</TableHead>
                                 </TableRow>
                               </TableHeader>

@@ -49,7 +49,12 @@ export function registerOnboardingRoutes(app: Express) {
       const userId = (req as any).user?.id;
 
       // Calculate current step based on completed steps
-      const data = req.body;
+      const { tourDismissed, ...data } = req.body ?? {};
+      // R18-03: the welcome tour records a one-time, server-side dismissal.
+      if (tourDismissed === true) {
+        data.showTour = false;
+        data.tourDismissedAt = new Date();
+      }
       let currentStep = 0;
       if (data.hasCompletedWelcome) currentStep = 1;
       if (data.hasCreatedCompany) currentStep = 2;
@@ -62,11 +67,18 @@ export function registerOnboardingRoutes(app: Express) {
 
       const isComplete = currentStep >= 8;
 
+      // A preference-only patch (e.g. tour dismissal) must not recompute, and
+      // therefore reset, the step progress from a body that carries no steps.
+      const touchesSteps = Object.keys(data).some((key) => key.startsWith("has"));
       const onboarding = await storage.updateUserOnboarding(userId, {
         ...data,
-        currentStep,
-        isOnboardingComplete: isComplete,
-        completedAt: isComplete ? new Date() : undefined,
+        ...(touchesSteps
+          ? {
+              currentStep,
+              isOnboardingComplete: isComplete,
+              completedAt: isComplete ? new Date() : undefined,
+            }
+          : {}),
       });
 
       res.json(onboarding);

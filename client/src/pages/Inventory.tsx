@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -264,13 +265,13 @@ export default function Inventory() {
   const getMovementTypeBadge = (type: string) => {
     switch (type) {
       case "purchase":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Purchase</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle"><T k="pages.purchase" /></Badge>;
       case "sale":
         return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sale</Badge>;
       case "adjustment":
-        return <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle">Adjustment</Badge>;
+        return <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle"><T k="pages.adjustment" /></Badge>;
       case "return":
-        return <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10">Return</Badge>;
+        return <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10"><T k="pages.return" /></Badge>;
       default:
         return <Badge variant="secondary">{type}</Badge>;
     }
@@ -304,7 +305,7 @@ export default function Inventory() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <div className="text-muted-foreground"><T k="pages.pleaseCreateACompanyFirst" /></div>
       </div>
     );
   }
@@ -329,7 +330,7 @@ export default function Inventory() {
         <TabsList>
           <TabsTrigger value="products" className="flex items-center gap-2">
             <Package className="w-4 h-4" />
-            Products
+            <T k="pages.products" />
           </TabsTrigger>
           <TabsTrigger value="movements" className="flex items-center gap-2">
             <ArrowDownUp className="w-4 h-4" />
@@ -343,7 +344,7 @@ export default function Inventory() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Products</CardTitle>
+                  <CardTitle><T k="pages.products" /></CardTitle>
                   <CardDescription>
                     {productsList.length} product{productsList.length !== 1 ? "s" : ""} in inventory
                   </CardDescription>
@@ -380,11 +381,11 @@ export default function Inventory() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead className="text-right">Unit Price</TableHead>
-                        <TableHead className="text-right">Cost Price</TableHead>
+                        <TableHead className="text-right"><T k="pages.unitPrice" /></TableHead>
+                        <TableHead className="text-right"><T k="pages.costPrice" /></TableHead>
                         <TableHead className="text-right">Stock</TableHead>
                         <TableHead>Unit</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead><T k="pages.status" /></TableHead>
                         <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -430,7 +431,7 @@ export default function Inventory() {
                             <TableCell>
                               {product.isActive ? (
                                 <Badge variant="secondary" className="bg-success-subtle text-success-subtle-foreground">
-                                  Active
+                                  <T k="pages.active" />
                                 </Badge>
                               ) : (
                                 <Badge variant="secondary">{t.inactive || "Inactive"}</Badge>
@@ -498,12 +499,12 @@ export default function Inventory() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t.date || "Date"}</TableHead>
-                        <TableHead>Product</TableHead>
+                        <TableHead><T k="pages.product" /></TableHead>
                         <TableHead>{t.type || "Type"}</TableHead>
                         <TableHead className="text-right">{t.quantity || "Quantity"}</TableHead>
-                        <TableHead className="text-right">Unit Cost</TableHead>
+                        <TableHead className="text-right"><T k="pages.unitCost" /></TableHead>
                         <TableHead>{t.reference || "Reference"}</TableHead>
-                        <TableHead>Notes</TableHead>
+                        <TableHead><T k="pages.notes" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -668,7 +669,7 @@ export default function Inventory() {
                   name="costPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Cost Price</FormLabel>
+                      <FormLabel><T k="pages.costPrice" /></FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -690,7 +691,7 @@ export default function Inventory() {
                   name="vatRate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>VAT Rate</FormLabel>
+                      <FormLabel><T k="pages.vatRate" /></FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseFloat(v))}
                         value={String(field.value)}
@@ -778,9 +779,9 @@ export default function Inventory() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="purchase">Purchase</SelectItem>
-                        <SelectItem value="adjustment">Adjustment</SelectItem>
-                        <SelectItem value="return">Return</SelectItem>
+                        <SelectItem value="purchase"><T k="pages.purchase" /></SelectItem>
+                        <SelectItem value="adjustment"><T k="pages.adjustment" /></SelectItem>
+                        <SelectItem value="return"><T k="pages.return" /></SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -807,7 +808,7 @@ export default function Inventory() {
                 name="unitCost"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unit Cost</FormLabel>
+                    <FormLabel><T k="pages.unitCost" /></FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -827,7 +828,7 @@ export default function Inventory() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel><T k="pages.notes" /></FormLabel>
                     <FormControl>
                       <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
                     </FormControl>
@@ -868,7 +869,7 @@ export default function Inventory() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (productToDelete) {
@@ -878,7 +879,7 @@ export default function Inventory() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

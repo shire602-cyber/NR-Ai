@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -73,14 +74,14 @@ export default function JournalEntryDetail() {
         return (
           <Badge className="bg-success-subtle text-success-subtle-foreground ">
             <CheckCircle2 className="w-3 h-3 mr-1" />
-            Posted
+            <T k="pages.posted" />
           </Badge>
         );
       case "draft":
         return (
           <Badge variant="secondary">
             <Clock className="w-3 h-3 mr-1" />
-            Draft
+            <T k="pages.draft" />
           </Badge>
         );
       case "reversed":
@@ -248,7 +249,9 @@ export default function JournalEntryDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Line Items</CardTitle>
+          <CardTitle className="text-lg">
+            <T k="pages.lineItems" />
+          </CardTitle>
           <CardDescription>Double-entry transaction details</CardDescription>
         </CardHeader>
         <CardContent>
@@ -290,7 +293,7 @@ export default function JournalEntryDetail() {
               ))}
               <TableRow className="bg-muted/50 font-bold">
                 <TableCell colSpan={3} className="text-right">
-                  Totals
+                  <T k="pages.totals" />
                 </TableCell>
                 <TableCell className="text-right font-mono">
                   {formatCurrency(totalDebit, "AED", locale)}

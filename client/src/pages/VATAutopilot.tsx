@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -812,7 +813,7 @@ export default function VATAutopilot() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjustmentOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => adjustmentMutation.mutate()}

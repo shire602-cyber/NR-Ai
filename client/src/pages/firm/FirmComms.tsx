@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -316,7 +317,7 @@ function InboxTab() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              <T k="pages.previous" />
             </Button>
             <span className="px-2 py-1">
               Page {page} / {totalPages}
@@ -491,7 +492,9 @@ function ComposeTab() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Subject</Label>
+            <Label>
+              <T k="pages.subject" />
+            </Label>
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
@@ -512,7 +515,9 @@ function ComposeTab() {
 
       {/* Body */}
       <div className="space-y-1.5">
-        <Label>Message</Label>
+        <Label>
+          <T k="pages.message" />
+        </Label>
         <Textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
@@ -650,7 +655,9 @@ function TemplatesTab() {
                     <TableHead>{t.templateName}</TableHead>
                     <TableHead>{t.channel}</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Language</TableHead>
+                    <TableHead>
+                      <T k="pages.language" />
+                    </TableHead>
                     <TableHead>{t.status}</TableHead>
                     <TableHead>{t.actions}</TableHead>
                   </TableRow>
@@ -715,8 +722,12 @@ function TemplatesTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="email">Email</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="email">
+                      <T k="pages.email" />
+                    </SelectItem>
+                    <SelectItem value="whatsapp">
+                      <T k="pages.whatsapp" />
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -730,11 +741,21 @@ function TemplatesTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vat_reminder">VAT Reminder</SelectItem>
-                    <SelectItem value="invoice">Invoice</SelectItem>
-                    <SelectItem value="document_request">Document Request</SelectItem>
-                    <SelectItem value="payment_confirmation">Payment Confirmation</SelectItem>
-                    <SelectItem value="custom">Custom</SelectItem>
+                    <SelectItem value="vat_reminder">
+                      <T k="pages.vatReminder" />
+                    </SelectItem>
+                    <SelectItem value="invoice">
+                      <T k="pages.invoice" />
+                    </SelectItem>
+                    <SelectItem value="document_request">
+                      <T k="pages.documentRequest" />
+                    </SelectItem>
+                    <SelectItem value="payment_confirmation">
+                      <T k="pages.paymentConfirmation" />
+                    </SelectItem>
+                    <SelectItem value="custom">
+                      <T k="pages.custom" />
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -880,9 +901,13 @@ function BulkActionsTab() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Client</TableHead>
+                        <TableHead>
+                          <T k="pages.client" />
+                        </TableHead>
                         <TableHead>{t.recipient}</TableHead>
-                        <TableHead>VAT Due</TableHead>
+                        <TableHead>
+                          <T k="pages.vatDue" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -898,7 +923,7 @@ function BulkActionsTab() {
                             ) : (
                               <span className="flex items-center gap-1 text-destructive">
                                 <XCircle className="h-3 w-3" />
-                                No email
+                                <T k="pages.noEmail" />
                               </span>
                             )}
                           </TableCell>

@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -152,7 +153,7 @@ export default function CashFlowForecast() {
             <TrendingUp className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Cash Flow Forecast</h1>
+            <h1 className="text-2xl font-bold tracking-tight"><T k="pages.cashFlowForecast" /></h1>
             <p className="text-muted-foreground text-sm">
               AI-powered projections based on your financial history
             </p>
@@ -176,7 +177,7 @@ export default function CashFlowForecast() {
             disabled={isFetchingForecast}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
-            Refresh
+            <T k="pages.refresh" />
           </Button>
         </div>
       </div>
@@ -242,7 +243,7 @@ export default function CashFlowForecast() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-primary" />
-              AI Insights
+              <T k="pages.aiInsights" />
             </CardTitle>
             <CardDescription>
               Key observations and recommendations from your financial data
@@ -289,7 +290,7 @@ export default function CashFlowForecast() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Week</TableHead>
-                    <TableHead>Period</TableHead>
+                    <TableHead><T k="pages.period" /></TableHead>
                     <TableHead className="text-right">Expected In</TableHead>
                     <TableHead className="text-right">Expected Out</TableHead>
                     <TableHead className="text-right">Projected Balance</TableHead>

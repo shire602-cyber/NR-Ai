@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -418,7 +419,9 @@ export default function PurchaseOrders() {
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>
+                                    <T k="pages.pickADate" />
+                                  </span>
                                 )}
                               </Button>
                             </FormControl>
@@ -444,7 +447,9 @@ export default function PurchaseOrders() {
                     name="vendorName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Vendor Name</FormLabel>
+                        <FormLabel>
+                          <T k="pages.vendorName" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -457,7 +462,9 @@ export default function PurchaseOrders() {
                     name="vendorTrn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Vendor TRN</FormLabel>
+                        <FormLabel>
+                          <T k="pages.vendorTrn" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} placeholder="Optional" className="font-mono" />
                         </FormControl>
@@ -488,7 +495,9 @@ export default function PurchaseOrders() {
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>
+                                    <T k="pages.pickADate" />
+                                  </span>
                                 )}
                               </Button>
                             </FormControl>
@@ -511,7 +520,9 @@ export default function PurchaseOrders() {
                     name="currency"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Currency</FormLabel>
+                        <FormLabel>
+                          <T k="pages.currency" />
+                        </FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger>
@@ -537,7 +548,9 @@ export default function PurchaseOrders() {
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notes</FormLabel>
+                      <FormLabel>
+                        <T k="pages.notes" />
+                      </FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
@@ -552,7 +565,9 @@ export default function PurchaseOrders() {
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">Line Items</h3>
+                    <h3 className="font-medium">
+                      <T k="pages.lineItems" />
+                    </h3>
                     <Button
                       type="button"
                       variant="outline"
@@ -562,7 +577,7 @@ export default function PurchaseOrders() {
                       }
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Line
+                      <T k="pages.addLine" />
                     </Button>
                   </div>
 
@@ -682,7 +697,9 @@ export default function PurchaseOrders() {
 
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-muted-foreground">
+                      <T k="pages.subtotal" />
+                    </span>
                     <span className="font-mono font-medium">
                       {formatCurrency(subtotal, "AED", locale)}
                     </span>
@@ -694,7 +711,9 @@ export default function PurchaseOrders() {
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>Total</span>
+                    <span>
+                      <T k="pages.total2" />
+                    </span>
                     <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
                   </div>
                 </div>
@@ -706,7 +725,7 @@ export default function PurchaseOrders() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    <T k="pages.cancel" />
                   </Button>
                   <Button
                     type="submit"
@@ -730,13 +749,23 @@ export default function PurchaseOrders() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold">Number</TableHead>
-                  <TableHead className="font-semibold">Vendor</TableHead>
+                  <TableHead className="font-semibold">
+                    <T k="pages.number" />
+                  </TableHead>
+                  <TableHead className="font-semibold">
+                    <T k="pages.vendor" />
+                  </TableHead>
                   <TableHead className="font-semibold">Date</TableHead>
                   <TableHead className="font-semibold">Expected Delivery</TableHead>
-                  <TableHead className="font-semibold text-right">Total</TableHead>
-                  <TableHead className="font-semibold text-center">Status</TableHead>
-                  <TableHead className="font-semibold text-center">Actions</TableHead>
+                  <TableHead className="font-semibold text-right">
+                    <T k="pages.total2" />
+                  </TableHead>
+                  <TableHead className="font-semibold text-center">
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead className="font-semibold text-center">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -792,7 +821,7 @@ export default function PurchaseOrders() {
                               disabled={po.status !== "sent"}
                             >
                               <CheckCircle className="w-4 h-4 mr-2" />
-                              Approve
+                              <T k="pages.approve" />
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() =>
@@ -809,7 +838,7 @@ export default function PurchaseOrders() {
                               }
                             >
                               <Download className="w-4 h-4 mr-2" />
-                              Download PDF
+                              <T k="pages.downloadPdf" />
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
@@ -825,7 +854,7 @@ export default function PurchaseOrders() {
                               disabled={po.status !== "draft"}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                              <T k="pages.delete" />
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

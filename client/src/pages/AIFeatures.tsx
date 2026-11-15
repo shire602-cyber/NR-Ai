@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -306,7 +307,7 @@ export default function AIFeatures() {
         <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
           <TabsTrigger value="overview" data-testid="tab-overview">
             <Target className="w-4 h-4 mr-2" />
-            Overview
+            <T k="pages.overview" />
           </TabsTrigger>
           <TabsTrigger value="anomalies" data-testid="tab-anomalies">
             <ShieldAlert className="w-4 h-4 mr-2" />
@@ -509,7 +510,9 @@ export default function AIFeatures() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <CheckCircle2 className="w-12 h-12 text-success mb-4" />
-                <h3 className="text-lg font-semibold">All Clear</h3>
+                <h3 className="text-lg font-semibold">
+                  <T k="pages.allClear" />
+                </h3>
                 <p className="text-muted-foreground">No anomalies detected in your transactions</p>
                 <Button
                   variant="outline"
@@ -577,7 +580,7 @@ export default function AIFeatures() {
                             data-testid={`button-resolve-${alert.id}`}
                           >
                             <Check className="w-4 h-4 mr-1" />
-                            Resolve
+                            <T k="pages.resolve" />
                           </Button>
                         </div>
                       </div>
@@ -592,7 +595,9 @@ export default function AIFeatures() {
         <TabsContent value="forecast" className="space-y-6">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-xl font-semibold">Cash Flow Forecast</h2>
+              <h2 className="text-xl font-semibold">
+                <T k="pages.cashFlowForecast" />
+              </h2>
               <p className="text-muted-foreground">
                 AI-powered predictions based on your financial history
               </p>
@@ -914,7 +919,7 @@ export default function AIFeatures() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => {
@@ -973,7 +978,7 @@ export default function AIFeatures() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCategorizationOpen(false)}>
-              Close
+              <T k="pages.close" />
             </Button>
             <Button
               onClick={() => {

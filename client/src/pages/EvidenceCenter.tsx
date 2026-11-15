@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
@@ -974,7 +975,7 @@ export default function EvidenceCenter() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIssueDialog(null)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => issueActionMutation.mutate()}
@@ -1028,7 +1029,7 @@ export default function EvidenceCenter() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRequestDialogOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() => requestReviewMutation.mutate()}

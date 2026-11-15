@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -336,7 +337,7 @@ export default function Admin() {
             </Button>
             <Button variant="outline" size="sm" data-testid="button-refresh">
               <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
+              <T k="pages.refresh" />
             </Button>
           </>
         }
@@ -346,7 +347,7 @@ export default function Admin() {
         <TabsList className="grid grid-cols-6 w-full max-w-4xl">
           <TabsTrigger value="overview" data-testid="tab-overview">
             <BarChart3 className="w-4 h-4 mr-2" />
-            Overview
+            <T k="pages.overview" />
           </TabsTrigger>
           <TabsTrigger value="pricing" data-testid="tab-pricing">
             <DollarSign className="w-4 h-4 mr-2" />
@@ -428,7 +429,7 @@ export default function Admin() {
                 <div className="text-2xl font-bold" data-testid="stat-ai-credits">
                   {stats?.aiCreditsUsed || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">This month</p>
+                <p className="text-xs text-muted-foreground"><T k="pages.thisMonth" /></p>
               </CardContent>
             </Card>
           </div>
@@ -447,7 +448,7 @@ export default function Admin() {
                     <span>Database</span>
                   </div>
                   <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
-                    Healthy
+                    <T k="pages.healthy" />
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -578,7 +579,7 @@ export default function Admin() {
           {/* Recent Activity */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Recent Activity</CardTitle>
+              <CardTitle className="text-base"><T k="pages.recentActivity" /></CardTitle>
               <CardDescription>Latest actions across the platform</CardDescription>
             </CardHeader>
             <CardContent>
@@ -743,7 +744,7 @@ export default function Admin() {
               <SelectContent>
                 <SelectItem value="all">All Users</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="inactive"><T k="pages.inactive" /></SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -861,7 +862,7 @@ export default function Admin() {
                   </div>
                   <DialogFooter className="mt-4">
                     <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>
-                      Cancel
+                      <T k="pages.cancel" />
                     </Button>
                     <Button type="submit" disabled={updateUserMutation.isPending}>
                       {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
@@ -982,7 +983,7 @@ export default function Admin() {
                   </div>
                   <DialogFooter className="mt-4">
                     <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>
-                      Cancel
+                      <T k="pages.cancel" />
                     </Button>
                     <Button type="submit" disabled={updateCompanyMutation.isPending}>
                       {updateCompanyMutation.isPending ? "Saving..." : "Save Changes"}
@@ -1367,7 +1368,7 @@ export default function Admin() {
                 <SelectValue placeholder="Filter by action" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Actions</SelectItem>
+                <SelectItem value="all"><T k="pages.allActions" /></SelectItem>
                 <SelectItem value="create">Create</SelectItem>
                 <SelectItem value="update">Update</SelectItem>
                 <SelectItem value="delete">Delete</SelectItem>

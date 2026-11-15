@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -418,7 +419,9 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Show Company Logo</FormLabel>
+                        <FormLabel className="text-base">
+                          <T k="pages.showCompanyLogo" />
+                        </FormLabel>
                         <FormDescription>Display your company logo on the invoice</FormDescription>
                       </div>
                       <FormControl>
@@ -453,7 +456,7 @@ export default function InvoiceTemplates() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    <T k="pages.cancel" />
                   </Button>
                   <Button
                     type="submit"

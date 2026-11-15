@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -274,12 +275,22 @@ export default function ClientImport() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-12">#</TableHead>
-                          <TableHead>Company Name</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Phone</TableHead>
+                          <TableHead>
+                            <T k="pages.companyName" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.email" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.phone" />
+                          </TableHead>
                           <TableHead>TRN</TableHead>
-                          <TableHead>Industry</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>
+                            <T k="pages.industry" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.status" />
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -343,7 +354,7 @@ export default function ClientImport() {
 
               <div className="flex justify-end gap-3">
                 <Button variant="outline" onClick={resetImport} data-testid="button-cancel-import">
-                  Cancel
+                  <T k="pages.cancel" />
                 </Button>
                 <Button
                   onClick={handleImport}
@@ -401,9 +412,15 @@ export default function ClientImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Company Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>
+                          <T k="pages.companyName" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.email" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.status" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -418,7 +435,7 @@ export default function ClientImport() {
                           <TableCell>{item.email || "-"}</TableCell>
                           <TableCell>
                             <Badge className="bg-success/10 text-success border-success/20">
-                              Created
+                              <T k="pages.created" />
                             </Badge>
                           </TableCell>
                         </TableRow>
@@ -433,7 +450,9 @@ export default function ClientImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Company Name</TableHead>
+                        <TableHead>
+                          <T k="pages.companyName" />
+                        </TableHead>
                         <TableHead>Error</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -461,8 +480,12 @@ export default function ClientImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Company</TableHead>
+                        <TableHead>
+                          <T k="pages.email" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.company" />
+                        </TableHead>
                         <TableHead>Invite Link</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -494,7 +517,7 @@ export default function ClientImport() {
                 data-testid="button-view-clients"
               >
                 <Users className="w-4 h-4 mr-2" />
-                View All Clients
+                <T k="pages.viewAllClients" />
               </Button>
             </div>
           </CardContent>

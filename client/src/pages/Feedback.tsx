@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -117,14 +118,14 @@ export default function Feedback() {
         return (
           <Badge className="bg-info">
             <Clock className="w-3 h-3 mr-1" />
-            In Progress
+            <T k="pages.inProgress" />
           </Badge>
         );
       case "reviewed":
         return (
           <Badge className="bg-warning">
             <AlertCircle className="w-3 h-3 mr-1" />
-            Reviewed
+            <T k="pages.reviewed" />
           </Badge>
         );
       case "new":
@@ -160,7 +161,7 @@ export default function Feedback() {
         <TabsList>
           <TabsTrigger value="submit" data-testid="tab-submit">
             <Send className="w-4 h-4 mr-2" />
-            Submit Feedback
+            <T k="pages.submitFeedback" />
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <History className="w-4 h-4 mr-2" />
@@ -205,7 +206,9 @@ export default function Feedback() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Category</Label>
+                  <Label>
+                    <T k="pages.category" />
+                  </Label>
                   <Select
                     value={formData.category}
                     onValueChange={(value) => setFormData({ ...formData, category: value })}
@@ -247,7 +250,9 @@ export default function Feedback() {
               </div>
 
               <div className="space-y-2">
-                <Label>Title</Label>
+                <Label>
+                  <T k="pages.title" />
+                </Label>
                 <Input
                   placeholder="Brief summary of your feedback"
                   value={formData.title}
@@ -257,7 +262,9 @@ export default function Feedback() {
               </div>
 
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>
+                  <T k="pages.description" />
+                </Label>
                 <Textarea
                   placeholder="Please provide as much detail as possible..."
                   value={formData.message}
@@ -301,7 +308,7 @@ export default function Feedback() {
                 data-testid="button-submit"
               >
                 <Send className="w-4 h-4 mr-2" />
-                Submit Feedback
+                <T k="pages.submitFeedback" />
               </Button>
             </CardContent>
           </Card>

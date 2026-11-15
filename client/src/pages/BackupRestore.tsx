@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -205,21 +206,21 @@ export default function BackupRestore() {
         return (
           <Badge className="bg-success/10 text-success border-success/20">
             <CheckCircle className="h-3 w-3 mr-1" />
-            Completed
+            <T k="pages.completed" />
           </Badge>
         );
       case "in_progress":
         return (
           <Badge className="bg-info/10 text-info border-info/20">
             <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-            In Progress
+            <T k="pages.inProgress" />
           </Badge>
         );
       case "failed":
         return (
           <Badge variant="destructive">
             <XCircle className="h-3 w-3 mr-1" />
-            Failed
+            <T k="pages.failed" />
           </Badge>
         );
       default:
@@ -266,7 +267,7 @@ export default function BackupRestore() {
         actions={
           <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
             <Plus className="h-4 w-4 mr-2" />
-            Create Backup
+            <T k="pages.createBackup" />
           </Button>
         }
       />
@@ -303,7 +304,7 @@ export default function BackupRestore() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>
@@ -323,7 +324,7 @@ export default function BackupRestore() {
               ) : (
                 <>
                   <Database className="h-4 w-4 mr-2" />
-                  Create Backup
+                  <T k="pages.createBackup" />
                 </>
               )}
             </Button>
@@ -413,11 +414,11 @@ export default function BackupRestore() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead><T k="pages.status" /></TableHead>
                   <TableHead>Records</TableHead>
                   <TableHead>Size</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead><T k="pages.created" /></TableHead>
+                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -500,12 +501,12 @@ export default function BackupRestore() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => deleteBackupMutation.mutate(backup.id)}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                               >
-                                Delete
+                                <T k="pages.delete" />
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -583,7 +584,7 @@ export default function BackupRestore() {
                 setSelectedBackupForRestore(null);
               }}
             >
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               variant="destructive"

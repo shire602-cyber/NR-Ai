@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { useEffect } from "react";
 import { LegalLayout } from "@/components/LegalLayout";
 
@@ -10,7 +11,11 @@ export default function CookiePolicy() {
     <LegalLayout title="Cookie Policy" effectiveDate="26 April 2026">
       <p>
         This Cookie Policy explains how Muhasib.ai uses cookies and similar technologies on our
-        website and platform. It should be read alongside our <a href="/privacy">Privacy Policy</a>.
+        website and platform. It should be read alongside our{" "}
+        <a href="/privacy">
+          <T k="pages.privacyPolicy" />
+        </a>
+        .
       </p>
 
       <h2>1. What Are Cookies?</h2>
@@ -36,7 +41,9 @@ export default function CookiePolicy() {
         default company, dashboard layout, and notification preferences.
       </p>
 
-      <h3>Analytics</h3>
+      <h3>
+        <T k="pages.analytics" />
+      </h3>
       <p>
         We use first-party analytics to understand how the Service is used (pages visited, features
         used, errors encountered). The data is aggregated and used to improve the product. We do not
