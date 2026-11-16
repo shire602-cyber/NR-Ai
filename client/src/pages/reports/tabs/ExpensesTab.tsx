@@ -1,5 +1,6 @@
 // Reports > expenses tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { AlertTriangle, DollarSign, FileSpreadsheet, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function ExpensesTab() {
+  const { t } = useTranslation();
   const {
     dateRange,
     expenseClaimReport,
@@ -141,7 +143,7 @@ export default function ExpensesTab() {
               <T k="reportCenter.expensesByVendor" />
             </CardTitle>
             <CardDescription>
-              Posted expense-account activity grouped by linked bill or receipt vendor.
+              {t["expensesTab.postedExpenseAccountActivityGrouped"]}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -196,7 +198,7 @@ export default function ExpensesTab() {
               <T k="reportCenter.expensesByCategory" />
             </CardTitle>
             <CardDescription>
-              Posted expense-account activity grouped by chart-of-account category.
+              {t["expensesTab.postedExpenseAccountActivityGrouped2"]}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -468,7 +470,7 @@ export default function ExpensesTab() {
           <CardDescription>
             {dateRange.from && dateRange.to
               ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-              : "All posted journal entry dates"}
+              : t["expensesTab.allPostedJournalEntryDates"]}
           </CardDescription>
         </CardHeader>
         <CardContent>

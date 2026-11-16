@@ -195,18 +195,38 @@ const statusBadge = (status: string) => {
 const CT_EXEMPTION_THRESHOLD = 375000;
 const CT_TAX_RATE = 0.09;
 
-const defaultWorkpaperRows = (): CorporateTaxWorkpaperRow[] => [
-  { id: "revenue", label: "Revenue", type: "revenue", amount: 0 },
-  { id: "cogs", label: "COGS", type: "expense", amount: 0 },
-  { id: "rent", label: "Rent", type: "expense", amount: 0 },
-  { id: "transport", label: "Transport", type: "expense", amount: 0 },
-  { id: "utility", label: "Utility bill", type: "expense", amount: 0 },
-  { id: "telephone", label: "Telephone", type: "expense", amount: 0 },
-  { id: "license", label: "License", type: "expense", amount: 0 },
-  { id: "bank-charges", label: "Bank service charges", type: "expense", amount: 0 },
-  { id: "professional-fees", label: "Professional fees", type: "expense", amount: 0 },
-  { id: "food", label: "Food", type: "expense", amount: 0 },
-  { id: "office-expenses", label: "Office expenses", type: "expense", amount: 0 },
+const defaultWorkpaperRows = (locale: string): CorporateTaxWorkpaperRow[] => [
+  { id: "revenue", label: ctTr(locale, "Revenue", "الإيرادات"), type: "revenue", amount: 0 },
+  { id: "cogs", label: ctTr(locale, "COGS", "تكلفة البضاعة المباعة"), type: "expense", amount: 0 },
+  { id: "rent", label: ctTr(locale, "Rent", "الإيجار"), type: "expense", amount: 0 },
+  { id: "transport", label: ctTr(locale, "Transport", "النقل"), type: "expense", amount: 0 },
+  {
+    id: "utility",
+    label: ctTr(locale, "Utility bill", "فواتير المرافق"),
+    type: "expense",
+    amount: 0,
+  },
+  { id: "telephone", label: ctTr(locale, "Telephone", "الهاتف"), type: "expense", amount: 0 },
+  { id: "license", label: ctTr(locale, "License", "الرخص"), type: "expense", amount: 0 },
+  {
+    id: "bank-charges",
+    label: ctTr(locale, "Bank service charges", "الرسوم البنكية"),
+    type: "expense",
+    amount: 0,
+  },
+  {
+    id: "professional-fees",
+    label: ctTr(locale, "Professional fees", "الأتعاب المهنية"),
+    type: "expense",
+    amount: 0,
+  },
+  { id: "food", label: ctTr(locale, "Food", "الطعام"), type: "expense", amount: 0 },
+  {
+    id: "office-expenses",
+    label: ctTr(locale, "Office expenses", "مصروفات المكتب"),
+    type: "expense",
+    amount: 0,
+  },
 ];
 
 const moneyInputValue = (amount: number) => (amount === 0 ? "" : String(amount));
@@ -269,7 +289,7 @@ export default function CorporateTax() {
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState("");
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
-    defaultWorkpaperRows()
+    defaultWorkpaperRows(locale)
   );
 
   // Detail dialog
@@ -386,7 +406,7 @@ export default function CorporateTax() {
       setCalculation(null);
       setNotes("");
       setDeductions(0);
-      setWorkpaperRows(defaultWorkpaperRows());
+      setWorkpaperRows(defaultWorkpaperRows(locale));
     },
     onError: (error: any) => {
       toast({
@@ -455,7 +475,7 @@ export default function CorporateTax() {
       ...rows,
       {
         id: `${type}-${Date.now()}`,
-        label: type === "revenue" ? "Other revenue" : "Other expense",
+        label: type === "revenue" ? t["corporateTax.otherRevenue"] : t["corporateTax.otherExpense"],
         type,
         amount: 0,
       },
@@ -524,7 +544,7 @@ export default function CorporateTax() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setWorkpaperRows(defaultWorkpaperRows())}
+                onClick={() => setWorkpaperRows(defaultWorkpaperRows(locale))}
               >
                 <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
               </Button>
@@ -901,7 +921,7 @@ export default function CorporateTax() {
                   <Label htmlFor="notes">Notes (optional)</Label>
                   <Textarea
                     id="notes"
-                    placeholder="Add any notes for this tax return..."
+                    placeholder={t["corporateTax.addAnyNotesForThis"]}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={2}
@@ -1043,7 +1063,7 @@ export default function CorporateTax() {
                                   "ct-workpaper.xlsx"
                                 )
                               }
-                              title="Download Excel workpaper"
+                              title={t["corporateTax.downloadExcelWorkpaper"]}
                               data-testid={`button-ct-export-${taxReturn.id}`}
                             >
                               <Download className="w-4 h-4" />

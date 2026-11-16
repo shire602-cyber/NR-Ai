@@ -398,7 +398,7 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       setShowAddDialog(false);
-      toast({ title: "Contact created successfully" });
+      toast({ title: t["customerContacts.contactCreatedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
@@ -418,7 +418,7 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       setEditContact(null);
-      toast({ title: "Contact updated successfully" });
+      toast({ title: t["customerContacts.contactUpdatedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
@@ -437,7 +437,7 @@ export default function CustomerContacts() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
-      toast({ title: "Contact deleted successfully" });
+      toast({ title: t["customerContacts.contactDeletedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
@@ -578,12 +578,12 @@ export default function CustomerContacts() {
 
   const downloadTemplate = () => {
     if (!companyId) {
-      toast({ variant: "destructive", title: "Select a company first" });
+      toast({ variant: "destructive", title: t["customerContacts.selectACompanyFirst"] });
       return;
     }
 
     void downloadContactTemplate(companyId)
-      .then(() => toast({ title: "Template downloaded" }))
+      .then(() => toast({ title: t["customerContacts.templateDownloaded"] }))
       .catch((err: any) =>
         toast({
           variant: "destructive",
@@ -1161,7 +1161,7 @@ export default function CustomerContacts() {
                 size="icon"
                 onClick={() => {
                   navigator.clipboard.writeText(portalLinkDialog.url);
-                  toast({ title: "Link copied to clipboard" });
+                  toast({ title: t["customerContacts.linkCopiedToClipboard"] });
                 }}
                 data-testid="button-copy-portal-link"
               >
@@ -1180,8 +1180,7 @@ export default function CustomerContacts() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              This link is valid for 1 year. The client can view invoices and download PDFs without
-              needing to log in.
+              {t["customerContacts.thisLinkIsValidFor"]}
             </p>
           </div>
         </DialogContent>
@@ -1220,8 +1219,7 @@ export default function CustomerContacts() {
                       contacts.
                     </p>
                     <p className="text-muted-foreground mt-1">
-                      Invoices will be kept, but their customer link will be cleared. You may need
-                      to relink them after re-importing your client list.
+                      {t["customerContacts.invoicesWillBeKeptBut"]}
                     </p>
                   </div>
                 )}

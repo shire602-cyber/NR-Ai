@@ -55,7 +55,7 @@ import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { Backup } from "@shared/schema";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 
 type BackupWithoutData = Omit<Backup, "dataSnapshot">;
 
@@ -165,6 +165,7 @@ const BACKUP_COPY = {
 };
 
 export default function BackupRestore() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -385,9 +386,9 @@ export default function BackupRestore() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Settings"
-        title="Backup & Restore"
+        title={t["backupRestore.backupRestore"]}
         testId="text-backup-title"
-        description="Safeguard your financial records with automated backups"
+        description={t["backupRestore.safeguardYourFinancialRecordsWith"]}
         actions={
           <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
             <Plus className="h-4 w-4 mr-2" />
@@ -420,7 +421,7 @@ export default function BackupRestore() {
               <Label htmlFor="backup-description">Description (Optional)</Label>
               <Textarea
                 id="backup-description"
-                placeholder="Add notes about this backup..."
+                placeholder={t["backupRestore.addNotesAboutThisBackup"]}
                 value={newBackupDescription}
                 onChange={(e) => setNewBackupDescription(e.target.value)}
                 data-testid="input-backup-description"
@@ -501,12 +502,12 @@ export default function BackupRestore() {
             <p className="text-2xl font-bold" data-testid="text-last-backup">
               {backups.length > 0 && backups[0].createdAt
                 ? format(new Date(backups[0].createdAt), "MMM d, yyyy")
-                : "Never"}
+                : t["banking.feeds.never"]}
             </p>
             <p className="text-xs text-muted-foreground">
               {backups.length > 0 && backups[0].createdAt
                 ? format(new Date(backups[0].createdAt), "h:mm a")
-                : "Create your first backup"}
+                : t["backupRestore.createYourFirstBackup"]}
             </p>
           </CardContent>
         </Card>

@@ -1,4 +1,7 @@
 import { T } from "@/components/layout/T";
+import { dateFnsOptions } from "@/lib/date-locale";
+import { activityDescription } from "@/lib/activity-log-labels";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -52,6 +55,7 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
+  const { t, locale } = useTranslation();
   const { data: stats, isLoading } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
   });
@@ -84,9 +88,9 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Admin Dashboard"
+        title={t["admin.adminDashboard"]}
         testId="text-admin-title"
-        description="Manage your accounting firm's clients and system"
+        description={t["adminDashboard.manageYourAccountingFirmS"]}
         actions={
           <>
             <Link href="/admin/clients">
@@ -135,7 +139,10 @@ export default function AdminDashboard() {
               {stats?.totalUsers || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              {stats?.adminUsers || 0} admins, {stats?.clientUsers || 0} clients
+              {formatMessage(t["adminDashboard.userCounts"], {
+                admins: stats?.adminUsers || 0,
+                clients: stats?.clientUsers || 0,
+              })}
             </p>
           </CardContent>
         </Card>
@@ -198,9 +205,14 @@ export default function AdminDashboard() {
                   data-testid={`client-row-${client.id}`}
                 >
                   <div>
-                    <p className="font-medium">{client.name}</p>
+                    <p className="font-medium" translate="no">
+                      {client.name}
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      {client.userCount || 0} users · {client.documentCount || 0} documents
+                      {formatMessage(t["adminDashboard.clientCounts"], {
+                        users: client.userCount || 0,
+                        documents: client.documentCount || 0,
+                      })}
                     </p>
                   </div>
                   <Link href={`/admin/clients/${client.id}`}>
@@ -209,7 +221,7 @@ export default function AdminDashboard() {
                       size="sm"
                       data-testid={`button-view-client-${client.id}`}
                     >
-                      View
+                      {t["hr.view"]}
                     </Button>
                   </Link>
                 </div>
@@ -258,9 +270,14 @@ export default function AdminDashboard() {
                     {log.action === "invite" && <Mail className="h-4 w-4 text-chart-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm">{log.description}</p>
+                    <p className="text-sm">{activityDescription(t, log, locale)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {log.createdAt && format(new Date(log.createdAt), "MMM d, yyyy h:mm a")}
+                      {log.createdAt &&
+                        format(
+                          new Date(log.createdAt),
+                          "MMM d, yyyy h:mm a",
+                          dateFnsOptions(locale)
+                        )}
                     </p>
                   </div>
                 </div>
@@ -368,17 +385,17 @@ export default function AdminDashboard() {
                   healthy: {
                     icon: "🟢",
                     badgeClass: "bg-success-subtle text-success border-success/30",
-                    label: "Healthy",
+                    label: t["pages.healthy"],
                   },
                   attention: {
                     icon: "🟡",
                     badgeClass: "bg-warning-subtle text-warning border-warning/30",
-                    label: "Attention",
+                    label: t["components.srv.firm.priority.attention"],
                   },
                   critical: {
                     icon: "🔴",
                     badgeClass: "bg-danger-subtle text-destructive border-destructive/30",
-                    label: "Critical",
+                    label: t["components.srv.firm.priority.critical"],
                   },
                 };
                 const cfg = statusConfig[client.status] || statusConfig.attention;
@@ -390,7 +407,7 @@ export default function AdminDashboard() {
                       data-testid={`health-card-${client.companyId}`}
                     >
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-sm truncate flex-1 me-2">
+                        <h3 className="font-semibold text-sm truncate flex-1 me-2" translate="no">
                           {client.companyName}
                         </h3>
                         <Badge
@@ -415,8 +432,12 @@ export default function AdminDashboard() {
                           </span>
                           <span className="font-medium text-foreground">
                             {client.lastActivity
-                              ? format(new Date(client.lastActivity), "MMM d, yyyy")
-                              : "N/A"}
+                              ? format(
+                                  new Date(client.lastActivity),
+                                  "MMM d, yyyy",
+                                  dateFnsOptions(locale)
+                                )
+                              : t["adminDashboard.notAvailable"]}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -425,8 +446,12 @@ export default function AdminDashboard() {
                           </span>
                           <span className="font-medium text-foreground">
                             {client.nextDeadline
-                              ? format(new Date(client.nextDeadline), "MMM d, yyyy")
-                              : "None"}
+                              ? format(
+                                  new Date(client.nextDeadline),
+                                  "MMM d, yyyy",
+                                  dateFnsOptions(locale)
+                                )
+                              : t["banking.line.noCounterpart"]}
                           </span>
                         </div>
                       </div>
@@ -455,7 +480,7 @@ export default function AdminDashboard() {
             <CalendarClock className="h-5 w-5" />
             <T k="pageLabels.deadlineTracker" />
           </CardTitle>
-          <CardDescription>Upcoming deadlines across all clients (next 90 days)</CardDescription>
+          <CardDescription>{t["adminDashboard.upcomingDeadlines90"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {deadlinesLoading ? (
@@ -498,9 +523,13 @@ export default function AdminDashboard() {
                           isOverdue ? "bg-danger-subtle " : isUrgent ? "bg-danger-subtle/50 " : ""
                         }`}
                       >
-                        <td className="py-3 pe-4 font-medium">{dl.clientName}</td>
+                        <td className="py-3 pe-4 font-medium" translate="no">
+                          {dl.clientName}
+                        </td>
                         <td className="py-3 pe-4">{dl.deadlineType}</td>
-                        <td className="py-3 pe-4">{format(new Date(dl.dueDate), "MMM d, yyyy")}</td>
+                        <td className="py-3 pe-4">
+                          {format(new Date(dl.dueDate), "MMM d, yyyy", dateFnsOptions(locale))}
+                        </td>
                         <td
                           className={`py-3 pe-4 text-end tabular-nums font-medium ${
                             isOverdue
@@ -530,7 +559,7 @@ export default function AdminDashboard() {
                             {isOverdue
                               ? "Overdue"
                               : dl.status === "in_progress"
-                                ? "In Progress"
+                                ? t["pages.inProgress"]
                                 : dl.status === "pending"
                                   ? "Pending"
                                   : dl.status}

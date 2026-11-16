@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -108,6 +109,7 @@ function formatDate(dateStr?: string) {
 // ─── Component ────────────────────────────────────────────────────────────
 
 export default function AutoReconcile() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [result, setResult] = useState<AutoReconcileResult | null>(null);
@@ -221,7 +223,7 @@ export default function AutoReconcile() {
               <T k="pageLabels.aIAutoReconciliation" />
             </h1>
             <p className="text-muted-foreground text-sm">
-              Automatically match bank transactions with journal entries, invoices, and receipts
+              {t["autoReconcile.automaticallyMatchBankTransactionsWith"]}
             </p>
           </div>
         </div>
@@ -231,7 +233,7 @@ export default function AutoReconcile() {
           ) : (
             <ArrowRightLeft className="h-4 w-4 mr-2" />
           )}
-          {scanMutation.isPending ? "Scanning..." : "Run Auto-Reconcile"}
+          {scanMutation.isPending ? t["aIInbox.scanning"] : t["autoReconcile.runAutoReconcile"]}
         </Button>
       </div>
 
@@ -462,8 +464,7 @@ export default function AutoReconcile() {
                 <T k="pageLabels.readyToReconcile" />
               </h3>
               <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                Click "Run Auto-Reconcile" to scan your unreconciled bank transactions and
-                automatically find matching journal entries, invoices, and receipts.
+                {t["autoReconcile.clickRunAutoReconcileTo"]}
               </p>
             </div>
           </CardContent>

@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -52,6 +53,7 @@ interface ImportResult {
 }
 
 export default function ClientImport() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
@@ -167,7 +169,7 @@ export default function ClientImport() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast({ title: "Template downloaded successfully" });
+      toast({ title: t["clientImport.templateDownloadedSuccessfully"] });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Download failed", description: error?.message });
     }
@@ -183,9 +185,9 @@ export default function ClientImport() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Import Clients"
+        title={t["pages.importClients"]}
         testId="text-import-title"
-        description="Bulk import client companies from Excel spreadsheets"
+        description={t["clientImport.bulkImportClientCompaniesFrom"]}
         actions={
           <Button
             variant="outline"
@@ -206,10 +208,7 @@ export default function ClientImport() {
                 <FileSpreadsheet className="w-5 h-5" />
                 <T k="pageLabels.uploadExcelFile" />
               </CardTitle>
-              <CardDescription>
-                Upload an Excel file (.xlsx) or CSV containing your client data. We'll automatically
-                map common column names like "Company Name", "Email", "Phone", etc.
-              </CardDescription>
+              <CardDescription>{t["clientImport.uploadHelp"]}</CardDescription>
             </CardHeader>
             <CardContent>
               <div
@@ -245,7 +244,9 @@ export default function ClientImport() {
                       <p className="font-medium">
                         <T k="pageLabels.dragAndDropYourExcelFileHere" />
                       </p>
-                      <p className="text-sm text-muted-foreground">or click to browse</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t["screens.orClickToBrowse"]}
+                      </p>
                     </div>
                     <input
                       type="file"
@@ -354,8 +355,7 @@ export default function ClientImport() {
                     </Label>
                   </div>
                   <p className="text-sm text-muted-foreground ms-6">
-                    If enabled, clients with email addresses will receive invitation links to access
-                    their portal.
+                    {t["clientImport.ifEnabledClientsWithEmail"]}
                   </p>
                 </CardContent>
               </Card>

@@ -700,7 +700,7 @@ export default function FixedAssets() {
                       )}
                     </TableCell>
                     <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
-                      {asset.category}
+                      {t[`forms.asset.cat.${asset.category}`] || asset.category}
                     </TableCell>
                     <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
                       {asset.purchase_date ? formatDate(asset.purchase_date, locale) : "—"}
@@ -809,7 +809,9 @@ export default function FixedAssets() {
             <TableBody>
               {summary.byCategory.map((cat) => (
                 <TableRow key={cat.category}>
-                  <TableCell className="font-medium">{cat.category}</TableCell>
+                  <TableCell className="font-medium">
+                    {t[`forms.asset.cat.${cat.category}`] || cat.category}
+                  </TableCell>
                   <TableCell data-numeric="">{cat.count}</TableCell>
                   <MoneyCell amount={cat.totalCost} className="hidden sm:table-cell" />
                   <MoneyCell
@@ -1142,7 +1144,7 @@ export default function FixedAssets() {
             <DialogDescription>
               {disposingAsset
                 ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
-                : "Record asset disposal"}
+                : t["fixedAssets.recordAssetDisposal"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -1283,7 +1285,9 @@ export default function FixedAssets() {
                   {t.cancel || "Cancel"}
                 </Button>
                 <Button type="submit" variant="destructive" disabled={disposeMutation.isPending}>
-                  {disposeMutation.isPending ? t.loading || "Loading..." : "Dispose Asset"}
+                  {disposeMutation.isPending
+                    ? t.loading || "Loading..."
+                    : t["pageLabels.disposeAsset"]}
                 </Button>
               </div>
             </form>
@@ -1299,7 +1303,7 @@ export default function FixedAssets() {
               <T k="pageLabels.runMonthlyDepreciation" />
             </DialogTitle>
             <DialogDescription>
-              Calculate and record depreciation for all active assets for the selected month.
+              {t["fixedAssets.calculateAndRecordDepreciationFor"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -1385,7 +1389,7 @@ export default function FixedAssets() {
                 <Button type="submit" disabled={runDepreciationMutation.isPending}>
                   {runDepreciationMutation.isPending
                     ? t.loading || "Loading..."
-                    : "Run Depreciation"}
+                    : t["pageLabels.runDepreciation"]}
                 </Button>
               </div>
             </form>
@@ -1405,7 +1409,7 @@ export default function FixedAssets() {
               <T k="pageLabels.deleteFixedAsset" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this asset record. This action cannot be undone.
+              {t["fixedAssets.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -27,7 +27,7 @@ import {
   ComposedChart,
 } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -97,6 +97,7 @@ interface AIInsight {
 }
 
 export default function AdvancedAnalytics() {
+  const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
@@ -273,7 +274,7 @@ export default function AdvancedAnalytics() {
                 <T k="pageLabels.advancedAnalyticsAndForecasts" />
               </h1>
               <p className="text-muted-foreground mt-1">
-                AI-powered financial intelligence for strategic decision making
+                {t["advancedAnalytics.aiPoweredFinancialIntelligenceFor"]}
               </p>
             </div>
           </div>
@@ -314,12 +315,12 @@ export default function AdvancedAnalytics() {
             <div className="flex items-center gap-3">
               <Select value={forecastPeriod} onValueChange={setForecastPeriod}>
                 <SelectTrigger className="w-40" data-testid="select-forecast-period">
-                  <SelectValue placeholder="Period" />
+                  <SelectValue placeholder={t["forms.section.period"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="3months">3 Months</SelectItem>
-                  <SelectItem value="6months">6 Months</SelectItem>
-                  <SelectItem value="12months">12 Months</SelectItem>
+                  <SelectItem value="3months">{t["advancedAnalytics.3Months"]}</SelectItem>
+                  <SelectItem value="6months">{t["advancedAnalytics.6Months"]}</SelectItem>
+                  <SelectItem value="12months">{t["advancedAnalytics.12Months"]}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -333,7 +334,7 @@ export default function AdvancedAnalytics() {
               ) : (
                 <Sparkles className="w-4 h-4 me-2" />
               )}
-              Generate Forecast
+              {t["aIFeatures.generateForecast"]}
             </Button>
           </div>
 
@@ -351,9 +352,9 @@ export default function AdvancedAnalytics() {
                   <Money amount={forecastSummary.inflow} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Next{" "}
-                  {forecastPeriod === "3months" ? "3" : forecastPeriod === "6months" ? "6" : "12"}{" "}
-                  months
+                  {formatMessage(t["advancedAnalytics.nextCountMonths"], {
+                    count: forecastPeriod === "3months" ? 3 : forecastPeriod === "6months" ? 6 : 12,
+                  })}
                 </p>
               </CardContent>
             </Card>
@@ -448,9 +449,7 @@ export default function AdvancedAnalytics() {
                   <p className="font-medium">
                     <T k="pageLabels.noForecastGeneratedYet" />
                   </p>
-                  <p className="text-sm">
-                    Generate a forecast once invoices, receipts, or journals exist.
-                  </p>
+                  <p className="text-sm">{t["advancedAnalytics.generateAForecastOnceInvoices"]}</p>
                 </div>
               )}
             </CardContent>
@@ -468,7 +467,7 @@ export default function AdvancedAnalytics() {
               <p className="text-sm text-muted-foreground">
                 {hasForecastRows
                   ? "Monthly totals of open invoices by due date, approved vendor bills, payroll, tax dates and scheduled items. No averages are extrapolated and no confidence score is claimed."
-                  : "Add invoices, vendor bills or scheduled items to build a forecast. Without them nothing is projected."}
+                  : t["advancedAnalytics.addInvoicesVendorBillsOr"]}
               </p>
             </CardContent>
           </Card>
@@ -479,7 +478,7 @@ export default function AdvancedAnalytics() {
           <div className="flex items-center gap-3 flex-wrap">
             <Select value={budgetYear.toString()} onValueChange={(v) => setBudgetYear(parseInt(v))}>
               <SelectTrigger className="w-28" data-testid="select-budget-year">
-                <SelectValue placeholder="Year" />
+                <SelectValue placeholder={t["hr.year"]} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="2024">2024</SelectItem>
@@ -491,7 +490,7 @@ export default function AdvancedAnalytics() {
               onValueChange={(v) => setBudgetMonth(parseInt(v))}
             >
               <SelectTrigger className="w-36" data-testid="select-budget-month">
-                <SelectValue placeholder="Month" />
+                <SelectValue placeholder={t["hr.month"]} />
               </SelectTrigger>
               <SelectContent>
                 {months.map((m, i) => (
@@ -517,7 +516,10 @@ export default function AdvancedAnalytics() {
                   <Money amount={budgetSummary.budgeted} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Planned for {months[budgetMonth - 1]} {budgetYear}
+                  {formatMessage(t["advancedAnalytics.plannedForMonthYear"], {
+                    month: months[budgetMonth - 1],
+                    year: budgetYear,
+                  })}
                 </p>
               </CardContent>
             </Card>
@@ -554,8 +556,8 @@ export default function AdvancedAnalytics() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {budgetSummary.variance < 0
-                    ? "Unfavourable to budget"
-                    : "Favourable or on budget"}
+                    ? t["advancedAnalytics.unfavourableToBudget"]
+                    : t["advancedAnalytics.favourableOrOnBudget"]}
                 </p>
               </CardContent>
             </Card>
@@ -593,8 +595,7 @@ export default function AdvancedAnalytics() {
                     <T k="pageLabels.noBudgetDataYet" />
                   </p>
                   <p className="text-sm">
-                    Create budgets and post transactions to compare planned versus actual
-                    performance.
+                    {t["advancedAnalytics.createBudgetsAndPostTransactions"]}
                   </p>
                 </div>
               )}
@@ -773,9 +774,7 @@ export default function AdvancedAnalytics() {
                 <p className="font-medium">
                   <T k="pageLabels.trendHistoryIsNotAvailableYet" />
                 </p>
-                <p className="text-sm">
-                  This chart will populate once periodic KPI snapshots are recorded.
-                </p>
+                <p className="text-sm">{t["advancedAnalytics.thisChartWillPopulateOnce"]}</p>
               </div>
             </CardContent>
           </Card>
@@ -785,7 +784,7 @@ export default function AdvancedAnalytics() {
         <TabsContent value="insights" className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Rule-based insights computed from your posted ledger and open invoices
+              {t["advancedAnalytics.ruleBasedInsightsComputedFrom"]}
             </p>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
               <Sparkles className="w-3 h-3 me-1" />
@@ -805,9 +804,7 @@ export default function AdvancedAnalytics() {
                   <p className="font-medium">
                     <T k="pageLabels.noInsightsYet" />
                   </p>
-                  <p className="text-sm">
-                    Insights will appear when real invoices, expenses, and patterns exist.
-                  </p>
+                  <p className="text-sm">{t["advancedAnalytics.insightsWillAppearWhenReal"]}</p>
                 </CardContent>
               </Card>
             )}
@@ -834,7 +831,7 @@ export default function AdvancedAnalytics() {
                       </div>
                       <Badge variant={insight.priority === "high" ? "destructive" : "secondary"}>
                         {insight.priority === "high"
-                          ? "High Priority"
+                          ? t["advancedAnalytics.highPriority"]
                           : insight.priority === "medium"
                             ? "Medium"
                             : "Low"}

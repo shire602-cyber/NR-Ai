@@ -1,4 +1,6 @@
 import { T } from "@/components/layout/T";
+import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
+import { useTranslation } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
@@ -72,6 +74,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from "@shared/schema";
 
 export default function Admin() {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
@@ -183,11 +186,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
-      toast({ title: "Setting updated successfully" });
+      toast({ title: t["admin.settingUpdatedSuccessfully"] });
       setEditSettingDialog(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update setting" });
+      toast({ variant: "destructive", title: t["admin.failedToUpdateSetting"] });
     },
   });
 
@@ -216,7 +219,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
-      toast({ title: "System settings saved successfully" });
+      toast({ title: t["admin.systemSettingsSavedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
@@ -233,11 +236,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan created successfully" });
+      toast({ title: t["admin.planCreatedSuccessfully"] });
       setNewPlanDialogOpen(false);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to create plan" });
+      toast({ variant: "destructive", title: t["admin.failedToCreatePlan"] });
     },
   });
 
@@ -249,11 +252,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan updated successfully" });
+      toast({ title: t["admin.planUpdatedSuccessfully"] });
       setEditingPlan(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update plan" });
+      toast({ variant: "destructive", title: t["admin.failedToUpdatePlan"] });
     },
   });
 
@@ -263,10 +266,10 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan deleted successfully" });
+      toast({ title: t["admin.planDeletedSuccessfully"] });
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to delete plan" });
+      toast({ variant: "destructive", title: t["admin.failedToDeletePlan"] });
     },
   });
 
@@ -276,11 +279,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      toast({ title: "User updated successfully" });
+      toast({ title: t["admin.userUpdatedSuccessfully"] });
       setEditingUser(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update user" });
+      toast({ variant: "destructive", title: t["admin.failedToUpdateUser"] });
     },
   });
 
@@ -290,11 +293,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/companies"] });
-      toast({ title: "Company updated successfully" });
+      toast({ title: t["admin.companyUpdatedSuccessfully"] });
       setEditingCompany(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update company" });
+      toast({ variant: "destructive", title: t["admin.failedToUpdateCompany"] });
     },
   });
 
@@ -325,9 +328,9 @@ export default function Admin() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Admin Dashboard"
+        title={t["admin.adminDashboard"]}
         testId="text-admin-title"
-        description="Manage platform settings, users, and subscriptions"
+        description={t["admin.managePlatformSettingsUsersAnd"]}
         actions={
           <>
             <Button variant="outline" size="sm" data-testid="button-export-data">
@@ -483,7 +486,7 @@ export default function Admin() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
-                    <span>AI Services (OpenAI)</span>
+                    <span>{t["admin.aiServices"]}</span>
                   </div>
                   <Badge
                     variant="outline"
@@ -627,10 +630,13 @@ export default function Admin() {
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium">
-                        {log.action} {log.resourceType}
+                        {activityActionLabel(t, log.action)} ·{" "}
+                        {activityEntityLabel(t, log.resourceType)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(log.createdAt).toLocaleString()}
+                        {new Date(log.createdAt).toLocaleString(
+                          locale === "ar" ? "ar-AE" : undefined
+                        )}
                       </p>
                     </div>
                   </div>
@@ -683,7 +689,7 @@ export default function Admin() {
             ) : plans.length === 0 ? (
               <Card className="col-span-full">
                 <CardContent className="py-8 text-center text-muted-foreground">
-                  No subscription plans configured. Add your first plan to get started.
+                  {t["admin.noSubscriptionPlansConfiguredAdd"]}
                 </CardContent>
               </Card>
             ) : (
@@ -775,7 +781,7 @@ export default function Admin() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search users..."
+                placeholder={t["admin.searchUsers"]}
                 className="ps-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -784,7 +790,7 @@ export default function Admin() {
             </div>
             <Select defaultValue="all">
               <SelectTrigger className="w-40" data-testid="select-user-filter">
-                <SelectValue placeholder="Filter by status" />
+                <SelectValue placeholder={t["admin.filterByStatus"]} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">
@@ -934,7 +940,7 @@ export default function Admin() {
                       <T k="pages.cancel" />
                     </Button>
                     <Button type="submit" disabled={updateUserMutation.isPending}>
-                      {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+                      {updateUserMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -1083,7 +1089,7 @@ export default function Admin() {
                       <T k="pages.cancel" />
                     </Button>
                     <Button type="submit" disabled={updateCompanyMutation.isPending}>
-                      {updateCompanyMutation.isPending ? "Saving..." : "Save Changes"}
+                      {updateCompanyMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -1509,14 +1515,14 @@ export default function Admin() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search audit logs..."
+                placeholder={t["admin.searchAuditLogs"]}
                 className="ps-10"
                 data-testid="input-search-audit"
               />
             </div>
             <Select defaultValue="all">
               <SelectTrigger className="w-40" data-testid="select-audit-filter">
-                <SelectValue placeholder="Filter by action" />
+                <SelectValue placeholder={t["admin.filterByAction"]} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">
@@ -1583,7 +1589,9 @@ export default function Admin() {
                       auditLogs.map((log) => (
                         <TableRow key={log.id}>
                           <TableCell className="text-sm">
-                            {new Date(log.createdAt).toLocaleString()}
+                            {new Date(log.createdAt).toLocaleString(
+                              locale === "ar" ? "ar-AE" : undefined
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -1595,11 +1603,11 @@ export default function Admin() {
                                     : "secondary"
                               }
                             >
-                              {log.action}
+                              {activityActionLabel(t, log.action)}
                             </Badge>
                           </TableCell>
-                          <TableCell>{log.resourceType}</TableCell>
-                          <TableCell>{log.userId || "System"}</TableCell>
+                          <TableCell>{activityEntityLabel(t, log.resourceType)}</TableCell>
+                          <TableCell>{log.userId || t["shell.themeSystem"]}</TableCell>
                           <TableCell className="max-w-xs truncate">{log.details || "-"}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {log.ipAddress || "-"}

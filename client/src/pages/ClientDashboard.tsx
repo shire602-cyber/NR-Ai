@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 
 export default function ClientDashboard() {
+  const { t } = useTranslation();
   const user = getStoredUser();
   const userName = user?.name || user?.email || "Client";
   const { companyId } = useDefaultCompany();
@@ -78,12 +80,18 @@ export default function ClientDashboard() {
   // Compliance status badge color
   const getComplianceBadge = () => {
     if (!nextDeadline)
-      return { color: "bg-success-subtle text-success border-success/30", label: "All Clear" };
+      return {
+        color: "bg-success-subtle text-success border-success/30",
+        label: t["pages.allClear"],
+      };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 7)
       return { color: "bg-danger-subtle text-destructive border-destructive/30", label: "Urgent" };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 30)
       return { color: "bg-warning-subtle text-warning border-warning/30", label: "Upcoming" };
-    return { color: "bg-success-subtle text-success border-success/30", label: "On Track" };
+    return {
+      color: "bg-success-subtle text-success border-success/30",
+      label: t["pageLabels.onTrack"],
+    };
   };
 
   const complianceBadge = getComplianceBadge();
@@ -105,7 +113,7 @@ export default function ClientDashboard() {
             <span className="text-primary">{userName}</span>
           </h1>
           <p className="text-muted-foreground text-lg">
-            Your Muhasib.ai client portal — everything in one place.
+            {t["clientDashboard.yourMuhasibAiClientPortal"]}
           </p>
         </div>
       </div>

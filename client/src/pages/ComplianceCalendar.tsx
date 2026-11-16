@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { dateFnsOptions } from "@/lib/date-locale";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -20,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import {
   ChevronLeft,
@@ -94,6 +95,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function ComplianceCalendar() {
+  const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -191,11 +193,11 @@ export default function ComplianceCalendar() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
-        title={locale === "ar" ? "تقويم الامتثال" : "Compliance Calendar"}
+        title={locale === "ar" ? "تقويم الامتثال" : t["pages.complianceCalendar2"]}
         description={
           locale === "ar"
             ? "عرض جميع المواعيد النهائية للضرائب والامتثال"
-            : "View all tax and compliance deadlines"
+            : t["complianceCalendar.viewAllTaxAndCompliance"]
         }
       />
 
@@ -210,7 +212,9 @@ export default function ComplianceCalendar() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <h2 className="text-lg font-semibold">{format(currentDate, "MMMM yyyy")}</h2>
+              <h2 className="text-lg font-semibold">
+                {format(currentDate, "MMMM yyyy", dateFnsOptions(locale))}
+              </h2>
               <Button
                 variant="outline"
                 size="icon"
@@ -225,14 +229,18 @@ export default function ComplianceCalendar() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-7 gap-1 mb-2">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                <div
-                  key={day}
-                  className="text-center text-sm font-medium text-muted-foreground py-2"
-                >
-                  {day}
-                </div>
-              ))}
+              {[0, 1, 2, 3, 4, 5, 6]
+                .map((dayIndex) =>
+                  format(new Date(2024, 0, 7 + dayIndex), "EEE", dateFnsOptions(locale))
+                )
+                .map((day) => (
+                  <div
+                    key={day}
+                    className="text-center text-sm font-medium text-muted-foreground py-2"
+                  >
+                    {day}
+                  </div>
+                ))}
             </div>
             <div className="grid grid-cols-7 gap-1">
               {paddedDays.map((day, index) => {
@@ -294,7 +302,7 @@ export default function ComplianceCalendar() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">
-                  {format(selectedDate, "EEEE, MMMM d, yyyy")}
+                  {format(selectedDate, "EEEE, MMMM d, yyyy", dateFnsOptions(locale))}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -327,7 +335,7 @@ export default function ComplianceCalendar() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                {locale === "ar" ? "المواعيد القادمة" : "Upcoming Deadlines"}
+                {locale === "ar" ? "المواعيد القادمة" : t["complianceCalendar.upcomingDeadlines"]}
               </CardTitle>
               <CardDescription>{locale === "ar" ? "خلال 30 يوم" : "Next 30 days"}</CardDescription>
             </CardHeader>
@@ -337,7 +345,9 @@ export default function ComplianceCalendar() {
                   <div className="text-center py-4 text-muted-foreground">
                     <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">
-                      {locale === "ar" ? "لا توجد مواعيد قادمة" : "No upcoming deadlines"}
+                      {locale === "ar"
+                        ? "لا توجد مواعيد قادمة"
+                        : t["pageLabels.noUpcomingDeadlines"]}
                     </p>
                   </div>
                 ) : (
@@ -398,7 +408,9 @@ export default function ComplianceCalendar() {
                       >
                         <span className="text-sm font-medium truncate">{event.title}</span>
                         <Badge variant="destructive" className="text-xs">
-                          {Math.abs(differenceInDays(event.date, new Date()))}d ago
+                          {formatMessage(t["complianceCalendar.daysAgo"], {
+                            count: Math.abs(differenceInDays(event.date, new Date())),
+                          })}
                         </Badge>
                       </div>
                     ))}

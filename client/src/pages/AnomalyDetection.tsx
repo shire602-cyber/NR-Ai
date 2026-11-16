@@ -123,6 +123,7 @@ function normalizeSeverity(severity: RawAnomalySeverity | null | undefined): Ano
 }
 
 export default function AnomalyDetection() {
+  const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -227,7 +228,9 @@ export default function AnomalyDetection() {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {locale === "ar" ? "كشف الشذوذ المحاسبي" : "Accounting anomaly checks"}
+              {locale === "ar"
+                ? "كشف الشذوذ المحاسبي"
+                : t["anomalyDetection.accountingAnomalyChecks"]}
             </h1>
             <p className="text-muted-foreground text-sm">
               {locale === "ar"
@@ -254,7 +257,7 @@ export default function AnomalyDetection() {
             ) : (
               <Scan className="h-4 w-4 me-2" />
             )}
-            {isFetching ? "Scanning..." : "Run Scan"}
+            {isFetching ? "Scanning..." : t["aiInbox.runScan"]}
           </Button>
         </div>
       </div>
@@ -316,7 +319,7 @@ export default function AnomalyDetection() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Info className="h-3 w-3 text-info" />
-                Info
+                {t["anomalyDetection.info"]}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -328,7 +331,7 @@ export default function AnomalyDetection() {
 
       {/* Filters */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Filter:</span>
+        <span className="text-sm text-muted-foreground">{t["anomalyDetection.filter"]}</span>
         <Select value={severityFilter} onValueChange={setSeverityFilter}>
           <SelectTrigger className="w-[160px]">
             <SelectValue />
@@ -343,7 +346,7 @@ export default function AnomalyDetection() {
             <SelectItem value="warning">
               <T k="pages.warning" />
             </SelectItem>
-            <SelectItem value="info">Info</SelectItem>
+            <SelectItem value="info">{t["anomalyDetection.info"]}</SelectItem>
           </SelectContent>
         </Select>
         {severityFilter !== "all" && (

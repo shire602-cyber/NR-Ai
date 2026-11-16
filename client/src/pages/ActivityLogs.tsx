@@ -1,4 +1,10 @@
 import { T } from "@/components/layout/T";
+import { dateFnsOptions } from "@/lib/date-locale";
+import {
+  activityActionLabel,
+  activityDescription,
+  activityEntityLabel,
+} from "@/lib/activity-log-labels";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -49,7 +55,7 @@ export default function ActivityLogs() {
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   // W5-E: verify the account-level ("global") tamper-evident audit chain.
   const [chainStatus, setChainStatus] = useState<{
     ok: boolean;
@@ -142,7 +148,7 @@ export default function ActivityLogs() {
           </Badge>
         );
       case "view":
-        return <Badge variant="secondary">View</Badge>;
+        return <Badge variant="secondary">{t["hr.view"]}</Badge>;
       case "login":
         return (
           <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">
@@ -162,20 +168,20 @@ export default function ActivityLogs() {
           </Badge>
         );
       default:
-        return <Badge variant="outline">{action}</Badge>;
+        return <Badge variant="outline">{activityActionLabel(t, action)}</Badge>;
     }
   };
 
   const getUserName = (userId: string | null) => {
-    if (!userId) return "System";
+    if (!userId) return t["shell.themeSystem"];
     const user = users.find((u) => u.id === userId);
-    return user?.name || user?.email || "Unknown";
+    return user?.name || user?.email || t["activityLog.unknown"];
   };
 
   const getCompanyName = (companyId: string | null) => {
     if (!companyId) return null;
     const company = clients.find((c) => c.id === companyId);
-    return company?.name || "Unknown";
+    return company?.name || t["activityLog.unknown"];
   };
 
   if (isLoading) {
@@ -190,9 +196,9 @@ export default function ActivityLogs() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Activity Logs"
+        title={t["pageLabels.activityLogs"]}
         testId="text-logs-title"
-        description="Complete audit trail of all system activities"
+        description={t["activityLogs.completeAuditTrailOfAll"]}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -233,7 +239,7 @@ export default function ActivityLogs() {
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search activities..."
+                  placeholder={t["activityLogs.searchActivities"]}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="ps-10"
@@ -244,7 +250,7 @@ export default function ActivityLogs() {
             <div className="flex items-center gap-2">
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-32" data-testid="select-filter-action">
-                  <SelectValue placeholder="Action" />
+                  <SelectValue placeholder={t["components.vwColAction"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -259,7 +265,7 @@ export default function ActivityLogs() {
                   <SelectItem value="delete">
                     <T k="pages.delete" />
                   </SelectItem>
-                  <SelectItem value="view">View</SelectItem>
+                  <SelectItem value="view">{t["hr.view"]}</SelectItem>
                   <SelectItem value="login">
                     <T k="pages.login" />
                   </SelectItem>
@@ -273,7 +279,7 @@ export default function ActivityLogs() {
               </Select>
               <Select value={entityFilter} onValueChange={setEntityFilter}>
                 <SelectTrigger className="w-36" data-testid="select-filter-entity">
-                  <SelectValue placeholder="Entity Type" />
+                  <SelectValue placeholder={t["activityLogs.entityType"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -299,7 +305,9 @@ export default function ActivityLogs() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{filteredLogs.length} entries</Badge>
+              <Badge variant="secondary">
+                {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
+              </Badge>
             </div>
           </div>
         </CardHeader>
@@ -318,7 +326,7 @@ export default function ActivityLogs() {
                   <TableHead>
                     <T k="pages.entity" />
                   </TableHead>
-                  <TableHead>User</TableHead>
+                  <TableHead>{t["activityLog.entity.user"]}</TableHead>
                   <TableHead>
                     <T k="pages.client" />
                   </TableHead>
@@ -336,7 +344,7 @@ export default function ActivityLogs() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <p className="font-medium">{log.description}</p>
+                      <p className="font-medium">{activityDescription(t, log, locale)}</p>
                       {log.metadata && (
                         <p className="text-xs text-muted-foreground mt-1">
                           {JSON.parse(log.metadata).changes?.join(", ") || ""}
@@ -347,7 +355,7 @@ export default function ActivityLogs() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {getEntityIcon(log.entityType)}
-                        <span className="capitalize">{log.entityType.replace("_", " ")}</span>
+                        <span className="capitalize">{activityEntityLabel(t, log.entityType)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -370,10 +378,10 @@ export default function ActivityLogs() {
                       {log.createdAt ? (
                         <div>
                           <p className="text-sm">
-                            {format(new Date(log.createdAt), "MMM d, yyyy")}
+                            {format(new Date(log.createdAt), "MMM d, yyyy", dateFnsOptions(locale))}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {format(new Date(log.createdAt), "h:mm a")}
+                            {format(new Date(log.createdAt), "h:mm a", dateFnsOptions(locale))}
                           </p>
                         </div>
                       ) : (
@@ -386,8 +394,8 @@ export default function ActivityLogs() {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {searchTerm || actionFilter !== "all" || entityFilter !== "all"
-                        ? "No logs match your filters"
-                        : "No activity logs yet"}
+                        ? t["activityLogs.noLogsMatchYourFilters"]
+                        : t["activityLogs.noActivityLogsYet"]}
                     </TableCell>
                   </TableRow>
                 )}

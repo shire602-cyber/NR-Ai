@@ -300,7 +300,7 @@ async function downloadArchive(companyId: string, row: ArchiveRow) {
 }
 
 export default function EInvoicingSettings() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const s: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -676,7 +676,7 @@ export default function EInvoicingSettings() {
             {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
             {view ? (
               <span className="ms-2 font-mono text-xs" dir="ltr">
-                {s.endpoint}: {view.inbound.endpoint}
+                {s.endpoint}: <span translate="no">{view.inbound.endpoint}</span>
               </span>
             ) : null}
           </CardDescription>

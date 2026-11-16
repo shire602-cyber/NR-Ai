@@ -62,12 +62,12 @@ export function FilingStatusBadge({
   if (status === "due_soon")
     return (
       <Badge variant="warning" dot>
-        {t.dueSoon ?? "Due soon"}
+        {t.dueSoon ?? t["components.statusDueSoon"]}
       </Badge>
     );
   return (
     <Badge variant="success" dot>
-      {t.onTrack ?? "On track"}
+      {t.onTrack ?? t["components.srv.firm.priority.onTrack"]}
     </Badge>
   );
 }

@@ -1,5 +1,6 @@
 import { formatAedText } from "@/lib/format";
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -180,6 +181,7 @@ function EditableField({
 }
 
 export default function ClientProfile() {
+  const { t } = useTranslation();
   const { companyId } = useParams<{ companyId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -226,7 +228,7 @@ export default function ClientProfile() {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
-      toast({ title: "Client updated successfully" });
+      toast({ title: t["clientProfile.clientUpdatedSuccessfully"] });
       setEditing(false);
       setEditData({});
     },
@@ -246,7 +248,12 @@ export default function ClientProfile() {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
-      toast({ title: vars.action === "assign" ? "Staff assigned" : "Staff unassigned" });
+      toast({
+        title:
+          vars.action === "assign"
+            ? t["clientProfile.staffAssigned"]
+            : t["clientProfile.staffUnassigned"],
+      });
       setAssignOpen(false);
       setSelectedStaff("");
     },
@@ -266,17 +273,24 @@ export default function ClientProfile() {
   if (!summary) {
     // Surface the server's actual reason — access denied, not-a-client, and
     // genuinely-missing are different problems with different fixes.
-    const message = (summaryError as any)?.message || "Client not found";
+    const rawMessage: string = (summaryError as any)?.message || "Client not found";
+    const lowerMessage = rawMessage.toLowerCase();
+    // The server sends English reasons; map the known ones to catalog copy.
+    const message = lowerMessage.includes("access")
+      ? t["clientProfile.accessDenied"]
+      : lowerMessage.includes("not found")
+        ? t["clientProfile.notFound"]
+        : rawMessage;
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
         <p className="font-medium">{message}</p>
         <p className="text-sm text-muted-foreground mt-1 max-w-md">
-          {message.toLowerCase().includes("access")
-            ? "Your account does not have this client assigned. A firm owner can assign you from the client profile."
-            : message.toLowerCase().includes("not an nra client")
-              ? "This company exists but is not marked as a firm-managed client."
-              : "The link may be outdated, or the client was removed."}
+          {lowerMessage.includes("access")
+            ? t["clientProfile.accessDeniedHelp"]
+            : lowerMessage.includes("not an nra client")
+              ? t["clientProfile.notFirmClient"]
+              : t["clientProfile.linkOutdated"]}
         </p>
         <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
           <T k="pages.backToPortfolio" />
@@ -337,7 +351,9 @@ export default function ClientProfile() {
           <div>
             <h1 className="text-2xl font-bold">{company.name}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {company.trnVatNumber ? `TRN: ${company.trnVatNumber}` : "No TRN registered"}
+              {company.trnVatNumber
+                ? `TRN: ${company.trnVatNumber}`
+                : t["clientProfile.noTrnRegistered"]}
               {company.emirate ? ` · ${company.emirate.replace(/_/g, " ")}` : ""}
             </p>
           </div>
@@ -351,7 +367,7 @@ export default function ClientProfile() {
               </Button>
               <Button onClick={handleSave} disabled={updateMutation.isPending}>
                 <Save className="w-4 h-4 me-1" />
-                {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                {updateMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
               </Button>
             </>
           ) : (
@@ -366,7 +382,7 @@ export default function ClientProfile() {
                 data-testid="button-open-books-profile"
               >
                 <BookOpen className="w-4 h-4 me-2" />
-                {switchMutation.isPending ? "Switching..." : "Open Books"}
+                {switchMutation.isPending ? "Switching..." : t["pages.openBooks"]}
                 <ExternalLink className="w-3.5 h-3.5 ms-1.5" />
               </Button>
             </>
@@ -401,7 +417,7 @@ export default function ClientProfile() {
             <p className="text-sm font-semibold mt-0.5">
               {stats.lastReceiptDate
                 ? format(new Date(stats.lastReceiptDate), "MMM d, yyyy")
-                : "Never"}
+                : t["banking.feeds.never"]}
             </p>
           </CardContent>
         </Card>
@@ -476,8 +492,7 @@ export default function ClientProfile() {
             <div className="space-y-2">
               <ServiceBadges services={serviceScope} />
               <p className="text-xs text-muted-foreground">
-                VAT, corporate tax, bookkeeping, and accounting queues use this scope so clients
-                only appear in services NRA actually delivers.
+                {t["clientProfile.vatCorporateTaxBookkeepingAnd"]}
               </p>
             </div>
           )}
@@ -493,17 +508,20 @@ export default function ClientProfile() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            <EditableField label="Company Name" {...field("name")} />
-            <EditableField label="TRN / VAT Number" {...field("trnVatNumber")} />
-            <EditableField label="Legal Structure" {...field("legalStructure")} />
-            <EditableField label="Industry" {...field("industry")} />
-            <EditableField label="Registration Number" {...field("registrationNumber")} />
-            <EditableField label="Emirate" {...field("emirate")} />
+            <EditableField label={t["pages.companyName"]} {...field("name")} />
+            <EditableField label={t["clientProfile.trnVatNumber"]} {...field("trnVatNumber")} />
+            <EditableField label={t["pages.legalStructure"]} {...field("legalStructure")} />
+            <EditableField label={t["pages.industry"]} {...field("industry")} />
+            <EditableField
+              label={t["clientProfile.registrationNumber"]}
+              {...field("registrationNumber")}
+            />
+            <EditableField label={t["components.vwColEmirate"]} {...field("emirate")} />
             <div className="col-span-2">
               <EditableField
-                label="Business Address"
+                label={t["pages.businessAddress"]}
                 {...field("businessAddress")}
-                placeholder="Street, Area, City"
+                placeholder={t["clientProfile.streetAreaCity"]}
               />
             </div>
           </CardContent>
@@ -518,9 +536,13 @@ export default function ClientProfile() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <EditableField label="Email" {...field("contactEmail")} type="email" />
-              <EditableField label="Phone" {...field("contactPhone")} type="tel" />
-              <EditableField label="Website" {...field("websiteUrl")} />
+              <EditableField
+                label={t["forms.contact.email"]}
+                {...field("contactEmail")}
+                type="email"
+              />
+              <EditableField label={t["pages.phone"]} {...field("contactPhone")} type="tel" />
+              <EditableField label={t["pages.website"]} {...field("websiteUrl")} />
             </CardContent>
           </Card>
 
@@ -612,8 +634,14 @@ export default function ClientProfile() {
                   <p className="text-sm font-medium">{monthLabel(company.fiscalYearStartMonth)}</p>
                 )}
               </div>
-              <EditableField label="Tax Registration Type" {...field("taxRegistrationType")} />
-              <EditableField label="Corporate Tax Registration" {...field("corporateTaxId")} />
+              <EditableField
+                label={t["pages.taxRegistrationType"]}
+                {...field("taxRegistrationType")}
+              />
+              <EditableField
+                label={t["pages.corporateTaxRegistration"]}
+                {...field("corporateTaxId")}
+              />
             </CardContent>
           </Card>
         </div>
@@ -733,7 +761,7 @@ export default function ClientProfile() {
                 </Label>
                 <Select value={selectedStaff} onValueChange={setSelectedStaff}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose a staff member..." />
+                    <SelectValue placeholder={t["clientProfile.chooseAStaffMember"]} />
                   </SelectTrigger>
                   <SelectContent>
                     {unassignedStaff.map((s) => (

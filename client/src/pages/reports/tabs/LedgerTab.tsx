@@ -1,5 +1,6 @@
 // Reports > ledger tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -30,6 +31,7 @@ import { formatReportDate, ledgerDetailPageSize } from "../shared";
 import { useReportsPageContext } from "../context";
 
 export default function LedgerTab() {
+  const { t } = useTranslation();
   const {
     accountActivity,
     dateRange,
@@ -91,7 +93,7 @@ export default function LedgerTab() {
                   <Money amount={ledgerReport.difference} currency={"AED"} />
                 </div>
                 <Badge variant={ledgerReport.difference < 0.005 ? "success" : "warning"} dot>
-                  {ledgerReport.difference < 0.005 ? "Balanced" : "Needs review"}
+                  {ledgerReport.difference < 0.005 ? "Balanced" : t["reportCenter.needsReview"]}
                 </Badge>
               </div>
             )}
@@ -277,7 +279,7 @@ export default function LedgerTab() {
               <CardDescription>
                 {dateRange.from && dateRange.to
                   ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "All posted journal entry dates"}
+                  : t["expensesTab.allPostedJournalEntryDates"]}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">

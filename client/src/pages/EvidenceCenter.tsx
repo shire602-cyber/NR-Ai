@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
@@ -162,6 +163,7 @@ interface CtEvidencePackSummary {
 }
 
 export default function EvidenceCenter() {
+  const { t } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { toast } = useToast();
   const search = useSearch();
@@ -265,7 +267,8 @@ export default function EvidenceCenter() {
     onSuccess: (result: EvidenceCenterResponse) => {
       queryClient.setQueryData(evidenceQueryKey, result);
       toast({
-        title: issueDialog?.action === "resolve" ? "Issue resolved" : "Issue waived",
+        title:
+          issueDialog?.action === "resolve" ? t["evidenceCenter.issueResolved"] : "Issue waived",
         description: "The evidence action was audit-logged.",
       });
       setIssueDialog(null);
@@ -368,9 +371,7 @@ export default function EvidenceCenter() {
             <CardTitle>
               <T k="pageLabels.proofTrailUnavailable" />
             </CardTitle>
-            <CardDescription>
-              The proof workspace could not load. Refresh the page or check company access.
-            </CardDescription>
+            <CardDescription>{t["evidenceCenter.theProofWorkspaceCouldNot"]}</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -381,8 +382,8 @@ export default function EvidenceCenter() {
     <div className="space-y-6 p-6" data-testid="evidence-center-page">
       <PageHeader
         eyebrow="Compliance"
-        title="Proof trail"
-        description="Contextual evidence behind VAT, invoices, purchases, reports, close readiness, and owner actions."
+        title={t["evidenceCenter.proofTrail"]}
+        description={t["evidenceCenter.contextualEvidenceBehindVatInvoices"]}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -582,7 +583,7 @@ export default function EvidenceCenter() {
               <T k="pageLabels.vATRefundSupportPack" />
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Download one source-evidence bundle, or export the workbook and cover separately.
+              {t["evidenceCenter.downloadOneSourceEvidenceBundle"]}
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">{data.refundPack.sheetCount} sheets</Badge>
@@ -647,7 +648,7 @@ export default function EvidenceCenter() {
             <T k="pageLabels.ownerFriendlyWhatShouldIDo" />
           </h2>
           <p className="text-sm text-muted-foreground">
-            Plain-language next actions generated from the evidence status.
+            {t["evidenceCenter.plainLanguageNextActionsGenerated"]}
           </p>
         </div>
         <div className="grid gap-3 p-4 lg:grid-cols-3">
@@ -676,7 +677,7 @@ export default function EvidenceCenter() {
               <T k="pageLabels.missingEvidenceInbox" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Documents, TRNs, attachments, and source proof blocking clean filings.
+              {t["evidenceCenter.documentsTrnsAttachmentsAndSource"]}
             </p>
           </div>
           <div className="w-full overflow-x-auto">
@@ -816,7 +817,7 @@ export default function EvidenceCenter() {
               data-testid="evidence-request-draft"
             />
             <p className="text-xs text-muted-foreground">
-              This draft deliberately warns against sharing OTPs, passwords, or portal credentials.
+              {t["evidenceCenter.thisDraftDeliberatelyWarnsAgainst"]}
             </p>
             <Button
               className="w-full"
@@ -948,7 +949,7 @@ export default function EvidenceCenter() {
               <T k="pageLabels.errorDetectorBeforeFiling" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Risk signals caught before VAT, corporate tax, reports, or close.
+              {t["evidenceCenter.riskSignalsCaughtBeforeVat"]}
             </p>
           </div>
           <div className="divide-y">
@@ -1014,7 +1015,7 @@ export default function EvidenceCenter() {
               <T k="pageLabels.filingTimelineWithConsequences" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Deadlines are shown with what breaks if the evidence stays incomplete.
+              {t["evidenceCenter.deadlinesAreShownWithWhat"]}
             </p>
           </div>
           <div className="divide-y">
@@ -1060,8 +1061,7 @@ export default function EvidenceCenter() {
             </h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Resolve, waiver, request-review, and refund-pack export actions recorded for this
-            company.
+            {t["evidenceCenter.resolveWaiverRequestReviewAnd"]}
           </p>
         </div>
         <div className="divide-y">
@@ -1097,13 +1097,10 @@ export default function EvidenceCenter() {
           <DialogHeader>
             <DialogTitle>
               {issueDialog?.action === "resolve"
-                ? "Resolve evidence issue"
-                : "Waive evidence issue"}
+                ? t["evidenceCenter.resolveEvidenceIssue"]
+                : t["evidenceCenter.waiveEvidenceIssue"]}
             </DialogTitle>
-            <DialogDescription>
-              This action writes an audit trail entry. Use waive only when the accounting risk is
-              accepted and documented.
-            </DialogDescription>
+            <DialogDescription>{t["evidenceCenter.thisActionWritesAnAudit"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="rounded-md border p-3">
@@ -1118,7 +1115,7 @@ export default function EvidenceCenter() {
                 id="evidence-action-reason"
                 value={issueReason}
                 onChange={(event) => setIssueReason(event.target.value)}
-                placeholder="Explain the evidence received, reviewer conclusion, or waiver rationale."
+                placeholder={t["evidenceCenter.explainTheEvidenceReceivedReviewer"]}
                 data-testid="textarea-evidence-action-reason"
               />
             </div>
@@ -1145,8 +1142,7 @@ export default function EvidenceCenter() {
               <T k="pageLabels.reviewExactEvidenceRequest" />
             </DialogTitle>
             <DialogDescription>
-              Confirm the recipient, subject, and full body before logging this for manual delivery.
-              No external email or WhatsApp is sent from this dialog.
+              {t["evidenceCenter.confirmTheRecipientSubjectAnd"]}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -1177,10 +1173,7 @@ export default function EvidenceCenter() {
                 onChange={(event) => setRequestAcknowledged(event.target.checked)}
                 data-testid="checkbox-evidence-request-ack"
               />
-              <span>
-                I reviewed the exact recipient, subject, and body. I understand this only logs the
-                reviewed request for manual delivery and does not send an external message.
-              </span>
+              <span>{t["evidenceCenter.iReviewedTheExactRecipient"]}</span>
             </label>
           </div>
           <DialogFooter>

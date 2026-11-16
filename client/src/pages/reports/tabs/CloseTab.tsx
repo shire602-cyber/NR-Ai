@@ -1,5 +1,6 @@
 // Reports > close tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, FileSpreadsheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function CloseTab() {
+  const { t } = useTranslation();
   const {
     auditTrailLoading,
     auditTrailPeriodLabel,
@@ -165,7 +167,7 @@ export default function CloseTab() {
                     <TableCell className="font-medium">{item.title}</TableCell>
                     <TableCell>
                       <Badge variant={item.status === "complete" ? "success" : "warning"} dot>
-                        {item.status === "complete" ? "Complete" : "Needs review"}
+                        {item.status === "complete" ? "Complete" : t["reportCenter.needsReview"]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">

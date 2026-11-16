@@ -223,7 +223,7 @@ export default function ChartOfAccounts() {
           <T k="pageLabels.setUpYourCompany" />
         </h2>
         <p className="text-muted-foreground text-center max-w-md mb-4">
-          You need a company before you can configure your Chart of Accounts.
+          {t["chartOfAccounts.youNeedACompanyBefore"]}
         </p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
           <T k="pages.createYourCompany" />

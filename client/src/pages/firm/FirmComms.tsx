@@ -373,7 +373,7 @@ function ComposeTab() {
     onSuccess: (res: { success: boolean; note?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/comms/log"] });
       if (res.success) {
-        toast({ title: "Message sent" });
+        toast({ title: t["firmComms.messageSent"] });
       } else {
         toast({ title: "Logged (not sent)", description: res.note, variant: "destructive" });
       }
@@ -402,12 +402,14 @@ function ComposeTab() {
   }
 
   function handleSend() {
-    if (!companyId) return toast({ variant: "destructive", title: "Select a client first" });
-    if (!body.trim()) return toast({ variant: "destructive", title: "Message body is required" });
+    if (!companyId)
+      return toast({ variant: "destructive", title: t["firmComms.selectAClientFirst"] });
+    if (!body.trim())
+      return toast({ variant: "destructive", title: t["firmComms.messageBodyIsRequired"] });
     if (channel === "email" && !recipientEmail)
-      return toast({ variant: "destructive", title: "Recipient email is required" });
+      return toast({ variant: "destructive", title: t["firmComms.recipientEmailIsRequired"] });
     if (channel === "whatsapp" && !recipientPhone)
-      return toast({ variant: "destructive", title: "Recipient phone is required" });
+      return toast({ variant: "destructive", title: t["firmComms.recipientPhoneIsRequired"] });
 
     const payload: Record<string, string> = { companyId, body };
     if (channel === "email") {
@@ -521,7 +523,7 @@ function ComposeTab() {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={6}
-          placeholder="Enter your message here..."
+          placeholder={t["firmComms.enterYourMessageHere"]}
           className="resize-none"
         />
       </div>
@@ -533,7 +535,7 @@ function ComposeTab() {
 
       {channel === "whatsapp" && (
         <p className="text-xs text-muted-foreground mt-1">
-          WhatsApp Business API integration is pending. Messages will be logged but not delivered.
+          {t["firmComms.whatsappBusinessApiIntegrationIs"]}
         </p>
       )}
     </div>
@@ -575,7 +577,7 @@ function TemplatesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/comms/templates"] });
-      toast({ title: "Default templates added" });
+      toast({ title: t["firmComms.defaultTemplatesAdded"] });
     },
   });
 
@@ -599,7 +601,7 @@ function TemplatesTab() {
 
   function handleSave() {
     if (!editTemplate?.name || !editTemplate?.bodyTemplate) {
-      return toast({ variant: "destructive", title: "Name and body are required" });
+      return toast({ variant: "destructive", title: t["firmComms.nameAndBodyAreRequired"] });
     }
     saveMutation.mutate(editTemplate);
   }
@@ -627,7 +629,7 @@ function TemplatesTab() {
               disabled={seedMutation.isPending}
             >
               <Zap className="h-4 w-4 me-1.5" />
-              {seedMutation.isPending ? t.loading : "Add Defaults"}
+              {seedMutation.isPending ? t.loading : t["firmComms.addDefaults"]}
             </Button>
           )}
           <Button size="sm" onClick={openNew}>
@@ -953,7 +955,7 @@ export default function FirmComms() {
       <PageHeader
         eyebrow="Firm"
         title={t.communicationsHub}
-        description="Send emails, manage templates, and track all client communications."
+        description={t["firmComms.sendEmailsManageTemplatesAnd"]}
       />
 
       <Tabs defaultValue="inbox">

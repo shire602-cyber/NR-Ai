@@ -347,7 +347,7 @@ export default function CostCenters() {
       ? `${profitabilityReport.periodStart ?? "Beginning"} to ${
           profitabilityReport.periodEnd ?? "today"
         }`
-      : "All posted periods";
+      : t["costCenters.allPostedPeriods"];
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
@@ -370,7 +370,7 @@ export default function CostCenters() {
         title={t["screens.costCenters"]}
         description={t["screens.costCentersDescription"]}
         backHref="/reports"
-        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : t["reportCenter.backToReports"]}
         actions={
           <>
             <Button
