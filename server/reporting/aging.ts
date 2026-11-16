@@ -6,7 +6,14 @@
  * the GL control account (1040 A/R, 2010 A/P) at the same date.
  */
 import { pool } from "../db";
-import { accountTotals, aed, loadAccounts, type Fils, type Queryable } from "./ledger-query";
+import {
+  accountTotals,
+  aed,
+  loadAccounts,
+  reportCurrencyOf,
+  type Fils,
+  type Queryable,
+} from "./ledger-query";
 import type { IsoDate } from "./dates";
 
 export interface AgingDocument {
@@ -33,11 +40,12 @@ export interface AgingRow {
   days90: number;
   over90: number;
   total: number;
-  currency: "AED";
+  /** The company's base (functional) currency (W5-C). */
+  currency: string;
 }
 
 export interface AgingReport {
-  reportCurrency: "AED";
+  reportCurrency: string;
   asOf: IsoDate;
   type: "receivable" | "payable";
   rows: AgingRow[];
@@ -97,7 +105,8 @@ function build(
     days: number;
     open_fils: string;
   }>,
-  control: { code: string | null; name: string | null; fils: Fils }
+  control: { code: string | null; name: string | null; fils: Fils },
+  reportCurrency: string
 ): AgingReport {
   const byName = new Map<string, Record<AgingBucket, Fils>>();
   const documents: AgingDocument[] = [];
@@ -135,12 +144,12 @@ function build(
       days90: aed(r.days90),
       over90: aed(r.over90),
       total: aed(sumB(r)),
-      currency: "AED" as const,
+      currency: reportCurrency,
     }))
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const totalFils = sumB(tot);
   return {
-    reportCurrency: "AED",
+    reportCurrency,
     asOf,
     type: kind,
     rows,
@@ -184,11 +193,12 @@ export async function agedReceivables(
        SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
               ${LOCAL("i.date")}::text AS date,
               COALESCE(${LOCAL("i.due_date")}, ${LOCAL("i.date")} + 30)::text AS due,
-              COALESCE(i.currency, 'AED') AS currency,
+              COALESCE(i.currency, co.base_currency) AS currency,
               ($2::date - COALESCE(${LOCAL("i.due_date")}, ${LOCAL("i.date")} + 30)) AS days,
               ROUND(GREATEST(i.total - COALESCE(p.amt, 0) - COALESCE(c.amt, 0), 0)
                     * COALESCE(NULLIF(i.exchange_rate, 0), 1) * 100)::bigint AS open_fils
          FROM invoices i
+         JOIN companies co ON co.id = i.company_id
          LEFT JOIN paid p ON p.invoice_id = i.id
          LEFT JOIN credited c ON c.invoice_id = i.id
         WHERE i.company_id = $1
@@ -199,7 +209,7 @@ export async function agedReceivables(
     ),
     controlBalance(companyId, asOf, "receivable", q),
   ]);
-  return build("receivable", asOf, rows, control);
+  return build("receivable", asOf, rows, control, await reportCurrencyOf(companyId, q));
 }
 
 export async function agedPayables(
@@ -217,11 +227,12 @@ export async function agedPayables(
        SELECT b.id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
               ${LOCAL("b.bill_date")}::text AS date,
               COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
-              COALESCE(b.currency, 'AED') AS currency,
+              COALESCE(b.currency, co.base_currency) AS currency,
               ($2::date - COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})) AS days,
               ROUND(GREATEST(COALESCE(b.total_amount, 0) - COALESCE(p.amt, 0), 0)
                     * COALESCE(NULLIF(b.exchange_rate, 0), 1) * 100)::bigint AS open_fils
          FROM vendor_bills b
+         JOIN companies co ON co.id = b.company_id
          LEFT JOIN paid p ON p.bill_id = b.id
         WHERE b.company_id = $1
           AND COALESCE(b.status, 'pending') NOT IN ('draft', 'pending', 'void', 'cancelled', 'rejected')
@@ -231,5 +242,5 @@ export async function agedPayables(
     ),
     controlBalance(companyId, asOf, "payable", q),
   ]);
-  return build("payable", asOf, rows, control);
+  return build("payable", asOf, rows, control, await reportCurrencyOf(companyId, q));
 }

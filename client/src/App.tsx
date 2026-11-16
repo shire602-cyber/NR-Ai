@@ -105,6 +105,8 @@ const DeveloperSettings = lazyWithReload(() => import("@/pages/DeveloperSettings
 const NotificationPreferences = lazyWithReload(() => import("@/pages/NotificationPreferences"));
 const Subscription = lazyWithReload(() => import("@/pages/Subscription"));
 const ExchangeRates = lazyWithReload(() => import("@/pages/ExchangeRates"));
+const CompanyGroups = lazyWithReload(() => import("@/pages/CompanyGroups"));
+const Consolidation = lazyWithReload(() => import("@/pages/Consolidation"));
 const RecurringInvoices = lazyWithReload(() => import("@/pages/RecurringInvoices"));
 const PaymentChasing = lazyWithReload(() => import("@/pages/PaymentChasing"));
 
@@ -636,6 +638,8 @@ function Router() {
             <Route path="/notification-preferences" component={NotificationPreferences} />
             <Route path="/subscription" component={Subscription} />
             <Route path="/exchange-rates" component={ExchangeRates} />
+            <Route path="/company-groups" component={CompanyGroups} />
+            <Route path="/consolidation" component={Consolidation} />
             <Route path="/payroll" component={Payroll} />
             <Route path="/bill-pay" component={BillPay} />
             <Route path="/vendors" component={Vendors} />

@@ -10,9 +10,16 @@ import { exchangeRates, EXCHANGE_RATE_TYPES } from "../../shared/schema";
 import type { ExchangeRate, ExchangeRateType } from "../../shared/schema";
 import { toFils, fromFils } from "../../shared/money";
 import { storage } from "../storage";
+import { DEFAULT_BASE_CURRENCY, loadBaseCurrency } from "../ledger";
+import { parseReportDate, trialBalanceByCurrency, uaeToday } from "../reporting";
 import {
   DEFAULT_MAX_RATE_AGE_DAYS,
+  FEED_PROVIDERS,
   convert,
+  feedStatus,
+  importRateCsv,
+  ingestFeedPayload,
+  runFeedProvider,
   computeFxExposure,
   deleteCompanyRate,
   getRate,
@@ -81,14 +88,16 @@ export async function getLatestRate(
 }
 
 /**
- * Convert a foreign-currency amount to AED using the stored rate.
+ * Convert a foreign-currency amount to the base currency using the stored rate
+ * (identity when the amount is already in `baseCurrency`, default the schema default).
  */
 export function toBaseCurrency(
   foreignAmount: number,
   foreignCurrency: string,
-  rateToBase: number
+  rateToBase: number,
+  baseCurrency: string = DEFAULT_BASE_CURRENCY
 ): number {
-  if (foreignCurrency === "AED") return foreignAmount;
+  if (foreignCurrency.toUpperCase() === baseCurrency.toUpperCase()) return foreignAmount;
   return foreignAmount * rateToBase;
 }
 
@@ -153,6 +162,16 @@ const ftaBulkBody = z.object({
     .min(1)
     .max(500),
   confirmLargeMove: z.boolean().optional(),
+});
+
+const feedRunBody = z.object({
+  provider: z.enum(FEED_PROVIDERS),
+  payload: z.string().min(1).max(2_000_000).optional(),
+});
+
+const csvImportBody = z.object({
+  csv: z.string().min(1).max(2_000_000),
+  source: z.enum(["manual", "fta"]).optional(),
 });
 
 const revalueBody = z.object({
@@ -221,7 +240,7 @@ export function registerExchangeRateRoutes(app: Express) {
       await assertCanWrite(req, companyId);
       const { fromCurrency, toCurrency, rate, effectiveDate, rateType, confirmLargeMove } =
         req.body as z.output<typeof companyRateBody>;
-      const base = (await storage.getCompany(companyId))?.baseCurrency?.toUpperCase() || "AED";
+      const base = await loadBaseCurrency(companyId);
       const { row, replaced, changePct } = await saveRate(companyId, userIdOf(req), {
         fromCurrency,
         toCurrency: toCurrency ?? base,
@@ -318,7 +337,7 @@ export function registerExchangeRateRoutes(app: Express) {
     "/api/exchange-rates",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const base = (queryString(req.query.base) ?? "AED").toUpperCase();
+      const base = (queryString(req.query.base) ?? DEFAULT_BASE_CURRENCY).toUpperCase();
       const target = queryString(req.query.target);
       if (target) {
         const rate = await getLatestRate(
@@ -367,7 +386,7 @@ export function registerExchangeRateRoutes(app: Express) {
       const { baseCurrency, targetCurrency, rate, date, source, rateType, confirmLargeMove } =
         req.body as z.output<typeof systemRateBody>;
       const { row } = await saveRate(null, userIdOf(req), {
-        fromCurrency: baseCurrency ?? "AED",
+        fromCurrency: baseCurrency ?? DEFAULT_BASE_CURRENCY,
         toCurrency: targetCurrency,
         rate,
         effectiveDate: date,
@@ -393,7 +412,7 @@ export function registerExchangeRateRoutes(app: Express) {
       for (const r of rates) {
         try {
           await saveRate(null, userId, {
-            fromCurrency: baseCurrency ?? "AED",
+            fromCurrency: baseCurrency ?? DEFAULT_BASE_CURRENCY,
             toCurrency: r.targetCurrency,
             rate: r.rate,
             effectiveDate: r.date,
@@ -416,7 +435,7 @@ export function registerExchangeRateRoutes(app: Express) {
     "/api/exchange-rates/lookup",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const base = (queryString(req.query.base) ?? "AED").toUpperCase();
+      const base = (queryString(req.query.base) ?? DEFAULT_BASE_CURRENCY).toUpperCase();
       const target = queryString(req.query.target);
       if (!target) throw new DomainError("TARGET_REQUIRED", 400, undefined, "target is required");
       const asOf = queryString(req.query.asOf);
@@ -439,6 +458,102 @@ export function registerExchangeRateRoutes(app: Express) {
         date: result.date,
         scope: "system",
       });
+    })
+  );
+
+  // ─── Trial balance by currency (W5-C, R14-16 / R11-18) ──────────────────
+
+  app.get(
+    "/api/companies/:companyId/reports/trial-balance-by-currency",
+    authMiddleware,
+    companyAccess,
+    asyncHandler(async (req: Request, res: Response) => {
+      const to = parseReportDate(req.query.to ?? req.query.asOf, "to") ?? uaeToday();
+      const from = parseReportDate(req.query.from, "from");
+      if (from && from > to) throw new DomainError("INVALID_REPORT_RANGE", 400, { from, to });
+      res.json(await trialBalanceByCurrency({ companyId: req.params.companyId, from, to }));
+    })
+  );
+
+  // ─── Rate feed (W5-C, R14-14) ───────────────────────────────────────────
+
+  // Staleness for the Exchange Rates banner: latest rate per pair visible to the company.
+  app.get(
+    "/api/companies/:companyId/exchange-rates/feed-status",
+    authMiddleware,
+    companyAccess,
+    asyncHandler(async (req: Request, res: Response) => {
+      const maxAgeDays = queryMaxAge(req.query.maxAgeDays);
+      const today = uaeToday();
+      const rows = await listRatesForCompany(req.params.companyId);
+      const latest = new Map<string, ExchangeRate>();
+      for (const r of rows) {
+        const k = `${r.baseCurrency}/${r.targetCurrency}/${r.rateType}`;
+        if (!latest.has(k)) latest.set(k, r);
+      }
+      const pairs = [...latest.values()].map((r) => {
+        const date = (r.date instanceof Date ? r.date : new Date(r.date))
+          .toISOString()
+          .slice(0, 10);
+        const ageDays = Math.max(
+          0,
+          Math.floor(
+            (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000
+          )
+        );
+        return {
+          pair: `${r.baseCurrency}/${r.targetCurrency}`,
+          rateType: r.rateType,
+          scope: r.companyId ? "company" : "system",
+          source: r.source,
+          date,
+          ageDays,
+          stale: ageDays > maxAgeDays,
+        };
+      });
+      const status = await feedStatus();
+      res.json({
+        maxAgeDays,
+        stale: pairs.filter((p) => p.stale),
+        pairs,
+        feed: { capability: status.capability, configured: status.configured },
+      });
+    })
+  );
+
+  app.get(
+    "/api/exchange-rates/feed/status",
+    authMiddleware,
+    adminMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(await feedStatus());
+    })
+  );
+
+  app.post(
+    "/api/exchange-rates/feed/run",
+    authMiddleware,
+    adminMiddleware,
+    strictBody(feedRunBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { provider, payload } = req.body as z.output<typeof feedRunBody>;
+      const userId = userIdOf(req);
+      // A payload is a provider file the admin downloaded (no network); otherwise fetch.
+      const result = payload
+        ? await ingestFeedPayload(provider, payload, userId)
+        : await runFeedProvider(provider, { userId });
+      res.status(result.status === "ok" ? 201 : 502).json(result);
+    })
+  );
+
+  app.post(
+    "/api/exchange-rates/import-csv",
+    authMiddleware,
+    adminMiddleware,
+    strictBody(csvImportBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { csv, source } = req.body as z.output<typeof csvImportBody>;
+      res.status(201).json(await importRateCsv(csv, userIdOf(req), source ?? "manual"));
     })
   );
 

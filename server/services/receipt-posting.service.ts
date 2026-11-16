@@ -18,10 +18,11 @@ import {
 } from "../tax/vat-recovery";
 import { recoverableShare } from "../tax/vat-boxes";
 import { SUPPLY_TYPES } from "../../shared/validators/primitives";
+import { documentCurrency, loadBaseCurrency } from "../ledger";
+import { has, resolve } from "../platform/service-registry";
+import type { FxGetRate } from "./fx";
 
 type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
-
-const BASE_CURRENCY = "AED";
 
 interface Component {
   accountId: string;
@@ -159,9 +160,26 @@ export async function planReceiptJournal(
   }
   for (const c of components) assertAccountUsable(byId.get(c.accountId), "expense");
 
-  const receiptCurrency = (receipt.currency || BASE_CURRENCY).toUpperCase();
-  const isForeign = receiptCurrency !== BASE_CURRENCY;
-  const fxRate = Number(receipt.exchangeRate) || 1;
+  // W5-C (R14-19 / R14-16): foreign means "not the company's functional currency"; a foreign
+  // receipt still on the column default rate of 1 takes the receipt-date rate from fx.getRate.
+  const baseCurrency = await loadBaseCurrency(receipt.companyId);
+  const receiptCurrency = documentCurrency(receipt.currency, baseCurrency);
+  const isForeign = receiptCurrency !== baseCurrency;
+  let fxRate = Number(receipt.exchangeRate) || 1;
+  if (isForeign && fxRate === 1 && has("fx.getRate")) {
+    try {
+      const day = (receipt.date ? new Date(receipt.date) : new Date()).toISOString().slice(0, 10);
+      const r = await resolve<FxGetRate>("fx.getRate")(
+        receipt.companyId,
+        receiptCurrency,
+        baseCurrency,
+        day
+      );
+      fxRate = r.rate;
+    } catch {
+      fxRate = 0;
+    }
+  }
   if (isForeign && !(fxRate > 0)) {
     throw new DomainError(
       "EXCHANGE_RATE_REQUIRED",

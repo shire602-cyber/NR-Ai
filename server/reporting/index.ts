@@ -16,6 +16,7 @@ export {
   loadCompany,
   naturalBalance,
   netIncomeOf,
+  reportCurrencyOf,
 } from "./ledger-query";
 export type {
   AccountTotals,
@@ -29,3 +30,4 @@ export type {
 export * from "./classify";
 export * from "./statements";
 export * from "./aging";
+export * from "./currency-trial-balance";

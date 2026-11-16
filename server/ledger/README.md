@@ -175,3 +175,10 @@ keeps only the reference.
 `auto_reverse_on`. New tables: `ledger_repair_findings` (duplicate reversals and unbalanced entries
 found in existing books — posted data is never edited), `ledger_settings`
 (`manual_approval_threshold`), `journal_templates`, `journal_attachments`.
+
+## Functional currency (W5-C, `currency.ts`)
+
+`baseCurrencyOf(company)`, `loadBaseCurrency(companyId, tx?)`, `documentCurrency(cur, base)`,
+`isForeignCurrency(cur, base)`. Debits and credits are always in the company's base currency; a
+document in the base currency carries no foreign tags. `DEFAULT_BASE_CURRENCY` is only the
+fallback for a blank column, never a business rule.

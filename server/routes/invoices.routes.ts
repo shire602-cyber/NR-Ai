@@ -60,7 +60,6 @@ import {
 } from "../services/invoice-lifecycle";
 import {
   assertPlaceOfSupply,
-  BASE_CURRENCY,
   createAndIssueCreditNote,
   invoiceSettlement,
   isIssuedStatus,
@@ -89,6 +88,7 @@ import {
 } from "../services/invoice-numbering.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { getRate } from "../services/fx";
+import { documentCurrency, loadBaseCurrency } from "../ledger";
 import type { SupplyType } from "../../shared/vat-classification";
 
 const log = createLogger("invoices");
@@ -155,16 +155,21 @@ function lineRow(invoiceId: string, r: PreparedSalesLine) {
   };
 }
 
-/** The rate (AED per 1 unit) for a foreign document: explicit, else fx.getRate for the company. */
+/**
+ * The rate (company base units per 1 document unit): 1 when the document is in the company's
+ * functional currency (W5-C, R14-19), else the explicit rate, else fx.getRate for the company.
+ */
 export async function resolveDocumentRate(
   companyId: string,
   currency: string,
   dateIso: string,
   supplied?: number | null
 ): Promise<number> {
-  if (currency === BASE_CURRENCY) return 1;
+  const base = await loadBaseCurrency(companyId);
+  const cur = documentCurrency(currency, base);
+  if (cur === base) return 1;
   if (supplied && supplied > 0) return supplied;
-  const r = await getRate(companyId, currency, BASE_CURRENCY, dateIso);
+  const r = await getRate(companyId, cur, base, dateIso);
   return r.rate;
 }
 
@@ -256,7 +261,7 @@ async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
     header.placeOfSupplyEmirate,
     rows.map((r) => r.vatSupplyType)
   );
-  const currency = body.currency ?? BASE_CURRENCY;
+  const currency = documentCurrency(body.currency, await loadBaseCurrency(companyId));
   const rate = await resolveDocumentRate(companyId, currency, body.date, body.exchangeRate);
   return { header, rows, totals, currency, rate };
 }
@@ -460,7 +465,7 @@ export function registerInvoiceRoutes(app: Express) {
         companyId,
         type: "invoice_created",
         title: "Invoice created",
-        message: `Invoice ${invoice.number} for ${invoice.customerName} — ${invoice.total} ${invoice.currency || "AED"}`,
+        message: `Invoice ${invoice.number} for ${invoice.customerName} — ${invoice.total} ${documentCurrency(invoice.currency, await loadBaseCurrency(companyId))}`,
         priority: "normal",
         relatedEntityType: "invoice",
         relatedEntityId: invoice.id,

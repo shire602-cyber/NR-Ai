@@ -6,7 +6,8 @@
 // idempotency key; every status change is ONE conditional UPDATE (transitionRow) inside the same
 // ledger transaction as its journal.
 //
-//   Approval (on bill_date), all amounts converted to AED at the bill rate, in integer fils:
+//   Approval (on bill_date), all amounts converted to the company's base (functional) currency
+//   at the bill rate, in integer fils (W5-C: no conversion when the bill is in the base currency):
 //     Dr  expense/asset per line (+ its share of non-recoverable VAT)
 //     Dr  VAT Receivable (Input VAT 1050)          recoverable VAT
 //     Cr  Accounts Payable 2010                     payable to the vendor (less withholding)
@@ -25,7 +26,11 @@ import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import {
+  DEFAULT_BASE_CURRENCY,
   defineMachine,
+  documentCurrency,
+  isForeignCurrency,
+  loadBaseCurrency,
   postJournal,
   reverseBySource,
   type LedgerTx,
@@ -38,7 +43,10 @@ const log = createLogger("bill-posting");
 
 export const BILL_JE_SOURCE = "bill";
 export const BILL_PAYMENT_JE_SOURCE = "bill_payment";
-export const BASE_CURRENCY = "AED";
+/**
+ * @deprecated W5-C (R14-19): the base currency is per company; use loadBaseCurrency(companyId).
+ */
+export const BASE_CURRENCY = DEFAULT_BASE_CURRENCY;
 
 /** Fallback expense account for uncategorised bill lines (R11-04: 5000, never 5130). */
 export const GENERAL_EXPENSE_CODE = ACCOUNT_CODES.GENERAL_EXPENSE; // "5000"
@@ -390,21 +398,25 @@ export interface BillLineRow {
 export const filsOf = (v: string | number | null | undefined): number =>
   v === null || v === undefined || v === "" ? 0 : toFils(String(v), { rounding: "halfUp" });
 
-export function rateTextOf(bill: {
-  exchange_rate?: string | number | null;
-  currency?: string | null;
-}): string {
-  const cur = (bill.currency || BASE_CURRENCY).toUpperCase();
-  if (cur === BASE_CURRENCY) return "1";
+/** Bill rate (company base per 1 bill unit); "1" when the bill is in the base currency. */
+export function rateTextOf(
+  bill: {
+    exchange_rate?: string | number | null;
+    currency?: string | null;
+  },
+  baseCurrency: string
+): string {
+  const cur = documentCurrency(bill.currency, baseCurrency);
+  if (cur === baseCurrency) return "1";
   const n = Number(bill.exchange_rate);
   return n > 0 ? String(bill.exchange_rate) : "1";
 }
 
-export function isForeign(bill: { currency?: string | null }): boolean {
-  return (bill.currency || BASE_CURRENCY).toUpperCase() !== BASE_CURRENCY;
+export function isForeign(bill: { currency?: string | null }, baseCurrency: string): boolean {
+  return isForeignCurrency(bill.currency, baseCurrency);
 }
 
-/** Convert document-currency fils to AED fils at `rate` (identity for AED). */
+/** Convert document-currency fils to base-currency fils at `rate` (identity in the base). */
 export function toBase(fils: number, rate: string, foreign: boolean): number {
   if (!foreign || fils === 0) return fils;
   return mulRate(fils, rate);
@@ -452,7 +464,7 @@ export interface BillJournalPlan {
 }
 
 /**
- * Build the balanced journal lines for an approved bill (AED, integer fils). Pure apart from
+ * Build the balanced journal lines for an approved bill (base currency, integer fils). Pure apart from
  * account lookups / on-demand account creation (done before any transaction opens).
  */
 export async function planBillJournal(
@@ -463,9 +475,10 @@ export async function planBillJournal(
   const companyId = bill.company_id;
   const ap = await requireApAccount(companyId);
   const accounts = await storage.getAccountsByCompanyId(companyId);
-  const foreign = isForeign(bill);
-  const rate = rateTextOf(bill);
-  const currency = (bill.currency || BASE_CURRENCY).toUpperCase();
+  const baseCurrency = await loadBaseCurrency(companyId);
+  const foreign = isForeign(bill, baseCurrency);
+  const rate = rateTextOf(bill, baseCurrency);
+  const currency = documentCurrency(bill.currency, baseCurrency);
   const billRef = bill.bill_number || bill.id.slice(0, 8);
 
   const nets = lineItems.map((l) => filsOf(l.amount));

@@ -18,6 +18,7 @@ import { EXCHANGE_RATE_TYPES } from "../../../shared/schema";
 import { ISO_4217_CODES, parseIsoDate } from "../../../shared/validators/primitives";
 import { mulRate, RATE_DECIMALS } from "../../../shared/money";
 import { DomainError } from "../../errors";
+import { VAT_FILING_CURRENCY, baseCurrencyOf } from "../../ledger/currency";
 
 const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 const ISO = new Set<string>(ISO_4217_CODES);
@@ -133,7 +134,7 @@ export async function getCompanyBaseCurrency(companyId: string): Promise<string>
     .where(eq(companies.id, companyId))
     .limit(1);
   if (!row) throw new DomainError("COMPANY_NOT_FOUND", 404);
-  return (row.baseCurrency || "AED").toUpperCase();
+  return baseCurrencyOf(row);
 }
 
 const rowIso = (row: ExchangeRate): string =>
@@ -338,7 +339,8 @@ export interface RateWriteInput {
   rate: number | string;
   effectiveDate?: string;
   rateType?: ExchangeRateType;
-  source?: "manual" | "api" | "fta";
+  /** cbuae / ecb: written only by the rate feed (W5-C, R14-14). */
+  source?: RateSource;
   /** Confirm a move larger than the sanity band versus the previous rate. */
   confirmLargeMove?: boolean;
 }
@@ -366,11 +368,14 @@ export function canonicalizeCompanyRate(
   return { baseCurrency: from, targetCurrency: to, rate };
 }
 
+export const RATE_SOURCES = ["manual", "api", "fta", "cbuae", "ecb"] as const;
+export type RateSource = (typeof RATE_SOURCES)[number];
+
 export interface ValidatedRate {
   row: CanonicalRow;
   date: string;
   rateType: ExchangeRateType;
-  source: "manual" | "api" | "fta";
+  source: RateSource;
 }
 
 /** Shared write validation: ISO codes, base != target, rate > 0, date valid and not future. */
@@ -404,7 +409,7 @@ export function validateRateInput(
   const rateType = input.rateType ?? "spot";
   if (!isRateType(rateType)) throw new DomainError("INVALID_RATE_TYPE", 400, { rateType });
   const source = input.source ?? "manual";
-  if (!["manual", "api", "fta"].includes(source)) {
+  if (!(RATE_SOURCES as readonly string[]).includes(source)) {
     throw new DomainError("INVALID_RATE_SOURCE", 400, { source });
   }
   const row = companyBase
@@ -467,7 +472,7 @@ export function sanityCheck(
  */
 export async function saveRate(
   companyId: string | null,
-  userId: string,
+  userId: string | null,
   input: RateWriteInput
 ): Promise<{ row: ExchangeRate; replaced: boolean; changePct: number | null }> {
   const base = companyId ? await getCompanyBaseCurrency(companyId) : null;
@@ -538,4 +543,27 @@ export async function deleteCompanyRate(companyId: string, rateId: string): Prom
     .where(and(eq(exchangeRates.id, rateId), eq(exchangeRates.companyId, companyId)))
     .returning({ id: exchangeRates.id });
   return rows.length > 0;
+}
+
+/**
+ * W5-C (R14-19): VAT returns are filed in AED whatever the functional currency. Converts a
+ * base-currency amount into AED at the document date (identity for an AED company). Exposed as
+ * the `fx.toVatFilingCurrency` service for the VAT engine (FOLLOW-UP: server/tax/vat-engine).
+ */
+export async function toVatFilingCurrency(
+  companyId: string,
+  baseFils: number,
+  documentDate: Date | string
+): Promise<{ filingCurrency: string; fils: number; rate: string; baseCurrency: string }> {
+  const baseCurrency = await getCompanyBaseCurrency(companyId);
+  if (baseCurrency === VAT_FILING_CURRENCY) {
+    return { filingCurrency: VAT_FILING_CURRENCY, fils: baseFils, rate: "1.000000", baseCurrency };
+  }
+  const c = await convert(companyId, baseFils, baseCurrency, VAT_FILING_CURRENCY, documentDate);
+  return {
+    filingCurrency: VAT_FILING_CURRENCY,
+    fils: c.convertedFils,
+    rate: c.rateText,
+    baseCurrency,
+  };
 }

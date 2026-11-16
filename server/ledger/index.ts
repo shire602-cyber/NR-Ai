@@ -41,3 +41,11 @@ export {
   type ReverseOptions,
   type ReverseResult,
 } from "./types";
+export {
+  DEFAULT_BASE_CURRENCY,
+  VAT_FILING_CURRENCY,
+  baseCurrencyOf,
+  documentCurrency,
+  isForeignCurrency,
+  loadBaseCurrency,
+} from "./currency";

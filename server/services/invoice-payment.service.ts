@@ -28,6 +28,9 @@ import {
 import { storage } from "../storage";
 import { DomainError } from "../errors";
 import {
+  documentCurrency,
+  isForeignCurrency,
+  loadBaseCurrency,
   postJournal,
   reverseEntry,
   withLedgerTx,
@@ -38,7 +41,6 @@ import { fromFils, mulRate, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { has, provide } from "../platform/service-registry";
 import {
-  BASE_CURRENCY,
   getArAccount,
   getFxAccounts,
   invoiceOpenFils,
@@ -138,13 +140,14 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   // then system rate via fx.getRate) so realised FX is booked; with no rate on
   // file it settles at the invoice rate (no FX), as before.
   let paymentExchangeRate = input.paymentExchangeRate ?? null;
-  const currency = (invoice.currency || BASE_CURRENCY).toUpperCase();
-  if (!paymentExchangeRate && currency !== BASE_CURRENCY) {
+  const baseCurrency = await loadBaseCurrency(input.companyId);
+  const currency = documentCurrency(invoice.currency, baseCurrency);
+  if (!paymentExchangeRate && currency !== baseCurrency) {
     try {
       const r = await getRate(
         input.companyId,
         currency,
-        BASE_CURRENCY,
+        baseCurrency,
         input.date.toISOString().slice(0, 10)
       );
       if (!r.stale) paymentExchangeRate = r.rate;
@@ -360,7 +363,8 @@ export async function applyCustomerCredit(args: {
         "Credits can only be applied to an issued, unpaid invoice."
       );
     }
-    if ((invoice.currency || BASE_CURRENCY).toUpperCase() !== credit.currency.toUpperCase()) {
+    const baseCurrency = await loadBaseCurrency(args.companyId, tx);
+    if (documentCurrency(invoice.currency, baseCurrency) !== credit.currency.toUpperCase()) {
       throw new DomainError("CURRENCY_MISMATCH", 422, {
         credit: credit.currency,
         invoice: invoice.currency,
@@ -375,12 +379,12 @@ export async function applyCustomerCredit(args: {
       throw new DomainError("CREDIT_EXCEEDS_INVOICE_BALANCE", 409, { open: fromFils(open) });
     }
     const creditRate =
-      credit.currency.toUpperCase() === BASE_CURRENCY ? "1" : String(credit.exchangeRate);
-    const invRate = invoiceRate(invoice);
+      credit.currency.toUpperCase() === baseCurrency ? "1" : String(credit.exchangeRate);
+    const invRate = invoiceRate(invoice, baseCurrency);
     const liabBase = toBase(args.amountFils, creditRate);
     const arBase = toBase(args.amountFils, invRate);
     const ar = await getArAccount(tx, args.companyId);
-    const foreign = credit.currency.toUpperCase() !== BASE_CURRENCY;
+    const foreign = credit.currency.toUpperCase() !== baseCurrency;
     const fxAcc = liabBase !== arBase ? await getFxAccounts(tx, args.companyId) : null;
     const label = `Credit applied to ${invoice.number}`;
     const lines: PostJournalLineInput[] = [
@@ -478,7 +482,7 @@ export async function refundCustomerCredit(args: {
     if (args.amountFils > remaining) {
       throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { remaining: fromFils(remaining) });
     }
-    const foreign = credit.currency.toUpperCase() !== BASE_CURRENCY;
+    const foreign = isForeignCurrency(credit.currency, await loadBaseCurrency(args.companyId, tx));
     const creditRate = foreign ? String(credit.exchangeRate) : "1";
     const refundRate = foreign
       ? String(args.exchangeRate && args.exchangeRate > 0 ? args.exchangeRate : credit.exchangeRate)

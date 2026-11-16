@@ -161,9 +161,9 @@ export function buildExpenseClaimJournalLines(args: {
 
 export type ExpenseClaimItemFils = {
   category?: string | null;
-  /** Net amount in AED fils. */
+  /** Net amount in base-currency fils. */
   amountFils: number;
-  /** VAT in AED fils. */
+  /** VAT in base-currency fils. */
   vatFils: number;
   /** Input VAT is recoverable only with a valid tax invoice; otherwise it is part of the cost. */
   vatRecoverable: boolean;
@@ -287,4 +287,63 @@ export function buildExpenseClaimPaymentLines(args: {
       description: `Reimbursement ${args.claimNumber} — paid to employee`,
     },
   ];
+}
+
+/**
+ * W5-C (R14-16): reimbursement of a foreign-currency claim paid FROM a bank account in that
+ * currency. The accrual credited 2045 at the expense-date rate(s) (`accruedFils`, base
+ * currency); the cash leg is the foreign amount at the payment-date rate (fx.getRate), tagged
+ * with the foreign currency so the bank's currency balance moves. The difference is realised
+ * FX: cash above the accrual is a loss, below it a gain. Paying from a base-currency account
+ * settles the accrual exactly (buildExpenseClaimPaymentLines) — no FX arises.
+ */
+export function buildExpenseClaimFxPaymentLines(args: {
+  payableAccountId: string;
+  paymentAccountId: string;
+  accruedFils: number;
+  foreignCurrency: string;
+  foreignFils: number;
+  /** Payment-date rate: base units per 1 foreign unit (6 dp string). */
+  paymentRate: string;
+  /** Base fils of the foreign amount at the payment rate (caller converts with fx). */
+  cashBaseFils: number;
+  fxGainAccountId: string;
+  fxLossAccountId: string;
+  claimNumber: string;
+}): Array<
+  FilsJournalLine & { foreignCurrency?: string; foreignCredit?: string; exchangeRate?: string }
+> {
+  const diff = args.cashBaseFils - args.accruedFils; // > 0 loss, < 0 gain
+  const foreignMajor = (args.foreignFils / 100).toFixed(2);
+  const lines: Array<
+    FilsJournalLine & { foreignCurrency?: string; foreignCredit?: string; exchangeRate?: string }
+  > = [
+    {
+      accountId: args.payableAccountId,
+      debitFils: args.accruedFils,
+      description: `Reimbursement ${args.claimNumber} — clear employee payable`,
+    },
+    {
+      accountId: args.paymentAccountId,
+      creditFils: args.cashBaseFils,
+      description: `Reimbursement ${args.claimNumber} — paid to employee (${args.foreignCurrency})`,
+      foreignCurrency: args.foreignCurrency,
+      foreignCredit: foreignMajor,
+      exchangeRate: args.paymentRate,
+    },
+  ];
+  if (diff > 0) {
+    lines.push({
+      accountId: args.fxLossAccountId,
+      debitFils: diff,
+      description: `Realised FX loss — reimbursement ${args.claimNumber}`,
+    });
+  } else if (diff < 0) {
+    lines.push({
+      accountId: args.fxGainAccountId,
+      creditFils: -diff,
+      description: `Realised FX gain — reimbursement ${args.claimNumber}`,
+    });
+  }
+  return lines;
 }
