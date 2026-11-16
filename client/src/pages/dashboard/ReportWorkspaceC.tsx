@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import { reportSectionHref } from "@/lib/reportCatalog";
@@ -14,6 +15,7 @@ import {
 
 export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
   const { t } = useTranslation();
+  const ct = useCatalogText();
   const {
     locale,
     selectedCompanyId,
@@ -54,13 +56,17 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                   ? t["dashboard.workspaceSyncingCatalog"]
                   : reportCatalogDiscoveryQuery.isError
                     ? t["components.launchLocalCatalog"]
-                    : `${preferredReportPackReadiness.syncedReadyReports} synced reports`}
+                    : ct.cx(`${preferredReportPackReadiness.syncedReadyReports} synced reports`)}
               </Badge>
               <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
-                {preferredReportPackReadiness.syncedPackTemplates} packs
+                {formatMessage(t["dashboard.nPacks"], {
+                  n: preferredReportPackReadiness.syncedPackTemplates,
+                })}
               </Badge>
               <Badge variant="outline" data-testid="dashboard-report-catalog-comparison-count">
-                {preferredReportPackReadiness.syncedComparisonPresets} comparisons
+                {formatMessage(t["dashboard.nComparisons"], {
+                  n: preferredReportPackReadiness.syncedComparisonPresets,
+                })}
               </Badge>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
@@ -76,7 +82,9 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
 
           <div className="grid grid-cols-3 gap-2 md:min-w-[420px]">
             <div className="rounded-md border border-border/70 p-3">
-              <div className="text-caption font-medium text-muted-foreground">Pack</div>
+              <div className="text-caption font-medium text-muted-foreground">
+                {t["reportCenter.labelPack"]}
+              </div>
               <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
                 {preferredReportPackReadiness.readinessPercent}%
               </div>
@@ -268,7 +276,9 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                           )}
                           data-testid="dashboard-report-delivery-run-readiness"
                         >
-                          {dashboardLatestDeliveryRun.readinessStatus}
+                          {t[
+                            `dashboard.runReadiness${dashboardLatestDeliveryRun.readinessStatus.charAt(0).toUpperCase()}${dashboardLatestDeliveryRun.readinessStatus.slice(1)}`
+                          ] ?? dashboardLatestDeliveryRun.readinessStatus}
                         </Badge>
                       </div>
                       <p className="mt-2 min-w-0 break-words">
@@ -375,7 +385,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 data-testid="dashboard-next-automation-queue"
               >
                 {queueDashboardReportDeliverySubscription.isPending
-                  ? "Queueing"
+                  ? t["components.launchQueueing"]
                   : preferredAutomationQueueRequiresHandoffAcknowledgement
                     ? t["components.launchAcknowledgeHandoff"]
                     : preferredAutomationNextAction.cta}
@@ -400,7 +410,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 data-testid="dashboard-next-automation-retry"
               >
                 {retryDashboardReportDeliveryRun.isPending
-                  ? "Retrying"
+                  ? t["components.launchRetrying"]
                   : preferredAutomationNextAction.cta}
                 <ArrowRight className="w-3.5 h-3.5" />
               </Button>

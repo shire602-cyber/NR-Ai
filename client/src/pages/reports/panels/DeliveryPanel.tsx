@@ -1,6 +1,7 @@
 // Reports > delivery workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { DeliverySubscriptionsSection } from "./sections/DeliverySubscriptionsSe
 
 export default function DeliveryPanel() {
   const { t } = useTranslation();
+  const ct = useCatalogText();
   const {
     handleExportWorkspacePackToSheets,
     isExporting,
@@ -47,7 +49,9 @@ export default function DeliveryPanel() {
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
             {reportAutomationOperationsNeedingReview > 0
-              ? `${reportAutomationOperationsNeedingReview} handoffs need action`
+              ? formatMessage(t["reportCenter.handoffsNeedAction"], {
+                  n: reportAutomationOperationsNeedingReview,
+                })
               : t["deliveryPanel.handoffsReady"]}
           </Badge>
         </div>
@@ -106,7 +110,7 @@ export default function DeliveryPanel() {
                   </div>
                   <p className="mt-2 text-muted-foreground">{item.nextAction.detail}</p>
                   <div className="mt-2 text-muted-foreground">
-                    Amount at risk:{" "}
+                    {t["reportCenter.amountAtRiskColon"]}{" "}
                     <span className="tabular-nums text-foreground">
                       <Money amount={item.amountAtRisk} currency={"AED"} />
                     </span>
@@ -158,8 +162,7 @@ export default function DeliveryPanel() {
               <T k="reportCenter.reportPackReadiness" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Delivery checks for scheduled packs before they reach owners, freelancers, or
-              accountants. {personaScopeDescription}
+              {formatMessage(t["reportCenter.dpChecksIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -170,7 +173,9 @@ export default function DeliveryPanel() {
             }
             dot
           >
-            {visibleReportPackReadiness.reduce((sum, item) => sum + item.reviewCount, 0)} review
+            {formatMessage(t["reportCenter.nReview"], {
+              n: visibleReportPackReadiness.reduce((sum, item) => sum + item.reviewCount, 0),
+            })}
           </Badge>
         </div>
 
@@ -221,7 +226,7 @@ export default function DeliveryPanel() {
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                       <div>
-                        <div className="text-muted-foreground">Pack</div>
+                        <div className="text-muted-foreground">{t["reportCenter.labelPack"]}</div>
                         <div className="tabular-nums font-semibold">
                           {item.automationHealth.readinessScore}%
                         </div>
@@ -271,11 +276,14 @@ export default function DeliveryPanel() {
                         <div className="text-xs text-muted-foreground">{check.detail}</div>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant={check.status === "Ready" ? "success" : "warning"} dot>
+                        <Badge
+                          variant={check.status === ct.cx("Ready") ? "success" : "warning"}
+                          dot
+                        >
                           {check.status}
                         </Badge>
                         <Button asChild size="sm" variant="outline">
-                          <Link href={check.workflow}>Open</Link>
+                          <Link href={check.workflow}>{t["pages.open"]}</Link>
                         </Button>
                       </div>
                     </div>
@@ -296,12 +304,11 @@ export default function DeliveryPanel() {
               <T k="reportCenter.reportPackAutomation" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Scheduled workspace packs with live report signals before delivery.{" "}
-              {personaScopeDescription}
+              {formatMessage(t["reportCenter.dpPacksIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant={reportPackReviewCount > 0 ? "warning" : "success"} dot>
-            {reportPackReviewCount} need review
+            {formatMessage(t["reportCenter.needReview"], { n: reportPackReviewCount })}
           </Badge>
         </div>
 
@@ -370,11 +377,15 @@ export default function DeliveryPanel() {
 
                   <div className="rounded-md border p-3 text-xs text-muted-foreground">
                     <div>
-                      <span className="font-medium text-foreground">Delivery:</span>{" "}
+                      <span className="font-medium text-foreground">
+                        {t["reportCenter.labelDelivery"]}
+                      </span>{" "}
                       {workspace.packSchedule.delivery}
                     </div>
                     <div className="mt-1">
-                      <span className="font-medium text-foreground">Recipients:</span>{" "}
+                      <span className="font-medium text-foreground">
+                        {t["reportCenter.labelRecipients"]}
+                      </span>{" "}
                       {workspace.packSchedule.recipients}
                     </div>
                   </div>
@@ -392,7 +403,10 @@ export default function DeliveryPanel() {
                           <div className="font-medium">{check.label}</div>
                           <div className="text-xs text-muted-foreground">{check.detail}</div>
                         </div>
-                        <Badge variant={check.status === "Ready" ? "success" : "warning"} dot>
+                        <Badge
+                          variant={check.status === ct.cx("Ready") ? "success" : "warning"}
+                          dot
+                        >
                           {check.status}
                         </Badge>
                       </div>
@@ -413,7 +427,7 @@ export default function DeliveryPanel() {
                           <div className="text-xs text-muted-foreground">{signal.detail}</div>
                         </div>
                         <Badge variant={signal.count > 0 ? "warning" : "success"} dot>
-                          {signal.count > 0 ? signal.count : "Clear"}
+                          {signal.count > 0 ? signal.count : t["reportCenter.clear"]}
                         </Badge>
                       </div>
                     ))}
@@ -435,7 +449,7 @@ export default function DeliveryPanel() {
                       disabled={isExporting || !selectedCompanyId}
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                     >
-                      <SiGooglesheets className="me-2 h-4 w-4" />
+                      <SiGooglesheets className="me-2 h-4 w-4" aria-hidden />
                       <T k="reportCenter.sendPack" />
                     </Button>
                   </div>

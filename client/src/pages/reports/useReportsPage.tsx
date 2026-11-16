@@ -11,8 +11,10 @@ import { useReportsAutomationOverview } from "./hooks/useReportsAutomationOvervi
 import { useReportsDeliveryActions } from "./hooks/useReportsDeliveryActions";
 import { useReportsWorkspacePack } from "./hooks/useReportsWorkspacePack";
 import { useReportsExports } from "./hooks/useReportsExports";
+import { useCatalogText } from "@/lib/reportCatalogText";
 
 export function useReportsPage() {
+  const ct = useCatalogText();
   const workspaceState = useReportsWorkspaceState();
   const workspaceSummaryState = useReportsWorkspaceSummaries(workspaceState);
   const dataQueries = useReportsDataQueries(workspaceState);
@@ -264,6 +266,51 @@ export function useReportsPage() {
     backToReportsHref,
   } = exportActions;
 
+  // Render-side localisation of the catalog-derived models (F14): exports and API payloads keep the
+  // English source because only this returned view of the models is translated.
+  const localizedComparisonRows = visibleComparisonRows.map(ct.metric);
+  const localizedComparisonPresets = visibleReportComparisonPresets.map((preset) => ({
+    ...preset,
+    metrics: preset.metrics.map(ct.metric),
+  }));
+  const localizedCatalogModels = ct.deep({
+    visibleComparisonRows: localizedComparisonRows,
+    reportAccountantHandoffSummaries,
+    reportAutomationCommandCenter,
+    reportAutomationImpactTotals,
+    reportAutomationOperationsNeedingReview,
+    reportDeliveryAutomationCommandTargets,
+    reportDeliveryHandoffPreviewByPersona,
+    reportDeliveryLauncherPreviewById,
+    reportDeliveryRecoverySummary,
+    reportDeliveryRunTimelineRows,
+    reportDeliverySchedulerHandoffReviews,
+    reportDeliverySubscriptionSummaries,
+    reportHomeAutomationOperation,
+    reportHomeQuickReports,
+    reportHomeSavedViews,
+    reportHomeSuites,
+    visibleAutomationCoverage,
+    visibleAutomationQueue,
+    visibleReportAutomationHealthTrends,
+    visibleReportAutomationImpactSummaries,
+    visibleReportAutomationOperations,
+    visibleReportAutomationRules,
+    visibleReportAutomationStarters,
+    visibleReportAutomationTriggerRules,
+    visibleReportComparisonPresets: localizedComparisonPresets,
+    visibleReportDecisionShortcuts,
+    visibleReportDeliverySubscriptions,
+    visibleReportManagementBriefSummaries,
+    visibleReportPackAutomation,
+    visibleReportPackReadiness,
+    visibleReportPackTemplates,
+    visibleReportProductDepthAreas,
+    visibleReportRoadmap,
+    visibleReportSuiteSummaries,
+    visibleWorkspaceSummaries,
+  });
+
   return {
     accountActivity,
     activeReportViewerOption,
@@ -357,30 +404,15 @@ export function useReportsPage() {
     queueReportDeliverySubscriptionWithHandoffGuard,
     receivableAgingRows,
     receivableAgingSummary,
-    reportAccountantHandoffSummaries,
-    reportAutomationCommandCenter,
-    reportAutomationImpactTotals,
     reportAutomationOperationsLoading,
-    reportAutomationOperationsNeedingReview,
     reportAutomationRuleReviewCount,
-    reportDeliveryAutomationCommandTargets,
-    reportDeliveryHandoffPreviewByPersona,
     reportDeliveryLauncherPersona,
-    reportDeliveryLauncherPreviewById,
-    reportDeliveryRecoverySummary,
     reportDeliveryRunStatusCounts,
     reportDeliveryRunStatusFilter,
-    reportDeliveryRunTimelineRows,
     reportDeliverySchedulerGuardrailSkips,
-    reportDeliverySchedulerHandoffReviews,
     reportDeliverySchedulerHandoffSkipCount,
     reportDeliverySettingsDraft,
     reportDeliverySubscriptionHasReviewHandoff,
-    reportDeliverySubscriptionSummaries,
-    reportHomeAutomationOperation,
-    reportHomeQuickReports,
-    reportHomeSavedViews,
-    reportHomeSuites,
     reportInvoices,
     reportPackReviewCount,
     reportSectionClass,
@@ -418,27 +450,8 @@ export function useReportsPage() {
     updateReportWorkflowSearch,
     vatLoading,
     vatSummary,
-    visibleAutomationCoverage,
-    visibleAutomationQueue,
-    visibleComparisonRows,
     visiblePlannedReportCount,
-    visibleReportAutomationHealthTrends,
-    visibleReportAutomationImpactSummaries,
-    visibleReportAutomationOperations,
-    visibleReportAutomationRules,
-    visibleReportAutomationStarters,
-    visibleReportAutomationTriggerRules,
-    visibleReportComparisonPresets,
-    visibleReportDecisionShortcuts,
-    visibleReportDeliverySubscriptions,
-    visibleReportManagementBriefSummaries,
-    visibleReportPackAutomation,
-    visibleReportPackReadiness,
-    visibleReportPackTemplates,
-    visibleReportProductDepthAreas,
     visibleReportProductDepthSubgoalCount,
-    visibleReportRoadmap,
-    visibleReportSuiteSummaries,
-    visibleWorkspaceSummaries,
+    ...localizedCatalogModels,
   };
 }

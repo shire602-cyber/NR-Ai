@@ -1527,9 +1527,11 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold">{selectedQuickAccessProfile.title}</p>
+                      <p className="text-sm font-semibold">
+                        {ct.cx(selectedQuickAccessProfile.title)}
+                      </p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {selectedQuickAccessProfile.outcome}
+                        {ct.cx(selectedQuickAccessProfile.outcome)}
                       </p>
                     </div>
                     <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -1554,17 +1556,27 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold">
-                        {selectedAutomationImpactProfile.title}
+                        {ct(
+                          "impact",
+                          selectedAutomationImpactProfile.persona,
+                          "title",
+                          selectedAutomationImpactProfile.title
+                        )}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {selectedAutomationImpactProfile.outcome}
+                        {ct(
+                          "impact",
+                          selectedAutomationImpactProfile.persona,
+                          "outcome",
+                          selectedAutomationImpactProfile.outcome
+                        )}
                       </p>
                     </div>
                     <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
                   <p className="mt-3 text-[11px] font-medium text-primary">
-                    {selectedAutomationImpactProfile.timeSavedLabel} ·{" "}
-                    {selectedAutomationImpactProfile.manualWorkLabel}
+                    {ct.cx(selectedAutomationImpactProfile.timeSavedLabel)} ·{" "}
+                    {ct.cx(selectedAutomationImpactProfile.manualWorkLabel)}
                   </p>
                 </button>
               ) : null}
@@ -1599,7 +1611,9 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                       </div>
                       <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     </div>
-                    <p className="mt-3 text-[11px] font-medium text-primary">{report.comparison}</p>
+                    <p className="mt-3 text-[11px] font-medium text-primary">
+                      {ct.cx(report.comparison)}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -1633,7 +1647,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                   <p className="mt-3 text-[11px] font-medium text-primary">
                     {formatMessage(t["onboarding.reportsAction"], {
                       n: suite.reportIds.length,
-                      lead: suite.primaryAction,
+                      lead: ct.cx(suite.primaryAction),
                     })}
                   </p>
                 </button>
@@ -1726,15 +1740,15 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold">{view.title}</p>
+                      <p className="text-sm font-semibold">{ct.cx(view.title)}</p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {view.description}
+                        {ct.cx(view.description)}
                       </p>
                     </div>
                     <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
                   <p className="mt-3 text-[11px] font-medium text-primary">
-                    {view.dateRangePreset} · {view.comparisonPeriod}
+                    {ct.cx(view.dateRangePreset)} · {ct.cx(view.comparisonPeriod)}
                   </p>
                 </button>
               ))}
@@ -1756,16 +1770,16 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold">{rule.title}</p>
+                      <p className="text-sm font-semibold">{ct.cx(rule.title)}</p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {rule.threshold}
+                        {ct.cx(rule.threshold)}
                       </p>
                     </div>
                     <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
                   <p className="mt-3 text-[11px] font-medium text-primary">
                     {formatMessage(t["onboarding.cadenceReports"], {
-                      lead: rule.cadence,
+                      lead: ct.cx(rule.cadence),
                       n: rule.reportIds.length,
                     })}
                   </p>
@@ -1793,14 +1807,14 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                         {ct("delivery", subscription.id, "title", subscription.title)}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {subscription.cadence}
+                        {ct.cx(subscription.cadence)}
                       </p>
                     </div>
                     <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
                   <p className="mt-3 text-[11px] font-medium text-primary">
                     {formatMessage(t["onboarding.cadenceReports"], {
-                      lead: subscription.channel,
+                      lead: ct.cx(subscription.channel),
                       n: subscription.reportIds.length,
                     })}
                   </p>
@@ -1835,7 +1849,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                   </div>
                   <p className="mt-3 text-[11px] font-medium text-primary">
                     {formatMessage(t["onboarding.setupSteps"], {
-                      lead: starter.setupTime,
+                      lead: ct.cx(starter.setupTime),
                       n: starter.setupSteps.length,
                     })}
                   </p>

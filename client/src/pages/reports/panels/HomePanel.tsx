@@ -1,6 +1,6 @@
 // Reports > home workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { ArrowRight, BarChart3, FileText, Search, Send, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,8 +49,10 @@ export default function HomePanel() {
                     className="w-fit"
                   >
                     {reportAutomationOperationsNeedingReview > 0
-                      ? `${reportAutomationOperationsNeedingReview} need action`
-                      : "Ready"}
+                      ? formatMessage(t["reportCenter.needAction"], {
+                          n: reportAutomationOperationsNeedingReview,
+                        })
+                      : t["reportCenter.ready"]}
                   </Badge>
                 </div>
               </CardHeader>
@@ -227,7 +229,7 @@ export default function HomePanel() {
                   <T k="reportCenter.topReports" />
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {personaFilterLabel} shortcuts from the active quick-access profile.
+                  {formatMessage(t["reportCenter.homeShortcuts"], { persona: personaFilterLabel })}
                 </p>
               </div>
               <Button
@@ -265,7 +267,7 @@ export default function HomePanel() {
                         </p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Button asChild size="sm">
-                            <Link href={href}>Open</Link>
+                            <Link href={href}>{t["pages.open"]}</Link>
                           </Button>
                           <Button asChild size="sm" variant="outline">
                             <Link href={workflowHref}>

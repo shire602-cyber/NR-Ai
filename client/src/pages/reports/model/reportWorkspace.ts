@@ -20,49 +20,144 @@ export const reportStatusMeta: Record<
   ReportStatus,
   { label: string; variant: BadgeProps["variant"] }
 > = {
-  live: { label: "Live", variant: "success" },
-  api: { label: "API ready", variant: "info" },
-  planned: { label: "Planned", variant: "neutral" },
+  live: {
+    get label() {
+      return translateNow("reportCenter.statusLive");
+    },
+    variant: "success",
+  },
+  api: {
+    get label() {
+      return translateNow("reportCenter.statusApiReady");
+    },
+    variant: "info",
+  },
+  planned: {
+    get label() {
+      return translateNow("reportCenter.statusPlanned");
+    },
+    variant: "neutral",
+  },
 };
 
 export const roadmapImpactMeta = {
-  high: { label: "High impact", variant: "warning" },
-  medium: { label: "Medium impact", variant: "info" },
-  low: { label: "Low impact", variant: "neutral" },
+  high: {
+    get label() {
+      return translateNow("reportCenter.impactHigh");
+    },
+    variant: "warning",
+  },
+  medium: {
+    get label() {
+      return translateNow("reportCenter.impactMedium");
+    },
+    variant: "info",
+  },
+  low: {
+    get label() {
+      return translateNow("reportCenter.impactLow");
+    },
+    variant: "neutral",
+  },
 } as const satisfies Record<string, { label: string; variant: BadgeProps["variant"] }>;
 
 export const triggerSeverityMeta = {
-  critical: { label: "Critical", variant: "danger" },
-  review: { label: "Review", variant: "warning" },
-  info: { label: "Monitor", variant: "info" },
+  critical: {
+    get label() {
+      return translateNow("reportCenter.severityCritical");
+    },
+    variant: "danger",
+  },
+  review: {
+    get label() {
+      return translateNow("reportCenter.severityReview");
+    },
+    variant: "warning",
+  },
+  info: {
+    get label() {
+      return translateNow("reportCenter.severityMonitor");
+    },
+    variant: "info",
+  },
 } as const satisfies Record<
   ReportAutomationTriggerSeverity,
   { label: string; variant: BadgeProps["variant"] }
 >;
 
 export const productDepthStatusMeta = {
-  working: { label: "Working", variant: "success" },
-  hardening: { label: "Hardening", variant: "warning" },
-  "data-needed": { label: "Data needed", variant: "info" },
+  working: {
+    get label() {
+      return translateNow("reportCenter.depthWorking");
+    },
+    variant: "success",
+  },
+  hardening: {
+    get label() {
+      return translateNow("reportCenter.depthHardening");
+    },
+    variant: "warning",
+  },
+  "data-needed": {
+    get label() {
+      return translateNow("reportCenter.depthDataNeeded");
+    },
+    variant: "info",
+  },
 } as const satisfies Record<
   ReportProductDepthStatus,
   { label: string; variant: BadgeProps["variant"] }
 >;
 
 export const productDepthEvidenceCheckpointStatusMeta = {
-  "current-proxy": { label: "Current proxy", variant: "neutral" },
-  "missing-source": { label: "Missing source", variant: "warning" },
-  guardrail: { label: "Guardrail", variant: "info" },
+  "current-proxy": {
+    get label() {
+      return translateNow("reportCenter.checkpointCurrentProxy");
+    },
+    variant: "neutral",
+  },
+  "missing-source": {
+    get label() {
+      return translateNow("reportCenter.checkpointMissingSource");
+    },
+    variant: "warning",
+  },
+  guardrail: {
+    get label() {
+      return translateNow("reportCenter.checkpointGuardrail");
+    },
+    variant: "info",
+  },
 } as const satisfies Record<
   ReportEvidenceCheckpointStatus,
   { label: string; variant: BadgeProps["variant"] }
 >;
 
 export const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "owner", label: "Owner" },
-  { id: "freelancer", label: "Freelancer" },
-  { id: "accountant", label: "Accountant" },
+  {
+    id: "all",
+    get label() {
+      return translateNow("reportCenter.personaAll");
+    },
+  },
+  {
+    id: "owner",
+    get label() {
+      return translateNow("reportCenter.personaOwner");
+    },
+  },
+  {
+    id: "freelancer",
+    get label() {
+      return translateNow("reportCenter.personaFreelancer");
+    },
+  },
+  {
+    id: "accountant",
+    get label() {
+      return translateNow("reportCenter.personaAccountant");
+    },
+  },
 ];
 
 export const reportViewerCategoryLabels: Record<string, string> = {
@@ -181,38 +276,66 @@ export const reportWorkspaceTabs: Array<{
 }> = [
   {
     id: "home",
-    label: "Home",
-    description: "Top reports and next action",
+    get label() {
+      return translateNow("reportCenter.tabHome");
+    },
+    get description() {
+      return translateNow("reportCenter.tabHomeDesc");
+    },
   },
   {
     id: "reports",
-    label: "Reports",
-    description: "Library, saved views, statements",
+    get label() {
+      return translateNow("reportCenter.tabReports");
+    },
+    get description() {
+      return translateNow("reportCenter.tabReportsDesc");
+    },
   },
   {
     id: "suites",
-    label: "Suites",
-    description: "Management packs and bundles",
+    get label() {
+      return translateNow("reportCenter.tabSuites");
+    },
+    get description() {
+      return translateNow("reportCenter.tabSuitesDesc");
+    },
   },
   {
     id: "comparisons",
-    label: "Compare",
-    description: "Period movement and snapshots",
+    get label() {
+      return translateNow("reportCenter.tabComparisons");
+    },
+    get description() {
+      return translateNow("reportCenter.tabComparisonsDesc");
+    },
   },
   {
     id: "automation",
-    label: "Automate",
-    description: "Rules, queues, command center",
+    get label() {
+      return translateNow("reportCenter.tabAutomation");
+    },
+    get description() {
+      return translateNow("reportCenter.tabAutomationDesc");
+    },
   },
   {
     id: "delivery",
-    label: "Delivery",
-    description: "Schedules, packs, handoff",
+    get label() {
+      return translateNow("reportCenter.tabDelivery");
+    },
+    get description() {
+      return translateNow("reportCenter.tabDeliveryDesc");
+    },
   },
   {
     id: "setup",
-    label: "Setup",
-    description: "Role workflows and roadmap",
+    get label() {
+      return translateNow("reportCenter.tabSetup");
+    },
+    get description() {
+      return translateNow("reportCenter.tabSetupDesc");
+    },
   },
 ];
 
@@ -309,7 +432,7 @@ export function reportsWorkspaceHref({
   if (tab) params.set("tab", tab);
   if (reportId) params.set("report", reportId);
   if (persona && persona !== "all") params.set("persona", persona);
-  if (workspace && workspace !== "home" && workspace !== "reports") {
+  if (workspace && workspace !== "reports") {
     params.set("workspace", workspace);
   }
 
@@ -321,20 +444,48 @@ export const reportDeliveryRunStatusFilters: Array<{
   id: ReportDeliveryRunStatusFilter;
   label: string;
 }> = [
-  { id: "all", label: translateNow("reportCenter.allRuns") },
-  { id: "queued", label: "Queued" },
-  { id: "sent", label: "Sent" },
-  { id: "failed", label: "Failed" },
+  {
+    id: "all",
+    get label() {
+      return translateNow("reportCenter.allRuns");
+    },
+  },
+  {
+    id: "queued",
+    get label() {
+      return translateNow("reportCenter.runQueued");
+    },
+  },
+  {
+    id: "sent",
+    get label() {
+      return translateNow("reportCenter.runSent");
+    },
+  },
+  {
+    id: "failed",
+    get label() {
+      return translateNow("reportCenter.runFailed");
+    },
+  },
 ];
 
 export const reportDeliveryAutomationCommandLabels: Record<
   ReportDeliveryAutomationCommand,
   string
 > = {
-  retry: "Retry recovery",
-  review: "Review guardrails",
-  queue: "Queue next pack",
-  comparison: "Open comparison",
+  get retry() {
+    return translateNow("reportCenter.cmdRetry");
+  },
+  get review() {
+    return translateNow("reportCenter.cmdReview");
+  },
+  get queue() {
+    return translateNow("reportCenter.cmdQueue");
+  },
+  get comparison() {
+    return translateNow("reportCenter.cmdComparison");
+  },
 };
 
 export const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
@@ -344,13 +495,27 @@ export const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
 };
 
 export const invoiceStatusLabels: Record<string, string> = {
-  draft: "Draft",
-  sent: "Sent",
-  posted: "Posted",
-  partial: "Partial",
-  paid: "Paid",
-  void: "Void",
-  cancelled: "Cancelled",
+  get draft() {
+    return translateNow("reportCenter.invoiceStatusDraft");
+  },
+  get sent() {
+    return translateNow("reportCenter.invoiceStatusSent");
+  },
+  get posted() {
+    return translateNow("reportCenter.invoiceStatusPosted");
+  },
+  get partial() {
+    return translateNow("reportCenter.invoiceStatusPartial");
+  },
+  get paid() {
+    return translateNow("reportCenter.invoiceStatusPaid");
+  },
+  get void() {
+    return translateNow("reportCenter.invoiceStatusVoid");
+  },
+  get cancelled() {
+    return translateNow("reportCenter.invoiceStatusCancelled");
+  },
 };
 
 export const inactiveInvoiceStatuses = new Set(["void", "cancelled"]);

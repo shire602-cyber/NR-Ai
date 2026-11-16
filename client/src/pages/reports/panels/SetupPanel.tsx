@@ -20,8 +20,12 @@ import {
   reportWorkspaceHref,
 } from "@/lib/reportCatalog";
 import { useReportsPageContext } from "../context";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 
 export default function SetupPanel() {
+  const { t } = useTranslation();
+  const ct = useCatalogText();
   const {
     handleExportWorkspacePack,
     handleExportWorkspacePackToSheets,
@@ -49,16 +53,16 @@ export default function SetupPanel() {
               <T k="reportCenter.roleSetupPaths" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              First-run checklists for owners, solo entrepreneurs, freelancers, and accountants to
-              move from report review into automated delivery. {personaScopeDescription}
+              {formatMessage(t["reportCenter.spRoleIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="outline">
-            {visibleWorkspaceSummaries.reduce(
-              (total, workspace) => total + workspace.setupStepCount,
-              0
-            )}{" "}
-            steps
+            {formatMessage(t["reportCenter.nSteps"], {
+              n: visibleWorkspaceSummaries.reduce(
+                (total, workspace) => total + workspace.setupStepCount,
+                0
+              ),
+            })}
           </Badge>
         </div>
 
@@ -71,7 +75,9 @@ export default function SetupPanel() {
                     <CardTitle className="text-base font-semibold">{workspace.navLabel}</CardTitle>
                     <CardDescription>{workspace.automationOutcome}</CardDescription>
                   </div>
-                  <Badge variant="info">{workspace.setupStepCount} steps</Badge>
+                  <Badge variant="info">
+                    {formatMessage(t["reportCenter.nSteps"], { n: workspace.setupStepCount })}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -91,8 +97,16 @@ export default function SetupPanel() {
                             {step.outcome}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1">
-                            <Badge variant="outline">{step.reports.length} reports</Badge>
-                            <Badge variant="outline">{step.command}</Badge>
+                            <Badge variant="outline">
+                              {formatMessage(t["reportCenter.nReportsShort"], {
+                                n: step.reports.length,
+                              })}
+                            </Badge>
+                            <Badge variant="outline">
+                              {t[
+                                `reportCenter.cmdWord${step.command.charAt(0).toUpperCase()}${step.command.slice(1)}`
+                              ] ?? step.command}
+                            </Badge>
                           </div>
                         </div>
                       </div>
@@ -115,16 +129,16 @@ export default function SetupPanel() {
               <T k="reportCenter.roleWorkflowChecklist" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Recurring report routines for owner, freelancer, and accountant workspaces after the
-              first setup path is complete. {personaScopeDescription}
+              {formatMessage(t["reportCenter.spWorkflowIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info">
-            {visibleWorkspaceSummaries.reduce(
-              (total, workspace) => total + workspace.workflowStepCount,
-              0
-            )}{" "}
-            workflows
+            {formatMessage(t["reportCenter.nWorkflows"], {
+              n: visibleWorkspaceSummaries.reduce(
+                (total, workspace) => total + workspace.workflowStepCount,
+                0
+              ),
+            })}
           </Badge>
         </div>
 
@@ -150,7 +164,11 @@ export default function SetupPanel() {
                         <CardDescription>{workspace.focus}</CardDescription>
                       </div>
                     </div>
-                    <Badge variant="outline">{workspace.workflowStepCount} workflows</Badge>
+                    <Badge variant="outline">
+                      {formatMessage(t["reportCenter.nWorkflows"], {
+                        n: workspace.workflowStepCount,
+                      })}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -179,7 +197,11 @@ export default function SetupPanel() {
                           </div>
 
                           <div className="flex flex-wrap gap-1">
-                            <Badge variant="outline">{step.reports.length} reports</Badge>
+                            <Badge variant="outline">
+                              {formatMessage(t["reportCenter.nReportsShort"], {
+                                n: step.reports.length,
+                              })}
+                            </Badge>
                             {step.reportSuite ? (
                               <Badge variant="outline">{step.reportSuite.workflow}</Badge>
                             ) : null}
@@ -211,7 +233,9 @@ export default function SetupPanel() {
                                 {step.handoffGuardrail}
                               </div>
                               <div className="mt-1 text-muted-foreground">
-                                Recipients: {step.handoffRecipients}
+                                {formatMessage(t["reportCenter.spRecipients"], {
+                                  value: step.handoffRecipients,
+                                })}
                               </div>
                             </div>
                           </div>
@@ -253,12 +277,13 @@ export default function SetupPanel() {
               <T k="reportCenter.reportingWorkflowMap" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Open the reporting work that is ready, being hardened, or waiting on deeper accounting
-              evidence. {personaScopeDescription}
+              {formatMessage(t["reportCenter.spMapIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot data-testid="report-product-depth-count">
-            {visibleReportProductDepthSubgoalCount} subgoals
+            {formatMessage(t["reportCenter.nSubgoals"], {
+              n: visibleReportProductDepthSubgoalCount,
+            })}
           </Badge>
         </div>
 
@@ -344,7 +369,11 @@ export default function SetupPanel() {
                                   </Button>
                                 </div>
                                 <div className="mt-2 flex flex-wrap gap-1">
-                                  <Badge variant="outline">{target.reportIds.length} reports</Badge>
+                                  <Badge variant="outline">
+                                    {formatMessage(t["reportCenter.nReportsShort"], {
+                                      n: target.reportIds.length,
+                                    })}
+                                  </Badge>
                                   {target.sourceEntities.slice(0, 3).map((entity) => (
                                     <Badge key={entity} variant="neutral">
                                       {entity}
@@ -403,7 +432,9 @@ export default function SetupPanel() {
                                     {record.systemOfRecord}
                                   </div>
                                   <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
-                                    Unlocks: {record.unlocks}
+                                    {formatMessage(t["reportCenter.spUnlocks"], {
+                                      value: record.unlocks,
+                                    })}
                                   </div>
                                 </div>
                               ))}
@@ -412,24 +443,36 @@ export default function SetupPanel() {
                         ) : null}
 
                         <div className="mt-3 flex flex-wrap gap-1">
-                          <Badge variant="outline">{subgoal.reportIds.length} reports</Badge>
                           <Badge variant="outline">
-                            {subgoal.comparisonPresetIds.length} comparisons
+                            {formatMessage(t["reportCenter.nReportsShort"], {
+                              n: subgoal.reportIds.length,
+                            })}
                           </Badge>
                           <Badge variant="outline">
-                            {subgoal.automationStarterIds.length} automations
+                            {formatMessage(t["reportCenter.nComparisonsShort"], {
+                              n: subgoal.comparisonPresetIds.length,
+                            })}
                           </Badge>
                           <Badge variant="outline">
-                            {subgoal.deliverySubscriptionIds.length} deliveries
+                            {formatMessage(t["reportCenter.nAutomations"], {
+                              n: subgoal.automationStarterIds.length,
+                            })}
                           </Badge>
                           <Badge variant="outline">
-                            {subgoal.decisionShortcutIds.length} questions
+                            {formatMessage(t["reportCenter.nDeliveries"], {
+                              n: subgoal.deliverySubscriptionIds.length,
+                            })}
+                          </Badge>
+                          <Badge variant="outline">
+                            {formatMessage(t["reportCenter.nQuestions"], {
+                              n: subgoal.decisionShortcutIds.length,
+                            })}
                           </Badge>
                         </div>
 
                         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="text-xs text-muted-foreground">
-                            Next: {subgoal.nextAction}
+                            {formatMessage(t["reportCenter.spNext"], { value: subgoal.nextAction })}
                           </div>
                           <Button asChild size="sm" variant="ghost" className="justify-start">
                             <Link href={area.href}>
@@ -456,12 +499,11 @@ export default function SetupPanel() {
               <T k="reportCenter.reportRoadmap" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Planned report gaps by role, with the automation unlocks each workspace gains next.{" "}
-              {personaScopeDescription}
+              {formatMessage(t["reportCenter.spRoadmapIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant={visiblePlannedReportCount > 0 ? "warning" : "success"} dot>
-            {visiblePlannedReportCount} planned
+            {formatMessage(t["reportCenter.nPlanned"], { n: visiblePlannedReportCount })}
           </Badge>
         </div>
 
@@ -564,8 +606,12 @@ export default function SetupPanel() {
                           >
                             <div className="min-w-0 space-y-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="text-sm font-medium">{report.name}</div>
-                                <Badge variant="outline">{report.category}</Badge>
+                                <div className="text-sm font-medium">
+                                  {ct("report", report.id, "name", report.name)}
+                                </div>
+                                <Badge variant="outline">
+                                  {ct("category", report.category, "label", report.category)}
+                                </Badge>
                                 {typeof report.roadmapPriority?.score === "number" ? (
                                   <Badge variant="warning">{report.roadmapPriority.score}</Badge>
                                 ) : null}
@@ -576,32 +622,33 @@ export default function SetupPanel() {
                                 ) : null}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {report.comparison} - {report.automation}
+                                {ct("report", report.id, "comparison", report.comparison)} -{" "}
+                                {ct("report", report.id, "automation", report.automation)}
                               </div>
                               {report.roadmapPriority?.rationale ? (
                                 <div className="text-xs text-muted-foreground">
-                                  {report.roadmapPriority.rationale}
+                                  {ct.cx(report.roadmapPriority.rationale)}
                                 </div>
                               ) : null}
                               {report.roadmapPrerequisites ? (
                                 <div className="grid gap-2 pt-2 text-xs text-muted-foreground">
                                   <div>
                                     <span className="font-medium text-foreground">
-                                      Data source:
+                                      {t["reportCenter.labelDataSource"]}
                                     </span>{" "}
-                                    {report.roadmapPrerequisites.dataSource}
+                                    {ct.cx(report.roadmapPrerequisites.dataSource)}
                                   </div>
                                   <div>
                                     <span className="font-medium text-foreground">
-                                      Workflow dependency:
+                                      {t["reportCenter.labelWorkflowDependency"]}
                                     </span>{" "}
-                                    {report.roadmapPrerequisites.workflowDependency}
+                                    {ct.cx(report.roadmapPrerequisites.workflowDependency)}
                                   </div>
                                   <div>
                                     <span className="font-medium text-foreground">
-                                      Automation rule:
+                                      {t["reportCenter.labelAutomationRule"]}
                                     </span>{" "}
-                                    {report.roadmapPrerequisites.automationRule}
+                                    {ct.cx(report.roadmapPrerequisites.automationRule)}
                                   </div>
                                 </div>
                               ) : null}
@@ -633,7 +680,7 @@ export default function SetupPanel() {
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(item.plannedAutomationHooks.length > 0
                         ? item.plannedAutomationHooks
-                        : ["No planned automation gaps"]
+                        : [t["reportCenter.noPlannedAutomation"]]
                       ).map((hook) => (
                         <Badge key={hook} variant="outline">
                           {hook}
@@ -649,7 +696,7 @@ export default function SetupPanel() {
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(item.plannedWorkflowDependencies.length > 0
                         ? item.plannedWorkflowDependencies
-                        : ["No planned workflow dependencies"]
+                        : [t["reportCenter.noPlannedDependencies"]]
                       ).map((dependency) => (
                         <Badge key={dependency} variant="outline">
                           {dependency}
@@ -682,7 +729,9 @@ export default function SetupPanel() {
               <T k="reportCenter.setupCoverageHint" />
             </p>
           </div>
-          <Badge variant="outline">{visibleWorkspaceSummaries.length} roles</Badge>
+          <Badge variant="outline">
+            {formatMessage(t["reportCenter.nRoles"], { n: visibleWorkspaceSummaries.length })}
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
@@ -702,7 +751,7 @@ export default function SetupPanel() {
                       </div>
                     </div>
                     <Badge variant={workspace.readyReports > 0 ? "success" : "neutral"} dot>
-                      {workspace.readyReports} ready
+                      {formatMessage(t["reportCenter.nReadyShort"], { n: workspace.readyReports })}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -804,15 +853,21 @@ export default function SetupPanel() {
                     </div>
                     <div className="mt-2 space-y-2 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Cadence:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelCadence"]}
+                        </span>{" "}
                         {workspace.packSchedule.cadence}
                       </div>
                       <div>
-                        <span className="font-medium text-foreground">Delivery:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelDelivery"]}
+                        </span>{" "}
                         {workspace.packSchedule.delivery}
                       </div>
                       <div>
-                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelAutomation"]}
+                        </span>{" "}
                         {workspace.packSchedule.automation}
                       </div>
                     </div>
@@ -835,12 +890,14 @@ export default function SetupPanel() {
                             <div className="min-w-0 space-y-1">
                               <div className="text-sm font-medium">{playbook.title}</div>
                               <div className="text-xs text-muted-foreground">
-                                Trigger: {playbook.trigger}
+                                {formatMessage(t["reportCenter.spTrigger"], {
+                                  value: playbook.trigger,
+                                })}
                               </div>
                               <div className="flex flex-wrap gap-1 pt-1">
                                 {linkedReports.slice(0, 3).map((report) => (
                                   <Badge key={report.id} variant="outline">
-                                    {report.name}
+                                    {ct("report", report.id, "name", report.name)}
                                   </Badge>
                                 ))}
                               </div>
@@ -904,7 +961,7 @@ export default function SetupPanel() {
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                       data-testid={`button-export-workspace-pack-sheets-${workspace.persona}`}
                     >
-                      <SiGooglesheets className="me-2 h-4 w-4" />
+                      <SiGooglesheets className="me-2 h-4 w-4" aria-hidden />
                       <T k="reportCenter.sheetsPack" />
                     </Button>
                   </div>

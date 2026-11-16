@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { reportSectionHref } from "@/lib/reportCatalog";
 import { FileText, Sparkles, ArrowRight, Clock, BarChart3 } from "lucide-react";
@@ -48,7 +48,10 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                       {workspace.navLabel}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {workspace.readyReports}/{workspace.totalReports} reports ready
+                      {formatMessage(t["dashboard.wsReportsReady"], {
+                        ready: workspace.readyReports,
+                        total: workspace.totalReports,
+                      })}
                     </div>
                   </div>
                   <Badge variant={workspace.isSelected ? "info" : "outline"}>
@@ -56,11 +59,16 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                   </Badge>
                 </div>
                 <div className="mt-2 text-caption text-muted-foreground">
-                  {workspace.automations.length} lanes · {workspace.automationStarterCount} starters
+                  {formatMessage(t["dashboard.wsLanesStarters"], {
+                    lanes: workspace.automations.length,
+                    starters: workspace.automationStarterCount,
+                  })}
                 </div>
                 <div className="mt-1 text-caption text-muted-foreground">
-                  {workspace.packTemplateCount} packs · {workspace.comparisonPresetCount}{" "}
-                  comparisons
+                  {formatMessage(t["dashboard.wsPacksComparisons"], {
+                    packs: workspace.packTemplateCount,
+                    comparisons: workspace.comparisonPresetCount,
+                  })}
                 </div>
               </button>
             ))}
@@ -74,8 +82,9 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
               <T k="pageLabels.roleSetupPath" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-              Follow the workspace path from first report review to scheduled automation for{" "}
-              {preferredReportWorkspace.navLabel}.
+              {formatMessage(t["dashboard.wsFollowPath"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "role-setup")}>
@@ -105,8 +114,14 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1">
-                  <Badge variant="outline">{step.reports.length} reports</Badge>
-                  <Badge variant="outline">{step.command}</Badge>
+                  <Badge variant="outline">
+                    {formatMessage(t["dashboard.nReports"], { n: step.reports.length })}
+                  </Badge>
+                  <Badge variant="outline">
+                    {t[
+                      `dashboard.cmdWord${step.command.charAt(0).toUpperCase()}${step.command.slice(1)}`
+                    ] ?? step.command}
+                  </Badge>
                 </div>
               </div>
             </Link>
@@ -240,7 +255,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                 <Link href={suite.packHref}>
                   <Button variant="outline" size="sm" className="w-full justify-start">
                     <FileText className="w-3.5 h-3.5" />
-                    Pack
+                    {t["reportCenter.labelPack"]}
                   </Button>
                 </Link>
                 <Link href={suite.automationHref}>

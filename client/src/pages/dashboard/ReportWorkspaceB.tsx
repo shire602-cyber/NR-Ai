@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { reportSectionHref } from "@/lib/reportCatalog";
 import { Sparkles, ArrowRight, Clock, BarChart3 } from "lucide-react";
@@ -7,6 +8,7 @@ import { T } from "@/components/layout/T";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
+  const { t } = useTranslation();
   const { preferredReportWorkspace, preferredReportQuickAccess, preferredReportSavedViews } = m;
   return (
     <>
@@ -18,8 +20,10 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
                 <T k="reportCenter.quickAccessReports" />
               </div>
               <Badge variant="info" dot>
-                {preferredReportQuickAccess.readyReports}/
-                {preferredReportQuickAccess.reports.length} ready
+                {formatMessage(t["dashboard.nReadyOfTotal"], {
+                  ready: preferredReportQuickAccess.readyReports,
+                  total: preferredReportQuickAccess.reports.length,
+                })}
               </Badge>
             </div>
             <h3 className="mt-2 text-base font-semibold text-foreground">
@@ -79,7 +83,7 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Link href={href}>
                     <Button size="sm" variant="outline" className="h-7 px-2">
-                      Open
+                      {t["pages.open"]}
                     </Button>
                   </Link>
                   <Link href={workflowHref}>

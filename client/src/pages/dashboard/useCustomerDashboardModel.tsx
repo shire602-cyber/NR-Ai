@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReportLaunchDeliveryPreview } from "@/components/reports/ReportLaunchPicker";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -72,6 +73,7 @@ import {
 
 export function useCustomerDashboardModel() {
   const { t, locale } = useTranslation();
+  const ct = useCatalogText();
   const { toast } = useToast();
   const { companyId: selectedCompanyId, company: selectedCompany } = useDefaultCompany();
   const [preferredReportPersona, setDashboardReportPersona] = useState<ReportPersona>(
@@ -715,16 +717,18 @@ export function useCustomerDashboardModel() {
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       const nextRunLabel = result?.subscription?.nextRunLabel;
       toast({
-        title: "Report pack queued",
-        description: nextRunLabel
-          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
-          : `${subscriptionTitle} queued from Dashboard.`,
+        title: ct.cx("Report pack queued"),
+        description: ct.cx(
+          nextRunLabel
+            ? `${subscriptionTitle} queued for ${nextRunLabel}.`
+            : `${subscriptionTitle} queued from Dashboard.`
+        ),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Could not queue report pack",
-        description: error?.message || "Failed to queue the report pack",
+        title: ct.cx("Could not queue report pack"),
+        description: error?.message || ct.cx("Failed to queue the report pack"),
         variant: "destructive",
       });
     },
@@ -742,14 +746,14 @@ export function useCustomerDashboardModel() {
       dashboardReportDeliveryRunsQuery.refetch();
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       toast({
-        title: "Report delivery retry queued",
-        description: `${subscriptionTitle} was requeued from Dashboard.`,
+        title: ct.cx("Report delivery retry queued"),
+        description: ct.cx(`${subscriptionTitle} was requeued from Dashboard.`),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Could not retry report delivery",
-        description: error?.message || "Failed to retry the report delivery",
+        title: ct.cx("Could not retry report delivery"),
+        description: error?.message || ct.cx("Failed to retry the report delivery"),
         variant: "destructive",
       });
     },
@@ -1249,7 +1253,7 @@ export function useCustomerDashboardModel() {
     if (primaryPlaybook) {
       return {
         title: primaryPlaybook.title,
-        detail: `${primaryPlaybook.trigger}. ${preferredReportWorkspace.packSchedule.automation}`,
+        detail: `${ct.cx(primaryPlaybook.trigger)}. ${ct.cx(preferredReportWorkspace.packSchedule.automation)}`,
         href: reportAutomationPlaybookHref(primaryPlaybook, preferredReportWorkspace.persona),
         cta: primaryPlaybook.cta,
         badge: "Ready lane",
@@ -1266,6 +1270,7 @@ export function useCustomerDashboardModel() {
       badgeVariant: "success",
     };
   }, [
+    ct,
     dashboardComparisonRows,
     dashboardPinnedAutomationAction,
     preferredReportPackReadiness.plannedReports,
@@ -1283,12 +1288,11 @@ export function useCustomerDashboardModel() {
         [subscriptionId]: true,
       }));
       toast({
-        title: "Handoff gaps acknowledged",
-        description: `${
-          subscription?.title ?? t["dashboard.modelThisReportDelivery"]
-        } has ${reportWorkflowGapFilterLabels[
-          handoff.priorityGap
-        ].toLowerCase()}. Click queue again to send with those gaps acknowledged.`,
+        title: t["dashboard.modelHandoffAck"],
+        description: formatMessage(t["dashboard.modelHandoffAckBody"], {
+          title: ct.cx(subscription?.title ?? t["dashboard.modelThisReportDelivery"]),
+          gap: ct.cx(reportWorkflowGapFilterLabels[handoff.priorityGap]).toLowerCase(),
+        }),
       });
       return;
     }
@@ -1326,6 +1330,73 @@ export function useCustomerDashboardModel() {
         }`;
   const animatedProfit = useCountUp(statsLoading ? 0 : profit);
 
+  // Render-side localisation of the catalog-derived report models (F14); the English source
+  // objects above stay as authored for hrefs, exports and API payloads.
+  const localizedReportModels = useMemo(
+    () =>
+      ct.deep({
+        preferredReportWorkspace,
+        dashboardReportWorkspaces,
+        dashboardRoleWorkdayPath,
+        preferredWorkspaceCatalogReports,
+        preferredWorkspaceReports,
+        preferredReportQuickAccess,
+        preferredReportSetupSteps,
+        preferredReportSavedViews,
+        preferredReportSuites,
+        preferredReportPackReadiness,
+        preferredReportPackTemplates,
+        preferredReportAutomationStarters,
+        preferredReportDecisionShortcuts,
+        preferredReportComparisonPresets,
+        preferredReportTriggerRules,
+        preferredReportDeliverySubscriptions,
+        dashboardComparisonRows,
+        dashboardLatestDeliveryRun,
+        dashboardLatestDeliveryRunSubscription,
+        dashboardDeliveryRunStatusSummary,
+        dashboardReportDeliveryHandoffBySubscriptionId,
+        dashboardReportDeliveryLauncherPreviewById,
+        preferredReportWorkflowGapLinks,
+        preferredReportWorkflowGapLabel,
+        dashboardPinnedAutomationAction,
+        preferredAutomationNextAction,
+        reportAutomationHealth,
+        preferredReportAutomationImpact,
+      }),
+    [
+      ct,
+      preferredReportWorkspace,
+      dashboardReportWorkspaces,
+      dashboardRoleWorkdayPath,
+      preferredWorkspaceCatalogReports,
+      preferredWorkspaceReports,
+      preferredReportQuickAccess,
+      preferredReportSetupSteps,
+      preferredReportSavedViews,
+      preferredReportSuites,
+      preferredReportPackReadiness,
+      preferredReportPackTemplates,
+      preferredReportAutomationStarters,
+      preferredReportDecisionShortcuts,
+      preferredReportComparisonPresets,
+      preferredReportTriggerRules,
+      preferredReportDeliverySubscriptions,
+      dashboardComparisonRows,
+      dashboardLatestDeliveryRun,
+      dashboardLatestDeliveryRunSubscription,
+      dashboardDeliveryRunStatusSummary,
+      dashboardReportDeliveryHandoffBySubscriptionId,
+      dashboardReportDeliveryLauncherPreviewById,
+      preferredReportWorkflowGapLinks,
+      preferredReportWorkflowGapLabel,
+      dashboardPinnedAutomationAction,
+      preferredAutomationNextAction,
+      reportAutomationHealth,
+      preferredReportAutomationImpact,
+    ]
+  );
+
   return {
     t,
     locale,
@@ -1341,7 +1412,6 @@ export function useCustomerDashboardModel() {
     toggleReportWorkspace,
     acknowledgedDashboardReportDeliveryHandoffGaps,
     setAcknowledgedDashboardReportDeliveryHandoffGaps,
-    preferredReportWorkspace,
     preferredReportWorkflowSearch,
     preferredReportWorkflowGapFilter,
     normalizedPreferredReportWorkflowSearch,
@@ -1349,23 +1419,8 @@ export function useCustomerDashboardModel() {
     dashboardReportActionContextById,
     reportAutomationPreferencesQuery,
     selectedReportPersonaSummary,
-    dashboardReportWorkspaces,
     selectDashboardReportPersona,
     clearDashboardReportWorkflowContext,
-    dashboardRoleWorkdayPath,
-    preferredWorkspaceCatalogReports,
-    preferredWorkspaceReports,
-    preferredReportQuickAccess,
-    preferredReportSetupSteps,
-    preferredReportSavedViews,
-    preferredReportSuites,
-    preferredReportPackReadiness,
-    preferredReportPackTemplates,
-    preferredReportAutomationStarters,
-    preferredReportDecisionShortcuts,
-    preferredReportComparisonPresets,
-    preferredReportTriggerRules,
-    preferredReportDeliverySubscriptions,
     dashboardPinnedDeliveryAutomationCommand,
     periodChoice,
     setPeriodChoice,
@@ -1384,22 +1439,10 @@ export function useCustomerDashboardModel() {
     queueDashboardReportDeliverySubscription,
     retryDashboardReportDeliveryRun,
     sparks,
-    dashboardComparisonRows,
-    reportAutomationHealth,
-    preferredReportAutomationImpact,
     dashboardPersonaDeliveryRuns,
-    dashboardLatestDeliveryRun,
     dashboardLatestFailedDeliveryRun,
-    dashboardLatestDeliveryRunSubscription,
-    dashboardReportDeliveryHandoffBySubscriptionId,
-    dashboardReportDeliveryLauncherPreviewById,
-    dashboardDeliveryRunStatusSummary,
-    preferredReportWorkflowGapLinks,
-    preferredReportWorkflowGapLabel,
     hasDashboardReportWorkflowContext,
     dashboardReportWorkflowContextHref,
-    dashboardPinnedAutomationAction,
-    preferredAutomationNextAction,
     queueDashboardReportDeliverySubscriptionWithHandoffGuard,
     preferredAutomationQueueRequiresHandoffAcknowledgement,
     monthLabel,
@@ -1407,6 +1450,7 @@ export function useCustomerDashboardModel() {
     margin,
     heroPeriodLabel,
     animatedProfit,
+    ...localizedReportModels,
   };
 }
 

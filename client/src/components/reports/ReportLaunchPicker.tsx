@@ -1016,7 +1016,7 @@ export function ReportLaunchPicker({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="font-medium text-foreground">
-                                {subscription.title}
+                                {ct("delivery", subscription.id, "title", subscription.title)}
                               </div>
                               {deliveryPreview?.status ? (
                                 <Badge
@@ -1024,13 +1024,13 @@ export function ReportLaunchPicker({
                                   dot
                                   className="shrink-0"
                                 >
-                                  {deliveryPreview.status}
+                                  {ct.cx(deliveryPreview.status)}
                                 </Badge>
                               ) : null}
                             </div>
                             {deliveryPreview?.summary ? (
                               <div className="mt-1 text-muted-foreground">
-                                {deliveryPreview.summary}
+                                {ct.cx(deliveryPreview.summary)}
                               </div>
                             ) : null}
                             <div
@@ -1041,33 +1041,35 @@ export function ReportLaunchPicker({
                                 <span className="font-medium text-foreground">
                                   {t["components.launchNextLabel"]}
                                 </span>{" "}
-                                {deliveryPreview?.nextRunLabel || subscription.cadence}
+                                {ct.cx(deliveryPreview?.nextRunLabel || subscription.cadence)}
                               </div>
                               <div>
                                 <span className="font-medium text-foreground">
                                   {t["components.launchChannelLabel"]}
                                 </span>{" "}
-                                {subscriptionChannel} · {subscriptionFormat}
+                                {ct.cx(subscriptionChannel)} · {ct.cx(subscriptionFormat)}
                               </div>
                               {deliveryPreview?.suiteTitles?.length ? (
                                 <div>
                                   <span className="font-medium text-foreground">
                                     {t["components.launchSuiteLabel"]}
                                   </span>{" "}
-                                  {deliveryPreview.suiteTitles.join(", ")}
+                                  {deliveryPreview.suiteTitles
+                                    .map((title) => ct.cx(title))
+                                    .join(", ")}
                                 </div>
                               ) : null}
                               <div>
                                 <span className="font-medium text-foreground">
                                   {t["components.launchToLabel"]}
                                 </span>{" "}
-                                {subscriptionRecipients}
+                                {ct.cx(subscriptionRecipients)}
                               </div>
                               <div>
                                 <span className="font-medium text-foreground">
                                   {t["components.launchGuardrailLabel"]}
                                 </span>{" "}
-                                {subscriptionGuardrail}
+                                {ct.cx(subscriptionGuardrail)}
                               </div>
                             </div>
                             {deliveryPreview?.handoffRows?.length ? (
@@ -1081,10 +1083,10 @@ export function ReportLaunchPicker({
                                 {deliveryPreview.handoffRows.slice(0, 3).map((row) => (
                                   <div key={row.label}>
                                     <span className="font-medium text-foreground">
-                                      {row.label}:
+                                      {ct.cx(row.label)}:
                                     </span>{" "}
-                                    {row.value}
-                                    {row.detail ? ` - ${row.detail}` : ""}
+                                    {ct.cx(row.value)}
+                                    {row.detail ? ` - ${ct.cx(row.detail)}` : ""}
                                   </div>
                                 ))}
                               </div>
@@ -1099,20 +1101,24 @@ export function ReportLaunchPicker({
                                     variant={deliveryPreview.latestRunStatusVariant ?? "info"}
                                     dot
                                   >
-                                    {deliveryPreview.latestRunStatus}
+                                    {t[
+                                      `reportCenter.run${deliveryPreview.latestRunStatus.charAt(0).toUpperCase()}${deliveryPreview.latestRunStatus.slice(1)}`
+                                    ] ?? deliveryPreview.latestRunStatus}
                                   </Badge>
                                   {deliveryPreview.latestRunLabel ? (
                                     <span className="font-medium text-foreground">
-                                      {deliveryPreview.latestRunLabel}
+                                      {ct.cx(deliveryPreview.latestRunLabel)}
                                     </span>
                                   ) : null}
                                 </div>
                                 {deliveryPreview.latestRunDetail ? (
-                                  <div className="mt-1">{deliveryPreview.latestRunDetail}</div>
+                                  <div className="mt-1">
+                                    {ct.cx(deliveryPreview.latestRunDetail)}
+                                  </div>
                                 ) : null}
                                 {deliveryPreview.latestRunError ? (
                                   <div className="mt-1 text-destructive">
-                                    {deliveryPreview.latestRunError}
+                                    {ct.cx(deliveryPreview.latestRunError)}
                                   </div>
                                 ) : null}
                                 {retryLatestDeliveryRunId && onRetryDeliveryRun ? (

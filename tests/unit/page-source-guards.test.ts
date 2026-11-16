@@ -172,38 +172,52 @@ describe("Mobile launch UX guards", () => {
     expect(source).toContain("reportPersonaWorkspaces.map");
     expect(source).toContain("workspace.navLabel");
     expect(source).toContain("workspace.automationNavLabel");
-    expect(source).toContain("description: workspace.focus");
-    expect(source).toContain("description: workspace.automationOutcome");
-    expect(source).toContain("description: workspace.packSchedule.automation");
+    expect(source).toContain(
+      'description: ct("workspace", workspace.persona, "focus", workspace.focus)'
+    );
+    expect(source).toContain('"automationOutcome"');
+    expect(source).toContain('"packSchedule.automation"');
     expect(source).toContain("reportPersonaWorkspaces.flatMap");
     expect(source).toContain("report.personas.includes(workspace.persona)");
     expect(source).toContain("reportPersonaHref(report, workspace.persona)");
     expect(source).toContain("key: `report-catalog-${workspace.persona}-${report.id}`");
-    expect(source).toContain("label: `${report.name} - ${workspace.title}`");
     expect(source).toContain(
-      "description: `${report.category} - ${report.comparison} - ${report.automation}`"
+      'label: `${ct("report", report.id, "name", report.name)} - ${wsTitle(workspace)}`'
+    );
+    expect(source).toContain(
+      'description: `${ct("category", report.category, "label", report.category)} - ${ct("report", report.id, "comparison", report.comparison)} - ${ct("report", report.id, "automation", report.automation)}`'
     );
     expect(source).toContain("key={link.key ?? link.href}");
     expect(source).toContain("reportWorkspaceHref(workspace)");
     expect(source).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(source).toContain("reportDecisionShortcuts.map");
     expect(source).toContain("reportDecisionShortcutHref(shortcut)");
-    expect(source).toContain("description: shortcut.answer");
+    expect(source).toContain('description: ct("shortcut", shortcut.id, "answer", shortcut.answer)');
     expect(source).toContain("reportAutomationTriggerRules.map");
     expect(source).toContain("reportAutomationTriggerRuleHref(rule)");
-    expect(source).toContain("description: `${rule.condition} - ${rule.actionLabel}`");
+    expect(source).toContain(
+      'description: `${ct("rule", rule.id, "condition", rule.condition)} - ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`'
+    );
     expect(source).toContain("reportDeliverySubscriptions.map");
     expect(source).toContain("reportDeliverySubscriptionHref(subscription)");
-    expect(source).toContain("description: `${subscription.cadence} - ${subscription.channel}`");
+    expect(source).toContain(
+      'description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} - ${ct("delivery", subscription.id, "channel", subscription.channel)}`'
+    );
     expect(source).toContain("reportAutomationStarters.map");
     expect(source).toContain("reportAutomationStarterHref(starter)");
-    expect(source).toContain("description: `${starter.audience} - ${starter.outcome}`");
+    expect(source).toContain(
+      'description: `${ct("starter", starter.id, "audience", starter.audience)} - ${ct("starter", starter.id, "outcome", starter.outcome)}`'
+    );
     expect(source).toContain("reportPackTemplates.map");
     expect(source).toContain("reportPackTemplateHref(template)");
-    expect(source).toContain("description: `${template.cadence} - ${template.delivery}`");
+    expect(source).toContain(
+      'description: `${ct("pack", template.id, "cadence", template.cadence)} - ${ct("pack", template.id, "delivery", template.delivery)}`'
+    );
     expect(source).toContain("reportComparisonPresets.map");
     expect(source).toContain("reportComparisonPresetHref(preset)");
-    expect(source).toContain("description: `${preset.baseline} - ${preset.automationTrigger}`");
+    expect(source).toContain(
+      'description: `${ct("preset", preset.id, "baseline", preset.baseline)} - ${ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}`'
+    );
     expect(source).toContain("mobile-nav-more-label");
     expect(source).toContain("mobile-nav-more-description");
     expect(source).toContain("aria-label={link.description");
