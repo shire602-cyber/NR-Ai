@@ -20,7 +20,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
       <div className="border-b border-border/60 p-5" data-testid="dashboard-report-role-switcher">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="pageLabels.reportingMode" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
@@ -37,7 +37,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                 className={`rounded-md border p-3 text-left transition-colors ${
                   workspace.isSelected
                     ? "border-accent bg-accent/5"
-                    : "border-border/70 hover:border-accent hover:bg-accent/5"
+                    : "border-border/70 hover:border-accent hover:bg-muted/60"
                 }`}
                 data-testid={`dashboard-report-mode-${workspace.persona}`}
               >
@@ -54,10 +54,10 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                     {workspace.readinessPercent}%
                   </Badge>
                 </div>
-                <div className="mt-2 text-[11px] text-muted-foreground">
+                <div className="mt-2 text-caption text-muted-foreground">
                   {workspace.automations.length} lanes · {workspace.automationStarterCount} starters
                 </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
+                <div className="mt-1 text-caption text-muted-foreground">
                   {workspace.packTemplateCount} packs · {workspace.comparisonPresetCount}{" "}
                   comparisons
                 </div>
@@ -69,7 +69,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
       <div className="border-b border-border/60 p-5" data-testid="dashboard-report-role-setup">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="pageLabels.roleSetupPath" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
@@ -89,11 +89,11 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
           {preferredReportSetupSteps.map((step, index) => (
             <Link key={step.id} href={step.href}>
               <div
-                className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-muted/60"
                 data-testid={`dashboard-report-role-setup-step-${step.id}`}
               >
                 <div className="flex items-start gap-2">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-[11px] font-semibold text-accent">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-caption font-semibold text-accent">
                     {index + 1}
                   </div>
                   <div className="min-w-0">
@@ -118,7 +118,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               {dashboardRoleWorkdayPath.eyebrow}
             </div>
             <h3 className="mt-2 text-base font-semibold text-foreground">
@@ -142,7 +142,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
             return (
               <Link key={action.id} href={action.href}>
                 <div
-                  className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                  className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-muted/60"
                   data-testid={`dashboard-report-role-workday-action-${action.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -164,7 +164,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
       <div className="border-b border-border/60 p-5" data-testid="dashboard-report-suites">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="reportCenter.reportSuites" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
@@ -207,7 +207,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                   <div className="text-muted-foreground">
                     <T k="reportCenter.triggerRules" />
                   </div>
-                  <div className="mt-1 font-mono font-semibold text-foreground">
+                  <div className="mt-1 font-semibold tabular-nums text-foreground">
                     {suite.triggerRules.length}
                   </div>
                 </div>

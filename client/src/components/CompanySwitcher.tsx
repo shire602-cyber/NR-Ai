@@ -11,6 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { switchActiveCompany } from "@/lib/activeCompany";
 import { useToast } from "@/hooks/use-toast";
@@ -27,7 +29,12 @@ import { useTranslation } from "@/lib/i18n";
  * so previously-loaded panels (invoices, receipts, dashboards) re-fetch
  * for the new tenant instead of showing stale data.
  */
-export function CompanySwitcher() {
+export function CompanySwitcher({
+  variant = "sidebar",
+}: {
+  /** sidebar: full-width outline button. compact: the mobile top-bar company name button. */
+  variant?: "sidebar" | "compact";
+} = {}) {
   const { toast } = useToast();
   const { t } = useTranslation();
   const [, navigate] = useLocation();
@@ -42,8 +49,21 @@ export function CompanySwitcher() {
 
   // Render when there's something to switch between, OR when an NRA-eligible
   // user is inside a client file and needs a way back to the firm workspace.
-  if (!active || !companies || (companies.length <= 1 && !(canReturnToFirm && isFirmContext))) {
-    return null;
+  const canSwitch = Boolean(
+    active && companies && (companies.length > 1 || (canReturnToFirm && isFirmContext))
+  );
+  if (!active || !companies) return null;
+  if (!canSwitch) {
+    // Nothing to switch between: the compact top bar still shows which company this is.
+    return variant === "compact" ? (
+      <span
+        className="min-w-0 truncate text-sm font-semibold text-foreground"
+        dir="auto"
+        data-testid="text-active-company"
+      >
+        {active.name}
+      </span>
+    ) : null;
   }
 
   const handleReturnToFirm = () => {
@@ -78,32 +98,63 @@ export function CompanySwitcher() {
     }
   };
 
+  const compact = variant === "compact";
+  const trigger = compact ? (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-9 min-w-0 max-w-full justify-start gap-1 px-1.5 text-sm font-semibold text-foreground"
+      aria-label={`${t["components.switcherSwitchCompany"]}: ${active.name}`}
+      data-testid="button-company-switcher-compact"
+    >
+      <span className="truncate" dir="auto">
+        {active.name}
+      </span>
+      <ChevronsUpDown className="!size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+    </Button>
+  ) : (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-10 w-full justify-between gap-2 px-2 text-small font-medium"
+      data-testid="button-company-switcher"
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <span
+          aria-hidden
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-caption font-semibold text-secondary-foreground"
+        >
+          {active.name.trim().charAt(0).toUpperCase() || <Building2 className="!size-3.5" />}
+        </span>
+        <span className="truncate" dir="auto">
+          {active.name}
+        </span>
+      </span>
+      <ChevronsUpDown className="!size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+    </Button>
+  );
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-10 w-full justify-between gap-2 px-2 text-[13px] font-medium"
-          data-testid="button-company-switcher"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              aria-hidden
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-[11px] font-semibold text-secondary-foreground"
-            >
-              {active.name.trim().charAt(0).toUpperCase() || <Building2 className="!size-3.5" />}
-            </span>
-            <span className="truncate" dir="auto">
-              {active.name}
-            </span>
-          </span>
-          <ChevronsUpDown className="!size-3.5 shrink-0 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
+      {compact ? (
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      ) : (
+        // The sidebar truncates long names, so the full name is one hover away (CTO 12).
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="start">
+            <span dir="auto">{active.name}</span>
+          </TooltipContent>
+        </Tooltip>
+      )}
       <DropdownMenuContent
         align="start"
-        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64"
+        className={cn(
+          "min-w-64",
+          compact ? "max-w-[calc(100vw-2rem)]" : "w-[var(--radix-dropdown-menu-trigger-width)]"
+        )}
       >
         {canReturnToFirm && (
           <>
@@ -132,7 +183,9 @@ export function CompanySwitcher() {
             className="flex items-center justify-between gap-2"
             data-testid={`company-switcher-item-${c.id}`}
           >
-            <span className="truncate">{c.name}</span>
+            <span className="truncate" dir="auto">
+              {c.name}
+            </span>
             {c.id === active.id && <Check className="w-3.5 h-3.5 text-primary" />}
           </DropdownMenuItem>
         ))}

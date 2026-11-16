@@ -175,5 +175,21 @@
   "components.switcherNowViewing": "تعرض الآن {name}.",
   "components.switcherUpdated": "تم تحديث الشركة النشطة.",
   "components.switcherFailedTitle": "تعذّر تبديل الشركة",
-  "components.switcherTryAgain": "يُرجى المحاولة مرة أخرى."
+  "components.switcherTryAgain": "يُرجى المحاولة مرة أخرى.",
+  "components.statusPartial": "مدفوعة جزئيًا",
+  "components.statusCancelled": "ملغاة",
+  "components.statusDueSoon": "مستحقة قريبًا",
+  "components.statusOverdueDays": "متأخر {days} يومًا",
+  "components.statusOverdueOneDay": "متأخر يومًا واحدًا",
+  "components.rowMoreActions": "إجراءات أخرى",
+  "components.statusChange": "تغيير الحالة: {status}",
+  "components.notificationEmailNotSetUpBody": "لم يتم إعداد البريد الإلكتروني بعد، لذلك لم يُرسل شيء. حزمة التقارير جاهزة للتنزيل.",
+  "components.notificationEmailNotSetUpLink": "إعداد البريد الإلكتروني",
+  "components.notificationDeliveryBlockedTitle": "تم إيقاف إرسال التقرير: {title}",
+  "components.notificationDeliverySentTitle": "تم إرسال التقرير: {title}",
+  "components.notificationDeliveryFailedTitle": "تعذّر إرسال التقرير: {title}",
+  "components.notificationDeliveryQueuedTitle": "التقرير في قائمة الإرسال: {title}",
+  "components.clearDates": "مسح التواريخ",
+  "components.launchViewAll": "عرض الكل في التقارير",
+  "components.launchReportActions": "إجراءات أخرى لـ {report}"
 }

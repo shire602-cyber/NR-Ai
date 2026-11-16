@@ -14,7 +14,7 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+              <div className="text-caption font-medium text-muted-foreground">
                 <T k="reportCenter.quickAccessReports" />
               </div>
               <Badge variant="info" dot>
@@ -62,7 +62,7 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
             ({ report, href, workflowHref, comparisonHref, deliveryHref }) => (
               <div
                 key={report.id}
-                className="rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                className="rounded-md border border-border/70 p-3 transition-colors hover:bg-muted/60"
                 data-testid={`dashboard-report-quick-access-${report.id}`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -127,7 +127,7 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
             className="mt-4 rounded-md border border-border/70 bg-muted/20 p-3"
             data-testid="dashboard-report-quick-access-more"
           >
-            <div className="text-[11px] font-semibold uppercase text-muted-foreground">
+            <div className="text-caption font-semibold uppercase text-muted-foreground">
               <T k="reportCenter.moreReports" />
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -145,7 +145,7 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
       <div className="border-b border-border/60 p-5" data-testid="dashboard-report-saved-views">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="reportCenter.savedReportViews" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">

@@ -1,246 +1,149 @@
-import { Fragment, type ReactNode } from "react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/format";
-import { Sparkles, ArrowRight } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDate } from "@/lib/format";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { Link } from "wouter";
-import { motion } from "framer-motion";
 import {
   BudgetVsActualWidget,
   CashMovement,
-  DrillThroughTiles,
   OverdueSummary,
   PeriodComparison,
-  TaxWidgets,
 } from "./PlanningWidgets";
 import { ScoreRing, FilingStatusBadge, FixItRow } from "./CompliancePulse";
 import { openAuditChecks } from "./auditChecks";
-import { SectionHeader } from "./Layout";
-import { T } from "@/components/layout/T";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
-/** Fill `{name}` placeholders in a translated sentence with rich nodes. */
-function fillTemplate(template: string, values: Record<string, ReactNode>): ReactNode[] {
-  return template.split(/(\{\w+\})/).map((part, i) => {
-    const match = /^\{(\w+)\}$/.exec(part);
-    return match && match[1] in values ? (
-      <Fragment key={i}>{values[match[1]]}</Fragment>
-    ) : (
-      <Fragment key={i}>{part}</Fragment>
-    );
-  });
-}
-
+/** Planning (D2b, CTO 4): comparison + budget, then cash + overdue. */
 export function DashboardPlanning({ m }: { m: DashboardModel }) {
-  const { t, locale, selectedCompanyId, stats, statsLoading, compliance, margin } = m;
+  const { locale, selectedCompanyId, stats, statsLoading } = m;
   return (
     <>
-      {/* ── Planning: comparison, drill-through, cash, overdue, tax, budget ── */}
-      <PeriodComparison stats={stats} loading={statsLoading} locale={locale} />
-      <DrillThroughTiles stats={stats} loading={statsLoading} locale={locale} />
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-        <CashMovement stats={stats} loading={statsLoading} locale={locale} />
-        <div className="space-y-4 lg:space-y-6">
-          <OverdueSummary stats={stats} loading={statsLoading} locale={locale} />
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+        <div className="xl:col-span-3">
+          <PeriodComparison stats={stats} loading={statsLoading} locale={locale} />
+        </div>
+        <div className="xl:col-span-2">
           <BudgetVsActualWidget companyId={selectedCompanyId} asOf={stats?.asOf} locale={locale} />
         </div>
       </section>
-      <TaxWidgets stats={stats} loading={statsLoading} locale={locale} />
-
-      {/* ── Compliance pulse ─────────────────────────────────────────────── */}
-      {compliance && (
-        <motion.section
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-        >
-          <SectionHeader
-            eyebrow={(t as any).complianceEyebrow ?? "Compliance"}
-            title={(t as any).filingPulse ?? "Filing pulse"}
-            action={
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="-me-2 text-accent hover:text-accent"
-              >
-                <Link href="/compliance-calendar">
-                  {(t as any).calendarLink ?? "Calendar"}
-                  <ArrowRight className="rtl:rotate-180" aria-hidden />
-                </Link>
-              </Button>
-            }
-          />
-          <Card className="overflow-hidden">
-            <div className="grid grid-cols-1 divide-y divide-border md:grid-cols-3 md:divide-y-0 md:divide-x md:rtl:divide-x-reverse">
-              {/* Audit readiness */}
-              <div className="p-5 flex items-center gap-4">
-                <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium text-foreground">
-                    {(t as any).auditReadiness ?? "Audit readiness"}
-                  </div>
-                  <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
-                    {(compliance.auditReadiness?.issues?.length ?? 0) === 0
-                      ? ((t as any).auditReadyBooks ?? "No open items — audit-ready books.")
-                      : `${compliance.auditReadiness.issues.length} ${(t as any).openItemsToResolve ?? "open items to resolve"}`}
-                  </div>
-                </div>
-              </div>
-
-              {/* VAT 201 */}
-              <div className="p-5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[13px] font-medium text-foreground">VAT 201</div>
-                  <FilingStatusBadge status={compliance.vatStatus?.filingStatus} t={t as any} />
-                </div>
-                <div className="mt-2 text-sm tabular-nums text-foreground">
-                  {compliance.vatStatus?.nextDue ? (
-                    <>
-                      {(t as any).nextDue ?? "Next due"}{" "}
-                      {formatDate(compliance.vatStatus.nextDue, locale)}
-                    </>
-                  ) : (
-                    ((t as any).noReturnFiledYet ?? "No return filed yet")
-                  )}
-                </div>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="-ms-3 mt-2 text-accent hover:text-accent"
-                >
-                  <Link href="/vat-filing">
-                    {(t as any).openVatWorkspace ?? "Open VAT workspace"}
-                    <ArrowRight className="rtl:rotate-180" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
-
-              {/* Corporate tax */}
-              <div className="p-5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[13px] font-medium text-foreground">
-                    {(t as any).corporateTaxLabel ?? "Corporate tax"}
-                  </div>
-                  <FilingStatusBadge status={compliance.corporateTaxStatus?.status} t={t as any} />
-                </div>
-                <div className="mt-2 text-sm tabular-nums text-foreground">
-                  {compliance.corporateTaxStatus?.nextDue ? (
-                    <>
-                      {(t as any).nextDue ?? "Next due"}{" "}
-                      {formatDate(compliance.corporateTaxStatus.nextDue, locale)}
-                    </>
-                  ) : (
-                    ((t as any).noReturnFiledYet ?? "No return filed yet")
-                  )}
-                </div>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="-ms-3 mt-2 text-accent hover:text-accent"
-                >
-                  <Link href="/corporate-tax">
-                    {(t as any).openTaxWorkpaper ?? "Open tax workpaper"}
-                    <ArrowRight className="rtl:rotate-180" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
-            </div>
-
-            {/* Fix-it list — each open item links to the screen that resolves it */}
-            {(compliance.auditReadiness?.issues?.length ?? 0) > 0 && (
-              <div className="border-t border-border">
-                <div className="eyebrow px-5 pb-1 pt-4">
-                  {(t as any).raiseYourScore ?? "Raise your score"}
-                </div>
-                <div className="divide-y divide-border pb-1.5">
-                  {openAuditChecks(compliance.auditReadiness).map((check) => (
-                    <FixItRow key={check.key} check={check} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </Card>
-        </motion.section>
-      )}
-
-      {/* ── AI Insights — refined ────────────────────────────────────────── */}
-      {!statsLoading &&
-        stats &&
-        (stats.revenue > 0 || stats.expenses > 0 || stats.outstanding > 0) && (
-          <motion.section
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.25 }}
-          >
-            <Card className="overflow-hidden">
-              <div className="flex items-start gap-4 p-5 md:p-6">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-accent dark:bg-brand-950">
-                  <Sparkles className="h-[18px] w-[18px]" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-h3">
-                      <T k="pageLabels.financialInsights" />
-                    </h3>
-                    <Badge variant="info" dot>
-                      <T k="pageLabels.realTime" />
-                    </Badge>
-                  </div>
-                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground text-pretty">
-                    {stats.revenue > 0 && stats.expenses > 0 && (
-                      <>
-                        {fillTemplate(t["dashboard.insightMargin"], {
-                          margin: (
-                            <span className="money font-semibold text-foreground">
-                              {margin.toFixed(1)}%
-                            </span>
-                          ),
-                        })}
-                        {stats.outstanding > 0 && (
-                          <>
-                            {" "}
-                            {fillTemplate(t["dashboard.insightOutstanding"], {
-                              amount: (
-                                <span className="money font-semibold text-foreground">
-                                  {formatCurrency(stats.outstanding, "AED", locale)}
-                                </span>
-                              ),
-                            })}
-                          </>
-                        )}
-                      </>
-                    )}
-                    {stats.revenue === 0 &&
-                      stats.expenses === 0 &&
-                      stats.outstanding > 0 &&
-                      fillTemplate(t["dashboard.insightOutstandingOnly"], {
-                        amount: (
-                          <span className="money font-semibold text-foreground">
-                            {formatCurrency(stats.outstanding, "AED", locale)}
-                          </span>
-                        ),
-                      })}
-                  </p>
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="ghost"
-                    className="-ms-3 mt-3 text-accent hover:text-accent"
-                  >
-                    <Link href="/ai?tab=cfo">
-                      <T k="pageLabels.talkToAICFO" />
-                      <ArrowRight className="rtl:rotate-180" aria-hidden />
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </motion.section>
-        )}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CashMovement stats={stats} loading={statsLoading} locale={locale} />
+        <OverdueSummary stats={stats} loading={statsLoading} locale={locale} />
+      </section>
     </>
+  );
+}
+
+function FilingRow({
+  label,
+  status,
+  nextDue,
+  href,
+  linkLabel,
+  m,
+}: {
+  label: string;
+  status: "up_to_date" | "due_soon" | "overdue" | undefined;
+  nextDue: string | undefined;
+  href: string;
+  linkLabel: string;
+  m: DashboardModel;
+}) {
+  const t = m.t as any;
+  return (
+    <div className="flex items-center justify-between gap-3 py-3">
+      <div className="min-w-0">
+        <Link
+          href={href}
+          className="text-small font-medium text-foreground hover:underline"
+          title={linkLabel}
+        >
+          {label}
+        </Link>
+        <div className="text-caption text-muted-foreground">
+          {nextDue
+            ? `${t.nextDue ?? "Next due"} ${formatDate(nextDue, m.locale)}`
+            : (t.noReturnFiledYet ?? "No return filed yet")}
+        </div>
+      </div>
+      <FilingStatusBadge status={status} t={t} />
+    </div>
+  );
+}
+
+/**
+ * Filing pulse (compact): audit readiness, VAT 201 and corporate tax as three rows,
+ * with the fix-it list one click away instead of always open (CTO 4).
+ */
+export function CompliancePanel({ m }: { m: DashboardModel }) {
+  const { t, compliance } = m;
+  if (!compliance) return null;
+  const tt = t as any;
+  const issues = compliance.auditReadiness?.issues?.length ?? 0;
+  const checks = issues > 0 ? openAuditChecks(compliance.auditReadiness) : [];
+  return (
+    <Card className="flex h-full flex-col" data-testid="dashboard-filing-pulse">
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+        <CardTitle>{tt.filingPulse ?? "Filing pulse"}</CardTitle>
+        <Link
+          href="/compliance-calendar"
+          className="inline-flex items-center gap-1 text-small font-medium text-accent hover:underline"
+        >
+          {tt.calendarLink ?? "Calendar"}
+          <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+        </Link>
+      </CardHeader>
+      <CardContent className="flex-1 pt-0">
+        <div className="flex items-center gap-4 pb-3">
+          <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
+          <div className="min-w-0">
+            <div className="text-small font-medium text-foreground">
+              {tt.auditReadiness ?? "Audit readiness"}
+            </div>
+            <div className="text-caption text-muted-foreground">
+              {issues === 0
+                ? (tt.auditReadyBooks ?? "No open items — audit-ready books.")
+                : `${issues} ${tt.openItemsToResolve ?? "open items to resolve"}`}
+            </div>
+          </div>
+        </div>
+        <div className="divide-hairline border-t border-border">
+          <FilingRow
+            m={m}
+            label="VAT 201"
+            status={compliance.vatStatus?.filingStatus}
+            nextDue={compliance.vatStatus?.nextDue}
+            href="/vat-filing"
+            linkLabel={tt.openVatWorkspace ?? "Open VAT workspace"}
+          />
+          <FilingRow
+            m={m}
+            label={tt.corporateTaxLabel ?? "Corporate tax"}
+            status={compliance.corporateTaxStatus?.status}
+            nextDue={compliance.corporateTaxStatus?.nextDue}
+            href="/corporate-tax"
+            linkLabel={tt.openTaxWorkpaper ?? "Open tax workpaper"}
+          />
+        </div>
+        {checks.length > 0 && (
+          <details className="group border-t border-border pt-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md py-1.5 text-small font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              <span>
+                {tt.raiseYourScore ?? "Raise your score"}{" "}
+                <span className="font-normal text-muted-foreground">({checks.length})</span>
+              </span>
+              <ChevronDown
+                className="h-4 w-4 text-muted-foreground transition-transform duration-base group-open:rotate-180"
+                aria-hidden
+              />
+            </summary>
+            <div className="-mx-5 divide-hairline">
+              {checks.map((check) => (
+                <FixItRow key={check.key} check={check} />
+              ))}
+            </div>
+          </details>
+        )}
+      </CardContent>
+    </Card>
   );
 }

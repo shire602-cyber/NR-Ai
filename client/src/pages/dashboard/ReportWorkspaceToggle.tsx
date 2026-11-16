@@ -1,4 +1,4 @@
-import { FileText, ChevronRight } from "lucide-react";
+import { FileText, ChevronDown } from "lucide-react";
 import { T } from "@/components/layout/T";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { DashboardModel } from "./useCustomerDashboardModel";
@@ -18,7 +18,7 @@ export function ReportWorkspaceToggle({ m }: { m: DashboardModel }) {
           data-testid="dashboard-report-workspace-toggle"
         >
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-foreground">
-            <FileText className="h-4 w-4 text-accent" strokeWidth={1.75} />
+            <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} aria-hidden />
             <T k="pageLabels.reportsWorkspace" />
             <span className="font-normal text-muted-foreground">
               {formatMessage(t["dashboard.reportsReadyCount"], {
@@ -27,8 +27,10 @@ export function ReportWorkspaceToggle({ m }: { m: DashboardModel }) {
               })}
             </span>
           </span>
-          <ChevronRight
-            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-base ${showReportWorkspace ? "rotate-90" : "rtl:rotate-180"}`}
+          {/* Expand chevron: down / up, never mirrored in RTL (CTO 12). */}
+          <ChevronDown
+            aria-hidden
+            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-base ${showReportWorkspace ? "rotate-180" : ""}`}
           />
         </button>
       </section>

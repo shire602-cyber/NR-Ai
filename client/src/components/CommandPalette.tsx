@@ -32,7 +32,8 @@ import {
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText, type CatalogTextKind } from "@/lib/reportCatalogText";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -86,6 +87,64 @@ interface PaletteItem {
   shortcut?: string;
   keywords?: string;
 }
+
+// D2b (CTO 11): palette groups and items read the nav / report catalogs in the UI locale.
+const PALETTE_GROUP_KEYS: Record<PaletteItem["group"], string> = {
+  Navigate: "shell.cmdGroupNavigate",
+  Reports: "shell.cmdGroupReports",
+  Create: "shell.cmdGroupCreate",
+  Settings: "shell.cmdGroupSettings",
+};
+
+const PALETTE_ITEM_KEYS: Record<string, string> = {
+  "nav-dashboard": "shell.cmdDashboard",
+  "nav-invoices": "shell.cmdInvoices",
+  "nav-receipts": "shell.cmdReceipts",
+  "nav-journal": "shell.cmdJournal",
+  "nav-contacts": "shell.cmdContacts",
+  "nav-reports": "shell.cmdReports",
+  "nav-bank": "shell.cmdBankReconciliation",
+  "nav-billpay": "shell.cmdBillPay",
+  "nav-payroll": "shell.cmdPayroll",
+  "nav-inventory": "shell.cmdInventory",
+  "nav-vat": "shell.cmdVatFiling",
+  "nav-corp-tax": "shell.cmdCorporateTax",
+  "nav-aichat": "shell.cmdAiChat",
+  "create-invoice": "shell.cmdNewInvoice",
+  "create-journal": "shell.cmdNewJournalEntry",
+  "create-receipt": "shell.cmdUploadReceipt",
+  "settings-company": "shell.cmdCompanyProfile",
+  "settings-team": "shell.cmdTeam",
+  "settings-integrations": "shell.cmdIntegrations",
+};
+
+/** Workspace-scoped section entries: id prefix -> label template key ({workspace}). */
+const PALETTE_SECTION_KEYS: Array<[string, string]> = [
+  ["report-role-setup-", "shell.cmdSectionRoleSetup"],
+  ["report-suites-", "shell.cmdSectionSuites"],
+  ["report-quick-access-", "shell.cmdSectionQuickAccess"],
+  ["report-saved-views-", "shell.cmdSectionSavedViews"],
+  ["report-automation-operations-", "shell.cmdSectionAutomationOperations"],
+  ["report-automation-impact-", "shell.cmdSectionAutomationImpact"],
+  ["report-decision-shortcuts-", "shell.cmdSectionDecisionShortcuts"],
+  ["report-trigger-rules-", "shell.cmdSectionTriggerRules"],
+  ["report-delivery-subscriptions-", "shell.cmdSectionDeliverySubscriptions"],
+  ["report-automation-starters-", "shell.cmdSectionAutomationStarters"],
+  ["report-recommendations-", "shell.cmdSectionRecommendations"],
+  ["report-pack-readiness-", "shell.cmdSectionPackReadiness"],
+  ["report-automation-rules-", "shell.cmdSectionAutomationRules"],
+  ["report-automation-command-center-", "shell.cmdSectionCommandCenter"],
+  ["report-pack-automation-", "shell.cmdSectionPackAutomation"],
+];
+
+/** Catalog entities with Arabic overlays: id prefix -> catalog kind + field. */
+const PALETTE_CATALOG_PREFIXES: Array<[string, CatalogTextKind, string]> = [
+  ["report-automation-starter-", "starter", "title"],
+  ["report-decision-shortcut-", "shortcut", "question"],
+  ["report-pack-template-", "pack", "title"],
+  ["report-comparison-preset-", "preset", "title"],
+  ["report-suite-", "suite", "title"],
+];
 
 interface CommandPaletteReportDeliveryRun {
   id: string;
@@ -193,7 +252,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const queryClient = useQueryClient();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const ct = useCatalogText();
   const [queueingDeliverySubscriptionId, setQueueingDeliverySubscriptionId] = useState<
     string | null
   >(null);
@@ -1196,6 +1256,64 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     return acc;
   }, {});
 
+  const workspaceTitleByPersona = new Map(
+    commandReportWorkspaces.map((workspace) => [
+      workspace.persona as string,
+      ct("workspace", workspace.persona, "title", workspace.title),
+    ])
+  );
+  const readyReportIds = new Set(commandReadyReports.map((report) => report.id as string));
+  const localizeItem = (item: PaletteItem): PaletteItem => {
+    const tt = t as Record<string, string>;
+    const key = PALETTE_ITEM_KEYS[item.id];
+    if (key && tt[key]) return { ...item, label: tt[key] };
+    if (item.id.startsWith("report-workspace-")) {
+      const persona = item.id.slice("report-workspace-".length);
+      return {
+        ...item,
+        label: workspaceTitleByPersona.get(persona) ?? item.label,
+        description: locale === "en" ? item.description : undefined,
+      };
+    }
+    for (const [prefix, sectionKey] of PALETTE_SECTION_KEYS) {
+      const persona = item.id.startsWith(prefix) ? item.id.slice(prefix.length) : null;
+      if (persona && workspaceTitleByPersona.has(persona) && tt[sectionKey]) {
+        return {
+          ...item,
+          label: formatMessage(tt[sectionKey], {
+            workspace: workspaceTitleByPersona.get(persona) ?? persona,
+          }),
+          description: locale === "en" ? item.description : undefined,
+        };
+      }
+    }
+    for (const [prefix, kind, field] of PALETTE_CATALOG_PREFIXES) {
+      if (item.id.startsWith(prefix)) {
+        const id = item.id.slice(prefix.length);
+        return {
+          ...item,
+          label: ct(kind, id, field, item.label),
+          description: locale === "en" ? item.description : undefined,
+        };
+      }
+    }
+    if (item.id.startsWith("report-")) {
+      const reportId = item.id.slice("report-".length);
+      if (readyReportIds.has(reportId)) {
+        const report = commandReadyReports.find((r) => r.id === reportId);
+        return {
+          ...item,
+          label: ct("report", reportId, "name", item.label),
+          description:
+            locale === "en" || !report
+              ? item.description
+              : ct("category", report.category, "label", report.category),
+        };
+      }
+    }
+    return item;
+  };
+
   const handleSelect = (item: PaletteItem) => {
     onOpenChange(false);
     if (item.href) navigate(item.href);
@@ -1213,8 +1331,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         {Object.entries(grouped).map(([group, groupItems], groupIdx) => (
           <div key={group}>
             {groupIdx > 0 && <CommandSeparator />}
-            <CommandGroup heading={group}>
-              {groupItems.map((item) => {
+            <CommandGroup
+              heading={
+                (t as Record<string, string>)[PALETTE_GROUP_KEYS[group as PaletteItem["group"]]] ??
+                group
+              }
+            >
+              {groupItems.map((sourceItem) => {
+                // Localized label/description; the English text stays searchable via keywords.
+                const item = {
+                  ...localizeItem(sourceItem),
+                  keywords: [sourceItem.label, sourceItem.description, sourceItem.keywords]
+                    .filter(Boolean)
+                    .join(" "),
+                };
                 const Icon = item.icon;
                 return (
                   <CommandItem

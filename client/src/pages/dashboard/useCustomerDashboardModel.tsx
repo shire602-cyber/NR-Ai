@@ -73,7 +73,7 @@ import {
 export function useCustomerDashboardModel() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: selectedCompanyId, company: selectedCompany } = useDefaultCompany();
   const [preferredReportPersona, setDashboardReportPersona] = useState<ReportPersona>(
     () => getPreferredReportPersona() ?? "owner"
   );
@@ -1333,6 +1333,7 @@ export function useCustomerDashboardModel() {
     locale,
     toast,
     selectedCompanyId,
+    companyName: selectedCompany?.name as string | undefined,
     preferredReportPersona,
     setDashboardReportPersona,
     reportWorkflowPreferenceRevision,

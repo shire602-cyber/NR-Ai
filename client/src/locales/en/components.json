@@ -175,5 +175,21 @@
   "components.switcherNowViewing": "Now viewing {name}.",
   "components.switcherUpdated": "Active company updated.",
   "components.switcherFailedTitle": "Could not switch company",
-  "components.switcherTryAgain": "Please try again."
+  "components.switcherTryAgain": "Please try again.",
+  "components.statusPartial": "Partly paid",
+  "components.statusCancelled": "Cancelled",
+  "components.statusDueSoon": "Due soon",
+  "components.statusOverdueDays": "{days} days overdue",
+  "components.statusOverdueOneDay": "1 day overdue",
+  "components.rowMoreActions": "More actions",
+  "components.statusChange": "Change status: {status}",
+  "components.notificationEmailNotSetUpBody": "Email isn't set up yet, so nothing was sent. The report pack is ready to download.",
+  "components.notificationEmailNotSetUpLink": "Set up email",
+  "components.notificationDeliveryBlockedTitle": "Report delivery blocked: {title}",
+  "components.notificationDeliverySentTitle": "Report delivery sent: {title}",
+  "components.notificationDeliveryFailedTitle": "Report delivery failed: {title}",
+  "components.notificationDeliveryQueuedTitle": "Report delivery queued: {title}",
+  "components.clearDates": "Clear dates",
+  "components.launchViewAll": "View all in Reports",
+  "components.launchReportActions": "More actions for {report}"
 }

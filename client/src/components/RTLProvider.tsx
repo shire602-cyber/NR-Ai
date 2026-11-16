@@ -132,10 +132,10 @@ function loadArabicFont(): void {
   fontLoaded = true;
 
   void Promise.all([
-    import("@fontsource/noto-sans-arabic/400.css"),
-    import("@fontsource/noto-sans-arabic/500.css"),
-    import("@fontsource/noto-sans-arabic/600.css"),
-    import("@fontsource/noto-sans-arabic/700.css"),
+    import("@fontsource/noto-sans-arabic/arabic-400.css"),
+    import("@fontsource/noto-sans-arabic/arabic-500.css"),
+    import("@fontsource/noto-sans-arabic/arabic-600.css"),
+    import("@fontsource/noto-sans-arabic/arabic-700.css"),
   ]).catch(() => {
     // Best-effort: if a chunk fails, the RTL font stack falls back to system
     // Arabic fonts (defined in rtl.css) — text stays readable.

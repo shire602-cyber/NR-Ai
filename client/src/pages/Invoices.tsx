@@ -26,7 +26,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -37,7 +36,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Table,
@@ -49,7 +47,8 @@ import {
 } from "@/components/ui/table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
+import { statusBadgeVariant, statusDotClass } from "@/components/ui/status-meta";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,8 +64,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { Money } from "@/components/ui/money";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -230,6 +232,7 @@ export default function Invoices() {
   const [paymentNotes, setPaymentNotes] = useState("");
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
+  const [invoicePendingDelete, setInvoicePendingDelete] = useState<Invoice | null>(null);
 
   // R13-21: dashboard drill-through links open /invoices?status=open|overdue|<status>; the
   // filter is applied server-side so the paginated list stays correct.
@@ -625,6 +628,130 @@ export default function Invoices() {
     (acc) => acc.type === "asset" && (acc.subType === "cash" || acc.subType === "bank")
   );
 
+  // Row actions (D2b, CTO issue 3): handlers shared by the visible buttons and the ... menu.
+  const downloadInvoicePdf = async (invoice: Invoice) => {
+    try {
+      // Fetch full invoice details with lines using apiRequest
+      const invoiceDetails = await apiRequest("GET", `/api/invoices/${invoice.id}`);
+
+      // Check if company is VAT registered
+      const isVATRegistered = !!(company?.trnVatNumber && company.trnVatNumber.length > 0);
+
+      await downloadInvoicePDF({
+        invoiceNumber: invoiceDetails.number,
+        date: invoiceDetails.date.toString(),
+        customerName: invoiceDetails.customerName,
+        customerTRN: invoiceDetails.customerTrn || undefined,
+        companyName: company?.name || "Your Company",
+        companyTRN: company?.trnVatNumber || undefined,
+        companyAddress: company?.businessAddress || undefined,
+        companyPhone: company?.contactPhone || undefined,
+        companyEmail: company?.contactEmail || undefined,
+        companyWebsite: company?.websiteUrl || undefined,
+        companyLogo: (await fetchCompanyLogoDataUrl(company)) ?? undefined,
+        lines: invoiceDetails.lines || [],
+        subtotal: invoiceDetails.subtotal,
+        vatAmount: invoiceDetails.vatAmount,
+        total: invoiceDetails.total,
+        currency: invoiceDetails.currency,
+        locale,
+        companyType: company?.companyType,
+        // Invoice customization settings
+        showLogo: company?.invoiceShowLogo !== undefined ? company.invoiceShowLogo : true,
+        showAddress: company?.invoiceShowAddress !== undefined ? company.invoiceShowAddress : true,
+        showPhone: company?.invoiceShowPhone !== undefined ? company.invoiceShowPhone : true,
+        showEmail: company?.invoiceShowEmail !== undefined ? company.invoiceShowEmail : true,
+        showWebsite: company?.invoiceShowWebsite === true ? true : undefined,
+        customTitle: company?.invoiceCustomTitle || undefined,
+        footerNote: company?.invoiceFooterNote || undefined,
+        isVATRegistered,
+      });
+
+      toast({
+        title: "PDF Downloaded",
+        description: "Invoice PDF has been downloaded successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to generate PDF",
+        variant: "destructive",
+      });
+    }
+  };
+  const generateEinvoice = async (invoice: Invoice) => {
+    try {
+      const result = await apiRequest("POST", `/api/invoices/${invoice.id}/generate-einvoice`);
+      toast({
+        title: "E-Invoice generated",
+        description: `UUID: ${result.uuid}`,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+      });
+    } catch (error: any) {
+      // W4-C: a 422 carries the full fix-it / validation list.
+      const issues =
+        error instanceof ApiError && error.status === 422
+          ? einvoiceIssuesFromError(error.body)
+          : [];
+      if (issues.length > 0) {
+        setEinvoiceIssues({ number: invoice.number, issues });
+        return;
+      }
+      toast({
+        title: "Error",
+        description: error?.message,
+        variant: "destructive",
+      });
+    }
+  };
+  const openAddPayment = (invoice: Invoice) => {
+    setInvoiceForPaymentDetail(invoice);
+    setPaymentAmount("");
+    setPaymentAccountForAdd("");
+    setPaymentMethod("bank");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setAddPaymentDialogOpen(true);
+  };
+  const openViewPayments = async (invoice: Invoice) => {
+    setInvoiceForPaymentDetail(invoice);
+    try {
+      const payments = await apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/invoices/${invoice.id}/payments`
+      );
+      setInvoicePayments(payments);
+      setViewPaymentsDialogOpen(true);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e?.message,
+      });
+    }
+  };
+  const openRecurring = (invoice: Invoice) => {
+    setInvoiceForRecurring(invoice);
+    setRecurringEnabled((invoice as any).isRecurring || false);
+    setRecurringInterval((invoice as any).recurringInterval || "monthly");
+    const next = (invoice as any).nextRecurringDate;
+    setRecurringNextDate(next ? new Date(next) : undefined);
+    const end = (invoice as any).recurringEndDate;
+    setRecurringEndDate(end ? new Date(end) : undefined);
+    setRecurringDialogOpen(true);
+  };
+  const requestCreditNote = (invoice: Invoice) => {
+    if (
+      window.confirm(
+        `Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`
+      )
+    ) {
+      createCreditNoteMutation.mutate(invoice.id);
+    }
+  };
+
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
       const fullInvoice = await apiRequest("GET", `/api/invoices/${invoice.id}`);
@@ -736,21 +863,6 @@ export default function Invoices() {
 
     setDialogOpen(false);
     resetForm();
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-success-subtle text-success ";
-      case "partial":
-        return "bg-success-subtle text-success ";
-      case "sent":
-        return "bg-info-subtle text-info ";
-      case "void":
-        return "bg-muted text-foreground ";
-      default:
-        return "bg-warning-subtle text-warning ";
-    }
   };
 
   // Calculate totals for preview
@@ -932,7 +1044,81 @@ export default function Invoices() {
         eyebrow="Sales"
         title={t.invoices}
         description={(t as any).manageInvoices ?? "Manage invoices and customize their appearance"}
+        actions={
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={isExporting}
+                  aria-label={t.export}
+                  className="px-2.5 sm:px-3"
+                  data-testid="button-export-invoices"
+                >
+                  <Download className="h-4 w-4" aria-hidden />
+                  <span className="hidden sm:inline">
+                    {isExporting ? t["invoices.exporting"] : t.export}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={handleExportExcel}
+                  data-testid="menu-export-invoices-excel"
+                >
+                  <FileSpreadsheet aria-hidden />
+                  <T k="reportCenter.exportToExcel" />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleExportGoogleSheets}
+                  data-testid="menu-export-invoices-sheets"
+                >
+                  <SiGooglesheets aria-hidden />
+                  <T k="reportCenter.exportToGoogleSheets" />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button onClick={() => setDialogOpen(true)} data-testid="button-create-invoice">
+              <Plus className="h-4 w-4" aria-hidden />
+              {t.newInvoice}
+            </Button>
+          </>
+        }
       />
+
+      <AlertDialog
+        open={invoicePendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setInvoicePendingDelete(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-delete-invoice">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {formatMessage(t["invoices.deleteTitle"], {
+                number: invoicePendingDelete?.number ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <T k="invoices.deleteBody" />
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (invoicePendingDelete) deleteMutation.mutate(invoicePendingDelete.id);
+                setInvoicePendingDelete(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <T k="hr.delete" />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={draftNudge !== null}
@@ -999,65 +1185,32 @@ export default function Invoices() {
         </TabsList>
 
         <TabsContent value="invoices" className="space-y-6 mt-0">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-4 flex-wrap">
-                  <span className="text-sm font-medium">
-                    {(t as any).filterByDate ?? "Filter by date:"}
-                  </span>
-                  <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-                  {statusFilter && (
-                    <Badge variant="secondary" className="gap-2" data-testid="badge-status-filter">
-                      {formatMessage(t["invoices.statusFilter"], {
-                        status: t[`invoices.statusFilter.${statusFilter}`] ?? statusFilter,
-                      })}
-                      <button
-                        type="button"
-                        onClick={clearStatusFilter}
-                        aria-label={t["invoices.clearStatusFilter"]}
-                        data-testid="button-clear-status-filter"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        disabled={isExporting}
-                        data-testid="button-export-invoices"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        {isExporting ? "Exporting..." : t.export}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={handleExportExcel}
-                        data-testid="menu-export-invoices-excel"
-                      >
-                        <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        <T k="reportCenter.exportToExcel" />
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={handleExportGoogleSheets}
-                        data-testid="menu-export-invoices-sheets"
-                      >
-                        <SiGooglesheets className="w-4 h-4 mr-2" />
-                        <T k="reportCenter.exportToGoogleSheets" />
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div
+            className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+            data-testid="invoices-filter-toolbar"
+          >
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <span className="sr-only">{(t as any).filterByDate ?? "Filter by date:"}</span>
+              <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+              {statusFilter && (
+                <Badge variant="secondary" className="gap-2" data-testid="badge-status-filter">
+                  {formatMessage(t["invoices.statusFilter"], {
+                    status: t[`invoices.statusFilter.${statusFilter}`] ?? statusFilter,
+                  })}
+                  <button
+                    type="button"
+                    onClick={clearStatusFilter}
+                    aria-label={t["invoices.clearStatusFilter"]}
+                    data-testid="button-clear-status-filter"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </Badge>
+              )}
+            </div>
+          </div>
 
-          <div className="flex items-center justify-end flex-wrap gap-4">
+          <div className="contents">
             <Dialog
               open={dialogOpen}
               onOpenChange={(open) => {
@@ -1077,12 +1230,6 @@ export default function Invoices() {
                 }
               }}
             >
-              <DialogTrigger asChild>
-                <Button data-testid="button-create-invoice">
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t.newInvoice}
-                </Button>
-              </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{editingInvoice ? "Edit Invoice" : t.newInvoice}</DialogTitle>
@@ -1560,34 +1707,51 @@ export default function Invoices() {
             <TableSkeleton rows={8} columns={6} />
           ) : (
             <>
-              <div className="grid gap-3 md:hidden" data-testid="mobile-invoice-list">
+              {/* Mobile row-cards (CTO 3/8): line 1 name + amount, line 2 number · date + status. */}
+              <Card
+                className="divide-hairline overflow-hidden md:hidden"
+                data-testid="mobile-invoice-list"
+              >
                 {(filteredInvoices || []).map((invoice) => (
-                  <Card key={invoice.id}>
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-mono text-sm font-semibold truncate">
-                            {invoice.number}
-                          </p>
-                          <p className="text-sm font-medium truncate">{invoice.customerName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(invoice.date, locale)}
-                          </p>
-                        </div>
-                        <p className="font-mono text-sm font-semibold shrink-0">
-                          {formatCurrency(invoice.total, invoice.currency, locale)}
+                  <div key={invoice.id} className="flex items-start gap-2 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p dir="auto" className="truncate text-sm font-medium text-foreground">
+                          {invoice.customerName}
                         </p>
+                        <Money
+                          amount={Number(invoice.total)}
+                          currency={invoice.currency}
+                          className="shrink-0 text-sm font-semibold text-foreground"
+                        />
                       </div>
-                      <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+                      <div className="mt-1 flex items-center justify-between gap-3">
+                        <p className="min-w-0 truncate text-caption text-muted-foreground">
+                          <span dir="ltr" className="[unicode-bidi:isolate]">
+                            {invoice.number}
+                          </span>
+                          {" · "}
+                          {formatDate(invoice.date, locale)}
+                        </p>
                         <Select
                           value={invoice.status}
                           onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
                           disabled={updateStatusMutation.isPending}
                         >
                           <SelectTrigger
-                            className={cn("h-9 border-0", getStatusBadgeColor(invoice.status))}
+                            className={cn(
+                              badgeVariants({ variant: statusBadgeVariant(invoice.status) }),
+                              "h-6 min-h-6 w-auto shrink-0 gap-1.5 py-0 ps-2 pe-1.5 shadow-none [&>svg]:size-3 [&>svg]:opacity-60"
+                            )}
+                            aria-label={formatMessage(t["components.statusChange"], {
+                              status: t[invoice.status as keyof typeof t] ?? invoice.status,
+                            })}
                             data-testid={`mobile-select-status-${invoice.id}`}
                           >
+                            <span
+                              aria-hidden
+                              className={statusDotClass(statusBadgeVariant(invoice.status))}
+                            />
                             <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
@@ -1600,31 +1764,42 @@ export default function Invoices() {
                             <SelectItem value="void">{t.void}</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditInvoice(invoice)}
-                          data-testid={`mobile-button-edit-invoice-${invoice.id}`}
-                        >
-                          <Edit className="w-4 h-4 mr-1" />
-                          {t.edit}
-                        </Button>
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="sm"
-                          data-testid={`mobile-button-proof-invoice-${invoice.id}`}
-                        >
-                          <Link href={evidenceSourceHref("invoice", invoice.id)}>
-                            <FileText className="w-4 h-4 mr-1" />
-                            <T k="reportCenter.proof" />
-                          </Link>
-                        </Button>
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                    <RowActions
+                      className="-me-2 -mt-1"
+                      menu={
+                        <>
+                          <DropdownMenuItem
+                            onSelect={() => handleEditInvoice(invoice)}
+                            data-testid={`mobile-button-edit-invoice-${invoice.id}`}
+                          >
+                            <Edit aria-hidden />
+                            {t.edit}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link
+                              href={evidenceSourceHref("invoice", invoice.id)}
+                              data-testid={`mobile-button-proof-invoice-${invoice.id}`}
+                            >
+                              <FileText aria-hidden />
+                              <T k="reportCenter.proof" />
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => void downloadInvoicePdf(invoice)}>
+                            <Download aria-hidden />
+                            {t["invoices.actionDownloadPdf"]}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => openAddPayment(invoice)}>
+                            <DollarSign aria-hidden />
+                            <T k="invoices.actionAddPayment" />
+                          </DropdownMenuItem>
+                        </>
+                      }
+                    />
+                  </div>
                 ))}
-              </div>
+              </Card>
               <Card className="hidden md:block">
                 <div
                   ref={tableScrollRef}
@@ -1639,14 +1814,16 @@ export default function Invoices() {
                   }
                 >
                   <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableHeader>
                       <TableRow>
-                        <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
-                        <TableHead className="font-semibold">{t.customerName}</TableHead>
-                        <TableHead className="font-semibold">{t.date}</TableHead>
-                        <TableHead className="font-semibold text-right">{t.total}</TableHead>
-                        <TableHead className="font-semibold text-center">{t.status}</TableHead>
-                        <TableHead className="font-semibold text-center">{t.actions}</TableHead>
+                        <TableHead>{t.invoiceNumber}</TableHead>
+                        <TableHead className="w-full">{t.customerName}</TableHead>
+                        <TableHead>{t.date}</TableHead>
+                        <TableHead data-numeric="">{t.total}</TableHead>
+                        <TableHead>{t.status}</TableHead>
+                        <TableHead className="text-end">
+                          <span className="sr-only">{t.actions}</span>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <VirtualizedInvoiceRows
@@ -1654,24 +1831,41 @@ export default function Invoices() {
                       scrollRef={tableScrollRef}
                       renderRow={(invoice) => (
                         <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-                          <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
-                          <TableCell>{invoice.customerName}</TableCell>
-                          <TableCell className="text-muted-foreground">
+                          <TableCell data-nowrap="" className="font-medium">
+                            <span dir="ltr" className="[unicode-bidi:isolate]">
+                              {invoice.number}
+                            </span>
+                          </TableCell>
+                          <TableCell data-truncate="" title={invoice.customerName}>
+                            <span dir="auto">{invoice.customerName}</span>
+                          </TableCell>
+                          <TableCell data-nowrap="" className="text-muted-foreground">
                             {formatDate(invoice.date, locale)}
                           </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(invoice.total, invoice.currency, locale)}
+                          <TableCell data-numeric="" className="font-medium">
+                            <Money amount={Number(invoice.total)} currency={invoice.currency} />
                           </TableCell>
-                          <TableCell className="text-center">
+                          <TableCell data-nowrap="">
                             <Select
                               value={invoice.status}
                               onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
                               disabled={updateStatusMutation.isPending}
                             >
+                              {/* Editable status: the StatusBadge is the dropdown trigger (CTO 3). */}
                               <SelectTrigger
-                                className={cn("w-32 border-0", getStatusBadgeColor(invoice.status))}
+                                className={cn(
+                                  badgeVariants({ variant: statusBadgeVariant(invoice.status) }),
+                                  "h-6 min-h-6 w-auto gap-1.5 py-0 ps-2 pe-1.5 shadow-none [&>svg]:size-3 [&>svg]:opacity-60"
+                                )}
+                                aria-label={formatMessage(t["components.statusChange"], {
+                                  status: t[invoice.status as keyof typeof t] ?? invoice.status,
+                                })}
                                 data-testid={`select-status-${invoice.id}`}
                               >
+                                <span
+                                  aria-hidden
+                                  className={statusDotClass(statusBadgeVariant(invoice.status))}
+                                />
                                 <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
                               </SelectTrigger>
                               <SelectContent>
@@ -1708,270 +1902,93 @@ export default function Invoices() {
                               </SelectContent>
                             </Select>
                             {(invoice as any).einvoiceStatus && (
-                              <Badge
-                                variant="outline"
-                                className="ml-1 text-[10px] px-1 py-0 bg-info-subtle text-info border-info/30"
-                              >
-                                E
+                              <Badge variant="info" className="ms-1.5 px-1.5">
+                                <T k="invoices.einvoiceShort" />
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                asChild
-                                variant="ghost"
-                                size="sm"
-                                data-testid={`button-proof-invoice-${invoice.id}`}
-                              >
-                                <Link href={evidenceSourceHref("invoice", invoice.id)}>
-                                  <FileText className="w-4 h-4 mr-2" />
-                                  <T k="reportCenter.proof" />
-                                </Link>
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditInvoice(invoice)}
-                                data-testid={`button-edit-invoice-${invoice.id}`}
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                {t.edit}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    // Fetch full invoice details with lines using apiRequest
-                                    const invoiceDetails = await apiRequest(
-                                      "GET",
-                                      `/api/invoices/${invoice.id}`
-                                    );
-
-                                    // Check if company is VAT registered
-                                    const isVATRegistered = !!(
-                                      company?.trnVatNumber && company.trnVatNumber.length > 0
-                                    );
-
-                                    await downloadInvoicePDF({
-                                      invoiceNumber: invoiceDetails.number,
-                                      date: invoiceDetails.date.toString(),
-                                      customerName: invoiceDetails.customerName,
-                                      customerTRN: invoiceDetails.customerTrn || undefined,
-                                      companyName: company?.name || "Your Company",
-                                      companyTRN: company?.trnVatNumber || undefined,
-                                      companyAddress: company?.businessAddress || undefined,
-                                      companyPhone: company?.contactPhone || undefined,
-                                      companyEmail: company?.contactEmail || undefined,
-                                      companyWebsite: company?.websiteUrl || undefined,
-                                      companyLogo:
-                                        (await fetchCompanyLogoDataUrl(company)) ?? undefined,
-                                      lines: invoiceDetails.lines || [],
-                                      subtotal: invoiceDetails.subtotal,
-                                      vatAmount: invoiceDetails.vatAmount,
-                                      total: invoiceDetails.total,
-                                      currency: invoiceDetails.currency,
-                                      locale,
-                                      companyType: company?.companyType,
-                                      // Invoice customization settings
-                                      showLogo:
-                                        company?.invoiceShowLogo !== undefined
-                                          ? company.invoiceShowLogo
-                                          : true,
-                                      showAddress:
-                                        company?.invoiceShowAddress !== undefined
-                                          ? company.invoiceShowAddress
-                                          : true,
-                                      showPhone:
-                                        company?.invoiceShowPhone !== undefined
-                                          ? company.invoiceShowPhone
-                                          : true,
-                                      showEmail:
-                                        company?.invoiceShowEmail !== undefined
-                                          ? company.invoiceShowEmail
-                                          : true,
-                                      showWebsite:
-                                        company?.invoiceShowWebsite === true ? true : undefined,
-                                      customTitle: company?.invoiceCustomTitle || undefined,
-                                      footerNote: company?.invoiceFooterNote || undefined,
-                                      isVATRegistered,
-                                    });
-
-                                    toast({
-                                      title: "PDF Downloaded",
-                                      description: "Invoice PDF has been downloaded successfully",
-                                    });
-                                  } catch (error: any) {
-                                    toast({
-                                      title: "Error",
-                                      description: error?.message || "Failed to generate PDF",
-                                      variant: "destructive",
-                                    });
-                                  }
-                                }}
-                                data-testid={`button-download-pdf-${invoice.id}`}
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                PDF
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    const result = await apiRequest(
-                                      "POST",
-                                      `/api/invoices/${invoice.id}/generate-einvoice`
-                                    );
-                                    toast({
-                                      title: "E-Invoice generated",
-                                      description: `UUID: ${result.uuid}`,
-                                    });
-                                    queryClient.invalidateQueries({
-                                      queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-                                    });
-                                  } catch (error: any) {
-                                    // W4-C: a 422 carries the full fix-it / validation list.
-                                    const issues =
-                                      error instanceof ApiError && error.status === 422
-                                        ? einvoiceIssuesFromError(error.body)
-                                        : [];
-                                    if (issues.length > 0) {
-                                      setEinvoiceIssues({ number: invoice.number, issues });
-                                      return;
-                                    }
-                                    toast({
-                                      title: "Error",
-                                      description: error?.message,
-                                      variant: "destructive",
-                                    });
-                                  }
-                                }}
-                                title="Generate E-Invoice"
-                                data-testid={`button-einvoice-${invoice.id}`}
-                              >
-                                <FileCode className="w-4 h-4 text-info" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="Add Payment"
-                                onClick={() => {
-                                  setInvoiceForPaymentDetail(invoice);
-                                  setPaymentAmount("");
-                                  setPaymentAccountForAdd("");
-                                  setPaymentMethod("bank");
-                                  setPaymentReference("");
-                                  setPaymentNotes("");
-                                  setAddPaymentDialogOpen(true);
-                                }}
-                                data-testid={`button-add-payment-${invoice.id}`}
-                              >
-                                <DollarSign className="w-4 h-4 text-success" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="View Payments"
-                                onClick={async () => {
-                                  setInvoiceForPaymentDetail(invoice);
-                                  try {
-                                    const payments = await apiRequest(
-                                      "GET",
-                                      `/api/companies/${selectedCompanyId}/invoices/${invoice.id}/payments`
-                                    );
-                                    setInvoicePayments(payments);
-                                    setViewPaymentsDialogOpen(true);
-                                  } catch (e: any) {
-                                    toast({
-                                      variant: "destructive",
-                                      title: "Error",
-                                      description: e?.message,
-                                    });
-                                  }
-                                }}
-                                data-testid={`button-view-payments-${invoice.id}`}
-                              >
-                                <FileText className="w-4 h-4 text-info" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="Set Recurring"
-                                onClick={() => {
-                                  setInvoiceForRecurring(invoice);
-                                  setRecurringEnabled((invoice as any).isRecurring || false);
-                                  setRecurringInterval(
-                                    (invoice as any).recurringInterval || "monthly"
-                                  );
-                                  const next = (invoice as any).nextRecurringDate;
-                                  setRecurringNextDate(next ? new Date(next) : undefined);
-                                  const end = (invoice as any).recurringEndDate;
-                                  setRecurringEndDate(end ? new Date(end) : undefined);
-                                  setRecurringDialogOpen(true);
-                                }}
-                                data-testid={`button-set-recurring-${invoice.id}`}
-                              >
-                                <RefreshCw
-                                  className={`w-4 h-4 ${(invoice as any).isRecurring ? "text-chart-5" : "text-muted-foreground"}`}
-                                />
-                              </Button>
-                              {(invoice as any).invoiceType !== "credit_note" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Create Credit Note"
-                                  onClick={() => {
-                                    if (
-                                      window.confirm(
-                                        `Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`
-                                      )
-                                    ) {
-                                      createCreditNoteMutation.mutate(invoice.id);
-                                    }
-                                  }}
-                                  disabled={createCreditNoteMutation.isPending}
-                                  data-testid={`button-credit-note-${invoice.id}`}
-                                >
-                                  <RotateCcw className="w-4 h-4 text-warning" />
-                                </Button>
-                              )}
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
+                          <TableCell data-nowrap="" className="w-px">
+                            <RowActions
+                              menuTestId={`button-invoice-actions-${invoice.id}`}
+                              menu={
+                                <>
+                                  <DropdownMenuItem asChild>
+                                    <Link
+                                      href={evidenceSourceHref("invoice", invoice.id)}
+                                      data-testid={`button-proof-invoice-${invoice.id}`}
+                                    >
+                                      <FileText aria-hidden />
+                                      <T k="reportCenter.proof" />
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => openAddPayment(invoice)}
+                                    data-testid={`button-add-payment-${invoice.id}`}
+                                  >
+                                    <DollarSign aria-hidden />
+                                    <T k="invoices.actionAddPayment" />
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => void openViewPayments(invoice)}
+                                    data-testid={`button-view-payments-${invoice.id}`}
+                                  >
+                                    <FileText aria-hidden />
+                                    <T k="invoices.actionViewPayments" />
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => void generateEinvoice(invoice)}
+                                    data-testid={`button-einvoice-${invoice.id}`}
+                                  >
+                                    <FileCode aria-hidden />
+                                    <T k="invoices.actionGenerateEinvoice" />
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => openRecurring(invoice)}
+                                    data-testid={`button-set-recurring-${invoice.id}`}
+                                  >
+                                    <RefreshCw aria-hidden />
+                                    {(invoice as any).isRecurring ? (
+                                      <T k="invoices.actionEditRecurring" />
+                                    ) : (
+                                      <T k="invoices.actionSetRecurring" />
+                                    )}
+                                  </DropdownMenuItem>
+                                  {(invoice as any).invoiceType !== "credit_note" && (
+                                    <DropdownMenuItem
+                                      onSelect={() => requestCreditNote(invoice)}
+                                      disabled={createCreditNoteMutation.isPending}
+                                      data-testid={`button-credit-note-${invoice.id}`}
+                                    >
+                                      <RotateCcw aria-hidden />
+                                      <T k="invoices.actionCreateCreditNote" />
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onSelect={() => setInvoicePendingDelete(invoice)}
                                     disabled={deleteMutation.isPending}
+                                    className="text-destructive focus:text-destructive"
                                     data-testid={`button-delete-invoice-${invoice.id}`}
                                   >
-                                    <Trash2 className="w-4 h-4 text-destructive" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>
-                                      Delete Invoice {invoice.number}?
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      This will permanently delete this invoice. This action cannot
-                                      be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>
-                                      <T k="pages.cancel" />
-                                    </AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => deleteMutation.mutate(invoice.id)}
-                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    >
-                                      <T k="hr.delete" />
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
+                                    <Trash2 aria-hidden />
+                                    <T k="invoices.actionDelete" />
+                                  </DropdownMenuItem>
+                                </>
+                              }
+                            >
+                              <RowActionButton
+                                icon={Edit}
+                                label={t.edit}
+                                onClick={() => handleEditInvoice(invoice)}
+                                data-testid={`button-edit-invoice-${invoice.id}`}
+                              />
+                              <RowActionButton
+                                icon={Download}
+                                label={t["invoices.actionDownloadPdf"]}
+                                onClick={() => void downloadInvoicePdf(invoice)}
+                                data-testid={`button-download-pdf-${invoice.id}`}
+                              />
+                            </RowActions>
                           </TableCell>
                         </TableRow>
                       )}

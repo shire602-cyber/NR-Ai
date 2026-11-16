@@ -1,32 +1,36 @@
-import { useId, useMemo } from "react";
-import { ResponsiveContainer, AreaChart, Area } from "recharts";
+import type { ReactNode } from "react";
+import { useMemo } from "react";
+import { ResponsiveContainer, LineChart, Line } from "recharts";
 import { StatCard } from "@/components/ui/stat-card";
+import { formatPercentDelta } from "@/lib/format-money";
 
 // ─── KPI tile (dashboard) ────────────────────────────────────────────────────
-// Built on the shared StatCard: neutral figure, a delta pill whose arrow
-// follows the sign of the change and whose colour says whether that change is
-// good news, and a full-width sparkline underneath.
+// Built on the shared StatCard: neutral figure (a <Money/>), a delta pill whose
+// arrow follows the sign of the change and whose colour says whether that change
+// is good news, an optional one-line hint, and a sparkline only when there is a
+// series (StatCard hides it below 640px, so no empty slot is reserved).
 
 export interface KpiCardProps {
   label: string;
-  value: string;
+  value: ReactNode;
   delta?: number;
   /** "up" = the change is good news, "down" = bad news (colour, not direction). */
   trend?: "up" | "down" | "flat";
   spark?: number[];
-  accent: "primary" | "success" | "warning" | "info";
+  /** Series colour role: brand for income-like figures, neutral for costs. */
+  accent?: "brand" | "neutral";
   isLoading?: boolean;
-  /** Kept for call-site compatibility; tiles no longer stagger in. */
-  delay?: number;
   /** Optional one-line context under the figure. */
-  hint?: string;
+  hint?: ReactNode;
+  href?: string;
+  testId?: string;
+  /** Accessible context for the delta, e.g. "vs prior period". */
+  deltaContext?: string;
 }
 
-const SPARK_COLOR: Record<KpiCardProps["accent"], string> = {
-  primary: "hsl(var(--chart-1))",
-  success: "hsl(var(--chart-1))",
-  warning: "hsl(var(--chart-3))",
-  info: "hsl(var(--chart-2))",
+const SPARK_COLOR: Record<NonNullable<KpiCardProps["accent"]>, string> = {
+  brand: "hsl(var(--chart-1))",
+  neutral: "hsl(var(--chart-neutral))",
 };
 
 export function KpiCard({
@@ -35,13 +39,16 @@ export function KpiCard({
   delta,
   trend,
   spark,
-  accent,
+  accent = "brand",
   isLoading,
   hint,
+  href,
+  testId,
+  deltaContext,
 }: KpiCardProps) {
-  const gradientId = useId().replace(/:/g, "");
   const sparkColor = SPARK_COLOR[accent];
   const sparkData = useMemo(() => (spark ?? []).map((v, i) => ({ i, v })), [spark]);
+  const hasSeries = sparkData.length > 1 && sparkData.some((d) => d.v !== 0);
 
   return (
     <StatCard
@@ -49,40 +56,34 @@ export function KpiCard({
       label={label}
       loading={isLoading}
       hint={hint}
-      value={
-        <span className="money" data-testid={`text-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-          {value}
-        </span>
-      }
+      href={href}
+      testId={testId}
+      value={value}
       delta={
-        delta === undefined
+        delta === undefined || !Number.isFinite(delta)
           ? undefined
           : {
-              label: `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%`,
+              label: formatPercentDelta(delta),
               direction: delta > 0 ? "up" : delta < 0 ? "down" : "flat",
               tone: trend === "up" ? "positive" : trend === "down" ? "negative" : "neutral",
+              context: deltaContext,
             }
       }
       visual={
-        sparkData.length > 1 ? (
-          <div className="-mx-1 hidden h-10 sm:block" dir="ltr" aria-hidden>
+        hasSeries ? (
+          <div className="-mx-1 h-9" dir="ltr" aria-hidden>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={sparkData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={sparkColor} stopOpacity={0.22} />
-                    <stop offset="100%" stopColor={sparkColor} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="monotone"
+              <LineChart data={sparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                {/* Linear segments: sparse monthly points never overshoot (CTO 6). */}
+                <Line
+                  type="linear"
                   dataKey="v"
                   stroke={sparkColor}
                   strokeWidth={1.5}
-                  fill={`url(#${gradientId})`}
+                  dot={false}
                   isAnimationActive={false}
                 />
-              </AreaChart>
+              </LineChart>
             </ResponsiveContainer>
           </div>
         ) : undefined

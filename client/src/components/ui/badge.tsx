@@ -3,6 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { STATUS_MAP, statusDotClass, type StatusKind } from "./status-meta";
 
 const badgeVariants = cva(
   "whitespace-nowrap inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 transition-colors" +
@@ -46,12 +47,7 @@ function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
         <span
           aria-hidden
           className={cn(
-            "inline-block h-1.5 w-1.5 rounded-full",
-            variant === "success" && "bg-success",
-            variant === "warning" && "bg-warning",
-            variant === "info" && "bg-info",
-            variant === "danger" && "bg-danger",
-            variant === "neutral" && "bg-muted-foreground",
+            statusDotClass(variant),
             (variant === "default" || !variant) && "bg-current"
           )}
         />
@@ -65,49 +61,32 @@ function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
  * StatusBadge — convenience wrapper that maps an invoice/payment status string
  * to the right semantic Badge variant. Use this in tables.
  */
-export type StatusKind =
-  | "paid"
-  | "sent"
-  | "draft"
-  | "void"
-  | "overdue"
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "posted"
-  | "active"
-  | "inactive"
-  | "submitted";
-
-// R18-02: `label` is a translation key (components namespace).
-const STATUS_MAP: Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> = {
-  paid: { variant: "success", label: "components.statusPaid" },
-  posted: { variant: "success", label: "components.statusPosted" },
-  approved: { variant: "success", label: "components.statusApproved" },
-  active: { variant: "success", label: "components.statusActive" },
-  sent: { variant: "info", label: "components.statusSent" },
-  submitted: { variant: "info", label: "components.statusSubmitted" },
-  pending: { variant: "warning", label: "components.statusPending" },
-  overdue: { variant: "danger", label: "components.statusOverdue" },
-  rejected: { variant: "danger", label: "components.statusRejected" },
-  void: { variant: "neutral", label: "components.statusVoid" },
-  draft: { variant: "neutral", label: "components.statusDraft" },
-  inactive: { variant: "neutral", label: "components.statusInactive" },
-};
-
 interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
   status: string;
-  /** Override the displayed label (default: capitalized status) */
+  /** Override the displayed label (default: the localized status label) */
   label?: React.ReactNode;
+  /** For overdue documents: "45 days overdue" / "متأخر 45 يومًا". */
+  overdueDays?: number;
 }
 
-function StatusBadge({ status, label, className, ...props }: StatusBadgeProps) {
+/**
+ * StatusBadge — the one document-status pill (CTO issue 7): localized label in sentence
+ * case, semantic colour, a dot. Unknown statuses render neutral with the raw value.
+ */
+function StatusBadge({ status, label, overdueDays, className, ...props }: StatusBadgeProps) {
   const { t } = useTranslation();
   const key = (status || "").toLowerCase() as StatusKind;
   const meta = STATUS_MAP[key];
+  const overdueLabel =
+    overdueDays !== undefined && overdueDays > 0
+      ? overdueDays === 1
+        ? t["components.statusOverdueOneDay"]
+        : (t["components.statusOverdueDays"] ?? "{days}").replace("{days}", String(overdueDays))
+      : undefined;
+  const variant = overdueLabel ? "danger" : (meta?.variant ?? "neutral");
   return (
-    <Badge variant={meta?.variant ?? "neutral"} dot className={cn("py-0.5", className)} {...props}>
-      {label ?? (meta ? (t[meta.label] ?? status) : status)}
+    <Badge variant={variant} dot className={cn("py-0.5", className)} {...props}>
+      {label ?? overdueLabel ?? (meta ? (t[meta.label] ?? status) : status)}
     </Badge>
   );
 }

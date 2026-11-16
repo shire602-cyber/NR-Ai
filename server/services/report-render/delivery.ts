@@ -25,6 +25,7 @@ import {
 } from "../../../shared/schema";
 import { activeProviderName, deliverOutboxMessage, enqueueEmail } from "../../outbox";
 import { isCapabilityLive } from "../../../shared/capabilities";
+import { EMAIL_NOT_SET_UP_RUN_ERROR } from "../../../shared/notification-copy";
 import { createLogger } from "../../config/logger";
 import { DomainError } from "../../errors";
 import { getObject, hasDurableObjectStore, putObject } from "../fileStorage";
@@ -277,12 +278,16 @@ async function executeRun(input: {
   }
 
   if (!activeProviderName()) {
+    // D2b: the run (shown in-app) carries user copy; the configuration detail stays in the log.
+    log.warn(
+      { companyId, runId },
+      "Report delivery blocked: no email provider configured (set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS)"
+    );
     return updateRun(companyId, runId, {
       ...base,
       status: "blocked",
       blockedReason: "no_email_provider",
-      errorMessage:
-        "No email provider is configured (RESEND_API_KEY or SMTP_HOST). The pack was rendered and can be downloaded; nothing was sent.",
+      errorMessage: EMAIL_NOT_SET_UP_RUN_ERROR,
     });
   }
 
@@ -363,7 +368,7 @@ async function executeRun(input: {
       outboxMessageIds: outboxIds,
       status: "blocked",
       blockedReason: "no_email_provider",
-      errorMessage: "No email provider is configured; nothing was sent.",
+      errorMessage: EMAIL_NOT_SET_UP_RUN_ERROR,
     });
   }
   const retryAt = await nextOutboxRetry(outboxIds);

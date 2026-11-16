@@ -1,6 +1,22 @@
 // Formatting utilities for currency and numbers
+import { formatMoneyText } from "./format-money";
+import { formatDate as formatDisplayDate } from "./format-date";
 
+/**
+ * Display money as a string. Delegates to the one money formatter (lib/format-money.ts):
+ * Latin digits, true minus, `AED 1,250.00` in English and `1,250.00 د.إ` in Arabic.
+ * Prefer `<Money>` / `<MoneyCell>` in JSX.
+ */
 export function formatCurrency(
+  amount: number,
+  currency: string = "AED",
+  locale: string = "en"
+): string {
+  return formatMoneyText(Number(amount) || 0, currency || "AED", locale);
+}
+
+/** Raw Intl currency string (no bidi isolates) for PDF/print renderers only. */
+export function formatCurrencyPlain(
   amount: number,
   currency: string = "AED",
   locale: string = "en"
@@ -25,7 +41,13 @@ export function formatNumber(num: number, locale: string = "en"): string {
   }).format(num);
 }
 
+/** Display date, `d MMM yyyy` (lib/format-date.ts). */
 export function formatDate(date: Date | string, locale: string = "en"): string {
+  return formatDisplayDate(date, locale);
+}
+
+/** Raw Intl date string for PDF/print renderers only. */
+export function formatDatePlain(date: Date | string, locale: string = "en"): string {
   const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
   const dateObj = typeof date === "string" ? new Date(date) : date;
 

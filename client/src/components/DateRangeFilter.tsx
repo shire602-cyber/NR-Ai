@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  format,
   startOfMonth,
   endOfMonth,
   subMonths,
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { CalendarIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format-date";
 import { useTranslation } from "@/lib/i18n";
 
 interface DateRange {
@@ -37,7 +37,7 @@ interface DateRangeFilterProps {
 }
 
 export function DateRangeFilter({ dateRange, onDateRangeChange, className }: DateRangeFilterProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const tt = t as Record<string, string>;
   const [preset, setPreset] = useState<string>("");
 
@@ -92,11 +92,17 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
     onDateRangeChange({ from: undefined, to: undefined });
   };
 
+  // D2b (CTO 8): one full-width row on mobile (preset 100%, date pair 50/50), inline from sm.
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+    <div
+      className={cn(
+        "mobile-keep-cols grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap",
+        className
+      )}
+    >
       <Select value={preset} onValueChange={handlePresetChange}>
         <SelectTrigger
-          className="w-[140px]"
+          className="col-span-2 h-9 w-full sm:w-[160px]"
           data-testid="select-date-preset"
           aria-label={tt.dateRange ?? "Date range"}
         >
@@ -116,15 +122,16 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
           <Button
             variant="outline"
             className={cn(
-              "justify-start text-left font-normal",
+              "h-9 min-w-0 justify-start px-3 text-start font-normal",
               !dateRange.from && "text-muted-foreground"
             )}
             data-testid="button-date-from"
+            aria-label={tt.startDate ?? "Start date"}
           >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {dateRange.from
-              ? format(dateRange.from, "MMM dd, yyyy")
-              : (tt.startDate ?? "Start date")}
+            <CalendarIcon className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">
+              {dateRange.from ? formatDate(dateRange.from, locale) : (tt.startDate ?? "Start date")}
+            </span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
@@ -140,20 +147,23 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
         </PopoverContent>
       </Popover>
 
-      <span className="text-muted-foreground">{tt.dateTo ?? "to"}</span>
+      <span className="hidden text-small text-muted-foreground sm:inline">{tt.dateTo ?? "to"}</span>
 
       <Popover>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             className={cn(
-              "justify-start text-left font-normal",
+              "h-9 min-w-0 justify-start px-3 text-start font-normal",
               !dateRange.to && "text-muted-foreground"
             )}
             data-testid="button-date-to"
+            aria-label={tt.endDate ?? "End date"}
           >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : (tt.endDate ?? "End date")}
+            <CalendarIcon className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">
+              {dateRange.to ? formatDate(dateRange.to, locale) : (tt.endDate ?? "End date")}
+            </span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
@@ -172,12 +182,13 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
       {(dateRange.from || dateRange.to) && (
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           onClick={clearDateRange}
-          className="h-8 w-8"
+          className="col-span-2 justify-self-end sm:col-span-1"
+          aria-label={tt["components.clearDates"]}
           data-testid="button-clear-dates"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden />
         </Button>
       )}
     </div>
