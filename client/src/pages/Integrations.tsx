@@ -253,7 +253,7 @@ export default function Integrations() {
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg">
-                    <T k="pagesAL.googleSheets" />
+                    <T k="pageLabels.googleSheets" />
                   </CardTitle>
                   <Badge
                     variant={integrationStatus?.googleSheets?.connected ? "default" : "secondary"}
@@ -473,7 +473,7 @@ export default function Integrations() {
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">
-                    <T k="pagesAL.quickBooks" />
+                    <T k="pageLabels.quickBooks" />
                   </CardTitle>
                   <Badge variant="outline">{t.comingSoon}</Badge>
                 </div>

@@ -375,7 +375,7 @@ export default function BackupRestore() {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">
-          <T k="pagesAL.pleaseSelectACompanyToManageBackups" />
+          <T k="pageLabels.pleaseSelectACompanyToManageBackups" />
         </p>
       </div>
     );
@@ -399,14 +399,14 @@ export default function BackupRestore() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.createNewBackup" />
+              <T k="pageLabels.createNewBackup" />
             </DialogTitle>
             <DialogDescription>{c.about1}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="backup-name">
-                <T k="pagesAL.backupName" />
+                <T k="pageLabels.backupName" />
               </Label>
               <Input
                 id="backup-name"
@@ -444,7 +444,7 @@ export default function BackupRestore() {
               {createBackupMutation.isPending ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  <T k="pagesAL.creating" />
+                  <T k="pageLabels.creating" />
                 </>
               ) : (
                 <>
@@ -462,7 +462,7 @@ export default function BackupRestore() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Database className="h-4 w-4" />
-              <T k="pagesAL.totalBackups" />
+              <T k="pageLabels.totalBackups" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -470,7 +470,7 @@ export default function BackupRestore() {
               {backups.length}
             </p>
             <p className="text-xs text-muted-foreground">
-              <T k="pagesAL.backupHistory" />
+              <T k="pageLabels.backupHistory" />
             </p>
           </CardContent>
         </Card>
@@ -478,7 +478,7 @@ export default function BackupRestore() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <HardDrive className="h-4 w-4" />
-              <T k="pagesAL.storageUsed" />
+              <T k="pageLabels.storageUsed" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -486,7 +486,7 @@ export default function BackupRestore() {
               {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
             </p>
             <p className="text-xs text-muted-foreground">
-              <T k="pagesAL.totalBackupSize" />
+              <T k="pageLabels.totalBackupSize" />
             </p>
           </CardContent>
         </Card>
@@ -494,7 +494,7 @@ export default function BackupRestore() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Clock className="h-4 w-4" />
-              <T k="pagesAL.lastBackup" />
+              <T k="pageLabels.lastBackup" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -515,10 +515,10 @@ export default function BackupRestore() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <T k="pagesAL.backupHistory2" />
+            <T k="pageLabels.backupHistory2" />
           </CardTitle>
           <CardDescription>
-            <T k="pagesAL.viewAndManageYourFinancialDataBackups" />
+            <T k="pageLabels.viewAndManageYourFinancialDataBackups" />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -530,17 +530,17 @@ export default function BackupRestore() {
             <div className="text-center py-8">
               <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium mb-2">
-                <T k="pagesAL.noBackupsYet" />
+                <T k="pageLabels.noBackupsYet" />
               </h3>
               <p className="text-muted-foreground mb-4">
-                <T k="pagesAL.createYourFirstBackupToProtectYourFinancialRecords" />
+                <T k="pageLabels.createYourFirstBackupToProtectYourFinancialRecords" />
               </p>
               <Button
                 onClick={() => setIsCreateDialogOpen(true)}
                 data-testid="button-create-first-backup"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                <T k="pagesAL.createFirstBackup" />
+                <T k="pageLabels.createFirstBackup" />
               </Button>
             </div>
           ) : (
@@ -553,7 +553,7 @@ export default function BackupRestore() {
                     <T k="pages.status" />
                   </TableHead>
                   <TableHead>
-                    <T k="pagesAL.records" />
+                    <T k="pageLabels.records" />
                   </TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead>
@@ -639,7 +639,7 @@ export default function BackupRestore() {
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>
-                                <T k="pagesAL.deleteBackup" />
+                                <T k="pageLabels.deleteBackup" />
                               </AlertDialogTitle>
                               <AlertDialogDescription>
                                 This will permanently delete "{backup.name}". This action cannot be

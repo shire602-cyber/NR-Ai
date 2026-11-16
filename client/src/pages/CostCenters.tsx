@@ -372,7 +372,7 @@ export default function CostCenters() {
             </Button>
             <Button onClick={handleOpenCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
-              <T k="pagesAL.addCostCenter" />
+              <T k="pageLabels.addCostCenter" />
             </Button>
           </>
         }
@@ -382,7 +382,7 @@ export default function CostCenters() {
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle>
-              <T k="pagesAL.costCenterPAndL" />
+              <T k="pageLabels.costCenterPAndL" />
             </CardTitle>
             <CardDescription>
               Period: {profitabilityPeriodLabel}. Source basis: posted journal lines allocated to
@@ -390,7 +390,7 @@ export default function CostCenters() {
             </CardDescription>
           </div>
           <Badge variant="secondary" className="w-fit">
-            <T k="pagesAL.accrualBasis" />
+            <T k="pageLabels.accrualBasis" />
           </Badge>
         </CardHeader>
         <CardContent>
@@ -404,7 +404,7 @@ export default function CostCenters() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <T k="pagesAL.activeCenters" />
+                    <T k="pageLabels.activeCenters" />
                   </p>
                   <p className="mt-1 text-2xl font-semibold">
                     {profitabilityTotals.activeCostCenterCount}/
@@ -429,7 +429,7 @@ export default function CostCenters() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <T k="pagesAL.netIncome" />
+                    <T k="pageLabels.netIncome" />
                   </p>
                   <p
                     className={`mt-1 text-2xl font-semibold ${
@@ -447,7 +447,7 @@ export default function CostCenters() {
                     <TableRow>
                       <TableHead>Code</TableHead>
                       <TableHead>
-                        <T k="pagesAL.costCenter" />
+                        <T k="pageLabels.costCenter" />
                       </TableHead>
                       <TableHead>
                         <T k="pages.status" />
@@ -469,7 +469,7 @@ export default function CostCenters() {
                     {profitabilityRows.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                          <T k="pagesAL.noCostCenterAllocationsHaveBeenPostedYet" />
+                          <T k="pageLabels.noCostCenterAllocationsHaveBeenPostedYet" />
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -534,7 +534,7 @@ export default function CostCenters() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              <T k="pagesAL.totalCostCenters" />
+              <T k="pageLabels.totalCostCenters" />
             </CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -739,7 +739,7 @@ export default function CostCenters() {
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">
-                <T k="pagesAL.noReportDataAvailableForThisCostCenter" />
+                <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
               </p>
             )}
           </CardContent>
@@ -853,7 +853,7 @@ export default function CostCenters() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      <T k="pagesAL.parentCostCenter" />
+                      <T k="pageLabels.parentCostCenter" />
                     </FormLabel>
                     <Select
                       onValueChange={(value) => field.onChange(value === "_none" ? null : value)}
@@ -888,7 +888,7 @@ export default function CostCenters() {
                         <T k="pages.active" />
                       </FormLabel>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.inactiveCostCentersCannotReceiveNewTransactions" />
+                        <T k="pageLabels.inactiveCostCentersCannotReceiveNewTransactions" />
                       </p>
                     </div>
                     <FormControl>

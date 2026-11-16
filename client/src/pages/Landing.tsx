@@ -415,7 +415,7 @@ export default function Landing() {
               transition={{ duration: 0.5, delay: 0.1 }}
             >
               <span className="font-bold text-xl leading-none tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-                <T k="pagesAL.muhasibAi" />
+                <T k="pageLabels.muhasibAi" />
               </span>
               <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
                 {locale === "en" ? "by NR Accounting Services" : "من NR Accounting Services"}
@@ -1241,7 +1241,7 @@ export default function Landing() {
                 </div>
                 <div>
                   <div className="font-bold text-xl">
-                    <T k="pagesAL.muhasibAi" />
+                    <T k="pageLabels.muhasibAi" />
                   </div>
                   <div className="text-xs text-muted-foreground">by NR Accounting Services</div>
                 </div>

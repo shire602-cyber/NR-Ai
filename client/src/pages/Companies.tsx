@@ -227,10 +227,10 @@ export default function Companies() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Building2 className="w-16 h-16 text-muted-foreground/50 mb-4" />
             <h3 className="text-lg font-medium mb-2">
-              <T k="pagesAL.noCompaniesYet" />
+              <T k="pageLabels.noCompaniesYet" />
             </h3>
             <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">
-              <T k="pagesAL.createYourFirstCompanyToGetStartedWithBookkeeping" />
+              <T k="pageLabels.createYourFirstCompanyToGetStartedWithBookkeeping" />
             </p>
             <Button onClick={() => setDialogOpen(true)} data-testid="button-create-first-company">
               <Plus className="w-4 h-4 mr-2" />

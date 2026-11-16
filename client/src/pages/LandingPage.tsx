@@ -234,7 +234,7 @@ export default function LandingPage() {
                   <span className="text-white font-bold text-sm">م</span>
                 </div>
                 <span className="font-bold text-lg tracking-tight">
-                  <T k="pagesAL.muhasibAi" />
+                  <T k="pageLabels.muhasibAi" />
                 </span>
               </div>
             </Link>
@@ -393,12 +393,12 @@ export default function LandingPage() {
 
           <ScrollReveal delay={0.1}>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
-              <T k="pagesAL.aIBookkeeping" />
+              <T k="pageLabels.aIBookkeeping" />
               <span className="text-primary">
-                <T k="pagesAL.builtFor" />
+                <T k="pageLabels.builtFor" />
               </span>
               <br className="hidden sm:block" />
-              <T k="pagesAL.uAEBusinesses" />
+              <T k="pageLabels.uAEBusinesses" />
             </h1>
           </ScrollReveal>
 
@@ -458,10 +458,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-14">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              <T k="pagesAL.powerfulFeatures" />
+              <T k="pageLabels.powerfulFeatures" />
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              <T k="pagesAL.everythingYouNeedToRunYourFinances" />
+              <T k="pageLabels.everythingYouNeedToRunYourFinances" />
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
               Built from the ground up for UAE businesses — VAT-ready, bilingual, and AI-assisted.
@@ -502,13 +502,13 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-14">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              <T k="pagesAL.simpleSetup" />
+              <T k="pageLabels.simpleSetup" />
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              <T k="pagesAL.upAndRunningInMinutes" />
+              <T k="pageLabels.upAndRunningInMinutes" />
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              <T k="pagesAL.threeStepsFromSignUpToAutomatedBookkeeping" />
+              <T k="pageLabels.threeStepsFromSignUpToAutomatedBookkeeping" />
             </p>
           </ScrollReveal>
 
@@ -548,7 +548,7 @@ export default function LandingPage() {
                 size="lg"
                 className="bg-primary hover:bg-primary/90 px-10 shadow-lg shadow-primary/25"
               >
-                <T k="pagesAL.getStartedFree" />
+                <T k="pageLabels.getStartedFree" />
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>
@@ -561,13 +561,13 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-14">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              <T k="pagesAL.simplePricing" />
+              <T k="pageLabels.simplePricing" />
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              <T k="pagesAL.startFreeScaleAsYouGrow" />
+              <T k="pageLabels.startFreeScaleAsYouGrow" />
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              <T k="pagesAL.noHiddenFeesNoSetupCostsCancelAnytime" />
+              <T k="pageLabels.noHiddenFeesNoSetupCostsCancelAnytime" />
             </p>
           </ScrollReveal>
 
@@ -585,7 +585,7 @@ export default function LandingPage() {
                     {plan.popular && (
                       <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
                         <Badge className="bg-primary text-white px-4 py-1 text-xs font-semibold shadow-lg">
-                          <T k="pagesAL.mostPopular" />
+                          <T k="pageLabels.mostPopular" />
                         </Badge>
                       </div>
                     )}
@@ -658,10 +658,10 @@ export default function LandingPage() {
                   variant="outline"
                   className="mb-3 border-primary/30 text-primary bg-primary/5"
                 >
-                  <T k="pagesAL.trustedPartner" />
+                  <T k="pageLabels.trustedPartner" />
                 </Badge>
                 <h2 className="text-2xl lg:text-3xl font-bold mb-3">
-                  <T k="pagesAL.poweredByNajmaAlRaedaAccounting" />
+                  <T k="pageLabels.poweredByNajmaAlRaedaAccounting" />
                 </h2>
                 <p className="text-muted-foreground leading-relaxed max-w-2xl">
                   Muhasib.ai is the official digital platform of{" "}
@@ -696,7 +696,7 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <ScrollReveal>
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-              <T k="pagesAL.readyToAutomateYourBookkeeping" />
+              <T k="pageLabels.readyToAutomateYourBookkeeping" />
             </h2>
             <p className="text-primary-foreground/80 text-lg mb-8">
               Start with guided onboarding, sample data, and VAT-ready workflows for UAE SMEs.
@@ -734,10 +734,10 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-12">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              <T k="pagesAL.getInTouch" />
+              <T k="pageLabels.getInTouch" />
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              <T k="pagesAL.talkToOurTeam" />
+              <T k="pageLabels.talkToOurTeam" />
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
               Questions about VAT, onboarding, or pricing? Our UAE-based team is here to help.
@@ -789,13 +789,13 @@ export default function LandingPage() {
                   <MapPin className="w-5 h-5 text-primary" />
                 </div>
                 <h3 className="font-semibold text-base mb-1">
-                  <T k="pagesAL.office" />
+                  <T k="pageLabels.office" />
                 </h3>
                 <p className="text-sm text-foreground">
-                  <T k="pagesAL.dubaiUAE" />
+                  <T k="pageLabels.dubaiUAE" />
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  <T k="pagesAL.najmaAlRaedaAccountingLLC" />
+                  <T k="pageLabels.najmaAlRaedaAccountingLLC" />
                 </p>
               </CardContent>
             </Card>
@@ -814,7 +814,7 @@ export default function LandingPage() {
                   <span className="text-white font-bold text-xs">م</span>
                 </div>
                 <span className="font-bold text-base">
-                  <T k="pagesAL.muhasibAi" />
+                  <T k="pageLabels.muhasibAi" />
                 </span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
@@ -845,7 +845,7 @@ export default function LandingPage() {
                 </li>
                 <li>
                   <Link href="/register" className="hover:text-foreground transition-colors">
-                    <T k="pagesAL.signUp" />
+                    <T k="pageLabels.signUp" />
                   </Link>
                 </li>
               </ul>
@@ -854,7 +854,7 @@ export default function LandingPage() {
             {/* Compliance */}
             <div>
               <h4 className="font-semibold text-sm mb-3">
-                <T k="pagesAL.compliance" />
+                <T k="pageLabels.compliance" />
               </h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>VAT 201 Workpaper Exports</li>
@@ -862,11 +862,11 @@ export default function LandingPage() {
                 <li>E-Invoicing (Phase 1 & 2)</li>
                 <li>WPS Payroll (SIF)</li>
                 <li>
-                  <T k="pagesAL.iFRSReadyReports" />
+                  <T k="pageLabels.iFRSReadyReports" />
                 </li>
               </ul>
               <h4 className="font-semibold text-sm mt-5 mb-3">
-                <T k="pagesAL.legal" />
+                <T k="pageLabels.legal" />
               </h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
@@ -890,13 +890,13 @@ export default function LandingPage() {
             {/* Contact */}
             <div>
               <h4 className="font-semibold text-sm mb-3">
-                <T k="pagesAL.contactNRA" />
+                <T k="pageLabels.contactNRA" />
               </h4>
               <ul className="space-y-2.5 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary" />
                   <span>
-                    <T k="pagesAL.dubaiUnitedArabEmirates" />
+                    <T k="pageLabels.dubaiUnitedArabEmirates" />
                   </span>
                 </li>
                 <li className="flex items-center gap-2">

@@ -122,7 +122,7 @@ export default function InvoiceSettings() {
     return (
       <div className="text-center py-8">
         <p className="text-muted-foreground">
-          <T k="pagesAL.companyNotFound" />
+          <T k="pageLabels.companyNotFound" />
         </p>
       </div>
     );
@@ -154,10 +154,10 @@ export default function InvoiceSettings() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
-                <T k="pagesAL.companyDetailsDisplay" />
+                <T k="pageLabels.companyDetailsDisplay" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.chooseWhichCompanyInformationToDisplayOnInvoices" />
+                <T k="pageLabels.chooseWhichCompanyInformationToDisplayOnInvoices" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -198,7 +198,7 @@ export default function InvoiceSettings() {
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">
-                        <T k="pagesAL.showBusinessAddress" />
+                        <T k="pageLabels.showBusinessAddress" />
                       </FormLabel>
                       <FormDescription>
                         Display your business address on invoices
@@ -228,7 +228,7 @@ export default function InvoiceSettings() {
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">
-                        <T k="pagesAL.showPhoneNumber" />
+                        <T k="pageLabels.showPhoneNumber" />
                       </FormLabel>
                       <FormDescription>
                         Display your business phone number on invoices
@@ -258,7 +258,7 @@ export default function InvoiceSettings() {
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">
-                        <T k="pagesAL.showEmailAddress" />
+                        <T k="pageLabels.showEmailAddress" />
                       </FormLabel>
                       <FormDescription>
                         Display your business email on invoices
@@ -288,7 +288,7 @@ export default function InvoiceSettings() {
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">
-                        <T k="pagesAL.showWebsite" />
+                        <T k="pageLabels.showWebsite" />
                       </FormLabel>
                       <FormDescription>
                         Display your website URL on invoices
@@ -317,10 +317,10 @@ export default function InvoiceSettings() {
           <Card>
             <CardHeader>
               <CardTitle>
-                <T k="pagesAL.invoiceCustomization" />
+                <T k="pageLabels.invoiceCustomization" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.customizeTheAppearanceAndTextOfYourInvoices" />
+                <T k="pageLabels.customizeTheAppearanceAndTextOfYourInvoices" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -330,7 +330,7 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      <T k="pagesAL.invoiceTitle" />
+                      <T k="pageLabels.invoiceTitle" />
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -357,7 +357,7 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      <T k="pagesAL.footerNote" />
+                      <T k="pageLabels.footerNote" />
                     </FormLabel>
                     <FormControl>
                       <Textarea

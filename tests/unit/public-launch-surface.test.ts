@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -6,6 +7,11 @@ const repoRoot = process.cwd();
 
 function readRepoFile(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");
+}
+
+// S6a: page copy moved into the en catalogs; text assertions accept source or catalog copy.
+function readRepoFileWithCatalog(path: string): string {
+  return readRepoFile(path) + "\n" + readRepoFile("client/src/locales/en/pageLabels.json");
 }
 
 const publicLaunchFiles = [
@@ -128,7 +134,7 @@ describe("Public SaaS launch surface", () => {
 
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
     const appSource = readRepoFile("client/src/App.tsx");
-    const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
+    const dashboardSource = readDashboardSource();
     const onboardingWizardSource = readRepoFile("client/src/components/Onboarding.tsx");
     const onboardingPageSource = readRepoFile("client/src/pages/Onboarding.tsx");
 
@@ -159,7 +165,7 @@ describe("Public SaaS launch surface", () => {
 
   it("keeps certification and SLA language explicitly truthful", () => {
     const trustSource = readRepoFile("client/src/pages/TrustSecurity.tsx");
-    const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
+    const helpSource = readRepoFileWithCatalog("client/src/pages/HelpCenter.tsx");
     const pricingSource = readRepoFile("client/src/pages/Pricing.tsx");
 
     expect(trustSource).toMatch(
@@ -175,7 +181,7 @@ describe("Public SaaS launch surface", () => {
   });
 
   it("exposes customer-facing help and migration coverage for launch buyers", () => {
-    const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
+    const helpSource = readRepoFileWithCatalog("client/src/pages/HelpCenter.tsx");
     const migrationSource = readRepoFile("client/src/pages/MigrationGuides.tsx");
 
     for (const expectedHelpTopic of [
@@ -205,7 +211,7 @@ describe("Public SaaS launch surface", () => {
   });
 
   it("keeps a public sample-data demo path for launch buyers", () => {
-    const demoSource = readRepoFile("client/src/pages/DemoWorkspace.tsx");
+    const demoSource = readRepoFileWithCatalog("client/src/pages/DemoWorkspace.tsx");
 
     for (const expectedDemoSignal of [
       "Sample company workspace",

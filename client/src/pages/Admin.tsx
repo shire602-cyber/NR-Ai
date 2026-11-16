@@ -328,7 +328,7 @@ export default function Admin() {
           <>
             <Button variant="outline" size="sm" data-testid="button-export-data">
               <Download className="w-4 h-4 mr-2" />
-              <T k="pagesAL.exportData" />
+              <T k="pageLabels.exportData" />
             </Button>
             <Button variant="outline" size="sm" data-testid="button-refresh">
               <RefreshCw className="w-4 h-4 mr-2" />
@@ -358,11 +358,11 @@ export default function Admin() {
           </TabsTrigger>
           <TabsTrigger value="integrations" data-testid="tab-integrations">
             <Plug className="w-4 h-4 mr-2" />
-            <T k="pagesAL.integrations" />
+            <T k="pageLabels.integrations" />
           </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit">
             <Shield className="w-4 h-4 mr-2" />
-            <T k="pagesAL.auditLog" />
+            <T k="pageLabels.auditLog" />
           </TabsTrigger>
         </TabsList>
 
@@ -373,7 +373,7 @@ export default function Admin() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.totalUsers" />
+                  <T k="pageLabels.totalUsers" />
                 </CardTitle>
                 <Users className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
@@ -390,7 +390,7 @@ export default function Admin() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.activeCompanies" />
+                  <T k="pageLabels.activeCompanies" />
                 </CardTitle>
                 <Building2 className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
@@ -407,7 +407,7 @@ export default function Admin() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.monthlyRevenue" />
+                  <T k="pageLabels.monthlyRevenue" />
                 </CardTitle>
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
@@ -424,7 +424,7 @@ export default function Admin() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.aICreditsUsed" />
+                  <T k="pageLabels.aICreditsUsed" />
                 </CardTitle>
                 <Activity className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
@@ -444,10 +444,10 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
-                  <T k="pagesAL.systemStatus" />
+                  <T k="pageLabels.systemStatus" />
                 </CardTitle>
                 <CardDescription>
-                  <T k="pagesAL.currentSystemHealthAndStatus" />
+                  <T k="pageLabels.currentSystemHealthAndStatus" />
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -455,7 +455,7 @@ export default function Admin() {
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
                     <span>
-                      <T k="pagesAL.database" />
+                      <T k="pageLabels.database" />
                     </span>
                   </div>
                   <Badge
@@ -469,14 +469,14 @@ export default function Admin() {
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
                     <span>
-                      <T k="pagesAL.aPIServices" />
+                      <T k="pageLabels.aPIServices" />
                     </span>
                   </div>
                   <Badge
                     variant="outline"
                     className="bg-success-subtle text-success border-success/30"
                   >
-                    <T k="pagesAL.operational" />
+                    <T k="pageLabels.operational" />
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -497,10 +497,10 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
-                  <T k="pagesAL.quickActions" />
+                  <T k="pageLabels.quickActions" />
                 </CardTitle>
                 <CardDescription>
-                  <T k="pagesAL.commonAdministrativeTasks" />
+                  <T k="pageLabels.commonAdministrativeTasks" />
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -522,7 +522,7 @@ export default function Admin() {
                   }}
                 >
                   <Database className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.backupDatabase" />
+                  <T k="pageLabels.backupDatabase" />
                 </Button>
                 <Button
                   variant="outline"
@@ -537,7 +537,7 @@ export default function Admin() {
                   }}
                 >
                   <Bell className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.sendNewsletter" />
+                  <T k="pageLabels.sendNewsletter" />
                 </Button>
                 <Button
                   variant="outline"
@@ -576,7 +576,7 @@ export default function Admin() {
                   }}
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.generateUsageReport" />
+                  <T k="pageLabels.generateUsageReport" />
                 </Button>
                 <Button
                   variant="outline"
@@ -596,7 +596,7 @@ export default function Admin() {
                   }}
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.syncAllIntegrations" />
+                  <T k="pageLabels.syncAllIntegrations" />
                 </Button>
               </CardContent>
             </Card>
@@ -609,7 +609,7 @@ export default function Admin() {
                 <T k="pages.recentActivity" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.latestActionsAcrossThePlatform" />
+                <T k="pageLabels.latestActionsAcrossThePlatform" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -636,7 +636,7 @@ export default function Admin() {
                 ))}
                 {auditLogs.length === 0 && (
                   <p className="text-center text-muted-foreground py-4">
-                    <T k="pagesAL.noRecentActivity" />
+                    <T k="pageLabels.noRecentActivity" />
                   </p>
                 )}
               </div>
@@ -648,22 +648,22 @@ export default function Admin() {
         <TabsContent value="pricing" className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">
-              <T k="pagesAL.subscriptionPlans" />
+              <T k="pageLabels.subscriptionPlans" />
             </h2>
             <Dialog open={newPlanDialogOpen} onOpenChange={setNewPlanDialogOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-plan">
                   <Plus className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.addPlan" />
+                  <T k="pageLabels.addPlan" />
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>
-                    <T k="pagesAL.createNewPlan" />
+                    <T k="pageLabels.createNewPlan" />
                   </DialogTitle>
                   <DialogDescription>
-                    <T k="pagesAL.addANewSubscriptionPlanForYourCustomers" />
+                    <T k="pageLabels.addANewSubscriptionPlanForYourCustomers" />
                   </DialogDescription>
                 </DialogHeader>
                 <PlanForm
@@ -705,13 +705,13 @@ export default function Admin() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
-                          <T k="pagesAL.maxCompanies" />
+                          <T k="pageLabels.maxCompanies" />
                         </span>
                         <span>{plan.maxCompanies || "Unlimited"}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
-                          <T k="pagesAL.maxUsers" />
+                          <T k="pageLabels.maxUsers" />
                         </span>
                         <span>{plan.maxUsers || "Unlimited"}</span>
                       </div>
@@ -751,10 +751,10 @@ export default function Admin() {
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>
-                  <T k="pagesAL.editPlan" />
+                  <T k="pageLabels.editPlan" />
                 </DialogTitle>
                 <DialogDescription>
-                  <T k="pagesAL.modifySubscriptionPlanDetails" />
+                  <T k="pageLabels.modifySubscriptionPlanDetails" />
                 </DialogDescription>
               </DialogHeader>
               {editingPlan && (
@@ -787,7 +787,7 @@ export default function Admin() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">
-                  <T k="pagesAL.allUsers" />
+                  <T k="pageLabels.allUsers" />
                 </SelectItem>
                 <SelectItem value="active">
                   <T k="firm.linkActive" />
@@ -815,7 +815,7 @@ export default function Admin() {
                       <T k="banking.common.status" />
                     </TableHead>
                     <TableHead>
-                      <T k="pagesAL.joined" />
+                      <T k="pageLabels.joined" />
                     </TableHead>
                     <TableHead className="text-right">
                       <T k="banking.common.actions" />
@@ -832,7 +832,7 @@ export default function Admin() {
                   ) : filteredUsers.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        <T k="pagesAL.noUsersFound" />
+                        <T k="pageLabels.noUsersFound" />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -874,10 +874,10 @@ export default function Admin() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
-                  <T k="pagesAL.editUser" />
+                  <T k="pageLabels.editUser" />
                 </DialogTitle>
                 <DialogDescription>
-                  <T k="pagesAL.updateUserInformation" />
+                  <T k="pageLabels.updateUserInformation" />
                 </DialogDescription>
               </DialogHeader>
               {editingUser && (
@@ -924,7 +924,7 @@ export default function Admin() {
                         defaultChecked={editingUser.isAdmin || false}
                       />
                       <Label htmlFor="edit-user-admin">
-                        <T k="pagesAL.adminUser" />
+                        <T k="pageLabels.adminUser" />
                       </Label>
                     </div>
                   </div>
@@ -975,7 +975,7 @@ export default function Admin() {
                   ) : filteredCompanies.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        <T k="pagesAL.noCompaniesFound" />
+                        <T k="pageLabels.noCompaniesFound" />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -1008,10 +1008,10 @@ export default function Admin() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
-                  <T k="pagesAL.editCompany" />
+                  <T k="pageLabels.editCompany" />
                 </DialogTitle>
                 <DialogDescription>
-                  <T k="pagesAL.updateCompanyInformation" />
+                  <T k="pageLabels.updateCompanyInformation" />
                 </DialogDescription>
               </DialogHeader>
               {editingCompany && (
@@ -1051,7 +1051,7 @@ export default function Admin() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="edit-company-currency">
-                        <T k="pagesAL.baseCurrency" />
+                        <T k="pageLabels.baseCurrency" />
                       </Label>
                       <Select name="baseCurrency" defaultValue={editingCompany.baseCurrency}>
                         <SelectTrigger>
@@ -1059,19 +1059,19 @@ export default function Admin() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="AED">
-                            <T k="pagesAL.aEDUAEDirham" />
+                            <T k="pageLabels.aEDUAEDirham" />
                           </SelectItem>
                           <SelectItem value="USD">
-                            <T k="pagesAL.uSDUSDollar" />
+                            <T k="pageLabels.uSDUSDollar" />
                           </SelectItem>
                           <SelectItem value="EUR">
-                            <T k="pagesAL.eUREuro" />
+                            <T k="pageLabels.eUREuro" />
                           </SelectItem>
                           <SelectItem value="GBP">
-                            <T k="pagesAL.gBPBritishPound" />
+                            <T k="pageLabels.gBPBritishPound" />
                           </SelectItem>
                           <SelectItem value="SAR">
-                            <T k="pagesAL.sARSaudiRiyal" />
+                            <T k="pageLabels.sARSaudiRiyal" />
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -1103,20 +1103,20 @@ export default function Admin() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    <T k="pagesAL.featureToggles" />
+                    <T k="pageLabels.featureToggles" />
                   </CardTitle>
                   <CardDescription>
-                    <T k="pagesAL.enableOrDisablePlatformFeatures" />
+                    <T k="pageLabels.enableOrDisablePlatformFeatures" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.aITransactionCategorization" />
+                        <T k="pageLabels.aITransactionCategorization" />
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.useAIToAutomaticallyCategorizeTransactions" />
+                        <T k="pageLabels.useAIToAutomaticallyCategorizeTransactions" />
                       </p>
                     </div>
                     <Switch
@@ -1131,10 +1131,10 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.oCRReceiptScanning" />
+                        <T k="pageLabels.oCRReceiptScanning" />
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.extractDataFromReceiptImages" />
+                        <T k="pageLabels.extractDataFromReceiptImages" />
                       </p>
                     </div>
                     <Switch
@@ -1149,10 +1149,10 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.smartAssistant" />
+                        <T k="pageLabels.smartAssistant" />
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.naturalLanguageFinancialQueries" />
+                        <T k="pageLabels.naturalLanguageFinancialQueries" />
                       </p>
                     </div>
                     <Switch
@@ -1167,10 +1167,10 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.referralProgram" />
+                        <T k="pageLabels.referralProgram" />
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.enableUserReferralRewards" />
+                        <T k="pageLabels.enableUserReferralRewards" />
                       </p>
                     </div>
                     <Switch
@@ -1188,17 +1188,17 @@ export default function Admin() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    <T k="pagesAL.systemSettings" />
+                    <T k="pageLabels.systemSettings" />
                   </CardTitle>
                   <CardDescription>
-                    <T k="pagesAL.configurePlatformWideSettings" />
+                    <T k="pageLabels.configurePlatformWideSettings" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>
-                        <T k="pagesAL.defaultCurrency" />
+                        <T k="pageLabels.defaultCurrency" />
                       </Label>
                       <Select
                         value={systemSettings.defaultCurrency}
@@ -1231,7 +1231,7 @@ export default function Admin() {
                     </div>
                     <div className="space-y-2">
                       <Label>
-                        <T k="pagesAL.aICreditsPerFreeUser" />
+                        <T k="pageLabels.aICreditsPerFreeUser" />
                       </Label>
                       <Input
                         type="number"
@@ -1263,12 +1263,12 @@ export default function Admin() {
                     {saveSystemSettingsMutation.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        <T k="pagesAL.saving" />
+                        <T k="pageLabels.saving" />
                       </>
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
-                        <T k="pagesAL.saveSettings" />
+                        <T k="pageLabels.saveSettings" />
                       </>
                     )}
                   </Button>
@@ -1279,16 +1279,16 @@ export default function Admin() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    <T k="pagesAL.notificationSettings" />
+                    <T k="pageLabels.notificationSettings" />
                   </CardTitle>
                   <CardDescription>
-                    <T k="pagesAL.configureEmailAndNotificationPreferences" />
+                    <T k="pageLabels.configureEmailAndNotificationPreferences" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      <T k="pagesAL.supportEmail" />
+                      <T k="pageLabels.supportEmail" />
                     </Label>
                     <Input
                       type="email"
@@ -1315,10 +1315,10 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.sendWelcomeEmail" />
+                        <T k="pageLabels.sendWelcomeEmail" />
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.emailNewUsersUponRegistration" />
+                        <T k="pageLabels.emailNewUsersUponRegistration" />
                       </p>
                     </div>
                     <Switch
@@ -1332,10 +1332,10 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.paymentReminderEmails" />
+                        <T k="pageLabels.paymentReminderEmails" />
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        <T k="pagesAL.sendLatePaymentReminders" />
+                        <T k="pageLabels.sendLatePaymentReminders" />
                       </p>
                     </div>
                     <Switch
@@ -1354,12 +1354,12 @@ export default function Admin() {
                     {saveSystemSettingsMutation.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        <T k="pagesAL.saving" />
+                        <T k="pageLabels.saving" />
                       </>
                     ) : (
                       <>
                         <Save className="w-4 h-4 mr-2" />
-                        <T k="pagesAL.saveNotificationSettings" />
+                        <T k="pageLabels.saveNotificationSettings" />
                       </>
                     )}
                   </Button>
@@ -1378,10 +1378,10 @@ export default function Admin() {
                   <div className="w-8 h-8 bg-[#6772e5] rounded flex items-center justify-center">
                     <CreditCard className="w-4 h-4 text-white" />
                   </div>
-                  <T k="pagesAL.stripeIntegration" />
+                  <T k="pageLabels.stripeIntegration" />
                 </CardTitle>
                 <CardDescription>
-                  <T k="pagesAL.paymentProcessingAndSubscriptionBilling" />
+                  <T k="pageLabels.paymentProcessingAndSubscriptionBilling" />
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1390,12 +1390,12 @@ export default function Admin() {
                     <T k="banking.common.status" />
                   </span>
                   <Badge variant="outline" className="bg-warning-subtle text-warning">
-                    <T k="pagesAL.notConfigured" />
+                    <T k="pageLabels.notConfigured" />
                   </Badge>
                 </div>
                 <div className="space-y-2">
                   <Label>
-                    <T k="pagesAL.stripePublicKey" />
+                    <T k="pageLabels.stripePublicKey" />
                   </Label>
                   <Input
                     type="password"
@@ -1405,7 +1405,7 @@ export default function Admin() {
                 </div>
                 <div className="space-y-2">
                   <Label>
-                    <T k="pagesAL.stripeSecretKey" />
+                    <T k="pageLabels.stripeSecretKey" />
                   </Label>
                   <Input
                     type="password"
@@ -1415,7 +1415,7 @@ export default function Admin() {
                 </div>
                 <Button className="w-full" data-testid="button-save-stripe">
                   <Save className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.saveConfiguration" />
+                  <T k="pageLabels.saveConfiguration" />
                 </Button>
               </CardContent>
             </Card>
@@ -1426,10 +1426,10 @@ export default function Admin() {
                   <div className="w-8 h-8 bg-black rounded flex items-center justify-center">
                     <Activity className="w-4 h-4 text-white" />
                   </div>
-                  <T k="pagesAL.openAIIntegration" />
+                  <T k="pageLabels.openAIIntegration" />
                 </CardTitle>
                 <CardDescription>
-                  <T k="pagesAL.aIPoweredFeaturesAndCategorization" />
+                  <T k="pageLabels.aIPoweredFeaturesAndCategorization" />
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1443,13 +1443,13 @@ export default function Admin() {
                 </div>
                 <div className="space-y-2">
                   <Label>
-                    <T k="pagesAL.aPIKey" />
+                    <T k="pageLabels.aPIKey" />
                   </Label>
                   <Input type="password" placeholder="sk-..." data-testid="input-openai-key" />
                 </div>
                 <div className="space-y-2">
                   <Label>
-                    <T k="pagesAL.model" />
+                    <T k="pageLabels.model" />
                   </Label>
                   <Select defaultValue="gpt-4o">
                     <SelectTrigger data-testid="select-openai-model">
@@ -1464,7 +1464,7 @@ export default function Admin() {
                 </div>
                 <Button className="w-full" data-testid="button-save-openai">
                   <Save className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.saveConfiguration" />
+                  <T k="pageLabels.saveConfiguration" />
                 </Button>
               </CardContent>
             </Card>
@@ -1475,10 +1475,10 @@ export default function Admin() {
                   <div className="w-8 h-8 bg-[#34A853] rounded flex items-center justify-center">
                     <FileText className="w-4 h-4 text-white" />
                   </div>
-                  <T k="pagesAL.googleSheets" />
+                  <T k="pageLabels.googleSheets" />
                 </CardTitle>
                 <CardDescription>
-                  <T k="pagesAL.exportDataToGoogleSheets" />
+                  <T k="pageLabels.exportDataToGoogleSheets" />
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1491,11 +1491,11 @@ export default function Admin() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  <T k="pagesAL.googleSheetsIntegrationIsConfiguredAndReadyToUse" />
+                  <T k="pageLabels.googleSheetsIntegrationIsConfiguredAndReadyToUse" />
                 </p>
                 <Button variant="outline" className="w-full" data-testid="button-test-sheets">
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.testConnection" />
+                  <T k="pageLabels.testConnection" />
                 </Button>
               </CardContent>
             </Card>
@@ -1548,20 +1548,20 @@ export default function Admin() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>
-                        <T k="pagesAL.timestamp" />
+                        <T k="pageLabels.timestamp" />
                       </TableHead>
                       <TableHead>
                         <T k="pages.action" />
                       </TableHead>
                       <TableHead>
-                        <T k="pagesAL.resource" />
+                        <T k="pageLabels.resource" />
                       </TableHead>
                       <TableHead>User</TableHead>
                       <TableHead>
                         <T k="reportCenter.details" />
                       </TableHead>
                       <TableHead>
-                        <T k="pagesAL.iPAddress" />
+                        <T k="pageLabels.iPAddress" />
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1575,7 +1575,7 @@ export default function Admin() {
                     ) : auditLogs.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          <T k="pagesAL.noAuditLogsFound" />
+                          <T k="pageLabels.noAuditLogsFound" />
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1654,7 +1654,7 @@ function PlanForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="name">
-            <T k="pagesAL.planName" />
+            <T k="pageLabels.planName" />
           </Label>
           <Input
             id="name"
@@ -1699,7 +1699,7 @@ function PlanForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="priceMonthly">
-            <T k="pagesAL.monthlyPrice" />
+            <T k="pageLabels.monthlyPrice" />
           </Label>
           <Input
             id="priceMonthly"
@@ -1712,7 +1712,7 @@ function PlanForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="priceYearly">
-            <T k="pagesAL.yearlyPrice" />
+            <T k="pageLabels.yearlyPrice" />
           </Label>
           <Input
             id="priceYearly"
@@ -1727,7 +1727,7 @@ function PlanForm({
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="maxCompanies">
-            <T k="pagesAL.maxCompanies" />
+            <T k="pageLabels.maxCompanies" />
           </Label>
           <Input
             id="maxCompanies"
@@ -1739,7 +1739,7 @@ function PlanForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="maxUsers">
-            <T k="pagesAL.maxUsers" />
+            <T k="pageLabels.maxUsers" />
           </Label>
           <Input
             id="maxUsers"
@@ -1766,7 +1766,7 @@ function PlanForm({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <Label>
-            <T k="pagesAL.advancedReports" />
+            <T k="pageLabels.advancedReports" />
           </Label>
           <Switch
             checked={formData.hasAdvancedReports || false}
@@ -1776,7 +1776,7 @@ function PlanForm({
         </div>
         <div className="flex items-center justify-between">
           <Label>
-            <T k="pagesAL.aPIAccess" />
+            <T k="pageLabels.aPIAccess" />
           </Label>
           <Switch
             checked={formData.hasApiAccess || false}

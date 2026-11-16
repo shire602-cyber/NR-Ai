@@ -29,7 +29,7 @@ export default function CookiePolicy() {
       <h2>2. Categories of Cookies We Use</h2>
 
       <h3>
-        <T k="pagesAL.strictlyNecessary" />
+        <T k="pageLabels.strictlyNecessary" />
       </h3>
       <p>
         These are required for the Service to function — for example, authentication tokens, your
@@ -38,7 +38,7 @@ export default function CookiePolicy() {
       </p>
 
       <h3>
-        <T k="pagesAL.functional" />
+        <T k="pageLabels.functional" />
       </h3>
       <p>
         These remember choices you make to provide a more personalised experience, such as your
@@ -55,7 +55,7 @@ export default function CookiePolicy() {
       </p>
 
       <h3>
-        <T k="pagesAL.marketing" />
+        <T k="pageLabels.marketing" />
       </h3>
       <p>
         We do not currently set marketing or advertising cookies. If this changes, we will update

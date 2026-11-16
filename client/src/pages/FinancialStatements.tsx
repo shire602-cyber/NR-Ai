@@ -211,7 +211,7 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: 
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-2">
-        <T k="pagesAL.noEntriesFound" />
+        <T k="pageLabels.noEntriesFound" />
       </p>
     );
   }
@@ -784,7 +784,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
         <Card>
           <CardContent className="pt-6">
             <p className="text-destructive">
-              <T k="pagesAL.failedToLoadCashFlowStatement" />
+              <T k="pageLabels.failedToLoadCashFlowStatement" />
             </p>
           </CardContent>
         </Card>
@@ -839,7 +839,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>
-                  <T k="pagesAL.operating" />
+                  <T k="pageLabels.operating" />
                 </CardDescription>
                 <CardTitle
                   className={`text-xl ${data.operating.total >= 0 ? "text-success" : "text-destructive"}`}
@@ -851,7 +851,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>
-                  <T k="pagesAL.investing" />
+                  <T k="pageLabels.investing" />
                 </CardDescription>
                 <CardTitle
                   className={`text-xl ${data.investing.total >= 0 ? "text-success" : "text-destructive"}`}
@@ -863,7 +863,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>
-                  <T k="pagesAL.financing" />
+                  <T k="pageLabels.financing" />
                 </CardDescription>
                 <CardTitle
                   className={`text-xl ${data.financing.total >= 0 ? "text-success" : "text-destructive"}`}
@@ -875,7 +875,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             <Card className="border-2">
               <CardHeader className="pb-2">
                 <CardDescription>
-                  <T k="pagesAL.netCashChange" />
+                  <T k="pageLabels.netCashChange" />
                 </CardDescription>
                 <CardTitle
                   className={`text-xl flex items-center gap-2 ${data.netCashChange >= 0 ? "text-success" : "text-destructive"}`}
@@ -891,10 +891,10 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">
-                <T k="pagesAL.operatingActivities" />
+                <T k="pageLabels.operatingActivities" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.cashFromDayToDayBusinessOperations" />
+                <T k="pageLabels.cashFromDayToDayBusinessOperations" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -902,7 +902,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
                 <span>
-                  <T k="pagesAL.netOperatingCashFlow" />
+                  <T k="pageLabels.netOperatingCashFlow" />
                 </span>
                 <span className="font-mono">
                   {formatCurrency(data.operating.total, "AED", locale)}
@@ -915,14 +915,14 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">
-                <T k="pagesAL.investingActivities" />
+                <T k="pageLabels.investingActivities" />
               </CardTitle>
               <CardDescription>Cash from buying/selling long-term assets</CardDescription>
             </CardHeader>
             <CardContent>
               {data.investing.breakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
-                  <T k="pagesAL.noInvestingActivitiesInThisPeriod" />
+                  <T k="pageLabels.noInvestingActivitiesInThisPeriod" />
                 </p>
               ) : (
                 <BreakdownTable items={data.investing.breakdown} locale={locale} />
@@ -930,7 +930,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
                 <span>
-                  <T k="pagesAL.netInvestingCashFlow" />
+                  <T k="pageLabels.netInvestingCashFlow" />
                 </span>
                 <span className="font-mono">
                   {formatCurrency(data.investing.total, "AED", locale)}
@@ -943,16 +943,16 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">
-                <T k="pagesAL.financingActivities" />
+                <T k="pageLabels.financingActivities" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.cashFromDebtEquityAndDividends" />
+                <T k="pageLabels.cashFromDebtEquityAndDividends" />
               </CardDescription>
             </CardHeader>
             <CardContent>
               {data.financing.breakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
-                  <T k="pagesAL.noFinancingActivitiesInThisPeriod" />
+                  <T k="pageLabels.noFinancingActivitiesInThisPeriod" />
                 </p>
               ) : (
                 <BreakdownTable items={data.financing.breakdown} locale={locale} />
@@ -960,7 +960,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
                 <span>
-                  <T k="pagesAL.netFinancingCashFlow" />
+                  <T k="pageLabels.netFinancingCashFlow" />
                 </span>
                 <span className="font-mono">
                   {formatCurrency(data.financing.total, "AED", locale)}
@@ -1025,7 +1025,7 @@ export default function FinancialStatements() {
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profit-loss" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
-            <T k="pagesAL.profitAndLoss" />
+            <T k="pageLabels.profitAndLoss" />
           </TabsTrigger>
           <TabsTrigger value="balance-sheet" className="flex items-center gap-2">
             <Scale className="h-4 w-4" />

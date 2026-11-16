@@ -101,7 +101,7 @@ export default function ClientDashboard() {
       <div className="relative overflow-hidden rounded-2xl p-8 border border-primary/10">
         <div className="relative z-10">
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
-            <T k="pagesAL.welcomeBack" />
+            <T k="pageLabels.welcomeBack" />
             <span className="text-primary">{userName}</span>
           </h1>
           <p className="text-muted-foreground text-lg">
@@ -116,7 +116,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              <T k="pagesAL.myDocuments" />
+              <T k="pageLabels.myDocuments" />
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-info-subtle flex items-center justify-center">
               <Upload className="w-4 h-4 text-info " />
@@ -131,7 +131,7 @@ export default function ClientDashboard() {
             <p className="text-xs text-muted-foreground mt-1">documents in vault</p>
             <Link href="/document-vault">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
-                <T k="pagesAL.viewAll" />
+                <T k="pageLabels.viewAll" />
                 <ArrowRight className="w-3 h-3" />
               </Button>
             </Link>
@@ -142,7 +142,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              <T k="pagesAL.complianceStatus" />
+              <T k="pageLabels.complianceStatus" />
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-success-subtle flex items-center justify-center">
               <ShieldCheck className="w-4 h-4 text-success " />
@@ -162,7 +162,7 @@ export default function ClientDashboard() {
               </>
             ) : (
               <div className="text-sm font-semibold">
-                <T k="pagesAL.noUpcomingDeadlines" />
+                <T k="pageLabels.noUpcomingDeadlines" />
               </div>
             )}
             <Badge variant="outline" className={`mt-2 text-xs ${complianceBadge.color}`}>
@@ -175,7 +175,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              <T k="pagesAL.pendingTasks" />
+              <T k="pageLabels.pendingTasks" />
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-warning-subtle flex items-center justify-center">
               <ListTodo className="w-4 h-4 text-warning " />
@@ -190,7 +190,7 @@ export default function ClientDashboard() {
             <p className="text-xs text-muted-foreground mt-1">tasks incomplete</p>
             <Link href="/compliance-calendar">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
-                <T k="pagesAL.viewTasks" />
+                <T k="pageLabels.viewTasks" />
                 <ArrowRight className="w-3 h-3" />
               </Button>
             </Link>
@@ -221,7 +221,7 @@ export default function ClientDashboard() {
       {/* Quick Actions */}
       <div>
         <h2 className="text-xl font-semibold mb-4">
-          <T k="pagesAL.quickActions" />
+          <T k="pageLabels.quickActions" />
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link href="/document-vault">
@@ -253,7 +253,7 @@ export default function ClientDashboard() {
             >
               <FileArchive className="w-7 h-7 text-chart-5" />
               <span className="font-medium">
-                <T k="pagesAL.viewTaxReturns" />
+                <T k="pageLabels.viewTaxReturns" />
               </span>
             </Button>
           </Link>
@@ -264,7 +264,7 @@ export default function ClientDashboard() {
             >
               <ListChecks className="w-7 h-7 text-success" />
               <span className="font-medium">
-                <T k="pagesAL.openTaskCenter" />
+                <T k="pageLabels.openTaskCenter" />
               </span>
             </Button>
           </Link>
@@ -276,7 +276,7 @@ export default function ClientDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Activity className="w-5 h-5" />
-            <T k="pagesAL.recentUpdates" />
+            <T k="pageLabels.recentUpdates" />
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -311,7 +311,7 @@ export default function ClientDashboard() {
             <div className="text-center py-8 text-muted-foreground">
               <Activity className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="text-sm">
-                <T k="pagesAL.noRecentUpdatesYet" />
+                <T k="pageLabels.noRecentUpdatesYet" />
               </p>
             </div>
           )}

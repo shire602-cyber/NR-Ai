@@ -349,7 +349,7 @@ export default function AIChat() {
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
                 <CardTitle>
-                  <T k="pagesAL.aIAssistant" />
+                  <T k="pageLabels.aIAssistant" />
                 </CardTitle>
                 <Badge variant="outline" className="ml-2">
                   {model}
@@ -367,7 +367,7 @@ export default function AIChat() {
               </div>
             </div>
             <CardDescription>
-              <T k="pagesAL.askQuestionsAboutYourAccountingAndFinancialManagement" />
+              <T k="pageLabels.askQuestionsAboutYourAccountingAndFinancialManagement" />
             </CardDescription>
           </CardHeader>
 
@@ -377,7 +377,7 @@ export default function AIChat() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="model">
-                    <T k="pagesAL.model" />
+                    <T k="pageLabels.model" />
                   </Label>
                   <Select value={model} onValueChange={(v: any) => setModel(v)}>
                     <SelectTrigger className="w-48">
@@ -391,13 +391,13 @@ export default function AIChat() {
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="streaming">
-                    <T k="pagesAL.streamingResponse" />
+                    <T k="pageLabels.streamingResponse" />
                   </Label>
                   <Switch id="streaming" checked={streaming} onCheckedChange={setStreaming} />
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="custom-prompt">
-                    <T k="pagesAL.customSystemPrompt" />
+                    <T k="pageLabels.customSystemPrompt" />
                   </Label>
                   <Switch
                     id="custom-prompt"
@@ -408,7 +408,7 @@ export default function AIChat() {
                 {useCustomSystemPrompt && (
                   <div>
                     <Label htmlFor="system-prompt">
-                      <T k="pagesAL.systemPrompt" />
+                      <T k="pageLabels.systemPrompt" />
                     </Label>
                     <Textarea
                       id="system-prompt"
@@ -431,7 +431,7 @@ export default function AIChat() {
                 <div className="text-center py-12 text-muted-foreground animate-fade-in">
                   <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>
-                    <T k="pagesAL.startAConversationByAskingAQuestion" />
+                    <T k="pageLabels.startAConversationByAskingAQuestion" />
                   </p>
                 </div>
               )}
@@ -461,7 +461,7 @@ export default function AIChat() {
                     {message.error && (
                       <div className="flex items-center gap-2 mb-2 text-destructive text-sm font-medium">
                         <X className="h-4 w-4" />
-                        <T k="pagesAL.errorOccurred" />
+                        <T k="pageLabels.errorOccurred" />
                       </div>
                     )}
                     <div className="whitespace-pre-wrap break-words">
@@ -469,7 +469,7 @@ export default function AIChat() {
                         (message.streaming && (
                           <span className="inline-flex items-center gap-1">
                             <Loader2 className="h-3 w-3 animate-spin" />
-                            <T k="pagesAL.thinking" />
+                            <T k="pageLabels.thinking" />
                           </span>
                         ))}
                     </div>
@@ -557,7 +557,7 @@ export default function AIChat() {
                   <div className="text-center py-8 text-muted-foreground">
                     <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p>
-                      <T k="pagesAL.noConversationHistory" />
+                      <T k="pageLabels.noConversationHistory" />
                     </p>
                   </div>
                 ) : (

@@ -200,7 +200,7 @@ export default function AutoReconcile() {
         <Card>
           <CardContent className="pt-6 text-center">
             <p className="text-muted-foreground">
-              <T k="pagesAL.pleaseCreateACompanyFirstToUseAutoReconciliation" />
+              <T k="pageLabels.pleaseCreateACompanyFirstToUseAutoReconciliation" />
             </p>
           </CardContent>
         </Card>
@@ -218,7 +218,7 @@ export default function AutoReconcile() {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              <T k="pagesAL.aIAutoReconciliation" />
+              <T k="pageLabels.aIAutoReconciliation" />
             </h1>
             <p className="text-muted-foreground text-sm">
               Automatically match bank transactions with journal entries, invoices, and receipts
@@ -242,7 +242,7 @@ export default function AutoReconcile() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Unlink className="h-3 w-3" />
-                <T k="pagesAL.unreconciled" />
+                <T k="pageLabels.unreconciled" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -253,7 +253,7 @@ export default function AutoReconcile() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Link2 className="h-3 w-3" />
-                <T k="pagesAL.totalMatches" />
+                <T k="pageLabels.totalMatches" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -294,7 +294,7 @@ export default function AutoReconcile() {
               <div>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Link2 className="h-5 w-5 text-primary" />
-                  <T k="pagesAL.suggestedMatches" />
+                  <T k="pageLabels.suggestedMatches" />
                 </CardTitle>
                 <CardDescription>
                   Review and apply auto-detected reconciliation matches.
@@ -306,7 +306,7 @@ export default function AutoReconcile() {
                   <T k="pages.highConfidence" />
                 </Button>
                 <Button variant="outline" size="sm" onClick={selectAll}>
-                  <T k="pagesAL.selectAll" />
+                  <T k="pageLabels.selectAll" />
                 </Button>
                 <Button variant="outline" size="sm" onClick={deselectAll}>
                   <T k="pages.clear" />
@@ -332,13 +332,13 @@ export default function AutoReconcile() {
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
                     <TableHead>
-                      <T k="pagesAL.bankTransaction" />
+                      <T k="pageLabels.bankTransaction" />
                     </TableHead>
                     <TableHead className="w-8 text-center">
                       <ChevronRight className="h-4 w-4 mx-auto text-muted-foreground" />
                     </TableHead>
                     <TableHead>
-                      <T k="pagesAL.matchedWith" />
+                      <T k="pageLabels.matchedWith" />
                     </TableHead>
                     <TableHead className="w-48">
                       <T k="pages.confidence" />
@@ -459,7 +459,7 @@ export default function AutoReconcile() {
             <div className="text-center py-12 space-y-4">
               <ArrowRightLeft className="h-12 w-12 text-muted-foreground mx-auto" />
               <h3 className="text-lg font-semibold">
-                <T k="pagesAL.readyToReconcile" />
+                <T k="pageLabels.readyToReconcile" />
               </h3>
               <p className="text-muted-foreground text-sm max-w-md mx-auto">
                 Click "Run Auto-Reconcile" to scan your unreconciled bank transactions and
@@ -478,17 +478,17 @@ export default function AutoReconcile() {
                 <>
                   <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
                   <h3 className="text-lg font-semibold">
-                    <T k="pagesAL.allCaughtUp" />
+                    <T k="pageLabels.allCaughtUp" />
                   </h3>
                   <p className="text-muted-foreground text-sm">
-                    <T k="pagesAL.allBankTransactionsAreAlreadyReconciled" />
+                    <T k="pageLabels.allBankTransactionsAreAlreadyReconciled" />
                   </p>
                 </>
               ) : (
                 <>
                   <XCircle className="h-12 w-12 text-warning mx-auto" />
                   <h3 className="text-lg font-semibold">
-                    <T k="pagesAL.noMatchesFound" />
+                    <T k="pageLabels.noMatchesFound" />
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     {result.totalUnreconciled} unreconciled transaction(s) found, but no automatic

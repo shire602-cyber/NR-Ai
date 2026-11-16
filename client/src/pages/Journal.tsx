@@ -468,7 +468,7 @@ export default function Journal() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">
-                    <T k="pagesAL.journalLines" />
+                    <T k="pageLabels.journalLines" />
                   </h3>
                   <Button
                     type="button"
@@ -806,7 +806,7 @@ export default function Journal() {
                             <AlertDialogContent>
                               <AlertDialogHeader>
                                 <AlertDialogTitle>
-                                  <T k="pagesAL.deleteDraftEntry" />
+                                  <T k="pageLabels.deleteDraftEntry" />
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently delete this draft entry. This action cannot

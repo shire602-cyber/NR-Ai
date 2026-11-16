@@ -57,22 +57,22 @@ export default function HelpCenter() {
       <header className="border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="text-lg font-bold">
-            <T k="pagesAL.muhasibAi" />
+            <T k="pageLabels.muhasibAi" />
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <Link href="/pricing" className="hover:text-foreground">
               <T k="pages.pricing" />
             </Link>
             <Link href="/trust" className="hover:text-foreground">
-              <T k="pagesAL.trust" />
+              <T k="pageLabels.trust" />
             </Link>
             <Link href="/migration-guides" className="hover:text-foreground">
-              <T k="pagesAL.migrate" />
+              <T k="pageLabels.migrate" />
             </Link>
           </nav>
           <a href="mailto:support@muhasib.ai?subject=Muhasib.ai%20support">
             <Button size="sm" variant="outline">
-              <T k="pagesAL.contactSupport" />
+              <T k="pageLabels.contactSupport" />
             </Button>
           </a>
         </div>
@@ -82,10 +82,10 @@ export default function HelpCenter() {
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-16">
             <Badge variant="outline" className="mb-5">
-              <T k="pagesAL.helpCenter" />
+              <T k="pageLabels.helpCenter" />
             </Badge>
             <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
-              <T k="pagesAL.launchSupportForUAEAccountingTeamsMovingFast" />
+              <T k="pageLabels.launchSupportForUAEAccountingTeamsMovingFast" />
             </h1>
             <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
               Practical setup guides for invoices, VAT workflows, bank reconciliation, imports, and
@@ -120,7 +120,7 @@ export default function HelpCenter() {
             <div>
               <h2 className="flex items-center gap-2 text-2xl font-semibold">
                 <LifeBuoy className="h-6 w-6 text-primary" />
-                <T k="pagesAL.supportAndSLAPosture" />
+                <T k="pageLabels.supportAndSLAPosture" />
               </h2>
               <p className="mt-3 text-muted-foreground">
                 We keep launch promises specific. Formal SLA terms are not implied for every plan;
@@ -144,22 +144,22 @@ export default function HelpCenter() {
               <div>
                 <h2 className="flex items-center gap-2 text-xl font-semibold">
                   <HelpCircle className="h-5 w-5 text-primary" />
-                  <T k="pagesAL.needHelpChoosingTheRightPath" />
+                  <T k="pageLabels.needHelpChoosingTheRightPath" />
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  <T k="pagesAL.askForAGuidedMigrationReviewBeforeImportingLiveBooks" />
+                  <T k="pageLabels.askForAGuidedMigrationReviewBeforeImportingLiveBooks" />
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <a href="mailto:support@muhasib.ai?subject=Migration%20review">
                   <Button>
                     <Mail className="mr-2 h-4 w-4" />
-                    <T k="pagesAL.requestReview" />
+                    <T k="pageLabels.requestReview" />
                   </Button>
                 </a>
                 <Link href="/migration-guides">
                   <Button variant="outline">
-                    <T k="pagesAL.migrationGuides" />
+                    <T k="pageLabels.migrationGuides" />
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>

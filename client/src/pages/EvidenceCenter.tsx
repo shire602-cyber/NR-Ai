@@ -364,7 +364,7 @@ export default function EvidenceCenter() {
         <Card>
           <CardHeader>
             <CardTitle>
-              <T k="pagesAL.proofTrailUnavailable" />
+              <T k="pageLabels.proofTrailUnavailable" />
             </CardTitle>
             <CardDescription>
               The proof workspace could not load. Refresh the page or check company access.
@@ -385,17 +385,17 @@ export default function EvidenceCenter() {
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
               <Link href="/vat-filing">
-                <T k="pagesAL.openVATWorkpaper" />
+                <T k="pageLabels.openVATWorkpaper" />
               </Link>
             </Button>
             <Button asChild variant="outline">
               <Link href="/corporate-tax">
-                <T k="pagesAL.openCorporateTax" />
+                <T k="pageLabels.openCorporateTax" />
               </Link>
             </Button>
             <Button asChild>
               <Link href="#owner-actions">
-                <T k="pagesAL.whatShouldIDo" />
+                <T k="pageLabels.whatShouldIDo" />
               </Link>
             </Button>
             <Button
@@ -411,7 +411,7 @@ export default function EvidenceCenter() {
               data-testid="button-download-refund-bundle"
             >
               <Archive className="mr-2 h-4 w-4" />
-              <T k="pagesAL.zIPBundle" />
+              <T k="pageLabels.zIPBundle" />
             </Button>
           </div>
         }
@@ -422,7 +422,7 @@ export default function EvidenceCenter() {
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="font-semibold">
-                <T k="pagesAL.focusedSourceProof" />
+                <T k="pageLabels.focusedSourceProof" />
               </h2>
               <p className="text-sm text-muted-foreground">
                 Showing proof rows for {sourceFilter.sourceType.replace(/_/g, " ")}
@@ -577,7 +577,7 @@ export default function EvidenceCenter() {
         <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
             <h2 className="font-semibold">
-              <T k="pagesAL.vATRefundSupportPack" />
+              <T k="pageLabels.vATRefundSupportPack" />
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Download one source-evidence bundle, or export the workbook and cover separately.
@@ -605,7 +605,7 @@ export default function EvidenceCenter() {
               disabled={exportingPack !== null}
             >
               <Archive className="mr-2 h-4 w-4" />
-              <T k="pagesAL.sourceZIP" />
+              <T k="pageLabels.sourceZIP" />
             </Button>
             <Button
               variant="outline"
@@ -619,7 +619,7 @@ export default function EvidenceCenter() {
               disabled={exportingPack !== null}
             >
               <Download className="mr-2 h-4 w-4" />
-              <T k="pagesAL.workbook" />
+              <T k="pageLabels.workbook" />
             </Button>
             <Button
               variant="outline"
@@ -633,7 +633,7 @@ export default function EvidenceCenter() {
               disabled={exportingPack !== null}
             >
               <FileDown className="mr-2 h-4 w-4" />
-              <T k="pagesAL.coverPDF" />
+              <T k="pageLabels.coverPDF" />
             </Button>
           </div>
         </div>
@@ -642,7 +642,7 @@ export default function EvidenceCenter() {
       <section id="owner-actions" className="rounded-md border bg-card" data-testid="owner-actions">
         <div className="border-b px-4 py-3">
           <h2 className="font-semibold">
-            <T k="pagesAL.ownerFriendlyWhatShouldIDo" />
+            <T k="pageLabels.ownerFriendlyWhatShouldIDo" />
           </h2>
           <p className="text-sm text-muted-foreground">
             Plain-language next actions generated from the evidence status.
@@ -671,7 +671,7 @@ export default function EvidenceCenter() {
         >
           <div className="border-b px-4 py-3">
             <h2 className="font-semibold">
-              <T k="pagesAL.missingEvidenceInbox" />
+              <T k="pageLabels.missingEvidenceInbox" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Documents, TRNs, attachments, and source proof blocking clean filings.
@@ -682,7 +682,7 @@ export default function EvidenceCenter() {
               <TableHeader>
                 <TableRow>
                   <TableHead>
-                    <T k="pagesAL.severity" />
+                    <T k="pageLabels.severity" />
                   </TableHead>
                   <TableHead>
                     <T k="banking.common.status" />
@@ -706,7 +706,7 @@ export default function EvidenceCenter() {
                 {data.missingEvidence.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                      <T k="pagesAL.noMissingEvidenceItems" />
+                      <T k="pageLabels.noMissingEvidenceItems" />
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -766,7 +766,7 @@ export default function EvidenceCenter() {
                               setIssueReason("");
                             }}
                           >
-                            <T k="pagesAL.waive" />
+                            <T k="pageLabels.waive" />
                           </Button>
                         </div>
                       </TableCell>
@@ -781,16 +781,16 @@ export default function EvidenceCenter() {
         <section id="request-draft" className="min-w-0 overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
             <h2 className="font-semibold">
-              <T k="pagesAL.clientRequestAutopilot" />
+              <T k="pageLabels.clientRequestAutopilot" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              <T k="pagesAL.draftOnlyNothingIsSentFromThisScreen" />
+              <T k="pageLabels.draftOnlyNothingIsSentFromThisScreen" />
             </p>
           </div>
           <div className="space-y-3 p-4">
             <div className="space-y-2">
               <Label htmlFor="evidence-request-recipient">
-                <T k="pagesAL.recipientEmail" />
+                <T k="pageLabels.recipientEmail" />
               </Label>
               <Input
                 id="evidence-request-recipient"
@@ -825,7 +825,7 @@ export default function EvidenceCenter() {
               data-testid="button-review-evidence-request"
             >
               <Send className="mr-2 h-4 w-4" />
-              <T k="pagesAL.reviewExactRequest" />
+              <T k="pageLabels.reviewExactRequest" />
             </Button>
           </div>
         </section>
@@ -834,10 +834,10 @@ export default function EvidenceCenter() {
       <section id="proof-drilldown" className="min-w-0 overflow-hidden rounded-md border bg-card">
         <div className="border-b px-4 py-3">
           <h2 className="font-semibold">
-            <T k="pagesAL.everyNumberHasProof" />
+            <T k="pageLabels.everyNumberHasProof" />
           </h2>
           <p className="text-sm text-muted-foreground">
-            <T k="pagesAL.sourceRowsBehindVATSalesPurchaseAndTaxNumbers" />
+            <T k="pageLabels.sourceRowsBehindVATSalesPurchaseAndTaxNumbers" />
           </p>
         </div>
         <div className="w-full overflow-x-auto">
@@ -849,16 +849,16 @@ export default function EvidenceCenter() {
                 </TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>
-                  <T k="pagesAL.party" />
+                  <T k="pageLabels.party" />
                 </TableHead>
                 <TableHead>
-                  <T k="pagesAL.document" />
+                  <T k="pageLabels.document" />
                 </TableHead>
                 <TableHead>
                   <T k="banking.common.status" />
                 </TableHead>
                 <TableHead>
-                  <T k="pagesAL.evidenceFile" />
+                  <T k="pageLabels.evidenceFile" />
                 </TableHead>
                 <TableHead className="text-right">
                   <T k="banking.common.amount" />
@@ -912,7 +912,7 @@ export default function EvidenceCenter() {
                           <Button asChild size="sm" variant="ghost" className="h-7 px-2">
                             <Link href={line.documentHref}>
                               <Eye className="mr-1.5 h-3.5 w-3.5" />
-                              <T k="pagesAL.previewSource" />
+                              <T k="pageLabels.previewSource" />
                             </Link>
                           </Button>
                         ) : null}
@@ -943,7 +943,7 @@ export default function EvidenceCenter() {
         <section id="risk-scan" className="min-w-0 overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
             <h2 className="font-semibold">
-              <T k="pagesAL.errorDetectorBeforeFiling" />
+              <T k="pageLabels.errorDetectorBeforeFiling" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Risk signals caught before VAT, corporate tax, reports, or close.
@@ -953,7 +953,7 @@ export default function EvidenceCenter() {
             {data.filingRiskScan.length === 0 ? (
               <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                 <CheckCircle2 className="h-4 w-4 text-success" />
-                <T k="pagesAL.noFilingRiskSignals" />
+                <T k="pageLabels.noFilingRiskSignals" />
               </div>
             ) : (
               data.filingRiskScan.slice(0, 12).map((issue) => (
@@ -996,7 +996,7 @@ export default function EvidenceCenter() {
                           setIssueReason("");
                         }}
                       >
-                        <T k="pagesAL.waive" />
+                        <T k="pageLabels.waive" />
                       </Button>
                     </div>
                   </div>
@@ -1009,7 +1009,7 @@ export default function EvidenceCenter() {
         <section className="min-w-0 overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
             <h2 className="font-semibold">
-              <T k="pagesAL.filingTimelineWithConsequences" />
+              <T k="pageLabels.filingTimelineWithConsequences" />
             </h2>
             <p className="text-sm text-muted-foreground">
               Deadlines are shown with what breaks if the evidence stays incomplete.
@@ -1018,7 +1018,7 @@ export default function EvidenceCenter() {
           <div className="divide-y">
             {data.filingTimeline.length === 0 ? (
               <div className="p-4 text-sm text-muted-foreground">
-                <T k="pagesAL.noUpcomingFilingEvents" />
+                <T k="pageLabels.noUpcomingFilingEvents" />
               </div>
             ) : (
               data.filingTimeline.slice(0, 12).map((item) => (
@@ -1054,7 +1054,7 @@ export default function EvidenceCenter() {
           <div className="flex items-center gap-2">
             <History className="h-4 w-4" />
             <h2 className="font-semibold">
-              <T k="pagesAL.evidenceAuditTrail" />
+              <T k="pageLabels.evidenceAuditTrail" />
             </h2>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -1065,7 +1065,7 @@ export default function EvidenceCenter() {
         <div className="divide-y">
           {data.actionTrail.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">
-              <T k="pagesAL.noProofTrailActionsHaveBeenLoggedYet" />
+              <T k="pageLabels.noProofTrailActionsHaveBeenLoggedYet" />
             </div>
           ) : (
             data.actionTrail.slice(0, 12).map((entry) => (
@@ -1140,7 +1140,7 @@ export default function EvidenceCenter() {
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.reviewExactEvidenceRequest" />
+              <T k="pageLabels.reviewExactEvidenceRequest" />
             </DialogTitle>
             <DialogDescription>
               Confirm the recipient, subject, and full body before logging this for manual delivery.
@@ -1151,7 +1151,7 @@ export default function EvidenceCenter() {
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground">
-                  <T k="pagesAL.recipient" />
+                  <T k="pageLabels.recipient" />
                 </p>
                 <p className="break-all font-medium">{requestRecipient || "No recipient set"}</p>
               </div>
@@ -1192,7 +1192,7 @@ export default function EvidenceCenter() {
               }
               data-testid="button-confirm-evidence-request"
             >
-              <T k="pagesAL.confirmReviewedRequest" />
+              <T k="pageLabels.confirmReviewedRequest" />
             </Button>
           </DialogFooter>
         </DialogContent>

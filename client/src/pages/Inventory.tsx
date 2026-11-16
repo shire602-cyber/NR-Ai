@@ -395,7 +395,7 @@ export default function Inventory() {
             {(t as any).inventory || "Inventory"}
           </h1>
           <p className="text-muted-foreground mt-1">
-            <T k="pagesAL.manageYourProductsAndTrackInventoryMovements" />
+            <T k="pageLabels.manageYourProductsAndTrackInventoryMovements" />
           </p>
         </div>
       </div>
@@ -438,7 +438,7 @@ export default function Inventory() {
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  <T k="pagesAL.addProduct" />
+                  <T k="pageLabels.addProduct" />
                 </Button>
               </div>
               <div className="mt-4">
@@ -580,10 +580,10 @@ export default function Inventory() {
           <Card>
             <CardHeader>
               <CardTitle>
-                <T k="pagesAL.inventoryMovements" />
+                <T k="pageLabels.inventoryMovements" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.historyOfAllInventoryChangesAcrossProducts" />
+                <T k="pageLabels.historyOfAllInventoryChangesAcrossProducts" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -921,7 +921,7 @@ export default function Inventory() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.lowStockThreshold" />
+                        <T k="pageLabels.lowStockThreshold" />
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -963,7 +963,7 @@ export default function Inventory() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.addStock" />
+              <T k="pageLabels.addStock" />
             </DialogTitle>
             <DialogDescription>
               {stockProduct
@@ -1082,7 +1082,7 @@ export default function Inventory() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <T k="pagesAL.deleteProduct" />
+              <T k="pageLabels.deleteProduct" />
             </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this product from inventory. This action cannot be

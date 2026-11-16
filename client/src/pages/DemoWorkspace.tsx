@@ -116,7 +116,7 @@ export default function DemoWorkspace() {
               <Building2 className="h-4 w-4 text-white" />
             </div>
             <span className="font-semibold">
-              <T k="pagesAL.muhasibAi" />
+              <T k="pageLabels.muhasibAi" />
             </span>
           </Link>
           <div className="flex items-center gap-2">
@@ -127,7 +127,7 @@ export default function DemoWorkspace() {
             </Link>
             <Link href="/register">
               <Button size="sm" className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                <T k="pagesAL.startFree" />
+                <T k="pageLabels.startFree" />
               </Button>
             </Link>
           </div>
@@ -138,10 +138,10 @@ export default function DemoWorkspace() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-3">
             <Badge className="bg-[#E6F1EC] text-[#0D5C3D] hover:bg-[#E6F1EC]">
-              <T k="pagesAL.sampleCompanyWorkspace" />
+              <T k="pageLabels.sampleCompanyWorkspace" />
             </Badge>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              <T k="pagesAL.seeTheSaaSProductWithRealAccountingContext" />
+              <T k="pageLabels.seeTheSaaSProductWithRealAccountingContext" />
             </h1>
             <p className="max-w-2xl text-sm leading-6 text-black/65 sm:text-base">
               Explore a launch-ready UAE SME workflow using sample invoices, receipts, bank imports,
@@ -151,13 +151,13 @@ export default function DemoWorkspace() {
           <div className="flex flex-wrap gap-2">
             <Link href="/register">
               <Button className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                <T k="pagesAL.createMyWorkspace" />
+                <T k="pageLabels.createMyWorkspace" />
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
             <Link href="/help">
               <Button variant="outline">
-                <T k="pagesAL.viewHelpDocs" />
+                <T k="pageLabels.viewHelpDocs" />
               </Button>
             </Link>
           </div>
@@ -197,7 +197,7 @@ export default function DemoWorkspace() {
                   </p>
                 </div>
                 <Badge variant="outline" className="w-fit">
-                  <T k="pagesAL.demoData" />
+                  <T k="pageLabels.demoData" />
                 </Badge>
               </div>
             </div>
@@ -208,7 +208,7 @@ export default function DemoWorkspace() {
                   <T k="pages.invoices" />
                 </TabsTrigger>
                 <TabsTrigger value="banking">
-                  <T k="pagesAL.banking" />
+                  <T k="pageLabels.banking" />
                 </TabsTrigger>
                 <TabsTrigger value="vat">VAT</TabsTrigger>
                 <TabsTrigger value="ct">CT</TabsTrigger>
@@ -294,7 +294,7 @@ export default function DemoWorkspace() {
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-[#9A762A]" />
                     <p className="text-sm font-medium">
-                      <T k="pagesAL.cSVStatementImportNoLiveFeedNeeded" />
+                      <T k="pageLabels.cSVStatementImportNoLiveFeedNeeded" />
                     </p>
                   </div>
                   <p className="mt-1 text-sm text-black/60">
@@ -377,7 +377,7 @@ export default function DemoWorkspace() {
                 </div>
                 <div className="mt-4 rounded-md border border-black/10 p-4">
                   <p className="text-sm font-medium">
-                    <T k="pagesAL.corporateTaxSupportSchedule" />
+                    <T k="pageLabels.corporateTaxSupportSchedule" />
                   </p>
                   <p className="mt-1 text-sm text-black/60">
                     Revenue and expense rows roll into a draft CT estimate and can be exported as an
@@ -393,7 +393,7 @@ export default function DemoWorkspace() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CheckCircle2 className="h-5 w-5 text-[#0D5C3D]" />
-                  <T k="pagesAL.launchChecklist" />
+                  <T k="pageLabels.launchChecklist" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -411,7 +411,7 @@ export default function DemoWorkspace() {
                 <Receipt className="h-8 w-8 text-[#C19E50]" />
                 <div>
                   <p className="font-semibold">
-                    <T k="pagesAL.wantYourOwnBooksInThisShape" />
+                    <T k="pageLabels.wantYourOwnBooksInThisShape" />
                   </p>
                   <p className="mt-1 text-sm text-white/65">
                     Register, create a company, then use express onboarding to seed the UAE chart of
@@ -420,7 +420,7 @@ export default function DemoWorkspace() {
                 </div>
                 <Link href="/register">
                   <Button className="w-full bg-card text-[#0E1320] hover:bg-card/90">
-                    <T k="pagesAL.startSetup" />
+                    <T k="pageLabels.startSetup" />
                   </Button>
                 </Link>
               </CardContent>

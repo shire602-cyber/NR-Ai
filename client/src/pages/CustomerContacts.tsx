@@ -191,7 +191,7 @@ function ContactForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>
-            <T k="pagesAL.tRNNumber" />
+            <T k="pageLabels.tRNNumber" />
           </Label>
           <Input
             value={formData.trnNumber}
@@ -234,7 +234,7 @@ function ContactForm({
       </div>
       <div className="space-y-2">
         <Label>
-          <T k="pagesAL.address" />
+          <T k="pageLabels.address" />
         </Label>
         <Input
           value={formData.address}
@@ -255,7 +255,7 @@ function ContactForm({
         </div>
         <div className="space-y-2">
           <Label>
-            <T k="pagesAL.country" />
+            <T k="pageLabels.country" />
           </Label>
           <Input
             value={formData.country}
@@ -554,7 +554,7 @@ export default function CustomerContacts() {
               data-testid="button-download-template"
             >
               <Download className="w-4 h-4 mr-2" />
-              <T k="pagesAL.downloadTemplate" />
+              <T k="pageLabels.downloadTemplate" />
             </Button>
             <Button
               variant="destructive"
@@ -566,22 +566,22 @@ export default function CustomerContacts() {
               data-testid="button-clear-all-contacts"
             >
               <Trash2 className="w-4 h-4 mr-2" />
-              <T k="pagesAL.clearAll" />
+              <T k="pageLabels.clearAll" />
             </Button>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-contact">
                   <Plus className="w-4 h-4 mr-2" />
-                  <T k="pagesAL.addContact" />
+                  <T k="pageLabels.addContact" />
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                   <DialogTitle>
-                    <T k="pagesAL.addNewContact" />
+                    <T k="pageLabels.addNewContact" />
                   </DialogTitle>
                   <DialogDescription>
-                    <T k="pagesAL.addANewCustomerOrBusinessContact" />
+                    <T k="pageLabels.addANewCustomerOrBusinessContact" />
                   </DialogDescription>
                 </DialogHeader>
                 <ContactForm
@@ -602,7 +602,7 @@ export default function CustomerContacts() {
           </TabsTrigger>
           <TabsTrigger value="import" data-testid="tab-contacts-import">
             <Upload className="w-4 h-4 mr-2" />
-            <T k="pagesAL.importFromExcel" />
+            <T k="pageLabels.importFromExcel" />
           </TabsTrigger>
         </TabsList>
 
@@ -764,7 +764,7 @@ export default function CustomerContacts() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileSpreadsheet className="w-5 h-5" />
-                    <T k="pagesAL.uploadExcelFile" />
+                    <T k="pageLabels.uploadExcelFile" />
                   </CardTitle>
                   <CardDescription>
                     Upload an Excel file (.xlsx) or CSV containing your customer contacts. We'll
@@ -788,7 +788,7 @@ export default function CustomerContacts() {
                         <FileSpreadsheet className="w-10 h-10 text-success" />
                         <p className="font-medium">{file.name}</p>
                         <Button variant="outline" size="sm" onClick={resetImport}>
-                          <T k="pagesAL.chooseDifferentFile" />
+                          <T k="pageLabels.chooseDifferentFile" />
                         </Button>
                       </div>
                     ) : (
@@ -796,7 +796,7 @@ export default function CustomerContacts() {
                         <Upload className="w-10 h-10 text-muted-foreground" />
                         <div>
                           <p className="font-medium">
-                            <T k="pagesAL.dropYourExcelFileHere" />
+                            <T k="pageLabels.dropYourExcelFileHere" />
                           </p>
                           <p className="text-sm text-muted-foreground">or click to browse</p>
                         </div>
@@ -879,7 +879,7 @@ export default function CustomerContacts() {
                         {importMutation.isPending ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            <T k="pagesAL.importing" />
+                            <T k="pageLabels.importing" />
                           </>
                         ) : (
                           <>
@@ -898,7 +898,7 @@ export default function CustomerContacts() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-success" />
-                  <T k="pagesAL.importComplete" />
+                  <T k="pageLabels.importComplete" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -912,13 +912,13 @@ export default function CustomerContacts() {
                   <div className="text-center p-4 bg-info/10 rounded-lg">
                     <p className="text-2xl font-bold text-info">{importResults.updated}</p>
                     <p className="text-sm text-muted-foreground">
-                      <T k="pagesAL.updated" />
+                      <T k="pageLabels.updated" />
                     </p>
                   </div>
                   <div className="text-center p-4 bg-warning/10 rounded-lg">
                     <p className="text-2xl font-bold text-warning">{importResults.skipped}</p>
                     <p className="text-sm text-muted-foreground">
-                      <T k="pagesAL.skipped" />
+                      <T k="pageLabels.skipped" />
                     </p>
                   </div>
                 </div>
@@ -950,10 +950,10 @@ export default function CustomerContacts() {
                     }}
                     data-testid="button-view-contacts"
                   >
-                    <T k="pagesAL.viewContacts" />
+                    <T k="pageLabels.viewContacts" />
                   </Button>
                   <Button onClick={resetImport} data-testid="button-import-more">
-                    <T k="pagesAL.importMore" />
+                    <T k="pageLabels.importMore" />
                   </Button>
                 </div>
               </CardContent>
@@ -966,10 +966,10 @@ export default function CustomerContacts() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.editContact" />
+              <T k="pageLabels.editContact" />
             </DialogTitle>
             <DialogDescription>
-              <T k="pagesAL.updateCustomerContactInformation" />
+              <T k="pageLabels.updateCustomerContactInformation" />
             </DialogDescription>
           </DialogHeader>
           {editContact && (
@@ -993,7 +993,7 @@ export default function CustomerContacts() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="w-5 h-5" />
-              <T k="pagesAL.clientPortalLink" />
+              <T k="pageLabels.clientPortalLink" />
             </DialogTitle>
             <DialogDescription>
               Share this link with {portalLinkDialog.contactName} to give them access to view their
@@ -1028,7 +1028,7 @@ export default function CustomerContacts() {
                 data-testid="button-open-portal"
               >
                 <ExternalLink className="w-4 h-4 mr-2" />
-                <T k="pagesAL.openPortal" />
+                <T k="pageLabels.openPortal" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -1052,7 +1052,7 @@ export default function CustomerContacts() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="w-5 h-5" />
-              <T k="pagesAL.deleteALLContacts" />
+              <T k="pageLabels.deleteALLContacts" />
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
@@ -1081,7 +1081,7 @@ export default function CustomerContacts() {
                   <Label htmlFor="clear-all-confirm">
                     <T k="consolidation.kind" />
                     <strong>
-                      <T k="pagesAL.dELETEALL" />
+                      <T k="pageLabels.dELETEALL" />
                     </strong>{" "}
                     to confirm:
                   </Label>
@@ -1113,7 +1113,7 @@ export default function CustomerContacts() {
               {clearAllMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  <T k="pagesAL.deleting" />
+                  <T k="pageLabels.deleting" />
                 </>
               ) : (
                 "Delete all contacts"
@@ -1132,10 +1132,10 @@ export default function CustomerContacts() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <T k="pagesAL.deleteContact" />
+              <T k="pageLabels.deleteContact" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <T k="pagesAL.areYouSureYouWantToDelete" />
+              <T k="pageLabels.areYouSureYouWantToDelete" />
               <strong>{contactToDelete?.name}</strong>? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

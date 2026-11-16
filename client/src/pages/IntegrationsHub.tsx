@@ -321,10 +321,10 @@ export default function IntegrationsHub() {
             </div>
             <div>
               <h1 className="text-3xl font-bold" data-testid="text-integrations-title">
-                <T k="pagesAL.cRMAndECommerceIntegrations" />
+                <T k="pageLabels.cRMAndECommerceIntegrations" />
               </h1>
               <p className="text-muted-foreground mt-1">
-                <T k="pagesAL.connectYourBusinessToolsForAutomaticDataSynchronization" />
+                <T k="pageLabels.connectYourBusinessToolsForAutomaticDataSynchronization" />
               </p>
             </div>
           </div>
@@ -338,13 +338,13 @@ export default function IntegrationsHub() {
           <TabsTrigger value="platforms" className="gap-2" data-testid="tab-platforms">
             <Plug className="w-4 h-4" />
             <span className="hidden sm:inline">
-              <T k="pagesAL.platforms" />
+              <T k="pageLabels.platforms" />
             </span>
           </TabsTrigger>
           <TabsTrigger value="transactions" className="gap-2" data-testid="tab-transactions">
             <CreditCard className="w-4 h-4" />
             <span className="hidden sm:inline">
-              <T k="pagesAL.transactions" />
+              <T k="pageLabels.transactions" />
             </span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2" data-testid="tab-settings">
@@ -369,7 +369,7 @@ export default function IntegrationsHub() {
               <CardContent>
                 <div className="text-2xl font-bold">{activeIntegrationCount}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.activeIntegrations" />
+                  <T k="pageLabels.activeIntegrations" />
                 </p>
               </CardContent>
             </Card>
@@ -377,14 +377,14 @@ export default function IntegrationsHub() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.syncedToday" />
+                  <T k="pageLabels.syncedToday" />
                 </CardTitle>
                 <RefreshCw className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{syncedTodayCount}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.transactionsImported" />
+                  <T k="pageLabels.transactionsImported" />
                 </p>
               </CardContent>
             </Card>
@@ -392,7 +392,7 @@ export default function IntegrationsHub() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.totalValue" />
+                  <T k="pageLabels.totalValue" />
                 </CardTitle>
                 <CreditCard className="w-4 h-4 text-chart-5 " />
               </CardHeader>
@@ -416,7 +416,7 @@ export default function IntegrationsHub() {
               <CardContent>
                 <div className="text-2xl font-bold">{reconciledPercent}%</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.autoMatched" />
+                  <T k="pageLabels.autoMatched" />
                 </p>
               </CardContent>
             </Card>
@@ -587,7 +587,7 @@ export default function IntegrationsHub() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Zap className="w-5 h-5 text-primary" />
-                <T k="pagesAL.whyConnectYourPlatforms" />
+                <T k="pageLabels.whyConnectYourPlatforms" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -598,10 +598,10 @@ export default function IntegrationsHub() {
                   </div>
                   <div>
                     <p className="font-medium">
-                      <T k="pagesAL.saveTime" />
+                      <T k="pageLabels.saveTime" />
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      <T k="pagesAL.automaticTransactionImportEliminatesManualDataEntry" />
+                      <T k="pageLabels.automaticTransactionImportEliminatesManualDataEntry" />
                     </p>
                   </div>
                 </div>
@@ -611,10 +611,10 @@ export default function IntegrationsHub() {
                   </div>
                   <div>
                     <p className="font-medium">
-                      <T k="pagesAL.reduceErrors" />
+                      <T k="pageLabels.reduceErrors" />
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      <T k="pagesAL.aIPoweredMatchingEnsuresAccurateReconciliation" />
+                      <T k="pageLabels.aIPoweredMatchingEnsuresAccurateReconciliation" />
                     </p>
                   </div>
                 </div>
@@ -624,10 +624,10 @@ export default function IntegrationsHub() {
                   </div>
                   <div>
                     <p className="font-medium">
-                      <T k="pagesAL.realTimeData" />
+                      <T k="pageLabels.realTimeData" />
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      <T k="pagesAL.alwaysHaveUpToDateFinancialInformation" />
+                      <T k="pageLabels.alwaysHaveUpToDateFinancialInformation" />
                     </p>
                   </div>
                 </div>
@@ -640,7 +640,7 @@ export default function IntegrationsHub() {
         <TabsContent value="transactions" className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              <T k="pagesAL.recentTransactionsImportedFromConnectedPlatforms" />
+              <T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />
             </p>
             <Button variant="outline" size="sm" data-testid="button-export-transactions">
               <FileText className="w-4 h-4 mr-2" />
@@ -663,7 +663,7 @@ export default function IntegrationsHub() {
                     <div className="p-10 text-center text-muted-foreground">
                       <CreditCard className="w-8 h-8 mx-auto mb-3" />
                       <p className="font-medium">
-                        <T k="pagesAL.noImportedTransactionsYet" />
+                        <T k="pageLabels.noImportedTransactionsYet" />
                       </p>
                       <p className="text-sm">
                         Connect Stripe or Shopify and run a sync to populate this list.
@@ -746,20 +746,20 @@ export default function IntegrationsHub() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.pendingReconciliation" />
+                  <T k="pageLabels.pendingReconciliation" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-warning ">12</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.transactionsNeedReview" />
+                  <T k="pageLabels.transactionsNeedReview" />
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.autoMatched2" />
+                  <T k="pageLabels.autoMatched2" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -772,13 +772,13 @@ export default function IntegrationsHub() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.failedImports" />
+                  <T k="pageLabels.failedImports" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-destructive ">3</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.requireAttention" />
+                  <T k="pageLabels.requireAttention" />
                 </p>
               </CardContent>
             </Card>
@@ -790,20 +790,20 @@ export default function IntegrationsHub() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                <T k="pagesAL.syncSettings" />
+                <T k="pageLabels.syncSettings" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.configureHowDataIsSynchronizedFromConnectedPlatforms" />
+                <T k="pageLabels.configureHowDataIsSynchronizedFromConnectedPlatforms" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">
-                    <T k="pagesAL.automaticSync" />
+                    <T k="pageLabels.automaticSync" />
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    <T k="pagesAL.syncNewTransactionsEveryHour" />
+                    <T k="pageLabels.syncNewTransactionsEveryHour" />
                   </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-auto-sync" />
@@ -812,10 +812,10 @@ export default function IntegrationsHub() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">
-                    <T k="pagesAL.autoReconciliation" />
+                    <T k="pageLabels.autoReconciliation" />
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    <T k="pagesAL.automaticallyMatchTransactionsWithInvoices" />
+                    <T k="pageLabels.automaticallyMatchTransactionsWithInvoices" />
                   </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-auto-reconcile" />
@@ -824,10 +824,10 @@ export default function IntegrationsHub() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">
-                    <T k="pagesAL.createJournalEntries" />
+                    <T k="pageLabels.createJournalEntries" />
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    <T k="pagesAL.automaticallyCreateJournalEntriesForMatchedTransactions" />
+                    <T k="pageLabels.automaticallyCreateJournalEntriesForMatchedTransactions" />
                   </p>
                 </div>
                 <Switch data-testid="switch-auto-journal" />
@@ -836,10 +836,10 @@ export default function IntegrationsHub() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">
-                    <T k="pagesAL.importRefunds" />
+                    <T k="pageLabels.importRefunds" />
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    <T k="pagesAL.includeRefundsInTransactionImports" />
+                    <T k="pageLabels.includeRefundsInTransactionImports" />
                   </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-import-refunds" />
@@ -850,42 +850,42 @@ export default function IntegrationsHub() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                <T k="pagesAL.accountMapping" />
+                <T k="pageLabels.accountMapping" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.mapPlatformTransactionsToYourChartOfAccounts" />
+                <T k="pageLabels.mapPlatformTransactionsToYourChartOfAccounts" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm text-muted-foreground">
-                    <T k="pagesAL.stripePayments" />
+                    <T k="pageLabels.stripePayments" />
                   </Label>
                   <p className="font-medium">1000 - Cash</p>
                 </div>
                 <div>
                   <Label className="text-sm text-muted-foreground">
-                    <T k="pagesAL.stripeFees" />
+                    <T k="pageLabels.stripeFees" />
                   </Label>
                   <p className="font-medium">5200 - Bank Charges</p>
                 </div>
                 <div>
                   <Label className="text-sm text-muted-foreground">
-                    <T k="pagesAL.shopifySales" />
+                    <T k="pageLabels.shopifySales" />
                   </Label>
                   <p className="font-medium">4000 - Sales Revenue</p>
                 </div>
                 <div>
                   <Label className="text-sm text-muted-foreground">
-                    <T k="pagesAL.shopifyFees" />
+                    <T k="pageLabels.shopifyFees" />
                   </Label>
                   <p className="font-medium">5300 - Platform Fees</p>
                 </div>
               </div>
               <Button variant="outline" className="w-full" data-testid="button-edit-mapping">
                 <Settings className="w-4 h-4 mr-2" />
-                <T k="pagesAL.editAccountMapping" />
+                <T k="pageLabels.editAccountMapping" />
               </Button>
             </CardContent>
           </Card>
@@ -915,7 +915,7 @@ export default function IntegrationsHub() {
               {selectedPlatform?.id === "stripe_payouts" && (
                 <div className="space-y-2">
                   <Label htmlFor="apiKey">
-                    <T k="pagesAL.stripeSecretKey" />
+                    <T k="pageLabels.stripeSecretKey" />
                   </Label>
                   <Input
                     id="apiKey"
@@ -935,7 +935,7 @@ export default function IntegrationsHub() {
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="shopDomain">
-                      <T k="pagesAL.shopDomain" />
+                      <T k="pageLabels.shopDomain" />
                     </Label>
                     <Input
                       id="shopDomain"
@@ -947,7 +947,7 @@ export default function IntegrationsHub() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="accessToken">
-                      <T k="pagesAL.accessToken" />
+                      <T k="pageLabels.accessToken" />
                     </Label>
                     <Input
                       id="accessToken"

@@ -136,7 +136,7 @@ export default function History() {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">
-          <T k="pagesAL.pleaseSelectACompanyToViewHistory" />
+          <T k="pageLabels.pleaseSelectACompanyToViewHistory" />
         </p>
       </div>
     );
@@ -201,7 +201,7 @@ export default function History() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
-                    <T k="pagesAL.allTypes" />
+                    <T k="pageLabels.allTypes" />
                   </SelectItem>
                   <SelectItem value="account">
                     <T k="shell.moreAccounts" />
@@ -216,7 +216,7 @@ export default function History() {
                     <T k="shell.navReceipts" />
                   </SelectItem>
                   <SelectItem value="backup">
-                    <T k="pagesAL.backups" />
+                    <T k="pageLabels.backups" />
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -230,7 +230,7 @@ export default function History() {
               <div className="text-center py-12">
                 <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">
-                  <T k="pagesAL.noActivityYet" />
+                  <T k="pageLabels.noActivityYet" />
                 </h3>
                 <p className="text-muted-foreground">
                   Activity will appear here as you create invoices, journal entries, and other

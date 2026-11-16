@@ -193,7 +193,7 @@ export default function ClientImport() {
             data-testid="button-download-template"
           >
             <Download className="w-4 h-4 mr-2" />
-            <T k="pagesAL.downloadTemplate" />
+            <T k="pageLabels.downloadTemplate" />
           </Button>
         }
       />
@@ -204,7 +204,7 @@ export default function ClientImport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5" />
-                <T k="pagesAL.uploadExcelFile" />
+                <T k="pageLabels.uploadExcelFile" />
               </CardTitle>
               <CardDescription>
                 Upload an Excel file (.xlsx) or CSV containing your client data. We'll automatically
@@ -227,7 +227,7 @@ export default function ClientImport() {
                   <div className="flex flex-col items-center gap-3">
                     <Loader2 className="w-10 h-10 animate-spin text-primary" />
                     <p className="text-muted-foreground">
-                      <T k="pagesAL.parsingFile" />
+                      <T k="pageLabels.parsingFile" />
                     </p>
                   </div>
                 ) : file ? (
@@ -235,7 +235,7 @@ export default function ClientImport() {
                     <FileSpreadsheet className="w-10 h-10 text-success" />
                     <p className="font-medium">{file.name}</p>
                     <Button variant="outline" size="sm" onClick={resetImport}>
-                      <T k="pagesAL.chooseDifferentFile" />
+                      <T k="pageLabels.chooseDifferentFile" />
                     </Button>
                   </div>
                 ) : (
@@ -243,7 +243,7 @@ export default function ClientImport() {
                     <Upload className="w-10 h-10 text-muted-foreground" />
                     <div>
                       <p className="font-medium">
-                        <T k="pagesAL.dragAndDropYourExcelFileHere" />
+                        <T k="pageLabels.dragAndDropYourExcelFileHere" />
                       </p>
                       <p className="text-sm text-muted-foreground">or click to browse</p>
                     </div>
@@ -266,7 +266,7 @@ export default function ClientImport() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>
-                      <T k="pagesAL.previewData" />
+                      <T k="pageLabels.previewData" />
                     </span>
                     <Badge variant="secondary">{previewData.totalRows} records found</Badge>
                   </CardTitle>
@@ -312,12 +312,12 @@ export default function ClientImport() {
                               {row.name ? (
                                 <Badge className="bg-success/10 text-success border-success/20">
                                   <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  <T k="pagesAL.valid" />
+                                  <T k="pageLabels.valid" />
                                 </Badge>
                               ) : (
                                 <Badge variant="destructive">
                                   <XCircle className="w-3 h-3 mr-1" />
-                                  <T k="pagesAL.missingName" />
+                                  <T k="pageLabels.missingName" />
                                 </Badge>
                               )}
                             </TableCell>
@@ -337,7 +337,7 @@ export default function ClientImport() {
               <Card>
                 <CardHeader>
                   <CardTitle>
-                    <T k="pagesAL.importOptions" />
+                    <T k="pageLabels.importOptions" />
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -350,7 +350,7 @@ export default function ClientImport() {
                     />
                     <Label htmlFor="createInvitations" className="flex items-center gap-2">
                       <Mail className="w-4 h-4" />
-                      <T k="pagesAL.createPortalInvitationsForClientsWithEmailAddresses" />
+                      <T k="pageLabels.createPortalInvitationsForClientsWithEmailAddresses" />
                     </Label>
                   </div>
                   <p className="text-sm text-muted-foreground ml-6">
@@ -372,7 +372,7 @@ export default function ClientImport() {
                   {importMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      <T k="pagesAL.importing" />
+                      <T k="pageLabels.importing" />
                     </>
                   ) : (
                     <>
@@ -390,7 +390,7 @@ export default function ClientImport() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-success" />
-              <T k="pagesAL.importComplete" />
+              <T k="pageLabels.importComplete" />
             </CardTitle>
             <CardDescription>{importResults.message}</CardDescription>
           </CardHeader>
@@ -497,7 +497,7 @@ export default function ClientImport() {
                           <T k="pages.company" />
                         </TableHead>
                         <TableHead>
-                          <T k="pagesAL.inviteLink" />
+                          <T k="pageLabels.inviteLink" />
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -522,7 +522,7 @@ export default function ClientImport() {
             <div className="flex justify-end gap-3 mt-6">
               <Button variant="outline" onClick={resetImport} data-testid="button-import-another">
                 <Upload className="w-4 h-4 mr-2" />
-                <T k="pagesAL.importAnotherFile" />
+                <T k="pageLabels.importAnotherFile" />
               </Button>
               <Button
                 onClick={() => (window.location.href = "/admin/clients")}

@@ -236,18 +236,18 @@ export default function JournalEntryDetail() {
             </Button>
           </Link>
           <h1 className="text-2xl font-bold">
-            <T k="pagesAL.journalEntryNotFound" />
+            <T k="pageLabels.journalEntryNotFound" />
           </h1>
         </div>
         <Card>
           <CardContent className="py-12 text-center">
             <XCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <p className="text-muted-foreground">
-              <T k="pagesAL.theRequestedJournalEntryCouldNotBeFound" />
+              <T k="pageLabels.theRequestedJournalEntryCouldNotBeFound" />
             </p>
             <Link href="/journal">
               <Button className="mt-4" data-testid="button-return-to-journal">
-                <T k="pagesAL.returnToJournal" />
+                <T k="pageLabels.returnToJournal" />
               </Button>
             </Link>
           </CardContent>
@@ -372,7 +372,7 @@ export default function JournalEntryDetail() {
           )}
           <Link href="/journal">
             <Button variant="outline" data-testid="button-view-all-entries">
-              <T k="pagesAL.viewAllEntries" />
+              <T k="pageLabels.viewAllEntries" />
             </Button>
           </Link>
         </div>
@@ -382,7 +382,7 @@ export default function JournalEntryDetail() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              <T k="pagesAL.totalDebits" />
+              <T k="pageLabels.totalDebits" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -395,7 +395,7 @@ export default function JournalEntryDetail() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              <T k="pagesAL.totalCredits" />
+              <T k="pageLabels.totalCredits" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -443,7 +443,7 @@ export default function JournalEntryDetail() {
             <T k="pages.lineItems" />
           </CardTitle>
           <CardDescription>
-            <T k="pagesAL.doubleEntryTransactionDetails" />
+            <T k="pageLabels.doubleEntryTransactionDetails" />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -452,7 +452,7 @@ export default function JournalEntryDetail() {
               <TableRow>
                 <TableHead className="w-[100px]">Code</TableHead>
                 <TableHead>
-                  <T k="pagesAL.accountName" />
+                  <T k="pageLabels.accountName" />
                 </TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Debit (AED)</TableHead>
@@ -555,7 +555,7 @@ export default function JournalEntryDetail() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">
-            <T k="pagesAL.entryDetails" />
+            <T k="pageLabels.entryDetails" />
           </CardTitle>
         </CardHeader>
         <CardContent>

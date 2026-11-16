@@ -158,7 +158,7 @@ export default function DeveloperSettings() {
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
-            <T k="pagesAL.webhooks" />
+            <T k="pageLabels.webhooks" />
           </TabsTrigger>
         </TabsList>
 
@@ -282,7 +282,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            <T k="pagesAL.createKey" />
+            <T k="pageLabels.createKey" />
           </Button>
         </CardHeader>
         <CardContent>
@@ -292,7 +292,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             </p>
           ) : !apiKeys?.length ? (
             <p className="text-muted-foreground py-8 text-center">
-              <T k="pagesAL.noAPIKeysCreatedYetCreateOneToGetStarted" />
+              <T k="pageLabels.noAPIKeysCreatedYetCreateOneToGetStarted" />
             </p>
           ) : (
             <Table>
@@ -304,7 +304,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     <T k="pages.scopes" />
                   </TableHead>
                   <TableHead>
-                    <T k="pagesAL.lastUsed" />
+                    <T k="pageLabels.lastUsed" />
                   </TableHead>
                   <TableHead>
                     <T k="pages.status" />
@@ -359,10 +359,10 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.createAPIKey" />
+              <T k="pageLabels.createAPIKey" />
             </DialogTitle>
             <DialogDescription>
-              <T k="pagesAL.generateANewAPIKeyForProgrammaticAccess" />
+              <T k="pageLabels.generateANewAPIKeyForProgrammaticAccess" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -432,10 +432,10 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.aPIKeyCreated" />
+              <T k="pageLabels.aPIKeyCreated" />
             </DialogTitle>
             <DialogDescription>
-              <T k="pagesAL.copyThisKeyNowYouWillNotBeAbleToSeeItAgain" />
+              <T k="pageLabels.copyThisKeyNowYouWillNotBeAbleToSeeItAgain" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -468,7 +468,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <T k="pagesAL.revokeAPIKey" />
+              <T k="pageLabels.revokeAPIKey" />
             </AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. Any applications using this key will immediately lose
@@ -483,7 +483,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <T k="pagesAL.revokeKey" />
+              <T k="pageLabels.revokeKey" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -623,7 +623,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>
-              <T k="pagesAL.webhookEndpoints" />
+              <T k="pageLabels.webhookEndpoints" />
             </CardTitle>
             <CardDescription>
               Receive real-time notifications when events happen in your account.
@@ -631,7 +631,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            <T k="pagesAL.addEndpoint" />
+            <T k="pageLabels.addEndpoint" />
           </Button>
         </CardHeader>
         <CardContent>
@@ -655,10 +655,10 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     <T k="pages.status" />
                   </TableHead>
                   <TableHead>
-                    <T k="pagesAL.failures" />
+                    <T k="pageLabels.failures" />
                   </TableHead>
                   <TableHead>
-                    <T k="pagesAL.lastTriggered" />
+                    <T k="pageLabels.lastTriggered" />
                   </TableHead>
                   <TableHead className="text-right">
                     <T k="pages.actions" />
@@ -749,7 +749,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.addWebhookEndpoint" />
+              <T k="pageLabels.addWebhookEndpoint" />
             </DialogTitle>
             <DialogDescription>
               We will send POST requests to this URL when selected events occur.
@@ -758,7 +758,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="webhook-url">
-                <T k="pagesAL.endpointURL" />
+                <T k="pageLabels.endpointURL" />
               </Label>
               <Input
                 id="webhook-url"
@@ -820,7 +820,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.webhookSecretCreated" />
+              <T k="pageLabels.webhookSecretCreated" />
             </DialogTitle>
             <DialogDescription>
               Copy this signing secret now. You will not be able to see it again. Use it to verify
@@ -861,7 +861,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.recentDeliveries" />
+              <T k="pageLabels.recentDeliveries" />
             </DialogTitle>
             <DialogDescription>
               Last 100 webhook delivery attempts for this endpoint.
@@ -870,20 +870,20 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           <div className="py-4">
             {!deliveries?.length ? (
               <p className="text-muted-foreground text-center py-4">
-                <T k="pagesAL.noDeliveriesRecordedYet" />
+                <T k="pageLabels.noDeliveriesRecordedYet" />
               </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>
-                      <T k="pagesAL.event" />
+                      <T k="pageLabels.event" />
                     </TableHead>
                     <TableHead>
                       <T k="pages.status" />
                     </TableHead>
                     <TableHead>
-                      <T k="pagesAL.response" />
+                      <T k="pageLabels.response" />
                     </TableHead>
                     <TableHead>Time</TableHead>
                     <TableHead />
@@ -950,7 +950,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <T k="pagesAL.deleteWebhookEndpoint" />
+              <T k="pageLabels.deleteWebhookEndpoint" />
             </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this endpoint and all delivery history. Events will no
@@ -965,7 +965,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <T k="pagesAL.deleteEndpoint" />
+              <T k="pageLabels.deleteEndpoint" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

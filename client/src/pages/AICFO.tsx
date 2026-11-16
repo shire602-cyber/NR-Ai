@@ -257,7 +257,7 @@ export default function AICFO() {
             </div>
             <div>
               <h1 className="text-3xl font-bold">
-                <T k="pagesAL.aICFOAndFinancialAdvisor" />
+                <T k="pageLabels.aICFOAndFinancialAdvisor" />
               </h1>
               <p className="text-muted-foreground mt-1">
                 Ask questions about your financial data and get AI-generated guidance.
@@ -426,7 +426,7 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-warning " />
-                <T k="pagesAL.outstandingInvoices" />
+                <T k="pageLabels.outstandingInvoices" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -443,7 +443,7 @@ export default function AICFO() {
                       cash flow.
                     </p>
                     <Button variant="outline" size="sm" className="w-fit">
-                      <T k="pagesAL.viewOutstandingInvoices" />
+                      <T k="pageLabels.viewOutstandingInvoices" />
                     </Button>
                   </>
                 ) : (
@@ -461,7 +461,7 @@ export default function AICFO() {
           <Card className="hover-elevate">
             <CardHeader>
               <CardTitle className="text-base">
-                <T k="pagesAL.revenueVsExpensesTrend" />
+                <T k="pageLabels.revenueVsExpensesTrend" />
               </CardTitle>
               <CardDescription>Last 6 months performance</CardDescription>
             </CardHeader>
@@ -508,10 +508,10 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <PieChart className="w-4 h-4" />
-                <T k="pagesAL.expenseBreakdown" />
+                <T k="pageLabels.expenseBreakdown" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.topExpenseCategoriesFromPostedJournalEntries" />
+                <T k="pageLabels.topExpenseCategoriesFromPostedJournalEntries" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -557,10 +557,10 @@ export default function AICFO() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Brain className="w-4 h-4 text-primary" />
-                  <T k="pagesAL.aIGeneratedRecommendations" />
+                  <T k="pageLabels.aIGeneratedRecommendations" />
                 </CardTitle>
                 <CardDescription>
-                  <T k="pagesAL.basedOnYourLiveFinancialDataGeneratedOnDemand" />
+                  <T k="pageLabels.basedOnYourLiveFinancialDataGeneratedOnDemand" />
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -600,10 +600,10 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
-                <T k="pagesAL.chatWithYourAICFO" />
+                <T k="pageLabels.chatWithYourAICFO" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.askQuestionsAboutYourFinancesAndGetPersonalizedAdvice" />
+                <T k="pageLabels.askQuestionsAboutYourFinancesAndGetPersonalizedAdvice" />
               </CardDescription>
             </CardHeader>
 
@@ -616,7 +616,7 @@ export default function AICFO() {
                       <Bot className="w-8 h-8 text-primary" />
                     </div>
                     <h3 className="font-semibold mb-2">
-                      <T k="pagesAL.startAConversation" />
+                      <T k="pageLabels.startAConversation" />
                     </h3>
                     <p className="text-sm text-muted-foreground mb-6 max-w-xs">
                       Ask me anything about your finances. I'll provide data-backed insights and
@@ -679,7 +679,7 @@ export default function AICFO() {
                         </div>
                         <div className="bg-muted rounded-lg p-3">
                           <p className="text-sm text-muted-foreground">
-                            <T k="pagesAL.aIIsThinking" />
+                            <T k="pageLabels.aIIsThinking" />
                           </p>
                         </div>
                       </div>

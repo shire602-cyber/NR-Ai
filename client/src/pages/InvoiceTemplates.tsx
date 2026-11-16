@@ -279,7 +279,7 @@ export default function InvoiceTemplates() {
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
-              <T k="pagesAL.createTemplate" />
+              <T k="pageLabels.createTemplate" />
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -299,7 +299,7 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.templateName" />
+                        <T k="pageLabels.templateName" />
                       </FormLabel>
                       <FormControl>
                         <Input {...field} placeholder="e.g., Professional Blue" />
@@ -316,7 +316,7 @@ export default function InvoiceTemplates() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          <T k="pagesAL.primaryColor" />
+                          <T k="pageLabels.primaryColor" />
                         </FormLabel>
                         <FormControl>
                           <div className="flex gap-2">
@@ -342,7 +342,7 @@ export default function InvoiceTemplates() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          <T k="pagesAL.accentColor" />
+                          <T k="pageLabels.accentColor" />
                         </FormLabel>
                         <FormControl>
                           <div className="flex gap-2">
@@ -370,7 +370,7 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.layout" />
+                        <T k="pageLabels.layout" />
                       </FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
@@ -380,13 +380,13 @@ export default function InvoiceTemplates() {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="standard">
-                            <T k="pagesAL.standardCleanTraditionalLayout" />
+                            <T k="pageLabels.standardCleanTraditionalLayout" />
                           </SelectItem>
                           <SelectItem value="modern">
-                            <T k="pagesAL.modernSleekDesignWithAccentColors" />
+                            <T k="pageLabels.modernSleekDesignWithAccentColors" />
                           </SelectItem>
                           <SelectItem value="minimal">
-                            <T k="pagesAL.minimalSimpleAndDistractionFree" />
+                            <T k="pageLabels.minimalSimpleAndDistractionFree" />
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -401,7 +401,7 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.headerText" />
+                        <T k="pageLabels.headerText" />
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -420,7 +420,7 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.footerText" />
+                        <T k="pageLabels.footerText" />
                       </FormLabel>
                       <FormControl>
                         <Textarea
@@ -472,7 +472,7 @@ export default function InvoiceTemplates() {
                           <T k="pages.showCompanyLogo" />
                         </FormLabel>
                         <FormDescription>
-                          <T k="pagesAL.displayYourCompanyLogoOnTheInvoice" />
+                          <T k="pageLabels.displayYourCompanyLogoOnTheInvoice" />
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -489,10 +489,10 @@ export default function InvoiceTemplates() {
                     <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
                         <FormLabel className="text-base">
-                          <T k="pagesAL.showCompanyStamp" />
+                          <T k="pageLabels.showCompanyStamp" />
                         </FormLabel>
                         <FormDescription>
-                          <T k="pagesAL.displayACompanyStampOrSealOnTheInvoice" />
+                          <T k="pageLabels.displayACompanyStampOrSealOnTheInvoice" />
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -541,7 +541,7 @@ export default function InvoiceTemplates() {
                   <div className="absolute top-2 right-2">
                     <Badge className="bg-primary">
                       <Check className="w-3 h-3 mr-1" />
-                      <T k="pagesAL.default" />
+                      <T k="pageLabels.default" />
                     </Badge>
                   </div>
                 )}
@@ -581,7 +581,7 @@ export default function InvoiceTemplates() {
                         disabled={setDefaultMutation.isPending}
                       >
                         <Star className="w-3 h-3 mr-1" />
-                        <T k="pagesAL.setDefault" />
+                        <T k="pageLabels.setDefault" />
                       </Button>
                     )}
                     <Button

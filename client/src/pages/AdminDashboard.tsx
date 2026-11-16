@@ -98,7 +98,7 @@ export default function AdminDashboard() {
             <Link href="/admin/invitations">
               <Button data-testid="button-invite-client">
                 <UserPlus className="w-4 h-4 mr-2" />
-                <T k="pagesAL.inviteClient" />
+                <T k="pageLabels.inviteClient" />
               </Button>
             </Link>
           </>
@@ -118,7 +118,7 @@ export default function AdminDashboard() {
               {stats?.totalClients || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              <T k="pagesAL.activeClientCompanies" />
+              <T k="pageLabels.activeClientCompanies" />
             </p>
           </CardContent>
         </Card>
@@ -126,7 +126,7 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">
-              <T k="pagesAL.totalUsers" />
+              <T k="pageLabels.totalUsers" />
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -143,7 +143,7 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">
-              <T k="pagesAL.pendingInvitations" />
+              <T k="pageLabels.pendingInvitations" />
             </CardTitle>
             <Mail className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -152,7 +152,7 @@ export default function AdminDashboard() {
               {stats?.pendingInvitations || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              <T k="pagesAL.awaitingClientRegistration" />
+              <T k="pageLabels.awaitingClientRegistration" />
             </p>
           </CardContent>
         </Card>
@@ -160,7 +160,7 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">
-              <T k="pagesAL.aIStatus" />
+              <T k="pageLabels.aIStatus" />
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -172,7 +172,7 @@ export default function AdminDashboard() {
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              <T k="pagesAL.allAIFeaturesOperational" />
+              <T k="pageLabels.allAIFeaturesOperational" />
             </p>
           </CardContent>
         </Card>
@@ -183,10 +183,10 @@ export default function AdminDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              <T k="pagesAL.recentClients" />
+              <T k="pageLabels.recentClients" />
             </CardTitle>
             <CardDescription>
-              <T k="pagesAL.yourMostRecentlyAddedClients" />
+              <T k="pageLabels.yourMostRecentlyAddedClients" />
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -218,11 +218,11 @@ export default function AdminDashboard() {
                 <div className="text-center py-8 text-muted-foreground">
                   <Building2 className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>
-                    <T k="pagesAL.noClientsYet" />
+                    <T k="pageLabels.noClientsYet" />
                   </p>
                   <Link href="/admin/clients">
                     <Button variant="ghost" className="mt-2">
-                      <T k="pagesAL.addYourFirstClient" />
+                      <T k="pageLabels.addYourFirstClient" />
                     </Button>
                   </Link>
                 </div>
@@ -238,7 +238,7 @@ export default function AdminDashboard() {
               <T k="pages.recentActivity" />
             </CardTitle>
             <CardDescription>
-              <T k="pagesAL.latestActionsInTheSystem" />
+              <T k="pageLabels.latestActionsInTheSystem" />
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -269,7 +269,7 @@ export default function AdminDashboard() {
                 <div className="text-center py-8 text-muted-foreground">
                   <Activity className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>
-                    <T k="pagesAL.noRecentActivity" />
+                    <T k="pageLabels.noRecentActivity" />
                   </p>
                 </div>
               )}
@@ -281,10 +281,10 @@ export default function AdminDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <T k="pagesAL.quickActions" />
+            <T k="pageLabels.quickActions" />
           </CardTitle>
           <CardDescription>
-            <T k="pagesAL.commonAdministrativeTasks" />
+            <T k="pageLabels.commonAdministrativeTasks" />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -297,7 +297,7 @@ export default function AdminDashboard() {
               >
                 <Building2 className="h-6 w-6" />
                 <span>
-                  <T k="pagesAL.manageClients" />
+                  <T k="pageLabels.manageClients" />
                 </span>
               </Button>
             </Link>
@@ -309,7 +309,7 @@ export default function AdminDashboard() {
               >
                 <UserPlus className="h-6 w-6" />
                 <span>
-                  <T k="pagesAL.sendInvitations" />
+                  <T k="pageLabels.sendInvitations" />
                 </span>
               </Button>
             </Link>
@@ -321,7 +321,7 @@ export default function AdminDashboard() {
               >
                 <Users className="h-6 w-6" />
                 <span>
-                  <T k="pagesAL.manageUsers" />
+                  <T k="pageLabels.manageUsers" />
                 </span>
               </Button>
             </Link>
@@ -333,7 +333,7 @@ export default function AdminDashboard() {
               >
                 <FileText className="h-6 w-6" />
                 <span>
-                  <T k="pagesAL.activityLogs" />
+                  <T k="pageLabels.activityLogs" />
                 </span>
               </Button>
             </Link>
@@ -348,10 +348,10 @@ export default function AdminDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <HeartPulse className="h-5 w-5" />
-            <T k="pagesAL.clientHealthOverview" />
+            <T k="pageLabels.clientHealthOverview" />
           </CardTitle>
           <CardDescription>
-            <T k="pagesAL.atAGlanceStatusForEachClientCompany" />
+            <T k="pageLabels.atAGlanceStatusForEachClientCompany" />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -403,7 +403,7 @@ export default function AdminDashboard() {
                       <div className="space-y-1 text-xs text-muted-foreground">
                         <div className="flex justify-between">
                           <span>
-                            <T k="pagesAL.outstandingInvoices2" />
+                            <T k="pageLabels.outstandingInvoices2" />
                           </span>
                           <span className="font-medium text-foreground">
                             {client.outstandingInvoices}
@@ -421,7 +421,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex justify-between">
                           <span>
-                            <T k="pagesAL.nextDeadline" />
+                            <T k="pageLabels.nextDeadline" />
                           </span>
                           <span className="font-medium text-foreground">
                             {client.nextDeadline
@@ -439,7 +439,7 @@ export default function AdminDashboard() {
             <div className="text-center py-8 text-muted-foreground">
               <HeartPulse className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="text-sm">
-                <T k="pagesAL.noClientCompaniesFound" />
+                <T k="pageLabels.noClientCompaniesFound" />
               </p>
             </div>
           )}
@@ -453,7 +453,7 @@ export default function AdminDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5" />
-            <T k="pagesAL.deadlineTracker" />
+            <T k="pageLabels.deadlineTracker" />
           </CardTitle>
           <CardDescription>Upcoming deadlines across all clients (next 90 days)</CardDescription>
         </CardHeader>
@@ -473,13 +473,13 @@ export default function AdminDashboard() {
                       <T k="pages.client" />
                     </th>
                     <th className="pb-3 pr-4 font-medium">
-                      <T k="pagesAL.deadlineType" />
+                      <T k="pageLabels.deadlineType" />
                     </th>
                     <th className="pb-3 pr-4 font-medium">
                       <T k="pages.dueDate" />
                     </th>
                     <th className="pb-3 pr-4 font-medium text-right">
-                      <T k="pagesAL.daysRemaining" />
+                      <T k="pageLabels.daysRemaining" />
                     </th>
                     <th className="pb-3 font-medium">
                       <T k="pages.status" />
@@ -546,7 +546,7 @@ export default function AdminDashboard() {
             <div className="text-center py-8 text-muted-foreground">
               <CalendarClock className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="text-sm">
-                <T k="pagesAL.noUpcomingDeadlines" />
+                <T k="pageLabels.noUpcomingDeadlines" />
               </p>
             </div>
           )}
@@ -560,10 +560,10 @@ export default function AdminDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserCog className="h-5 w-5" />
-            <T k="pagesAL.staffAssignment" />
+            <T k="pageLabels.staffAssignment" />
           </CardTitle>
           <CardDescription>
-            <T k="pagesAL.adminStaffAndTheirClientAssignments" />
+            <T k="pageLabels.adminStaffAndTheirClientAssignments" />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -573,13 +573,13 @@ export default function AdminDashboard() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="pb-3 pr-4 font-medium">
-                      <T k="pagesAL.staffName" />
+                      <T k="pageLabels.staffName" />
                     </th>
                     <th className="pb-3 pr-4 font-medium">
                       <T k="pages.email" />
                     </th>
                     <th className="pb-3 pr-4 font-medium text-right">
-                      <T k="pagesAL.assignedClients" />
+                      <T k="pageLabels.assignedClients" />
                     </th>
                     <th className="pb-3 font-medium">
                       <T k="pages.recentActivity" />
@@ -617,7 +617,7 @@ export default function AdminDashboard() {
             <div className="text-center py-8 text-muted-foreground">
               <UserCog className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="text-sm">
-                <T k="pagesAL.noStaffDataAvailable" />
+                <T k="pageLabels.noStaffDataAvailable" />
               </p>
             </div>
           )}

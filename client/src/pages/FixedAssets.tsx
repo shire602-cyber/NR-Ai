@@ -471,13 +471,13 @@ export default function FixedAssets() {
       case "disposed":
         return (
           <StatusBadge tone="danger">
-            <T k="pagesAL.disposed" />
+            <T k="pageLabels.disposed" />
           </StatusBadge>
         );
       case "fully_depreciated":
         return (
           <StatusBadge tone="warning">
-            <T k="pagesAL.fullyDepreciated" />
+            <T k="pageLabels.fullyDepreciated" />
           </StatusBadge>
         );
       default:
@@ -534,7 +534,7 @@ export default function FixedAssets() {
             <T k="pages.fixedAssets" />
           </h1>
           <p className="text-muted-foreground mt-1">
-            <T k="pagesAL.manageFixedAssetsDepreciationAndDisposals" />
+            <T k="pageLabels.manageFixedAssetsDepreciationAndDisposals" />
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -549,11 +549,11 @@ export default function FixedAssets() {
             className="flex items-center gap-2"
           >
             <PlayCircle className="w-4 h-4" />
-            <T k="pagesAL.runDepreciation" />
+            <T k="pageLabels.runDepreciation" />
           </Button>
           <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            <T k="pagesAL.addAsset" />
+            <T k="pageLabels.addAsset" />
           </Button>
         </div>
       </div>
@@ -580,7 +580,7 @@ export default function FixedAssets() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                <T k="pagesAL.accumulatedDepreciation" />
+                <T k="pageLabels.accumulatedDepreciation" />
               </CardTitle>
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -607,7 +607,7 @@ export default function FixedAssets() {
                 {formatCurrency(summary.totalNetBookValue, "AED", locale)}
               </div>
               <p className="text-xs text-muted-foreground">
-                <T k="pagesAL.currentCarryingValue" />
+                <T k="pageLabels.currentCarryingValue" />
               </p>
             </CardContent>
           </Card>
@@ -619,7 +619,7 @@ export default function FixedAssets() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              <T k="pagesAL.assetCategoryBreakdown" />
+              <T k="pageLabels.assetCategoryBreakdown" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -631,13 +631,13 @@ export default function FixedAssets() {
                       <T k="pages.category" />
                     </TableHead>
                     <TableHead className="text-right">
-                      <T k="pagesAL.count" />
+                      <T k="pageLabels.count" />
                     </TableHead>
                     <TableHead className="text-right">
                       <T k="pages.totalCost" />
                     </TableHead>
                     <TableHead className="text-right">
-                      <T k="pagesAL.accumDepreciation" />
+                      <T k="pageLabels.accumDepreciation" />
                     </TableHead>
                     <TableHead className="text-right">
                       <T k="pages.netBookValue" />
@@ -720,17 +720,17 @@ export default function FixedAssets() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>
-                      <T k="pagesAL.assetName" />
+                      <T k="pageLabels.assetName" />
                     </TableHead>
                     <TableHead>
                       <T k="pages.category" />
                     </TableHead>
                     <TableHead>
-                      <T k="pagesAL.purchaseDate" />
+                      <T k="pageLabels.purchaseDate" />
                     </TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">
-                      <T k="pagesAL.accumDep" />
+                      <T k="pageLabels.accumDep" />
                     </TableHead>
                     <TableHead className="text-right">NBV</TableHead>
                     <TableHead>
@@ -900,7 +900,7 @@ export default function FixedAssets() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.assetNumber" />
+                        <T k="pageLabels.assetNumber" />
                       </FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., FA-001" {...field} value={field.value || ""} />
@@ -1041,7 +1041,7 @@ export default function FixedAssets() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      <T k="pagesAL.depreciationMethod" />
+                      <T k="pageLabels.depreciationMethod" />
                     </FormLabel>
                     <Select onValueChange={field.onChange} value={field.value || "straight_line"}>
                       <FormControl>
@@ -1051,10 +1051,10 @@ export default function FixedAssets() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="straight_line">
-                          <T k="pagesAL.straightLine" />
+                          <T k="pageLabels.straightLine" />
                         </SelectItem>
                         <SelectItem value="declining_balance">
-                          <T k="pagesAL.decliningBalance" />
+                          <T k="pageLabels.decliningBalance" />
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -1070,7 +1070,7 @@ export default function FixedAssets() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.location" />
+                        <T k="pageLabels.location" />
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -1090,7 +1090,7 @@ export default function FixedAssets() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pagesAL.serialNumber" />
+                        <T k="pageLabels.serialNumber" />
                       </FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., SN-12345" {...field} value={field.value || ""} />
@@ -1146,7 +1146,7 @@ export default function FixedAssets() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.disposeAsset" />
+              <T k="pageLabels.disposeAsset" />
             </DialogTitle>
             <DialogDescription>
               {disposingAsset
@@ -1303,7 +1303,7 @@ export default function FixedAssets() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.runMonthlyDepreciation" />
+              <T k="pageLabels.runMonthlyDepreciation" />
             </DialogTitle>
             <DialogDescription>
               Calculate and record depreciation for all active assets for the selected month.
@@ -1405,7 +1405,7 @@ export default function FixedAssets() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <T k="pagesAL.deleteFixedAsset" />
+              <T k="pageLabels.deleteFixedAsset" />
             </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this asset record. This action cannot be undone.

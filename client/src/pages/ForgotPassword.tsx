@@ -98,7 +98,7 @@ export default function ForgotPassword() {
             <Briefcase className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-lg">
-            <T k="pagesAL.muhasibAi" />
+            <T k="pageLabels.muhasibAi" />
           </span>
         </Link>
       </div>
@@ -106,7 +106,7 @@ export default function ForgotPassword() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-semibold">
-            <T k="pagesAL.forgotPassword" />
+            <T k="pageLabels.forgotPassword" />
           </CardTitle>
           <CardDescription>
             Enter the email associated with your account and we'll send a reset link.
@@ -120,7 +120,7 @@ export default function ForgotPassword() {
                 <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
                 <div className="text-sm">
                   <p className="font-medium text-success-subtle-foreground ">
-                    <T k="pagesAL.checkYourInbox" />
+                    <T k="pageLabels.checkYourInbox" />
                   </p>
                   <p className="text-success mt-0.5">
                     If that email is registered, a reset link is on its way. The link is valid for

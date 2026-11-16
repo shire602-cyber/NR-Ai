@@ -331,7 +331,7 @@ export default function AIInbox() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-muted-foreground text-center">
-              <T k="pagesAL.pleaseCreateACompanyFirstToUseTheAIInbox" />
+              <T k="pageLabels.pleaseCreateACompanyFirstToUseTheAIInbox" />
             </p>
           </CardContent>
         </Card>
@@ -359,7 +359,7 @@ export default function AIInbox() {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              <T k="pagesAL.aIInbox" />
+              <T k="pageLabels.aIInbox" />
             </h1>
             <p className="text-muted-foreground text-sm">
               Autonomous GL Engine — AI categorizes and posts bank transactions
@@ -383,7 +383,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <BarChart3 className="h-3 w-3" />
-                <T k="pagesAL.totalProcessed" />
+                <T k="pageLabels.totalProcessed" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -416,7 +416,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Clock className="h-3 w-3 text-warning" />
-                <T k="pagesAL.pendingReview" />
+                <T k="pageLabels.pendingReview" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -427,7 +427,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <BookOpen className="h-3 w-3" />
-                <T k="pagesAL.activeRules" />
+                <T k="pageLabels.activeRules" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -451,7 +451,7 @@ export default function AIInbox() {
           </TabsTrigger>
           <TabsTrigger value="autoposted" className="gap-1">
             <Zap className="h-4 w-4" />
-            <T k="pagesAL.autoPosted" />
+            <T k="pageLabels.autoPosted" />
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1">
             <ArrowUpDown className="h-4 w-4" />
@@ -510,13 +510,13 @@ export default function AIInbox() {
                           <T k="pages.amount" />
                         </TableHead>
                         <TableHead>
-                          <T k="pagesAL.suggestedAccount" />
+                          <T k="pageLabels.suggestedAccount" />
                         </TableHead>
                         <TableHead>
                           <T k="pages.confidence" />
                         </TableHead>
                         <TableHead>
-                          <T k="pagesAL.aIReason" />
+                          <T k="pageLabels.aIReason" />
                         </TableHead>
                         <TableHead className="text-right">
                           <T k="pages.actions" />
@@ -550,7 +550,7 @@ export default function AIInbox() {
                                 </div>
                               ) : (
                                 <span className="text-sm text-muted-foreground">
-                                  <T k="pagesAL.noSuggestion" />
+                                  <T k="pageLabels.noSuggestion" />
                                 </span>
                               )}
                             </TableCell>
@@ -626,7 +626,7 @@ export default function AIInbox() {
                 <div className="text-center py-12 space-y-4">
                   <Zap className="h-12 w-12 text-muted-foreground mx-auto" />
                   <h3 className="text-lg font-semibold">
-                    <T k="pagesAL.noAutoPostedItems" />
+                    <T k="pageLabels.noAutoPostedItems" />
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     High-confidence transactions will be automatically posted here when scanned.
@@ -655,7 +655,7 @@ export default function AIInbox() {
                           <T k="pages.confidence" />
                         </TableHead>
                         <TableHead>
-                          <T k="pagesAL.journalEntry" />
+                          <T k="pageLabels.journalEntry" />
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -727,7 +727,7 @@ export default function AIInbox() {
                 <div className="text-center py-12 space-y-4">
                   <ArrowUpDown className="h-12 w-12 text-muted-foreground mx-auto" />
                   <h3 className="text-lg font-semibold">
-                    <T k="pagesAL.noHistory" />
+                    <T k="pageLabels.noHistory" />
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     Transaction history will appear here after items are processed.
@@ -829,7 +829,7 @@ export default function AIInbox() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.correctAccountAssignment" />
+              <T k="pageLabels.correctAccountAssignment" />
             </DialogTitle>
             <DialogDescription>
               Choose the correct account for this transaction. This will create a new rule so
@@ -852,7 +852,7 @@ export default function AIInbox() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  <T k="pagesAL.selectAccount" />
+                  <T k="pageLabels.selectAccount" />
                 </label>
                 <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                   <SelectTrigger>

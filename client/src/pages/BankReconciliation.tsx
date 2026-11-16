@@ -879,20 +879,20 @@ export default function BankReconciliation() {
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-[hsl(var(--chart-4))]" />
-              <T k="pagesAL.suggested" />
+              <T k="pageLabels.suggested" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">{stats.suggested}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              <T k="pagesAL.pendingReview2" />
+              <T k="pageLabels.pendingReview2" />
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              <T k="pagesAL.netAmount" />
+              <T k="pageLabels.netAmount" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -918,7 +918,7 @@ export default function BankReconciliation() {
                   onCheckedChange={(c) => setShowReconciled(c as boolean)}
                 />
                 <Label htmlFor="show-reconciled" className="text-sm cursor-pointer">
-                  <T k="pagesAL.showReconciled" />
+                  <T k="pageLabels.showReconciled" />
                 </Label>
               </div>
               <Select
@@ -934,7 +934,7 @@ export default function BankReconciliation() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
-                    <T k="pagesAL.allAccounts" />
+                    <T k="pageLabels.allAccounts" />
                   </SelectItem>
                   {bankAccounts?.map((acct) => (
                     <SelectItem key={acct.id} value={acct.id}>
@@ -1014,11 +1014,11 @@ export default function BankReconciliation() {
                               </StatusBadge>
                             ) : tx.matchStatus === "suggested" ? (
                               <StatusBadge tone="warning" className="w-fit">
-                                <T k="pagesAL.suggested" />
+                                <T k="pageLabels.suggested" />
                               </StatusBadge>
                             ) : (
                               <StatusBadge tone="neutral" className="w-fit">
-                                <T k="pagesAL.unmatched" />
+                                <T k="pageLabels.unmatched" />
                               </StatusBadge>
                             )}
                             {confMeta && !tx.isReconciled && (
@@ -1035,7 +1035,7 @@ export default function BankReconciliation() {
                               disabled={unmatchMutation.isPending}
                             >
                               <Unlink className="w-3.5 h-3.5 mr-1" />
-                              <T k="pagesAL.unmatch" />
+                              <T k="pageLabels.unmatch" />
                             </Button>
                           ) : tx.matchStatus === "suggested" ? (
                             <div className="flex gap-2">
@@ -1063,7 +1063,7 @@ export default function BankReconciliation() {
                               data-testid={`mobile-button-match-${tx.id}`}
                             >
                               <Link2 className="w-3.5 h-3.5 mr-1" />
-                              <T k="pagesAL.match" />
+                              <T k="pageLabels.match" />
                             </Button>
                           )}
                         </div>
@@ -1131,12 +1131,12 @@ export default function BankReconciliation() {
                               ) : tx.matchStatus === "suggested" ? (
                                 <StatusBadge tone="warning" className="w-fit">
                                   <Sparkles className="w-3 h-3 mr-1" />
-                                  <T k="pagesAL.suggested" />
+                                  <T k="pageLabels.suggested" />
                                 </StatusBadge>
                               ) : (
                                 <StatusBadge tone="neutral" className="w-fit">
                                   <XCircle className="w-3 h-3 mr-1" />
-                                  <T k="pagesAL.unmatched" />
+                                  <T k="pageLabels.unmatched" />
                                 </StatusBadge>
                               )}
                               {confMeta && !tx.isReconciled && (
@@ -1190,7 +1190,7 @@ export default function BankReconciliation() {
                                   data-testid={`button-match-${tx.id}`}
                                 >
                                   <Link2 className="w-3.5 h-3.5 mr-1" />
-                                  <T k="pagesAL.match" />
+                                  <T k="pageLabels.match" />
                                 </Button>
                               )}
                             </div>
@@ -1217,7 +1217,7 @@ export default function BankReconciliation() {
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.matchTransaction" />
+              <T k="pageLabels.matchTransaction" />
             </DialogTitle>
             <DialogDescription>
               {selectedTransaction && (
@@ -1235,7 +1235,7 @@ export default function BankReconciliation() {
             {/* Left: Bank transaction */}
             <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <T k="pagesAL.bankTransaction" />
+                <T k="pageLabels.bankTransaction" />
               </p>
               {selectedTransaction && (
                 <div className="space-y-2">
@@ -1269,7 +1269,7 @@ export default function BankReconciliation() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">
-                      <T k="pagesAL.direction" />
+                      <T k="pageLabels.direction" />
                     </p>
                     <Badge variant="outline" className="text-xs">
                       {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / Outflow"}
@@ -1282,7 +1282,7 @@ export default function BankReconciliation() {
             {/* Right: Match suggestions */}
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <T k="pagesAL.suggestedMatches" />
+                <T k="pageLabels.suggestedMatches" />
               </p>
               {isLoadingMatches ? (
                 <div className="space-y-2">
@@ -1346,7 +1346,7 @@ export default function BankReconciliation() {
                         )}
                         <div className="mt-2 flex justify-end">
                           <Badge variant="outline" className="text-xs">
-                            <T k="pagesAL.clickToMatch" />
+                            <T k="pageLabels.clickToMatch" />
                           </Badge>
                         </div>
                       </div>
@@ -1357,10 +1357,10 @@ export default function BankReconciliation() {
                 <div className="text-center py-8 text-muted-foreground">
                   <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
                   <p className="text-sm">
-                    <T k="pagesAL.noMatchesFound2" />
+                    <T k="pageLabels.noMatchesFound2" />
                   </p>
                   <p className="text-xs mt-1">
-                    <T k="pagesAL.tryReconcilingManuallyViaJournalEntries" />
+                    <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
                   </p>
                 </div>
               )}
@@ -1404,7 +1404,7 @@ export default function BankReconciliation() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>
-                <T k="pagesAL.bankAccount" />
+                <T k="pageLabels.bankAccount" />
               </Label>
               <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
                 <SelectTrigger data-testid="select-import-bank-account">
@@ -1426,7 +1426,7 @@ export default function BankReconciliation() {
             </div>
             <div className="space-y-2">
               <Label>
-                <T k="pagesAL.statementFile" />
+                <T k="pageLabels.statementFile" />
               </Label>
               <Input
                 type="file"
@@ -1647,7 +1647,7 @@ export default function BankReconciliation() {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
                   <p className="font-medium text-xs uppercase tracking-wide">
-                    <T k="pagesAL.supportedFormats" />
+                    <T k="pageLabels.supportedFormats" />
                   </p>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
@@ -1682,7 +1682,7 @@ export default function BankReconciliation() {
                   onClick={downloadSampleBankCsv}
                   data-testid="button-download-sample-bank-csv"
                 >
-                  <T k="pagesAL.sampleCSV" />
+                  <T k="pageLabels.sampleCSV" />
                 </Button>
               </div>
             </div>
@@ -1725,7 +1725,7 @@ export default function BankReconciliation() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5" />
-              <T k="pagesAL.reconciliationReport" />
+              <T k="pageLabels.reconciliationReport" />
             </DialogTitle>
             <DialogDescription>
               Summary of matched and unmatched transactions
@@ -1767,7 +1767,7 @@ export default function BankReconciliation() {
                       {reportData.summary.unreconciledCount}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      <T k="pagesAL.unreconciled" />
+                      <T k="pageLabels.unreconciled" />
                     </div>
                   </div>
                 </div>
@@ -1775,7 +1775,7 @@ export default function BankReconciliation() {
                   <div className="mt-3">
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">
-                        <T k="pagesAL.completion" />
+                        <T k="pageLabels.completion" />
                       </span>
                       <span className="font-medium">{reportData.summary.reconciledPct}%</span>
                     </div>
@@ -1789,12 +1789,12 @@ export default function BankReconciliation() {
               {/* Amount breakdown */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  <T k="pagesAL.amounts" />
+                  <T k="pageLabels.amounts" />
                 </p>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">
-                      <T k="pagesAL.totalCredits" />
+                      <T k="pageLabels.totalCredits" />
                     </span>
                     <span className="font-mono font-medium text-[hsl(var(--chart-5))]">
                       {formatCurrency(reportData.amounts.totalCredits)}
@@ -1802,7 +1802,7 @@ export default function BankReconciliation() {
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">
-                      <T k="pagesAL.totalDebits" />
+                      <T k="pageLabels.totalDebits" />
                     </span>
                     <span className="font-mono font-medium text-destructive">
                       {formatCurrency(reportData.amounts.totalDebits)}
@@ -1811,7 +1811,7 @@ export default function BankReconciliation() {
                   <Separator />
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">
-                      <T k="pagesAL.reconciledCredits" />
+                      <T k="pageLabels.reconciledCredits" />
                     </span>
                     <span className="font-mono text-[hsl(var(--chart-5))]">
                       {formatCurrency(reportData.amounts.reconciledCredits)}
@@ -1819,7 +1819,7 @@ export default function BankReconciliation() {
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">
-                      <T k="pagesAL.reconciledDebits" />
+                      <T k="pageLabels.reconciledDebits" />
                     </span>
                     <span className="font-mono text-destructive">
                       {formatCurrency(reportData.amounts.reconciledDebits)}
@@ -1828,7 +1828,7 @@ export default function BankReconciliation() {
                   <Separator />
                   <div className="flex justify-between items-center text-sm font-semibold">
                     <span>
-                      <T k="pagesAL.unreconciledCredits" />
+                      <T k="pageLabels.unreconciledCredits" />
                     </span>
                     <span className="font-mono text-[hsl(var(--chart-4))]">
                       {formatCurrency(reportData.amounts.unreconciledCredits)}
@@ -1836,7 +1836,7 @@ export default function BankReconciliation() {
                   </div>
                   <div className="flex justify-between items-center text-sm font-semibold">
                     <span>
-                      <T k="pagesAL.unreconciledDebits" />
+                      <T k="pageLabels.unreconciledDebits" />
                     </span>
                     <span className="font-mono text-[hsl(var(--chart-4))]">
                       {formatCurrency(reportData.amounts.unreconciledDebits)}

@@ -95,10 +95,10 @@ export default function DocumentVersions() {
         <History className="h-8 w-8 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            <T k="pagesAL.documentVersions" />
+            <T k="pageLabels.documentVersions" />
           </h1>
           <p className="text-muted-foreground">
-            <T k="pagesAL.viewTheFullVersionHistoryAndAuditTrailForAnyDocument" />
+            <T k="pageLabels.viewTheFullVersionHistoryAndAuditTrailForAnyDocument" />
           </p>
         </div>
       </div>
@@ -108,7 +108,7 @@ export default function DocumentVersions() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Search className="h-5 w-5" />
-            <T k="pagesAL.findDocumentHistory" />
+            <T k="pageLabels.findDocumentHistory" />
           </CardTitle>
           <CardDescription>
             Select a document type and enter the document ID to view its version timeline
@@ -118,7 +118,7 @@ export default function DocumentVersions() {
           <div className="flex flex-col sm:flex-row gap-4 items-end">
             <div className="flex-1 space-y-2">
               <Label htmlFor="documentType">
-                <T k="pagesAL.documentType" />
+                <T k="pageLabels.documentType" />
               </Label>
               <Select
                 value={documentType}
@@ -142,7 +142,7 @@ export default function DocumentVersions() {
 
             <div className="flex-1 space-y-2">
               <Label htmlFor="documentId">
-                <T k="pagesAL.documentID" />
+                <T k="pageLabels.documentID" />
               </Label>
               <Input
                 id="documentId"
@@ -186,7 +186,7 @@ export default function DocumentVersions() {
             {isLoading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
                 <Clock className="h-5 w-5 mr-2 animate-spin" />
-                <T k="pagesAL.loadingVersionHistory" />
+                <T k="pageLabels.loadingVersionHistory" />
               </div>
             ) : isError ? (
               <div className="text-center py-12 text-destructive">
@@ -196,10 +196,10 @@ export default function DocumentVersions() {
               <div className="text-center py-12 text-muted-foreground">
                 <History className="h-12 w-12 mx-auto mb-3 opacity-40" />
                 <p className="text-lg font-medium">
-                  <T k="pagesAL.noVersionsFound" />
+                  <T k="pageLabels.noVersionsFound" />
                 </p>
                 <p className="text-sm">
-                  <T k="pagesAL.noVersionHistoryExistsForThisDocumentYet" />
+                  <T k="pageLabels.noVersionHistoryExistsForThisDocumentYet" />
                 </p>
               </div>
             ) : (
@@ -207,17 +207,17 @@ export default function DocumentVersions() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[80px]">
-                      <T k="pagesAL.version" />
+                      <T k="pageLabels.version" />
                     </TableHead>
                     <TableHead>
-                      <T k="pagesAL.changeDescription" />
+                      <T k="pageLabels.changeDescription" />
                     </TableHead>
                     <TableHead className="w-[160px]">
-                      <T k="pagesAL.changedBy" />
+                      <T k="pageLabels.changedBy" />
                     </TableHead>
                     <TableHead className="w-[180px]">Date</TableHead>
                     <TableHead className="w-[100px]">
-                      <T k="pagesAL.snapshot" />
+                      <T k="pageLabels.snapshot" />
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -235,7 +235,7 @@ export default function DocumentVersions() {
                           <TableCell>
                             {version.changeDescription || (
                               <span className="text-muted-foreground italic">
-                                <T k="pagesAL.noDescription" />
+                                <T k="pageLabels.noDescription" />
                               </span>
                             )}
                           </TableCell>
@@ -272,7 +272,7 @@ export default function DocumentVersions() {
                             <TableCell colSpan={5} className="p-0">
                               <div className="bg-muted/30 border-t px-6 py-4">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
-                                  <T k="pagesAL.snapshotData" />
+                                  <T k="pageLabels.snapshotData" />
                                 </Label>
                                 <pre className="text-xs font-mono bg-background rounded-md border p-4 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap">
                                   {formatSnapshotData(version.snapshotData)}

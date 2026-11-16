@@ -473,7 +473,7 @@ export default function CorporateTax() {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">
-          <T k="pagesAL.noCompanyFoundPleaseSetUpYourCompanyFirst" />
+          <T k="pageLabels.noCompanyFoundPleaseSetUpYourCompanyFirst" />
         </p>
       </div>
     );
@@ -531,11 +531,11 @@ export default function CorporateTax() {
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
                 <Plus className="w-4 h-4 mr-2" />
-                <T k="pagesAL.revenueRow" />
+                <T k="pageLabels.revenueRow" />
               </Button>
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("expense")}>
                 <Plus className="w-4 h-4 mr-2" />
-                <T k="pagesAL.expenseRow" />
+                <T k="pageLabels.expenseRow" />
               </Button>
               <Button
                 type="button"
@@ -678,7 +678,7 @@ export default function CorporateTax() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
-            <T k="pagesAL.taxCalculator" />
+            <T k="pageLabels.taxCalculator" />
           </CardTitle>
           <CardDescription>
             Calculate corporate tax from your journal entries for a given period
@@ -717,7 +717,7 @@ export default function CorporateTax() {
               {calculateMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  <T k="pagesAL.calculating" />
+                  <T k="pageLabels.calculating" />
                 </>
               ) : (
                 <>
@@ -734,7 +734,7 @@ export default function CorporateTax() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    <T k="pagesAL.incomeSummary" />
+                    <T k="pageLabels.incomeSummary" />
                   </h3>
                   <div className="flex justify-between">
                     <span>
@@ -754,7 +754,7 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between border-t pt-2">
                     <span className="font-semibold">
-                      <T k="pagesAL.grossProfit" />
+                      <T k="pageLabels.grossProfit" />
                     </span>
                     <span className="font-semibold">
                       {formatCurrency(
@@ -768,7 +768,7 @@ export default function CorporateTax() {
 
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    <T k="pagesAL.taxCalculation" />
+                    <T k="pageLabels.taxCalculation" />
                   </h3>
                   <div className="flex justify-between items-center">
                     <span>
@@ -850,7 +850,7 @@ export default function CorporateTax() {
                   {saveDraftMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      <T k="pagesAL.saving" />
+                      <T k="pageLabels.saving" />
                     </>
                   ) : (
                     "Save as Draft"
@@ -868,10 +868,10 @@ export default function CorporateTax() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <T k="pagesAL.taxReturns" />
+            <T k="pageLabels.taxReturns" />
           </CardTitle>
           <CardDescription>
-            <T k="pagesAL.savedCorporateTaxReturnsAndTheirFilingStatus" />
+            <T k="pageLabels.savedCorporateTaxReturnsAndTheirFilingStatus" />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -892,10 +892,10 @@ export default function CorporateTax() {
             <div className="text-center py-12 text-muted-foreground">
               <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>
-                <T k="pagesAL.noCorporateTaxReturnsYet" />
+                <T k="pageLabels.noCorporateTaxReturnsYet" />
               </p>
               <p className="text-sm">
-                <T k="pagesAL.useTheCalculatorAboveToGenerateYourFirstReturn" />
+                <T k="pageLabels.useTheCalculatorAboveToGenerateYourFirstReturn" />
               </p>
             </div>
           ) : (
@@ -1105,7 +1105,7 @@ export default function CorporateTax() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.corporateTaxReturnDetails" />
+              <T k="pageLabels.corporateTaxReturnDetails" />
             </DialogTitle>
             <DialogDescription>
               {viewReturn && (

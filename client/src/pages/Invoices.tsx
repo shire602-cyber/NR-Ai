@@ -1978,7 +1978,7 @@ export default function Invoices() {
           ) : !company ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">
-                <T k="pagesAL.companyNotFound" />
+                <T k="pageLabels.companyNotFound" />
               </p>
             </div>
           ) : (
@@ -2000,10 +2000,10 @@ export default function Invoices() {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <FileText className="w-5 h-5" />
-                        <T k="pagesAL.companyDetailsDisplay" />
+                        <T k="pageLabels.companyDetailsDisplay" />
                       </CardTitle>
                       <CardDescription>
-                        <T k="pagesAL.chooseWhichCompanyInformationToDisplayOnInvoices" />
+                        <T k="pageLabels.chooseWhichCompanyInformationToDisplayOnInvoices" />
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -2044,7 +2044,7 @@ export default function Invoices() {
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
                               <FormLabel className="text-base">
-                                <T k="pagesAL.showBusinessAddress" />
+                                <T k="pageLabels.showBusinessAddress" />
                               </FormLabel>
                               <FormDescription>
                                 Display your business address on invoices
@@ -2074,7 +2074,7 @@ export default function Invoices() {
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
                               <FormLabel className="text-base">
-                                <T k="pagesAL.showPhoneNumber" />
+                                <T k="pageLabels.showPhoneNumber" />
                               </FormLabel>
                               <FormDescription>
                                 Display your business phone number on invoices
@@ -2104,7 +2104,7 @@ export default function Invoices() {
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
                               <FormLabel className="text-base">
-                                <T k="pagesAL.showEmailAddress" />
+                                <T k="pageLabels.showEmailAddress" />
                               </FormLabel>
                               <FormDescription>
                                 Display your business email on invoices
@@ -2134,7 +2134,7 @@ export default function Invoices() {
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
                               <FormLabel className="text-base">
-                                <T k="pagesAL.showWebsite" />
+                                <T k="pageLabels.showWebsite" />
                               </FormLabel>
                               <FormDescription>
                                 Display your website URL on invoices
@@ -2162,10 +2162,10 @@ export default function Invoices() {
                   <Card>
                     <CardHeader>
                       <CardTitle>
-                        <T k="pagesAL.invoiceCustomization" />
+                        <T k="pageLabels.invoiceCustomization" />
                       </CardTitle>
                       <CardDescription>
-                        <T k="pagesAL.customizeTheAppearanceAndTextOfYourInvoices" />
+                        <T k="pageLabels.customizeTheAppearanceAndTextOfYourInvoices" />
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -2175,7 +2175,7 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
-                              <T k="pagesAL.invoiceTitle" />
+                              <T k="pageLabels.invoiceTitle" />
                             </FormLabel>
                             <FormControl>
                               <Input
@@ -2202,7 +2202,7 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
-                              <T k="pagesAL.footerNote" />
+                              <T k="pageLabels.footerNote" />
                             </FormLabel>
                             <FormControl>
                               <Textarea
@@ -2247,7 +2247,7 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
-              <T k="pagesAL.similarInvoicesFound" />
+              <T k="pageLabels.similarInvoicesFound" />
             </DialogTitle>
             <DialogDescription>
               We found similar invoices that might be duplicates. Review them before proceeding.
@@ -2298,7 +2298,7 @@ export default function Invoices() {
                 }}
                 className="flex-1"
               >
-                <T k="pagesAL.createAnyway" />
+                <T k="pageLabels.createAnyway" />
               </Button>
             </div>
           </div>
@@ -2311,7 +2311,7 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-chart-5" />
-              <T k="pagesAL.recurringInvoiceSettings" />
+              <T k="pageLabels.recurringInvoiceSettings" />
             </DialogTitle>
             <DialogDescription>
               Configure automatic recurring copies for Invoice {invoiceForRecurring?.number}
@@ -2321,10 +2321,10 @@ export default function Invoices() {
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div>
                 <p className="font-medium">
-                  <T k="pagesAL.enableRecurring" />
+                  <T k="pageLabels.enableRecurring" />
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  <T k="pagesAL.automaticallyCreateNewInvoiceCopiesOnSchedule" />
+                  <T k="pageLabels.automaticallyCreateNewInvoiceCopiesOnSchedule" />
                 </p>
               </div>
               <Switch checked={recurringEnabled} onCheckedChange={setRecurringEnabled} />
@@ -2334,7 +2334,7 @@ export default function Invoices() {
               <>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
-                    <T k="pagesAL.frequency" />
+                    <T k="pageLabels.frequency" />
                   </label>
                   <Select value={recurringInterval} onValueChange={setRecurringInterval}>
                     <SelectTrigger>
@@ -2342,7 +2342,7 @@ export default function Invoices() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="weekly">
-                        <T k="pagesAL.weekly" />
+                        <T k="pageLabels.weekly" />
                       </SelectItem>
                       <SelectItem value="monthly">
                         <T k="firm.cycleMonthly" />
@@ -2351,7 +2351,7 @@ export default function Invoices() {
                         <T k="firm.cycleQuarterly" />
                       </SelectItem>
                       <SelectItem value="yearly">
-                        <T k="pagesAL.yearly" />
+                        <T k="pageLabels.yearly" />
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -2359,7 +2359,7 @@ export default function Invoices() {
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
-                    <T k="pagesAL.nextRunDate" />
+                    <T k="pageLabels.nextRunDate" />
                   </label>
                   <Popover>
                     <PopoverTrigger asChild>
@@ -2410,7 +2410,7 @@ export default function Invoices() {
                       onClick={() => setRecurringEndDate(undefined)}
                       className="text-xs text-muted-foreground"
                     >
-                      <T k="pagesAL.clearEndDate" />
+                      <T k="pageLabels.clearEndDate" />
                     </Button>
                   )}
                 </div>
@@ -2502,7 +2502,7 @@ export default function Invoices() {
                     <T k="pages.cheque" />
                   </SelectItem>
                   <SelectItem value="online">
-                    <T k="pagesAL.onlinePayment" />
+                    <T k="pageLabels.onlinePayment" />
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -2510,7 +2510,7 @@ export default function Invoices() {
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                <T k="pagesAL.depositAccount" />
+                <T k="pageLabels.depositAccount" />
               </label>
               {paymentAccounts.length > 0 ? (
                 <Select value={paymentAccountForAdd} onValueChange={setPaymentAccountForAdd}>
@@ -2591,13 +2591,13 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
             <DialogDescription>
-              <T k="pagesAL.allPaymentsRecordedForThisInvoice" />
+              <T k="pageLabels.allPaymentsRecordedForThisInvoice" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {invoicePayments.length === 0 ? (
               <p className="text-center text-muted-foreground py-6">
-                <T k="pagesAL.noPaymentsRecordedYet" />
+                <T k="pageLabels.noPaymentsRecordedYet" />
               </p>
             ) : (
               <>
@@ -2665,7 +2665,7 @@ export default function Invoices() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              <T k="pagesAL.selectPaymentAccount" />
+              <T k="pageLabels.selectPaymentAccount" />
             </DialogTitle>
             <DialogDescription>
               Choose where the payment for invoice {invoiceForPayment?.number} was deposited

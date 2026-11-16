@@ -269,7 +269,7 @@ export default function AdvancedAnalytics() {
             </div>
             <div>
               <h1 className="text-3xl font-bold" data-testid="text-analytics-title">
-                <T k="pagesAL.advancedAnalyticsAndForecasts" />
+                <T k="pageLabels.advancedAnalyticsAndForecasts" />
               </h1>
               <p className="text-muted-foreground mt-1">
                 AI-powered financial intelligence for strategic decision making
@@ -341,7 +341,7 @@ export default function AdvancedAnalytics() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.projectedInflow" />
+                  <T k="pageLabels.projectedInflow" />
                 </CardTitle>
                 <ArrowUp className="w-4 h-4 text-success " />
               </CardHeader>
@@ -360,7 +360,7 @@ export default function AdvancedAnalytics() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.projectedOutflow" />
+                  <T k="pageLabels.projectedOutflow" />
                 </CardTitle>
                 <ArrowDown className="w-4 h-4 text-info " />
               </CardHeader>
@@ -369,7 +369,7 @@ export default function AdvancedAnalytics() {
                   {formatCurrency(forecastSummary.outflow, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.estimatedExpenses" />
+                  <T k="pageLabels.estimatedExpenses" />
                 </p>
               </CardContent>
             </Card>
@@ -377,7 +377,7 @@ export default function AdvancedAnalytics() {
             <Card className="hover-elevate border-success/30 ">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.netCashPosition" />
+                  <T k="pageLabels.netCashPosition" />
                 </CardTitle>
                 <Wallet className="w-4 h-4 text-success " />
               </CardHeader>
@@ -386,7 +386,7 @@ export default function AdvancedAnalytics() {
                   {formatCurrency(forecastSummary.balance, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.projectedBalance" />
+                  <T k="pageLabels.projectedBalance" />
                 </p>
               </CardContent>
             </Card>
@@ -399,7 +399,7 @@ export default function AdvancedAnalytics() {
                 <T k="pages.cashFlowForecast" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.aIPredictedInflowsAndOutflowsWithConfidenceBands" />
+                <T k="pageLabels.aIPredictedInflowsAndOutflowsWithConfidenceBands" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -445,7 +445,7 @@ export default function AdvancedAnalytics() {
                 <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
                   <Calendar className="w-8 h-8 mb-3" />
                   <p className="font-medium">
-                    <T k="pagesAL.noForecastGeneratedYet" />
+                    <T k="pageLabels.noForecastGeneratedYet" />
                   </p>
                   <p className="text-sm">
                     Generate a forecast once invoices, receipts, or journals exist.
@@ -460,7 +460,7 @@ export default function AdvancedAnalytics() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                <T k="pagesAL.howThisForecastIsBuilt" />
+                <T k="pageLabels.howThisForecastIsBuilt" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -507,7 +507,7 @@ export default function AdvancedAnalytics() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.totalBudgeted" />
+                  <T k="pageLabels.totalBudgeted" />
                 </CardTitle>
                 <Target className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
@@ -533,7 +533,7 @@ export default function AdvancedAnalytics() {
                   {formatCurrency(budgetSummary.actual, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pagesAL.recordedTransactions" />
+                  <T k="pageLabels.recordedTransactions" />
                 </p>
               </CardContent>
             </Card>
@@ -541,7 +541,7 @@ export default function AdvancedAnalytics() {
             <Card className="hover-elevate border-success/30 ">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
-                  <T k="pagesAL.netVariance" />
+                  <T k="pageLabels.netVariance" />
                 </CardTitle>
                 <PiggyBank className="w-4 h-4 text-success " />
               </CardHeader>
@@ -564,10 +564,10 @@ export default function AdvancedAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                <T k="pagesAL.budgetVsActualComparison" />
+                <T k="pageLabels.budgetVsActualComparison" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.categoryWiseBreakdownOfPlannedVsActualSpending" />
+                <T k="pageLabels.categoryWiseBreakdownOfPlannedVsActualSpending" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -589,7 +589,7 @@ export default function AdvancedAnalytics() {
                 <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
                   <Target className="w-8 h-8 mb-3" />
                   <p className="font-medium">
-                    <T k="pagesAL.noBudgetDataYet" />
+                    <T k="pageLabels.noBudgetDataYet" />
                   </p>
                   <p className="text-sm">
                     Create budgets and post transactions to compare planned versus actual
@@ -604,17 +604,17 @@ export default function AdvancedAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                <T k="pagesAL.varianceAnalysis" />
+                <T k="pageLabels.varianceAnalysis" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.detailedBreakdownByCategory" />
+                <T k="pageLabels.detailedBreakdownByCategory" />
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {budgetRows.length === 0 && !budgetLoading && (
                   <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    <T k="pagesAL.noVarianceAnalysisIsAvailableYet" />
+                    <T k="pageLabels.noVarianceAnalysisIsAvailableYet" />
                   </div>
                 )}
                 {budgetRows.map((item, idx) => {
@@ -667,7 +667,7 @@ export default function AdvancedAnalytics() {
         <TabsContent value="kpis" className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              <T k="pagesAL.realTimeFinancialIndicatorsUpdatedAutomatically" />
+              <T k="pageLabels.realTimeFinancialIndicatorsUpdatedAutomatically" />
             </p>
             <Button variant="outline" size="sm" data-testid="button-refresh-kpis">
               <RefreshCw className="w-4 h-4 mr-2" />
@@ -686,10 +686,10 @@ export default function AdvancedAnalytics() {
                 <CardContent className="py-10 text-center text-muted-foreground">
                   <Activity className="w-8 h-8 mx-auto mb-3" />
                   <p className="font-medium">
-                    <T k="pagesAL.noKPIHistoryYet" />
+                    <T k="pageLabels.noKPIHistoryYet" />
                   </p>
                   <p className="text-sm">
-                    <T k="pagesAL.kPIsWillAppearAfterFinancialActivityIsRecorded" />
+                    <T k="pageLabels.kPIsWillAppearAfterFinancialActivityIsRecorded" />
                   </p>
                 </CardContent>
               </Card>
@@ -723,11 +723,11 @@ export default function AdvancedAnalytics() {
                     </div>
                     {meetsOrExceedsBenchmark ? (
                       <Badge variant="secondary" className="bg-success-subtle text-success ">
-                        <T k="pagesAL.onTrack" />
+                        <T k="pageLabels.onTrack" />
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="bg-warning-subtle text-warning ">
-                        <T k="pagesAL.belowTarget" />
+                        <T k="pageLabels.belowTarget" />
                       </Badge>
                     )}
                   </CardHeader>
@@ -760,17 +760,17 @@ export default function AdvancedAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                <T k="pagesAL.kPITrendsOverTime" />
+                <T k="pageLabels.kPITrendsOverTime" />
               </CardTitle>
               <CardDescription>
-                <T k="pagesAL.historicalPerformanceOfKeyFinancialIndicators" />
+                <T k="pageLabels.historicalPerformanceOfKeyFinancialIndicators" />
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground">
                 <BarChart3 className="w-8 h-8 mb-3" />
                 <p className="font-medium">
-                  <T k="pagesAL.trendHistoryIsNotAvailableYet" />
+                  <T k="pageLabels.trendHistoryIsNotAvailableYet" />
                 </p>
                 <p className="text-sm">
                   This chart will populate once periodic KPI snapshots are recorded.
@@ -802,7 +802,7 @@ export default function AdvancedAnalytics() {
                 <CardContent className="py-10 text-center text-muted-foreground">
                   <Brain className="w-8 h-8 mx-auto mb-3" />
                   <p className="font-medium">
-                    <T k="pagesAL.noInsightsYet" />
+                    <T k="pageLabels.noInsightsYet" />
                   </p>
                   <p className="text-sm">
                     Insights will appear when real invoices, expenses, and patterns exist.
@@ -863,7 +863,7 @@ export default function AdvancedAnalytics() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                <T k="pagesAL.howInsightsAreComputed" />
+                <T k="pageLabels.howInsightsAreComputed" />
               </CardTitle>
             </CardHeader>
             <CardContent>
