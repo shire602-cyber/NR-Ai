@@ -102,5 +102,16 @@
   "dashboard.modelNeedsAcknowledgement": "Needs acknowledgement",
   "dashboard.modelRecoverFailedDelivery": "Recover failed delivery",
   "dashboard.modelReviewHandoffGaps": "Review handoff gaps",
-  "dashboard.modelThisReportDelivery": "This report delivery"
+  "dashboard.modelThisReportDelivery": "This report delivery",
+  "dashboard.needsYouLabel": "Needs your attention",
+  "dashboard.needsOverdueInvoices": "{count} overdue invoices",
+  "dashboard.needsOverdueInvoicesOne": "1 overdue invoice",
+  "dashboard.needsBankLines": "{count} bank lines to review",
+  "dashboard.needsBankLinesOne": "1 bank line to review",
+  "dashboard.needsVatOverdue": "VAT return overdue",
+  "dashboard.needsVatDueSoon": "VAT return due soon",
+  "dashboard.needsVatDueIn": "VAT return due in {count} days",
+  "dashboard.needsPayroll": "{count} payroll runs to approve",
+  "dashboard.needsPayrollOne": "1 payroll run to approve",
+  "dashboard.needsNothing": "Nothing needs you right now"
 }

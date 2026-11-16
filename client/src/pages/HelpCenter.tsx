@@ -4,24 +4,26 @@ import {
   Banknote,
   BookOpen,
   FileSpreadsheet,
-  HelpCircle,
-  LifeBuoy,
   Mail,
   Receipt,
-  ShieldCheck,
+  Repeat,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
+import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Sections";
 
-const guides = [
+// R3 (CTO 8): same section system as the home page (line eyebrow, sentence case, hairline
+// tiles); customer-facing hero instead of launch copy. Support mailbox as published since L1.
+const SUPPORT_EMAIL = "support@muhasib.ai";
+
+const GUIDES = [
   { icon: BookOpen, n: 1 },
   { icon: Receipt, n: 2 },
   { icon: FileSpreadsheet, n: 3 },
   { icon: Banknote, n: 4 },
-  { icon: ShieldCheck, n: 5 },
+  { icon: Repeat, n: 5 },
 ];
 
 const SLA_ITEMS = [1, 2, 3, 4, 5];
@@ -39,79 +41,71 @@ export default function HelpCenter() {
             <p className="mk-eyebrow">
               <T k="pageLabels.helpCenter" />
             </p>
-            <h1 className="mk-h1">
-              <T k="pageLabels.launchSupportForUAEAccountingTeamsMovingFast" />
+            <h1 className="mk-h1" data-testid="text-help-title">
+              {t["marketing.helpTitle"]}
             </h1>
             <p className="mk-lead">{t["marketing.helpLead"]}</p>
           </div>
         </section>
 
-        <section className="mk-container mk-inner-section">
-          <div className="grid gap-4 md:grid-cols-2">
-            {guides.map(({ icon: Icon, n }) => {
-              return (
-                <Card key={n} className="mk-surface-card">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-3 text-lg">
-                      <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
-                      {t[`marketing.helpGuide${n}Title`]}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm leading-6 text-muted-foreground">
-                    {t[`marketing.helpGuide${n}Body`]}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+        <section className="mk-container mk-inner-section" aria-labelledby="help-guides-title">
+          <SectionHeading
+            id="help-guides-title"
+            eyebrow={t["marketing.helpGuidesEyebrow"]}
+            title={t["marketing.helpGuidesTitle"]}
+          />
+          <Tiles
+            items={GUIDES.map(({ icon, n }) => ({
+              key: `guide-${n}`,
+              icon,
+              title: t[`marketing.helpGuide${n}Title`],
+              body: t[`marketing.helpGuide${n}Body`],
+            }))}
+          />
         </section>
 
-        <section className="mk-section--sunken">
-          <div className="mk-container mk-inner-section grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="mk-section--sunken" aria-labelledby="help-support-title">
+          <div className="mk-container mk-inner-section grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
             <div>
-              <h2 className="flex items-center gap-2 text-2xl font-semibold">
-                <LifeBuoy className="h-6 w-6 text-accent" aria-hidden="true" />
+              <p className="mk-eyebrow">{t["marketing.helpSupportEyebrow"]}</p>
+              <h2 className="mk-h2 mt-4" id="help-support-title">
                 <T k="pageLabels.supportAndSLAPosture" />
               </h2>
-              <p className="mt-3 text-muted-foreground">{t["marketing.helpSlaBody"]}</p>
+              <p className="mk-lead mt-5">{t["marketing.helpSlaBody"]}</p>
+              <p className="mk-body mt-5" data-testid="help-support-contact">
+                {t["marketing.helpContactLead"]}{" "}
+                <a className="mk-link" href={`mailto:${SUPPORT_EMAIL}`} dir="ltr">
+                  {SUPPORT_EMAIL}
+                </a>
+              </p>
             </div>
-            <div className="grid gap-3">
-              {SLA_ITEMS.map((n) => (
-                <div key={n} className="flex gap-3 rounded-xl border bg-card p-4 text-sm">
-                  <ShieldCheck
-                    className="mt-0.5 h-4 w-4 shrink-0 text-success"
-                    aria-hidden="true"
-                  />
-                  <span className="text-muted-foreground">{t[`marketing.helpSla${n}`]}</span>
-                </div>
-              ))}
-            </div>
+            <Checklist items={SLA_ITEMS.map((n) => t[`marketing.helpSla${n}`])} />
           </div>
         </section>
 
-        <section className="mk-container mk-inner-section">
-          <div className="mk-card p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-xl font-semibold">
-                  <HelpCircle className="h-5 w-5 text-accent" aria-hidden="true" />
-                  <T k="pageLabels.needHelpChoosingTheRightPath" />
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  <T k="pageLabels.askForAGuidedMigrationReviewBeforeImportingLiveBooks" />
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild>
-                  <a href="mailto:support@muhasib.ai?subject=Migration%20review">
-                    <Mail aria-hidden="true" />
+        <section
+          className="mk-section"
+          style={{ paddingBlockStart: "clamp(3rem, 2rem + 3vw, 4.5rem)" }}
+        >
+          <div className="mk-container">
+            <div className="mk-cta">
+              <h2 className="mk-h2">
+                <T k="pageLabels.needHelpChoosingTheRightPath" />
+              </h2>
+              <p className="mk-lead">
+                <T k="pageLabels.askForAGuidedMigrationReviewBeforeImportingLiveBooks" />
+              </p>
+              <div className="mk-hero__ctas">
+                <Button asChild size="lg">
+                  <a href={`mailto:${SUPPORT_EMAIL}?subject=Migration%20review`}>
+                    <Mail aria-hidden />
                     <T k="pageLabels.requestReview" />
                   </a>
                 </Button>
-                <Button asChild variant="outline">
+                <Button asChild variant="outline" size="lg">
                   <Link href="/migration-guides">
                     <T k="pageLabels.migrationGuides" />
-                    <ArrowRight className="rtl:-scale-x-100" aria-hidden="true" />
+                    <ArrowRight className="rtl:-scale-x-100" aria-hidden />
                   </Link>
                 </Button>
               </div>

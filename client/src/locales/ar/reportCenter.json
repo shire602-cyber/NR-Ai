@@ -578,5 +578,6 @@
   "reportCenter.readyForClose": "جاهز للإقفال",
   "reportCenter.differenceFlagged": "تم رصد فرق",
   "reportCenter.vatPayableToFta": "المبلغ المستحق السداد للهيئة الاتحادية للضرائب",
-  "reportCenter.vatRefundFromFta": "المبلغ المستحق الاسترداد من الهيئة الاتحادية للضرائب"
+  "reportCenter.vatRefundFromFta": "المبلغ المستحق الاسترداد من الهيئة الاتحادية للضرائب",
+  "reportCenter.reportFieldLabel": "التقرير"
 }

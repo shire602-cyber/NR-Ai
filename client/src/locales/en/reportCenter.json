@@ -578,5 +578,6 @@
   "reportCenter.readyForClose": "Ready for close",
   "reportCenter.differenceFlagged": "Difference flagged",
   "reportCenter.vatPayableToFta": "Amount to be paid to the Federal Tax Authority",
-  "reportCenter.vatRefundFromFta": "Amount to be refunded by the Federal Tax Authority"
+  "reportCenter.vatRefundFromFta": "Amount to be refunded by the Federal Tax Authority",
+  "reportCenter.reportFieldLabel": "Report"
 }

@@ -74,7 +74,7 @@ export default function ReportsPanel() {
                     >
                       <span className="min-w-0">
                         <span className="flex items-center gap-2">
-                          <span className="block truncate text-body font-medium text-foreground">
+                          <span className="block line-clamp-2 break-words text-body font-medium leading-snug text-foreground">
                             {option.label}
                           </span>
                           <DataBasisBadge

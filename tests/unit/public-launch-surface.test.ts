@@ -185,12 +185,63 @@ describe("Public SaaS launch surface", () => {
       /We do not\s+claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete\./
     );
     expect(trustSource).toContain("External certifications are roadmap items, not current claims.");
-    expect(trustSource).toContain("Launch verification evidence");
     expect(trustSource).toContain("Backup and restore proof");
     expect(trustSource).toContain("Incident process");
     expect(trustSource).toContain("Privacy and DPA posture");
     expect(helpSource).toContain("Support and SLA posture");
     expect(pricingSource).toContain("Enterprise support terms");
+  });
+
+  it("keeps the trust, help and services pages customer-facing (R3, CTO 8/9)", () => {
+    const trustPage = readRepoFile("client/src/pages/TrustSecurity.tsx");
+    const helpPage = readRepoFile("client/src/pages/HelpCenter.tsx");
+    const servicesPage = readRepoFile("client/src/pages/Services.tsx");
+    const en = JSON.parse(readRepoFile("client/src/locales/en/marketing.json")) as Record<
+      string,
+      string
+    >;
+
+    // Internal release-gate / CI notes are not customer copy.
+    for (const key of [
+      "pageLabels.launchPosture",
+      "pageLabels.launchVerificationEvidence",
+      "pageLabels.internalReleaseGate",
+      "marketing.trustPosture",
+      "marketing.trustEvidence",
+    ]) {
+      expect(trustPage, `trust page still renders ${key}`).not.toContain(key);
+    }
+    // Leads with customer controls, then who operates the service and how to reach them.
+    expect(trustPage.indexOf("trustControlsTitle")).toBeLessThan(
+      trustPage.indexOf("trustWhoTitle")
+    );
+    for (const id of ["trust-data-residency", "trust-support-contact"]) {
+      expect(trustPage).toContain(id);
+    }
+    expect(trustPage).toContain("support@muhasib.ai");
+    expect(en["marketing.trustOperatorBody"]).toContain("Najma Al Raeda Accounting LLC");
+    // Data residency stays a statement of what is documented, not a hosting claim.
+    expect(en["marketing.trustResidencyBody"]).toMatch(/being finalised with counsel/);
+    expect(en["marketing.trustAuditTitle"]).toBe("Hash-chained audit log");
+    expect(en["marketing.trustControl3Title"]).toBe("Two-factor authentication");
+
+    // Help: customer hero, brand casing.
+    expect(helpPage).not.toContain("launchSupportForUAEAccountingTeamsMovingFast");
+    expect(JSON.stringify(en)).not.toMatch(/\bmazeed\b/);
+
+    // Services: rebuilt on the home section system, no roadmap or hype blocks.
+    expect(servicesPage).toContain("@/components/marketing/Sections");
+    for (const banned of [
+      "Coming Soon",
+      "Voice Commands",
+      "AI CFO",
+      "Powered by AI",
+      "Cutting-edge",
+    ]) {
+      expect(servicesPage).not.toContain(banned);
+      expect(JSON.stringify(en)).not.toContain(banned);
+    }
+    expect(servicesPage).toContain('data-testid="button-book-consultation"');
   });
 
   it("exposes customer-facing help and migration coverage for launch buyers", () => {
@@ -203,13 +254,13 @@ describe("Public SaaS launch surface", () => {
       "Create VAT-ready invoices",
       "Import receipts and contacts",
       "Reconcile bank statements",
-      "Migrate from mazeed or Wafeq",
+      "Migrate from Mazeed or Wafeq",
     ]) {
       expect(helpSource).toContain(expectedHelpTopic);
     }
 
     for (const expectedMigrationTopic of [
-      "Move from mazeed",
+      "Move from Mazeed",
       "Move from Wafeq",
       "Move from Zoho Books",
       "Move from Excel",
@@ -218,10 +269,10 @@ describe("Public SaaS launch surface", () => {
     }
 
     expect(migrationSource).toContain(
-      "Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail."
+      "Switch from Mazeed, Wafeq, Zoho Books, or Excel without losing audit trail."
     );
-    expect(migrationText).toContain("Prior-system report packs from mazeed, Wafeq, Zoho Books");
-    expect(helpSource).toContain("Migration review covers mazeed, Wafeq, Zoho Books, and Excel");
+    expect(migrationText).toContain("Prior-system report packs from Mazeed, Wafeq, Zoho Books");
+    expect(helpSource).toContain("Migration review covers Mazeed, Wafeq, Zoho Books, and Excel");
   });
 
   it("keeps a public sample-data demo path for launch buyers", () => {

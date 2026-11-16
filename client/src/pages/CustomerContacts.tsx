@@ -341,7 +341,12 @@ export default function CustomerContacts() {
   const { t, locale } = useTranslation();
   const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
-  const [searchTerm, setSearchTerm] = useState("");
+  // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
+  const [searchTerm, setSearchTerm] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (new URLSearchParams(window.location.search).get("q") ?? "")
+  );
   const [activeTab, setActiveTab] = useState("list");
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<any[] | null>(null);

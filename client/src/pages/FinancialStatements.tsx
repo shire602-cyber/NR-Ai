@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
+import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
@@ -1020,6 +1021,7 @@ export default function FinancialStatements() {
         backHref="/reports"
         backLabel={t["reportCenter.backToReports"]}
       />
+      <BooksStatusStrip companyId={companyId} />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>

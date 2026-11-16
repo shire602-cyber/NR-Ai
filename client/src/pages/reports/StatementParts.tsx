@@ -339,7 +339,8 @@ export function StatementsQuickPanel({
           >
             <span className="flex min-w-0 items-center gap-2.5 text-body font-medium text-foreground">
               <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="truncate">
+              {/* R3 (CTO 21): two-line wrap instead of mid-word truncation on narrow Arabic. */}
+              <span className="line-clamp-2 break-words leading-snug">
                 <T k={s.labelKey} />
               </span>
             </span>

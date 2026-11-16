@@ -26,6 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
+import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import { ReportWorkspaceTab, personaFilters, reportWorkspaceTabs } from "../shared";
 import { SiGooglesheets } from "react-icons/si";
 import { T } from "@/components/layout/T";
@@ -57,6 +58,7 @@ export default function ReportsHeader() {
     reportWorkflowContextSearchLabel,
     reportWorkflowContextShareHref,
     resetReportWorkflowContext,
+    selectedCompanyId,
     setDateRange,
     setReportPersonaFilter,
     setReportWorkspaceTab,
@@ -69,7 +71,7 @@ export default function ReportsHeader() {
         title={t.reports}
         description={
           (t as any).financialReportsSubtitle ??
-          "Financial reports, comparisons, and automation-ready workspaces"
+          "Financial statements, tax reports and comparisons from your books"
         }
         actions={
           <div className="flex flex-wrap gap-2">
@@ -103,6 +105,8 @@ export default function ReportsHeader() {
           </div>
         }
       />
+      {/* R3 (CTO 23): books-balanced / period-lock status on the report screen. */}
+      <BooksStatusStrip companyId={selectedCompanyId} />
       {activeReportWorkspaceTab === "reports" ? (
         <section className="space-y-4" aria-labelledby="report-viewer-title">
           <div className="flex flex-col gap-4">
@@ -139,7 +143,10 @@ export default function ReportsHeader() {
 
           <div className="grid items-start gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
             <div className="space-y-1.5">
-              <Label>{(t as any).reportCenter}</Label>
+              {/* R3 (CTO 21): the section title already says "Report Center"; the field is the report. */}
+              <Label>
+                <T k="reportCenter.reportFieldLabel" />
+              </Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

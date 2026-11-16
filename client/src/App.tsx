@@ -18,7 +18,8 @@ import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useFirmAccess } from "@/components/FirmRouteAccess";
 import { Button } from "@/components/ui/button";
-import { User, Building2, ArrowLeft, Search } from "lucide-react";
+import { Building2, ArrowLeft, Search } from "lucide-react";
+import { AccountMenu } from "@/components/layout/AccountMenu";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -350,22 +351,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               {/* On mobile the theme choice lives in the More sheet (CTO 8). */}
               <ThemeToggle className="hidden md:inline-flex" />
               <NotificationBell />
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="ms-0.5 h-9 min-h-9 gap-2 rounded-full ps-1.5 pe-1.5 md:h-8 md:min-h-8 md:ps-1 md:pe-3"
-              >
-                <Link href="/company-profile" data-testid="button-profile" aria-label={t.profile}>
-                  <span
-                    aria-hidden
-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground"
-                  >
-                    <User className="!size-3.5" />
-                  </span>
-                  <span className="hidden text-small font-medium md:inline">{t.profile}</span>
-                </Link>
-              </Button>
+              {/* R3 (CTO 23): avatar menu with a persistent Help / talk-to-an-accountant entry. */}
+              <AccountMenu />
             </div>
           </header>
           <FirmContextBanner />
