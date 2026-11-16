@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { onboardingPatchBody } from "../../shared/validators/route-bodies";
 import { parsedBody } from "../http/parsed-body";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
@@ -8,6 +9,11 @@ import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { pq } from "../services/connectors/pq";
 import { COA_TEMPLATES, validateTrnFormat } from "../services/migration-import/coa-templates";
+
+type OnboardingPatch = z.output<typeof onboardingPatchBody> & {
+  showTour?: boolean;
+  tourDismissedAt?: Date;
+};
 
 export function registerOnboardingRoutes(app: Express) {
   // =====================================
@@ -50,11 +56,12 @@ export function registerOnboardingRoutes(app: Express) {
   app.patch(
     "/api/onboarding",
     authMiddleware,
+    strictBody(onboardingPatchBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
 
       // Calculate current step based on completed steps
-      const { tourDismissed, ...data } = req.body ?? {};
+      const { tourDismissed, ...data } = parsedBody<OnboardingPatch>(req);
       // R18-03: the welcome tour records a one-time, server-side dismissal.
       if (tourDismissed === true) {
         data.showTour = false;

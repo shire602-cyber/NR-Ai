@@ -1,4 +1,7 @@
 import type { Express, Request, Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import { aiGlCorrectBody, aiGlSettingsBody } from "../../shared/validators/route-bodies";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
@@ -138,10 +141,11 @@ export function registerAIGLRoutes(app: Express) {
     "/api/companies/:companyId/ai-gl/queue/:id/correct",
     authMiddleware,
     requireCustomer,
+    strictBody(aiGlCorrectBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
       const userId = req.user!.id;
-      const { accountId } = req.body;
+      const { accountId } = parsedBody<{ accountId: string }>(req);
 
       if (!accountId) {
         return res.status(400).json({ message: "accountId is required" });
@@ -245,10 +249,11 @@ export function registerAIGLRoutes(app: Express) {
     "/api/companies/:companyId/ai-gl/settings",
     authMiddleware,
     requireCustomer,
+    strictBody(aiGlSettingsBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = req.user!.id;
-      const { confidenceThreshold } = req.body;
+      const { confidenceThreshold } = parsedBody<{ confidenceThreshold: number }>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { chaseRequestsBody } from "../../shared/validators/route-bodies";
 import { z } from "zod";
 
 import { storage } from "../storage";
@@ -338,6 +339,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     "/api/firm/email-intake/completeness/:companyId/chase",
     authMiddleware,
     requireFirmRole(),
+    strictBody(chaseRequestsBody),
     asyncHandler(async (req: Request, res: Response) => {
       const user = req.user!;
       const { companyId } = req.params;
@@ -345,16 +347,21 @@ export function registerEmailIntakeRoutes(app: Express) {
       if (!allowed)
         return res.status(403).json({ message: "Company not in your firm's client list" });
 
-      const periodStart = new Date(String(req.body?.periodStart ?? ""));
-      const periodEnd = new Date(String(req.body?.periodEnd ?? ""));
+      const chaseBody = parsedBody<{
+        periodStart?: string;
+        periodEnd?: string;
+        dueDate?: string | null;
+      }>(req);
+      const periodStart = new Date(String(chaseBody.periodStart ?? ""));
+      const periodEnd = new Date(String(chaseBody.periodEnd ?? ""));
       if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
         return res
           .status(400)
           .json({ message: "periodStart and periodEnd (ISO dates) are required" });
       }
       // Default the chase due date to two weeks after period end unless overridden.
-      const dueDate = req.body?.dueDate
-        ? new Date(String(req.body.dueDate))
+      const dueDate = chaseBody.dueDate
+        ? new Date(String(chaseBody.dueDate))
         : new Date(periodEnd.getTime() + 14 * 86400000);
 
       const lines = await loadBankLines(companyId);

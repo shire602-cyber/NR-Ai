@@ -1,4 +1,7 @@
 import { type Express, type Request, type Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import { whatsappLogMessageBody, whatsappRulesBody } from "../../shared/validators/route-bodies";
 import { randomUUID } from "crypto";
 import { and, desc, eq, gt } from "drizzle-orm";
 import { z } from "zod";
@@ -84,13 +87,14 @@ export function registerWhatsAppRoutes(app: Express) {
   app.post(
     "/api/integrations/whatsapp/log-message",
     authMiddleware,
+    strictBody(whatsappLogMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const { to, message } = req.body;
+      const { to, message } = parsedBody<{ to: string; message: string }>(req);
       if (!to || !message) {
         return res.status(400).json({ message: "Phone number and message are required" });
       }
@@ -486,13 +490,14 @@ export function registerWhatsAppRoutes(app: Express) {
   app.post(
     "/api/integrations/whatsapp/save-rules",
     authMiddleware,
+    strictBody(whatsappRulesBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const { rules } = req.body;
+      const { rules } = parsedBody<{ rules: Array<Record<string, unknown>> }>(req);
       if (!Array.isArray(rules)) {
         return res.status(400).json({ message: "Rules must be an array" });
       }

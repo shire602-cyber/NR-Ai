@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { billingCheckoutBody } from "../../shared/validators/route-bodies";
 import { parsedBody } from "../http/parsed-body";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -184,9 +185,13 @@ export function registerBillingRoutes(app: Express) {
     "/api/companies/:companyId/billing/checkout",
     authMiddleware,
     requireCustomer,
+    strictBody(billingCheckoutBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { planId, billingCycle } = req.body;
+      const { planId, billingCycle } = parsedBody<{
+        planId: string;
+        billingCycle: "monthly" | "yearly";
+      }>(req);
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);

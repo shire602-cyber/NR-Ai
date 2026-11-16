@@ -1,4 +1,5 @@
 import { type Express, type Request, type Response } from "express";
+import { receiptCheckSimilarBody } from "../../shared/validators/route-bodies";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -245,10 +246,15 @@ export function registerReceiptRoutes(app: Express) {
     "/api/companies/:companyId/receipts/check-similar",
     authMiddleware,
     requireCustomer,
+    strictBody(receiptCheckSimilarBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = req.user!.id;
-      const { merchant, amount, date } = req.body ?? {};
+      const { merchant, amount, date } = parsedBody<{
+        merchant?: string | null;
+        amount?: number | string | null;
+        date?: string | null;
+      }>(req);
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -260,7 +266,7 @@ export function registerReceiptRoutes(app: Express) {
       const probe = {
         merchant: typeof merchant === "string" ? merchant : null,
         amount: Number(amount) || 0,
-        date: typeof date === "string" || date instanceof Date ? date : null,
+        date: typeof date === "string" ? date : null,
       };
 
       const receipts = await storage.getReceiptsByCompanyId(companyId);

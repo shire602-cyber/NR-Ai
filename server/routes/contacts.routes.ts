@@ -1,4 +1,7 @@
 import type { Express, Request, Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import { contactsClearBody, contactsImportBody } from "../../shared/validators/route-bodies";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -102,6 +105,18 @@ function clean(value: unknown, max: number): string {
   if (value === undefined || value === null) return "";
   return sanitizePlainText(String(value)).slice(0, max);
 }
+
+type ContactImportRow = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  trnNumber?: string;
+  trn?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  [key: string]: unknown;
+};
 
 export function registerContactRoutes(app: Express) {
   // =====================================
@@ -243,6 +258,7 @@ export function registerContactRoutes(app: Express) {
     "/api/companies/:companyId/customer-contacts/import",
     authMiddleware,
     requireCustomer,
+    strictBody(contactsImportBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = req.user!.id;
@@ -252,7 +268,7 @@ export function registerContactRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { contacts } = req.body;
+      const { contacts } = parsedBody<{ contacts: ContactImportRow[] }>(req);
 
       if (!Array.isArray(contacts) || contacts.length === 0) {
         return res.status(400).json({ message: "No contacts provided for import" });
@@ -362,6 +378,7 @@ export function registerContactRoutes(app: Express) {
     "/api/companies/:companyId/customer-contacts/clear-all",
     authMiddleware,
     requireCustomer,
+    strictBody(contactsClearBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = req.user!.id;
@@ -372,7 +389,7 @@ export function registerContactRoutes(app: Express) {
       }
 
       // Require an explicit confirmation phrase in the body to guard against accidental calls
-      const { confirm } = req.body ?? {};
+      const { confirm } = parsedBody<{ confirm?: string }>(req);
       if (confirm !== "DELETE ALL") {
         return res.status(400).json({ message: "Confirmation phrase required" });
       }
