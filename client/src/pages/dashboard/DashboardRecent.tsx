@@ -18,22 +18,23 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
       <section>
         <SectionHeader eyebrow={t["dashboard.recentEyebrow"]} title={t["dashboard.recentTitle"]} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="border-card-border">
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
-              <CardTitle className="flex items-center gap-2 text-[13px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
-                <FileText className="w-3.5 h-3.5" />
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-2 border-b border-border py-3 md:py-3">
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" aria-hidden />
                 {t.recentInvoices}
               </CardTitle>
-              <Link href="/invoices">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-1 text-accent hover:text-accent -me-2"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="-me-2 text-accent hover:text-accent"
+              >
+                <Link href="/invoices">
                   <T k="pageLabels.viewAll2" />
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Button>
-              </Link>
+                  <ArrowRight className="rtl:rotate-180" aria-hidden />
+                </Link>
+              </Button>
             </CardHeader>
             <CardContent className="pt-3">
               {invoicesLoading ? (
@@ -43,7 +44,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                   ))}
                 </div>
               ) : recentInvoices && recentInvoices.length > 0 ? (
-                <ul className="divide-y divide-border/50">
+                <ul className="divide-y divide-border">
                   {recentInvoices.slice(0, 5).map((invoice: any) => (
                     <li
                       key={invoice.id}
@@ -51,20 +52,20 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                       data-testid={`invoice-${invoice.id}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-info-subtle text-info-subtle-foreground flex-shrink-0 group-hover:scale-[1.04] transition-transform">
+                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
                           <FileText className="w-4 h-4" strokeWidth={1.75} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[13.5px] font-medium tracking-tight text-foreground truncate">
+                          <div className="truncate text-sm font-medium text-foreground">
                             {invoice.customerName}
                           </div>
-                          <div className="text-[11.5px] text-muted-foreground font-mono tabular-nums">
+                          <div className="money text-xs text-muted-foreground">
                             INV-{invoice.number}
                           </div>
                         </div>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-[14px] font-mono font-semibold tabular-nums text-foreground">
+                      <div className="flex flex-shrink-0 flex-col items-end">
+                        <div className="money text-sm font-semibold text-foreground">
                           {formatCurrency(invoice.total, invoice.currency, locale)}
                         </div>
                         <StatusBadge status={invoice.status} className="mt-0.5" />
@@ -84,36 +85,37 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
             </CardContent>
           </Card>
 
-          <Card className="border-card-border">
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
-              <CardTitle className="flex items-center gap-2 text-[13px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
-                <Clock className="w-3.5 h-3.5" />
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-2 border-b border-border py-3 md:py-3">
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
                 <T k="pageLabels.recentActivity" />
               </CardTitle>
-              <Link href="/journal">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-1 text-accent hover:text-accent -me-2"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="-me-2 text-accent hover:text-accent"
+              >
+                <Link href="/journal">
                   <T k="pageLabels.viewAll2" />
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Button>
-              </Link>
+                  <ArrowRight className="rtl:rotate-180" aria-hidden />
+                </Link>
+              </Button>
             </CardHeader>
             <CardContent className="pt-3">
               {journalEntries && journalEntries.length > 0 ? (
-                <ul className="divide-y divide-border/50">
+                <ul className="divide-y divide-border">
                   {journalEntries.slice(0, 5).map((entry: any) => (
                     <li key={entry.id} className="flex items-center gap-3 py-3 group">
-                      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-success-subtle text-success-subtle-foreground flex-shrink-0 group-hover:scale-[1.04] transition-transform">
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-success-subtle text-success-subtle-foreground">
                         <CheckCircle2 className="w-4 h-4" strokeWidth={1.75} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13.5px] font-medium tracking-tight text-foreground truncate">
+                        <div className="truncate text-sm font-medium text-foreground">
                           {entry.memo || t["dashboard.journalEntryFallback"]}
                         </div>
-                        <div className="text-[11.5px] text-muted-foreground font-mono tabular-nums">
+                        <div className="text-xs tabular-nums text-muted-foreground">
                           {formatDate(entry.date, locale)}
                         </div>
                       </div>

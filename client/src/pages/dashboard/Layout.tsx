@@ -1,39 +1,40 @@
+import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight } from "lucide-react";
 import { Link } from "wouter";
-import { motion } from "framer-motion";
 
 // ─── Quick action ────────────────────────────────────────────────────────────
 
-export function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
+export function QuickAction({
+  icon: Icon,
+  title,
+  description,
+  href,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  href: string;
+  /** Kept for call-site compatibility; entrance motion is handled by the page. */
+  delay?: number;
+}) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay, ease: [0.4, 0, 0.2, 1] }}
+    <Link
+      href={href}
+      className="group flex h-full flex-col rounded-xl border border-card-border bg-card p-4 shadow-card-soft transition-[border-color,box-shadow] duration-base ease-standard hover:border-border-strong hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Link href={href}>
-        <div className="group relative h-full p-5 rounded-xl border border-card-border bg-card hover-lift cursor-pointer overflow-hidden transition-colors">
-          <div
-            aria-hidden
-            className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
-          />
-          <div className="relative">
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-foreground/5 text-foreground/80 ring-1 ring-border/60 group-hover:bg-accent/10 group-hover:text-accent group-hover:ring-accent/30 transition-colors">
-                <Icon className="w-4 h-4" strokeWidth={2} />
-              </div>
-              <ArrowUpRight className="ms-auto w-4 h-4 text-muted-foreground/50 group-hover:text-accent group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform duration-200" />
-            </div>
-            <div className="mt-4 font-semibold text-[14px] tracking-tight text-foreground">
-              {title}
-            </div>
-            <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
-              {description}
-            </div>
-          </div>
-        </div>
-      </Link>
-    </motion.div>
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-foreground/80 transition-colors duration-fast group-hover:bg-brand-50 group-hover:text-accent dark:group-hover:bg-brand-950">
+          <Icon className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+        </span>
+        <ArrowUpRight
+          aria-hidden
+          className="ms-auto h-4 w-4 text-muted-foreground transition-colors duration-fast group-hover:text-accent rtl:-scale-x-100"
+        />
+      </div>
+      <div className="mt-3 text-sm font-semibold text-foreground">{title}</div>
+      <div className="mt-0.5 text-small text-muted-foreground">{description}</div>
+    </Link>
   );
 }
 
@@ -46,19 +47,13 @@ export function SectionHeader({
 }: {
   eyebrow?: string;
   title: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between gap-4 mb-4">
-      <div>
-        {eyebrow && (
-          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-muted-foreground">
-            {eyebrow}
-          </div>
-        )}
-        <h2 className="mt-1 font-display text-[22px] md:text-[26px] leading-none text-foreground tracking-tight">
-          {title}
-        </h2>
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+        <h2 className="mt-1 text-h2 text-foreground">{title}</h2>
       </div>
       {action}
     </div>

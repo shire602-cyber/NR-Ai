@@ -5,15 +5,15 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 
 const badgeVariants = cva(
-  "whitespace-nowrap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-tight transition-colors" +
+  "whitespace-nowrap inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 transition-colors" +
     " focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground shadow-xs",
+        default: "border-transparent bg-primary text-primary-foreground",
         secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground shadow-xs",
-        outline: "border [border-color:var(--badge-outline)] shadow-xs",
+        destructive: "border-transparent bg-destructive text-destructive-foreground",
+        outline: "border-border bg-transparent text-foreground",
 
         /* Semantic — subtle (filled background, slim border) */
         success: "border-transparent bg-success-subtle text-success-subtle-foreground",
@@ -23,8 +23,8 @@ const badgeVariants = cva(
         neutral: "border-transparent bg-neutral-subtle text-neutral-subtle-foreground",
 
         /* Semantic — solid (high contrast) */
-        "success-solid": "border-transparent bg-success text-success-foreground shadow-xs",
-        "warning-solid": "border-transparent bg-warning text-warning-foreground shadow-xs",
+        "success-solid": "border-transparent bg-success text-success-foreground",
+        "warning-solid": "border-transparent bg-warning text-warning-foreground",
       },
     },
     defaultVariants: {
@@ -50,7 +50,7 @@ function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
             variant === "success" && "bg-success",
             variant === "warning" && "bg-warning",
             variant === "info" && "bg-info",
-            variant === "danger" && "bg-destructive",
+            variant === "danger" && "bg-danger",
             variant === "neutral" && "bg-muted-foreground",
             (variant === "default" || !variant) && "bg-current"
           )}

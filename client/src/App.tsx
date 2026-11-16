@@ -200,6 +200,7 @@ import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
 import { RedirectTo } from "@/components/layout/RedirectTo";
 import { openCommandPalette } from "@/lib/commandPalette";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
@@ -215,14 +216,12 @@ function FirmContextBanner() {
 
   return (
     <div
-      className="flex flex-wrap items-center justify-between gap-2 bg-primary/10 border-b border-primary/20 px-3 py-2 md:px-4"
+      className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-brand-50 px-3 py-2 dark:bg-brand-950/60 md:px-6"
       data-testid="firm-context-banner"
     >
       <div className="flex items-center gap-2 min-w-0">
         <Building2 className="w-4 h-4 text-primary shrink-0" />
-        <span className="text-xs uppercase tracking-wide text-primary/80 shrink-0">
-          {t["shell.managing"]}
-        </span>
+        <span className="eyebrow shrink-0 text-accent">{t["shell.managing"]}</span>
         <span className="font-semibold text-sm truncate" data-testid="firm-context-company-name">
           {company.name}
         </span>
@@ -294,81 +293,81 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
-          <motion.header
+          <header
             role="banner"
-            className="flex items-center justify-between gap-3 px-3 md:px-6 h-14 border-b border-border/70 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 sticky top-0 z-20"
-            initial={{ y: -16, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/85 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <SidebarTrigger
                 data-testid="button-sidebar-toggle"
                 aria-label={t["shell.toggleSidebar"]}
                 className="text-muted-foreground hover:text-foreground"
               />
-              <div className="hidden md:flex items-center gap-2 ps-2 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-subtle text-success-subtle-foreground text-[10px] font-semibold tracking-wide uppercase">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-dot" />
+              <span aria-hidden className="mx-1 hidden h-5 w-px bg-border md:block" />
+              <div className="hidden items-center gap-2 text-xs text-muted-foreground md:flex">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[11.5px] font-medium text-foreground/80">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-success" />
                   {t["shell.uaeTaxReady"]}
                 </span>
-                <span className="text-border">·</span>
-                <span className="font-mono text-[11px] tracking-tight">
-                  {t["shell.regionCurrency"]}
-                </span>
+                <span className="money text-[11.5px]">{t["shell.regionCurrency"]}</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 md:gap-1.5">
               <button
                 type="button"
                 onClick={openCommandPalette}
                 data-testid="button-command-palette"
                 title={t["shell.searchAndCommands"]}
                 aria-keyshortcuts="Control+K Meta+K"
-                className="hidden md:flex items-center gap-2 h-8 ps-3 pe-2 rounded-full border border-border/70 bg-card/50 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border transition-colors"
+                className="me-1 hidden h-8 w-56 items-center gap-2 rounded-md border border-input bg-card ps-2.5 pe-1.5 text-muted-foreground shadow-xs transition-colors duration-fast hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex lg:w-64"
               >
-                <Search className="w-3.5 h-3.5" />
-                <span className="text-[12.5px] font-medium pe-4">{t["shell.search"]}</span>
-                <kbd
-                  aria-hidden="true"
-                  className="inline-flex items-center gap-0.5 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
-                >
+                <Search className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="flex-1 text-start text-[13px]">{t["shell.search"]}</span>
+                <kbd aria-hidden="true" className="kbd">
                   ⌘K
                 </kbd>
               </button>
+              <button
+                type="button"
+                onClick={openCommandPalette}
+                aria-label={t["shell.searchAndCommands"]}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+              >
+                <Search className="h-4 w-4" aria-hidden />
+              </button>
               <OfflineIndicator />
+              <ThemeToggle />
               <NotificationBell />
-              <Link href="/company-profile">
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  data-testid="button-profile"
-                  aria-label={t.profile}
-                  className="group flex items-center gap-2 ps-1.5 pe-3 py-1 rounded-full border border-border/70 bg-card/50 hover:bg-card hover:border-border transition-colors"
-                >
-                  <span className="relative flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-xs">
-                    <User className="w-3.5 h-3.5" />
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="ms-1 h-8 min-h-8 gap-2 rounded-full ps-1 pe-1 sm:pe-3"
+              >
+                <Link href="/company-profile" data-testid="button-profile" aria-label={t.profile}>
+                  <span
+                    aria-hidden
+                    className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                  >
+                    <User className="!size-3.5" />
                   </span>
-                  <span className="hidden sm:inline text-[13px] font-medium tracking-tight text-foreground/80 group-hover:text-foreground">
-                    {t.profile}
-                  </span>
-                </motion.button>
-              </Link>
+                  <span className="hidden text-[13px] font-medium sm:inline">{t.profile}</span>
+                </Link>
+              </Button>
             </div>
-          </motion.header>
+          </header>
           <FirmContextBanner />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
-            <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
+            <div className="page-container">
               <RouteGuard>
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={location}
                     initial={false}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.16, ease: "easeOut" }}
                   >
                     <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
                   </motion.div>

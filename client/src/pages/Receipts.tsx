@@ -1508,7 +1508,7 @@ export default function Receipts() {
               border-2 border-dashed rounded-lg p-8 text-center transition-all
               ${isDragging ? "border-primary bg-primary/5" : "border-border"}
               ${processedReceipts.length > 0 ? "border-[hsl(var(--chart-5))] bg-[hsl(var(--chart-5)/0.05)]" : ""}
-              hover:border-primary hover:bg-accent/50 cursor-pointer
+              hover:border-primary hover:bg-muted/60 cursor-pointer
             `}
             onClick={() => document.getElementById("file-input")?.click()}
             data-testid="drop-zone"

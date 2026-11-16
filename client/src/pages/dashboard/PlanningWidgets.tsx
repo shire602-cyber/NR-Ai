@@ -15,7 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest } from "@/lib/queryClient";
-import { CHART_COLORS } from "./chart-colors";
+import { ArrowUpRight } from "lucide-react";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE } from "./chart-colors";
 import { dashboardPeriodLabel } from "./period";
 import type {
   BudgetVsActualRow,
@@ -36,7 +37,7 @@ function ChangeBadge({ value, inverse = false }: { value: number | null; inverse
   if (value === null) return <span className="text-xs text-muted-foreground">–</span>;
   const good = inverse ? value <= 0 : value >= 0;
   return (
-    <Badge variant={good ? "success" : "danger"} className="tabular-nums">
+    <Badge variant={good ? "success" : "danger"} className="money min-w-[3.75rem] justify-center">
       {value > 0 ? "+" : ""}
       {value.toFixed(1)}%
     </Badge>
@@ -60,22 +61,24 @@ function PeriodColumn({
     [L(locale, "Net profit", "صافي الربح"), summary.netProfit, change?.netProfit, false],
   ];
   return (
-    <div className="space-y-2">
-      <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-        {title}
-        <span className="ml-2 font-mono normal-case tracking-normal">
-          {summary.from ?? ""} – {summary.to}
-        </span>
+    <div className="min-w-0">
+      <div className="text-[13px] font-medium text-foreground">{title}</div>
+      <div className="money mt-0.5 text-xs text-muted-foreground">
+        {summary.from ?? ""} – {summary.to}
       </div>
-      {rows.map(([label, value, delta, inverse]) => (
-        <div key={label} className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="flex items-center gap-2">
-            <span className="font-mono tabular-nums">{formatCurrency(value, "AED", locale)}</span>
-            {change && <ChangeBadge value={delta ?? null} inverse={inverse} />}
-          </span>
-        </div>
-      ))}
+      <dl className="mt-3 divide-hairline">
+        {rows.map(([label, value, delta, inverse]) => (
+          <div key={label} className="flex items-center justify-between gap-3 py-2 text-sm">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="flex items-center gap-2">
+              <span className="money font-medium text-foreground">
+                {formatCurrency(value, "AED", locale)}
+              </span>
+              {change && <ChangeBadge value={delta ?? null} inverse={inverse} />}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
@@ -85,13 +88,16 @@ export function PeriodComparison({ stats, loading, locale }: WidgetProps) {
   if (loading || !stats) return <Skeleton className="h-40 w-full" />;
   return (
     <Card data-testid="dashboard-period-comparison">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
-          {L(locale, "Period comparison", "مقارنة الفترات")} ·{" "}
-          {dashboardPeriodLabel(stats.period, locale)}
+      <CardHeader className="pb-1">
+        <CardTitle>
+          {L(locale, "Period comparison", "مقارنة الفترات")}
+          <span className="font-normal text-muted-foreground">
+            {" "}
+            · {dashboardPeriodLabel(stats.period, locale)}
+          </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <CardContent className="grid grid-cols-1 gap-x-10 gap-y-6 md:grid-cols-3">
         <PeriodColumn
           title={L(locale, "Selected period", "الفترة المحددة")}
           summary={stats.current}
@@ -110,7 +116,7 @@ export function PeriodComparison({ stats, loading, locale }: WidgetProps) {
           locale={locale}
         />
       </CardContent>
-      <CardContent className="pt-0 text-xs text-muted-foreground">
+      <CardContent className="border-t border-border pt-4 text-xs text-muted-foreground md:pt-4">
         {L(
           locale,
           "Changes are shown against each comparison column. Figures come from the posted ledger.",
@@ -135,14 +141,23 @@ function Tile({
   testId: string;
 }) {
   return (
-    <Link href={href}>
-      <Card className="hover-elevate cursor-pointer h-full" data-testid={testId}>
-        <CardContent className="p-4">
-          <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-            {label}
+    <Link
+      href={href}
+      className="group block h-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Card interactive className="h-full" data-testid={testId}>
+        <CardContent className="flex h-full flex-col p-4 md:p-5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-[13px] font-medium text-muted-foreground">{label}</div>
+            <ArrowUpRight
+              aria-hidden
+              className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100 rtl:-scale-x-100"
+            />
           </div>
-          <div className="mt-2 font-display text-[22px] tabular-nums leading-none">{value}</div>
-          {hint && <div className="mt-2 text-xs text-muted-foreground">{hint}</div>}
+          <div className="money mt-2 text-xl font-semibold tracking-[-0.015em] text-foreground">
+            {value}
+          </div>
+          {hint && <div className="mt-auto pt-2 text-xs text-muted-foreground">{hint}</div>}
         </CardContent>
       </Card>
     </Link>
@@ -157,7 +172,10 @@ export function DrillThroughTiles({ stats, loading, locale }: WidgetProps) {
       ? L(locale, "Not enough data", "لا توجد بيانات كافية")
       : `${n.toFixed(1)} ${L(locale, "days", "يوم")}`;
   return (
-    <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" data-testid="dashboard-drill-tiles">
+    <section
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      data-testid="dashboard-drill-tiles"
+    >
       <Tile
         href={stats.links.cash}
         label={L(locale, "Cash (GL)", "النقد (الدفتر)")}
@@ -206,34 +224,53 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
   return (
     <Card data-testid="dashboard-cash-movement">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
-          {L(locale, "Cash in and out", "حركة النقد الداخلة والخارجة")}
-        </CardTitle>
+        <CardTitle>{L(locale, "Cash in and out", "حركة النقد الداخلة والخارجة")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="h-56 w-full" dir="ltr">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" fontSize={11} />
-              <YAxis fontSize={11} width={56} />
-              <Tooltip formatter={(v: number) => formatCurrency(v, "AED", locale)} />
-              <Legend />
+            <BarChart data={data} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+              <XAxis
+                dataKey="name"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+                stroke="hsl(var(--muted-foreground))"
+              />
+              <YAxis
+                fontSize={11}
+                width={48}
+                tickLine={false}
+                axisLine={false}
+                stroke="hsl(var(--muted-foreground))"
+                tickFormatter={(v: number) => `${Math.round(v / 1000)}k`}
+              />
+              <Tooltip
+                cursor={{ fill: "hsl(var(--muted))" }}
+                contentStyle={CHART_TOOLTIP_STYLE}
+                formatter={(v: number) => formatCurrency(v, "AED", locale)}
+              />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
               <Bar
                 dataKey="inflow"
                 name={L(locale, "Cash in", "داخل")}
                 fill={CHART_COLORS.accent}
+                radius={[3, 3, 0, 0]}
+                maxBarSize={28}
               />
               <Bar
                 dataKey="outflow"
                 name={L(locale, "Cash out", "خارج")}
                 fill={CHART_COLORS.warning}
+                radius={[3, 3, 0, 0]}
+                maxBarSize={28}
               />
             </BarChart>
           </ResponsiveContainer>
         </div>
         <div className="space-y-2" data-testid="dashboard-bank-vs-gl">
-          <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
+          <div className="eyebrow">
             {L(
               locale,
               "Bank statement balance vs general ledger",
@@ -252,10 +289,10 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
             accounts.map((a) => (
               <div
                 key={a.bankAccountId}
-                className="flex items-center justify-between gap-2 text-sm"
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5 text-sm"
               >
                 <span>{a.name}</span>
-                <span className="flex items-center gap-3 font-mono tabular-nums">
+                <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 tabular-nums">
                   <span>{formatCurrency(a.statementBalance, "AED", locale)}</span>
                   <span className="text-muted-foreground">
                     {a.glBalance === null ? "–" : formatCurrency(a.glBalance, "AED", locale)}
@@ -299,12 +336,15 @@ function OverdueList({
         </p>
       ) : (
         docs.map((d) => (
-          <div key={d.documentId} className="flex items-center justify-between gap-2 text-sm">
+          <div
+            key={d.documentId}
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5 text-sm"
+          >
             <span className="truncate">
               {d.name}
               {d.number ? <span className="text-muted-foreground"> · {d.number}</span> : null}
             </span>
-            <span className="flex items-center gap-2 font-mono tabular-nums">
+            <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 tabular-nums">
               {formatCurrency(d.open, "AED", locale)}
               <Badge variant="danger">
                 {d.daysPastDue} {L(locale, "d", "ي")}
@@ -322,7 +362,7 @@ export function OverdueSummary({ stats, loading, locale }: WidgetProps) {
   return (
     <Card data-testid="dashboard-top-overdue">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{L(locale, "Top overdue", "أعلى المتأخرات")}</CardTitle>
+        <CardTitle>{L(locale, "Top overdue", "أعلى المتأخرات")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
         <OverdueList
@@ -400,12 +440,12 @@ export function BudgetVsActualWidget({
   return (
     <Card data-testid="dashboard-budget-vs-actual">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center justify-between">
+        <CardTitle className="flex items-center justify-between gap-3">
           <span>
             {L(locale, "Budget vs actual · this month", "الموازنة مقابل الفعلي · هذا الشهر")}
           </span>
           <Link href="/budgets">
-            <span className="text-xs font-normal text-accent cursor-pointer">
+            <span className="cursor-pointer text-[13px] font-medium text-accent hover:underline">
               {L(locale, "Open budgets", "فتح الموازنات")}
             </span>
           </Link>
@@ -422,9 +462,12 @@ export function BudgetVsActualWidget({
           </p>
         ) : (
           rows.map((r) => (
-            <div key={r.lineId} className="flex items-center justify-between gap-2 text-sm">
+            <div
+              key={r.lineId}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5 text-sm"
+            >
               <span className="truncate">{r.accountName}</span>
-              <span className="flex items-center gap-2 font-mono tabular-nums">
+              <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 tabular-nums">
                 <span className="text-muted-foreground">
                   {formatCurrency(r.budgeted, "AED", locale)}
                 </span>

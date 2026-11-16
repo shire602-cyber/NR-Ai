@@ -14,7 +14,7 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { CHART_COLORS, PIE_PALETTE } from "./chart-colors";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE, PIE_PALETTE } from "./chart-colors";
 import { SectionHeader } from "./Layout";
 import { EmptyState } from "./EmptyState";
 import type { DashboardModel } from "./useCustomerDashboardModel";
@@ -28,15 +28,11 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
         <SectionHeader
           eyebrow={t["dashboard.trendsEyebrow"]}
           title={t["dashboard.trendsTitle"]}
-          action={
-            <Badge variant="outline" className="font-mono">
-              {t["dashboard.lastSixMonths"]}
-            </Badge>
-          }
+          action={<Badge variant="outline">{t["dashboard.lastSixMonths"]}</Badge>}
         />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="lg:col-span-2 border-card-border">
-            <CardContent className="p-5">
+          <Card className="lg:col-span-2">
+            <CardContent className="p-5 md:p-6">
               {trendsLoading ? (
                 <Skeleton className="h-[300px] w-full" />
               ) : monthlyTrends && monthlyTrends.length > 0 ? (
@@ -47,11 +43,11 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                   >
                     <defs>
                       <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={CHART_COLORS.accent} stopOpacity={0.32} />
+                        <stop offset="0%" stopColor={CHART_COLORS.accent} stopOpacity={0.18} />
                         <stop offset="100%" stopColor={CHART_COLORS.accent} stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="exp" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={CHART_COLORS.warning} stopOpacity={0.28} />
+                        <stop offset="0%" stopColor={CHART_COLORS.warning} stopOpacity={0.14} />
                         <stop offset="100%" stopColor={CHART_COLORS.warning} stopOpacity={0} />
                       </linearGradient>
                     </defs>
@@ -62,7 +58,6 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       fontSize={11}
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fontFamily: "var(--font-mono)" }}
                     />
                     <YAxis
                       stroke="hsl(var(--muted-foreground))"
@@ -70,7 +65,6 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                      tick={{ fontFamily: "var(--font-mono)" }}
                     />
                     <Tooltip
                       cursor={{
@@ -78,14 +72,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                         strokeWidth: 1,
                         strokeDasharray: "3 3",
                       }}
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--popover-border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                        fontFamily: "var(--font-mono)",
-                        boxShadow: "var(--shadow-md)",
-                      }}
+                      contentStyle={CHART_TOOLTIP_STYLE}
                       formatter={(value: any) => formatCurrency(value, "AED", locale)}
                       labelFormatter={(key: any) => formatMonthKey(String(key), locale)}
                     />
@@ -120,13 +107,11 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
           </Card>
 
           {/* Expense Breakdown */}
-          <Card className="border-card-border">
+          <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-[13px] font-semibold tracking-tight text-muted-foreground uppercase tracking-[0.12em]">
-                {t.expenseBreakdown}
-              </CardTitle>
+              <CardTitle>{t.expenseBreakdown}</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 px-3">
+            <CardContent className="px-3 pt-0 md:px-4 md:pt-0">
               {expenseLoading ? (
                 <Skeleton className="h-[260px] w-full" />
               ) : expenseData && expenseData.length > 0 ? (
@@ -137,8 +122,8 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                         data={expenseData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
+                        innerRadius={58}
+                        outerRadius={84}
                         paddingAngle={2}
                         dataKey="value"
                         stroke="hsl(var(--card))"
@@ -149,29 +134,22 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{
-                          backgroundColor: "hsl(var(--popover))",
-                          border: "1px solid hsl(var(--popover-border))",
-                          borderRadius: "8px",
-                          fontSize: "12px",
-                          fontFamily: "var(--font-mono)",
-                          boxShadow: "var(--shadow-md)",
-                        }}
+                        contentStyle={CHART_TOOLTIP_STYLE}
                         formatter={(value: any) => formatCurrency(value, "AED", locale)}
                       />
                     </PieChart>
                   </ResponsiveContainer>
                   <ul className="px-2 pb-3 space-y-1.5">
                     {expenseData.slice(0, 5).map((entry: any, i: number) => (
-                      <li key={i} className="flex items-center justify-between gap-2 text-[12px]">
+                      <li key={i} className="flex items-center justify-between gap-2 text-[13px]">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className="w-2 h-2 rounded-full flex-shrink-0"
                             style={{ background: PIE_PALETTE[i % PIE_PALETTE.length] }}
                           />
-                          <span className="truncate text-foreground/80">{entry.name}</span>
+                          <span className="truncate text-muted-foreground">{entry.name}</span>
                         </div>
-                        <span className="font-mono tabular-nums text-foreground/90">
+                        <span className="money font-medium text-foreground">
                           {formatCurrency(entry.value, "AED", locale)}
                         </span>
                       </li>

@@ -5,7 +5,7 @@
  * document direction is set to RTL (Arabic mode).
  *
  * Covers:
- *  - Arabic font stack (Google Fonts Cairo)
+ *  - Arabic font stack (self-hosted Noto Sans Arabic via --font-arabic)
  *  - Base directional overrides
  *  - shadcn/ui component adjustments
  *  - Tables, forms, sidebar, dialogs, badges, tooltips
@@ -14,34 +14,21 @@
  *  - Framer Motion sidebar animation fix
  */
 
-/* ── Google Fonts ─────────────────────────────────────────────────────── */
-/* Cairo + Noto Sans Arabic are now preloaded in index.html <head>.        */
-/* This @import is kept as a fallback for environments that skip the HTML  */
-/* preload (e.g. Storybook, standalone CSS consumers).                     */
+/* ── Fonts ───────────────────────────────────────────────────────────── */
+/* Noto Sans Arabic is self-hosted (Fontsource) and loaded on first RTL     */
+/* render by RTLProvider; the stack lives in the --font-arabic token.       */
 
 /* ══════════════════════════════════════════════════════════════════════
    1. BASE / TYPOGRAPHY
    ══════════════════════════════════════════════════════════════════════ */
 
 [dir="rtl"] {
-  font-family:
-    "Cairo",
-    "Noto Sans Arabic",
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-arabic);
   text-align: right;
 }
 
 [dir="rtl"] body {
-  font-family:
-    "Cairo",
-    "Noto Sans Arabic",
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-arabic);
 }
 
 /* Letter-spacing breaks Arabic joining (letters render disconnected), so the
@@ -50,14 +37,11 @@
   letter-spacing: normal;
 }
 
-/* Slightly larger line-height for Arabic readability */
+/* Slightly larger line-height for Arabic running text. Compact UI (buttons,
+   badges, table cells) keeps the type-scale line-height so rows stay aligned. */
 [dir="rtl"] p,
-[dir="rtl"] span,
-[dir="rtl"] label,
-[dir="rtl"] li,
-[dir="rtl"] td,
-[dir="rtl"] th {
-  line-height: 1.8;
+[dir="rtl"] li {
+  line-height: 1.7;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -743,7 +727,7 @@
 
 @media print {
   [dir="rtl"] {
-    font-family: "Cairo", "Noto Sans Arabic", serif;
+    font-family: var(--font-arabic);
   }
 
   [dir="rtl"] table {

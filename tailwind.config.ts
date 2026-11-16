@@ -7,13 +7,51 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      // Radii scale (tokens: --radius = 8px). sm 4 · md 6 · lg 8 · xl 12 · 2xl 16.
       borderRadius: {
-        lg: ".5625rem" /* 9px */,
-        md: ".375rem" /* 6px */,
-        sm: ".1875rem" /* 3px */,
+        sm: "calc(var(--radius) - 4px)",
+        md: "calc(var(--radius) - 2px)",
+        lg: "var(--radius)",
+        xl: "calc(var(--radius) + 4px)",
+        "2xl": "calc(var(--radius) + 8px)",
+      },
+      // Type scale. Body copy in the app is `text-sm` (14px); these named
+      // steps are the only heading sizes screens should need.
+      fontSize: {
+        display: [
+          "2.25rem",
+          { lineHeight: "2.625rem", letterSpacing: "-0.025em", fontWeight: "600" },
+        ],
+        h1: ["1.75rem", { lineHeight: "2.125rem", letterSpacing: "-0.022em", fontWeight: "600" }],
+        h2: ["1.25rem", { lineHeight: "1.75rem", letterSpacing: "-0.015em", fontWeight: "600" }],
+        h3: ["1rem", { lineHeight: "1.5rem", letterSpacing: "-0.01em", fontWeight: "600" }],
+        h4: ["0.875rem", { lineHeight: "1.25rem", fontWeight: "600" }],
+        body: ["0.875rem", { lineHeight: "1.375rem" }],
+        small: ["0.8125rem", { lineHeight: "1.25rem" }],
+        caption: ["0.75rem", { lineHeight: "1rem" }],
+      },
+      maxWidth: {
+        content: "var(--content-max)",
+        narrow: "var(--content-narrow)",
+      },
+      transitionDuration: {
+        fast: "var(--duration-fast)",
+        base: "var(--duration-base)",
+        slow: "var(--duration-slow)",
+      },
+      transitionTimingFunction: {
+        standard: "var(--ease-standard)",
+        out: "var(--ease-out)",
       },
       colors: {
-        // Flat / base colors (regular buttons)
+        // Raw palette (layer 1). Prefer the role colours below in components.
+        brand: Object.fromEntries(
+          ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"].map((k) => [
+            k,
+            `hsl(var(--brand-${k}) / <alpha-value>)`,
+          ])
+        ),
+        // Role colours (layer 3)
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         border: "hsl(var(--border) / <alpha-value>)",
@@ -66,6 +104,7 @@ export default {
           DEFAULT: "hsl(var(--sidebar) / <alpha-value>)",
           foreground: "hsl(var(--sidebar-foreground) / <alpha-value>)",
           border: "hsl(var(--sidebar-border) / <alpha-value>)",
+          muted: "hsl(var(--sidebar-muted-foreground) / <alpha-value>)",
         },
         "sidebar-primary": {
           DEFAULT: "hsl(var(--sidebar-primary) / <alpha-value>)",
@@ -105,10 +144,34 @@ export default {
           "subtle-foreground": "hsl(var(--info-subtle-foreground) / <alpha-value>)",
         },
         danger: {
+          DEFAULT: "hsl(var(--danger) / <alpha-value>)",
+          foreground: "hsl(var(--danger-foreground) / <alpha-value>)",
           subtle: "hsl(var(--danger-subtle) / <alpha-value>)",
           "subtle-foreground": "hsl(var(--danger-subtle-foreground) / <alpha-value>)",
         },
+        positive: "hsl(var(--positive) / <alpha-value>)",
+        negative: "hsl(var(--negative) / <alpha-value>)",
+        "border-strong": "hsl(var(--border-strong) / <alpha-value>)",
+        "surface-sunken": "hsl(var(--surface-sunken) / <alpha-value>)",
         neutral: {
+          ...Object.fromEntries(
+            [
+              "0",
+              "25",
+              "50",
+              "100",
+              "200",
+              "300",
+              "400",
+              "500",
+              "600",
+              "700",
+              "800",
+              "850",
+              "900",
+              "950",
+            ].map((k) => [k, `hsl(var(--neutral-${k}) / <alpha-value>)`])
+          ),
           subtle: "hsl(var(--neutral-subtle) / <alpha-value>)",
           "subtle-foreground": "hsl(var(--neutral-subtle-foreground) / <alpha-value>)",
         },
@@ -117,6 +180,8 @@ export default {
         sans: ["var(--font-sans)"],
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
+        display: ["var(--font-display)"],
+        arabic: ["var(--font-arabic)"],
       },
       boxShadow: {
         // Premium, dark-aware card elevation (defined in index.css). Every
@@ -138,11 +203,11 @@ export default {
           to: { opacity: "1" },
         },
         "slide-up": {
-          from: { transform: "translateY(10px)", opacity: "0" },
+          from: { transform: "translateY(6px)", opacity: "0" },
           to: { transform: "translateY(0)", opacity: "1" },
         },
         "slide-down": {
-          from: { transform: "translateY(-10px)", opacity: "0" },
+          from: { transform: "translateY(-6px)", opacity: "0" },
           to: { transform: "translateY(0)", opacity: "1" },
         },
         "slide-in-right": {
@@ -153,10 +218,10 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.3s ease-out",
-        "slide-up": "slide-up 0.3s ease-out",
-        "slide-down": "slide-down 0.3s ease-out",
-        "slide-in-right": "slide-in-right 0.3s ease-out",
+        "fade-in": "fade-in 180ms ease-out",
+        "slide-up": "slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "slide-down": "slide-down 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "slide-in-right": "slide-in-right 200ms cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },

@@ -23,15 +23,15 @@ export default function Dashboard() {
 function CustomerDashboard() {
   const m = useCustomerDashboardModel();
   return (
-    <div className="space-y-12">
+    <div className="space-y-6 md:space-y-8">
       <DashboardHero m={m} />
       <DashboardOverview m={m} />
+      <DashboardCharts m={m} />
       <DashboardPlanning m={m} />
+      <DashboardRecent m={m} />
+      <DashboardActions m={m} />
       <ReportWorkspaceToggle m={m} />
       {m.showReportWorkspace && <ReportWorkspaceSection m={m} />}
-      <DashboardCharts m={m} />
-      <DashboardActions m={m} />
-      <DashboardRecent m={m} />
     </div>
   );
 }

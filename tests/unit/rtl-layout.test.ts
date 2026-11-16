@@ -85,7 +85,9 @@ describe("RTL shell layout", () => {
     const provider = read("client/src/components/RTLProvider.tsx");
     expect(provider).toContain('html.dir = isRTL ? "rtl" : "ltr"');
     expect(provider).toContain("html.lang = locale");
-    expect(provider).toContain("@fontsource/cairo");
+    // D2: one Arabic face (Noto Sans Arabic) pairs with Geist; Cairo is no longer loaded.
+    expect(provider).toContain("@fontsource/noto-sans-arabic");
+    expect(provider).not.toContain("@fontsource/cairo");
   });
 
   it("R18-11: the Playwright RTL crawl asserts sidebar edge and content overlap on 20 pages", () => {

@@ -28,23 +28,21 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
       {/* ── First-invoice guide / draft explainer (R18-07, R18-12, R18-13) ──── */}
       {!invoicesLoading && (recentInvoices?.length ?? 0) === 0 && (
         <section
-          className="rounded-2xl border border-accent/30 bg-accent/5 p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+          className="flex flex-col gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-900 dark:bg-brand-950/50 md:flex-row md:items-center md:justify-between md:p-5"
           data-testid="card-first-invoice-guide"
         >
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold text-foreground">
-              {t["dashboard.firstInvoiceTitle"]}
-            </h2>
-            <p className="mt-1 text-[13px] text-muted-foreground max-w-2xl">
+            <h2 className="text-h3 text-foreground">{t["dashboard.firstInvoiceTitle"]}</h2>
+            <p className="mt-0.5 max-w-2xl text-small text-muted-foreground">
               {t["dashboard.firstInvoiceBody"]}
             </p>
           </div>
-          <Link href="/invoices?new=1">
-            <Button size="sm" data-testid="button-first-invoice">
-              <FileText className="w-3.5 h-3.5" />
+          <Button asChild size="sm" className="shrink-0" data-testid="button-first-invoice">
+            <Link href="/invoices?new=1">
+              <FileText aria-hidden />
               {t["dashboard.firstInvoiceCta"]}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </section>
       )}
       {!invoicesLoading &&
@@ -55,28 +53,32 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
           if (draftCount === 0 || (stats?.revenue ?? 0) > 0) return null;
           return (
             <section
-              className="rounded-2xl border border-warning/30 bg-warning/5 p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+              className="flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning-subtle p-4 md:flex-row md:items-center md:justify-between md:p-5"
               data-testid="card-draft-not-revenue"
             >
               <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold text-foreground">
+                <h2 className="text-h3 text-warning-subtle-foreground">
                   {t["dashboard.draftNotRevenueTitle"]}
                 </h2>
-                <p className="mt-1 text-[13px] text-muted-foreground max-w-2xl">
+                <p className="mt-0.5 max-w-2xl text-small text-warning-subtle-foreground">
                   {formatMessage(t["dashboard.draftNotRevenueBody"], { count: draftCount })}
                 </p>
               </div>
-              <Link href="/invoices">
-                <Button size="sm" variant="outline" data-testid="button-review-drafts">
-                  {t["dashboard.draftNotRevenueCta"]}
-                </Button>
-              </Link>
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                data-testid="button-review-drafts"
+              >
+                <Link href="/invoices">{t["dashboard.draftNotRevenueCta"]}</Link>
+              </Button>
             </section>
           );
         })()}
 
       {/* ── KPI strip ─────────────────────────────────────────────────────── */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label={(t as any).revenue ?? "Revenue"}
           value={formatCurrency(stats?.revenue || 0, "AED", locale)}

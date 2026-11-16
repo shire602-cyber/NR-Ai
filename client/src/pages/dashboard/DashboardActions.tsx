@@ -23,7 +23,7 @@ export function DashboardActions({ m }: { m: DashboardModel }) {
           eyebrow={t["dashboard.quickActionsEyebrow"]}
           title={t["dashboard.quickActionsTitle"]}
         />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 md:gap-4">
           <QuickAction
             icon={Plus}
             title={t["dashboard.quickCreateInvoice"]}

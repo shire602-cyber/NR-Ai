@@ -4,36 +4,40 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Button — D2 design system.
+ * Heights: sm 32 · default 36 · lg 40 · xl 48. One primary action per view;
+ * pair it with `outline` or `ghost` secondaries. Icons inherit 16px.
+ */
 const buttonVariants = cva(
-  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium tracking-tight" +
-    " focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" +
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium" +
+    " select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" +
     " disabled:pointer-events-none disabled:opacity-50" +
-    " transition-[transform,box-shadow,background-color,color,border-color] duration-150 ease-out" +
-    " active:translate-y-px" +
-    " [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0" +
-    " hover-elevate active-elevate-2",
+    " transition-[background-color,color,border-color,box-shadow] duration-fast ease-standard" +
+    " [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground border border-primary-border shadow-xs hover:shadow-sm",
+          "bg-primary text-primary-foreground border border-primary-border shadow-xs hover:bg-[hsl(var(--primary-hover))] active:shadow-none",
         destructive:
-          "bg-destructive text-destructive-foreground border border-destructive-border shadow-xs hover:shadow-sm",
+          "bg-destructive text-destructive-foreground border border-destructive-border shadow-xs hover:bg-destructive/90 active:shadow-none",
         accent:
-          "bg-accent text-accent-foreground border border-accent-border shadow-xs hover:shadow-sm",
+          "bg-accent text-accent-foreground border border-accent-border shadow-xs hover:bg-accent/90 active:shadow-none",
         outline:
-          "border [border-color:var(--button-outline)] shadow-xs hover:bg-secondary/50 active:shadow-none",
-        secondary: "border bg-secondary text-secondary-foreground border-secondary-border",
-        ghost: "border border-transparent hover:bg-secondary/60",
-        link: "border border-transparent text-primary underline-offset-4 hover:underline px-0",
+          "border border-input bg-card text-foreground shadow-xs hover:bg-secondary hover:border-border-strong active:shadow-none",
+        secondary:
+          "border border-transparent bg-secondary text-secondary-foreground hover:bg-neutral-200 dark:hover:bg-neutral-700",
+        ghost: "border border-transparent text-foreground hover:bg-secondary",
+        link: "border border-transparent text-accent underline-offset-4 hover:underline px-0",
       },
       size: {
         default: "min-h-9 px-4 py-2",
-        sm: "min-h-8 rounded-md px-3 text-xs",
-        lg: "min-h-10 rounded-md px-6 text-sm",
-        xl: "min-h-12 rounded-lg px-7 text-base",
+        sm: "min-h-8 px-3 text-[13px] gap-1.5",
+        lg: "min-h-10 px-5 text-sm",
+        xl: "min-h-12 rounded-lg px-6 text-base",
         icon: "h-9 w-9",
-        "icon-sm": "h-8 w-8 rounded-md",
+        "icon-sm": "h-8 w-8",
       },
     },
     defaultVariants: {

@@ -1223,7 +1223,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     onSelect={() => handleSelect(item)}
                     data-testid={`command-item-${item.id}`}
                   >
-                    <Icon className="me-2 h-4 w-4 text-muted-foreground" />
+                    <Icon className="h-4 w-4 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{item.label}</span>
                       {item.description ? (
