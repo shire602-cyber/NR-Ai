@@ -694,6 +694,8 @@ export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   zatca_documents: "ZATCA hash chain belongs to the source company's EGS unit",
   zatca_egs_units: "ZATCA device identity belongs to the source company",
   einvoice_documents: "transmission state belongs to the source company",
+  company_report_delivery_artifacts:
+    "delivery files of the source company's delivery log (runs are not cloned; S8)",
 };
 
 /** Columns cleared on clone: public/unguessable tokens must not be shared by two companies. */
