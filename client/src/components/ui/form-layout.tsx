@@ -109,7 +109,7 @@ export function FormActions({
           "sticky -bottom-5 z-10 -mx-4 -mb-5 sm:-bottom-6 mt-2 max-sm:!mt-auto border-t border-border bg-card px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-4",
         sticky &&
           variant === "page" &&
-          "sticky bottom-0 z-20 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:-mx-6 md:px-6",
+          "sticky bottom-0 z-20 -mx-4 border-t border-border bg-background px-4 py-3 md:-mx-6 md:px-6",
         className
       )}
       {...props}
