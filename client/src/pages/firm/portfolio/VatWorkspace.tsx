@@ -75,7 +75,6 @@ import type {
 import {
   copyText,
   formatAed,
-  formatDateShort,
   formatDays,
   formatPeriod,
   hasClientService,
@@ -164,6 +163,12 @@ const VX_AR: Record<string, string> = {
   "This evidence record was logged before file storage was enabled.":
     "سُجّل هذا الدليل قبل تفعيل تخزين الملفات.",
   "Could not download evidence": "تعذّر تنزيل الدليل",
+  file: "ملف",
+  ocr: "قراءة ضوئية",
+  manual: "يدوي",
+  import: "استيراد",
+  generated: "مُولَّد",
+  "FTA VAT 201 copy fields": "حقول نسخ إقرار ضريبة القيمة المضافة 201 للهيئة",
   "No draft rows to approve": "لا توجد صفوف مسودة للاعتماد",
   "Bulk approve failed": "فشل الاعتماد الجماعي",
   "Totals recalculated — approved rows now flow into the VAT 201.":
@@ -328,7 +333,7 @@ export function VatWorkspaceDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { isAr, vat, fx, status: statusWord } = useFirmText();
+  const { isAr, vat, fx, fdShort, status: statusWord } = useFirmText();
   const vx = (text: string) => (isAr ? (VX_AR[text] ?? text) : text);
   const { toast } = useToast();
   const [pickedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
@@ -1119,7 +1124,7 @@ export function VatWorkspaceDialog({
                             <TableRow className="bg-background">
                               <TableCell>
                                 <Badge variant={editingRowId ? "secondary" : "outline"}>
-                                  {editingRowId ? vx("editing") : "new row"}
+                                  {editingRowId ? vx("editing") : vx("new row")}
                                 </Badge>
                               </TableCell>
                               <TableCell>
@@ -1329,14 +1334,14 @@ export function VatWorkspaceDialog({
                                     <Badge
                                       variant={row.sourceMethod === "ocr" ? "secondary" : "outline"}
                                     >
-                                      {row.sourceMethod}
+                                      {vx(row.sourceMethod)}
                                     </Badge>
                                   </TableCell>
                                   <TableCell>
                                     <p className="font-medium">{row.invoiceNumber || "—"}</p>
                                     <p className="text-xs text-muted-foreground">{row.vat201Box}</p>
                                   </TableCell>
-                                  <TableCell>{formatDateShort(row.documentDate)}</TableCell>
+                                  <TableCell>{fdShort(row.documentDate)}</TableCell>
                                   <TableCell>
                                     <p className="max-w-56 truncate">
                                       {row.counterpartyName || "—"}
@@ -1346,7 +1351,7 @@ export function VatWorkspaceDialog({
                                     {row.counterpartyTrn || "—"}
                                   </TableCell>
                                   <TableCell className="text-sm">
-                                    {vatRowCategoryLabel(row.rowCategory)}
+                                    {vat(vatRowCategoryLabel(row.rowCategory))}
                                   </TableCell>
                                   <TableCell className="text-sm">{row.emirate || "—"}</TableCell>
                                   <TableCell data-numeric>
@@ -1732,7 +1737,7 @@ export function VatWorkspaceDialog({
                               <TableRow key={row.id}>
                                 <TableCell>{row.invoiceNumber || "—"}</TableCell>
                                 <TableCell>{row.counterpartyName || "—"}</TableCell>
-                                <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
+                                <TableCell>{vat(vatRowCategoryLabel(row.rowCategory))}</TableCell>
                                 <TableCell data-numeric>
                                   {formatAed(Number(row.vatAmount ?? 0))}
                                 </TableCell>
@@ -1805,7 +1810,7 @@ export function VatWorkspaceDialog({
                   <div className="rounded-md border p-3 space-y-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="font-medium">FTA VAT 201 copy fields</p>
+                        <p className="font-medium">{vx("FTA VAT 201 copy fields")}</p>
                         <p className="text-xs text-muted-foreground">
                           {vx(
                             "Approved rows are aggregated below. Copy each value into the FTA portal manually; this does not submit to FTA."
@@ -1877,7 +1882,9 @@ export function VatWorkspaceDialog({
                         </p>
                       </div>
                       <Badge variant="outline">
-                        {attachments.length} file{attachments.length === 1 ? "" : "s"}
+                        {isAr
+                          ? `${attachments.length} ${attachments.length === 1 ? "ملف" : "ملفات"}`
+                          : `${attachments.length} file${attachments.length === 1 ? "" : "s"}`}
                       </Badge>
                     </div>
                     {attachments.length === 0 ? (
@@ -1894,8 +1901,10 @@ export function VatWorkspaceDialog({
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium">{attachment.fileName}</p>
                               <p className="text-xs text-muted-foreground">
-                                {attachment.mimeType || "file"} ·{" "}
-                                {formatDateShort(attachment.createdAt)}
+                                <span dir="ltr" translate="no">
+                                  {attachment.mimeType || vx("file")}
+                                </span>{" "}
+                                · {fdShort(attachment.createdAt)}
                               </p>
                             </div>
                             <Button

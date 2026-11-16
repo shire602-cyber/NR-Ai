@@ -19,6 +19,7 @@ import {
   describeNotificationCopy,
   notificationCopy,
   renderCopyTemplate,
+  renderServerCopy,
   renderDescriptor,
   serverCopyCatalogKey,
   withNotificationCopy,
@@ -228,5 +229,54 @@ describe("server copy templates", () => {
         "Overdue by 12 day(s); recovery date is an assumption; delayed 5 day(s)"
       )?.params
     ).toEqual({ days: "12", delay: "5" });
+  });
+});
+
+describe("F10 report delivery scheduled copy, current and legacy wording", () => {
+  it("maps both stored wordings to the same copy key and renders in both locales", () => {
+    const current = describeNotificationCopy({
+      title: "Report delivery queued: Owner pack",
+      message: "PDF scheduled for 2026-11-20.",
+    });
+    const legacy = describeNotificationCopy({
+      title: "Report delivery queued: Owner pack",
+      message: "Report delivery scheduled for 2026-11-20.",
+    });
+    const key = "notification.reportDeliveryScheduled.message";
+    expect(current.messageKey).toBe(key);
+    expect(legacy.messageKey).toBe(key);
+    expect(current.messageParams).toMatchObject({ format: "PDF", date: "2026-11-20" });
+    expect(legacy.messageParams).toMatchObject({ date: "2026-11-20" });
+    expect(legacy.messageParams.format).toBeTruthy();
+    const catalogKey = serverCopyCatalogKey(key);
+    expect(renderCopyTemplate(en[catalogKey], legacy.messageParams)).toContain("2026-11-20");
+    expect(
+      renderCopyTemplate((arCatalog as Record<string, string>)[catalogKey], legacy.messageParams)
+    ).toContain("مجدول");
+  });
+});
+
+describe("F10 firm revenue-opportunity copy", () => {
+  const arCat = arCatalog as Record<string, string>;
+  const cases: Array<[string, Record<string, string | number>]> = [
+    ["firm.growth.serviceAr.title", {}],
+    ["firm.growth.serviceAr.reason", { client: "Al Noor Trading LLC", n: 2, amount: "8,400" }],
+    ["firm.growth.cleanup.title", {}],
+    ["firm.growth.cleanup.reason", { n: 7 }],
+    ["firm.growth.cfoPack.title", {}],
+    ["firm.growth.cfoPack.reason", { client: "Gulf Harbor Logistics" }],
+    ["firm.growth.compliance.title", {}],
+    ["firm.growth.compliance.missingBoth", { client: "Al Noor Trading LLC" }],
+    ["firm.growth.compliance.missingTrn", { client: "Al Noor Trading LLC" }],
+    ["firm.growth.compliance.missingCt", { client: "Al Noor Trading LLC" }],
+  ];
+  it.each(cases)("%s renders in English and localises to Arabic", (key, params) => {
+    const english = renderServerCopy(key, params);
+    const ar = localizeFirmText(english, arCat);
+    expect(ar).not.toBe(english);
+    expect(ar).toMatch(/[\u0600-\u06FF]/);
+    // Client names pass through untouched.
+    if ("client" in params) expect(ar).toContain(String(params.client));
+    if ("n" in params) expect(ar).toContain(String(params.n));
   });
 });

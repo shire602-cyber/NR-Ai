@@ -30,6 +30,27 @@ export function amountInAed(invoice: InvoiceReportRow): number {
   return Number(invoice.baseCurrencyAmount ?? invoice.total ?? 0) || 0;
 }
 
+/** Server open balance (base currency) of an invoice; falls back to status only for old payloads. */
+export function invoiceOpenAed(invoice: InvoiceReportRow): number {
+  if (typeof invoice.openBalanceBase === "number") return Math.max(0, invoice.openBalanceBase);
+  return invoice.status === "paid" ? 0 : amountInAed(invoice);
+}
+
+/** An issued invoice that still has a server open balance (credit-note settled / part-paid aware). */
+export function isInvoiceOpen(invoice: InvoiceReportRow): boolean {
+  if (invoice.status === "draft" || invoice.status === "void" || invoice.status === "cancelled")
+    return false;
+  if (invoice.invoiceType === "credit_note") return false;
+  if (typeof invoice.openBalanceBase === "number") return invoice.openBalanceBase > 0.005;
+  return invoice.status !== "paid";
+}
+
+/** An approved vendor bill that still has a server open balance. */
+export function isVendorBillOpen(bill: VendorBillReportRow): boolean {
+  if (bill.open_balance_base != null) return Number(bill.open_balance_base) > 0.005;
+  return !["paid", "void", "cancelled"].includes(bill.status);
+}
+
 export function vendorBillTotalAed(bill: VendorBillReportRow): number {
   const exchangeRate = Number(bill.exchange_rate ?? 1);
   const normalizedExchangeRate =
@@ -38,6 +59,7 @@ export function vendorBillTotalAed(bill: VendorBillReportRow): number {
 }
 
 export function vendorBillOutstandingAed(bill: VendorBillReportRow): number {
+  if (bill.open_balance_base != null) return Math.max(0, Number(bill.open_balance_base) || 0);
   const outstanding = Math.max(
     0,
     (Number(bill.total_amount) || 0) - (Number(bill.amount_paid) || 0)

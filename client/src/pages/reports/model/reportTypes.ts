@@ -391,6 +391,8 @@ export interface InvoiceReportRow {
   reminderCount: number;
   lastReminderSentAt: string | null;
   invoiceType: string;
+  /** Server open balance in base currency (settlement rule: payments + credit notes + credits). */
+  openBalanceBase?: number;
 }
 
 export interface OverdueInvoiceRow {
@@ -425,6 +427,9 @@ export interface VendorBillReportRow {
   amount_paid: number | string | null;
   exchange_rate?: number | string | null;
   status: string;
+  /** Server open balance (document / base currency) from the settlement rule. */
+  open_balance?: number | string | null;
+  open_balance_base?: number | string | null;
 }
 
 export interface InvoiceStatusSummaryRow {

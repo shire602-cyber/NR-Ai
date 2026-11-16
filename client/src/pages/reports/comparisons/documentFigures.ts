@@ -11,10 +11,12 @@ import {
   dueWithinDaysAfterRangeEnd,
   expenseClaimInDateRange,
   inactiveInvoiceStatuses,
-  inactiveVendorBillStatuses,
   inclusiveDayCount,
   inventoryMovementInDateRange,
   invoiceInDateRange,
+  invoiceOpenAed,
+  isInvoiceOpen,
+  isVendorBillOpen,
   nonPayableVendorBillStatuses,
   nonRevenueInvoiceStatuses,
   payrollRunInDateRange,
@@ -74,12 +76,8 @@ export function computeDocumentComparisonFigures({
       !nonPayableVendorBillStatuses.has(bill.status) &&
       vendorBillInDateRange(bill, comparisonPreviousRange)
   );
-  const currentVendorBills = currentVendorBillDocuments.filter(
-    (bill) => !inactiveVendorBillStatuses.has(bill.status)
-  );
-  const previousVendorBills = previousVendorBillDocuments.filter(
-    (bill) => !inactiveVendorBillStatuses.has(bill.status)
-  );
+  const currentVendorBills = currentVendorBillDocuments.filter((bill) => isVendorBillOpen(bill));
+  const previousVendorBills = previousVendorBillDocuments.filter((bill) => isVendorBillOpen(bill));
   const currentReceipts = receipts.filter((receipt) =>
     receiptInDateRange(receipt, comparisonCurrentRange)
   );
@@ -145,17 +143,15 @@ export function computeDocumentComparisonFigures({
     0
   );
   const openReceivableRows = (rows: InvoiceReportRow[]) =>
-    rows.filter(
-      (invoice) => !nonRevenueInvoiceStatuses.has(invoice.status) && invoice.status !== "paid"
-    );
+    rows.filter((invoice) => isInvoiceOpen(invoice));
   const currentOpenReceivableInvoices = openReceivableRows(currentInvoices);
   const previousOpenReceivableInvoices = openReceivableRows(previousInvoices);
   const currentOpenReceivableValue = currentOpenReceivableInvoices.reduce(
-    (sum, invoice) => sum + amountInAed(invoice),
+    (sum, invoice) => sum + invoiceOpenAed(invoice),
     0
   );
   const previousOpenReceivableValue = previousOpenReceivableInvoices.reduce(
-    (sum, invoice) => sum + amountInAed(invoice),
+    (sum, invoice) => sum + invoiceOpenAed(invoice),
     0
   );
   const currentOpenInvoiceValueShare = ratioPercent(
@@ -194,11 +190,11 @@ export function computeDocumentComparisonFigures({
     comparisonPreviousRange
   );
   const currentDueSoonReceivableValue = currentDueSoonReceivableInvoices.reduce(
-    (sum, invoice) => sum + amountInAed(invoice),
+    (sum, invoice) => sum + invoiceOpenAed(invoice),
     0
   );
   const previousDueSoonReceivableValue = previousDueSoonReceivableInvoices.reduce(
-    (sum, invoice) => sum + amountInAed(invoice),
+    (sum, invoice) => sum + invoiceOpenAed(invoice),
     0
   );
   const currentAverageDueSoonInvoiceValue =
@@ -230,23 +226,18 @@ export function computeDocumentComparisonFigures({
     return dueDate <= rangeEnd;
   };
   const overdueReceivableRows = (rows: InvoiceReportRow[], range: ComparisonRange) =>
-    rows.filter(
-      (invoice) =>
-        !nonRevenueInvoiceStatuses.has(invoice.status) &&
-        invoice.status !== "paid" &&
-        isDueByRangeEnd(invoice, range)
-    );
+    rows.filter((invoice) => isInvoiceOpen(invoice) && isDueByRangeEnd(invoice, range));
   const currentOverdueReceivables = overdueReceivableRows(currentInvoices, comparisonCurrentRange);
   const previousOverdueReceivables = overdueReceivableRows(
     previousInvoices,
     comparisonPreviousRange
   );
   const currentOverdueReceivableValue = currentOverdueReceivables.reduce(
-    (sum, invoice) => sum + amountInAed(invoice),
+    (sum, invoice) => sum + invoiceOpenAed(invoice),
     0
   );
   const previousOverdueReceivableValue = previousOverdueReceivables.reduce(
-    (sum, invoice) => sum + amountInAed(invoice),
+    (sum, invoice) => sum + invoiceOpenAed(invoice),
     0
   );
   const currentOverdueInvoiceCount = currentOverdueReceivables.length;

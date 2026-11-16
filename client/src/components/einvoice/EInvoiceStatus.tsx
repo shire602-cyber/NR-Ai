@@ -450,7 +450,21 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   return (
                     <li key={`${issue.field}-${i}`} className="text-small text-foreground">
                       <span className="font-medium">{label ? t[label] : issue.field}</span>
-                      <span className="text-muted-foreground"> — {issue.message}</span>
+                      {/* The validator message is English source text: in Arabic show the
+                          localised field label plus the LTR rule code, never a mixed sentence. */}
+                      {locale === "ar" && label ? (
+                        issue.message.match(/\(([a-z0-9-]+)\)\s*$/i) ? (
+                          <bdi
+                            dir="ltr"
+                            translate="no"
+                            className="ms-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+                          >
+                            {issue.message.match(/\(([a-z0-9-]+)\)\s*$/i)?.[1]}
+                          </bdi>
+                        ) : null
+                      ) : (
+                        <span className="text-muted-foreground"> — {issue.message}</span>
+                      )}
                     </li>
                   );
                 })}

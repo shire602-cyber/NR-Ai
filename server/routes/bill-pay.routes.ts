@@ -95,7 +95,7 @@ import { receipts } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
 import { parseReportDate, uaeToday } from "../reporting";
 import { readReceiptImage, saveReceiptImage } from "../services/fileStorage";
-import { payableOpenSql, payableSettledSql } from "../reporting/settlement";
+import { docRateSql, payableOpenSql, payableSettledSql } from "../reporting/settlement";
 
 const log = createLogger("bill-pay");
 
@@ -161,7 +161,12 @@ export function registerBillPayRoutes(app: Express) {
       const { companyId } = req.params;
       await assertCompanyAccess(req, companyId);
       const { status, vendor, vendor_id, dateFrom, dateTo } = req.query;
-      let query = `SELECT * FROM vendor_bills WHERE company_id = $1`;
+      // Open balance from the one settlement rule (server/reporting/settlement.ts): total less
+      // Σ bill_payments (payments, prepayments, vendor-credit applications, reversals).
+      let query = `SELECT vendor_bills.*,
+                          ${payableOpenSql("vendor_bills")}::float8 AS open_balance,
+                          (ROUND(${payableOpenSql("vendor_bills")} * ${docRateSql("vendor_bills")} * 100)::bigint / 100.0)::float8 AS open_balance_base
+                     FROM vendor_bills WHERE company_id = $1`;
       const params: unknown[] = [companyId];
       const add = (cond: string, v: unknown) => {
         params.push(v);

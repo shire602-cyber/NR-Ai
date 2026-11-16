@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { renderServerCopy } from "../../shared/server-copy";
 
 import { db } from "../db";
 import {
@@ -143,8 +144,12 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
         sourceKey: `${client.id}:service-ar`,
         opportunityType: "service_ar",
         sourceSignal: "overdue_service_ar",
-        title: "Recover NRA service AR",
-        reason: `${client.name} has ${overdueCount} overdue invoice(s) and AED ${Math.round(openAr).toLocaleString("en-AE")} open AR.`,
+        title: renderServerCopy("firm.growth.serviceAr.title"),
+        reason: renderServerCopy("firm.growth.serviceAr.reason", {
+          client: client.name,
+          n: overdueCount,
+          amount: Math.round(openAr).toLocaleString("en-AE"),
+        }),
         estimatedValue: Math.max(500, Math.round(openAr * 0.05)),
         confidence: 0.78,
         priority: priorityFor(openAr, 25000, 10000),
@@ -158,8 +163,8 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
         sourceKey: `${client.id}:cleanup`,
         opportunityType: "cleanup",
         sourceSignal: "cleanup_workload",
-        title: "Bill cleanup work",
-        reason: `${cleanupItems} VAT/bookkeeping source items need cleanup before the file is ready.`,
+        title: renderServerCopy("firm.growth.cleanup.title"),
+        reason: renderServerCopy("firm.growth.cleanup.reason", { n: cleanupItems }),
         estimatedValue: Math.max(750, cleanupItems * 45),
         confidence: 0.72,
         priority: priorityFor(cleanupItems, 40, 15),
@@ -173,8 +178,8 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
         sourceKey: `${client.id}:cfo-pack`,
         opportunityType: "cfo_pack",
         sourceSignal: "high_activity_client",
-        title: "Offer monthly CFO pack",
-        reason: `${client.name} has enough transaction volume or AR exposure for a higher-value advisory cadence.`,
+        title: renderServerCopy("firm.growth.cfoPack.title"),
+        reason: renderServerCopy("firm.growth.cfoPack.reason", { client: client.name }),
         estimatedValue: 2500,
         confidence: 0.62,
         priority: openAr >= 75000 ? "high" : "medium",
@@ -183,19 +188,19 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
     }
 
     if (!client.trnVatNumber || !client.corporateTaxId) {
-      const missing = [
-        !client.trnVatNumber ? "VAT TRN" : null,
-        !client.corporateTaxId ? "corporate tax registration" : null,
-      ]
-        .filter(Boolean)
-        .join(" and ");
+      const missingKey =
+        !client.trnVatNumber && !client.corporateTaxId
+          ? "firm.growth.compliance.missingBoth"
+          : !client.trnVatNumber
+            ? "firm.growth.compliance.missingTrn"
+            : "firm.growth.compliance.missingCt";
       candidates.push({
         companyId: client.id,
         sourceKey: `${client.id}:compliance-extra`,
         opportunityType: "compliance_extra",
         sourceSignal: "missing_tax_registration",
-        title: "Compliance setup opportunity",
-        reason: `${client.name} is missing ${missing}.`,
+        title: renderServerCopy("firm.growth.compliance.title"),
+        reason: renderServerCopy(missingKey, { client: client.name }),
         estimatedValue: 1200,
         confidence: 0.68,
         priority: "high",

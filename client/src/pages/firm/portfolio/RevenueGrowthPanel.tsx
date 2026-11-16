@@ -17,7 +17,7 @@ export function RevenueGrowthPanel({
   onOpenClient: (companyId: string) => void;
 }) {
   const { toast } = useToast();
-  const { b } = useFirmText();
+  const { b, fx } = useFirmText();
   const { data, isLoading } = useQuery<GrowthDashboard>({
     queryKey: ["/api/firm/growth-opportunities"],
   });
@@ -148,7 +148,7 @@ export function RevenueGrowthPanel({
               <div key={opportunity.id} className="rounded-md border p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-medium truncate">{opportunity.title}</p>
+                    <p className="font-medium truncate">{fx(opportunity.title)}</p>
                     <p className="text-xs text-muted-foreground truncate">
                       {opportunity.companyName ?? b("Client", "العميل")}
                     </p>
@@ -168,7 +168,7 @@ export function RevenueGrowthPanel({
                     )}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{opportunity.reason}</p>
+                <p className="text-sm text-muted-foreground">{fx(opportunity.reason)}</p>
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-semibold">
                     {formatAed(Number(opportunity.estimatedValue ?? 0))}

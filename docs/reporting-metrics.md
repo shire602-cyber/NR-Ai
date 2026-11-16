@@ -283,7 +283,16 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `overdue-cash-gap`, `overdue-cash-coverage`, `overdue-workload-gap`,
   `average-overdue-bill-value`, `average-overdue-bill-days`, `overdue-bill-share`,
   `paid-invoice-share`, `working-capital-proxy`, `collection-days`, `payable-days`,
-  `cash-conversion-gap`) use current invoice/vendor-bill statuses grouped by document date;
+  `cash-conversion-gap`) use current invoice/vendor-bill documents grouped by document date, with
+  every open amount taken from the SERVER open balance (F10), never recomputed from status or
+  total on the client: invoices carry `openBalanceBase` (GET `/invoices?all=true`, base currency)
+  and bills carry `open_balance` / `open_balance_base` (GET `/bills`), both built from the one
+  settlement rule in `server/reporting/settlement.ts` (payments, issued credit-note invoices,
+  applied customer credits, vendor-credit applications; floored at zero). A part-paid document
+  counts at its remaining balance and a document settled by a credit note or credit application is
+  not open even if its status is still `sent`/`approved`. An invoice/bill is "open" when its server
+  open balance is above zero (credit-note invoices are never open); status is only a fallback for
+  payloads without the balance fields;
   `overdue-receivables` uses unpaid non-draft invoices due by the comparison period end,
   `overdue-payables` uses unpaid bills due by the comparison period end, and
   overdue share/count metrics reuse those overdue document sets, with shares dividing overdue
