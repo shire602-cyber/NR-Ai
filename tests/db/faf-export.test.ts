@@ -61,6 +61,7 @@ describe("W5-A FTA Audit File", () => {
     expect(r.status, r.text).toBe(200);
     const faf = r.body;
     expect(faf.label).toBe("Generated for upload/inspection — not transmitted to FTA");
+    expect(faf.specNotice).toMatch(/verify against the current FTA specification/); // S5 EXTERNAL
     expect(faf.company).toMatchObject({ trn: TRN, periodStart: PERIOD.from, periodEnd: PERIOD.to });
 
     // Supply listing: two invoices, standard rated, customer TRN carried.

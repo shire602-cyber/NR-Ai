@@ -36,6 +36,7 @@ export type CapabilityId =
   | "sms"
   | "whatsapp"
   | "fx_rate_feed"
+  | "news_feed"
   | "antivirus"
   | "captcha"
   | "saml";
@@ -80,6 +81,22 @@ const set = (env: EnvLike, name: string): boolean => {
 const all = (env: EnvLike, names: readonly string[]) => names.every((n) => set(env, n));
 const looksSandbox = (value: string | undefined): boolean =>
   typeof value === "string" && /sandbox|test|staging|uat|demo/i.test(value);
+/** Comma-separated https URLs (malformed or non-https entries are ignored). */
+export function httpsFeedUrls(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const url = part.trim();
+    if (!url) continue;
+    try {
+      const u = new URL(url);
+      if (u.protocol === "https:") out.push(u.toString());
+    } catch {
+      // ignored
+    }
+  }
+  return out;
+}
 const flag = (env: EnvLike, name: string): boolean =>
   ["1", "true", "yes", "on"].includes((env[name] ?? "").trim().toLowerCase());
 
@@ -289,7 +306,9 @@ const DEFS: readonly CapabilityDef[] = [
       ar: "أنشئ مفاتيح VAPID واضبط جهة الاتصال.",
     },
     envVars: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"],
-    whenUnconfigured: "disabled",
+    // S5: push cannot work until a VAPID key pair is generated and configured, which is an
+    // operator action outside the app, so it is requires_external rather than disabled.
+    whenUnconfigured: "requires_external",
     detect: (env) => (all(env, ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"]) ? "live" : null),
   },
   {
@@ -326,6 +345,19 @@ const DEFS: readonly CapabilityDef[] = [
     // W5-C (R14-14): the adapters exist; a live feed needs the provider arrangement.
     whenUnconfigured: "requires_external",
     detect: (env) => (set(env, "FX_RATE_FEED") ? "live" : null),
+  },
+  {
+    id: "news_feed",
+    label: { en: "Regulatory news feed", ar: "تغذية الأخبار التنظيمية" },
+    externalAction: {
+      en: "Set NEWS_FEED_URLS to the https RSS/Atom feed URLs of the FTA, the Ministry of Finance or a news publisher you are licensed to republish.",
+      ar: "اضبط NEWS_FEED_URLS على روابط RSS/Atom (https) للهيئة الاتحادية للضرائب أو وزارة المالية أو ناشر أخبار مرخّص لإعادة نشر محتواه.",
+    },
+    envVars: ["NEWS_FEED_URLS"],
+    // S5 (W3-E residual): same rule as server/services/news-ingest.service.ts configuredFeedUrls:
+    // live only with at least one valid https feed URL; nothing is fabricated without one.
+    whenUnconfigured: "requires_external",
+    detect: (env) => (httpsFeedUrls(env.NEWS_FEED_URLS).length > 0 ? "live" : null),
   },
   {
     id: "antivirus",

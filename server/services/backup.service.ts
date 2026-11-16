@@ -673,6 +673,284 @@ export async function restoreCompanyBackup(args: {
   }
 }
 
+// ─── Restore into another company (clone / template) — S5 ────────────────────
+//
+// A backup of company A is loaded into company B: every row of the snapshot gets a
+// fresh primary key and every reference to an old key (FK columns, JSON payloads,
+// keys embedded in text such as source keys) is rewritten, company_id becomes B.
+// B must hold no accounting activity yet; its existing company-scoped rows (the
+// seeded chart, settings) are replaced by the snapshot's in one transaction after
+// an automatic pre-restore backup of B. Nothing in A changes.
+
+/** Tables never cloned into another company (globally unique external identities). */
+export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
+  payment_links: "payment links carry provider sessions and public tokens",
+  payment_gateway_events: "provider event ids are globally unique",
+  email_intake_messages: "provider message ids are globally unique",
+  ecommerce_transactions: "marketplace transaction ids belong to the source company's store",
+  ecommerce_integrations: "store connections are credentials of the source company",
+  einvoice_archive: "immutable legal archive of the source company's transmissions",
+  tax_return_archive: "immutable legal archive of the source company's filings",
+  zatca_documents: "ZATCA hash chain belongs to the source company's EGS unit",
+  zatca_egs_units: "ZATCA device identity belongs to the source company",
+  einvoice_documents: "transmission state belongs to the source company",
+};
+
+/** Columns cleared on clone: public/unguessable tokens must not be shared by two companies. */
+export const CLONE_CLEARED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  invoices: ["share_token"],
+  customer_contacts: ["portal_access_token"],
+};
+
+/** Activity tables: B must have none of these rows to be a clone target. */
+const CLONE_TARGET_ACTIVITY_TABLES = [
+  "journal_entries",
+  "invoices",
+  "receipts",
+  "vendor_bills",
+  "bank_transactions",
+  "payroll_runs",
+  "credit_notes",
+] as const;
+
+/** Skipped tables plus child tables reached only through skipped parents (to a fixed point). */
+export function cloneSkipReasons(
+  tables: Pick<ManifestTable, "name" | "scope" | "predicate">[]
+): Map<string, string> {
+  const skip = new Map<string, string>(
+    tables
+      .filter((t) => CLONE_SKIPPED_TABLES[t.name])
+      .map((t) => [t.name, CLONE_SKIPPED_TABLES[t.name]])
+  );
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const t of tables) {
+      if (skip.has(t.name) || t.scope !== "child") continue;
+      const parents = [...t.predicate.matchAll(/FROM "([^"]+)" p/g)].map((m) => m[1]);
+      if (parents.length && parents.every((p) => skip.has(p))) {
+        skip.set(t.name, `belongs to ${parents.join(", ")} (not cloned)`);
+        changed = true;
+      }
+    }
+  }
+  return skip;
+}
+
+const UUID_RX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/**
+ * Rewrite a snapshot for `targetCompanyId`: fresh uuid primary keys, every occurrence of an
+ * old key (anywhere in the JSON, including nested payloads and embedded in strings) replaced,
+ * and the source company id replaced by the target. Pure; exported for unit tests.
+ */
+export function remapSnapshotForClone(
+  tables: Record<string, unknown[]>,
+  manifest: Pick<ManifestTable, "name" | "pk">[],
+  sourceCompanyId: string,
+  targetCompanyId: string,
+  newId: () => string = () => crypto.randomUUID()
+): { tables: Record<string, unknown[]>; remapped: number } {
+  const map = new Map<string, string>();
+  map.set(sourceCompanyId.toLowerCase(), targetCompanyId);
+  for (const t of manifest) {
+    if (t.pk.length !== 1) continue;
+    for (const row of (tables[t.name] ?? []) as Array<Record<string, unknown>>) {
+      const v = row?.[t.pk[0]];
+      if (typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v) && !map.has(v.toLowerCase())) {
+        map.set(v.toLowerCase(), newId());
+      }
+    }
+  }
+  const out: Record<string, unknown[]> = {};
+  for (const [name, rows] of Object.entries(tables)) {
+    const cleared = CLONE_CLEARED_COLUMNS[name] ?? [];
+    const json = JSON.stringify(rows ?? []).replace(UUID_RX, (m) => map.get(m.toLowerCase()) ?? m);
+    const parsed = JSON.parse(json) as Array<Record<string, unknown>>;
+    for (const row of parsed) for (const c of cleared) if (c in row) row[c] = null;
+    out[name] = parsed;
+  }
+  return { tables: out, remapped: map.size - 1 };
+}
+
+export interface CloneResult {
+  dryRun: boolean;
+  sourceCompanyId: string;
+  targetCompanyId: string;
+  tables: Array<{ table: string; rows: number }>;
+  totals: { insert: number; replacedTargetRows: number };
+  skippedTables: Array<{ table: string; reason: string; rows: number }>;
+  preRestoreBackupId: string | null;
+}
+
+/**
+ * Restore (or dry-run) `backupId` into a different company. The caller checks permissions
+ * (backups.manage in both companies), fresh MFA, and writes the audit entries after this
+ * resolves.
+ */
+export async function restoreBackupIntoCompany(args: {
+  backupId: string;
+  sourceCompanyId: string;
+  targetCompanyId: string;
+  userId: string;
+  dryRun: boolean;
+}): Promise<CloneResult> {
+  if (args.sourceCompanyId === args.targetCompanyId) {
+    throw new DomainError(
+      "CLONE_TARGET_IS_SOURCE",
+      422,
+      undefined,
+      "Choose a different company; use restore to roll this company back."
+    );
+  }
+  const { rows } = await pq<{
+    id: string;
+    company_id: string;
+    status: string;
+    data_snapshot: string | null;
+    checksum: string | null;
+    name: string;
+  }>(`SELECT id, company_id, status, data_snapshot, checksum, name FROM backups WHERE id = $1`, [
+    args.backupId,
+  ]);
+  const backup = rows[0];
+  if (!backup || backup.company_id !== args.sourceCompanyId) {
+    throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
+  }
+  if (backup.status !== "completed" || !backup.data_snapshot) {
+    throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
+  }
+  const { snapshot: raw } = openSnapshot(backup.data_snapshot, backup.checksum);
+  const snapshot = asV2(raw);
+  if (snapshot.companyId !== args.sourceCompanyId) {
+    throw new DomainError("BACKUP_COMPANY_MISMATCH", 409);
+  }
+
+  const { rows: cos } = await pq<{ id: string; base_currency: string | null }>(
+    `SELECT id, base_currency FROM companies WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+    [[args.sourceCompanyId, args.targetCompanyId]]
+  );
+  const src = cos.find((c) => c.id === args.sourceCompanyId);
+  const dst = cos.find((c) => c.id === args.targetCompanyId);
+  if (!dst) throw new DomainError("NOT_FOUND", 404, undefined, "Target company not found");
+  if (src && (src.base_currency || "AED") !== (dst.base_currency || "AED")) {
+    throw new DomainError(
+      "BASE_CURRENCY_MISMATCH",
+      422,
+      { source: src.base_currency, target: dst.base_currency },
+      "The target company must use the same base currency as the backup's company."
+    );
+  }
+  for (const table of CLONE_TARGET_ACTIVITY_TABLES) {
+    const { rows: n } = await pq<{ n: string }>(
+      `SELECT count(*) AS n FROM ${q(table)} WHERE company_id = $1`,
+      [args.targetCompanyId]
+    );
+    if (Number(n[0].n) > 0) {
+      throw new DomainError(
+        "CLONE_TARGET_NOT_EMPTY",
+        409,
+        { table, rows: Number(n[0].n) },
+        "The target company already has accounting activity. Clone only into a new, empty company."
+      );
+    }
+  }
+
+  let preRestoreBackupId: string | null = null;
+  if (!args.dryRun) {
+    const pre = await createCompanyBackup({
+      companyId: args.targetCompanyId,
+      userId: args.userId,
+      name: `Pre-clone backup (before loading ${backup.name})`,
+      description: "Automatic backup created before restoring another company's backup here",
+      backupType: "pre_restore",
+    });
+    preRestoreBackupId = pre.id;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `backup-restore:${args.targetCompanyId}`,
+    ]);
+    const full = await buildBackupManifest(client);
+    const skip = cloneSkipReasons(full.tables);
+    const skippedTables = full.tables
+      .filter((t) => skip.has(t.name))
+      .map((t) => ({
+        table: t.name,
+        reason: skip.get(t.name)!,
+        rows: (snapshot.tables[t.name] ?? []).length,
+      }));
+    const manifest = full.tables.filter((t) => !skip.has(t.name));
+    const { tables } = remapSnapshotForClone(
+      snapshot.tables,
+      manifest,
+      args.sourceCompanyId,
+      args.targetCompanyId
+    );
+    const empty = "[]";
+    let replacedTargetRows = 0;
+    for (const t of manifest) {
+      const { rows: c } = await pq<{ n: string }>(
+        `SELECT count(*) AS n FROM ${q(t.name)} t WHERE ${t.predicate}`,
+        [args.targetCompanyId],
+        client
+      );
+      replacedTargetRows += Number(c[0].n);
+    }
+    const counts = manifest
+      .map((t) => ({ table: t.name, rows: (tables[t.name] ?? []).length }))
+      .filter((c) => c.rows > 0);
+    if (!args.dryRun) {
+      // Clear the target's scoped rows (children first), then insert the remapped snapshot.
+      const asReplace = manifest.map((t) => ({ ...t, appendOnly: false }));
+      for (const t of [...asReplace].reverse()) {
+        await applyTable(client, t, args.targetCompanyId, empty, "replace", "delete");
+      }
+      for (const t of asReplace) {
+        await applyTable(
+          client,
+          t,
+          args.targetCompanyId,
+          JSON.stringify(tables[t.name] ?? []),
+          "replace",
+          "upsert"
+        );
+      }
+      for (const t of asReplace) {
+        await applyTable(
+          client,
+          t,
+          args.targetCompanyId,
+          JSON.stringify(tables[t.name] ?? []),
+          "replace",
+          "deferred"
+        );
+      }
+    }
+    await client.query(args.dryRun ? "ROLLBACK" : "COMMIT");
+    return {
+      dryRun: args.dryRun,
+      sourceCompanyId: args.sourceCompanyId,
+      targetCompanyId: args.targetCompanyId,
+      tables: counts,
+      totals: { insert: counts.reduce((sum, c) => sum + c.rows, 0), replacedTargetRows },
+      skippedTables: skippedTables.filter((t) => t.rows > 0),
+      preRestoreBackupId,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    log.warn(
+      { err: (err as Error).message, backupId: args.backupId, target: args.targetCompanyId },
+      "Clone restore rolled back"
+    );
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ─── Schedules ───────────────────────────────────────────────────────────────
 
 const FREQUENCY_DAYS: Record<string, number> = { daily: 1, weekly: 7, monthly: 30 };

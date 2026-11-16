@@ -197,7 +197,7 @@ describe("capability registry", () => {
   it("covers every integration with en+ar copy and an external action", () => {
     const caps = computeCapabilities({});
     expect(caps.map((c) => c.id)).toEqual(CAPABILITY_IDS);
-    expect(CAPABILITY_IDS.length).toBe(20);
+    expect(CAPABILITY_IDS.length).toBe(21);
     for (const c of caps) {
       expect(c.label.en && c.label.ar && c.externalAction.en && c.externalAction.ar).toBeTruthy();
       expect(/[؀-ۿ]/.test(c.label.ar)).toBe(true);
@@ -234,6 +234,20 @@ describe("capability registry", () => {
     expect(status({ SMTP_HOST: "  " }, "email")).toBe("disabled");
     expect(isCapabilityLive("ai", { OPENAI_API_KEY: "sk" })).toBe(true);
     expect(isCapabilityLive("ai", {})).toBe(false);
+  });
+
+  it("[S5] news_feed is registered and push needs external VAPID keys (requires_external)", () => {
+    const status = (env: Record<string, string>, id: string) =>
+      computeCapabilities(env).find((c) => c.id === id)?.status;
+    expect(CAPABILITY_IDS).toContain("news_feed");
+    expect(status({}, "news_feed")).toBe("requires_external");
+    expect(status({ NEWS_FEED_URLS: "http://insecure.example/rss" }, "news_feed")).toBe(
+      "requires_external"
+    );
+    expect(status({ NEWS_FEED_URLS: " , https://tax.gov.ae/rss " }, "news_feed")).toBe("live");
+    expect(status({}, "push")).toBe("requires_external");
+    expect(status({ VAPID_PUBLIC_KEY: "p" }, "push")).toBe("requires_external");
+    expect(status({ VAPID_PUBLIC_KEY: "p", VAPID_PRIVATE_KEY: "k" }, "push")).toBe("live");
   });
 
   it("serialisable snapshot never includes env values", () => {

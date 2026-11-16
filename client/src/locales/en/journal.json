@@ -42,5 +42,13 @@
   "journal.sourcePayment": "Payment",
   "journal.sourceReversal": "Reversal",
   "journal.sourceTemplate": "Recurring journal",
-  "journal.balancedExactly": "Debits must equal credits exactly"
+  "journal.balancedExactly": "Debits must equal credits exactly",
+  "journal.coaExportCsv": "Export CSV",
+  "journal.coaImportCsv": "Import CSV",
+  "journal.coaSetParent": "Set parent account",
+  "journal.coaParentHelp": "Group this account under another account of the same type. Parents roll up their children in the indented view.",
+  "journal.coaNoParent": "No parent (top level)",
+  "journal.coaSaveParent": "Save",
+  "journal.coaParentSaved": "Parent account updated",
+  "journal.coaParentFailed": "Could not change the parent account"
 }

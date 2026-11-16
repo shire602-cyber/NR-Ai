@@ -14,6 +14,11 @@
  *   GET    /api/backups/:id/download                      decrypted JSON export (?format=encrypted for the sealed file)
  *   POST   /api/backups/:id/restore-preview               dry-run diff for a mode
  *   POST   /api/backups/:id/restore                       restore: mode merge | replace
+ *   POST   /api/backups/:id/clone-preview                 S5: dry-run of loading this backup into
+ *                                                         another (empty) company
+ *   POST   /api/backups/:id/clone                         S5: load it there (backups.manage in both
+ *                                                         companies, MFA enrolled + fresh step-up,
+ *                                                         typed target name, audited in both)
  *   DELETE /api/backups/:id
  */
 import type { Express, Request, Response } from "express";
@@ -26,7 +31,7 @@ import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { roleHasAnyPermission } from "../../shared/permissions";
 import { isNraFirmRole } from "../../shared/access";
-import { zText } from "../../shared/validators/primitives";
+import { zText, zUuid } from "../../shared/validators/primitives";
 import { storage } from "../storage";
 import { pq } from "../services/connectors/pq";
 import { recordAudit } from "../services/audit.service";
@@ -37,10 +42,12 @@ import {
   createCompanyBackup,
   exclusionReason,
   openSnapshot,
+  restoreBackupIntoCompany,
   restoreCompanyBackup,
   runScheduledBackups,
 } from "../services/backup.service";
 import { listJobs, registerJob } from "../platform/job-registry";
+import { hasRecentMfa } from "../services/security/policy";
 
 const createBody = z
   .object({ name: zText(200).optional(), description: zText(1000).optional() })
@@ -56,6 +63,17 @@ const restoreBody = z
   .strict();
 
 const previewBody = z.object({ mode: z.enum(["merge", "replace"]).default("replace") }).strict();
+
+const clonePreviewBody = z.object({ targetCompanyId: zUuid }).strict();
+
+const cloneBody = z
+  .object({
+    targetCompanyId: zUuid,
+    confirmRestore: z.literal(true),
+    /** The caller typed the TARGET company's name to confirm its data is replaced. */
+    confirmTargetName: zText(300),
+  })
+  .strict();
 
 const scheduleBody = z
   .object({
@@ -102,6 +120,49 @@ async function backupFor(req: Request): Promise<BackupRow> {
     }
   }
   return backup;
+}
+
+/** backups.manage in the clone target too (404 for non-members). Returns the target's name. */
+async function cloneTargetFor(req: Request, targetCompanyId: string): Promise<{ name: string }> {
+  const company = await storage.getCompany(targetCompanyId);
+  if (!company) throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
+  const user = req.user!;
+  if (!user.isAdmin && !isNraFirmRole(user.firmRole)) {
+    const role = await getCompanyRole(user.id, targetCompanyId);
+    if (!role) throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
+    if (!roleHasAnyPermission(role, ["backups.manage"])) {
+      throw new DomainError("PERMISSION_DENIED", 403, { permission: "backups.manage", role });
+    }
+  }
+  return { name: company.name };
+}
+
+/**
+ * Loading one company's books into another is the most sensitive data move in the product:
+ * the caller must have MFA enrolled (not just "MFA if enabled") and have verified a code within
+ * the step-up window.
+ */
+async function requireFreshMfaEnrolled(req: Request): Promise<void> {
+  const { rows } = await pq<{ mfa_enabled: boolean }>(
+    `SELECT mfa_enabled FROM users WHERE id = $1`,
+    [req.user!.id]
+  );
+  if (!rows[0]?.mfa_enabled) {
+    throw new DomainError(
+      "MFA_ENROLLMENT_REQUIRED",
+      403,
+      { enrollUrl: "/api/auth/mfa/enroll" },
+      "Turn on two-factor authentication before loading a backup into another company."
+    );
+  }
+  if (!hasRecentMfa(req)) {
+    throw new DomainError(
+      "MFA_STEP_UP_REQUIRED",
+      403,
+      { stepUpUrl: "/api/auth/mfa/step-up" },
+      "Confirm this action with your authenticator code."
+    );
+  }
 }
 
 export function registerBackupRoutes(app: Express) {
@@ -346,6 +407,104 @@ export function registerBackupRoutes(app: Express) {
           body.mode === "replace"
             ? "Restore complete: company data now matches the backup."
             : `Merge complete: ${result.totals.insert} missing record(s) added from the backup.`,
+        ...result,
+      });
+    })
+  );
+
+  app.post(
+    "/api/backups/:id/clone-preview",
+    authMiddleware,
+    strictBody(clonePreviewBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const backup = await backupFor(req);
+      const { targetCompanyId } = parsedBody<z.output<typeof clonePreviewBody>>(req);
+      const target = await cloneTargetFor(req, targetCompanyId);
+      const result = await restoreBackupIntoCompany({
+        backupId: backup.id,
+        sourceCompanyId: backup.companyId,
+        targetCompanyId,
+        userId: req.user!.id,
+        dryRun: true,
+      });
+      res.json({
+        backup: { id: backup.id, name: backup.name, createdAt: backup.createdAt },
+        target: { id: targetCompanyId, name: target.name },
+        ...result,
+        warning:
+          "The target company's chart, settings and other company data are replaced by this backup's (with new record ids). The source company is not changed. A pre-restore backup of the target is taken automatically.",
+      });
+    })
+  );
+
+  app.post(
+    "/api/backups/:id/clone",
+    authMiddleware,
+    strictBody(cloneBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const backup = await backupFor(req);
+      const body = parsedBody<z.output<typeof cloneBody>>(req);
+      const target = await cloneTargetFor(req, body.targetCompanyId);
+      await requireFreshMfaEnrolled(req);
+      if (body.confirmTargetName !== target.name) {
+        throw new DomainError(
+          "CONFIRMATION_REQUIRED",
+          400,
+          { fields: { confirmTargetName: ["Type the target company's name to confirm"] } },
+          "Type the target company's name to confirm"
+        );
+      }
+      const result = await restoreBackupIntoCompany({
+        backupId: backup.id,
+        sourceCompanyId: backup.companyId,
+        targetCompanyId: body.targetCompanyId,
+        userId: req.user!.id,
+        dryRun: false,
+      });
+      // Written only after the clone transaction committed, in both companies.
+      const detail = `inserted ${result.totals.insert} row(s), replaced ${result.totals.replacedTargetRows}`;
+      await storage.createActivityLog({
+        companyId: body.targetCompanyId,
+        userId: req.user!.id,
+        action: "update",
+        entityType: "backup",
+        entityId: backup.id,
+        description: `Loaded backup "${backup.name}" from another company (${detail})`,
+        metadata: JSON.stringify({
+          sourceCompanyId: backup.companyId,
+          totals: result.totals,
+          preRestoreBackupId: result.preRestoreBackupId,
+        }),
+      });
+      await storage.createActivityLog({
+        companyId: backup.companyId,
+        userId: req.user!.id,
+        action: "export",
+        entityType: "backup",
+        entityId: backup.id,
+        description: `Backup "${backup.name}" was loaded into company "${target.name}"`,
+        metadata: JSON.stringify({ targetCompanyId: body.targetCompanyId }),
+      });
+      for (const companyId of [body.targetCompanyId, backup.companyId]) {
+        await recordAudit({
+          userId: req.user!.id,
+          companyId,
+          action: "backup.clone",
+          entityType: "backup",
+          entityId: backup.id,
+          before: { preRestoreBackupId: result.preRestoreBackupId },
+          after: {
+            sourceCompanyId: backup.companyId,
+            targetCompanyId: body.targetCompanyId,
+            totals: result.totals,
+            skippedTables: result.skippedTables.map((t) => t.table),
+          },
+          req,
+        });
+      }
+      res.json({
+        success: true,
+        message: `Backup loaded into ${target.name}: ${detail}.`,
         ...result,
       });
     })

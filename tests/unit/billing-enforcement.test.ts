@@ -14,6 +14,10 @@ const subscriptions: Record<string, { planId: string } | undefined> = {};
 vi.mock("../../server/storage", () => ({
   storage: {
     getSubscription: vi.fn(async (companyId: string) => subscriptions[companyId] ?? null),
+    getCompany: vi.fn(async (companyId: string) => ({
+      id: companyId,
+      companyType: companyId.startsWith("co-client") ? "client" : "customer",
+    })),
   },
 }));
 
@@ -126,6 +130,20 @@ describe("production defaults", () => {
 describe("BILLING_ENFORCEMENT=true", () => {
   beforeEach(() => {
     process.env.BILLING_ENFORCEMENT = "true";
+  });
+
+  it("[S5] fails closed: a company with no subscription row is treated as the Free plan", async () => {
+    const app = appWithGates();
+    const res = await get(app, "/api/companies/co-norow/quotes");
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "TIER_LOCKED", currentTier: "free" });
+    expect((await get(app, "/api/companies/co-norow/payroll")).status).toBe(403);
+  });
+
+  it("[S5] NR-managed client books (company_type client) are firm-billed and not tier-gated", async () => {
+    const app = appWithGates();
+    expect((await get(app, "/api/companies/co-client-1/quotes")).status).toBe(200);
+    expect((await get(app, "/api/companies/co-client-1/payroll")).status).toBe(200);
   });
 
   it("blocks the free tier on a feature-gated endpoint with a structured 403", async () => {

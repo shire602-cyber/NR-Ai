@@ -18,13 +18,20 @@ export const useI18n = create<I18nStore>()(
         set({ locale });
         document.documentElement.lang = locale;
         document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+        // S5: namespace catalogs are code-split; fetch the new locale's chunks on switch.
+        void loadLocale(locale);
       },
     }),
     {
       name: "i18n-storage",
+      // Only the locale is persisted (never the catalog version below).
+      partialize: (state) => ({ locale: state.locale }) as I18nStore,
     }
   )
 );
+
+/** Bumped whenever a locale's namespace catalogs finish loading, so hooks re-render. */
+const useCatalogVersion = create<{ version: number }>()(() => ({ version: 0 }));
 
 // Base translation dictionary (legacy flat keys). New strings belong in the
 // per-namespace catalogs under client/src/locales/{en,ar}/<namespace>.json,
@@ -919,32 +926,56 @@ type TranslationCatalog = Record<string, string>;
 // Namespace catalogs: client/src/locales/<locale>/<namespace>.json. Every
 // workstream appends to its own namespace file so catalogs never collide.
 // Key convention: "<namespace>.<camelCaseKey>".
-const namespaceFiles = {
-  en: import.meta.glob("../locales/en/*.json", { eager: true, import: "default" }),
-  ar: import.meta.glob("../locales/ar/*.json", { eager: true, import: "default" }),
-} as Record<Locale, Record<string, TranslationCatalog>>;
+//
+// S5 (bundle budget): the catalogs are code-split, one chunk per namespace and locale, and
+// are NOT in the main bundle. main.tsx awaits loadLocale(<active locale>) before the first
+// render, so `t[...]` / `<T k>` stay synchronous; Arabic chunks are fetched only when the
+// active locale is "ar" (or the user switches to it).
+const namespaceLoaders = {
+  en: import.meta.glob("../locales/en/*.json", { import: "default" }),
+  ar: import.meta.glob("../locales/ar/*.json", { import: "default" }),
+} as Record<Locale, Record<string, () => Promise<TranslationCatalog>>>;
 
-function mergeNamespaces(locale: Locale): TranslationCatalog {
-  const merged: TranslationCatalog = {};
-  for (const path of Object.keys(namespaceFiles[locale]).sort()) {
-    Object.assign(merged, namespaceFiles[locale][path]);
-  }
-  return merged;
-}
-
-// Order: extended (fills gaps) < base (existing behaviour wins) < namespaces.
+// Order: extended (fills gaps) < base (existing behaviour wins) < namespaces (merged in on load).
 export const t = {
   en: {
     ...(extendedTranslations.en as TranslationCatalog),
     ...baseT.en,
-    ...mergeNamespaces("en"),
   } as typeof baseT.en & TranslationCatalog,
   ar: {
     ...(extendedTranslations.ar as TranslationCatalog),
     ...baseT.ar,
-    ...mergeNamespaces("ar"),
   } as typeof baseT.ar & TranslationCatalog,
 };
+
+const loadedLocales = new Set<Locale>();
+const pendingLocales = new Map<Locale, Promise<void>>();
+
+/** True once every namespace catalog of `locale` is merged into `t[locale]`. */
+export function isLocaleLoaded(locale: Locale): boolean {
+  return loadedLocales.has(locale);
+}
+
+/**
+ * Load (once) every namespace catalog of `locale` and merge it into `t[locale]` in sorted
+ * file order. Resolves when the catalogs are in place; concurrent calls share one load.
+ */
+export function loadLocale(locale: Locale): Promise<void> {
+  if (loadedLocales.has(locale)) return Promise.resolve();
+  const pending = pendingLocales.get(locale);
+  if (pending) return pending;
+  const loaders = namespaceLoaders[locale] ?? {};
+  const paths = Object.keys(loaders).sort();
+  const p = Promise.all(paths.map((path) => loaders[path]()))
+    .then((catalogs) => {
+      for (const catalog of catalogs) Object.assign(t[locale], catalog);
+      loadedLocales.add(locale);
+      useCatalogVersion.setState((s) => ({ version: s.version + 1 }));
+    })
+    .finally(() => pendingLocales.delete(locale));
+  pendingLocales.set(locale, p);
+  return p;
+}
 
 /**
  * Interpolate `{name}` placeholders. Use this instead of concatenating
@@ -959,5 +990,12 @@ export function formatMessage(template: string, values: Record<string, string | 
 
 export function useTranslation() {
   const { locale } = useI18n();
+  // Subscribing re-renders the caller once a lazily loaded catalog lands.
+  useCatalogVersion((s) => s.version);
+  if (!loadedLocales.has(locale)) {
+    void loadLocale(locale);
+    // While Arabic chunks load after a switch, keep showing the loaded English copy.
+    if (locale !== "en" && loadedLocales.has("en")) return { t: t.en, locale };
+  }
   return { t: t[locale], locale };
 }

@@ -42,5 +42,13 @@
   "journal.sourcePayment": "دفعة",
   "journal.sourceReversal": "عكس",
   "journal.sourceTemplate": "قيد متكرر",
-  "journal.balancedExactly": "يجب أن يتساوى المدين والدائن تماماً"
+  "journal.balancedExactly": "يجب أن يتساوى المدين والدائن تماماً",
+  "journal.coaExportCsv": "تصدير CSV",
+  "journal.coaImportCsv": "استيراد CSV",
+  "journal.coaSetParent": "تعيين الحساب الرئيسي",
+  "journal.coaParentHelp": "اجمع هذا الحساب تحت حساب آخر من النوع نفسه. تظهر الحسابات الفرعية تحت الحساب الرئيسي في العرض المتدرج.",
+  "journal.coaNoParent": "بدون حساب رئيسي (المستوى الأعلى)",
+  "journal.coaSaveParent": "حفظ",
+  "journal.coaParentSaved": "تم تحديث الحساب الرئيسي",
+  "journal.coaParentFailed": "تعذر تغيير الحساب الرئيسي"
 }
