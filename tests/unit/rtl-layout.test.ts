@@ -1,3 +1,6 @@
+// Source inspection is intentional: jsdom does not apply Tailwind/CSS, so physical-direction
+// class usage and rtl.css rules can only be linted from source text; the runtime RTL behaviour is
+// covered by client-behaviour.test.ts and the Playwright RTL crawl.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";

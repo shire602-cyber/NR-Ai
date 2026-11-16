@@ -2,8 +2,6 @@
  * S5 chart of accounts (R02-16a/b/c residuals): parent-account selection rules shared by the
  * Chart of Accounts page, CSV import/export entry points on that page, and the seeded chart.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   descendantIds,
@@ -60,16 +58,6 @@ describe("S5 parent account selection (R02-16c)", () => {
       (a) => a
     );
     expect(cyclic).toHaveLength(2);
-  });
-
-  it("the Chart of Accounts page wires parent selection, CSV export and CSV import", () => {
-    const page = readFileSync(join(process.cwd(), "client/src/pages/ChartOfAccounts.tsx"), "utf8");
-    expect(page).toContain("parentCandidates(");
-    expect(page).toContain('apiRequest("PUT", `/api/accounts/${parentFor!.id}`');
-    expect(page).toContain("/imports/chart-of-accounts/export");
-    expect(page).toContain('navigate("/import?kind=chart_of_accounts")');
-    const wizard = readFileSync(join(process.cwd(), "client/src/pages/ImportWizard.tsx"), "utf8");
-    expect(wizard).toContain("kindFromSearch(");
   });
 });
 

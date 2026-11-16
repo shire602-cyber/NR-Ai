@@ -1,3 +1,5 @@
+// Source inspection is intentional: it asserts file structure (line budgets, module layout and
+// lazy panel boundaries of the Reports split), which exists only in the source tree.
 /**
  * W5-A Reports page structure and catalog honesty (unit).
  *

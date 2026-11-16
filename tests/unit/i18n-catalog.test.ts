@@ -1,3 +1,6 @@
+// Source inspection is intentional: this is the hard-coded-copy guard. It scans every page and
+// component source file for JSX text that bypasses the catalogs, which is a property of the
+// source itself, not of any rendered output.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
