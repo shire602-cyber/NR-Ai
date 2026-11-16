@@ -309,10 +309,7 @@ describe("W4-B inventory ledger", () => {
     const rec = await t.as.post(`/api/purchase-orders/${po.body.id}/receive`, {});
     expect(rec.status, rec.text).toBe(200);
     expect(rec.body.inventoryUpdated).toBe(true);
-    // The hand-off runs after the PO commit.
-    for (let i = 0; i < 40 && (await stock(p.id)).qty === 0; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-    }
+    // F2: stock and GRNI commit with the receipt, before the response is sent.
     expect(await stock(p.id)).toEqual({ qty: 4, value: 100 });
     expect(await bal(t, "2015")).toBe(-10_000);
     const conv = await t.as.post(`/api/purchase-orders/${po.body.id}/convert-to-bill`, {});

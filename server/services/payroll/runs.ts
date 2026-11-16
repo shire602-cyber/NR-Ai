@@ -309,7 +309,7 @@ export async function calculateRun(
   );
   const baseCurrency = company?.base_currency || "AED";
 
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const run = await lockRun(tx, runId, companyId);
     if (!CALCULABLE.has(run.status)) {
       throw new DomainError(
@@ -469,18 +469,17 @@ export async function calculateRun(
     );
     if (!updated)
       throw new DomainError("PAYROLL_RUN_CHANGED", 409, undefined, "The run changed; retry");
-    afterCommit(() =>
-      recordAudit({
-        userId: actorId,
-        companyId,
-        action: "payroll.calculate",
-        entityType: "payroll_run",
-        entityId: runId,
-        before: { status: run.status },
-        after: { status: "calculated", employeeCount: updated.employee_count },
-        req,
-      })
-    );
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.calculate",
+      entityType: "payroll_run",
+      entityId: runId,
+      before: { status: run.status },
+      after: { status: "calculated", employeeCount: updated.employee_count },
+      req,
+      tx,
+    });
     return updated;
   });
 }
@@ -826,22 +825,21 @@ export async function approveRun(
       [runId, posted.entry.id],
       tx
     );
-    afterCommit(() =>
-      recordAudit({
-        userId: actorId,
-        companyId,
-        action: "payroll.approve",
-        entityType: "payroll_run",
-        entityId: runId,
-        before: { status: run.status },
-        after: {
-          status: "approved",
-          journalEntryId: posted.entry.id,
-          entryNumber: posted.entry.entryNumber,
-        },
-        req,
-      })
-    );
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.approve",
+      entityType: "payroll_run",
+      entityId: runId,
+      before: { status: run.status },
+      after: {
+        status: "approved",
+        journalEntryId: posted.entry.id,
+        entryNumber: posted.entry.entryNumber,
+      },
+      req,
+      tx,
+    });
     afterCommit(() =>
       emitDomainEvent("payroll.approved", {
         companyId,
@@ -944,24 +942,23 @@ export async function payRun(
       [runId, paymentEntryId],
       tx
     );
-    afterCommit(() =>
-      recordAudit({
-        userId: actorId,
-        companyId,
-        action: "payroll.pay",
-        entityType: "payroll_run",
-        entityId: runId,
-        before: { status: run.status },
-        after: {
-          status: "paid",
-          paymentJournalEntryId: paymentEntryId,
-          netPaid: fromFils(netFils),
-          expenseReimbursements: fromFils(reimbursementFils),
-          reimbursedClaims,
-        },
-        req,
-      })
-    );
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.pay",
+      entityType: "payroll_run",
+      entityId: runId,
+      before: { status: run.status },
+      after: {
+        status: "paid",
+        paymentJournalEntryId: paymentEntryId,
+        netPaid: fromFils(netFils),
+        expenseReimbursements: fromFils(reimbursementFils),
+        reimbursedClaims,
+      },
+      req,
+      tx,
+    });
     afterCommit(() =>
       emitDomainEvent("payroll.paid", {
         companyId,
@@ -985,7 +982,7 @@ export async function unpayRun(
   reason: string,
   req?: Request
 ): Promise<PayrollRunRow> {
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const run = await lockRun(tx, runId, companyId);
     assertTransition(payrollRunMachine, run.status, "approved");
     if (run.payment_journal_entry_id) {
@@ -1012,18 +1009,17 @@ export async function unpayRun(
     );
     // The reversed payment journal restored 2045: the reimbursed claims are owed again.
     await reopenRunClaims(tx, companyId, runId);
-    afterCommit(() =>
-      recordAudit({
-        userId: actorId,
-        companyId,
-        action: "payroll.unpay",
-        entityType: "payroll_run",
-        entityId: runId,
-        before: { status: "paid" },
-        after: { status: "approved", reason },
-        req,
-      })
-    );
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.unpay",
+      entityType: "payroll_run",
+      entityId: runId,
+      before: { status: "paid" },
+      after: { status: "approved", reason },
+      req,
+      tx,
+    });
     return updated;
   });
 }
@@ -1036,7 +1032,7 @@ export async function unapproveRun(
   reason: string,
   req?: Request
 ): Promise<PayrollRunRow> {
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const run = await lockRun(tx, runId, companyId);
     if (run.status === "paid") {
       throw new DomainError(
@@ -1068,18 +1064,17 @@ export async function unapproveRun(
       [runId],
       tx
     );
-    afterCommit(() =>
-      recordAudit({
-        userId: actorId,
-        companyId,
-        action: "payroll.unapprove",
-        entityType: "payroll_run",
-        entityId: runId,
-        before: { status: "approved", journalEntryId: run.journal_entry_id },
-        after: { status: "reversed", reason },
-        req,
-      })
-    );
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.unapprove",
+      entityType: "payroll_run",
+      entityId: runId,
+      before: { status: "approved", journalEntryId: run.journal_entry_id },
+      after: { status: "reversed", reason },
+      req,
+      tx,
+    });
     return updated;
   });
 }

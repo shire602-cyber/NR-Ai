@@ -675,17 +675,24 @@ export interface GoodsReceivedEvent {
   lines: Array<{ lineId: string; productId: string | null; quantity: number; unitPrice: unknown }>;
 }
 
-/** inventory.onGoodsReceived — stock in at the PO price against GRNI. Idempotent per receipt line. */
+/**
+ * inventory.onGoodsReceived — stock in at the PO price against GRNI. Idempotent per receipt line.
+ * Pass the receipt's transaction as `outer` (F2): stock, GRNI and the journal then commit or roll
+ * back together with the receipt itself.
+ */
 export async function onGoodsReceived(
-  event: GoodsReceivedEvent
+  event: GoodsReceivedEvent,
+  outer?: LedgerTx
 ): Promise<{ entryId: string | null }> {
   const po = (
-    await withLedgerTx((tx) =>
-      q<{ currency: string; number: string; created_by: string | null }>(
-        tx,
-        sql`SELECT currency, number, created_by FROM purchase_orders
-             WHERE id = ${event.purchaseOrderId} AND company_id = ${event.companyId}`
-      )
+    await withLedgerTx(
+      (tx) =>
+        q<{ currency: string; number: string; created_by: string | null }>(
+          tx,
+          sql`SELECT currency, number, created_by FROM purchase_orders
+               WHERE id = ${event.purchaseOrderId} AND company_id = ${event.companyId}`
+        ),
+      outer
     )
   )[0];
   if (!po) throw new DomainError("PO_NOT_FOUND", 404);
@@ -782,7 +789,7 @@ export async function onGoodsReceived(
     if (entryId) await linkMovementsToEntry(tx, movementIds, entryId);
     log.info({ receiptId: event.receiptId, entryId }, "PO goods received into stock");
     return { entryId };
-  });
+  }, outer);
 }
 
 export const hasFx = () => has("fx.convert");
