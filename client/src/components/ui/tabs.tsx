@@ -2,8 +2,21 @@ import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
-const Tabs = TabsPrimitive.Root;
+/**
+ * D3a: Radix Tabs stamps `dir="ltr"` on its root unless told otherwise (there is no
+ * DirectionProvider), which flipped every tabbed screen's content — tables, grids, dates —
+ * back to LTR in Arabic. Default `dir` to the locale's direction; an explicit prop wins.
+ */
+const Tabs = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Root>
+>(({ dir, ...props }, ref) => {
+  const { locale } = useTranslation();
+  return <TabsPrimitive.Root ref={ref} dir={dir ?? (locale === "ar" ? "rtl" : "ltr")} {...props} />;
+});
+Tabs.displayName = TabsPrimitive.Root.displayName;
 
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,

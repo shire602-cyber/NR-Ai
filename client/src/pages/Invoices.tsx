@@ -68,7 +68,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
-import { Money } from "@/components/ui/money";
+import { Money, MoneyCell } from "@/components/ui/money";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -111,7 +111,11 @@ import {
 } from "@/lib/invoice-totals";
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
 import { companyLogoSrc, fetchCompanyLogoDataUrl } from "@/lib/company-logo";
-import { invoiceStatusQuery, parseInvoiceStatusFilter } from "@/lib/invoice-filters";
+import {
+  invoiceStatusQuery,
+  parseInvoiceStatusFilter,
+  type InvoiceStatusFilter,
+} from "@/lib/invoice-filters";
 
 // R07-01: each line carries an explicit UAE supply type; the VAT rate follows
 // from it (5% standard, 0% for zero-rated / exempt / out of scope).
@@ -1030,9 +1034,7 @@ export default function Invoices() {
             {(einvoiceIssues?.issues ?? []).map((issue, i) => (
               <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
                 {issue.field && (
-                  <span className="block font-mono text-xs text-muted-foreground">
-                    {issue.field}
-                  </span>
+                  <span className="block text-xs text-muted-foreground">{issue.field}</span>
                 )}
                 {issue.message}
               </li>
@@ -1175,16 +1177,21 @@ export default function Invoices() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="invoices" data-testid="tab-invoices">
-            <FileText className="w-4 h-4 mr-2" />
+            <FileText className="w-4 h-4" />
             {t.invoices}
           </TabsTrigger>
           <TabsTrigger value="branding" data-testid="tab-branding">
-            <Palette className="w-4 h-4 mr-2" />
+            <Palette className="w-4 h-4" />
             {(t as any).invoiceBranding ?? "Invoice Branding"}
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="invoices" className="space-y-6 mt-0">
+        <TabsContent value="invoices" className="space-y-4 mt-0">
+          <InvoiceStatusTiles
+            companyId={selectedCompanyId}
+            active={statusFilter}
+            onSelect={(status) => (status ? setStatusFilter(status) : clearStatusFilter())}
+          />
           <div
             className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
             data-testid="invoices-filter-toolbar"
@@ -1251,7 +1258,6 @@ export default function Invoices() {
                             <FormControl>
                               <Input
                                 {...field}
-                                className="font-mono"
                                 data-testid="input-invoice-number"
                                 readOnly={!editingInvoice}
                                 placeholder={
@@ -1275,12 +1281,12 @@ export default function Invoices() {
                                   <Button
                                     variant="outline"
                                     className={cn(
-                                      "w-full justify-start text-left font-normal",
+                                      "w-full justify-start text-start font-normal",
                                       !field.value && "text-muted-foreground"
                                     )}
                                     data-testid="button-date-picker"
                                   >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    <CalendarIcon className="h-4 w-4" />
                                     {field.value ? (
                                       format(field.value, "PPP")
                                     ) : (
@@ -1330,7 +1336,6 @@ export default function Invoices() {
                               <Input
                                 {...field}
                                 placeholder="Optional"
-                                className="font-mono"
                                 data-testid="input-customer-trn"
                               />
                             </FormControl>
@@ -1415,7 +1420,7 @@ export default function Invoices() {
                           onClick={() => append({ ...EMPTY_LINE })}
                           data-testid="button-add-line"
                         >
-                          <Plus className="w-4 h-4 mr-2" />
+                          <Plus className="w-4 h-4" />
                           {t.addLine}
                         </Button>
                       </div>
@@ -1453,7 +1458,6 @@ export default function Invoices() {
                                       type="number"
                                       step="0.01"
                                       placeholder="Qty"
-                                      className="font-mono"
                                       aria-label={`Line ${index + 1} quantity`}
                                       value={field.value ?? ""}
                                       onChange={(e) =>
@@ -1479,7 +1483,6 @@ export default function Invoices() {
                                       type="number"
                                       step="0.01"
                                       placeholder="Price"
-                                      className="font-mono"
                                       aria-label={`Line ${index + 1} unit price`}
                                       value={field.value ?? ""}
                                       onChange={(e) =>
@@ -1547,7 +1550,6 @@ export default function Invoices() {
                                       max={100}
                                       placeholder={t["invoices.discountPercent"]}
                                       aria-label={t["invoices.discountPercent"]}
-                                      className="font-mono"
                                       value={field.value ?? ""}
                                       onChange={(e) =>
                                         field.onChange(
@@ -1562,7 +1564,7 @@ export default function Invoices() {
                             />
                           </div>
                           <div className="col-span-2">
-                            <div className="h-10 flex items-center justify-end font-mono text-sm">
+                            <div className="h-10 flex items-center justify-end text-sm">
                               {formatCurrency(
                                 computeInvoiceFormLine(
                                   watchLines[index] ?? EMPTY_LINE,
@@ -1620,7 +1622,6 @@ export default function Invoices() {
                                             min={0}
                                             placeholder={t["invoices.marginPurchaseCost"]}
                                             aria-label={t["invoices.marginPurchaseCost"]}
-                                            className="font-mono"
                                             value={field.value ?? ""}
                                             onChange={(e) =>
                                               field.onChange(
@@ -1647,7 +1648,7 @@ export default function Invoices() {
                     <div className="border-t pt-4 space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{t.subtotal}</span>
-                        <span className="font-mono font-medium">
+                        <span className="font-medium">
                           {formatCurrency(subtotal, "AED", locale)}
                         </span>
                       </div>
@@ -1661,13 +1662,13 @@ export default function Invoices() {
                             : "0%"}
                           )
                         </span>
-                        <span className="font-mono font-medium">
+                        <span className="font-medium">
                           {formatCurrency(vatAmount, "AED", locale)}
                         </span>
                       </div>
                       <div className="flex justify-between text-lg font-semibold pt-2 border-t">
                         <span>{t.total}</span>
-                        <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
+                        <span>{formatCurrency(total, "AED", locale)}</span>
                       </div>
                     </div>
 
@@ -1821,7 +1822,7 @@ export default function Invoices() {
                         <TableHead>{t.date}</TableHead>
                         <TableHead data-numeric="">{t.total}</TableHead>
                         <TableHead>{t.status}</TableHead>
-                        <TableHead className="text-end">
+                        <TableHead data-numeric="">
                           <span className="sr-only">{t.actions}</span>
                         </TableHead>
                       </TableRow>
@@ -2318,7 +2319,7 @@ export default function Invoices() {
                       disabled={updateBrandingMutation.isPending}
                       data-testid="button-save-branding"
                     >
-                      <Save className="w-4 h-4 mr-2" />
+                      <Save className="w-4 h-4" />
                       {updateBrandingMutation.isPending ? "Saving..." : "Save Settings"}
                     </Button>
                   </div>
@@ -2356,7 +2357,7 @@ export default function Invoices() {
                         {invoice.status}
                       </Badge>
                     </div>
-                    <p className="font-mono font-semibold">
+                    <p className="font-semibold">
                       {formatCurrency(invoice.total || 0, "AED", locale)}
                     </p>
                   </div>
@@ -2398,7 +2399,7 @@ export default function Invoices() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="w-5 h-5 text-chart-5" />
+              <RefreshCw className="w-5 h-5 text-accent" />
               <T k="pageLabels.recurringInvoiceSettings" />
             </DialogTitle>
             <DialogDescription>
@@ -2453,9 +2454,9 @@ export default function Invoices() {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-full justify-start text-left font-normal"
+                        className="w-full justify-start text-start font-normal"
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        <CalendarIcon className="h-4 w-4" />
                         {recurringNextDate ? format(recurringNextDate, "PPP") : "Pick a date"}
                       </Button>
                     </PopoverTrigger>
@@ -2476,9 +2477,9 @@ export default function Invoices() {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-full justify-start text-left font-normal"
+                        className="w-full justify-start text-start font-normal"
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        <CalendarIcon className="h-4 w-4" />
                         {recurringEndDate ? format(recurringEndDate, "PPP") : "No end date"}
                       </Button>
                     </PopoverTrigger>
@@ -2567,7 +2568,6 @@ export default function Invoices() {
                 type="number"
                 step="0.01"
                 placeholder="0.00"
-                className="font-mono"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
@@ -2699,7 +2699,7 @@ export default function Invoices() {
                       <TableHead>
                         <T k="banking.common.reference" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric="">
                         <T k="banking.common.amount" />
                       </TableHead>
                     </TableRow>
@@ -2712,13 +2712,11 @@ export default function Invoices() {
                         <TableCell className="text-muted-foreground">
                           {p.reference || "—"}
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(
-                            p.amount,
-                            invoiceForPaymentDetail?.currency || "AED",
-                            locale
-                          )}
-                        </TableCell>
+                        <MoneyCell
+                          amount={Number(p.amount)}
+                          currency={invoiceForPaymentDetail?.currency || "AED"}
+                          className="font-medium"
+                        />
                       </TableRow>
                     ))}
                   </TableBody>
@@ -2727,7 +2725,7 @@ export default function Invoices() {
                   <span>
                     <T k="pages.totalPaid" />
                   </span>
-                  <span className="font-mono">
+                  <span>
                     {formatCurrency(
                       invoicePayments.reduce((s: number, p: InvoicePayment) => s + p.amount, 0),
                       invoiceForPaymentDetail?.currency || "AED",
@@ -2778,9 +2776,7 @@ export default function Invoices() {
                           <div className="font-medium">
                             {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
                           </div>
-                          <div className="text-sm text-muted-foreground font-mono">
-                            {account.code}
-                          </div>
+                          <div className="text-sm text-muted-foreground">{account.code}</div>
                         </div>
                         {selectedPaymentAccount === account.id && (
                           <div className="text-primary">✓</div>
@@ -2808,7 +2804,7 @@ export default function Invoices() {
                   className="w-full"
                   data-testid="button-create-payment-account"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4" />
                   Create Bank/Cash Account
                 </Button>
               </div>
@@ -2895,5 +2891,95 @@ function VirtualizedInvoiceRows({
         </tr>
       )}
     </TableBody>
+  );
+}
+
+/**
+ * Invoice status tiles (D3a, benchmark "invoice list is scannable"): count and value per
+ * status bucket from the full invoice list (`?all=true`, same query key as the Dashboard),
+ * in AED (`baseCurrencyAmount`). A tile applies the same server-side status filter as the
+ * dashboard drill-through links; pressing the active tile clears it.
+ */
+function InvoiceStatusTiles({
+  companyId,
+  active,
+  onSelect,
+}: {
+  companyId: string | undefined;
+  active: string | null;
+  onSelect: (status: InvoiceStatusFilter | null) => void;
+}) {
+  const { t } = useTranslation();
+  const { data: all = [] } = useQuery<Invoice[]>({
+    queryKey: ["/api/companies", companyId, "invoices"],
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
+    enabled: !!companyId,
+  });
+  const buckets = useMemo(() => {
+    const today = startOfDay(new Date());
+    const sum = (rows: Invoice[]) =>
+      rows.reduce((s, inv) => s + Number(inv.baseCurrencyAmount ?? inv.total ?? 0), 0);
+    const live = all.filter((inv) => Number(inv.total) >= 0);
+    const draft = live.filter((inv) => inv.status === "draft");
+    const open = live.filter((inv) => inv.status === "sent" || inv.status === "partial");
+    const overdue = open.filter((inv) => inv.dueDate && new Date(inv.dueDate) < today);
+    const paid = live.filter((inv) => inv.status === "paid");
+    return [
+      { key: "draft" as const, label: t["invoices.statusFilter.draft"], rows: draft },
+      { key: "open" as const, label: t["invoices.statusFilter.open"], rows: open },
+      { key: "overdue" as const, label: t["invoices.statusFilter.overdue"], rows: overdue },
+      { key: "paid" as const, label: t["invoices.statusFilter.paid"], rows: paid },
+    ].map((b) => ({ ...b, count: b.rows.length, value: sum(b.rows) }));
+  }, [all, t]);
+
+  return (
+    <div
+      className="mobile-keep-cols grid grid-cols-2 gap-3 lg:grid-cols-4"
+      data-testid="invoice-status-tiles"
+    >
+      {buckets.map((b) => {
+        const isActive = active === b.key;
+        return (
+          <button
+            key={b.key}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onSelect(isActive ? null : b.key)}
+            data-testid={`invoice-status-tile-${b.key}`}
+            className={cn(
+              "rounded-xl border bg-card px-4 py-3 text-start shadow-card-soft transition-colors duration-fast",
+              "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              isActive ? "border-primary ring-1 ring-primary" : "border-border"
+            )}
+          >
+            <span className="flex items-center gap-2 text-small font-medium text-muted-foreground">
+              <span
+                aria-hidden
+                className={statusDotClass(
+                  b.key === "open"
+                    ? "info"
+                    : b.key === "overdue"
+                      ? "danger"
+                      : b.key === "paid"
+                        ? "success"
+                        : "neutral"
+                )}
+              />
+              {b.label}
+            </span>
+            <Money
+              amount={b.value}
+              className={cn(
+                "mt-1 flex text-h3 font-semibold text-foreground",
+                b.key === "overdue" && b.value > 0 && "text-danger"
+              )}
+            />
+            <span className="mt-0.5 block text-caption text-muted-foreground">
+              {formatMessage(t["screens.invoicesCount"], { count: b.count })}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

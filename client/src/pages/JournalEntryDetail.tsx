@@ -2,8 +2,7 @@ import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +10,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -30,18 +30,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { formatCurrency } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { Money, MoneyCell } from "@/components/ui/money";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  ArrowLeft,
-  BookMarked,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  FileText,
-  RotateCcw,
-  Ban,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, Clock, FileText, RotateCcw, Ban } from "lucide-react";
 
 interface JournalLine {
   id: string;
@@ -146,19 +141,32 @@ export default function JournalEntryDetail() {
     onError,
   });
 
+  const accountTypeLabel = (type?: string | null) =>
+    type
+      ? ((
+          {
+            asset: t["screens.typeAsset"],
+            liability: t["screens.typeLiability"],
+            equity: t["screens.typeEquity"],
+            income: t["screens.typeIncome"],
+            expense: t["screens.typeExpense"],
+          } as Record<string, string>
+        )[type] ?? type)
+      : "—";
+
   const getStatusBadge = (entry: JournalEntry) => {
     switch (entry.lifecycleStatus ?? entry.status) {
       case "posted":
         return (
-          <Badge className="bg-success-subtle text-success-subtle-foreground ">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
+          <Badge variant="success">
+            <CheckCircle2 className="w-3 h-3 me-1" />
             {t["journal.statusPosted"]}
           </Badge>
         );
       case "draft":
         return (
-          <Badge variant="secondary">
-            <Clock className="w-3 h-3 mr-1" />
+          <Badge variant="neutral">
+            <Clock className="w-3 h-3 me-1" />
             {entry.approvalStatus === "pending"
               ? t["journal.statusPendingApproval"]
               : t["journal.statusDraft"]}
@@ -166,15 +174,15 @@ export default function JournalEntryDetail() {
         );
       case "reversed":
         return (
-          <Badge variant="destructive">
-            <RotateCcw className="w-3 h-3 mr-1" />
+          <Badge variant="danger">
+            <RotateCcw className="w-3 h-3 me-1" />
             {t["journal.statusReversed"]}
           </Badge>
         );
       case "voided":
         return (
-          <Badge variant="destructive">
-            <Ban className="w-3 h-3 mr-1" />
+          <Badge variant="danger">
+            <Ban className="w-3 h-3 me-1" />
             {t["journal.statusVoided"]}
           </Badge>
         );
@@ -197,8 +205,8 @@ export default function JournalEntryDetail() {
     };
 
     return (
-      <Badge variant="outline" className="ml-2">
-        <FileText className="w-3 h-3 mr-1" />
+      <Badge variant="outline">
+        <FileText className="w-3 h-3 me-1" />
         {sourceLabels[source] || source}
       </Badge>
     );
@@ -206,7 +214,7 @@ export default function JournalEntryDetail() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <Skeleton className="h-8 w-64" />
@@ -228,13 +236,13 @@ export default function JournalEntryDetail() {
 
   if (error || !entry) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href="/journal">
-            <Button variant="ghost" size="icon" data-testid="button-back-to-journal">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          </Link>
+          <Button asChild variant="ghost" size="icon" data-testid="button-back-to-journal">
+            <Link href="/journal">
+              <ArrowLeft className="w-5 h-5 rtl:-scale-x-100" />
+            </Link>
+          </Button>
           <h1 className="text-2xl font-bold">
             <T k="pageLabels.journalEntryNotFound" />
           </h1>
@@ -245,11 +253,11 @@ export default function JournalEntryDetail() {
             <p className="text-muted-foreground">
               <T k="pageLabels.theRequestedJournalEntryCouldNotBeFound" />
             </p>
-            <Link href="/journal">
-              <Button className="mt-4" data-testid="button-return-to-journal">
+            <Button asChild className="mt-4" data-testid="button-return-to-journal">
+              <Link href="/journal">
                 <T k="pageLabels.returnToJournal" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -266,240 +274,219 @@ export default function JournalEntryDetail() {
   const canApprove = entry.status === "draft" && entry.approvalStatus === "pending";
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/journal">
-            <Button variant="ghost" size="icon" data-testid="button-back-to-journal">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <BookMarked className="w-6 h-6 text-primary" />
-              <h1 className="text-2xl font-bold" data-testid="text-journal-entry-number">
-                Journal Entry #{entry.entryNumber}
-              </h1>
-              {getStatusBadge(entry)}
-              {getSourceBadge(entry.source)}
-            </div>
-            <p className="text-muted-foreground">{format(new Date(entry.date), "MMMM d, yyyy")}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canApprove && (
-            <Button
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending}
-              data-testid="button-approve-entry"
-            >
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              {t["journal.approve"]}
-            </Button>
-          )}
-          {canReverse && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" data-testid="button-reverse-entry">
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  {t["journal.reverse"]}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{t["journal.reverseTitle"]}</AlertDialogTitle>
-                  <AlertDialogDescription>{t["journal.reverseDescription"]}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="reversal-date">{t["journal.reversalDate"]}</Label>
-                    <Input
-                      id="reversal-date"
-                      type="date"
-                      value={reverseDate}
-                      onChange={(e) => setReverseDate(e.target.value)}
-                      data-testid="input-reversal-date"
-                    />
-                    <p className="text-xs text-muted-foreground">{t["journal.reversalDateHint"]}</p>
+    <div className="space-y-6">
+      <PageHeader
+        backHref="/journal"
+        backLabel={t["pageLabels.viewAllEntries"]}
+        eyebrow="Accounting"
+        title={
+          <>
+            {t["screens.journalEntry"]}{" "}
+            <span dir="ltr" className="tabular-nums [unicode-bidi:isolate]">
+              {entry.entryNumber}
+            </span>
+          </>
+        }
+        testId="text-journal-entry-number"
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>{formatDate(entry.date, locale)}</span>
+            {getStatusBadge(entry)}
+            {getSourceBadge(entry.source)}
+          </span>
+        }
+        actions={
+          <>
+            {canReverse && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" data-testid="button-void-entry">
+                    <Ban aria-hidden />
+                    {t["journal.void"]}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t["journal.voidTitle"]}</AlertDialogTitle>
+                    <AlertDialogDescription>{t["journal.voidDescription"]}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>
+                      <T k="pages.cancel" />
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => voidMutation.mutate()}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {t["journal.confirmVoid"]}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {canReverse && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" data-testid="button-reverse-entry">
+                    <RotateCcw aria-hidden />
+                    {t["journal.reverse"]}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t["journal.reverseTitle"]}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t["journal.reverseDescription"]}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="reversal-date">{t["journal.reversalDate"]}</Label>
+                      <Input
+                        id="reversal-date"
+                        type="date"
+                        value={reverseDate}
+                        onChange={(e) => setReverseDate(e.target.value)}
+                        data-testid="input-reversal-date"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t["journal.reversalDateHint"]}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="reversal-reason">{t["journal.reason"]}</Label>
+                      <Input
+                        id="reversal-reason"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        data-testid="input-reversal-reason"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="reversal-reason">{t["journal.reason"]}</Label>
-                    <Input
-                      id="reversal-reason"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      data-testid="input-reversal-reason"
-                    />
-                  </div>
-                </div>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>
-                    <T k="pages.cancel" />
-                  </AlertDialogCancel>
-                  <AlertDialogAction onClick={() => reverseMutation.mutate()}>
-                    {t["journal.confirmReverse"]}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          {canReverse && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" data-testid="button-void-entry">
-                  <Ban className="w-4 h-4 mr-2" />
-                  {t["journal.void"]}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{t["journal.voidTitle"]}</AlertDialogTitle>
-                  <AlertDialogDescription>{t["journal.voidDescription"]}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>
-                    <T k="pages.cancel" />
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => voidMutation.mutate()}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    {t["journal.confirmVoid"]}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          <Link href="/journal">
-            <Button variant="outline" data-testid="button-view-all-entries">
-              <T k="pageLabels.viewAllEntries" />
-            </Button>
-          </Link>
-        </div>
-      </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>
+                      <T k="pages.cancel" />
+                    </AlertDialogCancel>
+                    <AlertDialogAction onClick={() => reverseMutation.mutate()}>
+                      {t["journal.confirmReverse"]}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {canApprove && (
+              <Button
+                onClick={() => approveMutation.mutate()}
+                disabled={approveMutation.isPending}
+                data-testid="button-approve-entry"
+              >
+                <CheckCircle2 aria-hidden />
+                {t["journal.approve"]}
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pageLabels.totalDebits" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success" data-testid="text-total-debits">
-              {formatCurrency(totalDebit, "AED", locale)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pageLabels.totalCredits" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info" data-testid="text-total-credits">
-              {formatCurrency(totalCredit, "AED", locale)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="portal.balance" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div
-              className={`text-2xl font-bold ${isBalanced ? "text-success" : "text-destructive"}`}
-              data-testid="text-balance"
-            >
-              {isBalanced
-                ? t.balanced
-                : formatCurrency(Math.abs(totalDebitFils - totalCreditFils) / 100, "AED", locale)}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="mobile-keep-cols grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <StatCard
+          label={t["pageLabels.totalDebits"]}
+          value={<Money amount={totalDebit} />}
+          testId="text-total-debits"
+        />
+        <StatCard
+          label={t["pageLabels.totalCredits"]}
+          value={<Money amount={totalCredit} />}
+          testId="text-total-credits"
+        />
+        <StatCard
+          label={t["portal.balance"]}
+          testId="text-balance"
+          value={
+            isBalanced ? (
+              <span className="inline-flex items-center gap-2 text-success">
+                <CheckCircle2 className="h-6 w-6" aria-hidden />
+                {t.balanced}
+              </span>
+            ) : (
+              <Money
+                amount={Math.abs(totalDebitFils - totalCreditFils) / 100}
+                className="text-danger"
+              />
+            )
+          }
+          hint={isBalanced ? t["screens.debitsEqualCredits"] : t["screens.notBalanced"]}
+        />
       </div>
 
       {entry.memo && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Memo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground" data-testid="text-memo">
-              {entry.memo}
-            </p>
-          </CardContent>
-        </Card>
+        <SectionCard title={t["screens.memo"]}>
+          <p dir="auto" className="text-sm text-muted-foreground" data-testid="text-memo">
+            {entry.memo}
+          </p>
+        </SectionCard>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
-            <T k="pages.lineItems" />
-          </CardTitle>
-          <CardDescription>
-            <T k="pageLabels.doubleEntryTransactionDetails" />
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">Code</TableHead>
-                <TableHead>
-                  <T k="pageLabels.accountName" />
-                </TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Debit (AED)</TableHead>
-                <TableHead className="text-right">Credit (AED)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entry.lines.map((line, index) => (
-                <TableRow key={line.id} data-testid={`row-journal-line-${index}`}>
-                  <TableCell className="font-mono">{line.account?.code || "-"}</TableCell>
-                  <TableCell>
-                    {locale === "ar" && line.account?.nameAr
-                      ? line.account.nameAr
-                      : line.account?.nameEn || "Unknown Account"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {line.account?.type || "-"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {fils(line.debit) > 0
-                      ? formatCurrency(fils(line.debit) / 100, "AED", locale)
-                      : "-"}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {fils(line.credit) > 0
-                      ? formatCurrency(fils(line.credit) / 100, "AED", locale)
-                      : "-"}
-                  </TableCell>
-                </TableRow>
-              ))}
-              <TableRow className="bg-muted/50 font-bold">
-                <TableCell colSpan={3} className="text-right">
-                  <T k="pages.totals" />
+      <SectionCard
+        title={t["screens.entryLines"]}
+        description={t["pageLabels.doubleEntryTransactionDetails"]}
+        flush
+      >
+        <Table className="mobile-fit">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t["screens.code"]}</TableHead>
+              <TableHead className="w-full">
+                <T k="pageLabels.accountName" />
+              </TableHead>
+              <TableHead className="hidden sm:table-cell">{t["screens.type"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.debit"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.credit"]}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entry.lines.map((line, index) => (
+              <TableRow key={line.id} data-testid={`row-journal-line-${index}`}>
+                <TableCell data-nowrap="" className="tabular-nums text-muted-foreground">
+                  {line.account?.code || "—"}
                 </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatCurrency(totalDebit, "AED", locale)}
+                <TableCell data-truncate="" dir="auto">
+                  {locale === "ar" && line.account?.nameAr
+                    ? line.account.nameAr
+                    : line.account?.nameEn || t["screens.unknownAccount"]}
                 </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatCurrency(totalCredit, "AED", locale)}
+                <TableCell data-nowrap="" className="hidden text-muted-foreground sm:table-cell">
+                  {accountTypeLabel(line.account?.type)}
+                </TableCell>
+                <TableCell data-numeric="">
+                  {fils(line.debit) > 0 ? (
+                    <Money amount={fils(line.debit) / 100} showCurrency={false} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell data-numeric="">
+                  {fils(line.credit) > 0 ? (
+                    <Money amount={fils(line.credit) / 100} showCurrency={false} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
               </TableRow>
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            ))}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={2}>
+                <T k="pages.totals" />
+              </TableCell>
+              <TableCell className="hidden sm:table-cell" />
+              <MoneyCell amount={totalDebit} />
+              <MoneyCell amount={totalCredit} />
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </SectionCard>
 
       {(entry.reversedByEntryId || entry.reversalOf) && (
         <Card className="border-warning/30" data-testid="card-reversal-information">
@@ -520,15 +507,16 @@ export default function JournalEntryDetail() {
                     : t["journal.reversedBy"],
                   { number: entry.reversedByEntry?.entryNumber ?? "" }
                 )}{" "}
-                <Link href={`/journal/${entry.reversedByEntryId}`}>
-                  <Button
-                    variant="ghost"
-                    className="text-primary p-0 h-auto"
-                    data-testid="link-reversal-entry"
-                  >
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="text-primary p-0 h-auto"
+                  data-testid="link-reversal-entry"
+                >
+                  <Link href={`/journal/${entry.reversedByEntryId}`}>
                     {t["journal.viewReversalEntry"]}
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </p>
             )}
             {entry.reversalOf && (
@@ -537,56 +525,54 @@ export default function JournalEntryDetail() {
                 {formatMessage(t["journal.reversalOf"], {
                   number: entry.reversalOfEntry?.entryNumber ?? "",
                 })}{" "}
-                <Link href={`/journal/${entry.reversalOf}`}>
-                  <Button
-                    variant="ghost"
-                    className="text-primary p-0 h-auto"
-                    data-testid="link-original-entry"
-                  >
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="text-primary p-0 h-auto"
+                  data-testid="link-original-entry"
+                >
+                  <Link href={`/journal/${entry.reversalOf}`}>
                     {t["journal.viewOriginalEntry"]}
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </p>
             )}
           </CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
-            <T k="pageLabels.entryDetails" />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Entry ID:</span>
-              <span className="ml-2 font-mono" data-testid="text-entry-id">
-                {entry.id}
-              </span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Created:</span>
-              <span className="ml-2" data-testid="text-created-at">
-                {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
-              </span>
-            </div>
-            {entry.source && (
-              <div>
-                <span className="text-muted-foreground">{t["journal.source"]}:</span>
-                <span className="ml-2 capitalize">{entry.source}</span>
-              </div>
-            )}
-            {entry.sourceId && (
-              <div>
-                <span className="text-muted-foreground">Source ID:</span>
-                <span className="ml-2 font-mono">{entry.sourceId}</span>
-              </div>
-            )}
+      <SectionCard title={t["pageLabels.entryDetails"]}>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm md:grid-cols-2">
+          <div className="min-w-0">
+            <dt className="text-caption text-muted-foreground">{t["screens.entryId"]}</dt>
+            <dd
+              dir="ltr"
+              className="truncate tabular-nums [unicode-bidi:isolate]"
+              data-testid="text-entry-id"
+            >
+              {entry.id}
+            </dd>
           </div>
-        </CardContent>
-      </Card>
+          <div>
+            <dt className="text-caption text-muted-foreground">{t["screens.created"]}</dt>
+            <dd data-testid="text-created-at">{formatDate(entry.createdAt, locale)}</dd>
+          </div>
+          {entry.source && (
+            <div>
+              <dt className="text-caption text-muted-foreground">{t["journal.source"]}</dt>
+              <dd>{getSourceBadge(entry.source)}</dd>
+            </div>
+          )}
+          {entry.sourceId && (
+            <div className="min-w-0">
+              <dt className="text-caption text-muted-foreground">{t["screens.sourceId"]}</dt>
+              <dd dir="ltr" className="truncate tabular-nums [unicode-bidi:isolate]">
+                {entry.sourceId}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </SectionCard>
     </div>
   );
 }

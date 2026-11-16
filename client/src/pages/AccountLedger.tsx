@@ -3,12 +3,9 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { format } from "date-fns";
-import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -28,10 +25,22 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -44,10 +53,10 @@ import {
   FileSpreadsheet,
   RotateCcw,
   BookOpen,
-  Filter,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  MoreHorizontal,
 } from "lucide-react";
 
 interface LedgerEntry {
@@ -336,317 +345,279 @@ export default function AccountLedger() {
           <T k="pageLabels.accountNotFound" />
         </h2>
         <Button onClick={() => navigate("/chart-of-accounts")} variant="outline">
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="h-4 w-4" />
           <T k="pageLabels.backToChartOfAccounts" />
         </Button>
       </div>
     );
   }
 
+  const accountName = ledger
+    ? locale === "ar" && ledger.account.nameAr
+      ? ledger.account.nameAr
+      : ledger.account.nameEn
+    : locale === "ar"
+      ? "دفتر الأستاذ"
+      : "Account Ledger";
+  const typeLabel = ledger?.account.type
+    ? ((
+        {
+          asset: t["screens.typeAsset"],
+          liability: t["screens.typeLiability"],
+          equity: t["screens.typeEquity"],
+          income: t["screens.typeIncome"],
+          expense: t["screens.typeExpense"],
+        } as Record<string, string>
+      )[ledger.account.type] ?? ledger.account.type)
+    : "";
+
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/chart-of-accounts")}
-            data-testid="button-back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1
-              className="text-2xl md:text-3xl font-bold tracking-tight"
-              data-testid="text-account-name"
+    <div className="space-y-6">
+      <PageHeader
+        backHref="/chart-of-accounts"
+        backLabel={t.chartOfAccounts}
+        eyebrow="Accounting"
+        title={
+          isLoading ? (
+            <Skeleton className="h-8 w-48" />
+          ) : (
+            <span dir="auto" data-testid="text-account-name">
+              {accountName}
+            </span>
+          )
+        }
+        testId="text-account-ledger-title"
+        description={
+          isLoading ? undefined : (
+            <>
+              {ledger?.account.code ? (
+                <span className="tabular-nums">{ledger.account.code}</span>
+              ) : null}
+              {ledger?.account.code ? " · " : null}
+              {typeLabel}
+              {" · "}
+              {locale === "ar" ? "دفتر الأستاذ" : "General Ledger"}
+            </>
+          )
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => void handleExportExcel()}
+              disabled={!ledger || isExporting || !selectedCompanyId}
+              data-testid="button-export-xlsx"
             >
-              {isLoading ? (
-                <Skeleton className="h-8 w-48" />
-              ) : locale === "ar" && ledger?.account.nameAr ? (
-                ledger.account.nameAr
-              ) : (
-                ledger?.account.nameEn || "Account Ledger"
-              )}
-            </h1>
-            {isLoading ? (
-              <Skeleton className="h-4 w-32 mt-1" />
-            ) : (
-              <p className="text-muted-foreground mt-1">
-                <Badge variant="outline" className="mr-2">
-                  {ledger?.account.type}
-                </Badge>
-                {locale === "ar" ? "دفتر الأستاذ" : "General Ledger"}
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void handleExportExcel()}
-            disabled={!ledger || isExporting || !selectedCompanyId}
-            data-testid="button-export-xlsx"
-          >
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            <T k="statements.exportExcel" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportCSV}
-            disabled={!ledger || isExporting}
-            data-testid="button-export-csv"
-          >
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportPDF}
-            disabled={!ledger || isExporting}
-            data-testid="button-export-pdf"
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            PDF
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => refetch()}
-            data-testid="button-refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+              <FileSpreadsheet aria-hidden />
+              <T k="statements.exportExcel" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t["components.rowMoreActions"]}
+                  title={t["components.rowMoreActions"]}
+                >
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={handleExportCSV}
+                  disabled={!ledger || isExporting}
+                  data-testid="button-export-csv"
+                >
+                  <FileSpreadsheet aria-hidden />
+                  {t["screens.exportCsv"]}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={handleExportPDF}
+                  disabled={!ledger || isExporting}
+                  data-testid="button-export-pdf"
+                >
+                  <FileText aria-hidden />
+                  {t["screens.exportPdf"]}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => refetch()} data-testid="button-refresh">
+                  <RefreshCw aria-hidden />
+                  {t["screens.refresh"]}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
+
+      <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
+        <StatCard
+          label={locale === "ar" ? "الرصيد الافتتاحي" : "Opening Balance"}
+          loading={isLoading}
+          value={<Money amount={ledger?.openingBalance ?? 0} />}
+          testId="text-opening-balance"
+        />
+        <StatCard
+          label={locale === "ar" ? "إجمالي المدين" : "Total Debit"}
+          loading={isLoading}
+          value={<Money amount={ledger?.totalDebit ?? 0} />}
+          testId="text-total-debit"
+        />
+        <StatCard
+          label={locale === "ar" ? "إجمالي الدائن" : "Total Credit"}
+          loading={isLoading}
+          value={<Money amount={ledger?.totalCredit ?? 0} />}
+          testId="text-total-credit"
+        />
+        <StatCard
+          label={locale === "ar" ? "الرصيد الختامي" : "Closing Balance"}
+          loading={isLoading}
+          value={
+            <Money
+              amount={Math.abs(ledger?.closingBalance ?? 0)}
+              className={(ledger?.closingBalance ?? 0) < 0 ? "text-negative" : undefined}
+            />
+          }
+          testId="text-closing-balance"
+        />
       </div>
 
-      {!isLoading && ledger && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "الرصيد الافتتاحي" : "Opening Balance"}
-              </p>
-              <p className="text-2xl font-mono font-bold" data-testid="text-opening-balance">
-                {formatCurrency(ledger.openingBalance)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "إجمالي المدين" : "Total Debit"}
-              </p>
-              <p
-                className="text-2xl font-mono font-bold text-success"
-                data-testid="text-total-debit"
-              >
-                {formatCurrency(ledger.totalDebit)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "إجمالي الدائن" : "Total Credit"}
-              </p>
-              <p
-                className="text-2xl font-mono font-bold text-destructive"
-                data-testid="text-total-credit"
-              >
-                {formatCurrency(ledger.totalCredit)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "الرصيد الختامي" : "Closing Balance"}
-              </p>
-              <p
-                className={`text-2xl font-mono font-bold ${
-                  ledger.closingBalance >= 0 ? "text-foreground" : "text-destructive"
-                }`}
-                data-testid="text-closing-balance"
-              >
-                {formatCurrency(Math.abs(ledger.closingBalance))}
-              </p>
-            </CardContent>
-          </Card>
+      {/* Filters: one row, not in a card */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-64">
+          <Search
+            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            placeholder={locale === "ar" ? "بحث..." : "Search entries..."}
+            aria-label={locale === "ar" ? "بحث..." : "Search entries..."}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 ps-9"
+            data-testid="input-search-ledger"
+          />
         </div>
-      )}
+        <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+      </div>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              {locale === "ar" ? "الفلاتر" : "Filters"}
-            </CardTitle>
-            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-              <div className="relative flex-1 sm:flex-none sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={locale === "ar" ? "بحث..." : "Search entries..."}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                  data-testid="input-search-ledger"
-                />
-              </div>
-              <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <Card>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-4 space-y-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : !ledger?.entries?.length ? (
-            <div className="p-8 text-center">
-              <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">
-                {locale === "ar" ? "لا توجد قيود" : "No entries found"}
-              </h3>
-              <p className="text-muted-foreground">
-                {locale === "ar"
-                  ? "لا توجد حركات لهذا الحساب بناءً على الفلاتر المحددة"
-                  : "No transactions found for this account with the selected filters"}
-              </p>
-            </div>
-          ) : (
+      <DataTableCard
+        status={isLoading ? "loading" : !ledger?.entries?.length ? "empty" : "ready"}
+        columnLabels={[t.date, t.description, t["screens.balance"]]}
+        empty={{
+          icon: BookOpen,
+          title: locale === "ar" ? "لا توجد قيود" : "No entries found",
+          description:
+            locale === "ar"
+              ? "لا توجد حركات لهذا الحساب بناءً على الفلاتر المحددة"
+              : "No transactions found for this account with the selected filters",
+        }}
+        footer={
+          totalPages > 1 && ledger ? (
             <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[100px]">
-                        {locale === "ar" ? "التاريخ" : "Date"}
-                      </TableHead>
-                      <TableHead className="w-[120px]">
-                        {locale === "ar" ? "رقم القيد" : "Entry #"}
-                      </TableHead>
-                      <TableHead className="min-w-[200px]">
-                        {locale === "ar" ? "الوصف" : "Description"}
-                      </TableHead>
-                      <TableHead className="text-right w-[100px]">
-                        {locale === "ar" ? "مدين" : "Debit"}
-                      </TableHead>
-                      <TableHead className="text-right w-[100px]">
-                        {locale === "ar" ? "دائن" : "Credit"}
-                      </TableHead>
-                      <TableHead className="text-right w-[120px]">
-                        {locale === "ar" ? "الرصيد" : "Balance"}
-                      </TableHead>
-                      <TableHead className="w-[80px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedEntries.map((entry, index) => (
-                      <motion.tr
-                        key={entry.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.02 }}
-                        className="group hover-elevate"
-                        data-testid={`row-entry-${entry.id}`}
-                      >
-                        <TableCell className="font-medium">
-                          {format(new Date(entry.date), "MMM dd, yyyy")}
-                        </TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/journal/${entry.journalEntryId}`}
-                            className="text-primary hover:underline"
-                          >
-                            {entry.entryNumber.slice(-12)}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="truncate max-w-[300px]">
-                              {entry.description || entry.memo || "-"}
-                            </span>
-                            <Badge variant="outline" className="shrink-0 text-xs">
-                              {entry.source}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-success">
-                          {entry.debit > 0 ? formatCurrency(entry.debit) : "-"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-destructive">
-                          {entry.credit > 0 ? formatCurrency(entry.credit) : "-"}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-mono font-medium ${
-                            entry.runningBalance >= 0 ? "text-foreground" : "text-destructive"
-                          }`}
-                        >
-                          {formatCurrency(Math.abs(entry.runningBalance))}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => handleReverseEntry(entry)}
-                            title={locale === "ar" ? "عكس القيد" : "Reverse entry"}
-                            data-testid={`button-reverse-${entry.id}`}
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </motion.tr>
-                    ))}
-                  </TableBody>
-                </Table>
+              <span>
+                {formatMessage(t["screens.showingRange"], {
+                  from: (currentPage - 1) * entriesPerPage + 1,
+                  to: Math.min(currentPage * entriesPerPage, ledger.totalCount),
+                  total: ledger.totalCount,
+                })}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  aria-label={t["screens.previousPage"]}
+                  data-testid="button-prev-page"
+                >
+                  <ChevronLeft className="rtl:-scale-x-100" aria-hidden />
+                </Button>
+                <span className="tabular-nums text-foreground">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  aria-label={t["screens.nextPage"]}
+                  data-testid="button-next-page"
+                >
+                  <ChevronRight className="rtl:-scale-x-100" aria-hidden />
+                </Button>
               </div>
-
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t">
-                  <p className="text-sm text-muted-foreground">
-                    {locale === "ar"
-                      ? `عرض ${(currentPage - 1) * entriesPerPage + 1} - ${Math.min(currentPage * entriesPerPage, ledger.totalCount)} من ${ledger.totalCount}`
-                      : `Showing ${(currentPage - 1) * entriesPerPage + 1} - ${Math.min(currentPage * entriesPerPage, ledger.totalCount)} of ${ledger.totalCount}`}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      data-testid="button-prev-page"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <span className="text-sm">
-                      {currentPage} / {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      data-testid="button-next-page"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
             </>
-          )}
-        </CardContent>
-      </Card>
+          ) : undefined
+        }
+      >
+        <Table className="row-cards">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{locale === "ar" ? "التاريخ" : "Date"}</TableHead>
+              <TableHead>{locale === "ar" ? "رقم القيد" : "Entry #"}</TableHead>
+              <TableHead className="w-full">{locale === "ar" ? "الوصف" : "Description"}</TableHead>
+              <TableHead data-numeric="">{locale === "ar" ? "مدين" : "Debit"}</TableHead>
+              <TableHead data-numeric="">{locale === "ar" ? "دائن" : "Credit"}</TableHead>
+              <TableHead data-numeric="">{locale === "ar" ? "الرصيد" : "Balance"}</TableHead>
+              <TableHead>
+                <span className="sr-only">{t.actions}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginatedEntries.map((entry) => (
+              <TableRow key={entry.id} className="group" data-testid={`row-entry-${entry.id}`}>
+                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                  {formatDate(entry.date, locale)}
+                </TableCell>
+                <TableCell data-nowrap="" data-cell="meta">
+                  <Link
+                    href={`/journal/${entry.journalEntryId}`}
+                    dir="ltr"
+                    className="tabular-nums text-accent [unicode-bidi:isolate] hover:underline"
+                  >
+                    {entry.entryNumber.slice(-12)}
+                  </Link>
+                </TableCell>
+                <TableCell data-truncate="" data-cell="title">
+                  <span dir="auto">{entry.description || entry.memo || "—"}</span>
+                </TableCell>
+                <TableCell data-numeric="">
+                  {entry.debit > 0 ? (
+                    <Money amount={entry.debit} showCurrency={false} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell data-numeric="">
+                  {entry.credit > 0 ? (
+                    <Money amount={entry.credit} showCurrency={false} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <MoneyCell
+                  amount={Math.abs(entry.runningBalance)}
+                  showCurrency={false}
+                  className={cn("font-medium", entry.runningBalance < 0 && "text-negative")}
+                  data-cell="amount"
+                />
+                <TableCell data-cell="actions" className="w-px">
+                  <RowActions collapseOnMobile>
+                    <RowActionButton
+                      label={locale === "ar" ? "عكس القيد" : "Reverse entry"}
+                      icon={RotateCcw}
+                      className="md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                      onClick={() => handleReverseEntry(entry)}
+                      data-testid={`button-reverse-${entry.id}`}
+                    />
+                  </RowActions>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </DataTableCard>
 
       <Dialog open={reversalDialogOpen} onOpenChange={setReversalDialogOpen}>
         <DialogContent>
@@ -668,21 +639,19 @@ export default function AccountLedger() {
                   <span className="text-sm text-muted-foreground">
                     {locale === "ar" ? "رقم القيد" : "Entry Number"}
                   </span>
-                  <span className="font-mono">{selectedEntry.entryNumber}</span>
+                  <span>{selectedEntry.entryNumber}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">
                     {locale === "ar" ? "التاريخ" : "Date"}
                   </span>
-                  <span>{format(new Date(selectedEntry.date), "MMM dd, yyyy")}</span>
+                  <span>{formatDate(selectedEntry.date, locale)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">
                     {locale === "ar" ? "المبلغ" : "Amount"}
                   </span>
-                  <span className="font-mono">
-                    {formatCurrency(selectedEntry.debit || selectedEntry.credit)}
-                  </span>
+                  <span>{formatCurrency(selectedEntry.debit || selectedEntry.credit)}</span>
                 </div>
               </div>
 
@@ -720,12 +689,12 @@ export default function AccountLedger() {
             >
               {reversalMutation.isPending ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  <RefreshCw className="h-4 w-4 animate-spin" />
                   {locale === "ar" ? "جاري العكس..." : "Reversing..."}
                 </>
               ) : (
                 <>
-                  <RotateCcw className="h-4 w-4 mr-2" />
+                  <RotateCcw className="h-4 w-4" />
                   {locale === "ar" ? "تأكيد العكس" : "Confirm Reversal"}
                 </>
               )}

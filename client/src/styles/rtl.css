@@ -54,7 +54,10 @@
 [dir="rtl"] input[type="tel"],
 [dir="rtl"] input[inputmode="numeric"],
 [dir="rtl"] input[inputmode="decimal"],
-[dir="rtl"] .tabular-nums {
+/* D3a: <Table> carries tabular-nums for its figures; forcing the whole table LTR
+   reversed the column order and garbled Arabic dates ("13 2026 نوفمبر"). Only
+   leaf elements flip; table structure keeps the document direction. */
+[dir="rtl"] .tabular-nums:not(table):not(thead):not(tbody):not(tfoot):not(tr) {
   direction: ltr;
   unicode-bidi: embed;
   text-align: right;

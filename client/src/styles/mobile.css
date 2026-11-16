@@ -625,3 +625,121 @@
     background: hsl(var(--background));
   }
 }
+
+/* ─── Row-card tables (D3) ───────────────────────────────────────────────── */
+/* Below 768px a <Table className="row-cards"> renders each row as a two-line card
+   (CTO D3 rule): line 1 = [data-cell="title"] + [data-cell="amount"] + [data-cell="actions"],
+   line 2 = [data-cell="meta"] cells joined by "·", then [data-cell="status"] at the end.
+   Cells without data-cell are hidden on phones (the ⋯ menu or detail view carries them);
+   colSpan rows (empty/loading states) span the whole card. */
+@media (max-width: 767px) {
+  table.row-cards {
+    display: block;
+    min-width: 0;
+  }
+  table.row-cards > thead {
+    display: none;
+  }
+  table.row-cards > tbody,
+  table.row-cards > tfoot {
+    display: block;
+  }
+  table.row-cards > tbody > tr,
+  table.row-cards > tfoot > tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.5rem;
+    row-gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid hsl(var(--border) / 0.7);
+  }
+  table.row-cards > tbody > tr:last-child {
+    border-bottom: 0;
+  }
+  table.row-cards > tbody > tr::before,
+  table.row-cards > tfoot > tr::before {
+    content: "";
+    order: 2;
+    flex-basis: 100%;
+    height: 0;
+  }
+  table.row-cards > tbody > tr > td,
+  table.row-cards > tfoot > tr > td {
+    display: none;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  table.row-cards > tbody > tr > td[colspan] {
+    display: block;
+    flex-basis: 100%;
+  }
+  table.row-cards td[data-cell="title"] {
+    display: block;
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    color: hsl(var(--foreground));
+  }
+  /* A dir="auto" name inside the title truncates in its own direction (Latin names in RTL
+     rows lose their tail, not their head). */
+  table.row-cards td[data-cell="title"] > [dir="auto"]:first-child {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.row-cards td[data-cell="amount"] {
+    display: block;
+    order: 1;
+    flex: none;
+    font-weight: 600;
+    text-align: end;
+  }
+  table.row-cards td[data-cell="actions"] {
+    display: block;
+    order: 1;
+    flex: none;
+    margin-inline-end: -0.5rem;
+  }
+  table.row-cards td[data-cell="meta"] {
+    display: block;
+    order: 3;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    color: hsl(var(--muted-foreground));
+  }
+  /* Wrapping uses flex-basis, so a long document number would push the status onto a third
+     line. Earlier meta cells are capped; the last one has a zero basis and takes what is left
+     (truncated), which keeps the status on line 2. */
+  table.row-cards td[data-cell="meta"] {
+    max-width: 55%;
+  }
+  table.row-cards td[data-cell="meta"]:not(:has(~ td[data-cell="meta"])) {
+    flex: 1 1 0;
+    max-width: none;
+  }
+  table.row-cards td[data-cell="meta"] ~ td[data-cell="meta"]::before {
+    content: "·";
+    margin-inline-end: 0.5rem;
+  }
+  table.row-cards td[data-cell="status"] {
+    display: block;
+    order: 4;
+    flex: none;
+    margin-inline-start: auto;
+  }
+  table.row-cards td[data-cell="status"] ~ td[data-cell="status"] {
+    margin-inline-start: 0;
+  }
+}

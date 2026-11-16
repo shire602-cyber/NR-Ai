@@ -36,6 +36,16 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Money, MoneyCell } from "@/components/ui/money";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -363,14 +373,14 @@ export default function Journal() {
   const isBalanced = totalDebitFils === totalCreditFils;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow={t["journal.pageEyebrow"]}
         title={t.journal}
         description={t["journal.pageDescription"]}
         actions={
           <Button onClick={() => setDialogOpen(true)} data-testid="button-create-entry">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4" />
             {t.newEntry}
           </Button>
         }
@@ -417,12 +427,12 @@ export default function Journal() {
                             <Button
                               variant="outline"
                               className={cn(
-                                "w-full justify-start text-left font-normal",
+                                "w-full justify-start text-start font-normal",
                                 !field.value && "text-muted-foreground"
                               )}
                               data-testid="button-date-picker"
                             >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              <CalendarIcon className="h-4 w-4" />
                               {field.value ? (
                                 format(field.value, "PPP")
                               ) : (
@@ -477,7 +487,7 @@ export default function Journal() {
                     onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
                     data-testid="button-add-line"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4" />
                     <T k="pages.addLine" />
                   </Button>
                 </div>
@@ -486,8 +496,8 @@ export default function Journal() {
                   <div className="col-span-5">
                     <T k="consolidation.account" />
                   </div>
-                  <div className="col-span-3 text-right">{t.debit}</div>
-                  <div className="col-span-3 text-right">{t.credit}</div>
+                  <div className="col-span-3 text-end">{t.debit}</div>
+                  <div className="col-span-3 text-end">{t.credit}</div>
                   <div className="col-span-1"></div>
                 </div>
 
@@ -511,7 +521,7 @@ export default function Journal() {
                               <SelectContent>
                                 {accounts?.map((acc: any) => (
                                   <SelectItem key={acc.id} value={acc.id}>
-                                    <span className="font-mono text-xs mr-2">{acc.code}</span>
+                                    <span className="text-xs me-2">{acc.code}</span>
                                     {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
                                   </SelectItem>
                                 ))}
@@ -532,7 +542,7 @@ export default function Journal() {
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                className="font-mono text-right"
+                                className="text-end"
                                 value={field.value ?? ""}
                                 onChange={(e) =>
                                   field.onChange(e.target.value ? parseFloat(e.target.value) : "")
@@ -555,7 +565,7 @@ export default function Journal() {
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                className="font-mono text-right"
+                                className="text-end"
                                 value={field.value ?? ""}
                                 onChange={(e) =>
                                   field.onChange(e.target.value ? parseFloat(e.target.value) : "")
@@ -587,18 +597,18 @@ export default function Journal() {
               <div className="border-t pt-4 space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total {t.debit}</span>
-                  <span className="font-mono font-medium">{formatNumber(totalDebit, locale)}</span>
+                  <span className="font-medium">{formatNumber(totalDebit, locale)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total {t.credit}</span>
-                  <span className="font-mono font-medium">{formatNumber(totalCredit, locale)}</span>
+                  <span className="font-medium">{formatNumber(totalCredit, locale)}</span>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t">
                   <span className="font-semibold">{t.balance}</span>
                   <div className="flex items-center gap-2">
                     {isBalanced ? (
                       <>
-                        <CheckCircle2 className="w-4 h-4 text-[hsl(var(--chart-5))]" />
+                        <CheckCircle2 className="w-4 h-4 text-success" />
                         <StatusBadge tone="success">{t.balanced}</StatusBadge>
                       </>
                     ) : (
@@ -660,7 +670,7 @@ export default function Journal() {
               if (lifecycle === "reversed" || lifecycle === "voided") {
                 return (
                   <StatusBadge tone="danger">
-                    <RotateCcw className="w-3 h-3 mr-1" />
+                    <RotateCcw className="w-3 h-3 me-1" />
                     {lifecycle === "voided"
                       ? t["journal.statusVoided"]
                       : t["journal.statusReversed"]}
@@ -670,7 +680,7 @@ export default function Journal() {
               if (isDraft && entry.approvalStatus === "pending") {
                 return (
                   <StatusBadge tone="warning">
-                    <FileText className="w-3 h-3 mr-1" />
+                    <FileText className="w-3 h-3 me-1" />
                     {t["journal.statusPendingApproval"]}
                   </StatusBadge>
                 );
@@ -678,21 +688,21 @@ export default function Journal() {
               if (isPosted) {
                 return (
                   <StatusBadge tone="success">
-                    <Lock className="w-3 h-3 mr-1" />
+                    <Lock className="w-3 h-3 me-1" />
                     <T k="hr.status.posted" />
                   </StatusBadge>
                 );
               } else if (isVoid) {
                 return (
                   <StatusBadge tone="danger">
-                    <XCircle className="w-3 h-3 mr-1" />
-                    Void
+                    <XCircle className="w-3 h-3 me-1" />
+                    {t["components.statusVoid"]}
                   </StatusBadge>
                 );
               } else {
                 return (
                   <StatusBadge tone="warning">
-                    <FileText className="w-3 h-3 mr-1" />
+                    <FileText className="w-3 h-3 me-1" />
                     <T k="banking.statement.draft" />
                   </StatusBadge>
                 );
@@ -702,11 +712,11 @@ export default function Journal() {
             const getSourceBadge = () => {
               if (!entry.source || entry.source === "manual") return null;
               const sources: Record<string, { label: string; tone: StatusTone }> = {
-                invoice: { label: "Invoice", tone: "info" },
-                receipt: { label: "Receipt", tone: "accent" },
-                payment: { label: "Payment", tone: "success" },
-                reversal: { label: t["journal.sourceReversal"], tone: "warning" },
-                journal_template: { label: t["journal.sourceTemplate"], tone: "info" },
+                invoice: { label: t["screens.sourceInvoice"], tone: "neutral" },
+                receipt: { label: t["screens.sourceReceipt"], tone: "neutral" },
+                payment: { label: t["screens.sourcePayment"], tone: "neutral" },
+                reversal: { label: t["journal.sourceReversal"], tone: "neutral" },
+                journal_template: { label: t["journal.sourceTemplate"], tone: "neutral" },
               };
               const source = sources[entry.source];
               if (!source) return null;
@@ -718,17 +728,28 @@ export default function Journal() {
                 : evidenceSourceHref("journal_entry", entry.id, "evidence-audit-trail");
 
             return (
-              <Card key={entry.id} className={cn(isVoid && "opacity-60")}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+              <Card key={entry.id} className={cn("mb-3", isVoid && "opacity-60")}>
+                <CardContent className="p-4 sm:p-5">
+                  <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 flex items-center gap-2 text-caption text-muted-foreground">
                         {entry.entryNumber && (
-                          <span className="font-mono font-medium">{entry.entryNumber}</span>
+                          <Link
+                            href={`/journal/${entry.id}`}
+                            dir="ltr"
+                            className="font-medium tabular-nums text-foreground [unicode-bidi:isolate] hover:underline"
+                          >
+                            {entry.entryNumber}
+                          </Link>
                         )}
+                        <span aria-hidden>·</span>
                         <span>{formatDate(entry.date, locale)}</span>
                       </div>
-                      {entry.memo && <div className="font-medium">{entry.memo}</div>}
+                      {entry.memo && (
+                        <div dir="auto" className="truncate text-sm font-medium text-foreground">
+                          {entry.memo}
+                        </div>
+                      )}
                       {entry.reversedByEntry && (
                         <div
                           className="text-xs text-muted-foreground"
@@ -757,18 +778,20 @@ export default function Journal() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {getStatusBadge()}
                       {getSourceBadge()}
                       <Button
                         asChild
                         variant="ghost"
-                        size="sm"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={t["reportCenter.proof"]}
+                        title={t["reportCenter.proof"]}
                         data-testid={`button-proof-journal-${entry.id}`}
                       >
                         <Link href={sourceProofHref}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          <T k="reportCenter.proof" />
+                          <FileText aria-hidden />
                         </Link>
                       </Button>
 
@@ -781,26 +804,31 @@ export default function Journal() {
                             disabled={postMutation.isPending}
                             data-testid={`button-post-journal-${entry.id}`}
                           >
-                            <Send className="w-4 h-4 mr-2" />
-                            Post
+                            <Send aria-hidden />
+                            {t["screens.post"]}
                           </Button>
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label={t.edit}
+                            title={t.edit}
                             onClick={() => handleEditEntry(entry)}
                             data-testid={`button-edit-journal-${entry.id}`}
                           >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
+                            <Edit aria-hidden />
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon-sm"
+                                className="text-muted-foreground hover:text-destructive"
+                                aria-label={t.delete}
+                                title={t.delete}
                                 data-testid={`button-delete-journal-${entry.id}`}
                               >
-                                <Trash2 className="w-4 h-4 text-destructive" />
+                                <Trash2 aria-hidden />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
@@ -809,8 +837,7 @@ export default function Journal() {
                                   <T k="pageLabels.deleteDraftEntry" />
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete this draft entry. This action cannot
-                                  be undone.
+                                  {t["screens.deleteDraftEntryBody"]}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -837,7 +864,7 @@ export default function Journal() {
                               size="sm"
                               data-testid={`button-reverse-journal-${entry.id}`}
                             >
-                              <RotateCcw className="w-4 h-4 mr-2" />
+                              <RotateCcw className="w-4 h-4" />
                               {t["journal.reverse"]}
                             </Button>
                           </AlertDialogTrigger>
@@ -896,11 +923,13 @@ export default function Journal() {
                           <AlertDialogTrigger asChild>
                             <Button
                               variant="ghost"
-                              size="sm"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-foreground"
+                              aria-label={t["journal.void"]}
+                              title={t["journal.void"]}
                               data-testid={`button-void-journal-${entry.id}`}
                             >
-                              <Ban className="w-4 h-4 mr-2" />
-                              {t["journal.void"]}
+                              <Ban aria-hidden />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -928,27 +957,7 @@ export default function Journal() {
                       )}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    {entry.lines?.map((line: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-12 gap-4 text-sm py-2 border-b last:border-0"
-                      >
-                        <div className="col-span-6 flex items-center gap-2">
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {line.account?.code}
-                          </span>
-                          <span>{line.account?.nameEn}</span>
-                        </div>
-                        <div className="col-span-3 text-right font-mono">
-                          {line.debit > 0 ? formatNumber(line.debit, locale) : "-"}
-                        </div>
-                        <div className="col-span-3 text-right font-mono">
-                          {line.credit > 0 ? formatNumber(line.credit, locale) : "-"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <JournalLinesTable lines={entry.lines ?? []} />
                 </CardContent>
               </Card>
             );
@@ -972,6 +981,89 @@ export default function Journal() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+/**
+ * Journal voucher lines (D3a): a compact table with account code + name, debit and credit
+ * columns, and a totals row that states whether the entry balances (trust cue).
+ */
+function JournalLinesTable({
+  lines,
+}: {
+  lines: Array<{
+    debit: number | string;
+    credit: number | string;
+    account?: { code?: string; nameEn?: string; nameAr?: string | null } | null;
+  }>;
+}) {
+  const { t, locale } = useTranslation();
+  const debit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
+  const credit = lines.reduce((sum, l) => sum + Number(l.credit || 0), 0);
+  const balanced = Math.round(debit * 100) === Math.round(credit * 100);
+  return (
+    <div className="-mx-4 -mb-4 mt-3 overflow-hidden rounded-b-xl border-t border-border sm:-mx-5 sm:-mb-5">
+      <Table density="compact" className="mobile-fit">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-full">{t["screens.account"]}</TableHead>
+            <TableHead data-numeric="">{t["screens.debit"]}</TableHead>
+            <TableHead data-numeric="">{t["screens.credit"]}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lines.map((line, idx) => (
+            <TableRow key={idx}>
+              <TableCell data-truncate="">
+                <span className="me-2 tabular-nums text-muted-foreground">
+                  {line.account?.code}
+                </span>
+                <span dir="auto">
+                  {locale === "ar" && line.account?.nameAr
+                    ? line.account.nameAr
+                    : line.account?.nameEn}
+                </span>
+              </TableCell>
+              <TableCell data-numeric="">
+                {Number(line.debit) > 0 ? (
+                  <Money amount={Number(line.debit)} showCurrency={false} />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
+              <TableCell data-numeric="">
+                {Number(line.credit) > 0 ? (
+                  <Money amount={Number(line.credit)} showCurrency={false} />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 text-caption font-medium",
+                  balanced ? "text-success" : "text-danger"
+                )}
+              >
+                {balanced ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                ) : (
+                  <XCircle className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {balanced ? t.balanced : t["screens.notBalanced"]}
+              </span>
+            </TableCell>
+            <MoneyCell amount={debit} showCurrency={false} />
+            <MoneyCell amount={credit} showCurrency={false} />
+          </TableRow>
+        </TableFooter>
+      </Table>
     </div>
   );
 }

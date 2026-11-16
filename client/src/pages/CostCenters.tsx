@@ -18,12 +18,10 @@ import {
 } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -55,12 +53,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
-import { formatCurrency } from "@/lib/format";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -129,7 +133,7 @@ type CostCenterFormData = z.infer<typeof costCenterFormSchema>;
 // ─── Component ───────────────────────────────────────────
 
 export default function CostCenters() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const cc = CC_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -353,11 +357,11 @@ export default function CostCenters() {
   // ─── Render ───────────────────────────────────────────
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Accounting"
-        title="Cost Centers"
-        description="Manage cost centers for departmental accounting and P&L tracking"
+        title={t["screens.costCenters"]}
+        description={t["screens.costCentersDescription"]}
         backHref="/reports"
         backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
@@ -367,224 +371,204 @@ export default function CostCenters() {
               onClick={handleExportCostCenterProfitability}
               disabled={isLoadingProfitability || !profitabilityReport}
             >
-              <Download className="mr-2 h-4 w-4" />
+              <Download aria-hidden />
               <T k="pages.export" />
             </Button>
             <Button onClick={handleOpenCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus aria-hidden />
               <T k="pageLabels.addCostCenter" />
             </Button>
           </>
         }
       />
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>
+      {/* P&L by cost center */}
+      <section className="space-y-4" aria-labelledby="cc-pl-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="cc-pl-title" className="text-h2 text-foreground">
               <T k="pageLabels.costCenterPAndL" />
-            </CardTitle>
-            <CardDescription>
-              Period: {profitabilityPeriodLabel}. Source basis: posted journal lines allocated to
-              cost centers, grouped by income and expense accounts.
-            </CardDescription>
+            </h2>
+            <p className="mt-1 text-small text-muted-foreground">
+              {formatMessage(t["screens.costCenterPlBasis"], { period: profitabilityPeriodLabel })}
+            </p>
           </div>
-          <Badge variant="secondary" className="w-fit">
+          <Badge variant="neutral">
             <T k="pageLabels.accrualBasis" />
           </Badge>
-        </CardHeader>
-        <CardContent>
-          {isLoadingProfitability ? (
-            <div className="space-y-3">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <T k="pageLabels.activeCenters" />
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">
-                    {profitabilityTotals.activeCostCenterCount}/
-                    {profitabilityTotals.costCenterCount}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <T k="pages.income" />
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-success">
-                    {formatCurrency(profitabilityTotals.totalIncome, "AED", locale)}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <T k="pages.expenses" />
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-destructive">
-                    {formatCurrency(profitabilityTotals.totalExpenses, "AED", locale)}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <T k="pageLabels.netIncome" />
-                  </p>
-                  <p
-                    className={`mt-1 text-2xl font-semibold ${
-                      profitabilityTotals.netIncome >= 0 ? "text-success" : "text-destructive"
-                    }`}
-                  >
-                    {formatCurrency(profitabilityTotals.netIncome, "AED", locale)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>
-                        <T k="pageLabels.costCenter" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pages.status" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pages.income" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pages.expenses" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pages.netIncome" />
-                      </TableHead>
-                      <TableHead className="text-right">{cc.rollup}</TableHead>
-                      <TableHead className="text-right">{cc.lines}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {profitabilityRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                          <T k="pageLabels.noCostCenterAllocationsHaveBeenPostedYet" />
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      profitabilityRows.map((row) => (
-                        <TableRow
-                          key={row.costCenterId}
-                          className={row.isUnallocated ? "bg-muted/40 italic" : undefined}
-                        >
-                          <TableCell className="font-mono text-sm">{row.code}</TableCell>
-                          <TableCell
-                            className="font-medium"
-                            style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
-                          >
-                            {row.isUnallocated
-                              ? cc.unallocated
-                              : locale === "ar" && row.nameAr
-                                ? row.nameAr
-                                : row.name}
-                            {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
-                              <Badge variant="outline" className="ms-2">
-                                {row.type === "project" ? cc.typeProject : cc.typeJob}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {!row.isUnallocated && (
-                              <Badge variant={row.isActive ? "default" : "secondary"}>
-                                {row.isActive ? cc.active : cc.inactive}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.totalIncome, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.totalExpenses, "AED", locale)}
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-mono ${
-                              row.netIncome >= 0 ? "text-success" : "text-destructive"
-                            }`}
-                          >
-                            {formatCurrency(row.netIncome, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.rollup ? formatCurrency(row.rollup.netIncome, "AED", locale) : ""}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pageLabels.totalCostCenters" />
-            </CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{costCenters.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.active" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{activeCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.inactive" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">{inactiveCount}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search cost centers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+        </div>
+        <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard
+            label={t["pageLabels.activeCenters"]}
+            loading={isLoadingProfitability}
+            value={
+              <span className="tabular-nums">
+                {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
+              </span>
+            }
+          />
+          <StatCard
+            label={t["pages.income"]}
+            loading={isLoadingProfitability}
+            value={<Money amount={profitabilityTotals.totalIncome} />}
+          />
+          <StatCard
+            label={t["pages.expenses"]}
+            loading={isLoadingProfitability}
+            value={<Money amount={profitabilityTotals.totalExpenses} />}
+          />
+          <StatCard
+            label={t["pageLabels.netIncome"]}
+            loading={isLoadingProfitability}
+            value={<Money amount={profitabilityTotals.netIncome} tone="auto" />}
           />
         </div>
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
+        <DataTableCard
+          status={
+            isLoadingProfitability ? "loading" : profitabilityRows.length === 0 ? "empty" : "ready"
+          }
+          empty={{
+            icon: Building2,
+            title: t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"],
+          }}
+        >
+          <Table className="row-cards">
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
+                <TableHead>{t["screens.code"]}</TableHead>
+                <TableHead className="w-full">
+                  <T k="pageLabels.costCenter" />
+                </TableHead>
+                <TableHead>
+                  <T k="pages.status" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pages.income" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pages.expenses" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pages.netIncome" />
+                </TableHead>
+                <TableHead data-numeric="">{cc.rollup}</TableHead>
+                <TableHead data-numeric="">{cc.lines}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {profitabilityRows.map((row) => (
+                <TableRow
+                  key={row.costCenterId}
+                  className={row.isUnallocated ? "bg-surface-sunken/60" : undefined}
+                >
+                  <TableCell
+                    data-nowrap=""
+                    data-cell="meta"
+                    className="tabular-nums text-muted-foreground"
+                  >
+                    {row.code}
+                  </TableCell>
+                  <TableCell
+                    data-truncate=""
+                    data-cell="title"
+                    className={cn("font-medium", row.isUnallocated && "text-muted-foreground")}
+                    style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
+                  >
+                    <span dir="auto">
+                      {row.isUnallocated
+                        ? cc.unallocated
+                        : locale === "ar" && row.nameAr
+                          ? row.nameAr
+                          : row.name}
+                    </span>
+                    {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
+                      <Badge variant="outline" className="ms-2">
+                        {row.type === "project" ? cc.typeProject : cc.typeJob}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="status">
+                    {!row.isUnallocated && (
+                      <StatusBadge status={row.isActive ? "active" : "inactive"} />
+                    )}
+                  </TableCell>
+                  <MoneyCell
+                    amount={row.totalIncome}
+                    showCurrency={false}
+                    className="text-muted-foreground"
+                  />
+                  <MoneyCell
+                    amount={row.totalExpenses}
+                    showCurrency={false}
+                    className="text-muted-foreground"
+                  />
+                  <MoneyCell
+                    amount={row.netIncome}
+                    tone="auto"
+                    className="font-medium"
+                    data-cell="amount"
+                  />
+                  <TableCell data-numeric="" className="text-muted-foreground">
+                    {row.rollup ? (
+                      <Money amount={row.rollup.netIncome} showCurrency={false} />
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell data-numeric="" className="text-muted-foreground">
+                    {row.lineCount}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DataTableCard>
+      </section>
+
+      {/* Register */}
+      <section className="space-y-4" aria-labelledby="cc-register-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="cc-register-title" className="text-h2 text-foreground">
+              {t["screens.costCenterRegister"]}
+            </h2>
+            <p className="mt-1 text-small text-muted-foreground">
+              {formatMessage(t["screens.costCenterCounts"], {
+                total: costCenters.length,
+                active: activeCount,
+                inactive: inactiveCount,
+              })}
+            </p>
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder={t["screens.searchCostCenters"]}
+              aria-label={t["screens.searchCostCenters"]}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 ps-9"
+            />
+          </div>
+        </div>
+        <DataTableCard
+          status={filteredCostCenters.length === 0 ? "empty" : "ready"}
+          empty={{
+            icon: Building2,
+            title: searchQuery ? t["screens.noCostCenterMatch"] : t["screens.noCostCenters"],
+            action: searchQuery
+              ? undefined
+              : { label: t["pageLabels.addCostCenter"], onClick: handleOpenCreateDialog },
+          }}
+        >
+          <Table className="row-cards">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t["screens.code"]}</TableHead>
+                <TableHead className="w-full">{t["pages.contactsColName"]}</TableHead>
                 <TableHead>
                   <T k="pages.description" />
                 </TableHead>
@@ -594,167 +578,134 @@ export default function CostCenters() {
                 <TableHead>
                   <T k="pages.status" />
                 </TableHead>
-                <TableHead className="text-right">
-                  <T k="pages.actions" />
+                <TableHead>
+                  <span className="sr-only">
+                    <T k="pages.actions" />
+                  </span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredCostCenters.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                    {searchQuery
-                      ? "No cost centers match your search"
-                      : "No cost centers yet. Add your first cost center to get started."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredCostCenters.map((cc) => (
-                  <TableRow
-                    key={cc.id}
-                    className={
-                      selectedCostCenterId === cc.id
-                        ? "bg-muted/50"
-                        : "cursor-pointer hover:bg-muted/30"
-                    }
-                    onClick={() =>
-                      setSelectedCostCenterId(cc.id === selectedCostCenterId ? null : cc.id)
-                    }
+              {filteredCostCenters.map((center) => (
+                <TableRow
+                  key={center.id}
+                  data-state={selectedCostCenterId === center.id ? "selected" : undefined}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    setSelectedCostCenterId(center.id === selectedCostCenterId ? null : center.id)
+                  }
+                >
+                  <TableCell
+                    data-nowrap=""
+                    data-cell="meta"
+                    className="tabular-nums text-muted-foreground"
                   >
-                    <TableCell className="font-mono text-sm">{cc.code}</TableCell>
-                    <TableCell className="font-medium">{cc.name}</TableCell>
-                    <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                      {cc.description || "-"}
-                    </TableCell>
-                    <TableCell>{getParentName(cc.parentId)}</TableCell>
-                    <TableCell>
-                      {cc.isActive ? (
-                        <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
-                          <T k="pages.active" />
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-muted text-foreground hover:bg-muted">
-                          <T k="pages.inactive" />
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEditDialog(cc);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (
-                              window.confirm("Are you sure you want to delete this cost center?")
-                            ) {
-                              deleteMutation.mutate(cc.id);
+                    {center.code}
+                  </TableCell>
+                  <TableCell data-truncate="" data-cell="title" dir="auto" className="font-medium">
+                    {center.name}
+                  </TableCell>
+                  <TableCell data-truncate="" className="text-muted-foreground">
+                    {center.description || "—"}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                    {getParentName(center.parentId)}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="status">
+                    <StatusBadge status={center.isActive ? "active" : "inactive"} />
+                  </TableCell>
+                  <TableCell data-cell="actions" onClick={(e) => e.stopPropagation()}>
+                    <RowActions
+                      collapseOnMobile
+                      menu={
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() => {
+                            if (window.confirm(t["screens.confirmDeleteCostCenter"])) {
+                              deleteMutation.mutate(center.id);
                             }
                           }}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
+                          <Trash2 aria-hidden />
+                          {t.delete}
+                        </DropdownMenuItem>
+                      }
+                    >
+                      <RowActionButton
+                        label={t.edit}
+                        icon={Edit}
+                        onClick={() => handleOpenEditDialog(center)}
+                      />
+                    </RowActions>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        </DataTableCard>
+      </section>
 
-      {/* Cost Center P&L Report */}
+      {/* Selected cost center P&L */}
       {selectedCostCenter && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              P&L Summary — {selectedCostCenter.name} ({selectedCostCenter.code})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {report ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-success-subtle border-success/30">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-success">
-                      <T k="pages.income" />
-                    </CardTitle>
-                    <TrendingUp className="h-4 w-4 text-success" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-success font-mono">
-                      {formatCurrency(report.totalIncome ?? 0, "AED", locale)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="bg-danger-subtle border-destructive/30">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-destructive">
-                      <T k="pages.expenses" />
-                    </CardTitle>
-                    <TrendingDown className="h-4 w-4 text-destructive" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-destructive font-mono">
-                      {formatCurrency(report.totalExpenses ?? 0, "AED", locale)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card
-                  className={
-                    (report.netIncome ?? 0) >= 0
-                      ? "bg-info-subtle border-info/30"
-                      : "bg-warning-subtle border-warning/30"
-                  }
-                >
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle
-                      className={`text-sm font-medium ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
-                    >
-                      Net
-                    </CardTitle>
-                    <DollarSign
-                      className={`h-4 w-4 ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
-                    />
-                  </CardHeader>
-                  <CardContent>
-                    <div
-                      className={`text-2xl font-bold font-mono ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
-                    >
-                      {formatCurrency(report.netIncome ?? 0, "AED", locale)}
-                    </div>
-                  </CardContent>
-                </Card>
+        <SectionCard
+          title={
+            <>
+              {t["screens.plSummary"]} · <span dir="auto">{selectedCostCenter.name}</span>{" "}
+              <span className="tabular-nums text-muted-foreground">
+                ({selectedCostCenter.code})
+              </span>
+            </>
+          }
+        >
+          {report ? (
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
+                  <TrendingUp className="h-4 w-4" aria-hidden />
+                  <T k="pages.income" />
+                </dt>
+                <dd className="mt-1 text-h3 font-semibold">
+                  <Money amount={report.totalIncome ?? 0} />
+                </dd>
               </div>
-            ) : (
-              <p className="text-muted-foreground text-sm">
-                <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
-              </p>
-            )}
-          </CardContent>
-        </Card>
+              <div>
+                <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
+                  <TrendingDown className="h-4 w-4" aria-hidden />
+                  <T k="pages.expenses" />
+                </dt>
+                <dd className="mt-1 text-h3 font-semibold">
+                  <Money amount={report.totalExpenses ?? 0} />
+                </dd>
+              </div>
+              <div>
+                <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
+                  <DollarSign className="h-4 w-4" aria-hidden />
+                  {t["screens.net"]}
+                </dt>
+                <dd className="mt-1 text-h3 font-semibold">
+                  <Money amount={report.netIncome ?? 0} tone="auto" />
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
+            </p>
+          )}
+        </SectionCard>
       )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingCostCenter ? "Edit Cost Center" : "Add Cost Center"}</DialogTitle>
+            <DialogTitle>
+              {editingCostCenter ? t["screens.editCostCenter"] : t["pageLabels.addCostCenter"]}
+            </DialogTitle>
             <DialogDescription>
               {editingCostCenter
-                ? "Update cost center details below."
-                : "Fill in the details to create a new cost center."}
+                ? t["screens.costCenterDialogEditDesc"]
+                : t["screens.costCenterDialogNewDesc"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -766,7 +717,9 @@ export default function CostCenters() {
                   name="code"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Code *</FormLabel>
+                      <FormLabel>
+                        {t["screens.ccCode"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="CC-001" {...field} />
                       </FormControl>
@@ -779,9 +732,11 @@ export default function CostCenters() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Name *</FormLabel>
+                      <FormLabel>
+                        {t["screens.ccName"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <Input placeholder="Marketing" {...field} />
+                        <Input placeholder={t["screens.cc2Marketing"]} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -836,7 +791,7 @@ export default function CostCenters() {
                     </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Optional description for this cost center"
+                        placeholder={t["screens.cc2OptionalDescriptionForThisCostCenter"]}
                         rows={3}
                         {...field}
                         value={field.value || ""}
@@ -861,7 +816,7 @@ export default function CostCenters() {
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="None (top-level)" />
+                          <SelectValue placeholder={t["screens.cc2NoneTopLevel"]} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -907,7 +862,7 @@ export default function CostCenters() {
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   {(createMutation.isPending || updateMutation.isPending) && (
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                   )}
                   {editingCostCenter ? "Update Cost Center" : "Add Cost Center"}
                 </Button>

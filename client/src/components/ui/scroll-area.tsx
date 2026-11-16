@@ -6,9 +6,14 @@ import { cn } from "@/lib/utils";
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, dir, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     ref={ref}
+    // D3a: without a DirectionProvider Radix stamps dir="ltr"; follow the document instead.
+    dir={
+      dir ??
+      (typeof document !== "undefined" && document.documentElement.dir === "rtl" ? "rtl" : "ltr")
+    }
     className={cn("relative overflow-hidden", className)}
     {...props}
   >

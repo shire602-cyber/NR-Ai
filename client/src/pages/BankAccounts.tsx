@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { DataTableCard } from "@/components/ui/data-table";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
@@ -34,7 +37,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Building2, FileDown, Plus, RotateCcw, Scale } from "lucide-react";
+import { Building2, FileDown, FileSpreadsheet, Link2, Plus, RotateCcw, Scale } from "lucide-react";
 
 interface BankAccount {
   id: string;
@@ -108,7 +111,7 @@ const EMPTY_FORM = {
 };
 
 export default function BankAccounts() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const tr = (k: string) => t[k] ?? k;
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -204,150 +207,168 @@ export default function BankAccounts() {
         title={tr("banking.accounts.title")}
         description={tr("banking.accounts.description")}
         actions={
-          <Button
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            data-testid="button-add-bank-account"
-          >
-            <Plus className="w-4 h-4 me-2" />
+          <Button onClick={() => setCreateOpen(true)} data-testid="button-add-bank-account">
+            <Plus className="w-4 h-4" />
             {tr("banking.accounts.add")}
           </Button>
         }
       />
 
-      <Card>
-        <CardContent className="pt-6">
-          {isLoading ? (
-            <Skeleton className="h-32" />
-          ) : !accounts || accounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">
-              {tr("banking.accounts.none")}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tr("banking.accounts.name")}</TableHead>
-                    <TableHead>{tr("banking.accounts.bankName")}</TableHead>
-                    <TableHead>{tr("banking.accounts.iban")}</TableHead>
-                    <TableHead>{tr("banking.accounts.currency")}</TableHead>
-                    <TableHead>{tr("banking.accounts.glAccount")}</TableHead>
-                    <TableHead className="text-end">{tr("banking.common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {accounts.map((a) => {
-                    const gl = a.glAccountId ? glById.get(a.glAccountId) : undefined;
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell className="font-medium">
-                          <span className="inline-flex items-center gap-2">
-                            <Building2 className="w-4 h-4 text-muted-foreground" />
-                            {a.nameEn}
-                          </span>
-                          {!a.isActive && (
-                            <Badge variant="outline" className="ms-2">
-                              {tr("banking.accounts.inactive")}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{a.bankName}</TableCell>
-                        <TableCell className="font-mono text-xs">{a.iban ?? "—"}</TableCell>
-                        <TableCell>{a.currency}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {gl ? `${gl.code} ${gl.nameEn}` : "—"}
-                        </TableCell>
-                        <TableCell className="text-end space-x-2 rtl:space-x-reverse">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setRelinkFor(a);
-                              setRelinkGl(a.glAccountId ?? "");
-                            }}
-                          >
-                            {tr("banking.accounts.relink")}
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => setStatementFor(a)}>
-                            <Scale className="w-4 h-4 me-1" />
-                            {tr("banking.statement.title")}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <DataTableCard
+        status={isLoading ? "loading" : !accounts || accounts.length === 0 ? "empty" : "ready"}
+        empty={{
+          icon: Building2,
+          title: tr("banking.accounts.none"),
+          action: { label: tr("banking.accounts.add"), onClick: () => setCreateOpen(true) },
+        }}
+      >
+        <Table className="row-cards">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-full">{tr("banking.accounts.name")}</TableHead>
+              <TableHead>{tr("banking.accounts.bankName")}</TableHead>
+              <TableHead>{tr("banking.accounts.iban")}</TableHead>
+              <TableHead>{tr("banking.accounts.currency")}</TableHead>
+              <TableHead>{tr("banking.accounts.glAccount")}</TableHead>
+              <TableHead>
+                <span className="sr-only">{tr("banking.common.actions")}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(accounts ?? []).map((a) => {
+              const gl = a.glAccountId ? glById.get(a.glAccountId) : undefined;
+              return (
+                <TableRow key={a.id}>
+                  <TableCell data-truncate="" data-cell="title" className="font-medium">
+                    <span dir="auto">{a.nameEn}</span>
+                    {!a.isActive && (
+                      <Badge variant="neutral" className="ms-2">
+                        {tr("banking.accounts.inactive")}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                    {a.bankName}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                    <span dir="ltr" className="tabular-nums [unicode-bidi:isolate]">
+                      {a.iban ?? "—"}
+                    </span>
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="status" className="text-muted-foreground">
+                    {a.currency}
+                  </TableCell>
+                  <TableCell data-nowrap="" className="text-muted-foreground">
+                    {gl ? (
+                      <>
+                        <span className="tabular-nums">{gl.code}</span> {gl.nameEn}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell data-cell="actions">
+                    <RowActions
+                      collapseOnMobile
+                      menu={
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setRelinkFor(a);
+                            setRelinkGl(a.glAccountId ?? "");
+                          }}
+                        >
+                          <Link2 aria-hidden />
+                          {tr("banking.accounts.relink")}
+                        </DropdownMenuItem>
+                      }
+                    >
+                      <RowActionButton
+                        label={tr("banking.statement.title")}
+                        icon={Scale}
+                        onClick={() => setStatementFor(a)}
+                      />
+                    </RowActions>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </DataTableCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{tr("banking.imports.title")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!imports || imports.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{tr("banking.imports.none")}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tr("banking.common.date")}</TableHead>
-                    <TableHead>{tr("banking.accounts.name")}</TableHead>
-                    <TableHead>{tr("banking.imports.file")}</TableHead>
-                    <TableHead className="text-end">{tr("banking.imports.rows")}</TableHead>
-                    <TableHead className="text-end">{tr("banking.imports.imported")}</TableHead>
-                    <TableHead>{tr("banking.common.status")}</TableHead>
-                    <TableHead className="text-end">{tr("banking.common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {imports.map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell className="text-xs">{b.createdAt.slice(0, 10)}</TableCell>
-                      <TableCell>{accountName(b.bankAccountId)}</TableCell>
-                      <TableCell className="text-xs">
-                        {b.fileName ?? b.source}
-                        {b.continuityWarning && (
-                          <p className="text-amber-600" title={b.continuityWarning}>
-                            {tr("banking.imports.continuity")}: {b.continuityWarning}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-end">{b.rowCount}</TableCell>
-                      <TableCell className="text-end">{b.importedCount}</TableCell>
-                      <TableCell>
-                        {b.status === "undone" ? (
-                          <Badge variant="outline">{tr("banking.imports.undone")}</Badge>
-                        ) : (
-                          <Badge>{b.status}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-end">
-                        {b.status !== "undone" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => undoMutation.mutate(b.id)}
-                            disabled={undoMutation.isPending}
-                          >
-                            <RotateCcw className="w-4 h-4 me-1" />
-                            {tr("banking.imports.undo")}
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <h2 className="text-h2 text-foreground">{tr("banking.imports.title")}</h2>
+        <DataTableCard
+          status={!imports || imports.length === 0 ? "empty" : "ready"}
+          empty={{ icon: FileSpreadsheet, title: tr("banking.imports.none") }}
+        >
+          <Table className="row-cards">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{tr("banking.common.date")}</TableHead>
+                <TableHead>{tr("banking.accounts.name")}</TableHead>
+                <TableHead className="w-full">{tr("banking.imports.file")}</TableHead>
+                <TableHead data-numeric="">{tr("banking.imports.rows")}</TableHead>
+                <TableHead data-numeric="">{tr("banking.imports.imported")}</TableHead>
+                <TableHead>{tr("banking.common.status")}</TableHead>
+                <TableHead>
+                  <span className="sr-only">{tr("banking.common.actions")}</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(imports ?? []).map((b) => (
+                <TableRow key={b.id}>
+                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                    {formatDate(b.createdAt, locale)}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                    {accountName(b.bankAccountId)}
+                  </TableCell>
+                  <TableCell data-truncate="" data-cell="title">
+                    <span dir="ltr" className="[unicode-bidi:isolate]">
+                      {b.fileName ?? b.source}
+                    </span>
+                    {b.continuityWarning && (
+                      <p className="truncate text-caption text-warning" title={b.continuityWarning}>
+                        {tr("banking.imports.continuity")}: {b.continuityWarning}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell data-numeric="" className="text-muted-foreground">
+                    {b.rowCount}
+                  </TableCell>
+                  <TableCell data-numeric="" data-cell="amount">
+                    {b.importedCount}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="status">
+                    {b.status === "undone" ? (
+                      <Badge variant="neutral" dot>
+                        {tr("banking.imports.undone")}
+                      </Badge>
+                    ) : (
+                      <StatusBadge status={b.status} />
+                    )}
+                  </TableCell>
+                  <TableCell data-cell="actions">
+                    {b.status !== "undone" && (
+                      <RowActions collapseOnMobile>
+                        <RowActionButton
+                          label={tr("banking.imports.undo")}
+                          icon={RotateCcw}
+                          onClick={() => undoMutation.mutate(b.id)}
+                          disabled={undoMutation.isPending}
+                        />
+                      </RowActions>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DataTableCard>
+      </section>
 
       {/* Create */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -664,7 +685,7 @@ function StatementDialog({
                 <div key={key}>
                   <div className="flex justify-between font-medium">
                     <span>{tr(key)}</span>
-                    <span className="font-mono">{value}</span>
+                    <span>{value}</span>
                   </div>
                   {items?.map((it) => (
                     <div
@@ -674,7 +695,7 @@ function StatementDialog({
                       <span className="truncate">
                         {it.date} {it.description}
                       </span>
-                      <span className="font-mono">{it.amount}</span>
+                      <span>{it.amount}</span>
                     </div>
                   ))}
                 </div>
@@ -689,8 +710,8 @@ function StatementDialog({
               {(history ?? []).map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{r.periodEnd}</TableCell>
-                  <TableCell className="font-mono">{r.statementClosingBalance}</TableCell>
-                  <TableCell className="font-mono">{r.difference}</TableCell>
+                  <TableCell>{r.statementClosingBalance}</TableCell>
+                  <TableCell>{r.difference}</TableCell>
                   <TableCell>
                     <Badge variant={r.status === "signed_off" ? "default" : "outline"}>
                       {r.status === "signed_off"
@@ -715,7 +736,7 @@ function StatementDialog({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          <FileDown className="w-3 h-3 me-1" />
+                          <FileDown className="w-3 h-3" />
                           {f === "pdf"
                             ? tr("banking.statement.exportPdf")
                             : tr("banking.statement.exportXlsx")}
