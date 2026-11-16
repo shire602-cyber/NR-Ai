@@ -349,7 +349,7 @@ export default function ReconciliationRules() {
         <Card>
           <CardContent className="p-6">
             <p className="text-muted-foreground">
-              Please select a company to manage reconciliation rules.
+              <T k="pageLabels.pleaseSelectACompanyToManage" />
             </p>
           </CardContent>
         </Card>
@@ -379,7 +379,7 @@ export default function ReconciliationRules() {
             </Button>
             <Button onClick={openCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Rule
+              <T k="pageLabels.addRule" />
             </Button>
           </>
         }
@@ -412,7 +412,9 @@ export default function ReconciliationRules() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Rules</CardTitle>
+          <CardTitle>
+            <T k="reportCenter.rules" />
+          </CardTitle>
           <CardDescription>
             Rules are evaluated in priority order (lowest number first). The first matching rule
             wins.
@@ -427,7 +429,7 @@ export default function ReconciliationRules() {
             </div>
           ) : !rules || rules.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No reconciliation rules yet. Create one to get started.
+              <T k="pageLabels.noReconciliationRulesYetCreateOne" />
             </div>
           ) : (
             <Table>
@@ -449,7 +451,9 @@ export default function ReconciliationRules() {
                   <TableHead>
                     <T k="pages.category" />
                   </TableHead>
-                  <TableHead className="text-center">Applied</TableHead>
+                  <TableHead className="text-center">
+                    <T k="pageLabels.applied" />
+                  </TableHead>
                   <TableHead className="text-center">
                     <T k="pages.active" />
                   </TableHead>
@@ -529,7 +533,9 @@ export default function ReconciliationRules() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Rule Name</FormLabel>
+                    <FormLabel>
+                      <T k="pageLabels.ruleName" />
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g. Office Rent Payment" {...field} />
                     </FormControl>
@@ -601,10 +607,18 @@ export default function ReconciliationRules() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="contains">Contains</SelectItem>
-                          <SelectItem value="exact">Exact Match</SelectItem>
-                          <SelectItem value="starts_with">Starts With</SelectItem>
-                          <SelectItem value="regex">Regex</SelectItem>
+                          <SelectItem value="contains">
+                            <T k="pageLabels.contains" />
+                          </SelectItem>
+                          <SelectItem value="exact">
+                            <T k="pageLabels.exactMatch" />
+                          </SelectItem>
+                          <SelectItem value="starts_with">
+                            <T k="pageLabels.startsWith" />
+                          </SelectItem>
+                          <SelectItem value="regex">
+                            <T k="pageLabels.regex" />
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -762,7 +776,7 @@ export default function ReconciliationRules() {
                         <T k="pages.active" />
                       </FormLabel>
                       <p className="text-sm text-muted-foreground">
-                        Enable this rule for auto-matching
+                        <T k="pageLabels.enableThisRuleForAutoMatching" />
                       </p>
                     </div>
                     <FormControl>

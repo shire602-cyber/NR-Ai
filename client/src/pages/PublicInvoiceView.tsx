@@ -141,7 +141,9 @@ export default function PublicInvoiceView() {
       <div className="min-h-screen bg-muted flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin w-10 h-10 border-3 border-info border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading invoice...</p>
+          <p className="text-muted-foreground">
+            <T k="pageLabels.loadingInvoice" />
+          </p>
         </div>
       </div>
     );
@@ -291,7 +293,9 @@ export default function PublicInvoiceView() {
 
             {/* Bill To */}
             <div>
-              <h3 className="text-sm font-semibold text-info uppercase mb-2">Bill To</h3>
+              <h3 className="text-sm font-semibold text-info uppercase mb-2">
+                <T k="pageLabels.billTo" />
+              </h3>
               <p className="font-semibold text-lg">{invoice.customerName}</p>
               {invoice.customerTrn && (
                 <p className="text-sm text-muted-foreground">TRN: {invoice.customerTrn}</p>
@@ -408,9 +412,13 @@ export default function PublicInvoiceView() {
 
         {/* Footer */}
         <div className="text-center text-sm text-muted-foreground/70 pb-4">
-          <p>Thank you for your business</p>
+          <p>
+            <T k="pageLabels.thankYouForYourBusiness" />
+          </p>
           {isVATRegistered && (
-            <p className="mt-1">This is a tax invoice - Please keep for your records</p>
+            <p className="mt-1">
+              <T k="pageLabels.thisIsATaxInvoicePlease" />
+            </p>
           )}
         </div>
       </div>

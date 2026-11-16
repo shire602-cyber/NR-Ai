@@ -462,7 +462,7 @@ export default function MonthEndClose() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-muted-foreground text-center">
-              Please create a company first to use month-end close.
+              <T k="pageLabels.pleaseCreateACompanyFirstTo" />
             </p>
           </CardContent>
         </Card>
@@ -479,9 +479,11 @@ export default function MonthEndClose() {
             <CalendarCheck className="h-6 w-6 text-info" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Month-End Close</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              <T k="pageLabels.monthEndClose" />
+            </h1>
             <p className="text-muted-foreground text-sm">
-              Review, validate, and lock your monthly accounting period
+              <T k="pageLabels.reviewValidateAndLockYourMonthly" />
             </p>
           </div>
         </div>
@@ -543,7 +545,9 @@ export default function MonthEndClose() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-lg">Close Checklist</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pageLabels.closeChecklist" />
+              </CardTitle>
               <CardDescription>
                 {completedCount}/{totalCount} items complete for {formatPeriodLabel(period)}
               </CardDescription>
@@ -630,7 +634,7 @@ export default function MonthEndClose() {
             </div>
           ) : (
             <p className="text-muted-foreground text-sm text-center py-6">
-              Select a period to load the checklist.
+              <T k="pageLabels.selectAPeriodToLoadThe" />
             </p>
           )}
         </CardContent>
@@ -642,7 +646,9 @@ export default function MonthEndClose() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-warning" />
-              <CardTitle className="text-lg">AI Validation</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pageLabels.aiValidation" />
+              </CardTitle>
             </div>
             <Button
               onClick={() => validationMutation.mutate()}
@@ -686,7 +692,9 @@ export default function MonthEndClose() {
           ) : validationMutation.isPending ? (
             <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
               <RefreshCw className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Running AI validation...</span>
+              <span className="text-sm">
+                <T k="pageLabels.runningAiValidation" />
+              </span>
             </div>
           ) : (
             <p className="text-muted-foreground text-sm text-center py-6">
@@ -893,9 +901,13 @@ export default function MonthEndClose() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-muted-foreground" />
-            <CardTitle className="text-lg">Close History</CardTitle>
+            <CardTitle className="text-lg">
+              <T k="pageLabels.closeHistory" />
+            </CardTitle>
           </div>
-          <CardDescription>Past month-end closings for this company</CardDescription>
+          <CardDescription>
+            <T k="pageLabels.pastMonthEndClosingsForThis" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingHistory ? (
@@ -914,8 +926,12 @@ export default function MonthEndClose() {
                   <TableHead>
                     <T k="pages.status" />
                   </TableHead>
-                  <TableHead>Closed By</TableHead>
-                  <TableHead>Closed At</TableHead>
+                  <TableHead>
+                    <T k="pageLabels.closedBy" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pageLabels.closedAt" />
+                  </TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -936,7 +952,7 @@ export default function MonthEndClose() {
                       {record.status === "locked" ? (
                         <Badge variant="destructive" className="flex items-center gap-1 w-fit">
                           <Lock className="h-3 w-3" />
-                          Locked
+                          <T k="pageLabels.locked" />
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="flex items-center gap-1 w-fit">
@@ -981,7 +997,7 @@ export default function MonthEndClose() {
             </Table>
           ) : (
             <p className="text-muted-foreground text-sm text-center py-8">
-              No period closings recorded yet.
+              <T k="pageLabels.noPeriodClosingsRecordedYet" />
             </p>
           )}
         </CardContent>

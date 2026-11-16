@@ -1039,7 +1039,9 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain(
       'reportSectionHref(selectedWorkspace, "automation-operations")'
     );
-    expect(onboardingSource).toContain("Open report operations");
+    expect(onboardingSource + read("client/src/locales/en/pageLabels.json")).toContain(
+      "Open report operations"
+    );
     expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
     expect(onboardingSource).toContain(
       'reportSectionHref(selectedWorkspace, "automation-command-center")'

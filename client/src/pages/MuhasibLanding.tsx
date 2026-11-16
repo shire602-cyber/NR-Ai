@@ -177,7 +177,7 @@ function HeroProductMock() {
                   م
                 </div>
                 <span className="text-[11px] font-semibold tracking-wide" style={{ color: C.ink }}>
-                  Acme Trading LLC
+                  Acme Trading LLC{/* i18n-ignore: brand or sample data */}
                 </span>
               </div>
               <div className="space-y-1">
@@ -323,7 +323,7 @@ function HeroProductMock() {
             >
               <Sparkles className="h-2.5 w-2.5 text-white" />
             </span>
-            Ask Muhasib
+            <T k="pageLabels.askMuhasib" />
           </div>
           <div
             className="mb-2 rounded-lg px-3 py-2 text-[11px]"
@@ -342,13 +342,13 @@ function HeroProductMock() {
                 className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.emerald }}
               >
-                Draft return
+                <T k="pageLabels.draftReturn" />
               </span>
               <span
                 className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.muted }}
               >
-                Show workpaper
+                <T k="pageLabels.showWorkpaper" />
               </span>
             </div>
           </div>
@@ -438,7 +438,7 @@ function FtaTicker() {
             <span className="absolute inset-0 animate-ping rounded-full bg-success/60 opacity-75" />
             <span className="relative h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
           </span>
-          Tax workflow
+          <T k="pageLabels.taxWorkflow" />
         </span>
 
         <div className="relative flex-1 overflow-hidden">
@@ -493,9 +493,9 @@ function CapabilityBento() {
                 style={{ borderColor: C.hairline, background: "#FBF9F2" }}
               >
                 <div className="p-2.5 text-[8px] font-mono leading-tight" style={{ color: C.ink }}>
-                  CARREFOUR
+                  CARREFOUR{/* i18n-ignore: brand or sample data */}
                   <br />
-                  Dubai Mall
+                  Dubai Mall{/* i18n-ignore: brand or sample data */}
                   <br />
                   ───────────────
                   <br />
@@ -587,7 +587,7 @@ function CapabilityBento() {
         >
           <div className="bg-card p-3 leading-tight" style={{ color: C.ink }}>
             <div className="font-semibold" style={{ color: C.emerald }}>
-              Tax Invoice
+              <T k="invoices.publicTaxInvoice" />
             </div>
             <div className="mt-1 font-mono" style={{ color: C.muted }}>
               TRN 100212345600003
@@ -769,7 +769,9 @@ function ComparisonTable() {
           className="grid grid-cols-[1.6fr_repeat(4,1fr)] items-center border-b text-[10px] font-semibold uppercase tracking-[0.2em]"
           style={{ borderColor: C.hairline, color: C.muted }}
         >
-          <div className="px-5 py-4">UAE-built feature</div>
+          <div className="px-5 py-4">
+            <T k="pageLabels.uaeBuiltFeature" />
+          </div>
           {cols.map((c, i) => (
             <div
               key={c}
@@ -930,7 +932,7 @@ function Workflow() {
               review-ready
             </span>
             .<br />
-            With controls.
+            <T k="pageLabels.withControls" />
           </h2>
           <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: C.muted }}>
             Snap a receipt, forward an invoice, or import a bank statement. Muhasib categorises it,
@@ -970,7 +972,7 @@ function Workflow() {
               style={{ color: C.muted }}
             >
               <Cpu className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              Live pipeline
+              <T k="pageLabels.livePipeline" />
             </div>
 
             <div className="space-y-3">
@@ -1041,7 +1043,8 @@ export default function MuhasibLanding() {
                 م
               </div>
               <span className="text-[15px] font-semibold tracking-tight">
-                Muhasib<span style={{ color: C.emerald }}>.ai</span>
+                <T k="shell.brandName" />
+                <span style={{ color: C.emerald }}>.ai</span>
               </span>
             </div>
           </Link>
@@ -1068,7 +1071,7 @@ export default function MuhasibLanding() {
           <div className="hidden items-center gap-3 md:flex">
             <Link href="/login">
               <button className="text-[13px] font-medium" style={{ color: C.muted }}>
-                Sign in
+                <T k="portal.signIn" />
               </button>
             </Link>
             <Link href="/register">
@@ -1076,7 +1079,7 @@ export default function MuhasibLanding() {
                 className="group flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-semibold text-white transition-transform hover:scale-[1.02]"
                 style={{ background: C.emerald }}
               >
-                Start free
+                <T k="pageLabels.startFree2" />
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
             </Link>
@@ -1120,7 +1123,7 @@ export default function MuhasibLanding() {
                   className="w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
                   style={{ background: C.emerald }}
                 >
-                  Start free
+                  <T k="pageLabels.startFree2" />
                 </button>
               </Link>
             </div>
@@ -1155,7 +1158,7 @@ export default function MuhasibLanding() {
                   className="mt-7 font-serif text-[3.2rem] font-medium leading-[0.98] tracking-tight md:text-[4.4rem] lg:text-[5.2rem]"
                   style={{ color: C.ink }}
                 >
-                  The ledger,
+                  <T k="pageLabels.theLedger" />
                   <br />
                   <span className="italic" style={{ color: C.emerald }}>
                     handled.
@@ -1192,7 +1195,7 @@ export default function MuhasibLanding() {
                     className="flex items-center gap-2 rounded-full border px-6 py-3.5 text-sm font-semibold"
                     style={{ borderColor: C.hairlineStrong, color: C.ink }}
                   >
-                    Explore demo data
+                    <T k="pageLabels.exploreDemoData" />
                     <ChevronRight className="h-4 w-4" />
                   </Link>
                 </div>
@@ -1211,7 +1214,7 @@ export default function MuhasibLanding() {
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    Official-channel handoff
+                    <T k="pageLabels.officialChannelHandoff" />
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
@@ -1280,13 +1283,13 @@ export default function MuhasibLanding() {
               style={{ color: C.emerald }}
             >
               <span className="h-px w-8" style={{ background: C.emerald }} />
-              Product
+              <T k="pages.product" />
             </div>
             <h2
               className="font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
               style={{ color: C.ink }}
             >
-              Every UAE accounting workflow,
+              <T k="pageLabels.everyUaeAccountingWorkflow" />
               <br />
               <span className="italic" style={{ color: C.emerald }}>
                 quietly automated.
@@ -1315,13 +1318,13 @@ export default function MuhasibLanding() {
               style={{ color: C.emerald }}
             >
               <span className="h-px w-8" style={{ background: C.emerald }} />
-              Compare
+              <T k="reportCenter.compare" />
             </div>
             <h2
               className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
               style={{ color: C.ink }}
             >
-              Other tools were built
+              <T k="pageLabels.otherToolsWereBuilt" />
               <br />
               <span className="italic" style={{ color: C.emerald }}>
                 somewhere else.
@@ -1350,13 +1353,13 @@ export default function MuhasibLanding() {
                 style={{ color: C.emerald }}
               >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
-                Insights
+                <T k="shell.sidebarInsights" />
               </div>
               <h2
                 className="font-serif text-3xl tracking-tight md:text-5xl"
                 style={{ color: C.ink }}
               >
-                From the desk.
+                <T k="pageLabels.fromTheDesk" />
               </h2>
             </div>
             <a
@@ -1364,7 +1367,7 @@ export default function MuhasibLanding() {
               className="hidden items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] sm:inline-flex"
               style={{ color: C.muted }}
             >
-              All insights <ArrowUpRight className="h-3.5 w-3.5" />
+              <T k="pageLabels.allInsights" /> <ArrowUpRight className="h-3.5 w-3.5" />
             </a>
           </div>
         </Reveal>
@@ -1434,7 +1437,7 @@ export default function MuhasibLanding() {
                 className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
                 style={{ color: C.ink }}
               >
-                Hand the ledger to an
+                <T k="pageLabels.handTheLedgerToAn" />
                 <br />
                 <span className="italic" style={{ color: C.emerald }}>
                   agent that never sleeps.
@@ -1462,7 +1465,7 @@ export default function MuhasibLanding() {
                   className="rounded-full border px-7 py-3.5 text-sm font-semibold"
                   style={{ borderColor: C.hairlineStrong, color: C.ink }}
                 >
-                  Explore demo
+                  <T k="pageLabels.exploreDemo" />
                 </Link>
               </div>
             </div>
@@ -1486,7 +1489,8 @@ export default function MuhasibLanding() {
                   م
                 </div>
                 <span className="text-[15px] font-semibold tracking-tight">
-                  Muhasib<span style={{ color: C.emerald }}>.ai</span>
+                  <T k="shell.brandName" />
+                  <span style={{ color: C.emerald }}>.ai</span>
                 </span>
               </div>
               <p className="mt-5 max-w-md text-sm" style={{ color: C.muted }}>
@@ -1529,7 +1533,7 @@ export default function MuhasibLanding() {
             <div>© {new Date().getFullYear()} Muhasib.ai · DIFC, Dubai, United Arab Emirates</div>
             <div className="flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              All systems normal
+              <T k="pageLabels.allSystemsNormal" />
             </div>
           </div>
         </div>

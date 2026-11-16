@@ -262,7 +262,7 @@ export default function UAENewsFeed() {
                   onClick={() => window.open("https://emaratax.tax.gov.ae", "_blank")}
                 >
                   <Receipt className="w-4 h-4 mr-2" />
-                  EmaraTax
+                  EmaraTax{/* i18n-ignore: brand or sample data */}
                 </Button>
               </div>
             </CardContent>

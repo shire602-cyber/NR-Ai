@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
 
 export default function PrivacyPolicy() {
@@ -21,31 +22,51 @@ export default function PrivacyPolicy() {
       <p>We collect the following categories of personal and business data:</p>
       <ul>
         <li>
-          <strong>Account data</strong> — name, email, phone number, password (hashed).
+          <strong>
+            <T k="pageLabels.accountData" />
+          </strong>{" "}
+          — name, email, phone number, password (hashed).
         </li>
         <li>
-          <strong>Company data</strong> — trade licence number, TRN, address, business activity.
+          <strong>
+            <T k="pageLabels.companyData" />
+          </strong>{" "}
+          — trade licence number, TRN, address, business activity.
         </li>
         <li>
-          <strong>Financial data</strong> — invoices, receipts, bank transactions, ledger entries.
+          <strong>
+            <T k="pageLabels.financialData" />
+          </strong>{" "}
+          — invoices, receipts, bank transactions, ledger entries.
         </li>
         <li>
-          <strong>Usage data</strong> — pages visited, features used, IP address, device and browser
-          information.
+          <strong>
+            <T k="pageLabels.usageData" />
+          </strong>{" "}
+          — pages visited, features used, IP address, device and browser information.
         </li>
         <li>
-          <strong>Support data</strong> — communications you send to our support team.
+          <strong>
+            <T k="pageLabels.supportData" />
+          </strong>{" "}
+          — communications you send to our support team.
         </li>
       </ul>
 
       <h2>2. How We Use Your Data</h2>
       <p>We use your data to:</p>
       <ul>
-        <li>Provide, operate, and maintain the Service.</li>
+        <li>
+          <T k="pageLabels.provideOperateAndMaintainTheService" />
+        </li>
         <li>Generate VAT-ready tax workpapers, e-invoices, and financial reports.</li>
         <li>Send service-related notifications (e.g. invoice reminders, filing deadlines).</li>
-        <li>Improve features through aggregated, anonymised analytics.</li>
-        <li>Comply with our legal obligations under UAE law.</li>
+        <li>
+          <T k="pageLabels.improveFeaturesThroughAggregatedAnonymisedAnalytics" />
+        </li>
+        <li>
+          <T k="pageLabels.complyWithOurLegalObligationsUnder" />
+        </li>
       </ul>
 
       <h2>3. Legal Basis for Processing</h2>
@@ -68,14 +89,22 @@ export default function PrivacyPolicy() {
       <p>We do not sell your personal data. We may share data with:</p>
       <ul>
         <li>
-          <strong>Service providers</strong> (cloud hosting, email delivery, payment processors)
-          under data-processing agreements.
+          <strong>
+            <T k="pageLabels.serviceProviders" />
+          </strong>{" "}
+          (cloud hosting, email delivery, payment processors) under data-processing agreements.
         </li>
         <li>
-          <strong>UAE regulatory authorities</strong> (FTA, MoF) where legally required.
+          <strong>
+            <T k="pageLabels.uaeRegulatoryAuthorities" />
+          </strong>{" "}
+          (FTA, MoF) where legally required.
         </li>
         <li>
-          <strong>Your authorised users</strong> (team members, accountants you have invited).
+          <strong>
+            <T k="pageLabels.yourAuthorisedUsers" />
+          </strong>{" "}
+          (team members, accountants you have invited).
         </li>
       </ul>
 

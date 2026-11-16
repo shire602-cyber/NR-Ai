@@ -432,7 +432,9 @@ function CustomerOnboarding() {
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-lg">Muhasib.ai</span>
+          <span className="font-bold text-lg">
+            {/* i18n-ignore: brand or sample data */}Muhasib.ai
+          </span>
         </Link>
 
         {currentStep !== "welcome" && currentStep !== "complete" && (
@@ -452,7 +454,7 @@ function CustomerOnboarding() {
             disabled={completeMutation.isPending}
             className="text-muted-foreground text-sm"
           >
-            Save & continue later
+            <T k="pageLabels.saveContinueLater" />
           </Button>
         )}
       </header>
@@ -572,6 +574,7 @@ function WelcomeStep({
 }: {
   companyName?: string;
   onNext: () => void;
+  // i18n-ignore: TypeScript type, not UI text
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
   expressSaving: boolean;
 }) {
@@ -600,7 +603,7 @@ function WelcomeStep({
     <div className="text-center space-y-8">
       <div className="space-y-3">
         <Badge variant="secondary" className="px-3 py-1">
-          Welcome to Muhasib.ai
+          <T k="onboarding.step.welcome.title" />
         </Badge>
         <h1 className="font-display text-[34px] md:text-[40px] leading-[1.05] tracking-tight">
           {companyName
@@ -781,7 +784,9 @@ function CompanyStep({
         >
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
           <div className="flex-1 space-y-2">
-            <p className="text-sm font-medium">We couldn't save your company.</p>
+            <p className="text-sm font-medium">
+              <T k="pageLabels.weCouldnTSaveYourCompany" />
+            </p>
             <p className="text-sm text-destructive/90">{saveError}</p>
             <Button
               size="sm"
@@ -801,7 +806,9 @@ function CompanyStep({
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Company Name</Label>
+            <Label>
+              <T k="pages.companyName" />
+            </Label>
             <Input
               value={form.name}
               onChange={(e) => onChange({ name: e.target.value })}
@@ -816,7 +823,9 @@ function CompanyStep({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Emirate</Label>
+            <Label>
+              <T k="pages.emirate" />
+            </Label>
             <Select value={form.emirate} onValueChange={(v) => onChange({ emirate: v })}>
               <SelectTrigger data-testid="onboarding-emirate">
                 <SelectValue />
@@ -855,7 +864,7 @@ function CompanyStep({
           </div>
           <div className="space-y-1.5">
             <Label>
-              Trade License Number
+              <T k="pageLabels.tradeLicenseNumber" />
               <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
             </Label>
             <Input
@@ -881,7 +890,9 @@ function CompanyStep({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Phone</Label>
+            <Label>
+              <T k="pages.phone" />
+            </Label>
             <Input
               value={form.contactPhone}
               onChange={(e) => onChange({ contactPhone: e.target.value })}
@@ -890,7 +901,9 @@ function CompanyStep({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>
+              <T k="hr.field.email" />
+            </Label>
             <Input
               type="email"
               value={form.contactEmail}
@@ -975,7 +988,7 @@ function AccountsStep({
       <p className="text-xs text-muted-foreground text-center">
         You can customise accounts anytime from{" "}
         <Link href="/chart-of-accounts" className="underline text-primary">
-          Chart of Accounts
+          <T k="onboarding.step.accounts.title" />
         </Link>
         .
       </p>
@@ -998,7 +1011,8 @@ const GUIDED_COPY = {
     trnValid: "TRN format is valid. Confirm it on the FTA EmaraTax TRN verification page.",
     trnMissing: "No TRN saved yet. Add it in company settings when you register for VAT.",
     importTitle: "Moving from Xero, QuickBooks, Zoho Books or Wafeq?",
-    importHelp: "Import your chart of accounts, opening balances, contacts, items and open invoices.",
+    importHelp:
+      "Import your chart of accounts, opening balances, contacts, items and open invoices.",
     importDone: "Data imported",
     importCta: "Open Import data",
   },
@@ -1008,9 +1022,11 @@ const GUIDED_COPY = {
     added: "حسابات أُضيفت",
     trnTitle: "التحقق من الرقم الضريبي",
     trnValid: "صيغة الرقم الضريبي صحيحة. تحقق منه في صفحة التحقق على منصة إمارات تاكس.",
-    trnMissing: "لم يُحفظ رقم ضريبي بعد. أضفه في إعدادات الشركة عند التسجيل في ضريبة القيمة المضافة.",
+    trnMissing:
+      "لم يُحفظ رقم ضريبي بعد. أضفه في إعدادات الشركة عند التسجيل في ضريبة القيمة المضافة.",
     importTitle: "تنتقل من زيرو أو كويك بوكس أو زوهو بوكس أو وافق؟",
-    importHelp: "استورد دليل الحسابات والأرصدة الافتتاحية وجهات الاتصال والأصناف والفواتير المفتوحة.",
+    importHelp:
+      "استورد دليل الحسابات والأرصدة الافتتاحية وجهات الاتصال والأصناف والفواتير المفتوحة.",
     importDone: "تم استيراد البيانات",
     importCta: "فتح استيراد البيانات",
   },
@@ -1143,7 +1159,9 @@ function BankStep({
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Account Display Name</Label>
+            <Label>
+              <T k="pageLabels.accountDisplayName" />
+            </Label>
             <Input
               value={form.nameEn}
               onChange={(e) => onChange({ nameEn: e.target.value })}
@@ -1207,7 +1225,7 @@ function BankStep({
           className="text-muted-foreground"
           data-testid="onboarding-skip-bank"
         >
-          Skip for now
+          <T k="onboarding.skip" />
         </Button>
         <Button
           onClick={onNext}
@@ -1281,7 +1299,7 @@ function FirstDocStep({
             <p className="font-semibold text-sm mb-1">{title}</p>
             <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
             <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
-              Get started <ChevronRight className="w-3 h-3" />
+              <T k="pageLabels.getStarted" /> <ChevronRight className="w-3 h-3" />
             </div>
           </button>
         ))}
@@ -1373,7 +1391,9 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
       </motion.div>
 
       <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">You're all set!</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          <T k="pageLabels.youReAllSet" />
+        </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           Muhasib.ai is configured for your business. Here's what you can explore next:
         </p>
@@ -1382,7 +1402,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
       <div className="space-y-3 max-w-2xl mx-auto">
         <div className="flex items-center justify-center gap-2 text-sm font-medium">
           <BarChart3 className="w-4 h-4 text-primary" />
-          Reporting workspace
+          <T k="pageLabels.reportingWorkspace" />
         </div>
         <div
           className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left"
@@ -1760,7 +1780,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             className="gap-2 px-8"
             data-testid="onboarding-open-report-operations"
           >
-            Open report operations
+            <T k="pageLabels.openReportOperations" />
             <ArrowRight className="w-4 h-4" />
           </Button>
           <Button
@@ -1811,7 +1831,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         className="gap-2 px-8"
         data-testid="onboarding-go-dashboard"
       >
-        Go to Dashboard
+        <T k="pageLabels.goToDashboard" />
         <ArrowRight className="w-4 h-4" />
       </Button>
     </div>
@@ -1965,7 +1985,9 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-lg">Muhasib.ai</span>
+          <span className="font-bold text-lg">
+            {/* i18n-ignore: brand or sample data */}Muhasib.ai
+          </span>
         </Link>
         {step !== "welcome" && step !== "complete" && (
           <Button
@@ -1975,7 +1997,7 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
             className="text-muted-foreground text-sm"
             data-testid="firm-onboarding-skip"
           >
-            Skip for now
+            <T k="onboarding.skip" />
           </Button>
         )}
       </header>
@@ -2050,7 +2072,9 @@ function FirmWelcomeStep({
         <Badge variant="secondary" className="px-3 py-1">
           {firmRole === "firm_owner" ? "Firm Owner" : "Firm Admin"}
         </Badge>
-        <h1 className="text-3xl font-bold tracking-tight">Welcome to your firm workspace</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          <T k="pageLabels.welcomeToYourFirmWorkspace" />
+        </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           {firmRole === "firm_owner"
             ? "Invite your team, onboard your clients, and manage their books from one place."
@@ -2077,7 +2101,7 @@ function FirmWelcomeStep({
       </div>
 
       <Button size="lg" onClick={onNext} className="gap-2 px-8" data-testid="firm-onboarding-start">
-        Get Started
+        <T k="pageLabels.getStarted2" />
         <ArrowRight className="w-4 h-4" />
       </Button>
     </div>
@@ -2121,7 +2145,7 @@ function FirmTeamStep({
               data-testid="firm-onboarding-staff"
             >
               <Users className="w-4 h-4" />
-              Open Staff Management
+              <T k="pageLabels.openStaffManagement" />
             </Button>
           </CardContent>
         </Card>
@@ -2170,12 +2194,14 @@ function FirmClientsStep({
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
             <Building2 className="w-5 h-5 text-primary" />
           </div>
-          <p className="font-semibold text-sm mb-1">Add a client</p>
+          <p className="font-semibold text-sm mb-1">
+            <T k="pageLabels.addAClient" />
+          </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
             Create a new client workspace and invite their team to the portal.
           </p>
           <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
-            Open <ChevronRight className="w-3 h-3" />
+            <T k="firm.statusOpen" /> <ChevronRight className="w-3 h-3" />
           </div>
         </button>
         <button
@@ -2188,12 +2214,14 @@ function FirmClientsStep({
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
             <FileText className="w-5 h-5 text-primary" />
           </div>
-          <p className="font-semibold text-sm mb-1">Import in bulk</p>
+          <p className="font-semibold text-sm mb-1">
+            <T k="pageLabels.importInBulk" />
+          </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
             Migrating from another tool? Bring your client list across with a CSV.
           </p>
           <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
-            Open <ChevronRight className="w-3 h-3" />
+            <T k="firm.statusOpen" /> <ChevronRight className="w-3 h-3" />
           </div>
         </button>
       </div>
@@ -2231,7 +2259,9 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
         </div>
       </motion.div>
       <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">Your firm is set up</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          <T k="pageLabels.yourFirmIsSetUp" />
+        </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           Jump straight into the client portfolio to start managing books.
         </p>
@@ -2242,7 +2272,7 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
         className="gap-2 px-8"
         data-testid="firm-onboarding-go"
       >
-        Go to clients
+        <T k="pageLabels.goToClients" />
         <ArrowRight className="w-4 h-4" />
       </Button>
     </div>

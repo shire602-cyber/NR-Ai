@@ -328,10 +328,12 @@ export default function VATAutopilot() {
   if (!companyId) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">VAT Autopilot</h1>
+        <h1 className="text-2xl font-semibold">
+          <T k="pageLabels.vatAutopilot" />
+        </h1>
         <Card>
           <CardContent className="p-6 text-muted-foreground">
-            Set up a company before using VAT autopilot.
+            <T k="pageLabels.setUpACompanyBeforeUsing" />
           </CardContent>
         </Card>
       </div>
@@ -364,7 +366,9 @@ export default function VATAutopilot() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Filing period</CardTitle>
+          <CardTitle>
+            <T k="pageLabels.filingPeriod" />
+          </CardTitle>
           <CardDescription>
             Choose the VAT return period first. The calculation will only use transactions inside
             that selected period.
@@ -372,7 +376,9 @@ export default function VATAutopilot() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="space-y-2 md:min-w-[360px]">
-            <Label htmlFor="vat-filing-period">Period to file</Label>
+            <Label htmlFor="vat-filing-period">
+              <T k="pageLabels.periodToFile" />
+            </Label>
             <Select
               value={selectedPeriodKey ?? ""}
               onValueChange={setSelectedPeriodKey}
@@ -408,7 +414,7 @@ export default function VATAutopilot() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground" data-testid="selected-vat-period-empty">
-              No filing period selected.
+              <T k="pageLabels.noFilingPeriodSelected" />
             </p>
           )}
         </CardContent>
@@ -420,7 +426,9 @@ export default function VATAutopilot() {
           <CardContent className="p-4 flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium">Ledger reconciliation mismatch</p>
+              <p className="font-medium">
+                <T k="pageLabels.ledgerReconciliationMismatch" />
+              </p>
               <p className="text-muted-foreground">
                 Calculated output VAT differs from the ledger by{" "}
                 {formatCurrency(visibleCalc.reconciliation.outputVatDelta)}; input VAT differs by{" "}
@@ -437,8 +445,10 @@ export default function VATAutopilot() {
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">
             The last calculation was for a different period. Click{" "}
-            <span className="font-medium text-foreground">Calculate selected period</span> to update
-            VAT 201 for {periodLabel(selectedPeriod)}.
+            <span className="font-medium text-foreground">
+              <T k="pageLabels.calculateSelectedPeriod" />
+            </span>{" "}
+            to update VAT 201 for {periodLabel(selectedPeriod)}.
           </CardContent>
         </Card>
       )}
@@ -518,7 +528,7 @@ export default function VATAutopilot() {
                 onClick={() => setAdjustmentOpen(true)}
                 disabled={!currentPeriodId}
               >
-                Add manual adjustment
+                <T k="pageLabels.addManualAdjustment" />
               </Button>
               {currentPeriodId && currentPeriodStatus === "draft" && (
                 <Button
@@ -530,7 +540,7 @@ export default function VATAutopilot() {
                   data-testid="button-mark-ready"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mark ready
+                  <T k="pageLabels.markReady" />
                 </Button>
               )}
               {currentPeriodId && currentPeriodStatus === "ready" && (
@@ -543,7 +553,7 @@ export default function VATAutopilot() {
                   data-testid="button-mark-submitted"
                 >
                   <Send className="h-4 w-4 mr-2" />
-                  Mark submitted
+                  <T k="pageLabels.markSubmitted" />
                 </Button>
               )}
               {currentPeriodId && currentPeriodStatus === "submitted" && (
@@ -556,13 +566,13 @@ export default function VATAutopilot() {
                   data-testid="button-mark-accepted"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mark accepted by FTA
+                  <T k="pageLabels.markAcceptedByFta" />
                 </Button>
               )}
               {currentPeriodId && currentPeriodStatus === "accepted" && (
                 <Badge variant="secondary" className="text-xs">
                   <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Accepted by FTA
+                  <T k="pageLabels.acceptedByFta" />
                 </Badge>
               )}
             </div>
@@ -573,8 +583,12 @@ export default function VATAutopilot() {
       {/* Periods table */}
       <Card>
         <CardHeader>
-          <CardTitle>Periods</CardTitle>
-          <CardDescription>Last several VAT filing windows for this company.</CardDescription>
+          <CardTitle>
+            <T k="pageLabels.periods" />
+          </CardTitle>
+          <CardDescription>
+            <T k="pageLabels.lastSeveralVatFilingWindowsFor" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {periodsQuery.isLoading ? (
@@ -586,7 +600,9 @@ export default function VATAutopilot() {
             >
               <XCircle className="h-4 w-4 mt-0.5" />
               <div>
-                <p className="font-medium">Could not load VAT periods</p>
+                <p className="font-medium">
+                  <T k="pageLabels.couldNotLoadVatPeriods" />
+                </p>
                 <p className="text-xs">
                   {(periodsQuery.error as Error)?.message || "Please try again or contact support."}
                 </p>
@@ -600,12 +616,22 @@ export default function VATAutopilot() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Filing</TableHead>
-                  <TableHead>Period</TableHead>
+                  <TableHead>
+                    <T k="firm.filingType" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="hr.period" />
+                  </TableHead>
                   <TableHead>Due</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Output VAT</TableHead>
-                  <TableHead className="text-right">Input VAT</TableHead>
+                  <TableHead>
+                    <T k="banking.common.status" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <T k="pageLabels.outputVat" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <T k="pageLabels.inputVat" />
+                  </TableHead>
                   <TableHead className="text-right">Net</TableHead>
                 </TableRow>
               </TableHeader>
@@ -682,7 +708,9 @@ export default function VATAutopilot() {
             >
               <XCircle className="h-4 w-4 mt-0.5" />
               <div>
-                <p className="font-medium">Could not load upcoming deadlines</p>
+                <p className="font-medium">
+                  <T k="pageLabels.couldNotLoadUpcomingDeadlines" />
+                </p>
                 <p className="text-xs">
                   {(dueDatesQuery.error as Error)?.message ||
                     "Please try again or contact support."}
@@ -691,15 +719,19 @@ export default function VATAutopilot() {
             </div>
           ) : upcoming.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="due-dates-empty">
-              No upcoming VAT deadlines.
+              <T k="pageLabels.noUpcomingVatDeadlines" />
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Period end</TableHead>
+                  <TableHead>
+                    <T k="banking.statement.periodEnd" />
+                  </TableHead>
                   <TableHead>Due</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <T k="banking.common.status" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -734,7 +766,9 @@ export default function VATAutopilot() {
       <Dialog open={adjustmentOpen} onOpenChange={setAdjustmentOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Manual adjustment</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.manualAdjustment" />
+            </DialogTitle>
             <DialogDescription>
               Adjustments are appended to the audit trail and applied on top of auto-calculated
               boxes.
@@ -829,7 +863,9 @@ export default function VATAutopilot() {
               )}
             </div>
             <div>
-              <Label>Reason</Label>
+              <Label>
+                <T k="banking.line.excludeReason" />
+              </Label>
               <Textarea
                 value={adjustmentReason}
                 onChange={(e) => setAdjustmentReason(e.target.value)}
@@ -854,7 +890,7 @@ export default function VATAutopilot() {
             >
               {adjustmentMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <FileText className="h-4 w-4 mr-2" />
-              Save adjustment
+              <T k="pageLabels.saveAdjustment" />
             </Button>
           </DialogFooter>
         </DialogContent>

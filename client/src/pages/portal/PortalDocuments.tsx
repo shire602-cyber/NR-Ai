@@ -96,7 +96,7 @@ export default function PortalDocuments() {
             <T k="pages.documents" />
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Upload receipts and documents for NR Accounting to process.
+            <T k="pageLabels.uploadReceiptsAndDocumentsForNr" />
           </p>
         </div>
         <div>
@@ -131,9 +131,11 @@ export default function PortalDocuments() {
           ) : documents.length === 0 ? (
             <div className="text-center py-14">
               <Upload className="w-10 h-10 text-muted-foreground/70 mx-auto mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">No documents yet</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                <T k="pageLabels.noDocumentsYet" />
+              </p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Upload receipts or files for your accountant.
+                <T k="pageLabels.uploadReceiptsOrFilesForYour" />
               </p>
             </div>
           ) : (

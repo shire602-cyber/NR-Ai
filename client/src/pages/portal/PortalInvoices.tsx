@@ -52,7 +52,7 @@ export default function PortalInvoices() {
           <T k="pages.invoices" />
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          View and download invoices issued by NR Accounting.
+          <T k="pageLabels.viewAndDownloadInvoicesIssuedBy" />
         </p>
       </div>
 
@@ -63,7 +63,9 @@ export default function PortalInvoices() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : invoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 text-center py-10">No invoices found.</p>
+            <p className="text-sm text-muted-foreground/70 text-center py-10">
+              <T k="pageLabels.noInvoicesFound" />
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

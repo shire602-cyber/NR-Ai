@@ -82,11 +82,19 @@ export default function Notifications() {
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case "urgent":
-        return <Badge variant="destructive">Urgent</Badge>;
+        return (
+          <Badge variant="destructive">
+            <T k="pageLabels.urgent" />
+          </Badge>
+        );
       case "high":
         return <Badge className="bg-warning">High</Badge>;
       case "normal":
-        return <Badge variant="secondary">Normal</Badge>;
+        return (
+          <Badge variant="secondary">
+            <T k="pageLabels.normal" />
+          </Badge>
+        );
       default:
         return <Badge variant="outline">Low</Badge>;
     }
@@ -121,7 +129,7 @@ export default function Notifications() {
               data-testid="button-mark-all-read"
             >
               <Check className="w-4 h-4 mr-2" />
-              Mark All as Read
+              <T k="pageLabels.markAllAsRead" />
             </Button>
           ) : null
         }
@@ -140,7 +148,7 @@ export default function Notifications() {
           </TabsTrigger>
           <TabsTrigger value="regulatory" data-testid="tab-regulatory">
             <Newspaper className="w-4 h-4 mr-2" />
-            Regulatory News
+            <T k="pageLabels.regulatoryNews" />
           </TabsTrigger>
         </TabsList>
 
@@ -155,9 +163,11 @@ export default function Notifications() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Bell className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No notifications</h3>
+                <h3 className="text-lg font-medium">
+                  <T k="pageLabels.noNotifications" />
+                </h3>
                 <p className="text-muted-foreground text-center">
-                  You're all caught up! New notifications will appear here.
+                  <T k="pageLabels.youReAllCaughtUpNew" />
                 </p>
               </CardContent>
             </Card>
@@ -235,9 +245,11 @@ export default function Notifications() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Newspaper className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No regulatory updates</h3>
+                <h3 className="text-lg font-medium">
+                  <T k="pageLabels.noRegulatoryUpdates" />
+                </h3>
                 <p className="text-muted-foreground text-center">
-                  Latest regulatory news and updates will appear here.
+                  <T k="pageLabels.latestRegulatoryNewsAndUpdatesWill" />
                 </p>
               </CardContent>
             </Card>
@@ -256,7 +268,9 @@ export default function Notifications() {
                             </Badge>
                           )}
                           {news.importance === "high" && (
-                            <Badge className="bg-warning">Important</Badge>
+                            <Badge className="bg-warning">
+                              <T k="pageLabels.important" />
+                            </Badge>
                           )}
                         </div>
                         <CardTitle>{news.title}</CardTitle>
@@ -278,7 +292,7 @@ export default function Notifications() {
                     {news.sourceUrl && (
                       <Button variant="ghost" className="p-0 mt-2" asChild>
                         <a href={news.sourceUrl} target="_blank" rel="noopener noreferrer">
-                          Read more <ChevronRight className="w-4 h-4 ml-1" />
+                          <T k="pageLabels.readMore" /> <ChevronRight className="w-4 h-4 ml-1" />
                         </a>
                       </Button>
                     )}

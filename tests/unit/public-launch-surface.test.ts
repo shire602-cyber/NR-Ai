@@ -164,9 +164,10 @@ describe("Public SaaS launch surface", () => {
   });
 
   it("keeps certification and SLA language explicitly truthful", () => {
-    const trustSource = readRepoFile("client/src/pages/TrustSecurity.tsx");
+    // S6a/S6b: page copy moved into the pageLabels catalog; page source plus catalog is the claim surface.
+    const trustSource = readRepoFileWithCatalog("client/src/pages/TrustSecurity.tsx");
     const helpSource = readRepoFileWithCatalog("client/src/pages/HelpCenter.tsx");
-    const pricingSource = readRepoFile("client/src/pages/Pricing.tsx");
+    const pricingSource = readRepoFileWithCatalog("client/src/pages/Pricing.tsx");
 
     expect(trustSource).toMatch(
       /We do not\s+claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete\./
@@ -182,7 +183,8 @@ describe("Public SaaS launch surface", () => {
 
   it("exposes customer-facing help and migration coverage for launch buyers", () => {
     const helpSource = readRepoFileWithCatalog("client/src/pages/HelpCenter.tsx");
-    const migrationSource = readRepoFile("client/src/pages/MigrationGuides.tsx");
+    const migrationSource = readRepoFileWithCatalog("client/src/pages/MigrationGuides.tsx");
+    const migrationText = migrationSource.replace(/\s+/g, " ");
 
     for (const expectedHelpTopic of [
       "Set up your company",
@@ -206,7 +208,7 @@ describe("Public SaaS launch surface", () => {
     expect(migrationSource).toContain(
       "Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail."
     );
-    expect(migrationSource).toContain("Prior-system report packs from mazeed, Wafeq, Zoho Books");
+    expect(migrationText).toContain("Prior-system report packs from mazeed, Wafeq, Zoho Books");
     expect(helpSource).toContain("Migration review covers mazeed, Wafeq, Zoho Books, and Excel");
   });
 

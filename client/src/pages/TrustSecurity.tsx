@@ -89,21 +89,23 @@ export default function TrustSecurity() {
       <header className="border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="text-lg font-bold">
-            Muhasib.ai
+            Muhasib.ai{/* i18n-ignore: brand or sample data */}
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <Link href="/pricing" className="hover:text-foreground">
-              Pricing
+              <T k="pages.pricing" />
             </Link>
             <Link href="/help" className="hover:text-foreground">
               Help
             </Link>
             <Link href="/migration-guides" className="hover:text-foreground">
-              Migrate
+              <T k="pageLabels.migrate" />
             </Link>
           </nav>
           <Link href="/register">
-            <Button size="sm">Start Free</Button>
+            <Button size="sm">
+              <T k="pageLabels.startFree" />
+            </Button>
           </Link>
         </div>
       </header>
@@ -112,12 +114,12 @@ export default function TrustSecurity() {
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-16 lg:py-20">
             <Badge variant="outline" className="mb-5">
-              Trust and Security
+              <T k="pageLabels.trustAndSecurity" />
             </Badge>
             <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
               <div>
                 <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
-                  Built for cautious UAE finance teams, with claims kept honest.
+                  <T k="pageLabels.builtForCautiousUaeFinanceTeams" />
                 </h1>
                 <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
                   Muhasib.ai protects accounting workflows with access controls, secure sessions,
@@ -129,7 +131,7 @@ export default function TrustSecurity() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <ShieldCheck className="h-5 w-5 text-success" />
-                    Launch posture
+                    <T k="pageLabels.launchPosture" />
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
@@ -145,7 +147,9 @@ export default function TrustSecurity() {
                   </div>
                   <div className="flex items-start gap-2">
                     <Clock className="mt-0.5 h-4 w-4 text-warning" />
-                    <span>External certifications are roadmap items, not current claims.</span>
+                    <span>
+                      <T k="pageLabels.externalCertificationsAreRoadmapItemsNot" />
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -156,14 +160,18 @@ export default function TrustSecurity() {
         <section className="container mx-auto max-w-6xl px-4 py-14">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-2xl font-semibold">Launch verification evidence</h2>
+              <h2 className="text-2xl font-semibold">
+                <T k="pageLabels.launchVerificationEvidence" />
+              </h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
                 Release evidence is kept practical: automated gates, production health checks, and
                 authenticated route crawls for protected firm workflows when smoke credentials are
                 available.
               </p>
             </div>
-            <Badge variant="outline">Internal release gate</Badge>
+            <Badge variant="outline">
+              <T k="pageLabels.internalReleaseGate" />
+            </Badge>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {launchEvidence.map((item) => (
@@ -202,7 +210,9 @@ export default function TrustSecurity() {
         <section className="border-y bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-14">
             <div>
-              <h2 className="text-2xl font-semibold">Operational trust posture</h2>
+              <h2 className="text-2xl font-semibold">
+                <T k="pageLabels.operationalTrustPosture" />
+              </h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
                 The public posture separates working product controls from environment-specific
                 operating procedures and future certifications.
@@ -232,7 +242,9 @@ export default function TrustSecurity() {
         <section className="border-y bg-muted/30">
           <div className="container mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-2">
             <div>
-              <h2 className="text-2xl font-semibold">Support commitments during launch</h2>
+              <h2 className="text-2xl font-semibold">
+                <T k="pageLabels.supportCommitmentsDuringLaunch" />
+              </h2>
               <p className="mt-3 text-muted-foreground">
                 Paid launch customers get guided onboarding, implementation checklists, and support
                 through the onboarding team. Formal enterprise support commitments are confirmed
@@ -242,10 +254,12 @@ export default function TrustSecurity() {
             <div className="rounded-lg border bg-background p-5">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <UserCheck className="h-4 w-4 text-primary" />
-                What customers can expect
+                <T k="pageLabels.whatCustomersCanExpect" />
               </div>
               <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-                <li>Guided company setup and chart-of-accounts review.</li>
+                <li>
+                  <T k="pageLabels.guidedCompanySetupAndChartOf" />
+                </li>
                 <li>Migration support from mazeed, Wafeq, Zoho Books, or Excel exports.</li>
                 <li>Escalation path for accounting workflow blockers during onboarding.</li>
                 <li>
@@ -257,7 +271,9 @@ export default function TrustSecurity() {
         </section>
 
         <section className="container mx-auto max-w-6xl px-4 py-14">
-          <h2 className="text-2xl font-semibold">Assurance roadmap</h2>
+          <h2 className="text-2xl font-semibold">
+            <T k="pageLabels.assuranceRoadmap" />
+          </h2>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {roadmap.map((item) => (
               <div
@@ -272,12 +288,14 @@ export default function TrustSecurity() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/help">
               <Button>
-                Visit Help Center
+                <T k="pageLabels.visitHelpCenter" />
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
             <Link href="/migration-guides">
-              <Button variant="outline">Migration Guides</Button>
+              <Button variant="outline">
+                <T k="pageLabels.migrationGuides" />
+              </Button>
             </Link>
             <Link href="/privacy">
               <Button variant="outline">

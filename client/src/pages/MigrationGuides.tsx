@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { T } from "@/components/layout/T";
 import {
   ArrowRight,
   CheckCircle2,
@@ -81,21 +82,23 @@ export default function MigrationGuides() {
       <header className="border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="text-lg font-bold">
-            Muhasib.ai
+            Muhasib.ai{/* i18n-ignore: brand or sample data */}
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <Link href="/pricing" className="hover:text-foreground">
-              Pricing
+              <T k="pages.pricing" />
             </Link>
             <Link href="/trust" className="hover:text-foreground">
-              Trust
+              <T k="pageLabels.trust" />
             </Link>
             <Link href="/help" className="hover:text-foreground">
               Help
             </Link>
           </nav>
           <Link href="/register">
-            <Button size="sm">Start Free</Button>
+            <Button size="sm">
+              <T k="pageLabels.startFree" />
+            </Button>
           </Link>
         </div>
       </header>
@@ -104,7 +107,7 @@ export default function MigrationGuides() {
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-16">
             <Badge variant="outline" className="mb-5">
-              Migration Guides
+              <T k="pageLabels.migrationGuides" />
             </Badge>
             <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
               Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail.
@@ -148,7 +151,7 @@ export default function MigrationGuides() {
             <div>
               <h2 className="flex items-center gap-2 text-2xl font-semibold">
                 <ClipboardCheck className="h-6 w-6 text-primary" />
-                Go-live checklist
+                <T k="pageLabels.goLiveChecklist" />
               </h2>
               <p className="mt-3 text-muted-foreground">
                 This checklist is the minimum we recommend before moving real books from another
@@ -172,23 +175,23 @@ export default function MigrationGuides() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
-                  Supported import files
+                  <T k="pageLabels.supportedImportFiles" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm leading-6 text-muted-foreground">
-                The Import data wizard loads CSV exports from Xero, QuickBooks Online, Zoho Books and
-                Wafeq: chart of accounts, opening trial balance, customers, vendors, items, open
+                The Import data wizard loads CSV exports from Xero, QuickBooks Online, Zoho Books
+                and Wafeq: chart of accounts, opening trial balance, customers, vendors, items, open
                 invoices and open bills. Bank reconciliation supports CSV formats from Emirates NBD,
-                ADCB, FAB, Mashreq, and generic statement layouts.
-                Prior-system report packs from mazeed, Wafeq, Zoho Books, or Excel should be stored
-                in Document Vault as read-only support files.
+                ADCB, FAB, Mashreq, and generic statement layouts. Prior-system report packs from
+                mazeed, Wafeq, Zoho Books, or Excel should be stored in Document Vault as read-only
+                support files.
               </CardContent>
             </Card>
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Landmark className="h-5 w-5 text-primary" />
-                  Bank reconciliation after migration
+                  <T k="pageLabels.bankReconciliationAfterMigration" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm leading-6 text-muted-foreground">
@@ -201,7 +204,7 @@ export default function MigrationGuides() {
           <div className="mt-8">
             <Link href="/register">
               <Button>
-                Start Migration
+                <T k="pageLabels.startMigration" />
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>

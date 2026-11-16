@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { T } from "@/components/layout/T";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
@@ -1462,7 +1463,7 @@ export default function Receipts() {
             data-testid="button-add-manual-expense"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Add Expense Manually
+            <T k="pageLabels.addExpenseManually" />
           </Button>
         }
       />
@@ -1472,7 +1473,7 @@ export default function Receipts() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="w-5 h-5" />
-            Upload Receipts
+            <T k="pageLabels.uploadReceipts" />
           </CardTitle>
           <CardDescription>
             Drag & drop receipt images or click to browse (supports bulk upload)
@@ -1514,7 +1515,7 @@ export default function Receipts() {
                   <span>{processedReceipts.length} image(s) loaded</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Click or drop more images to add them
+                  <T k="pageLabels.clickOrDropMoreImagesTo" />
                 </p>
               </div>
             ) : (
@@ -1525,7 +1526,9 @@ export default function Receipts() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-lg font-medium">Drop your receipts here</p>
+                  <p className="text-lg font-medium">
+                    <T k="pageLabels.dropYourReceiptsHere" />
+                  </p>
                   <p className="text-sm text-muted-foreground mt-1">
                     or click to browse files (multiple selection supported)
                   </p>
@@ -1542,7 +1545,7 @@ export default function Receipts() {
                   }}
                   data-testid="button-browse-receipts"
                 >
-                  Browse files
+                  <T k="pageLabels.browseFiles" />
                 </Button>
               </div>
             )}
@@ -1561,7 +1564,7 @@ export default function Receipts() {
                 {isProcessingBulk ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Processing...
+                    <T k="invoices.processing" />
                   </>
                 ) : (
                   <>
@@ -1605,7 +1608,7 @@ export default function Receipts() {
                 {isOcrExporting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Preparing...
+                    <T k="pageLabels.preparing" />
                   </>
                 ) : (
                   <>
@@ -1687,8 +1690,12 @@ export default function Receipts() {
                   <div className="flex-1 space-y-3">
                     {receipt.status === "pending" && (
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">Pending</Badge>
-                        <p className="text-sm text-muted-foreground">Ready to process</p>
+                        <Badge variant="outline">
+                          <T k="hr.status.pending" />
+                        </Badge>
+                        <p className="text-sm text-muted-foreground">
+                          <T k="pageLabels.readyToProcess" />
+                        </p>
                       </div>
                     )}
 
@@ -1697,7 +1704,7 @@ export default function Receipts() {
                         <div className="flex items-center justify-between text-sm">
                           <span className="flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            Processing with OCR...
+                            <T k="pageLabels.processingWithOcr" />
                           </span>
                           <span>{receipt.progress}%</span>
                         </div>
@@ -1719,7 +1726,7 @@ export default function Receipts() {
                           data-testid={`button-retry-ocr-${index}`}
                         >
                           <RefreshCw className="w-3 h-3 mr-1" />
-                          Try again
+                          <T k="pageLabels.tryAgain" />
                         </Button>
                       </div>
                     )}
@@ -1727,7 +1734,9 @@ export default function Receipts() {
                     {receipt.status === "saved" && (
                       <div className="flex items-center gap-2 text-[hsl(var(--chart-1))]">
                         <CheckCircle2 className="w-4 h-4" />
-                        <span className="text-sm font-medium">Successfully saved to database</span>
+                        <span className="text-sm font-medium">
+                          <T k="pageLabels.successfullySavedToDatabase" />
+                        </span>
                       </div>
                     )}
 
@@ -1839,7 +1848,9 @@ export default function Receipts() {
                         </div>
 
                         <div className="space-y-1">
-                          <Label className="text-xs">Category</Label>
+                          <Label className="text-xs">
+                            <T k="pages.category" />
+                          </Label>
                           <Select
                             value={receipt.data.category}
                             onValueChange={(value) => updateReceiptData(index, { category: value })}
@@ -1848,27 +1859,47 @@ export default function Receipts() {
                               <SelectValue placeholder="Category" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                              <SelectItem value="Meals">Meals &amp; Entertainment</SelectItem>
-                              <SelectItem value="Travel">Travel</SelectItem>
-                              <SelectItem value="Utilities">Utilities</SelectItem>
-                              <SelectItem value="Marketing">Marketing</SelectItem>
-                              <SelectItem value="Equipment">Equipment</SelectItem>
-                              <SelectItem value="Communication">Communication</SelectItem>
-                              <SelectItem value="Professional Services">
-                                Professional Services
+                              <SelectItem value="Office Supplies">
+                                <T k="pageLabels.officeSupplies" />
                               </SelectItem>
-                              <SelectItem value="Insurance">Insurance</SelectItem>
-                              <SelectItem value="Maintenance">Maintenance</SelectItem>
+                              <SelectItem value="Meals">Meals &amp; Entertainment</SelectItem>
+                              <SelectItem value="Travel">
+                                <T k="pages.travel" />
+                              </SelectItem>
+                              <SelectItem value="Utilities">
+                                <T k="pages.utilities" />
+                              </SelectItem>
+                              <SelectItem value="Marketing">
+                                <T k="pageLabels.marketing" />
+                              </SelectItem>
+                              <SelectItem value="Equipment">
+                                <T k="pages.equipment" />
+                              </SelectItem>
+                              <SelectItem value="Communication">
+                                <T k="pageLabels.communication" />
+                              </SelectItem>
+                              <SelectItem value="Professional Services">
+                                <T k="pages.professionalServices" />
+                              </SelectItem>
+                              <SelectItem value="Insurance">
+                                <T k="pages.insurance" />
+                              </SelectItem>
+                              <SelectItem value="Maintenance">
+                                <T k="pages.maintenance" />
+                              </SelectItem>
                               <SelectItem value="Rent">Rent</SelectItem>
-                              <SelectItem value="Other">Other</SelectItem>
+                              <SelectItem value="Other">
+                                <T k="pages.other" />
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
                         {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
                           <div className="col-span-2 space-y-1">
-                            <Label className="text-xs">Line Items</Label>
+                            <Label className="text-xs">
+                              <T k="pages.lineItems" />
+                            </Label>
                             <div className="rounded border text-xs divide-y">
                               {receipt.data.lineItems.map((item, i) => (
                                 <div key={i} className="flex justify-between px-2 py-1">
@@ -2020,8 +2051,12 @@ export default function Receipts() {
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <CardTitle>Recent Expenses</CardTitle>
-              <CardDescription>Previously scanned and saved expenses</CardDescription>
+              <CardTitle>
+                <T k="pageLabels.recentExpenses" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pageLabels.previouslyScannedAndSavedExpenses" />
+              </CardDescription>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -2054,7 +2089,7 @@ export default function Receipts() {
                   data-testid="menu-export-expenses-sheets"
                 >
                   <SiGooglesheets className="w-4 h-4 mr-2" />
-                  Export to Google Sheets
+                  <T k="reportCenter.exportToGoogleSheets" />
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -2106,7 +2141,7 @@ export default function Receipts() {
                             title={`Classified by internal ${receipt.classifierMethod} stage`}
                           >
                             <Brain className="w-3 h-3 mr-1" />
-                            Internal
+                            <T k="pageLabels.internal" />
                           </Badge>
                         )}
                         {receipt.classifierMethod === "openai" && (
@@ -2128,11 +2163,13 @@ export default function Receipts() {
                             title="Auto-posted by Receipt Autopilot"
                           >
                             <Zap className="w-3 h-3 mr-1" />
-                            Auto-posted
+                            <T k="reportCenter.autoPosted" />
                           </Badge>
                         )}
                         {receipt.posted && !receipt.autoPosted && (
-                          <StatusBadge tone="success">Posted</StatusBadge>
+                          <StatusBadge tone="success">
+                            <T k="hr.status.posted" />
+                          </StatusBadge>
                         )}
                       </div>
                     </div>
@@ -2190,7 +2227,7 @@ export default function Receipts() {
                       >
                         <Link href={evidenceSourceHref("receipt", receipt.id)}>
                           <FileText className="w-4 h-4 mr-2" />
-                          Proof
+                          <T k="reportCenter.proof" />
                         </Link>
                       </Button>
                       <Button
@@ -2261,7 +2298,9 @@ export default function Receipts() {
       <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Source receipt image</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.sourceReceiptImage" />
+            </DialogTitle>
             <DialogDescription>
               {imagePreview?.merchant
                 ? `Original scanned image for ${imagePreview.merchant}`
@@ -2285,8 +2324,12 @@ export default function Receipts() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Receipt</DialogTitle>
-            <DialogDescription>Update receipt details</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.editReceipt" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.updateReceiptDetails" />
+            </DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
@@ -2295,7 +2338,9 @@ export default function Receipts() {
                 name="merchant"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Merchant</FormLabel>
+                    <FormLabel>
+                      <T k="pages.merchant" />
+                    </FormLabel>
                     <FormControl>
                       <Input {...field} data-testid="input-edit-merchant" />
                     </FormControl>
@@ -2321,7 +2366,9 @@ export default function Receipts() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Amount</FormLabel>
+                    <FormLabel>
+                      <T k="banking.common.amount" />
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -2366,7 +2413,9 @@ export default function Receipts() {
                 name="category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category</FormLabel>
+                    <FormLabel>
+                      <T k="pages.category" />
+                    </FormLabel>
                     <Select onValueChange={field.onChange} value={field.value ?? undefined}>
                       <FormControl>
                         <SelectTrigger data-testid="select-edit-category">
@@ -2374,13 +2423,27 @@ export default function Receipts() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                        <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
-                        <SelectItem value="Travel">Travel</SelectItem>
-                        <SelectItem value="Utilities">Utilities</SelectItem>
-                        <SelectItem value="Marketing">Marketing</SelectItem>
-                        <SelectItem value="Software">Software</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
+                        <SelectItem value="Office Supplies">
+                          <T k="pageLabels.officeSupplies" />
+                        </SelectItem>
+                        <SelectItem value="Meals & Entertainment">
+                          <T k="pageLabels.mealsEntertainment" />
+                        </SelectItem>
+                        <SelectItem value="Travel">
+                          <T k="pages.travel" />
+                        </SelectItem>
+                        <SelectItem value="Utilities">
+                          <T k="pages.utilities" />
+                        </SelectItem>
+                        <SelectItem value="Marketing">
+                          <T k="pageLabels.marketing" />
+                        </SelectItem>
+                        <SelectItem value="Software">
+                          <T k="pageLabels.software" />
+                        </SelectItem>
+                        <SelectItem value="Other">
+                          <T k="pages.other" />
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -2394,7 +2457,7 @@ export default function Receipts() {
                   onClick={() => setEditDialogOpen(false)}
                   className="flex-1"
                 >
-                  Cancel
+                  <T k="banking.common.cancel" />
                 </Button>
                 <Button
                   type="submit"
@@ -2416,7 +2479,7 @@ export default function Receipts() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-[hsl(var(--chart-4))]" />
-              Similar Transactions Found
+              <T k="pageLabels.similarTransactionsFound" />
             </DialogTitle>
             <DialogDescription>
               We found similar transactions that might be duplicates. Review them before proceeding.
@@ -2454,7 +2517,7 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-cancel-similar-warning"
               >
-                Cancel
+                <T k="banking.common.cancel" />
               </Button>
               <Button
                 onClick={async () => {
@@ -2468,7 +2531,7 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-save-anyway"
               >
-                Save Anyway
+                <T k="pageLabels.saveAnyway" />
               </Button>
             </div>
           </div>
@@ -2479,14 +2542,18 @@ export default function Receipts() {
       <Dialog open={createAccountDialogOpen} onOpenChange={setCreateAccountDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Account</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.createNewAccount" />
+            </DialogTitle>
             <DialogDescription>
               Add a new {newAccountType === "expense" ? "expense" : "payment"} account
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="account-code">Account Code</Label>
+              <Label htmlFor="account-code">
+                <T k="pageLabels.accountCode" />
+              </Label>
               <Input
                 id="account-code"
                 value={newAccountCode}
@@ -2496,7 +2563,9 @@ export default function Receipts() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="account-name">Account Name</Label>
+              <Label htmlFor="account-name">
+                <T k="pageLabels.accountName" />
+              </Label>
               <Input
                 id="account-name"
                 value={newAccountName}
@@ -2513,7 +2582,7 @@ export default function Receipts() {
                 className="flex-1"
                 disabled={createAccountMutation.isPending}
               >
-                Cancel
+                <T k="banking.common.cancel" />
               </Button>
               <Button
                 type="button"
@@ -2553,9 +2622,11 @@ export default function Receipts() {
       <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Post Expense to Journal</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.postExpenseToJournal" />
+            </DialogTitle>
             <DialogDescription>
-              Select accounts to create journal entry for this expense
+              <T k="pageLabels.selectAccountsToCreateJournalEntry" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -2689,7 +2760,7 @@ export default function Receipts() {
                 className="flex-1"
                 disabled={postExpenseMutation.isPending}
               >
-                Cancel
+                <T k="banking.common.cancel" />
               </Button>
               <Button
                 type="button"
@@ -2713,8 +2784,12 @@ export default function Receipts() {
       <Dialog open={manualExpenseDialogOpen} onOpenChange={setManualExpenseDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Expense Manually</DialogTitle>
-            <DialogDescription>Enter expense details without OCR scanning</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.addExpenseManually" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.enterExpenseDetailsWithoutOcrScanning" />
+            </DialogDescription>
           </DialogHeader>
           <Form {...manualExpenseForm}>
             <form
@@ -2815,7 +2890,7 @@ export default function Receipts() {
                   onClick={() => setManualExpenseDialogOpen(false)}
                   className="flex-1"
                 >
-                  Cancel
+                  <T k="banking.common.cancel" />
                 </Button>
                 <Button
                   type="submit"

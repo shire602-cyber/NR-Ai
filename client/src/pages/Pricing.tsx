@@ -554,7 +554,8 @@ export default function Pricing() {
       apiAccess: locale === "en" ? "API Access" : "وصول API",
       webhooks: locale === "en" ? "Signed Webhooks" : "خطافات ويب موقّعة",
       multiCurrency: locale === "en" ? "Multi-Currency Documents" : "مستندات متعددة العملات",
-      onlinePayments: locale === "en" ? "Online Invoice Payment Links" : "روابط دفع الفواتير عبر الإنترنت",
+      onlinePayments:
+        locale === "en" ? "Online Invoice Payment Links" : "روابط دفع الفواتير عبر الإنترنت",
       bulkOps: locale === "en" ? "Bulk Operations" : "العمليات المجمّعة",
     },
     faq: {
@@ -665,7 +666,9 @@ export default function Pricing() {
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
                 <Calculator className="h-4 w-4 text-white" />
               </div>
-              <span className="font-bold text-lg">Muhasib.ai</span>
+              <span className="font-bold text-lg">
+                {/* i18n-ignore: brand or sample data */}Muhasib.ai
+              </span>
             </div>
           </Link>
           <div className="flex items-center gap-3">
@@ -852,9 +855,7 @@ export default function Pricing() {
                             <li key={idx} className="flex items-start gap-2 text-sm">
                               <Check
                                 className={`h-4 w-4 mt-0.5 shrink-0 ${
-                                  tier.highlight
-                                    ? "text-success "
-                                    : "text-muted-foreground"
+                                  tier.highlight ? "text-success " : "text-muted-foreground"
                                 }`}
                               />
                               <span>{feature}</span>
@@ -1057,7 +1058,9 @@ export default function Pricing() {
             <div className="h-6 w-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
               <Calculator className="h-3 w-3 text-white" />
             </div>
-            <span>Muhasib.ai by NR Accounting Services</span>
+            <span>
+              {/* i18n-ignore: brand or sample data */}Muhasib.ai by NR Accounting Services
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <Lock className="h-3.5 w-3.5" />
