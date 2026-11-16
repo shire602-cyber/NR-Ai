@@ -129,6 +129,9 @@ await storage.createJournalEntry(entry, lines);
       "server/routes/evil.routes.ts": writes,
       "server/ledger/post.ts": writes,
       "server/storage.ts": writes,
+      // R20-09: the storage split keeps only the ledger adapter module exempt.
+      "server/storage/ledger.ts": writes,
+      "server/storage/sales.ts": writes,
     });
     const r = runScript("check-ledger-writes.mjs", [
       "--root",
@@ -140,8 +143,8 @@ await storage.createJournalEntry(entry, lines);
     expect(r.code).toBe(1);
     const result = JSON.parse(r.out.trim().split("\n").pop() as string);
     expect(new Set(result.regressions.map((x: { file: string }) => x.file))).toEqual(
-      new Set(["server/routes/evil.routes.ts"])
+      new Set(["server/routes/evil.routes.ts", "server/storage/sales.ts"])
     );
-    expect(result.regressions).toHaveLength(3);
+    expect(result.regressions).toHaveLength(6);
   });
 });

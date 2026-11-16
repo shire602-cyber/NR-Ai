@@ -126,8 +126,15 @@ describe.skipIf(process.env.HARNESS_MODE !== "postgres")("R14-06 numbering lock"
 
   it("R14-06: no session-level advisory lock code remains in the storage/ledger sources", async () => {
     const fs = await import("node:fs");
+    // R20-09: server/storage.ts is a barrel over server/storage/*.ts.
+    const storageParts = fs
+      .readdirSync("server/storage")
+      .filter((f) => f.endsWith(".ts"))
+      .map((f) => `server/storage/${f}`);
+    expect(storageParts.length).toBeGreaterThan(5);
     for (const f of [
       "server/storage.ts",
+      ...storageParts,
       "server/ledger/numbering.ts",
       "server/ledger/kernel.ts",
     ]) {

@@ -1,0 +1,251 @@
+// DatabaseStorage part: Companies, company users, team management and company access.
+// Domain classes are chained with `extends` and composed into DatabaseStorage in
+// server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
+
+import {
+  companies,
+  companyUsers,
+  journalEntries,
+  users,
+  type Company,
+  type CompanyUser,
+  type InsertCompany,
+  type InsertCompanyUser,
+  type User,
+} from "@shared/schema";
+import {
+  NR_FIRM_ID,
+  accessibleClientCondition,
+  canAccessFirmClient,
+  type FirmContext,
+} from "../services/firm/scope";
+import { db } from "../db";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { scopedDelete, scopedGet, scopedUpdate } from "../tenancy";
+import { UserStorage } from "./users";
+
+export class CompanyStorage extends UserStorage {
+  // Companies
+  async getCompany(id: string): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.id, id), isNull(companies.deletedAt)));
+    return company || undefined;
+  }
+
+  async ownerHasCompanyNamed(
+    userId: string,
+    name: string,
+    excludeCompanyId?: string
+  ): Promise<boolean> {
+    // Company names are unique per owner (case-insensitive), never across tenants (R14-09).
+    const rows = await db
+      .select({ id: companies.id })
+      .from(companies)
+      .innerJoin(companyUsers, eq(companyUsers.companyId, companies.id))
+      .where(
+        and(
+          eq(companyUsers.userId, userId),
+          eq(companyUsers.role, "owner"),
+          isNull(companies.deletedAt),
+          sql`lower(btrim(${companies.name})) = lower(btrim(${name}))`,
+          excludeCompanyId ? sql`${companies.id} <> ${excludeCompanyId}` : sql`true`
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async companyHasPostedJournal(companyId: string): Promise<boolean> {
+    const rows = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(and(eq(journalEntries.companyId, companyId), eq(journalEntries.status, "posted")))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async getCompanyByName(name: string): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.name, name), isNull(companies.deletedAt)));
+    return company || undefined;
+  }
+
+  async getCompaniesByUserId(userId: string): Promise<Company[]> {
+    const results = await db
+      .select()
+      .from(companies)
+      .innerJoin(companyUsers, eq(companies.id, companyUsers.companyId))
+      .where(and(eq(companyUsers.userId, userId), isNull(companies.deletedAt)));
+
+    return results.map((r) => r.companies);
+  }
+
+  async createCompany(insertCompany: InsertCompany): Promise<Company> {
+    const [company] = await db.insert(companies).values(insertCompany).returning();
+    return company;
+  }
+
+  async updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company> {
+    const [company] = await db.update(companies).set(data).where(eq(companies.id, id)).returning();
+    return company;
+  }
+
+  // Company Users
+  async createCompanyUser(insertCompanyUser: InsertCompanyUser): Promise<CompanyUser> {
+    const [companyUser] = await db.insert(companyUsers).values(insertCompanyUser).returning();
+    return companyUser;
+  }
+
+  async getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined> {
+    const [companyUser] = await db
+      .select()
+      .from(companyUsers)
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)));
+    return companyUser || undefined;
+  }
+
+  /**
+   * Resolve a valid actor user id for a company — used wherever a system /
+   * automated action (AI auto-post, scheduled jobs) must satisfy a created_by
+   * FK. Firm-client companies have no company_users rows, so a bare
+   * role='owner' lookup returns nothing; fall back to any member, then to a
+   * firm owner who has access to all client companies.
+   */
+  async resolveCompanyActorUserId(companyId: string): Promise<string | null> {
+    const [owner] = await db
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.role, "owner")))
+      .limit(1);
+    if (owner?.userId) return owner.userId;
+
+    const [anyMember] = await db
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(eq(companyUsers.companyId, companyId))
+      .limit(1);
+    if (anyMember?.userId) return anyMember.userId;
+
+    // Firm-client company: any firm owner can act for it.
+    const company = await this.getCompany(companyId);
+    if (company?.companyType === "client") {
+      const [firmOwner] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.firmRole, "firm_owner"))
+        .limit(1);
+      if (firmOwner?.id) return firmOwner.id;
+    }
+    return null;
+  }
+
+  async hasCompanyAccess(
+    userId: string,
+    companyId: string,
+    firmRole?: string | null
+  ): Promise<boolean> {
+    // Direct company_users membership (includes firm grants, W5-D).
+    if (await this.getUserRole(companyId, userId)) return true;
+
+    // Look up firm role if caller didn't pass it. This makes all existing
+    // call sites firm-aware without per-route changes.
+    let role: string | null = firmRole ?? null;
+    if (firmRole === undefined) {
+      const [u] = await db
+        .select({ firmRole: users.firmRole })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      role = u?.firmRole ?? null;
+    }
+
+    // Legacy NR bypass roles only; preparer / reviewer / viewer and staff of
+    // other firms reach client books through company_users grants.
+    if (role !== "firm_owner" && role !== "firm_admin") return false;
+
+    // firm_owner: any client of the NR firm. firm_admin: assigned NR clients.
+    // A revoked link or another firm's client is never reachable (R15-12).
+    return canAccessFirmClient(
+      { firmId: NR_FIRM_ID, isNr: true, role, userId, platformAdmin: false },
+      companyId
+    );
+  }
+
+  async getAccessibleCompanies(
+    userId: string,
+    firmRole?: string | null,
+    isAdmin = false
+  ): Promise<Company[]> {
+    const direct = await this.getCompaniesByUserId(userId);
+
+    if (!isAdmin && firmRole !== "firm_owner" && firmRole !== "firm_admin") {
+      return direct;
+    }
+
+    // Add firm-accessible client companies (not already in direct list).
+    const directIds = new Set(direct.map((c) => c.id));
+
+    const ctx: FirmContext =
+      firmRole === "firm_owner" || firmRole === "firm_admin"
+        ? { firmId: NR_FIRM_ID, isNr: true, role: firmRole, userId, platformAdmin: false }
+        : { firmId: NR_FIRM_ID, isNr: true, role: "firm_owner", userId, platformAdmin: true };
+    const firmCompanies: Company[] = await db
+      .select()
+      .from(companies)
+      .where(accessibleClientCondition(ctx));
+
+    const merged = [...direct];
+    for (const c of firmCompanies) {
+      if (!directIds.has(c.id)) merged.push(c);
+    }
+    return merged;
+  }
+
+  async getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]> {
+    return await db.select().from(companyUsers).where(eq(companyUsers.companyId, companyId));
+  }
+
+  // Team Management
+  // R01-01: membership writes are always scoped by (membership id, company id);
+  // a membership of another company is "not found".
+  async updateCompanyUser(
+    companyId: string,
+    id: string,
+    data: Pick<Partial<InsertCompanyUser>, "role">
+  ): Promise<CompanyUser | undefined> {
+    return scopedUpdate(companyUsers, companyId, id, data);
+  }
+
+  async deleteCompanyUser(companyId: string, id: string): Promise<boolean> {
+    return scopedDelete(companyUsers, companyId, id);
+  }
+
+  async getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined> {
+    return scopedGet(companyUsers, companyId, id);
+  }
+
+  async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
+    const results = await db
+      .select()
+      .from(companyUsers)
+      .innerJoin(users, eq(companyUsers.userId, users.id))
+      .where(eq(companyUsers.companyId, companyId));
+
+    return results.map((r) => ({
+      ...r.company_users,
+      user: r.users,
+    }));
+  }
+
+  // Admin Company Management
+  async deleteCompany(id: string): Promise<void> {
+    await db
+      .update(companies)
+      .set({ deletedAt: new Date(), isActive: false })
+      .where(eq(companies.id, id));
+  }
+}
