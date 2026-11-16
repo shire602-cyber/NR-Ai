@@ -3311,7 +3311,7 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("workflowFinderHref");
     expect(reportLaunchPickerSource).toContain("matchingAutomationPackHref");
     expect(reportLaunchPickerSource).toContain("matchingAutomationPackLabel");
-    expect(reportLaunchPickerSource).toContain("Open matching suite");
+    expect(reportLaunchPickerSource).toContain('t["components.launchOpenMatchingSuite"]');
     expect(reportLaunchPickerSource).toContain(
       "visibleDeliverySubscriptions[0] ?? deliverySubscriptions[0]"
     );
@@ -3385,7 +3385,7 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("report-launch-delivery-preview-${subscription.id}");
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.suiteTitles");
     expect(reportLaunchPickerSource).toContain("report-launch-delivery-handoff-${subscription.id}");
-    expect(reportLaunchPickerSource).toContain("Acknowledge handoff");
+    expect(reportLaunchPickerSource).toContain('t["components.launchAcknowledgeHandoff"]');
     expect(reportLaunchPickerSource).toContain(
       "report-launch-latest-delivery-run-${subscription.id}"
     );

@@ -2,6 +2,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 const badgeVariants = cva(
   "whitespace-nowrap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-tight transition-colors" +
@@ -78,19 +79,20 @@ export type StatusKind =
   | "inactive"
   | "submitted";
 
+// R18-02: `label` is a translation key (components namespace).
 const STATUS_MAP: Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> = {
-  paid: { variant: "success", label: "Paid" },
-  posted: { variant: "success", label: "Posted" },
-  approved: { variant: "success", label: "Approved" },
-  active: { variant: "success", label: "Active" },
-  sent: { variant: "info", label: "Sent" },
-  submitted: { variant: "info", label: "Submitted" },
-  pending: { variant: "warning", label: "Pending" },
-  overdue: { variant: "danger", label: "Overdue" },
-  rejected: { variant: "danger", label: "Rejected" },
-  void: { variant: "neutral", label: "Void" },
-  draft: { variant: "neutral", label: "Draft" },
-  inactive: { variant: "neutral", label: "Inactive" },
+  paid: { variant: "success", label: "components.statusPaid" },
+  posted: { variant: "success", label: "components.statusPosted" },
+  approved: { variant: "success", label: "components.statusApproved" },
+  active: { variant: "success", label: "components.statusActive" },
+  sent: { variant: "info", label: "components.statusSent" },
+  submitted: { variant: "info", label: "components.statusSubmitted" },
+  pending: { variant: "warning", label: "components.statusPending" },
+  overdue: { variant: "danger", label: "components.statusOverdue" },
+  rejected: { variant: "danger", label: "components.statusRejected" },
+  void: { variant: "neutral", label: "components.statusVoid" },
+  draft: { variant: "neutral", label: "components.statusDraft" },
+  inactive: { variant: "neutral", label: "components.statusInactive" },
 };
 
 interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
@@ -100,11 +102,12 @@ interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
 }
 
 function StatusBadge({ status, label, className, ...props }: StatusBadgeProps) {
+  const { t } = useTranslation();
   const key = (status || "").toLowerCase() as StatusKind;
-  const meta = STATUS_MAP[key] ?? { variant: "neutral" as const, label: status };
+  const meta = STATUS_MAP[key];
   return (
-    <Badge variant={meta.variant} dot className={cn("py-0.5", className)} {...props}>
-      {label ?? meta.label}
+    <Badge variant={meta?.variant ?? "neutral"} dot className={cn("py-0.5", className)} {...props}>
+      {label ?? (meta ? (t[meta.label] ?? status) : status)}
     </Badge>
   );
 }

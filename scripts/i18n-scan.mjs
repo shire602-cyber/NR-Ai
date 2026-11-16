@@ -76,3 +76,96 @@ function scanDirs(dirs) {
 
   return { pages: files.length, translated, hardcoded, justified, untranslatedPages, perFile };
 }
+
+// ─── client/src/lib and client/src/hooks (F7, R18-02) ────────────────────────
+// Strings that live in data, hooks and libraries never appear as JSX text, so
+// the scan above misses them (report catalog labels, toast copy, chart
+// configs). This pass flags string literals assigned to user-visible
+// properties (label, title, description, placeholder, message, ...) in
+// client/src/lib/** and client/src/hooks/**. Move the copy into
+// client/src/locales/{en,ar}/<namespace>.json and store the key instead, or
+// justify it: `i18n-ignore: <reason>` on (or above) the line, or a file-level
+// `i18n-ignore-file: <reason>` comment for files whose strings are not UI copy
+// (export workbook cells, PDF content, the English source of a keyed overlay).
+export const libHookDirs = [
+  join(repoRoot, "client", "src", "lib"),
+  join(repoRoot, "client", "src", "hooks"),
+];
+// The translation tables themselves.
+const LIB_HOOK_EXEMPT = new Set(["client/src/lib/i18n.ts", "client/src/lib/i18n-extended.ts"]);
+const VISIBLE_PROP =
+  /\b(label|title|description|placeholder|message|heading|subtitle|helpText|emptyText|emptyState|cta|actionLabel|tooltip|ariaLabel|confirmLabel|cancelLabel|buttonLabel|hint|caption|toastTitle|toastDescription)\s*:\s*(["'`])((?:(?!\2)[^\n\\]|\\.)*)\2/g;
+
+/** A literal that reads as English prose (not a key, code, id or token). */
+export function isEnglishPhrase(value) {
+  const text = value.replace(/\$\{[^}]*\}/g, " ").trim();
+  if (!/[A-Za-z]{2,}/.test(text)) return false;
+  // translation keys ("pages.foo"), ids ("owner-cash-suite"), codes ("extension_not_detected")
+  if (/^[a-z0-9]+([._-][A-Za-z0-9]+)+$/.test(text)) return false;
+  if (/^[a-z][A-Za-z0-9]*$/.test(text)) return false;
+  // single ALL-CAPS token / acronym (VAT, PDF)
+  if (/^[A-Z0-9_]+$/.test(text)) return false;
+  return /^[A-Z]/.test(text) || /\s/.test(text);
+}
+
+function walkSources(dir) {
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...walkSources(p));
+    else if (/\.tsx?$/.test(p) && !/\.d\.ts$/.test(p)) out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Scan one source text: `hardcoded` user-visible English literals, `justified` ones
+ * (i18n-ignore on/above the line, or a file-level i18n-ignore-file), and the 0-based line
+ * numbers of the hard-coded hits.
+ */
+export function scanLibHookSource(src) {
+  const lines = src.split("\n");
+  const fileIgnore = /i18n-ignore-file:\s*\S/.test(src);
+  let hardcoded = 0;
+  let justified = 0;
+  const hits = [];
+  for (const m of src.matchAll(VISIBLE_PROP)) {
+    if (!isEnglishPhrase(m[3])) continue;
+    const lineIndex = src.slice(0, m.index).split("\n").length - 1;
+    const context = `${lines[lineIndex - 1] ?? ""}\n${lines[lineIndex] ?? ""}`;
+    if (fileIgnore || /i18n-ignore:/.test(context)) {
+      justified++;
+      continue;
+    }
+    hardcoded++;
+    hits.push(lineIndex);
+  }
+  return { hardcoded, justified, hits };
+}
+
+export function scanLibHooks() {
+  const files = libHookDirs.filter((d) => existsSync(d)).flatMap((d) => walkSources(d));
+  let hardcoded = 0;
+  let justified = 0;
+  const perFile = {};
+  const ignoredFiles = {};
+  const samples = [];
+  for (const f of files) {
+    const rel = f.replace(repoRoot + "/", "");
+    if (LIB_HOOK_EXEMPT.has(rel)) continue;
+    const src = readFileSync(f, "utf8");
+    const lines = src.split("\n");
+    const result = scanLibHookSource(src);
+    hardcoded += result.hardcoded;
+    justified += result.justified;
+    if (result.hardcoded > 0) perFile[rel] = result.hardcoded;
+    if (/i18n-ignore-file:\s*\S/.test(src) && result.justified > 0) {
+      ignoredFiles[rel] = result.justified;
+    }
+    for (const line of result.hits) {
+      if (samples.length < 50)
+        samples.push(`${rel}:${line + 1}: ${lines[line].trim().slice(0, 100)}`);
+    }
+  }
+  return { files: files.length, hardcoded, justified, perFile, ignoredFiles, samples };
+}

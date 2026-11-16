@@ -2,8 +2,10 @@ import { ReportLaunchPicker } from "@/components/reports/ReportLaunchPicker";
 import { Plus, Receipt, BookOpen, BarChart3 } from "lucide-react";
 import { QuickAction, SectionHeader } from "./Layout";
 import type { DashboardModel } from "./useCustomerDashboardModel";
+import { useTranslation } from "@/lib/i18n";
 
 export function DashboardActions({ m }: { m: DashboardModel }) {
+  const { t } = useTranslation();
   const {
     selectedCompanyId,
     preferredReportWorkspace,
@@ -17,33 +19,36 @@ export function DashboardActions({ m }: { m: DashboardModel }) {
     <>
       {/* ── Quick actions ────────────────────────────────────────────────── */}
       <section>
-        <SectionHeader eyebrow="Shortcuts" title="Quick actions" />
+        <SectionHeader
+          eyebrow={t["dashboard.quickActionsEyebrow"]}
+          title={t["dashboard.quickActionsTitle"]}
+        />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <QuickAction
             icon={Plus}
-            title="Create Invoice"
-            description="Create VAT-ready tax invoices in seconds"
+            title={t["dashboard.quickCreateInvoice"]}
+            description={t["dashboard.quickCreateInvoiceBody"]}
             href="/invoices"
             delay={0.05}
           />
           <QuickAction
             icon={Receipt}
-            title="Scan Receipt"
-            description="OCR receipts straight into your books"
+            title={t["dashboard.quickScanReceipt"]}
+            description={t["dashboard.quickScanReceiptBody"]}
             href="/receipts"
             delay={0.1}
           />
           <QuickAction
             icon={BookOpen}
-            title="Journal Entry"
-            description="Record manual double-entry transactions"
+            title={t["dashboard.quickJournalEntry"]}
+            description={t["dashboard.quickJournalEntryBody"]}
             href="/journal"
             delay={0.15}
           />
           <QuickAction
             icon={BarChart3}
-            title="View Reports"
-            description="P&L, balance sheet, cash flow — exportable"
+            title={t["dashboard.quickViewReports"]}
+            description={t["dashboard.quickViewReportsBody"]}
             href="/reports"
             delay={0.2}
           />

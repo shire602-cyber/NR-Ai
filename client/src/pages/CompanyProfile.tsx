@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -93,6 +94,7 @@ type CompanyProfileFormData = z.infer<typeof companyProfileSchema>;
 
 export default function CompanyProfile() {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { companyId, isLoading: companiesLoading } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -169,15 +171,15 @@ export default function CompanyProfile() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Company profile updated",
-        description: "Your company profile has been saved successfully.",
+        title: t["pages.companyProfileSavedTitle"],
+        description: t["pages.companyProfileSavedBody"],
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update profile",
-        description: error?.message || "Please try again.",
+        title: t["pages.companyProfileSaveFailed"],
+        description: error?.message || t["pages.companyProfileTryAgain"],
       });
     },
   });
@@ -193,7 +195,11 @@ export default function CompanyProfile() {
     if (!file || !companyId) return;
     const problem = companyLogoFileError(file);
     if (problem) {
-      toast({ variant: "destructive", title: "Invalid logo", description: problem });
+      toast({
+        variant: "destructive",
+        title: t["pages.companyProfileInvalidLogo"],
+        description: problem,
+      });
       e.target.value = "";
       return;
     }
@@ -203,12 +209,12 @@ export default function CompanyProfile() {
       setLogoPreview(URL.createObjectURL(file));
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
-      toast({ title: "Logo uploaded" });
+      toast({ title: t["pages.companyProfileLogoUploaded"] });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Logo upload failed",
-        description: error?.message || "Please try again.",
+        title: t["pages.companyProfileLogoFailed"],
+        description: error?.message || t["pages.companyProfileTryAgain"],
       });
     }
   };
@@ -244,9 +250,9 @@ export default function CompanyProfile() {
   return (
     <div className="space-y-8 max-w-4xl">
       <PageHeader
-        eyebrow="Settings"
-        title="Company Profile"
-        description="Manage your company information, tax settings, and compliance details"
+        eyebrow={t["pages.companyProfileEyebrow"]}
+        title={t["pages.companyProfileTitle"]}
+        description={t["pages.companyProfileDescription"]}
       />
 
       <Form {...form}>
@@ -273,11 +279,11 @@ export default function CompanyProfile() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company Name *</FormLabel>
+                      <FormLabel>{t["pages.companyProfileNameLabel"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Acme Corporation"
+                          placeholder={t["pages.companyProfileNamePlaceholder"]}
                           data-testid="input-company-name"
                         />
                       </FormControl>
@@ -291,11 +297,13 @@ export default function CompanyProfile() {
                   name="legalStructure"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Legal Structure *</FormLabel>
+                      <FormLabel>{t["pages.companyProfileLegalStructureLabel"]}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-legal-structure">
-                            <SelectValue placeholder="Select legal structure" />
+                            <SelectValue
+                              placeholder={t["pages.companyProfileLegalStructurePlaceholder"]}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -330,7 +338,7 @@ export default function CompanyProfile() {
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Technology, Retail, etc."
+                          placeholder={t["pages.companyProfileIndustryPlaceholder"]}
                           data-testid="input-industry"
                         />
                       </FormControl>
@@ -366,11 +374,11 @@ export default function CompanyProfile() {
                 name="businessAddress"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Business Address *</FormLabel>
+                    <FormLabel>{t["pages.companyProfileAddressLabel"]}</FormLabel>
                     <FormControl>
                       <Textarea
                         {...field}
-                        placeholder="123 Business St, Dubai, UAE"
+                        placeholder={t["pages.companyProfileAddressPlaceholder"]}
                         rows={3}
                         data-testid="textarea-business-address"
                       />
@@ -455,7 +463,7 @@ export default function CompanyProfile() {
                       <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0">
                         <img
                           src={logoPreview}
-                          alt="Logo preview"
+                          alt={t["pages.companyProfileLogoPreview"]}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -467,10 +475,10 @@ export default function CompanyProfile() {
                         onChange={handleLogoChange}
                         className="cursor-pointer"
                         data-testid="input-logo-upload"
-                        aria-label="Company logo"
+                        aria-label={t["pages.companyProfileLogoLabel"]}
                       />
                       <FormDescription className="mt-2">
-                        Upload your company logo (optional)
+                        {t["pages.companyProfileLogoHint"]}
                       </FormDescription>
                     </div>
                   </div>
@@ -501,7 +509,7 @@ export default function CompanyProfile() {
                   name="trnVatNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TRN / VAT Number *</FormLabel>
+                      <FormLabel>{t["pages.companyProfileTrnLabel"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -510,7 +518,7 @@ export default function CompanyProfile() {
                           data-testid="input-trn-vat-number"
                         />
                       </FormControl>
-                      <FormDescription>15-digit Tax Registration Number (UAE)</FormDescription>
+                      <FormDescription>{t["pages.companyProfileTrnHint"]}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -527,7 +535,9 @@ export default function CompanyProfile() {
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-tax-registration-type">
-                            <SelectValue placeholder="Select registration type" />
+                            <SelectValue
+                              placeholder={t["pages.companyProfileRegistrationTypePlaceholder"]}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -555,11 +565,13 @@ export default function CompanyProfile() {
                   name="vatFilingFrequency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>VAT Filing Frequency *</FormLabel>
+                      <FormLabel>{t["pages.companyProfileVatFrequencyLabel"]}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-vat-filing-frequency">
-                            <SelectValue placeholder="Select filing frequency" />
+                            <SelectValue
+                              placeholder={t["pages.companyProfileVatFrequencyPlaceholder"]}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -631,7 +643,7 @@ export default function CompanyProfile() {
               data-testid="button-save-company-profile"
             >
               {updateMutation.isPending ? (
-                "Saving..."
+                t["pages.companyProfileSaving"]
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />

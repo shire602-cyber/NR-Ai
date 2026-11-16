@@ -365,9 +365,9 @@ export default function Journal() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["journal.pageEyebrow"]}
         title={t.journal}
-        description="Double-entry journal with automatic balance validation"
+        description={t["journal.pageDescription"]}
         actions={
           <Button onClick={() => setDialogOpen(true)} data-testid="button-create-entry">
             <Plus className="w-4 h-4 mr-2" />
@@ -959,8 +959,8 @@ export default function Journal() {
           <CardContent className="p-0">
             <EmptyState
               icon={BookMarked}
-              title="No journal entries yet"
-              description="Record your first manual journal entry — every transaction needs at least one debit and one credit."
+              title={t["journal.emptyTitle"]}
+              description={t["journal.emptyDescription"]}
               action={{
                 label: t.newEntry,
                 icon: Plus,

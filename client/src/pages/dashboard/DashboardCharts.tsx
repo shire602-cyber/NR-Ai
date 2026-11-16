@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatMonthKey } from "@/lib/format";
 import { BarChart3, Coins } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -26,11 +26,11 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
       {/* ── Charts row ───────────────────────────────────────────────────── */}
       <section>
         <SectionHeader
-          eyebrow="Trends"
-          title="Revenue vs Expenses"
+          eyebrow={t["dashboard.trendsEyebrow"]}
+          title={t["dashboard.trendsTitle"]}
           action={
             <Badge variant="outline" className="font-mono">
-              Last 6 months
+              {t["dashboard.lastSixMonths"]}
             </Badge>
           }
         />
@@ -56,7 +56,8 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       </linearGradient>
                     </defs>
                     <XAxis
-                      dataKey="month"
+                      dataKey="key"
+                      tickFormatter={(key: string) => formatMonthKey(key, locale)}
                       stroke="hsl(var(--muted-foreground))"
                       fontSize={11}
                       tickLine={false}
@@ -86,6 +87,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                         boxShadow: "var(--shadow-md)",
                       }}
                       formatter={(value: any) => formatCurrency(value, "AED", locale)}
+                      labelFormatter={(key: any) => formatMonthKey(String(key), locale)}
                     />
                     <Area
                       type="monotone"
@@ -93,7 +95,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       stroke={CHART_COLORS.accent}
                       strokeWidth={2}
                       fill="url(#rev)"
-                      name="Revenue"
+                      name={t.revenue}
                     />
                     <Area
                       type="monotone"
@@ -101,16 +103,16 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       stroke={CHART_COLORS.warning}
                       strokeWidth={2}
                       fill="url(#exp)"
-                      name="Expenses"
+                      name={t.expenses}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
                 <EmptyState
                   icon={BarChart3}
-                  title="No revenue data yet"
-                  body="Issue your first invoice and the trend chart fills in automatically."
-                  actionLabel="Create invoice"
+                  title={t["dashboard.emptyRevenueTitle"]}
+                  body={t["dashboard.emptyRevenueBody"]}
+                  actionLabel={t["dashboard.emptyInvoicesAction"]}
                   actionHref="/invoices"
                 />
               )}
@@ -121,7 +123,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
           <Card className="border-card-border">
             <CardHeader className="pb-2">
               <CardTitle className="text-[13px] font-semibold tracking-tight text-muted-foreground uppercase tracking-[0.12em]">
-                {t.expenseBreakdown ?? "Expense Breakdown"}
+                {t.expenseBreakdown}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0 px-3">
@@ -179,9 +181,9 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
               ) : (
                 <EmptyState
                   icon={Coins}
-                  title="No expenses tracked"
-                  body="Categorize your first expense to see the breakdown."
-                  actionLabel="Create journal entry"
+                  title={t["dashboard.emptyExpensesTitle"]}
+                  body={t["dashboard.emptyExpensesBody"]}
+                  actionLabel={t["dashboard.createJournalEntry"]}
                   actionHref="/journal"
                 />
               )}

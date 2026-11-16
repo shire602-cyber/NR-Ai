@@ -16,13 +16,13 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
     <>
       {/* ── Recent activity ─────────────────────────────────────────────── */}
       <section>
-        <SectionHeader eyebrow="Activity" title="Recent" />
+        <SectionHeader eyebrow={t["dashboard.recentEyebrow"]} title={t["dashboard.recentTitle"]} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card className="border-card-border">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
               <CardTitle className="flex items-center gap-2 text-[13px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
                 <FileText className="w-3.5 h-3.5" />
-                {t.recentInvoices ?? "Recent invoices"}
+                {t.recentInvoices}
               </CardTitle>
               <Link href="/invoices">
                 <Button
@@ -75,9 +75,9 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
               ) : (
                 <EmptyState
                   icon={FileText}
-                  title="No invoices yet"
-                  body="Create your first invoice to get started."
-                  actionLabel="Create invoice"
+                  title={t["dashboard.emptyInvoicesTitle"]}
+                  body={t["dashboard.emptyInvoicesBody"]}
+                  actionLabel={t["dashboard.emptyInvoicesAction"]}
                   actionHref="/invoices"
                 />
               )}
@@ -111,7 +111,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13.5px] font-medium tracking-tight text-foreground truncate">
-                          {entry.memo || "Journal entry"}
+                          {entry.memo || t["dashboard.journalEntryFallback"]}
                         </div>
                         <div className="text-[11.5px] text-muted-foreground font-mono tabular-nums">
                           {formatDate(entry.date, locale)}
@@ -124,9 +124,9 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
               ) : (
                 <EmptyState
                   icon={BookOpen}
-                  title="No transactions yet"
-                  body="Your double-entry ledger is waiting for its first entry."
-                  actionLabel="Create journal entry"
+                  title={t["dashboard.emptyTransactionsTitle"]}
+                  body={t["dashboard.emptyTransactionsBody"]}
+                  actionLabel={t["dashboard.createJournalEntry"]}
                   actionHref="/journal"
                 />
               )}

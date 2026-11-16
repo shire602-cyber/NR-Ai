@@ -375,7 +375,7 @@ export default function Quotes() {
                     name="date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <FormLabel>{t.date}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -728,7 +728,7 @@ export default function Quotes() {
                   <TableHead className="font-semibold">
                     <T k="pages.customer" />
                   </TableHead>
-                  <TableHead className="font-semibold">Date</TableHead>
+                  <TableHead className="font-semibold">{t.date}</TableHead>
                   <TableHead className="font-semibold">
                     <T k="pages.expiry" />
                   </TableHead>

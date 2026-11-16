@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { apiUrl } from "@/lib/api";
@@ -414,8 +414,16 @@ export default function ChartOfAccounts() {
                                       {formatCurrency(Math.abs(item.balance))}
                                     </p>
                                     <div className="flex gap-2 text-xs text-muted-foreground">
-                                      <span>Dr: {formatCurrency(item.debitTotal)}</span>
-                                      <span>Cr: {formatCurrency(item.creditTotal)}</span>
+                                      <span>
+                                        {formatMessage(t["pages.coaDebitTotal"], {
+                                          amount: formatCurrency(item.debitTotal, "AED", locale),
+                                        })}
+                                      </span>
+                                      <span>
+                                        {formatMessage(t["pages.coaCreditTotal"], {
+                                          amount: formatCurrency(item.creditTotal, "AED", locale),
+                                        })}
+                                      </span>
                                     </div>
                                   </div>
                                   <Button

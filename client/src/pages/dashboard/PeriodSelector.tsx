@@ -2,17 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   DASHBOARD_PRESETS,
+  DASHBOARD_PRESET_LABELS,
   isCompleteChoice,
   type DashboardPeriodChoice,
-  type DashboardPreset,
 } from "./period";
 
-const LABELS: Record<DashboardPreset, { en: string; ar: string }> = {
-  month: { en: "This month", ar: "هذا الشهر" },
-  quarter: { en: "This quarter", ar: "هذا الربع" },
-  ytd: { en: "Year to date", ar: "منذ بداية السنة" },
-  custom: { en: "Custom", ar: "فترة مخصصة" },
-};
+const LABELS = DASHBOARD_PRESET_LABELS;
 
 interface PeriodSelectorProps {
   choice: DashboardPeriodChoice;

@@ -19,6 +19,13 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - UI copy goes into namespaced catalogs `client/src/locales/{en,ar}/*.json` (used via `<T k>` /
   `t["ns.key"]`); use logical CSS properties for RTL. `node tests/e2e/a11y-crawl.mjs [--rtl]` runs
   the axe/keyboard crawl.
+  Report catalog labels stay English in `reportCatalog.ts`; Arabic lives in the keyed overlay
+  `client/src/locales/ar-catalog/reportCatalog.json` (`useCatalogText()` in
+  `client/src/lib/reportCatalogText.ts`, coverage in `tests/unit/report-catalog-arabic.test.ts`).
+  `npm run e2e:arabic-runtime` (`tests/e2e/arabic-runtime-crawl.mjs`, BASE_URL) counts rendered
+  English text nodes on the 20 launch routes in Arabic mode (target 0); the i18n ratchet also scans
+  `client/src/lib` + `client/src/hooks` string properties (baseline 0, `i18n-ignore-file:` for non-UI
+  files).
 - After a merged build, refresh the bundle baseline with
   `node scripts/check-bundle-budget.mjs --update`.
 - Every journal write goes through the ledger kernel in `server/ledger/` (frozen API in

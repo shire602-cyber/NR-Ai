@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -337,6 +337,27 @@ const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
   statistical: "your past classifications",
   openai: "AI vision",
 };
+
+/** Display label for a stored (English) receipt category; unknown categories show as stored. */
+const RECEIPT_CATEGORY_KEYS: Record<string, string> = {
+  "Office Supplies": "pageLabels.officeSupplies",
+  Meals: "pages.receiptsCategoryMeals",
+  Travel: "pages.travel",
+  Utilities: "pages.utilities",
+  Marketing: "pageLabels.marketing",
+  Equipment: "pages.equipment",
+  Communication: "pageLabels.communication",
+  "Professional Services": "pages.professionalServices",
+  Insurance: "pages.insurance",
+  Maintenance: "pages.maintenance",
+  Rent: "pages.receiptsCategoryRent",
+  Other: "pages.other",
+};
+
+function receiptCategoryLabel(t: Record<string, string>, category: string): string {
+  const key = RECEIPT_CATEGORY_KEYS[category];
+  return (key && t[key]) || category;
+}
 
 export default function Receipts() {
   const { t, locale } = useTranslation();
@@ -1475,9 +1496,7 @@ export default function Receipts() {
             <Upload className="w-5 h-5" />
             <T k="pageLabels.uploadReceipts" />
           </CardTitle>
-          <CardDescription>
-            Drag & drop receipt images or click to browse (supports bulk upload)
-          </CardDescription>
+          <CardDescription>{t["pages.receiptsUploadDescription"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Drop Zone */}
@@ -1500,7 +1519,7 @@ export default function Receipts() {
               accept="image/*,application/pdf"
               multiple
               className="sr-only"
-              aria-label="Upload receipt images or PDFs"
+              aria-label={t["pages.receiptsUploadInputLabel"]}
               onChange={(e) => {
                 const files = e.target.files;
                 if (files && files.length > 0) handleFilesSelect(files);
@@ -1512,7 +1531,11 @@ export default function Receipts() {
               <div className="space-y-4">
                 <div className="flex items-center justify-center gap-2 text-[hsl(var(--chart-5))]">
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>{processedReceipts.length} image(s) loaded</span>
+                  <span>
+                    {formatMessage(t["pages.receiptsImagesLoaded"], {
+                      count: processedReceipts.length,
+                    })}
+                  </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   <T k="pageLabels.clickOrDropMoreImagesTo" />
@@ -1530,12 +1553,10 @@ export default function Receipts() {
                     <T k="pageLabels.dropYourReceiptsHere" />
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    or click to browse files (multiple selection supported)
+                    {t["pages.receiptsBrowseHint"]}
                   </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Supports: JPG, PNG, HEIC, PDF • Bulk upload enabled
-                </p>
+                <p className="text-xs text-muted-foreground">{t["pages.receiptsSupportedTypes"]}</p>
                 <Button
                   type="button"
                   variant="outline"
@@ -1862,7 +1883,9 @@ export default function Receipts() {
                               <SelectItem value="Office Supplies">
                                 <T k="pageLabels.officeSupplies" />
                               </SelectItem>
-                              <SelectItem value="Meals">Meals &amp; Entertainment</SelectItem>
+                              <SelectItem value="Meals">
+                                {t["pages.receiptsCategoryMeals"]}
+                              </SelectItem>
                               <SelectItem value="Travel">
                                 <T k="pages.travel" />
                               </SelectItem>
@@ -1887,7 +1910,9 @@ export default function Receipts() {
                               <SelectItem value="Maintenance">
                                 <T k="pages.maintenance" />
                               </SelectItem>
-                              <SelectItem value="Rent">Rent</SelectItem>
+                              <SelectItem value="Rent">
+                                {t["pages.receiptsCategoryRent"]}
+                              </SelectItem>
                               <SelectItem value="Other">
                                 <T k="pages.other" />
                               </SelectItem>
@@ -2066,7 +2091,7 @@ export default function Receipts() {
                   data-testid="button-export-expenses"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  {isExporting ? "Exporting..." : "Export"}
+                  {isExporting ? t["pages.receiptsExporting"] : t["pages.receiptsExport"]}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -2075,14 +2100,14 @@ export default function Receipts() {
                   data-testid="menu-export-expenses-excel"
                 >
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Export to Excel (full)
+                  {t["pages.receiptsExportExcelFull"]}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleDownloadReceiptsExcel}
                   data-testid="menu-export-expenses-excel-ocr"
                 >
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Download Excel (OCR format)
+                  {t["pages.receiptsExportExcelOcr"]}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
@@ -2097,7 +2122,7 @@ export default function Receipts() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4 flex-wrap pb-4 border-b">
-            <span className="text-sm font-medium">Filter by date:</span>
+            <span className="text-sm font-medium">{t.filterByDate}</span>
             <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
           </div>
           {isLoading ? (
@@ -2132,7 +2157,11 @@ export default function Receipts() {
                         {formatCurrency(receipt.amount || 0, "AED", locale)}
                       </p>
                       <div className="flex gap-2 mt-1 flex-wrap sm:justify-end">
-                        <Badge variant="outline">{receipt.category || "Uncategorized"}</Badge>
+                        <Badge variant="outline">
+                          {receipt.category
+                            ? receiptCategoryLabel(t, receipt.category)
+                            : t["pages.receiptsUncategorized"]}
+                        </Badge>
                         {isInternalClassifierMethod(receipt.classifierMethod) && (
                           <Badge
                             variant="secondary"
@@ -2183,7 +2212,7 @@ export default function Receipts() {
                           data-testid={`button-post-receipt-${receipt.id}`}
                         >
                           <CheckCircle2 className="w-4 h-4 mr-2" />
-                          Post
+                          {t["pages.receiptsPost"]}
                         </Button>
                       )}
                       <Button
@@ -2194,7 +2223,7 @@ export default function Receipts() {
                         data-testid={`button-edit-receipt-${receipt.id}`}
                       >
                         <Edit className="w-4 h-4 mr-2" />
-                        Edit
+                        {t.edit}
                       </Button>
                       <Button
                         variant="ghost"
@@ -2250,18 +2279,18 @@ export default function Receipts() {
               icon={Upload}
               title={
                 dateRange.from || dateRange.to
-                  ? "No receipts in this date range"
-                  : "No receipts yet"
+                  ? t["pages.receiptsEmptyRangeTitle"]
+                  : t["pages.receiptsEmptyTitle"]
               }
               description={
                 dateRange.from || dateRange.to
-                  ? "Try widening the filter or clearing it to see all receipts."
-                  : "Snap a photo or upload a PDF — AI extracts merchant, VAT, and category automatically."
+                  ? t["pages.receiptsEmptyRangeBody"]
+                  : t["pages.receiptsEmptyBody"]
               }
               action={
                 !(dateRange.from || dateRange.to)
                   ? {
-                      label: "Upload receipt",
+                      label: t["pages.receiptsUploadReceipt"],
                       icon: Upload,
                       onClick: () => document.getElementById("file-input")?.click(),
                       testId: "button-upload-first-receipt",

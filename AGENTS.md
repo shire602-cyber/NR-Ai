@@ -7,6 +7,9 @@ Scope: this file applies to the whole repository. It is a concise index; detail 
 
 - `client/` React/Vite frontend (`@` aliases `client/src`). UI copy lives in namespaced catalogs
   `client/src/locales/{en,ar}/*.json` (`<T k>` / `t["ns.key"]`); use logical CSS properties for RTL.
+  Report catalog Arabic is the keyed overlay `client/src/locales/ar-catalog/reportCatalog.json`
+  (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 20
+  launch routes in Arabic mode. The i18n ratchet also scans `client/src/lib` and `client/src/hooks`.
 - `server/` Express API: `routes/`, `services/`, `middleware/`, `ledger/`, `reporting/`, `tax/`,
   `tenancy/`, `platform/` (service registry, domain events, job registry), `outbox/`, `http/`.
   `server/routes/ai.routes.ts` and `firm.routes.ts` keep every registration (path, middleware

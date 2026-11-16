@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -283,6 +283,7 @@ function ContactForm({
 
 export default function CustomerContacts() {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -542,9 +543,9 @@ export default function CustomerContacts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
-        title="Customer Contacts"
-        description="Manage your customers and business contacts for invoicing"
+        eyebrow={t["pages.contactsEyebrow"]}
+        title={t["pages.contactsTitle"]}
+        description={t["pages.contactsDescription"]}
         testId="text-contacts-title"
         actions={
           <>
@@ -598,7 +599,7 @@ export default function CustomerContacts() {
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
             <Building2 className="w-4 h-4 mr-2" />
-            Contacts ({contacts.length})
+            {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
           </TabsTrigger>
           <TabsTrigger value="import" data-testid="tab-contacts-import">
             <Upload className="w-4 h-4 mr-2" />
@@ -611,7 +612,7 @@ export default function CustomerContacts() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search contacts..."
+                placeholder={t["pages.contactsSearchPlaceholder"]}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -629,25 +630,28 @@ export default function CustomerContacts() {
               ) : filteredContacts.length === 0 ? (
                 <EmptyState
                   icon={Building2}
-                  title={searchTerm ? "No matching contacts" : "No contacts yet"}
+                  title={
+                    searchTerm ? t["pages.contactsNoMatchTitle"] : t["pages.contactsEmptyTitle"]
+                  }
                   description={
-                    searchTerm
-                      ? "Try a different search term or clear the search."
-                      : "Add your first contact, or import a list from an Excel/CSV file."
+                    searchTerm ? t["pages.contactsNoMatchBody"] : t["pages.contactsEmptyBody"]
                   }
                   action={
                     searchTerm
                       ? undefined
                       : {
-                          label: "Add contact",
+                          label: t["pages.contactsAddContact"],
                           onClick: () => setShowAddDialog(true),
                           testId: "button-add-first-contact",
                         }
                   }
                   secondaryAction={
                     searchTerm
-                      ? { label: "Clear search", onClick: () => setSearchTerm("") }
-                      : { label: "Import from Excel", onClick: () => setActiveTab("import") }
+                      ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                      : {
+                          label: t["pageLabels.importFromExcel"],
+                          onClick: () => setActiveTab("import"),
+                        }
                   }
                 />
               ) : (
@@ -660,7 +664,7 @@ export default function CustomerContacts() {
                   columns={[
                     {
                       key: "name",
-                      header: "Name",
+                      header: t["pages.contactsColName"],
                       cell: (contact) => (
                         <div className="flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-muted-foreground" />
@@ -670,7 +674,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "email",
-                      header: "Email",
+                      header: t["pages.contactsColEmail"],
                       cell: (contact) => (
                         <div className="flex items-center gap-2 truncate">
                           <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -680,7 +684,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "phone",
-                      header: "Phone",
+                      header: t["pages.contactsColPhone"],
                       cell: (contact) =>
                         contact.phone ? (
                           <div className="flex items-center gap-2">
@@ -701,7 +705,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "location",
-                      header: "Location",
+                      header: t["pages.contactsColLocation"],
                       cell: (contact) =>
                         contact.city || contact.country ? (
                           <div className="flex items-center gap-2">
@@ -712,7 +716,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "actions",
-                      header: "Actions",
+                      header: t["pages.contactsColActions"],
                       width: "170px",
                       cell: (contact) => (
                         <div className="flex items-center gap-1">

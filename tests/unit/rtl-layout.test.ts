@@ -93,10 +93,9 @@ describe("RTL shell layout", () => {
     expect(crawl).toContain('process.argv.includes("--rtl")');
     expect(crawl).toContain("layout.clientWidth - layout.sidebarWidth - 1");
     expect(crawl).toContain("rtl-main-overlaps-sidebar");
-    const routeBlock = crawl.slice(
-      crawl.indexOf("const CUSTOMER_ROUTES = ["),
-      crawl.indexOf("];", crawl.indexOf("const CUSTOMER_ROUTES = ["))
-    );
-    expect((routeBlock.match(/^\s+"\//gm) ?? []).length).toBeGreaterThanOrEqual(20);
+    // F7: the route list is shared with the Arabic runtime crawl (tests/e2e/launch-routes.mjs).
+    expect(crawl).toContain("const CUSTOMER_ROUTES = LAUNCH_ROUTES;");
+    const routes = read("tests/e2e/launch-routes.mjs");
+    expect((routes.match(/^\s+"\//gm) ?? []).length).toBeGreaterThanOrEqual(20);
   });
 });

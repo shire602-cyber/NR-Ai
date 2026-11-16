@@ -36,6 +36,16 @@ export function formatDate(date: Date | string, locale: string = "en"): string {
   }).format(dateObj);
 }
 
+/** Short month label for a `YYYY-MM` key ("Nov" / "نوفمبر"), in the UI locale (R18-02). */
+export function formatMonthKey(key: string, locale: string = "en"): string {
+  const match = /^(\d{4})-(\d{2})/.exec(key ?? "");
+  if (!match) return key;
+  const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
+  return new Intl.DateTimeFormat(formatLocale, { month: "short", timeZone: "UTC" }).format(
+    new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1))
+  );
+}
+
 export function formatPercent(value: number, locale: string = "en"): string {
   const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
 

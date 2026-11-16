@@ -26,7 +26,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -489,20 +489,15 @@ export default function CorporateTax() {
             <h1 className="text-3xl font-bold tracking-tight">
               {(t as any).corporateTax || "Corporate Tax (9%)"}
             </h1>
-            <p className="text-muted-foreground mt-1">
-              UAE Corporate Tax &mdash; 9% on taxable income above AED 375,000
-            </p>
+            <p className="text-muted-foreground mt-1">{t["corporateTax.pageSubtitle"]}</p>
           </div>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Pre-submission Profit / Loss Workpaper</CardTitle>
-          <CardDescription>
-            Enter revenue and expense lines exactly like the Excel schedule used before filing.
-            These rows support the draft return and do not mark anything as submitted.
-          </CardDescription>
+          <CardTitle>{t["corporateTax.workpaperTitle"]}</CardTitle>
+          <CardDescription>{t["corporateTax.workpaperDescription"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
@@ -552,7 +547,9 @@ export default function CorporateTax() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-[260px] text-base font-bold">
-                    Year {new Date(periodEnd || periodStart).getFullYear() || currentYear}
+                    {formatMessage(t["corporateTax.workpaperYear"], {
+                      year: new Date(periodEnd || periodStart).getFullYear() || currentYear,
+                    })}
                   </TableHead>
                   <TableHead className="min-w-[180px] text-right text-base font-bold">
                     <T k="pages.expense" />
@@ -651,7 +648,9 @@ export default function CorporateTax() {
                   <TableCell colSpan={2} />
                 </TableRow>
                 <TableRow>
-                  <TableCell className="font-bold">PROFIT / LOSS (Revenue - Expense)</TableCell>
+                  <TableCell className="font-bold">
+                    {t["corporateTax.workpaperProfitLoss"]}
+                  </TableCell>
                   <TableCell />
                   <TableCell
                     className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-destructive" : "text-success"}`}
@@ -666,10 +665,7 @@ export default function CorporateTax() {
             </Table>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            This is a corporate tax support schedule. It creates a draft return only; it does not
-            submit to the FTA and it does not post accounting entries.
-          </p>
+          <p className="text-xs text-muted-foreground">{t["corporateTax.workpaperDisclaimer"]}</p>
         </CardContent>
       </Card>
 
@@ -680,9 +676,7 @@ export default function CorporateTax() {
             <Calculator className="w-5 h-5" />
             <T k="pageLabels.taxCalculator" />
           </CardTitle>
-          <CardDescription>
-            Calculate corporate tax from your journal entries for a given period
-          </CardDescription>
+          <CardDescription>{t["corporateTax.calculatorDescription"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Period Selector */}

@@ -1607,7 +1607,7 @@ export default function Invoices() {
                           data-testid={`mobile-button-edit-invoice-${invoice.id}`}
                         >
                           <Edit className="w-4 h-4 mr-1" />
-                          Edit
+                          {t.edit}
                         </Button>
                         <Button
                           asChild
@@ -1736,7 +1736,7 @@ export default function Invoices() {
                                 data-testid={`button-edit-invoice-${invoice.id}`}
                               >
                                 <Edit className="w-4 h-4 mr-2" />
-                                Edit
+                                {t.edit}
                               </Button>
                               <Button
                                 variant="ghost"

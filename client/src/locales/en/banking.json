@@ -118,5 +118,8 @@
   "banking.rules.suggestionsHint": "Payees you coded to the same account more than once.",
   "banking.rules.useSuggestion": "Create rule",
   "banking.rules.ranTitle": "Rules applied",
-  "banking.rules.ranResult": "{posted} posted, {review} waiting for review, {errors} failed, out of {total} open lines."
+  "banking.rules.ranResult": "{posted} posted, {review} waiting for review, {errors} failed, out of {total} open lines.",
+  "banking.emptyTransactionsTitle": "No bank transactions",
+  "banking.emptyTransactionsDescription": "Import a bank statement (CSV or PDF) to start matching transactions to journal entries.",
+  "banking.importStatementAction": "Import bank statement"
 }

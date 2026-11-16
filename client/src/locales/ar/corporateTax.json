@@ -51,5 +51,12 @@
   "corporateTax.statusUpdateFailed": "تعذر تحديث الإقرار",
   "corporateTax.statusUpdated": "تم تحديث الإقرار",
   "corporateTax.tradeLicenceExpiry": "تاريخ انتهاء الرخصة التجارية",
-  "corporateTax.voidReturn": "إلغاء هذه المسودة"
+  "corporateTax.voidReturn": "إلغاء هذه المسودة",
+  "corporateTax.pageSubtitle": "ضريبة الشركات في الإمارات — 9% على الدخل الخاضع للضريبة الذي يتجاوز 375,000 درهم",
+  "corporateTax.workpaperTitle": "ورقة عمل الأرباح / الخسائر قبل التقديم",
+  "corporateTax.workpaperDescription": "أدخل بنود الإيرادات والمصروفات تمامًا كما في جدول Excel المستخدم قبل التقديم. تدعم هذه البنود مسودة الإقرار ولا تُعلِّم أي شيء كمقدَّم.",
+  "corporateTax.workpaperProfitLoss": "الربح / الخسارة (الإيرادات - المصروفات)",
+  "corporateTax.workpaperDisclaimer": "هذا جدول داعم لضريبة الشركات. ينشئ مسودة إقرار فقط؛ ولا يقدّم إلى الهيئة الاتحادية للضرائب ولا يرحّل قيودًا محاسبية.",
+  "corporateTax.calculatorDescription": "احسب ضريبة الشركات من قيود اليومية لفترة محددة",
+  "corporateTax.workpaperYear": "سنة {year}"
 }

@@ -50,5 +50,9 @@
   "journal.coaNoParent": "بدون حساب رئيسي (المستوى الأعلى)",
   "journal.coaSaveParent": "حفظ",
   "journal.coaParentSaved": "تم تحديث الحساب الرئيسي",
-  "journal.coaParentFailed": "تعذر تغيير الحساب الرئيسي"
+  "journal.coaParentFailed": "تعذر تغيير الحساب الرئيسي",
+  "journal.pageEyebrow": "المحاسبة",
+  "journal.pageDescription": "دفتر يومية بالقيد المزدوج مع تحقق تلقائي من التوازن",
+  "journal.emptyTitle": "لا توجد قيود يومية بعد",
+  "journal.emptyDescription": "سجّل أول قيد يومية يدوي — تحتاج كل معاملة إلى طرف مدين وطرف دائن على الأقل."
 }

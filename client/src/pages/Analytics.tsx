@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ interface AnalyticsDashboard {
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D"];
 
 export default function Analytics() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("overview");
 
   const { data: analytics, isLoading } = useQuery<AnalyticsDashboard>({
@@ -87,9 +89,9 @@ export default function Analytics() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Insights"
-        title="Usage Analytics"
-        description="Monitor feature engagement and user activity"
+        eyebrow={t["pages.analyticsEyebrow"]}
+        title={t["pages.analyticsTitle"]}
+        description={t["pages.analyticsDescription"]}
       />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
