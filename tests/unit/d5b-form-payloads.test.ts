@@ -65,6 +65,22 @@ const JOURNAL_BODY = {
     { accountId: "a0000000-0000-4000-8000-000000000102", debit: 0, credit: 7500 },
   ],
 };
+const BUDGET_BODY = {
+  name: "FY 2026 operating budget",
+  fiscalYear: 2026,
+  startDate: "2026-01-01",
+  endDate: "2026-12-31",
+  notes: "Board approved draft",
+};
+const COST_CENTER_BODY = {
+  code: "CC-110",
+  name: "Retail branch",
+  nameAr: "فرع التجزئة",
+  type: "cost_centre",
+  description: "Mall kiosk",
+  parentId: null,
+  isActive: true,
+};
 const PRODUCT_BODY = {
   name: "A4 copier paper",
   nameAr: "ورق نسخ A4",
@@ -521,6 +537,46 @@ describe("[D5b] employee form payload unchanged", () => {
       basicSalary: "12000",
       housingAllowance: "4000",
     });
+  });
+});
+
+describe("[D5b] payroll run form payload unchanged", () => {
+  it("POSTs the same payroll run body", async () => {
+    const { RunsTab } = await import("../../client/src/pages/payroll/RunsTab");
+    await renderPage(RunsTab, { companyId: COMPANY_ID });
+    await click(byTestId("button-new-run"));
+    await type(document.getElementById("run-year"), "2026");
+    await submit([...dialog().querySelectorAll("button:not(.absolute)")].pop()!);
+    expect(body("POST", `${C}/payroll-runs`)).toStrictEqual({ periodMonth: 3, periodYear: 2026 });
+  });
+});
+
+describe("[D5b] budget plan form payload unchanged", () => {
+  it("POSTs the same budget plan body", async () => {
+    const { default: Budgets } = await import("../../client/src/pages/Budgets");
+    await renderPage(Budgets);
+    await click(buttonByText(/new budget/i));
+    await type(named("name"), "FY 2026 operating budget");
+    await type(named("fiscalYear"), "2026");
+    await type(named("startDate"), "2026-01-01");
+    await type(named("endDate"), "2026-12-31");
+    await type(named("notes"), "Board approved draft");
+    await submit(dialog().querySelector('button[type="submit"]'));
+    expect(body("POST", `${C}/budget-plans`)).toStrictEqual(BUDGET_BODY);
+  });
+});
+
+describe("[D5b] cost centre form payload unchanged", () => {
+  it("POSTs the same cost centre body", async () => {
+    const { default: CostCenters } = await import("../../client/src/pages/CostCenters");
+    await renderPage(CostCenters);
+    await click(buttonByText(/add cost cent/i));
+    await type(named("code"), "CC-110");
+    await type(named("name"), "Retail branch");
+    await type(named("nameAr"), "فرع التجزئة");
+    await type(named("description"), "Mall kiosk");
+    await submit(dialog().querySelector('button[type="submit"]'));
+    expect(body("POST", `${C}/cost-centers`)).toStrictEqual(COST_CENTER_BODY);
   });
 });
 

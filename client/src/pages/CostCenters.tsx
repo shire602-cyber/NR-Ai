@@ -1,4 +1,11 @@
 import { T } from "@/components/layout/T";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -697,7 +704,7 @@ export default function CostCenters() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md" data-testid="dialog-cost-center-form">
           <DialogHeader>
             <DialogTitle>
               {editingCostCenter ? t["screens.editCostCenter"] : t["pageLabels.addCostCenter"]}
@@ -710,163 +717,160 @@ export default function CostCenters() {
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {t["screens.ccCode"]} <span className="text-danger">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="CC-001" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {t["screens.ccName"]} <span className="text-danger">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder={t["screens.cc2Marketing"]} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="nameAr"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{cc.nameAr}</FormLabel>
-                      <FormControl>
-                        <Input dir="rtl" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{cc.type}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "cost_centre"}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} noValidate className="space-y-6">
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.costCenter"]}>
+                <FormGrid>
+                  <FormField
+                    control={form.control}
+                    name="code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.ccCode"]}</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Input ltr placeholder="CC-001" {...field} />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="cost_centre">{cc.typeCostCentre}</SelectItem>
-                          <SelectItem value="project">{cc.typeProject}</SelectItem>
-                          <SelectItem value="job">{cc.typeJob}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormItem>
-                  )}
-                />
-              </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.ccName"]}</FormLabel>
+                        <FormControl>
+                          <Input dir="auto" placeholder={t["screens.cc2Marketing"]} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="nameAr"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{cc.nameAr}</FormLabel>
+                        <FormControl>
+                          <Input dir="rtl" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{cc.type}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "cost_centre"}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="cost_centre">{cc.typeCostCentre}</SelectItem>
+                            <SelectItem value="project">{cc.typeProject}</SelectItem>
+                            <SelectItem value="job">{cc.typeJob}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="parentId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.parentCostCenter" />
+                        </FormLabel>
+                        <Select
+                          onValueChange={(value) =>
+                            field.onChange(value === "_none" ? null : value)
+                          }
+                          value={field.value || "_none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.cc2NoneTopLevel"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="_none">{t["screens.cc2NoneTopLevel"]}</SelectItem>
+                            {getAvailableParents().map((parent) => (
+                              <SelectItem key={parent.id} value={parent.id}>
+                                {parent.code} — {parent.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel>
+                          <T k="pages.description" />
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder={t["screens.cc2OptionalDescriptionForThisCostCenter"]}
+                            rows={2}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="isActive"
+                    render={({ field }) => (
+                      <FormItem className="sm:col-span-full flex items-center justify-between gap-4 space-y-0 rounded-lg bg-surface-sunken/60 p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel>
+                            <T k="pages.active" />
+                          </FormLabel>
+                          <p className="text-caption text-muted-foreground">
+                            <T k="pageLabels.inactiveCostCentersCannotReceiveNewTransactions" />
+                          </p>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.description" />
-                    </FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder={t["screens.cc2OptionalDescriptionForThisCostCenter"]}
-                        rows={3}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="parentId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pageLabels.parentCostCenter" />
-                    </FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(value === "_none" ? null : value)}
-                      value={field.value || "_none"}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t["screens.cc2NoneTopLevel"]} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="_none">None (top-level)</SelectItem>
-                        {getAvailableParents().map((parent) => (
-                          <SelectItem key={parent.id} value={parent.id}>
-                            {parent.code} — {parent.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="isActive"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel>
-                        <T k="pages.active" />
-                      </FormLabel>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.inactiveCostCentersCannotReceiveNewTransactions" />
-                      </p>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex justify-end gap-3 pt-2">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   <T k="pages.cancel" />
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
-                  {(createMutation.isPending || updateMutation.isPending) && (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  )}
-                  {editingCostCenter ? "Update Cost Center" : "Add Cost Center"}
+                  {createMutation.isPending || updateMutation.isPending
+                    ? t["forms.saving"]
+                    : editingCostCenter
+                      ? t["forms.costCenter.update"]
+                      : t["pageLabels.addCostCenter"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>

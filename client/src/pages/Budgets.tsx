@@ -1,4 +1,14 @@
 import { T } from "@/components/layout/T";
+import { monthName } from "@/pages/payroll/shared";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  FormTotals,
+  formSpanFull,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -66,6 +76,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
@@ -275,6 +286,8 @@ export default function Budgets() {
   });
 
   // ─── Forms ──────────────────────────────────────────────
+
+  const monthLabel = (idx: number) => monthName(idx + 1, locale);
 
   const budgetForm = useForm<BudgetFormData>({
     resolver: zodResolver(budgetFormSchema),
@@ -1205,105 +1218,122 @@ export default function Budgets() {
 
       {/* ─── Budget Create/Edit Dialog ─────────────────── */}
       <Dialog open={budgetDialogOpen} onOpenChange={setBudgetDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md" data-testid="dialog-budget-form">
           <DialogHeader>
-            <DialogTitle>{editingBudget ? "Edit Budget Plan" : "Create Budget Plan"}</DialogTitle>
+            <DialogTitle>
+              {editingBudget ? t["forms.budget.editTitle"] : t["forms.budget.newTitle"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingBudget ? "Update budget details." : "Create a new annual budget plan."}
+              {editingBudget ? t["forms.budget.editDesc"] : t["forms.budget.newDesc"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...budgetForm}>
-            <form onSubmit={budgetForm.handleSubmit(handleBudgetSubmit)} className="space-y-4">
-              <FormField
-                control={budgetForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Budget Name *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., FY 2026 Operating Budget" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <form
+              onSubmit={budgetForm.handleSubmit(handleBudgetSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.plan"]}>
+                <FormGrid>
+                  <FormField
+                    control={budgetForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel required>{t["forms.budget.name"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.budget.namePlaceholder"]}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="fiscalYear"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.budget.fiscalYear"]}</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="2000" max="2100" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.budget.startDate"]}</FormLabel>
+                        <FormControl>
+                          <Input type="date" dir="ltr" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.budget.endDate"]}</FormLabel>
+                        <FormControl>
+                          <Input type="date" dir="ltr" {...field} />
+                        </FormControl>
+                        <FormDescription>{t["forms.budget.periodHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel>
+                          <T k="pages.notes" />
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            dir="auto"
+                            rows={2}
+                            placeholder={t["forms.budget.notesPlaceholder"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
 
-              <FormField
-                control={budgetForm.control}
-                name="fiscalYear"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fiscal Year *</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="2000" max="2100" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={budgetForm.control}
-                  name="startDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Start Date *</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={budgetForm.control}
-                  name="endDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>End Date *</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={budgetForm.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.notes" />
-                    </FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setBudgetDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createBudgetMutation.isPending || updateBudgetMutation.isPending}
                 >
                   {createBudgetMutation.isPending || updateBudgetMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingBudget
-                      ? t.save || "Save"
-                      : "Create Budget"}
+                      ? t.save
+                      : t["forms.budget.create"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -1311,109 +1341,116 @@ export default function Budgets() {
 
       {/* ─── Budget Line Add/Edit Dialog ───────────────── */}
       <Dialog open={addLineDialogOpen} onOpenChange={setAddLineDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-budget-line-form">
           <DialogHeader>
-            <DialogTitle>{editingLine ? "Edit Budget Line" : "Add Budget Line"}</DialogTitle>
+            <DialogTitle>
+              {editingLine ? t["forms.budget.editLineTitle"] : t["forms.budget.addLineTitle"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingLine
-                ? "Update monthly allocations."
-                : "Add a category with monthly budget amounts."}
+              {editingLine ? t["forms.budget.editLineDesc"] : t["forms.budget.addLineDesc"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...lineForm}>
-            <form onSubmit={lineForm.handleSubmit(handleLineSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={lineForm.control}
-                  name="category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Category *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {BUDGET_CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat}>
-                              {cat}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={lineForm.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.description" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="Optional detail" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-3">Monthly Amounts (AED)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {MONTH_KEYS.map((key, idx) => (
-                    <FormField
-                      key={key}
-                      control={lineForm.control}
-                      name={key}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs">{MONTH_LABELS[idx]}</FormLabel>
+            <form
+              onSubmit={lineForm.handleSubmit(handleLineSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.details"]}>
+                <FormGrid>
+                  <FormField
+                    control={lineForm.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.claim.category"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              {...field}
-                              className="text-sm"
-                            />
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.selectCategory"]} />
+                            </SelectTrigger>
                           </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  ))}
+                          <SelectContent>
+                            {BUDGET_CATEGORIES.map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {t[`forms.budget.cat.${cat}`] || cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={lineForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.description" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.optional"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.budget.monthly"]}>
+                <div className="rounded-lg bg-surface-sunken/60 p-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {MONTH_KEYS.map((key, idx) => (
+                      <FormField
+                        key={key}
+                        control={lineForm.control}
+                        name={key}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={lineLabelClass}>{monthLabel(idx)}</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" min="0" {...field} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <FormTotals
+                    rows={[]}
+                    total={{
+                      label: t["forms.budget.annualTotal"],
+                      value: <Money amount={computedAnnualTotal} currency={"AED"} />,
+                    }}
+                  />
                 </div>
-                <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                  <span className="font-medium text-sm">Annual Total:</span>
-                  <span className="font-bold text-lg">
-                    <Money amount={computedAnnualTotal} currency={"AED"} />
-                  </span>
-                </div>
-              </div>
+              </FormSection>
 
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setAddLineDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={addLineMutation.isPending || updateLineMutation.isPending}
                 >
                   {addLineMutation.isPending || updateLineMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingLine
-                      ? t.save || "Save"
-                      : "Add Line"}
+                      ? t.save
+                      : t["forms.budget.addLine"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>

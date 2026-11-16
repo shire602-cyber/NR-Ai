@@ -1,4 +1,12 @@
 import { useState } from "react";
+import {
+  ErrorSummary,
+  Field,
+  FormActions,
+  FormGrid,
+  FormSection,
+  useFormGate,
+} from "@/components/ui/form-layout";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Calculator,
@@ -82,6 +90,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
     action: "unpay" | "unapprove";
   } | null>(null);
   const [reason, setReason] = useState("");
+  const runGate = useFormGate([{ id: "run-year", label: tx("hr.year"), invalid: !year.trim() }]);
   const [issues, setIssues] = useState<SifIssue[] | null>(null);
 
   const run = runs.find((r) => r.id === viewing) ?? null;
@@ -278,128 +287,146 @@ export function RunsTab({ companyId }: { companyId: string }) {
       </CardContent>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent size="sm" data-testid="dialog-payroll-run-form">
           <DialogHeader>
             <DialogTitle>{tx("hr.newRun")}</DialogTitle>
             <DialogDescription>{tx("hr.newRunHint")}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>{tx("hr.month")}</Label>
-              <Select value={month} onValueChange={setMonth}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <SelectItem key={i + 1} value={String(i + 1)}>
-                      {monthName(i + 1, locale)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="run-year">{tx("hr.year")}</Label>
-              <Input
-                id="run-year"
-                inputMode="numeric"
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              {tx("hr.cancel")}
-            </Button>
-            <Button onClick={() => create.mutate()} disabled={create.isPending}>
-              {tx("hr.create")}
-            </Button>
-          </DialogFooter>
+          <form
+            noValidate
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (create.isPending || !runGate.attempt()) return;
+              create.mutate();
+            }}
+          >
+            <ErrorSummary items={runGate.summary} />
+            <FormSection title={tx("forms.section.period")}>
+              <FormGrid>
+                <Field id="run-month" label={tx("hr.month")} required>
+                  <Select value={month} onValueChange={setMonth}>
+                    <SelectTrigger id="run-month">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>
+                          {monthName(i + 1, locale)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field
+                  id="run-year"
+                  label={tx("hr.year")}
+                  required
+                  error={runGate.errorFor("run-year")}
+                >
+                  <Input
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                  />
+                </Field>
+              </FormGrid>
+            </FormSection>
+            <FormActions>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                {tx("hr.cancel")}
+              </Button>
+              <Button type="submit" className="sm:min-w-28" disabled={create.isPending}>
+                {tx("hr.create")}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!payRun} onOpenChange={(o) => !o && setPayRun(null)}>
-        <DialogContent>
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>{tx("hr.recordPayment")}</DialogTitle>
             <DialogDescription>{tx("hr.recordPaymentHint")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>{tx("hr.paymentAccount")}</Label>
-              <Select value={payAccount || undefined} onValueChange={setPayAccount}>
-                <SelectTrigger>
-                  <SelectValue placeholder={tx("hr.select")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {bankAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} · {a.nameEn}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="pay-date">{tx("hr.paymentDate")}</Label>
-              <Input
-                id="pay-date"
-                type="date"
-                value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayRun(null)}>
-              {tx("hr.cancel")}
-            </Button>
-            <Button
-              disabled={!payAccount || action.isPending}
-              onClick={() =>
-                payRun &&
-                action.mutate({
-                  id: payRun.id,
-                  path: "pay",
-                  body: { paymentAccountId: payAccount, paymentDate: payDate },
-                })
-              }
-            >
-              {tx("hr.recordPayment")}
-            </Button>
-          </DialogFooter>
+          <form
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!payRun || !payAccount || action.isPending) return;
+              action.mutate({
+                id: payRun.id,
+                path: "pay",
+                body: { paymentAccountId: payAccount, paymentDate: payDate },
+              });
+            }}
+          >
+            <FormGrid cols={1}>
+              <Field id="pay-account" label={tx("hr.paymentAccount")} required>
+                <Select value={payAccount || undefined} onValueChange={setPayAccount}>
+                  <SelectTrigger id="pay-account">
+                    <SelectValue placeholder={tx("hr.select")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bankAccounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} · {a.nameEn}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field id="pay-date" label={tx("hr.paymentDate")} required>
+                <Input
+                  type="date"
+                  dir="ltr"
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                />
+              </Field>
+            </FormGrid>
+            <FormActions>
+              <Button type="button" variant="outline" onClick={() => setPayRun(null)}>
+                {tx("hr.cancel")}
+              </Button>
+              <Button type="submit" disabled={!payAccount || action.isPending}>
+                {tx("hr.recordPayment")}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!reverseRun} onOpenChange={(o) => !o && setReverseRun(null)}>
-        <DialogContent>
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               {tx(reverseRun?.action === "unpay" ? "hr.unpay" : "hr.unapprove")}
             </DialogTitle>
             <DialogDescription>{tx("hr.reverseHint")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-1">
-            <Label htmlFor="rev-reason">{tx("hr.reason")}</Label>
-            <Input id="rev-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReverseRun(null)}>
-              {tx("hr.cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={!reason || action.isPending}
-              onClick={() =>
-                reverseRun &&
-                action.mutate({ id: reverseRun.run.id, path: reverseRun.action, body: { reason } })
-              }
-            >
-              {tx("hr.confirm")}
-            </Button>
-          </DialogFooter>
+          <form
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!reverseRun || !reason || action.isPending) return;
+              action.mutate({ id: reverseRun.run.id, path: reverseRun.action, body: { reason } });
+            }}
+          >
+            <Field id="rev-reason" label={tx("hr.reason")} required>
+              <Input dir="auto" value={reason} onChange={(e) => setReason(e.target.value)} />
+            </Field>
+            <FormActions>
+              <Button type="button" variant="outline" onClick={() => setReverseRun(null)}>
+                {tx("hr.cancel")}
+              </Button>
+              <Button type="submit" variant="destructive" disabled={!reason || action.isPending}>
+                {tx("hr.confirm")}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 
