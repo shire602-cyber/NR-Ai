@@ -530,5 +530,6 @@
   "reportCenter.partyStatementReference": "المرجع",
   "reportCenter.partyStatementDebit": "مدين",
   "reportCenter.partyStatementCredit": "دائن",
-  "reportCenter.partyStatementBalance": "الرصيد"
+  "reportCenter.partyStatementBalance": "الرصيد",
+  "reportCenter.reportFieldLabel": "التقرير"
 }

@@ -87,5 +87,16 @@
   "dashboard.colSelected": "الفترة المحددة",
   "dashboard.colPrior": "الفترة السابقة",
   "dashboard.colPriorYear": "الفترة نفسها من العام الماضي",
-  "dashboard.periodComparisonNote": "التغيير معروض مقابل كل عمود مقارنة. الأرقام من دفتر الأستاذ المرحّل."
+  "dashboard.periodComparisonNote": "التغيير معروض مقابل كل عمود مقارنة. الأرقام من دفتر الأستاذ المرحّل.",
+  "dashboard.needsYouLabel": "يحتاج إلى انتباهك",
+  "dashboard.needsOverdueInvoices": "فواتير متأخرة: {count}",
+  "dashboard.needsOverdueInvoicesOne": "فاتورة متأخرة واحدة",
+  "dashboard.needsBankLines": "حركات بنكية للمراجعة: {count}",
+  "dashboard.needsBankLinesOne": "حركة بنكية واحدة للمراجعة",
+  "dashboard.needsVatOverdue": "إقرار ضريبة القيمة المضافة متأخر",
+  "dashboard.needsVatDueSoon": "إقرار ضريبة القيمة المضافة مستحق قريبًا",
+  "dashboard.needsVatDueIn": "إقرار ضريبة القيمة المضافة: متبقٍ {count} يوم",
+  "dashboard.needsPayroll": "مسيرات رواتب بانتظار الاعتماد: {count}",
+  "dashboard.needsPayrollOne": "مسير رواتب واحد بانتظار الاعتماد",
+  "dashboard.needsNothing": "لا شيء يحتاج إليك الآن"
 }

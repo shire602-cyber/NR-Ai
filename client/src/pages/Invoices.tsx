@@ -339,6 +339,23 @@ export default function Invoices() {
     }
   }, []);
 
+  // R3 (CTO 17): command-palette record results open /invoices?open=<id> in the invoice view.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const openId = params.get("open");
+    if (!openId) return;
+    params.delete("open");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      window.location.pathname + (query ? `?${query}` : "") + window.location.hash
+    );
+    void handleEditInvoice({ id: openId } as Invoice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const stripNewInvoiceParam = () => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);

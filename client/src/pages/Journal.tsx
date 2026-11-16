@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/ui/page-header";
+import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import {
   Select,
   SelectContent,
@@ -392,6 +393,8 @@ export default function Journal() {
           </Button>
         }
       />
+      {/* R3 (CTO 23): books-balanced / period-lock status on the ledger. */}
+      <BooksStatusStrip companyId={selectedCompanyId} />
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {

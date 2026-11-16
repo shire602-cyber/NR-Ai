@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -7,25 +5,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Money } from "@/components/ui/money";
 import { BarChart3, BookOpen, FileText, MoreHorizontal, Receipt, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 import { formatDateRange } from "@/lib/format-date";
 import { currencyLabel } from "@/lib/format-money";
 import { PeriodSelector } from "./PeriodSelector";
+import { NeedsYouStrip } from "./NeedsYouStrip";
 import type { DashboardModel } from "./useCustomerDashboardModel";
-
-/** Fill `{name}` placeholders in a translated sentence with rich nodes. */
-function fillTemplate(template: string, values: Record<string, ReactNode>): ReactNode[] {
-  return template.split(/(\{\w+\})/).map((part, i) => {
-    const match = /^\{(\w+)\}$/.exec(part);
-    return match && match[1] in values ? (
-      <Fragment key={i}>{values[match[1]]}</Fragment>
-    ) : (
-      <Fragment key={i}>{part}</Fragment>
-    );
-  });
-}
 
 /**
  * Dashboard header (D2b, CTO 4/12): the company name as the title, the resolved period
@@ -34,13 +20,11 @@ function fillTemplate(template: string, values: Record<string, ReactNode>): Reac
  * directly under it, so the figures below need no headline of their own.
  */
 export function DashboardHero({ m }: { m: DashboardModel }) {
-  const { t, locale, stats, statsLoading, margin, periodChoice, setPeriodChoice } = m;
+  const { t, locale, stats, periodChoice, setPeriodChoice } = m;
   const companyName = m.companyName;
   const tt = t as Record<string, string>;
   const currency = currencyLabel("AED", locale);
   const range = stats ? formatDateRange(stats.period.from, stats.period.to, locale) : "";
-  const showInsight =
-    !statsLoading && stats && (stats.revenue > 0 || stats.expenses > 0 || stats.outstanding > 0);
 
   return (
     <header className="space-y-5">
@@ -125,44 +109,14 @@ export function DashboardHero({ m }: { m: DashboardModel }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3">
         <PeriodSelector choice={periodChoice} onChange={setPeriodChoice} locale={locale} />
-        {showInsight && stats ? (
-          <p
-            className="max-w-2xl text-small text-muted-foreground text-pretty lg:text-end"
-            data-testid="dashboard-insight"
-          >
-            {stats.revenue > 0 && stats.expenses > 0 && (
-              <>
-                {fillTemplate(tt["dashboard.insightMargin"], {
-                  margin: (
-                    <span className="money font-medium text-foreground" dir="ltr">
-                      {margin.toFixed(1)}%
-                    </span>
-                  ),
-                })}
-                {stats.outstanding > 0 && (
-                  <>
-                    {" "}
-                    {fillTemplate(tt["dashboard.insightOutstanding"], {
-                      amount: (
-                        <Money amount={stats.outstanding} className="font-medium text-foreground" />
-                      ),
-                    })}
-                  </>
-                )}
-              </>
-            )}
-            {stats.revenue === 0 &&
-              stats.expenses === 0 &&
-              stats.outstanding > 0 &&
-              fillTemplate(tt["dashboard.insightOutstandingOnly"], {
-                amount: (
-                  <Money amount={stats.outstanding} className="font-medium text-foreground" />
-                ),
-              })}
-          </p>
-        ) : null}
+        {/* R3 (CTO 16): linked "needs you" chips replace the one-line insight sentence. */}
+        <NeedsYouStrip
+          companyId={m.selectedCompanyId}
+          invoices={m.recentInvoices}
+          compliance={m.compliance}
+        />
       </div>
     </header>
   );

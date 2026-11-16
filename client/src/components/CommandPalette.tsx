@@ -28,7 +28,20 @@ import {
   Plus,
   Sparkles,
   ClipboardCheck,
+  Camera,
+  Clock,
+  Store,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  interpretPaletteQuery,
+  paletteFilter,
+  pushPaletteRecent,
+  readPaletteRecents,
+  searchPaletteRecords,
+  type PaletteRecent,
+  type PaletteRecord,
+} from "@/lib/commandPaletteRecords";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
@@ -260,6 +273,39 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [retryingDeliveryRunId, setRetryingDeliveryRunId] = useState<string | null>(null);
   const [acknowledgedPaletteDeliveryHandoffGaps, setAcknowledgedPaletteDeliveryHandoffGaps] =
     useState<Record<string, true>>({});
+  // R3 (CTO 17): controlled query so the palette can echo its interpretation, show records,
+  // and keep the empty state to Recent + Actions.
+  const [search, setSearch] = useState("");
+  const [recents, setRecents] = useState<PaletteRecent[]>([]);
+  // Reset the query and reload recents when the palette opens or closes (state adjusted
+  // during render, React's pattern for deriving state from a prop change).
+  const [lastOpen, setLastOpen] = useState(open);
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (open) setRecents(readPaletteRecents());
+    else setSearch("");
+  }
+  const trimmedSearch = search.trim();
+  const recordSearchEnabled = open && !!selectedCompanyId && trimmedSearch.length >= 2;
+  const paletteInvoicesQuery = useQuery<any[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`),
+    enabled: recordSearchEnabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const paletteCustomersQuery = useQuery<any[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
+    enabled: recordSearchEnabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const paletteVendorsQuery = useQuery<any[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "vendors"],
+    enabled: recordSearchEnabled,
+    staleTime: 60_000,
+    retry: false,
+  });
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(null),
     queryFn: () => fetchReportCatalogDiscovery(),
@@ -1316,59 +1362,217 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const handleSelect = (item: PaletteItem) => {
     onOpenChange(false);
-    if (item.href) navigate(item.href);
+    if (item.href) {
+      setRecents(
+        pushPaletteRecent({ id: item.id, label: item.label, href: item.href, kind: "page" })
+      );
+      navigate(item.href);
+    }
     void item.action?.();
   };
 
+  const tt = t as Record<string, string>;
+  const recordTypeLabel: Record<PaletteRecord["kind"], string> = {
+    invoice: tt["shell.cmdRecordInvoice"],
+    customer: tt["shell.cmdRecordCustomer"],
+    vendor: tt["shell.cmdRecordVendor"],
+  };
+  const recordIcon: Record<PaletteRecord["kind"], PaletteItem["icon"]> = {
+    invoice: FileText,
+    customer: Users,
+    vendor: Store,
+  };
+  const recordResults = recordSearchEnabled
+    ? searchPaletteRecords(trimmedSearch, {
+        invoices: Array.isArray(paletteInvoicesQuery.data) ? paletteInvoicesQuery.data : [],
+        customers: Array.isArray(paletteCustomersQuery.data) ? paletteCustomersQuery.data : [],
+        vendors: Array.isArray(paletteVendorsQuery.data) ? paletteVendorsQuery.data : [],
+      })
+    : [];
+  const interpreted = interpretPaletteQuery(trimmedSearch);
+  const echoTemplate =
+    interpreted.kind === "documentNumber"
+      ? tt["shell.cmdEchoDocumentNumber"]
+      : interpreted.kind === "amount"
+        ? tt["shell.cmdEchoAmount"]
+        : interpreted.kind === "trn"
+          ? tt["shell.cmdEchoTrn"]
+          : tt["shell.cmdEchoText"];
+  const handleSelectRecord = (record: PaletteRecord) => {
+    onOpenChange(false);
+    setRecents(
+      pushPaletteRecent({
+        id: record.id,
+        label: record.title,
+        href: record.href,
+        kind: record.kind,
+      })
+    );
+    navigate(record.href);
+  };
+  const handleSelectRecent = (recent: PaletteRecent) => {
+    onOpenChange(false);
+    setRecents(pushPaletteRecent(recent));
+    navigate(recent.href);
+  };
+  const quickActions: PaletteItem[] = [
+    {
+      id: "action-new-invoice",
+      label: tt["shell.cmdActionNewInvoice"],
+      group: "Create",
+      icon: Plus,
+      href: "/invoices?new=1",
+      shortcut: "n",
+    },
+    {
+      id: "action-scan-receipt",
+      label: tt["shell.cmdActionScanReceipt"],
+      group: "Create",
+      icon: Camera,
+      href: "/receipts?upload=1",
+    },
+    {
+      id: "action-new-journal",
+      label: tt["shell.cmdNewJournalEntry"],
+      group: "Create",
+      icon: Plus,
+      href: "/journal?new=1",
+    },
+  ];
+  const renderPaletteItem = (sourceItem: PaletteItem) => {
+    // Localized label/description; the English text stays searchable via keywords.
+    const item = {
+      ...localizeItem(sourceItem),
+      keywords: [sourceItem.label, sourceItem.description, sourceItem.keywords]
+        .filter(Boolean)
+        .join(" "),
+    };
+    const Icon = item.icon;
+    return (
+      <CommandItem
+        key={item.id}
+        value={`${item.label} ${item.description ?? ""} ${item.keywords ?? ""}`}
+        onSelect={() => handleSelect(item)}
+        data-testid={`command-item-${item.id}`}
+      >
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{item.label}</span>
+          {item.description ? (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              {item.description}
+            </span>
+          ) : null}
+        </span>
+        {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+      </CommandItem>
+    );
+  };
+
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} commandProps={{ filter: paletteFilter }}>
       <CommandInput
         placeholder={t["components.commandSearchPlaceholder"]}
+        value={search}
+        onValueChange={setSearch}
         data-testid="command-palette-input"
       />
+      {trimmedSearch ? (
+        <p
+          className="border-b border-border px-3 py-2 text-caption text-muted-foreground"
+          aria-live="polite"
+          data-testid="command-palette-echo"
+          data-query-kind={interpreted.kind}
+        >
+          {formatMessage(echoTemplate, { query: `\u2068${trimmedSearch}\u2069` })}
+        </p>
+      ) : null}
       <CommandList>
         <CommandEmpty>{t["components.commandNoResults"]}</CommandEmpty>
-        {Object.entries(grouped).map(([group, groupItems], groupIdx) => (
-          <div key={group}>
-            {groupIdx > 0 && <CommandSeparator />}
-            <CommandGroup
-              heading={
-                (t as Record<string, string>)[PALETTE_GROUP_KEYS[group as PaletteItem["group"]]] ??
-                group
-              }
-            >
-              {groupItems.map((sourceItem) => {
-                // Localized label/description; the English text stays searchable via keywords.
-                const item = {
-                  ...localizeItem(sourceItem),
-                  keywords: [sourceItem.label, sourceItem.description, sourceItem.keywords]
-                    .filter(Boolean)
-                    .join(" "),
-                };
-                const Icon = item.icon;
-                return (
+        {!trimmedSearch ? (
+          <>
+            {/* Empty state (CTO 17): Recent, then the everyday actions, then pages. */}
+            {recents.length > 0 ? (
+              <CommandGroup heading={tt["shell.cmdGroupRecent"]} data-testid="command-group-recent">
+                {recents.map((recent) => (
                   <CommandItem
-                    key={item.id}
-                    value={`${item.label} ${item.description ?? ""} ${item.keywords ?? ""}`}
-                    onSelect={() => handleSelect(item)}
-                    data-testid={`command-item-${item.id}`}
+                    key={`recent-${recent.id}`}
+                    value={`recent ${recent.label} ${recent.id}`}
+                    onSelect={() => handleSelectRecent(recent)}
+                    data-testid={`command-recent-${recent.id}`}
                   >
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{item.label}</span>
-                      {item.description ? (
-                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                          {item.description}
-                        </span>
-                      ) : null}
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate" dir="auto">
+                      {recent.label}
                     </span>
-                    {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                    {recent.kind && recent.kind !== "page" ? (
+                      <Badge variant="outline" className="shrink-0 font-normal">
+                        {recordTypeLabel[recent.kind]}
+                      </Badge>
+                    ) : null}
                   </CommandItem>
-                );
-              })}
+                ))}
+              </CommandGroup>
+            ) : null}
+            <CommandGroup heading={tt["shell.cmdGroupActions"]} data-testid="command-group-actions">
+              {quickActions.map(renderPaletteItem)}
             </CommandGroup>
-          </div>
-        ))}
+            <CommandSeparator />
+            <CommandGroup heading={tt[PALETTE_GROUP_KEYS.Navigate] ?? "Navigate"}>
+              {(grouped.Navigate ?? []).map(renderPaletteItem)}
+            </CommandGroup>
+          </>
+        ) : (
+          <>
+            {recordResults.length > 0 ? (
+              <CommandGroup
+                heading={tt["shell.cmdGroupRecords"]}
+                data-testid="command-group-records"
+              >
+                {recordResults.map((record) => {
+                  const Icon = recordIcon[record.kind];
+                  return (
+                    <CommandItem
+                      key={record.id}
+                      // Records are already matched (amounts, TRNs too); carry the query so the filter keeps them.
+                      value={`record ${record.id} ${record.title} ${record.subtitle ?? ""} ${trimmedSearch}`}
+                      onSelect={() => handleSelectRecord(record)}
+                      data-testid={`command-record-${record.id}`}
+                    >
+                      <Icon className="h-4 w-4 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate" dir="auto">
+                          {record.title}
+                        </span>
+                        {record.subtitle ? (
+                          <span
+                            className="mt-0.5 block truncate text-xs text-muted-foreground"
+                            dir="auto"
+                          >
+                            {record.subtitle}
+                          </span>
+                        ) : null}
+                      </span>
+                      <Badge variant="outline" className="shrink-0 font-normal">
+                        {recordTypeLabel[record.kind]}
+                      </Badge>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ) : null}
+            {Object.entries(grouped).map(([group, groupItems], groupIdx) => (
+              <div key={group}>
+                {(groupIdx > 0 || recordResults.length > 0) && <CommandSeparator />}
+                <CommandGroup
+                  heading={tt[PALETTE_GROUP_KEYS[group as PaletteItem["group"]]] ?? group}
+                >
+                  {groupItems.map(renderPaletteItem)}
+                </CommandGroup>
+              </div>
+            ))}
+          </>
+        )}
       </CommandList>
     </CommandDialog>
   );

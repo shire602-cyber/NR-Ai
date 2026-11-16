@@ -530,5 +530,6 @@
   "reportCenter.partyStatementReference": "Reference",
   "reportCenter.partyStatementDebit": "Debit",
   "reportCenter.partyStatementCredit": "Credit",
-  "reportCenter.partyStatementBalance": "Balance"
+  "reportCenter.partyStatementBalance": "Balance",
+  "reportCenter.reportFieldLabel": "Report"
 }

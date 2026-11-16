@@ -1,9 +1,9 @@
 import { T } from "@/components/layout/T";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
+import { Checklist, SectionHeading, Tiles } from "@/components/marketing/Sections";
 import { Link } from "wouter";
 import {
   ArrowRight,
-  CheckCircle2,
   Clock,
   Database,
   FileCheck,
@@ -13,31 +13,71 @@ import {
   UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n";
 
-// Copy lives in the marketing catalog (en + ar). Claims stay limited to what the
-// product does today; certifications and audits are listed as roadmap items only.
-const CONTROLS = [
-  { icon: Lock, n: 1 },
-  { icon: KeyRound, n: 2 },
-  { icon: UserCheck, n: 3 },
-  { icon: Database, n: 4 },
-  { icon: FileCheck, n: 5 },
-];
+// R3 (CTO 8): the trust page is written for customers. It leads with the controls a customer
+// uses today, then who operates the service and how to reach them, then how we operate, and
+// ends with the honest "not certified yet" roadmap. Copy lives in the marketing catalog
+// (en + ar); claims stay limited to what the product does today and what docs/ and the legal
+// pages document (operator, support and privacy mailboxes). Release-gate / CI notes are
+// internal evidence (docs/TRUST.md), not customer copy.
 
-const OPERATIONAL = [
-  { icon: Database, n: 1 },
-  { icon: ShieldCheck, n: 2 },
-  { icon: UserCheck, n: 3 },
-];
+const SUPPORT_EMAIL = "support@muhasib.ai";
+const PRIVACY_EMAIL = "privacy@muhasib.ai";
+const SECURITY_EMAIL = "security@muhasib.ai";
 
-const EVIDENCE = [1, 2, 3];
 const ROADMAP = [1, 2, 3, 4];
+
+function MailLink({ email }: { email: string }) {
+  return (
+    <a href={`mailto:${email}`} dir="ltr">
+      {email}
+    </a>
+  );
+}
 
 export default function TrustSecurity() {
   const { t } = useTranslation();
+  const controls = [
+    { key: "access", icon: UserCheck, n: "trustControl1" },
+    { key: "2fa", icon: KeyRound, n: "trustControl3" },
+    { key: "sessions", icon: Lock, n: "trustControl2" },
+  ].map(({ key, icon, n }) => ({
+    key,
+    icon,
+    title: t[`marketing.${n}Title`],
+    body: t[`marketing.${n}Body`],
+    testId: `trust-control-${key}`,
+  }));
+  controls.push(
+    {
+      key: "audit",
+      icon: FileCheck,
+      title: t["marketing.trustAuditTitle"],
+      body: t["marketing.trustControl5Body"],
+      testId: "trust-control-audit",
+    },
+    {
+      key: "backups",
+      icon: Database,
+      title: t["marketing.trustBackupTitle"],
+      body: t["marketing.trustBackupBody"],
+      testId: "trust-control-backups",
+    },
+    {
+      key: "pdpl",
+      icon: ShieldCheck,
+      title: t["marketing.trustPdplTitle"],
+      body: t["marketing.trustPdplBody"],
+      testId: "trust-control-pdpl",
+    }
+  );
+  const operations = [1, 2, 3].map((n) => ({
+    key: `op-${n}`,
+    title: t[`marketing.trustOp${n}Title`],
+    body: t[`marketing.trustOp${n}Body`],
+  }));
+
   return (
     <MarketingLayout
       titleKey="marketing.seoTrustTitle"
@@ -49,159 +89,109 @@ export default function TrustSecurity() {
             <p className="mk-eyebrow">
               <T k="pageLabels.trustAndSecurity" />
             </p>
-            <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+            <h1 className="mk-h1" data-testid="text-trust-title">
+              {t["marketing.trustTitle"]}
+            </h1>
+            <p className="mk-lead">{t["marketing.trustLead"]}</p>
+          </div>
+        </section>
+
+        <section className="mk-container mk-inner-section" aria-labelledby="trust-controls-title">
+          <SectionHeading
+            id="trust-controls-title"
+            eyebrow={t["marketing.trustControlsEyebrow"]}
+            title={t["marketing.trustControlsTitle"]}
+          />
+          <Tiles items={controls} />
+        </section>
+
+        <section className="mk-section--sunken" aria-labelledby="trust-who-title">
+          <div className="mk-container mk-inner-section">
+            <SectionHeading
+              id="trust-who-title"
+              eyebrow={t["marketing.trustWhoEyebrow"]}
+              title={t["marketing.trustWhoTitle"]}
+            />
+            <dl className="mk-defs" data-testid="trust-facts">
               <div>
-                <h1 className="mk-h1">
-                  <T k="pageLabels.builtForCautiousUaeFinanceTeams" />
-                </h1>
-                <p className="mk-lead">{t["marketing.trustLead"]}</p>
+                <dt>{t["marketing.trustOperatorLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustOperatorBody"]}{" "}
+                  <Link href="/services">{t["marketing.trustOperatorLink"]}</Link>
+                </dd>
               </div>
-              <Card className="mk-surface-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ShieldCheck className="h-5 w-5 text-success" aria-hidden="true" />
-                    <T k="pageLabels.launchPosture" />
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  {[1, 2].map((n) => (
-                    <div key={n} className="flex items-start gap-2">
-                      <CheckCircle2
-                        className="mt-0.5 h-4 w-4 shrink-0 text-success"
-                        aria-hidden="true"
-                      />
-                      <span>{t[`marketing.trustPosture${n}`]}</span>
-                    </div>
-                  ))}
-                  <div className="flex items-start gap-2">
-                    <Clock className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
-                    <span>
-                      <T k="pageLabels.externalCertificationsAreRoadmapItemsNot" />
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        <section className="mk-container mk-inner-section">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-h3 font-semibold">
-                <T k="pageLabels.launchVerificationEvidence" />
-              </h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {t["marketing.trustEvidenceBody"]}
-              </p>
-            </div>
-            <Badge variant="outline" className="w-fit">
-              <T k="pageLabels.internalReleaseGate" />
-            </Badge>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {EVIDENCE.map((n) => (
-              <div key={n} className="rounded-xl border bg-card p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <FileCheck className="h-4 w-4 text-accent" aria-hidden="true" />
-                  {t[`marketing.trustEvidence${n}Title`]}
-                </div>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  {t[`marketing.trustEvidence${n}Body`]}
-                </p>
+              <div data-testid="trust-data-residency">
+                <dt>{t["marketing.trustResidencyLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustResidencyBody"]}{" "}
+                  <Link href="/privacy">{t["marketing.trustResidencyLink"]}</Link>
+                </dd>
               </div>
-            ))}
+              <div data-testid="trust-support-contact">
+                <dt>{t["marketing.trustSupportLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustSupportContact"]} <MailLink email={SUPPORT_EMAIL} />
+                  <span className="mt-2 block">{t["marketing.trustSupportBody"]}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>{t["marketing.trustPrivacyLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustPrivacyContact"]} <MailLink email={PRIVACY_EMAIL} />
+                </dd>
+              </div>
+              <div>
+                <dt>{t["marketing.trustSecurityLabel"]}</dt>
+                <dd>
+                  {t["marketing.trustSecurityContact"]} <MailLink email={SECURITY_EMAIL} />
+                </dd>
+              </div>
+            </dl>
           </div>
         </section>
 
-        <section className="mk-container mk-inner-section">
-          <div className="grid gap-4 md:grid-cols-2">
-            {CONTROLS.map(({ icon: Icon, n }) => (
-              <Card key={n}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3 text-lg">
-                    <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
-                    {t[`marketing.trustControl${n}Title`]}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm leading-6 text-muted-foreground">
-                  {t[`marketing.trustControl${n}Body`]}
-                </CardContent>
-              </Card>
-            ))}
+        <section className="mk-container mk-inner-section" aria-labelledby="trust-operate-title">
+          <SectionHeading
+            id="trust-operate-title"
+            eyebrow={t["marketing.trustOperateEyebrow"]}
+            title={t["marketing.trustOperateTitle"]}
+          />
+          <Tiles items={operations} />
+          <div className="mt-12 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+            <h3 className="mk-h3">{t["marketing.trustExpectTitle"]}</h3>
+            <Checklist
+              items={[
+                <T key="setup" k="pageLabels.guidedCompanySetupAndChartOf" />,
+                ...[2, 3, 4].map((n) => t[`marketing.trustExpect${n}`]),
+              ]}
+            />
           </div>
         </section>
 
-        <section className="mk-section--sunken">
+        <section className="mk-section--sunken" aria-labelledby="trust-roadmap-title">
           <div className="mk-container mk-inner-section">
-            <div>
-              <h2 className="text-h3 font-semibold">
-                <T k="pageLabels.operationalTrustPosture" />
+            <div className="mk-heading">
+              <p className="mk-eyebrow">{t["marketing.trustRoadmapEyebrow"]}</p>
+              <h2 className="mk-h2" id="trust-roadmap-title">
+                <T k="pageLabels.externalCertificationsAreRoadmapItemsNot" />
               </h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {t["marketing.trustOperationalBody"]}
-              </p>
+              <p className="mk-lead">{t["marketing.trustRoadmapLead"]}</p>
             </div>
-            <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {OPERATIONAL.map(({ icon: Icon, n }) => (
-                <Card key={n}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-3 text-lg">
-                      <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
-                      {t[`marketing.trustOp${n}Title`]}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm leading-6 text-muted-foreground">
-                    {t[`marketing.trustOp${n}Body`]}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="mk-container mk-inner-section">
-          <div className="grid gap-8 lg:grid-cols-2">
-            <div>
-              <h2 className="text-h3 font-semibold">
-                <T k="pageLabels.supportCommitmentsDuringLaunch" />
-              </h2>
-              <p className="mt-3 text-muted-foreground">{t["marketing.trustSupportBody"]}</p>
-            </div>
-            <div className="rounded-xl border bg-card p-5">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <UserCheck className="h-4 w-4 text-accent" aria-hidden="true" />
-                <T k="pageLabels.whatCustomersCanExpect" />
-              </div>
-              <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-                <li>
-                  <T k="pageLabels.guidedCompanySetupAndChartOf" />
-                </li>
-                {[2, 3, 4].map((n) => (
-                  <li key={n}>{t[`marketing.trustExpect${n}`]}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <section className="mk-section--sunken">
-          <div className="mk-container mk-inner-section">
-            <h2 className="text-h3 font-semibold">
+            <h3 className="mk-h3">
               <T k="pageLabels.assuranceRoadmap" />
-            </h2>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
+            </h3>
+            <ul className="mk-defs mt-4" data-testid="trust-roadmap">
               {ROADMAP.map((n) => (
-                <div
-                  key={n}
-                  className="flex gap-3 rounded-xl border bg-card p-4 text-sm text-muted-foreground"
-                >
-                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
-                  <span>{t[`marketing.trustRoadmap${n}`]}</span>
-                </div>
+                <li key={n} className="flex gap-3">
+                  <Clock
+                    className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="mk-body">{t[`marketing.trustRoadmap${n}`]}</span>
+                </li>
               ))}
-            </div>
-            <div className="mt-8 flex flex-wrap gap-3">
+            </ul>
+            <div className="mk-actions">
               <Button asChild>
                 <Link href="/help">
                   <T k="pageLabels.visitHelpCenter" />

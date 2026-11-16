@@ -22,14 +22,24 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-const CommandDialog = ({ children, ...props }: DialogProps) => {
+const CommandDialog = ({
+  children,
+  commandProps,
+  ...props
+}: DialogProps & {
+  /** Extra props for the inner cmdk root (e.g. a custom `filter`). */
+  commandProps?: Omit<React.ComponentPropsWithoutRef<typeof CommandPrimitive>, "children">;
+}) => {
   return (
     <Dialog {...props}>
       <DialogContent className="top-[12vh] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 shadow-2xl data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2">
         <DialogTitle className="sr-only">
           <T k="components.commandPaletteTitle" />
         </DialogTitle>
-        <Command className="[&_[cmdk-group]]:px-2 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2">
+        <Command
+          {...commandProps}
+          className="[&_[cmdk-group]]:px-2 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2"
+        >
           {children}
         </Command>
       </DialogContent>
