@@ -8,12 +8,17 @@
 // justified with a `i18n-ignore: <reason>` comment on the same line or the line
 // above; it is reported separately and does not count against the ratchet.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const pagesDir = join(repoRoot, "client", "src", "pages");
+// S9: shared UI also counts. client/src/layouts does not exist today; it is scanned if added.
+export const componentDirs = [
+  join(repoRoot, "client", "src", "components"),
+  join(repoRoot, "client", "src", "layouts"),
+];
 
 // JSX text node between tags that is an English phrase of 2+ words or a
 // capitalised word of 4+ letters. Excludes bindings ({...}), entities, numbers.
@@ -29,8 +34,16 @@ export function walk(dir) {
   return out;
 }
 
+export function scanComponents() {
+  return scanDirs(componentDirs.filter((d) => existsSync(d)));
+}
+
 export function scanPages() {
-  const files = walk(pagesDir);
+  return scanDirs([pagesDir]);
+}
+
+function scanDirs(dirs) {
+  const files = dirs.flatMap((d) => walk(d));
   let translated = 0;
   let hardcoded = 0;
   let justified = 0;

@@ -187,6 +187,7 @@ export default function VAT201Form({
                     <TableCell dir="rtl">{companyInfo.nameAr || "-"}</TableCell>
                   </TableRow>
                   <TableRow>
+                    {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                     <TableCell className="font-medium">
                       Address
                       <br />
@@ -202,6 +203,7 @@ export default function VAT201Form({
               <Table>
                 <TableBody>
                   <TableRow>
+                    {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                     <TableCell className="font-medium w-1/2">
                       VAT Return Period
                       <br />
@@ -212,6 +214,7 @@ export default function VAT201Form({
                     </TableCell>
                   </TableRow>
                   <TableRow>
+                    {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                     <TableCell className="font-medium">
                       VAT Stagger
                       <br />
@@ -220,6 +223,7 @@ export default function VAT201Form({
                     <TableCell>{periodInfo.vatStagger || "Quarterly"}</TableCell>
                   </TableRow>
                   <TableRow>
+                    {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                     <TableCell className="font-medium">
                       VAT Return Due Date
                       <br />
@@ -228,6 +232,7 @@ export default function VAT201Form({
                     <TableCell>{periodInfo.dueDate}</TableCell>
                   </TableRow>
                   <TableRow>
+                    {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                     <TableCell className="font-medium">
                       Tax Year End
                       <br />
@@ -245,6 +250,7 @@ export default function VAT201Form({
       <Card>
         <CardHeader className="bg-muted py-2">
           <CardTitle className="text-sm flex justify-between">
+            {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
             <span>VAT on Sales and All Other Outputs</span>
             <span dir="rtl">ضريبة القيمة المضافة على المبيعات وجميع المخرجات الأخرى</span>
           </CardTitle>
@@ -335,6 +341,7 @@ export default function VAT201Form({
 
               <TableRow>
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">2</span> Tax Refunds provided to Tourists
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -398,6 +405,7 @@ export default function VAT201Form({
 
               <TableRow>
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">4</span> Zero Rated Supplies
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -420,6 +428,7 @@ export default function VAT201Form({
 
               <TableRow>
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">5</span> Exempt Supplies
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -442,6 +451,7 @@ export default function VAT201Form({
 
               <TableRow>
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">6</span> Goods imported into the UAE
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -473,6 +483,7 @@ export default function VAT201Form({
 
               <TableRow>
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">7</span> Adjustments to goods imported into the UAE
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -504,6 +515,7 @@ export default function VAT201Form({
 
               <TableRow className="bg-muted/50 font-bold">
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">8</span> Totals
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -528,6 +540,7 @@ export default function VAT201Form({
       <Card>
         <CardHeader className="bg-muted py-2">
           <CardTitle className="text-sm flex justify-between">
+            {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
             <span>VAT on Expenses and All Other Inputs</span>
             <span dir="rtl">ضريبة القيمة المضافة على المصروفات وجميع المدخلات الأخرى</span>
           </CardTitle>
@@ -557,6 +570,7 @@ export default function VAT201Form({
             <TableBody>
               <TableRow>
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">9</span> Standard Rated Expenses
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -629,6 +643,7 @@ export default function VAT201Form({
 
               <TableRow className="bg-muted/50 font-bold">
                 <TableCell>
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-medium">11</span> Totals
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -651,6 +666,7 @@ export default function VAT201Form({
       <Card className="border-accent/40 bg-accent/[0.03]">
         <CardHeader className="bg-success-subtle py-2">
           <CardTitle className="text-sm flex justify-between text-success-subtle-foreground ">
+            {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
             <span>Net VAT Due</span>
             <span dir="rtl">صافي ضريبة القيمة المضافة المستحقة</span>
           </CardTitle>
@@ -660,6 +676,7 @@ export default function VAT201Form({
             <TableBody>
               <TableRow>
                 <TableCell className="font-medium">
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-bold">12</span> Total value of due tax for the period
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">
@@ -685,6 +702,7 @@ export default function VAT201Form({
               </TableRow>
               <TableRow className="bg-success-subtle ">
                 <TableCell className="font-bold">
+                  {/* i18n-ignore: FTA VAT 201 bilingual form label, English is paired with a fixed Arabic line */}
                   <span className="font-bold">14</span> Payable Tax for the period
                   <br />
                   <span className="text-muted-foreground text-xs" dir="rtl">

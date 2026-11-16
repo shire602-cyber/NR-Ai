@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canAccessNraCenter } from "@shared/access";
+import { useTranslation } from "@/lib/i18n";
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the
@@ -28,6 +29,7 @@ import { canAccessNraCenter } from "@shared/access";
  */
 export function CompanySwitcher() {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { company: active } = useDefaultCompany();
   const { isFirmContext, clearActiveClientCompany } = useActiveCompany();
@@ -51,8 +53,8 @@ export function CompanySwitcher() {
     // in the firm workspace rather than leaving the user on a client page.
     navigate("/firm/clients");
     toast({
-      title: "Firm workspace",
-      description: "Returned to the NRA firm workspace.",
+      title: t["components.switcherFirmWorkspace"],
+      description: t["components.switcherReturnedToFirm"],
     });
   };
 
@@ -104,7 +106,7 @@ export function CompanySwitcher() {
             >
               <span className="flex items-center gap-2 min-w-0">
                 <Briefcase className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">Firm workspace</span>
+                <span className="truncate">{t["components.switcherFirmWorkspace"]}</span>
               </span>
               {!isFirmContext && <Check className="w-3.5 h-3.5 text-primary" />}
             </DropdownMenuItem>
@@ -112,7 +114,7 @@ export function CompanySwitcher() {
           </>
         )}
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Switch company
+          {t["components.switcherSwitchCompany"]}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {companies.map((c) => (

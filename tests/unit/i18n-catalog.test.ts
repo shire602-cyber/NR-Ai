@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error - plain .mjs script without type declarations
-import { scanPages } from "../../scripts/i18n-scan.mjs";
+import { scanComponents, scanPages } from "../../scripts/i18n-scan.mjs";
 import { formatMessage, isLocaleLoaded, loadLocale, t } from "../../client/src/lib/i18n";
 
 // S5: namespace catalogs are code-split (one lazy chunk per namespace and locale).
@@ -153,6 +153,21 @@ describe("i18n hard-coded string ratchet", () => {
     ) as { maxHardcoded: number };
     const { hardcoded } = scanPages();
     expect(hardcoded).toBeLessThanOrEqual(baseline.maxHardcoded);
+  });
+
+  it("S9: shared components have no hard-coded JSX strings and a real Arabic components catalog", () => {
+    const { hardcoded, perFile } = scanComponents();
+    expect(perFile).toEqual({});
+    expect(hardcoded).toBe(0);
+    const baseline = JSON.parse(
+      readFileSync(join(repoRoot, "scripts", "guard-baselines", "i18n.json"), "utf8")
+    ) as { maxHardcoded: number };
+    expect(baseline.maxHardcoded).toBe(0);
+    const components = loadNamespaces("ar").components;
+    expect(Object.keys(components).length).toBeGreaterThan(50);
+    for (const [key, value] of Object.entries(components)) {
+      expect(value, `ar ${key} must be Arabic script`).toMatch(/[\u0600-\u06FF]/);
+    }
   });
 
   it("R15-17: firm workspace pages have their visible copy translated through the pages catalog", () => {

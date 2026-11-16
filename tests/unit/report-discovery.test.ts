@@ -1139,7 +1139,7 @@ describe("report discoverability", () => {
     expect(journalSource).toContain("data-testid={`button-proof-journal-${entry.id}`}");
     expect(reportsSource).toContain('data-testid="button-report-proof-trail"');
     expect(reportsSource).toContain('evidenceSourceHref("invoice", invoice.id)');
-    expect(vatWorkpaperPanelSource).toContain("VAT evidence workpaper");
+    expect(vatWorkpaperPanelSource).toContain("components.vwTitle");
     expect(vatWorkpaperPanelSource).toContain("Excel-like area for the VAT return");
     expect(vatFilingSource).toContain("canGenerateVatReturn");
     expect(vatFilingSource).toContain('href="/company-profile"');
@@ -3375,9 +3375,9 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("href={reportAutomationContext.delivery.href}");
     expect(reportLaunchPickerSource).toContain("href={reportAutomationContext.comparison.href}");
     expect(reportLaunchPickerSource).toContain("href={reportAutomationContext.suite.href}");
-    expect(reportLaunchPickerSource).toContain("Open report <ArrowRight");
-    expect(reportLaunchPickerSource).toContain("Autopilot");
-    expect(reportLaunchPickerSource).toContain("Scheduled");
+    expect(reportLaunchPickerSource).toContain("components.launchOpenReport");
+    expect(reportLaunchPickerSource).toContain("components.launchAutopilot");
+    expect(reportLaunchPickerSource).toContain("components.launchScheduled");
     expect(reportLaunchPickerSource).toContain(
       "report-launch-delivery-subscription-${subscription.id}"
     );

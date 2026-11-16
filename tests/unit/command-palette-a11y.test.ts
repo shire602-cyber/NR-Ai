@@ -13,8 +13,7 @@ describe("command palette accessibility", () => {
     const commandSource = readRepoFile("client/src/components/ui/command.tsx");
 
     expect(commandSource).toContain("DialogTitle");
-    expect(commandSource).toContain(
-      '<DialogTitle className="sr-only">Command palette</DialogTitle>'
-    );
+    expect(commandSource).toContain('<DialogTitle className="sr-only">');
+    expect(commandSource).toContain('<T k="components.commandPaletteTitle" />');
   });
 });

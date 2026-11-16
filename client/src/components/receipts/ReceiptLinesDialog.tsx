@@ -63,7 +63,7 @@ export interface ReceiptLinesDialogProps {
   accounts: readonly AccountOption[];
   onSaved: (result: unknown) => void;
   /** Injected in tests; defaults to the app's CSRF-aware apiRequest. */
-  request?: (method: string, url: string, body: unknown) => Promise<unknown>;
+  request?: (method: string, url: string, body: unknown) => Promise<unknown>; // i18n-ignore: TypeScript type, not UI copy
 }
 
 const ERROR_KEY: Record<ReceiptSplitError, string> = {

@@ -10,6 +10,7 @@ import {
 import { useNotifications, type AppNotification } from "@/hooks/useNotifications";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -29,6 +30,7 @@ function priorityDot(priority: string) {
 
 export function NotificationBell() {
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { t } = useTranslation();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
 
@@ -67,7 +69,7 @@ export function NotificationBell() {
 
       <DropdownMenuContent align="end" className="w-80 p-0" sideOffset={8}>
         <div className="flex items-center justify-between px-3 py-2 border-b">
-          <span className="text-sm font-semibold">Notifications</span>
+          <span className="text-sm font-semibold">{t["components.notificationsTitle"]}</span>
           {unreadCount > 0 && (
             <Button
               variant="ghost"
@@ -76,14 +78,16 @@ export function NotificationBell() {
               onClick={markAllAsRead}
             >
               <CheckCheck className="w-3 h-3 mr-1" />
-              Mark all read
+              {t["components.notificationsMarkAllRead"]}
             </Button>
           )}
         </div>
 
         <div className="max-h-80 overflow-y-auto">
           {recent.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No notifications</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t["components.notificationsEmpty"]}
+            </p>
           ) : (
             recent.map((n) => (
               <div
@@ -136,7 +140,7 @@ export function NotificationBell() {
                 setOpen(false);
               }}
             >
-              View all notifications
+              {t["components.notificationsViewAll"]}
             </Button>
           </div>
         )}
