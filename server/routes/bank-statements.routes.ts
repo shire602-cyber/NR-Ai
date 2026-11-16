@@ -16,6 +16,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getSuggestionsForTransaction } from "../services/auto-reconcile.service";
 import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
+import { notificationCopy } from "../../shared/server-copy";
 import {
   BANK_FORMAT_LABELS,
   parseBankCsvText,
@@ -511,8 +512,11 @@ export function registerBankStatementRoutes(app: Express) {
         userId,
         companyId,
         type: "bank_import",
-        title: "Bank statement imported",
-        message: `${created.length} transaction(s) imported from ${bankAccount.bankName} (${format} format)`,
+        ...notificationCopy(
+          "notification.bankStatementImported.title",
+          "notification.bankStatementImported.message",
+          { count: created.length, bank: bankAccount.bankName, format }
+        ),
         priority: "normal",
         relatedEntityType: "bank_statement",
         actionUrl: "/bank-reconciliation",

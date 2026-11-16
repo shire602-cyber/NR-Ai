@@ -1,7 +1,6 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
 import { T } from "@/components/layout/T";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
 import {
   CLIENT_SERVICE_OPTIONS,
   DEFAULT_CLIENT_SERVICE_CODES,
@@ -10,9 +9,11 @@ import {
 } from "@shared/client-services";
 import type { BookkeeperPriority, ClientWithStats } from "./types";
 import { priorityClass, priorityLabel } from "./helpers";
+import { useFirmText } from "./text";
 
 export function PriorityBadge({ priority }: { priority: BookkeeperPriority | "filed" }) {
-  return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
+  const { fx } = useFirmText();
+  return <Badge className={priorityClass(priority)}>{fx(priorityLabel(priority))}</Badge>;
 }
 
 export function ServiceScopeBadges({
@@ -22,6 +23,7 @@ export function ServiceScopeBadges({
   services?: readonly ClientServiceCode[];
   compact?: boolean;
 }) {
+  const { fx } = useFirmText();
   const activeServices = services?.length ? [...services] : DEFAULT_CLIENT_SERVICE_CODES;
   const labels = compact
     ? serviceLabels(activeServices)
@@ -34,7 +36,7 @@ export function ServiceScopeBadges({
     <div className="flex flex-wrap gap-1">
       {labels.map((label) => (
         <Badge key={label} variant="outline" className="text-caption">
-          {label}
+          {fx(label)}
         </Badge>
       ))}
     </div>
@@ -42,6 +44,7 @@ export function ServiceScopeBadges({
 }
 
 export function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"] }) {
+  const { b, fdShort } = useFirmText();
   if (!vatStatus)
     return (
       <Badge variant="outline">
@@ -69,11 +72,15 @@ export function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatS
   if (daysUntilDue <= 14) {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        Due {format(due, "MMM d")}
+        {b("Due", "مستحق")} {fdShort(vatStatus.dueDate)}
       </Badge>
     );
   }
-  return <Badge variant="outline">Due {format(due, "MMM d")}</Badge>;
+  return (
+    <Badge variant="outline">
+      {b("Due", "مستحق")} {fdShort(vatStatus.dueDate)}
+    </Badge>
+  );
 }
 
 export function StatusBadge({ active }: { active: boolean }) {

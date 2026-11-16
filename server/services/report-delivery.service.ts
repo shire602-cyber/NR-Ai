@@ -14,10 +14,8 @@ import {
   type ReportWorkflowGapFilter,
 } from "../../client/src/lib/reportCatalog";
 import { isCapabilityLive } from "../../shared/capabilities";
-import {
-  EMAIL_NOT_SET_UP_MESSAGE,
-  REPORT_DELIVERY_TITLE_PREFIX,
-} from "../../shared/notification-copy";
+import { EMAIL_NOT_SET_UP_MESSAGE } from "../../shared/notification-copy";
+import { renderServerCopy } from "../../shared/server-copy";
 import type {
   CompanyReportDeliveryRun,
   CompanyReportDeliverySubscription,
@@ -429,23 +427,30 @@ export function buildReportDeliveryNotificationForPlan(input: {
     : "";
   const status = run?.status ?? "queued";
   const recipientCount = run?.recipientAddresses?.length ?? 0;
-  const title =
-    status === "sent"
-      ? `${REPORT_DELIVERY_TITLE_PREFIX.sent}${plan.title}`
-      : status === "blocked"
-        ? `${REPORT_DELIVERY_TITLE_PREFIX.blocked}${plan.title}`
-        : status === "failed"
-          ? `${REPORT_DELIVERY_TITLE_PREFIX.failed}${plan.title}`
-          : `${REPORT_DELIVERY_TITLE_PREFIX.queued}${plan.title}`;
+  const titleKey = (
+    {
+      sent: "notification.reportDeliverySent.title",
+      blocked: "notification.reportDeliveryBlocked.title",
+      failed: "notification.reportDeliveryFailed.title",
+    } as Record<string, string>
+  )[status] ?? "notification.reportDeliveryQueued.title";
+  const title = renderServerCopy(titleKey, { title: plan.title });
   // D2b (CTO 11): a missing email provider is reported in user terms with a link to set it up;
   // provider and environment details are logged server-side only.
   const emailNotSetUp = status === "blocked" && run?.blockedReason === "no_email_provider";
   const outcome =
     status === "sent"
-      ? `Emailed PDF and Excel pack to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`
+      ? renderServerCopy(
+          recipientCount === 1
+            ? "notification.reportDeliverySentOne.message"
+            : "notification.reportDeliverySent.message",
+          { count: recipientCount }
+        )
       : status === "blocked" || status === "failed"
-        ? `Nothing was sent. ${run?.errorMessage ?? ""}`.trim()
-        : `${plan.format} scheduled for ${scheduledForLabel}.`;
+        ? `${renderServerCopy("notification.reportDeliveryNothingSent.message")} ${run?.errorMessage ?? ""}`.trim()
+        : renderServerCopy("notification.reportDeliveryScheduled.message", {
+            date: scheduledForLabel,
+          });
 
   return {
     userId: input.userId,

@@ -150,6 +150,70 @@ export function RunsTab({ companyId }: { companyId: string }) {
     );
   }
 
+  /** One next-step action per run (outline); view, SIF and reversals stay quiet. Shared by the table and the phone cards. */
+  const runActions = (r: PayrollRun) => (
+    <div className="flex items-center justify-end gap-1">
+      {["draft", "calculated", "reversed"].includes(r.status) && r.status !== "calculated" && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => action.mutate({ id: r.id, path: "calculate" })}
+        >
+          <Calculator className="me-1.5 h-4 w-4" aria-hidden />
+          {tx("hr.calculate")}
+        </Button>
+      )}
+      {r.status === "calculated" && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => action.mutate({ id: r.id, path: "approve" })}
+        >
+          <CheckCircle className="me-1.5 h-4 w-4" aria-hidden />
+          {tx("hr.approve")}
+        </Button>
+      )}
+      {r.status === "approved" && (
+        <Button size="sm" variant="outline" onClick={() => setPayRun(r)}>
+          <Wallet className="me-1.5 h-4 w-4" aria-hidden />
+          {tx("hr.recordPayment")}
+        </Button>
+      )}
+      <RowActions
+        menu={
+          r.status === "calculated" || r.status === "approved" || r.status === "paid" ? (
+            <>
+              {r.status === "calculated" && (
+                <DropdownMenuItem onSelect={() => action.mutate({ id: r.id, path: "calculate" })}>
+                  <Calculator aria-hidden />
+                  {tx("hr.calculate")}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => downloadSif(r)}>
+                <Download aria-hidden />
+                {tx("hr.downloadSif")}
+              </DropdownMenuItem>
+              {r.status === "approved" && (
+                <DropdownMenuItem onSelect={() => setReverseRun({ run: r, action: "unapprove" })}>
+                  <Undo2 aria-hidden />
+                  {tx("hr.unapprove")}
+                </DropdownMenuItem>
+              )}
+              {r.status === "paid" && (
+                <DropdownMenuItem onSelect={() => setReverseRun({ run: r, action: "unpay" })}>
+                  <Undo2 aria-hidden />
+                  {tx("hr.unpay")}
+                </DropdownMenuItem>
+              )}
+            </>
+          ) : undefined
+        }
+      >
+        <RowActionButton icon={Eye} label={tx("hr.view")} onClick={() => setViewing(r.id)} />
+      </RowActions>
+    </div>
+  );
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -166,113 +230,69 @@ export function RunsTab({ companyId }: { companyId: string }) {
         {runs.length === 0 ? (
           <p className="text-muted-foreground">{tx("hr.noRuns")}</p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{tx("hr.period")}</TableHead>
-                  <TableHead data-numeric>{tx("hr.employeesCount")}</TableHead>
-                  <TableHead data-numeric>{tx("hr.totalNet")}</TableHead>
-                  <TableHead>{tx("hr.statusLabel")}</TableHead>
-                  <TableHead>{tx("hr.wpsStatus")}</TableHead>
-                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {runs.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium" data-nowrap>
+          <>
+            {/* Below 768px: stacked row-cards (line 1 period + net, line 2 employees + status, actions). */}
+            <ul className="divide-hairline md:hidden" data-testid="mobile-run-list">
+              {runs.map((r) => (
+                <li key={r.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="min-w-0 truncate text-sm font-medium text-foreground">
                       {monthName(r.period_month, locale)} {r.period_year}
-                    </TableCell>
-                    <TableCell data-numeric>{r.employee_count}</TableCell>
-                    <MoneyCell amount={Number(r.total_net)} currency="AED" />
-                    <TableCell>
-                      <StatusBadge status={r.status} />
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={r.wps_status} />
-                    </TableCell>
-                    <TableCell data-nowrap>
-                      {/* One next-step action per run (outline); view, SIF and reversals stay quiet. */}
-                      <div className="flex items-center justify-end gap-1">
-                        {["draft", "calculated", "reversed"].includes(r.status) &&
-                          r.status !== "calculated" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => action.mutate({ id: r.id, path: "calculate" })}
-                            >
-                              <Calculator className="me-1.5 h-4 w-4" aria-hidden />
-                              {tx("hr.calculate")}
-                            </Button>
-                          )}
-                        {r.status === "calculated" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => action.mutate({ id: r.id, path: "approve" })}
-                          >
-                            <CheckCircle className="me-1.5 h-4 w-4" aria-hidden />
-                            {tx("hr.approve")}
-                          </Button>
-                        )}
-                        {r.status === "approved" && (
-                          <Button size="sm" variant="outline" onClick={() => setPayRun(r)}>
-                            <Wallet className="me-1.5 h-4 w-4" aria-hidden />
-                            {tx("hr.recordPayment")}
-                          </Button>
-                        )}
-                        <RowActions
-                          menu={
-                            r.status === "calculated" ||
-                            r.status === "approved" ||
-                            r.status === "paid" ? (
-                              <>
-                                {r.status === "calculated" && (
-                                  <DropdownMenuItem
-                                    onSelect={() => action.mutate({ id: r.id, path: "calculate" })}
-                                  >
-                                    <Calculator aria-hidden />
-                                    {tx("hr.calculate")}
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onSelect={() => downloadSif(r)}>
-                                  <Download aria-hidden />
-                                  {tx("hr.downloadSif")}
-                                </DropdownMenuItem>
-                                {r.status === "approved" && (
-                                  <DropdownMenuItem
-                                    onSelect={() => setReverseRun({ run: r, action: "unapprove" })}
-                                  >
-                                    <Undo2 aria-hidden />
-                                    {tx("hr.unapprove")}
-                                  </DropdownMenuItem>
-                                )}
-                                {r.status === "paid" && (
-                                  <DropdownMenuItem
-                                    onSelect={() => setReverseRun({ run: r, action: "unpay" })}
-                                  >
-                                    <Undo2 aria-hidden />
-                                    {tx("hr.unpay")}
-                                  </DropdownMenuItem>
-                                )}
-                              </>
-                            ) : undefined
-                          }
-                        >
-                          <RowActionButton
-                            icon={Eye}
-                            label={tx("hr.view")}
-                            onClick={() => setViewing(r.id)}
-                          />
-                        </RowActions>
-                      </div>
-                    </TableCell>
+                    </p>
+                    <Money
+                      amount={Number(r.total_net)}
+                      currency="AED"
+                      className="shrink-0 text-sm font-semibold text-foreground"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
+                    <span>
+                      {tx("hr.employeesCount")}:{" "}
+                      <span className="tabular-nums">{r.employee_count}</span>
+                    </span>
+                    <StatusBadge status={r.status} />
+                    <StatusBadge status={r.wps_status} />
+                  </div>
+                  {runActions(r)}
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{tx("hr.period")}</TableHead>
+                    <TableHead data-numeric>{tx("hr.employeesCount")}</TableHead>
+                    <TableHead data-numeric>{tx("hr.totalNet")}</TableHead>
+                    <TableHead>{tx("hr.statusLabel")}</TableHead>
+                    <TableHead>{tx("hr.wpsStatus")}</TableHead>
+                    <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {runs.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium" data-nowrap>
+                        {monthName(r.period_month, locale)} {r.period_year}
+                      </TableCell>
+                      <TableCell data-numeric>{r.employee_count}</TableCell>
+                      <MoneyCell amount={Number(r.total_net)} currency="AED" />
+                      <TableCell>
+                        <StatusBadge status={r.status} />
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={r.wps_status} />
+                      </TableCell>
+                      <TableCell data-nowrap>
+                        {/* One next-step action per run (outline); view, SIF and reversals stay quiet. */}
+                        {runActions(r)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
         <p className="mt-3 text-xs text-muted-foreground">{tx("hr.approvalSodHint")}</p>
       </CardContent>

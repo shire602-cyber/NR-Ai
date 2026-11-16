@@ -19,7 +19,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
 import { CLIENT_SERVICE_OPTIONS } from "@shared/client-services";
 import type {
   BookkeeperClient,
@@ -31,7 +30,6 @@ import {
   blockerPreview,
   clientIntervention,
   formatAed,
-  formatDateShort,
   formatDays,
   hasClientService,
   interventionClass,
@@ -43,6 +41,7 @@ import {
   sortProductionItems,
 } from "./helpers";
 import { PriorityBadge } from "./badges";
+import { useFirmText } from "./text";
 
 export function BookkeeperCommandCenter({
   dashboard,
@@ -57,6 +56,7 @@ export function BookkeeperCommandCenter({
   onOpenBrief: (companyId: string) => void;
   onManageStaff: () => void;
 }) {
+  const { b, fx, fdShort, fdTime } = useFirmText();
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>("vat");
   const dashboardClients = useMemo(() => dashboard?.clients ?? [], [dashboard?.clients]);
   const workloadOwners = useMemo(
@@ -346,16 +346,18 @@ export function BookkeeperCommandCenter({
             <T k="pages.nrBookkeeperCommandCenter" />
           </h2>
           <p className="text-sm text-muted-foreground">
-            VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review
-            across the client portfolio.
+            {b(
+              "VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review across the client portfolio.",
+              "مجموعات ضريبة القيمة المضافة ومواعيد ضريبة الشركات ومعوقات الإقفال الشهري والمراجعة المحاسبية عبر محفظة العملاء."
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
             <Clock className="w-3.5 h-3.5" />
             {dashboard?.generatedAt
-              ? `Updated ${format(new Date(dashboard.generatedAt), "MMM d, HH:mm")}`
-              : "Loading"}
+              ? `${b("Updated", "آخر تحديث")} ${fdTime(dashboard.generatedAt)}`
+              : b("Loading", "جارٍ التحميل")}
           </span>
         </div>
       </div>
@@ -375,7 +377,7 @@ export function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">VAT due 28d</p>
+              <p className="text-xs text-muted-foreground">{fx("VAT due 28d")}</p>
               <Calendar className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.vatDue28Days ?? 0}</p>
@@ -384,7 +386,7 @@ export function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">CT due 90d</p>
+              <p className="text-xs text-muted-foreground">{fx("CT due 90d")}</p>
               <Calculator className="w-4 h-4 text-info" />
             </div>
             <p className="text-2xl font-bold mt-1">
@@ -414,11 +416,15 @@ export function BookkeeperCommandCenter({
                 <T k="pages.clientServiceMatrix" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Scope every client by service before planning VAT, corporate tax, bookkeeping, or
-                accounting work.
+                {b(
+                  "Scope every client by service before planning VAT, corporate tax, bookkeeping, or accounting work.",
+                  "حدّد نطاق خدمات كل عميل قبل تخطيط أعمال ضريبة القيمة المضافة وضريبة الشركات ومسك الدفاتر والمحاسبة."
+                )}
               </p>
             </div>
-            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+            <Badge variant="outline">
+              {dashboard?.summary.totalClients ?? 0} {b("clients", "عملاء")}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -435,10 +441,11 @@ export function BookkeeperCommandCenter({
               }))
             ).map((service) => (
               <div key={service.code} className="rounded-md border bg-muted/20 p-3">
-                <p className="text-sm font-medium">{service.label}</p>
+                <p className="text-sm font-medium">{fx(service.label)}</p>
                 <p className="text-2xl font-bold mt-1">{service.clientCount}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {service.critical} critical · {service.attention} attention
+                  {service.critical} {b("critical", "حرجة")} · {service.attention}{" "}
+                  {b("attention", "تحتاج انتباهًا")}
                 </p>
               </div>
             ))}
@@ -454,8 +461,8 @@ export function BookkeeperCommandCenter({
               <T k="pages.productionPlanner" />
             </CardTitle>
             <Badge variant="outline">
-              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible
-              items
+              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)}{" "}
+              {b("visible items", "عناصر ظاهرة")}
             </Badge>
           </div>
         </CardHeader>
@@ -468,7 +475,7 @@ export function BookkeeperCommandCenter({
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium flex items-center gap-2">
                       <Icon className="w-4 h-4 text-primary" />
-                      {bucket.title}
+                      {fx(bucket.title)}
                     </p>
                     <Badge variant="outline">{bucket.items.length}</Badge>
                   </div>
@@ -491,12 +498,14 @@ export function BookkeeperCommandCenter({
                               {item.client.companyName}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {item.label} · {formatDays(item.daysTilDue)}
+                              {fx(item.label)} · {fx(formatDays(item.daysTilDue))}
                             </p>
                           </div>
                           <PriorityBadge priority={item.client.priority} />
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1 truncate">{item.metric}</p>
+                        <p className="text-xs text-muted-foreground mt-1 truncate">
+                          {fx(item.metric)}
+                        </p>
                       </button>
                     ))}
                   </div>
@@ -516,7 +525,10 @@ export function BookkeeperCommandCenter({
                 <T k="pages.staffCapacityPlanner" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Balance owners before VAT, CT, and close work becomes a bottleneck.
+                {b(
+                  "Balance owners before VAT, CT, and close work becomes a bottleneck.",
+                  "وازن أحمال المسؤولين قبل أن تصبح أعمال ضريبة القيمة المضافة وضريبة الشركات والإقفال عنق زجاجة."
+                )}
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={onManageStaff}>
@@ -551,7 +563,7 @@ export function BookkeeperCommandCenter({
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{client.companyName}</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {client.nextBestAction}
+                          {fx(client.nextBestAction)}
                         </p>
                       </div>
                       <PriorityBadge priority={client.priority} />
@@ -595,19 +607,26 @@ export function BookkeeperCommandCenter({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{owner.name}</p>
+                        <p className="text-sm font-medium truncate">{fx(owner.name)}</p>
                         <p className="text-xs text-muted-foreground">
-                          {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                          {owner.clientCount} {b("clients", "عملاء")} · {owner.averageCloseProgress}
+                          % {b("avg close", "متوسط الإقفال")}
                         </p>
                       </div>
                       <Badge variant={owner.critical > 0 ? "destructive" : "secondary"}>
-                        {owner.critical} critical
+                        {owner.critical} {b("critical", "حرجة")}
                       </Badge>
                     </div>
                     <div className="flex flex-wrap gap-2 mt-2 text-caption text-muted-foreground">
-                      <span>{owner.vatDue28Days} VAT</span>
-                      <span>{owner.corporateTaxDue90Days} CT</span>
-                      <span>{owner.bookkeepingBlocked} close blocked</span>
+                      <span>
+                        {owner.vatDue28Days} {b("VAT", "ضريبة قيمة مضافة")}
+                      </span>
+                      <span>
+                        {owner.corporateTaxDue90Days} {b("CT", "ضريبة شركات")}
+                      </span>
+                      <span>
+                        {owner.bookkeepingBlocked} {b("close blocked", "إقفال معوق")}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -634,9 +653,10 @@ export function BookkeeperCommandCenter({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{owner.name}</p>
+                        <p className="text-sm font-medium truncate">{fx(owner.name)}</p>
                         <p className="text-xs text-muted-foreground">
-                          {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                          {owner.clientCount} {b("clients", "عملاء")} · {owner.averageCloseProgress}
+                          % {b("avg close", "متوسط الإقفال")}
                         </p>
                       </div>
                       <Badge variant="outline">
@@ -644,7 +664,8 @@ export function BookkeeperCommandCenter({
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {owner.vatDue28Days} VAT due · {owner.bookkeepingBlocked} close blocked
+                      {owner.vatDue28Days} {b("VAT due", "ضريبة مستحقة")} ·{" "}
+                      {owner.bookkeepingBlocked} {b("close blocked", "إقفال معوق")}
                     </p>
                   </div>
                 ))}
@@ -663,8 +684,10 @@ export function BookkeeperCommandCenter({
                 <T k="pages.interventionRadar" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Prioritize files by deadline pressure, source-document gaps, owner gaps, and
-                collection exposure.
+                {b(
+                  "Prioritize files by deadline pressure, source-document gaps, owner gaps, and collection exposure.",
+                  "رتّب الملفات حسب ضغط المواعيد وفجوات المستندات المصدرية وفجوات المسؤولين وانكشاف التحصيل."
+                )}
               </p>
             </div>
             <div className="flex gap-2">
@@ -675,11 +698,12 @@ export function BookkeeperCommandCenter({
                     : "outline"
                 }
               >
-                {dashboard?.summary.interventionHigh ?? interventionRadar.high.length} high
+                {dashboard?.summary.interventionHigh ?? interventionRadar.high.length}{" "}
+                {b("high", "مرتفع")}
               </Badge>
               <Badge variant="secondary">
                 {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length}{" "}
-                watchlist
+                {b("watchlist", "قيد المراقبة")}
               </Badge>
             </div>
           </div>
@@ -712,7 +736,7 @@ export function BookkeeperCommandCenter({
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
                           <p className="text-xs text-muted-foreground truncate">
-                            {intervention.title}
+                            {fx(intervention.title)}
                           </p>
                         </div>
                         <Badge className={interventionClass(intervention.level)}>
@@ -720,9 +744,9 @@ export function BookkeeperCommandCenter({
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">
-                        {intervention.deadlineLabel}
+                        {fx(intervention.deadlineLabel)}
                       </p>
-                      <p className="text-xs font-medium mt-1">{intervention.ownerAction}</p>
+                      <p className="text-xs font-medium mt-1">{fx(intervention.ownerAction)}</p>
                       <div className="flex gap-1 mt-2">
                         <Button
                           size="sm"
@@ -732,7 +756,7 @@ export function BookkeeperCommandCenter({
                           <T k="pages.brief" />
                         </Button>
                         <Button size="sm" onClick={() => onOpenBooks(client.companyId)}>
-                          Open
+                          {b("Open", "فتح")}
                         </Button>
                       </div>
                     </div>
@@ -767,7 +791,7 @@ export function BookkeeperCommandCenter({
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
                           <p className="text-xs text-muted-foreground truncate">
-                            {intervention.ownerAction}
+                            {fx(intervention.ownerAction)}
                           </p>
                         </div>
                         <Badge className={interventionClass(intervention.level)}>
@@ -775,7 +799,10 @@ export function BookkeeperCommandCenter({
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2 truncate">
-                        {intervention.reasons.slice(0, 2).join(" · ")}
+                        {intervention.reasons
+                          .slice(0, 2)
+                          .map((reason) => fx(reason))
+                          .join(" · ")}
                       </p>
                     </button>
                   );
@@ -807,13 +834,14 @@ export function BookkeeperCommandCenter({
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
                           <p className="text-xs text-muted-foreground">
-                            {client.bookkeeping.overdueInvoiceCount} overdue invoices
+                            {client.bookkeeping.overdueInvoiceCount}{" "}
+                            {b("overdue invoices", "فواتير متأخرة")}
                           </p>
                         </div>
                         <Badge variant="outline">{formatAed(intervention.exposureAed)}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2 truncate">
-                        {intervention.ownerAction}
+                        {fx(intervention.ownerAction)}
                       </p>
                       <div className="flex gap-1 mt-2">
                         <Button
@@ -849,11 +877,15 @@ export function BookkeeperCommandCenter({
                 <T k="pages.serviceLaneForecast" />
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting
-                review cadence.
+                {b(
+                  "One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting review cadence.",
+                  "عرض واحد للمحفظة لمجموعات ضريبة القيمة المضافة وضريبة الشركات وإقفال مسك الدفاتر ووتيرة المراجعة المحاسبية."
+                )}
               </p>
             </div>
-            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+            <Badge variant="outline">
+              {dashboard?.summary.totalClients ?? 0} {b("clients", "عملاء")}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -864,7 +896,7 @@ export function BookkeeperCommandCenter({
                 <div key={lane.key} className="rounded-md border bg-muted/20 p-3">
                   <p className="text-sm font-medium flex items-center gap-2">
                     <Icon className="w-4 h-4 text-primary" />
-                    {lane.title}
+                    {fx(lane.title)}
                   </p>
                   <div className="mt-3 space-y-2">
                     {lane.rows.map((row) => (
@@ -877,14 +909,16 @@ export function BookkeeperCommandCenter({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{row.label}</p>
-                            <p className="text-xs text-muted-foreground truncate">{row.metric}</p>
+                            <p className="text-sm font-medium truncate">{fx(row.label)}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {fx(row.metric)}
+                            </p>
                           </div>
                           <Badge className={priorityClass(row.risk)}>{row.count}</Badge>
                         </div>
-                        <p className="text-xs font-medium mt-2 truncate">{row.action}</p>
+                        <p className="text-xs font-medium mt-2 truncate">{fx(row.action)}</p>
                         <p className="text-caption text-muted-foreground mt-1 truncate">
-                          {row.sample || "No active clients"}
+                          {row.sample || fx("No active clients")}
                         </p>
                       </button>
                     ))}
@@ -904,7 +938,9 @@ export function BookkeeperCommandCenter({
                 <Target className="w-4 h-4 text-primary" />
                 <T k="pages.actionQueues" />
               </CardTitle>
-              <Badge variant="outline">{activeQueueItems.length} active</Badge>
+              <Badge variant="outline">
+                {activeQueueItems.length} {b("active", "نشطة")}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -922,7 +958,7 @@ export function BookkeeperCommandCenter({
                     className="gap-1.5"
                   >
                     <Icon className="w-3.5 h-3.5" />
-                    {queueConfig[key].label}
+                    {fx(queueConfig[key].label)}
                     <span className="text-xs text-muted-foreground">{count}</span>
                   </Button>
                 );
@@ -950,18 +986,24 @@ export function BookkeeperCommandCenter({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium text-sm truncate">{item.companyName}</p>
                         <PriorityBadge priority={item.priority} />
-                        <span className="text-xs text-muted-foreground">{item.metric}</span>
+                        <span className="text-xs text-muted-foreground">{fx(item.metric)}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{item.action}</p>
+                      <p className="text-xs text-muted-foreground mt-1 truncate">
+                        {fx(item.action)}
+                      </p>
                       <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <UserCheck className="w-3.5 h-3.5" />
-                          {ownerPreview(item.ownerNames)}
+                          {fx(ownerPreview(item.ownerNames))}
                         </span>
                         <span>
-                          {formatDateShort(item.dueDate)} · {formatDays(item.daysTilDue)}
+                          {fdShort(item.dueDate)} · {fx(formatDays(item.daysTilDue))}
                         </span>
-                        {item.blockers.length > 1 && <span>{item.blockers.length} blockers</span>}
+                        {item.blockers.length > 1 && (
+                          <span>
+                            {item.blockers.length} {b("blockers", "معوقات")}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-1 sm:shrink-0">
@@ -982,7 +1024,7 @@ export function BookkeeperCommandCenter({
                       </Button>
                       <Button size="sm" onClick={() => onOpenBooks(item.companyId)}>
                         <BookOpen className="w-3.5 h-3.5 me-1" />
-                        Open
+                        {b("Open", "فتح")}
                       </Button>
                     </div>
                   </div>
@@ -1001,7 +1043,7 @@ export function BookkeeperCommandCenter({
               </CardTitle>
               {(dashboard?.workload?.unassignedClients ?? 0) > 0 && (
                 <Badge variant="destructive">
-                  {dashboard?.workload?.unassignedClients} unassigned
+                  {dashboard?.workload?.unassignedClients} {b("unassigned", "غير معيّنين")}
                 </Badge>
               )}
             </div>
@@ -1016,9 +1058,10 @@ export function BookkeeperCommandCenter({
               <div key={owner.staffId ?? "unassigned"} className="rounded-md border px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{owner.name}</p>
+                    <p className="text-sm font-medium truncate">{fx(owner.name)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                      {owner.clientCount} {b("clients", "عملاء")} · {owner.averageCloseProgress}%{" "}
+                      {b("avg close", "متوسط الإقفال")}
                     </p>
                   </div>
                   <Badge
@@ -1031,8 +1074,8 @@ export function BookkeeperCommandCenter({
                     }
                   >
                     {owner.critical > 0
-                      ? `${owner.critical} critical`
-                      : `${owner.attention} attention`}
+                      ? `${owner.critical} ${b("critical", "حرجة")}`
+                      : `${owner.attention} ${b("attention", "تحتاج انتباهًا")}`}
                   </Badge>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -1042,9 +1085,15 @@ export function BookkeeperCommandCenter({
                   />
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2 text-caption text-muted-foreground">
-                  <span>{owner.vatDue28Days} VAT due</span>
-                  <span>{owner.corporateTaxDue90Days} CT due</span>
-                  <span>{owner.bookkeepingBlocked} close blocked</span>
+                  <span>
+                    {owner.vatDue28Days} {b("VAT due", "ضريبة مستحقة")}
+                  </span>
+                  <span>
+                    {owner.corporateTaxDue90Days} {b("CT due", "ضريبة شركات مستحقة")}
+                  </span>
+                  <span>
+                    {owner.bookkeepingBlocked} {b("close blocked", "إقفال معوق")}
+                  </span>
                 </div>
               </div>
             ))}
@@ -1058,7 +1107,9 @@ export function BookkeeperCommandCenter({
             <CardTitle className="text-base">
               <T k="pages.vatProductionBoard" />
             </CardTitle>
-            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+            <Badge variant="outline">
+              {dashboard?.summary.totalClients ?? 0} {b("clients", "عملاء")}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -1067,18 +1118,24 @@ export function BookkeeperCommandCenter({
               <div key={cohort.key} className="rounded-lg border bg-muted/20 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium text-sm">Group {index + 1}</p>
-                    <p className="text-xs text-muted-foreground">{cohort.label}</p>
-                    <p className="text-xs text-muted-foreground">{cohort.clientCount} clients</p>
+                    <p className="font-medium text-sm">
+                      {b("Group", "المجموعة")} {index + 1}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{fx(cohort.label)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cohort.clientCount} {b("clients", "عملاء")}
+                    </p>
                   </div>
                   <div className="flex gap-1">
                     {cohort.dueSoon > 0 && (
                       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-                        {cohort.dueSoon} due
+                        {cohort.dueSoon} {b("due", "مستحقة")}
                       </Badge>
                     )}
                     {cohort.blocked > 0 && (
-                      <Badge variant="destructive">{cohort.blocked} blocked</Badge>
+                      <Badge variant="destructive">
+                        {cohort.blocked} {b("blocked", "معوقة")}
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -1099,13 +1156,13 @@ export function BookkeeperCommandCenter({
                         <div className="min-w-0">
                           <p className="font-medium text-sm truncate">{client.companyName}</p>
                           <p className="text-xs text-muted-foreground">
-                            {formatDateShort(client.dueDate)} · {formatDays(client.daysTilDue)}
+                            {fdShort(client.dueDate)} · {fx(formatDays(client.daysTilDue))}
                           </p>
                         </div>
                         <PriorityBadge priority={client.status} />
                       </div>
                       <p className="text-xs text-muted-foreground mt-1 truncate">
-                        {blockerPreview(client.blockers)}
+                        {fx(blockerPreview(client.blockers))}
                       </p>
                     </button>
                   ))}
@@ -1142,7 +1199,7 @@ export function BookkeeperCommandCenter({
                   <PriorityBadge priority={client.priority} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate">
-                  {client.nextBestAction}
+                  {fx(client.nextBestAction)}
                 </p>
               </button>
             ))}
@@ -1167,11 +1224,11 @@ export function BookkeeperCommandCenter({
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <span className="text-xs text-muted-foreground">
-                    {formatDays(client.corporateTax.daysTilDue)}
+                    {fx(formatDays(client.corporateTax.daysTilDue))}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate">
-                  {blockerPreview(client.corporateTax.blockers)}
+                  {fx(blockerPreview(client.corporateTax.blockers))}
                 </p>
               </div>
             ))}
@@ -1204,7 +1261,7 @@ export function BookkeeperCommandCenter({
                   />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate">
-                  {blockerPreview(client.bookkeeping.blockers)}
+                  {fx(blockerPreview(client.bookkeeping.blockers))}
                 </p>
               </div>
             ))}
@@ -1231,7 +1288,7 @@ export function BookkeeperCommandCenter({
                   <PriorityBadge priority={client.accounting.status} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate">
-                  {blockerPreview(client.accounting.blockers)}
+                  {fx(blockerPreview(client.accounting.blockers))}
                 </p>
               </div>
             ))}

@@ -1,33 +1,45 @@
 /**
- * Display text for server notifications (D2b, CTO 11). Notifications are stored in English;
- * known system messages are shown in the reader's language, and configuration problems are
- * phrased for users with a "Set up email" link instead of environment variable names.
+ * Display text for server notifications (D2b, CTO 11; D4). The server stores English and
+ * returns stable message keys + params in `copy`; this renders them from the en/ar catalogs.
+ * Rows without `copy` (older cached rows, socket pushes) are mapped on read with the same
+ * shared templates. Configuration problems are phrased for users with a "Set up email" link
+ * instead of environment variable names.
  */
+import { EMAIL_SETUP_HREF, isEmailNotSetUpMessage } from "@shared/notification-copy";
 import {
-  EMAIL_SETUP_HREF,
-  isEmailNotSetUpMessage,
-  parseReportDeliveryTitle,
-} from "@shared/notification-copy";
+  describeNotificationCopy,
+  renderDescriptor,
+  type NotificationCopyDescriptor,
+} from "@shared/server-copy";
+import { reportDeliverySubscriptions } from "@/lib/reportCatalog";
 
-const DELIVERY_TITLE_KEYS = {
-  sent: "components.notificationDeliverySentTitle",
-  blocked: "components.notificationDeliveryBlockedTitle",
-  failed: "components.notificationDeliveryFailedTitle",
-  queued: "components.notificationDeliveryQueuedTitle",
-} as const;
+type NotificationLike = {
+  title: string;
+  message: string;
+  copy?: NotificationCopyDescriptor | null;
+};
 
-/**
- * Server notifications are stored in English. Known system messages are shown in the
- * reader's language, and configuration problems are phrased for users (CTO 11).
- */
+const SUBSCRIPTION_TITLE_KEY = (id: string) => `reportCatalog.delivery.${id}.title`;
+
+/** Localised name of a report delivery subscription (catalog titles are English-only data). */
+export function localizeDeliverySubscriptionTitle(
+  title: string,
+  t: Record<string, string | undefined>
+): string {
+  const sub = reportDeliverySubscriptions.find((s) => s.title === title);
+  return (sub && t[SUBSCRIPTION_TITLE_KEY(sub.id)]) || title;
+}
+
 export function localizeNotification(
-  n: { title: string; message: string },
-  t: Record<string, string>
+  n: NotificationLike,
+  t: Record<string, string | undefined>
 ): { title: string; message: string; setupEmailHref?: string } {
-  const delivery = parseReportDeliveryTitle(n.title);
-  const title = delivery
-    ? (t[DELIVERY_TITLE_KEYS[delivery.outcome]] ?? n.title).replace("{title}", delivery.planTitle)
-    : n.title;
+  const copy = n.copy ?? describeNotificationCopy(n);
+  const titleParams = { ...copy.titleParams };
+  if (titleParams.title) {
+    titleParams.title = localizeDeliverySubscriptionTitle(titleParams.title, t);
+  }
+  const title = renderDescriptor(copy.titleKey, titleParams, n.title, t);
   if (isEmailNotSetUpMessage(n.message)) {
     return {
       title,
@@ -35,5 +47,8 @@ export function localizeNotification(
       setupEmailHref: EMAIL_SETUP_HREF,
     };
   }
-  return { title, message: n.message };
+  return {
+    title,
+    message: renderDescriptor(copy.messageKey, copy.messageParams, n.message, t),
+  };
 }

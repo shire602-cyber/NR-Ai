@@ -24,6 +24,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslation } from "@/lib/i18n";
+import {
+  describeCashForecastItemText,
+  describeCashForecastText,
+  renderDescriptor,
+  type CopyDescriptor,
+} from "@shared/server-copy";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -64,6 +70,8 @@ interface ForecastData {
   currentBalance: number;
   projections: WeeklyProjection[];
   insights: string[];
+  insightMessages?: CopyDescriptor[];
+  assumptionMessages?: CopyDescriptor[];
   items: ForecastItem[];
   assumptions: string[];
   insufficientData: boolean;
@@ -114,6 +122,13 @@ interface MonthlyCashHistory {
 
 export default function CashFlowForecast() {
   const { t: _t, locale } = useTranslation();
+  /** Server sentence -> reader's language via stable message keys (en text is the fallback). */
+  const serverText = (text: string, d: CopyDescriptor | null | undefined) => {
+    const desc = d ?? describeCashForecastText(text) ?? describeCashForecastItemText(text);
+    return desc
+      ? renderDescriptor(desc.key, desc.params, text, _t as Record<string, string>)
+      : text;
+  };
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [forecastDays, setForecastDays] = useState("90");
   const [scenario, setScenario] = useState<Scenario>("base");
@@ -408,7 +423,9 @@ export default function CashFlowForecast() {
                   className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 border"
                 >
                   {getInsightIcon(insight)}
-                  <span className="text-sm flex-1">{insight}</span>
+                  <span className="text-sm flex-1">
+                    {serverText(insight, forecast.insightMessages?.[index])}
+                  </span>
                   {getInsightBadge(insight)}
                 </div>
               ))}
@@ -505,8 +522,8 @@ export default function CashFlowForecast() {
             </CardTitle>
             <CardDescription>
               <ul className="list-disc ps-5 space-y-1">
-                {forecast.assumptions.map((a) => (
-                  <li key={a}>{a}</li>
+                {forecast.assumptions.map((a, i) => (
+                  <li key={a}>{serverText(a, forecast.assumptionMessages?.[i])}</li>
                 ))}
               </ul>
             </CardDescription>
@@ -543,9 +560,11 @@ export default function CashFlowForecast() {
                           )}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {it.description}
+                          {serverText(it.description, null)}
                           {it.note && (
-                            <span className="block text-xs text-muted-foreground">{it.note}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {serverText(it.note, null)}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell

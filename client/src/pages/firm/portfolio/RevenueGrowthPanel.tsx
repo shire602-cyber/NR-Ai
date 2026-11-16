@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { GrowthDashboard, GrowthOpportunityStatus } from "./types";
 import { formatAed } from "./helpers";
+import { useFirmText } from "./text";
 
 export function RevenueGrowthPanel({
   onOpenClient,
@@ -16,6 +17,7 @@ export function RevenueGrowthPanel({
   onOpenClient: (companyId: string) => void;
 }) {
   const { toast } = useToast();
+  const { b } = useFirmText();
   const { data, isLoading } = useQuery<GrowthDashboard>({
     queryKey: ["/api/firm/growth-opportunities"],
   });
@@ -84,8 +86,10 @@ export function RevenueGrowthPanel({
               <T k="pages.revenueGrowth" />
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Internal opportunity queue for service AR, cleanup work, advisory packs, and
-              compliance extras.
+              {b(
+                "Internal opportunity queue for service AR, cleanup work, advisory packs, and compliance extras.",
+                "قائمة فرص داخلية لذمم الخدمات وأعمال التنظيف وحزم الاستشارات والخدمات الإضافية للامتثال."
+              )}
             </p>
           </div>
           <Button
@@ -133,8 +137,10 @@ export function RevenueGrowthPanel({
           </p>
         ) : active.length === 0 ? (
           <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            No active revenue opportunities yet. Refresh signals after new AR, cleanup, or
-            compliance data lands.
+            {b(
+              "No active revenue opportunities yet. Refresh signals after new AR, cleanup, or compliance data lands.",
+              "لا توجد فرص إيرادات نشطة بعد. حدّث الإشارات بعد وصول بيانات جديدة للذمم أو التنظيف أو الامتثال."
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -144,11 +150,22 @@ export function RevenueGrowthPanel({
                   <div className="min-w-0">
                     <p className="font-medium truncate">{opportunity.title}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {opportunity.companyName ?? "Client"}
+                      {opportunity.companyName ?? b("Client", "العميل")}
                     </p>
                   </div>
                   <Badge variant={opportunity.priority === "critical" ? "destructive" : "outline"}>
-                    {opportunity.priority}
+                    {b(
+                      opportunity.priority,
+                      (
+                        {
+                          critical: "حرج",
+                          high: "مرتفع",
+                          medium: "متوسط",
+                          low: "منخفض",
+                          normal: "عادي",
+                        } as Record<string, string>
+                      )[opportunity.priority] ?? opportunity.priority
+                    )}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">{opportunity.reason}</p>
@@ -157,7 +174,8 @@ export function RevenueGrowthPanel({
                     {formatAed(Number(opportunity.estimatedValue ?? 0))}
                   </span>
                   <span className="text-muted-foreground">
-                    {Math.round(Number(opportunity.confidence ?? 0) * 100)}% confidence
+                    {Math.round(Number(opportunity.confidence ?? 0) * 100)}%{" "}
+                    {b("confidence", "ثقة")}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">

@@ -52,6 +52,7 @@ import {
 import { fromFils, mulRate, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { createAndEmitNotification } from "../services/socket.service";
+import { notificationCopy } from "../../shared/server-copy";
 import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import {
   dueDateFromTerms,
@@ -473,8 +474,16 @@ export function registerInvoiceRoutes(app: Express) {
         userId,
         companyId,
         type: "invoice_created",
-        title: "Invoice created",
-        message: `Invoice ${invoice.number} for ${invoice.customerName} — ${invoice.total} ${documentCurrency(invoice.currency, await loadBaseCurrency(companyId))}`,
+        ...notificationCopy(
+          "notification.invoiceCreated.title",
+          "notification.invoiceCreated.message",
+          {
+            number: invoice.number,
+            customer: invoice.customerName,
+            total: invoice.total,
+            currency: documentCurrency(invoice.currency, await loadBaseCurrency(companyId)),
+          }
+        ),
         priority: "normal",
         relatedEntityType: "invoice",
         relatedEntityId: invoice.id,
@@ -805,8 +814,10 @@ export function registerInvoiceRoutes(app: Express) {
           userId,
           companyId: invoice.companyId,
           type: "invoice_status_change",
-          title: "Invoice void",
-          message: `Invoice ${invoice.number} for ${invoice.customerName} marked as void`,
+          ...notificationCopy("notification.invoiceVoid.title", "notification.invoiceVoid.message", {
+            number: invoice.number,
+            customer: invoice.customerName,
+          }),
           priority: "normal",
           relatedEntityType: "invoice",
           relatedEntityId: invoice.id,

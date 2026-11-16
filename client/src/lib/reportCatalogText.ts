@@ -18,6 +18,7 @@ export type CatalogTextKind =
   | "preset"
   | "pack"
   | "starter"
+  | "delivery"
   | "category";
 
 export function catalogTextKey(kind: CatalogTextKind, id: string, field: string): string {

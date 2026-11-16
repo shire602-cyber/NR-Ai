@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import { withNotificationCopy } from "../../shared/server-copy";
 import { registerNotificationEngine } from "../services/notification-engine.service";
 import { registerOutboxJob } from "../outbox";
 
@@ -23,7 +24,7 @@ export function registerNotificationRoutes(app: Express) {
       const userId = req.user!.id;
       const notifications = await storage.getNotificationsByUserId(userId);
       const unreadCount = await storage.getUnreadNotificationCount(userId);
-      res.json({ notifications, unreadCount });
+      res.json({ notifications: notifications.map(withNotificationCopy), unreadCount });
     })
   );
 
@@ -48,7 +49,7 @@ export function registerNotificationRoutes(app: Express) {
       if (!notification) {
         return res.status(404).json({ message: "Notification not found" });
       }
-      res.json(notification);
+      res.json(withNotificationCopy(notification));
     })
   );
 
@@ -74,7 +75,7 @@ export function registerNotificationRoutes(app: Express) {
       if (!notification) {
         return res.status(404).json({ message: "Notification not found" });
       }
-      res.json(notification);
+      res.json(withNotificationCopy(notification));
     })
   );
 
@@ -114,7 +115,7 @@ export function registerNotificationRoutes(app: Express) {
         isRead: false,
         isDismissed: false,
       });
-      res.json(notification);
+      res.json(withNotificationCopy(notification));
     })
   );
 }

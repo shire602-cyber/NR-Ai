@@ -34,8 +34,13 @@ import {
   triggerSeverityMeta,
 } from "../../shared";
 import { useReportsPageContext } from "../../context";
+import { useTranslation } from "@/lib/i18n";
+import { localizeDeliverySubscriptionTitle } from "@/lib/notification-display";
 
 export function DeliverySubscriptionsSection() {
+  const { t: tr } = useTranslation();
+  const subscriptionTitle = (title: string) =>
+    localizeDeliverySubscriptionTitle(title, tr as Record<string, string>);
   const {
     activeReportWorkspaceTab,
     automationLoading,
@@ -500,7 +505,7 @@ export function DeliverySubscriptionsSection() {
                     </div>
                     <Badge variant="outline">{run.workspaceLabel}</Badge>
                   </div>
-                  <div className="mt-2 font-medium text-foreground">{run.subscriptionTitle}</div>
+                  <div className="mt-2 font-medium text-foreground">{subscriptionTitle(run.subscriptionTitle)}</div>
                   <div className="mt-1 text-muted-foreground">
                     Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
                     {run.readyReportCount}/{run.reportCount} reports - {run.channel}
@@ -577,7 +582,7 @@ export function DeliverySubscriptionsSection() {
                         </div>
                         <div className="min-w-0">
                           <CardTitle className="text-base font-semibold">
-                            {subscription.title}
+                            {subscriptionTitle(subscription.title)}
                           </CardTitle>
                           <CardDescription>{subscription.audience}</CardDescription>
                         </div>

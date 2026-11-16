@@ -12,6 +12,7 @@ import {
   reportAutomationStarters,
   reportCatalog,
   reportComparisonPresets,
+  reportDeliverySubscriptions,
   reportDecisionShortcuts,
   reportPackTemplates,
   reportPersonaWorkspaces,
@@ -81,6 +82,9 @@ describe("F7 report catalog Arabic overlay", () => {
     for (const r of reportCatalog) {
       valid.add(catalogTextKey("report", r.id, "name"));
       valid.add(catalogTextKey("report", r.id, "decisionQuestion"));
+    }
+    for (const sub of reportDeliverySubscriptions) {
+      valid.add(catalogTextKey("delivery", sub.id, "title"));
     }
     expect(Object.keys(overlay).filter((key) => !valid.has(key))).toEqual([]);
   });

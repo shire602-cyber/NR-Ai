@@ -21,13 +21,13 @@ import {
 import type { BookkeeperClient } from "./types";
 import {
   formatAed,
-  formatDateShort,
   formatDays,
   formatPeriod,
   hasClientService,
   ownerPreview,
 } from "./helpers";
 import { PriorityBadge, ServiceScopeBadges } from "./badges";
+import { useFirmText } from "./text";
 
 export function OperationsBriefDialog({
   client,
@@ -42,6 +42,7 @@ export function OperationsBriefDialog({
   onOpenBooks: (companyId: string) => void;
   onViewProfile: (companyId: string) => void;
 }) {
+  const { b, fx, fdShort } = useFirmText();
   const lanes = client
     ? [
         {
@@ -50,12 +51,12 @@ export function OperationsBriefDialog({
           title: "VAT",
           icon: Calendar,
           status: client.vat.status,
-          due: `${formatDateShort(client.vat.dueDate)} · ${formatDays(client.vat.daysTilDue)}`,
+          due: `${fdShort(client.vat.dueDate)} · ${fx(formatDays(client.vat.daysTilDue))}`,
           period: formatPeriod(client.vat.periodStart, client.vat.periodEnd),
           metric:
             client.vat.payableTax !== null
               ? formatAed(client.vat.payableTax)
-              : client.vat.cohortLabel,
+              : fx(client.vat.cohortLabel),
           blockers: client.vat.blockers,
         },
         {
@@ -64,12 +65,12 @@ export function OperationsBriefDialog({
           title: "Corporate Tax",
           icon: Calculator,
           status: client.corporateTax.status,
-          due: `${formatDateShort(client.corporateTax.dueDate)} · ${formatDays(client.corporateTax.daysTilDue)}`,
+          due: `${fdShort(client.corporateTax.dueDate)} · ${fx(formatDays(client.corporateTax.daysTilDue))}`,
           period: formatPeriod(client.corporateTax.periodStart, client.corporateTax.periodEnd),
           metric:
             client.corporateTax.taxPayable !== null
               ? formatAed(client.corporateTax.taxPayable)
-              : "Readiness",
+              : fx("Readiness"),
           blockers: client.corporateTax.blockers,
         },
         {
@@ -78,12 +79,12 @@ export function OperationsBriefDialog({
           title: "Bookkeeping",
           icon: TrendingUp,
           status: client.bookkeeping.status,
-          due: `${client.bookkeeping.closeProgress}% close-ready`,
+          due: fx(`${client.bookkeeping.closeProgress}% close-ready`),
           period:
             client.bookkeeping.daysSinceActivity === null
-              ? "No activity date"
-              : `${client.bookkeeping.daysSinceActivity}d since activity`,
-          metric: `${client.bookkeeping.unpostedReceiptCount} receipts · ${client.bookkeeping.unreconciledBankCount} bank lines`,
+              ? b("No activity date", "لا يوجد تاريخ نشاط")
+              : fx(`${client.bookkeeping.daysSinceActivity}d since activity`),
+          metric: `${client.bookkeeping.unpostedReceiptCount} ${b("receipts", "إيصالات")} · ${client.bookkeeping.unreconciledBankCount} ${b("bank lines", "بنود بنكية")}`,
           blockers: client.bookkeeping.blockers,
         },
         {
@@ -92,14 +93,16 @@ export function OperationsBriefDialog({
           title: "Accounting",
           icon: CheckCircle2,
           status: client.accounting.status,
-          due: client.accounting.trialBalanceBalanced ? "Balanced" : "Needs review",
+          due: client.accounting.trialBalanceBalanced
+            ? b("Balanced", "متوازن")
+            : b("Needs review", "يحتاج مراجعة"),
           period:
             client.accounting.discrepancy > 0
               ? formatAed(client.accounting.discrepancy)
-              : "No variance",
+              : b("No variance", "لا يوجد فرق"),
           metric: client.accounting.trialBalanceBalanced
-            ? "Trial balance clean"
-            : "Trial balance variance",
+            ? b("Trial balance clean", "ميزان المراجعة سليم")
+            : b("Trial balance variance", "فرق في ميزان المراجعة"),
           blockers: client.accounting.blockers,
         },
       ].filter((lane) => hasClientService(client, lane.service))
@@ -109,11 +112,13 @@ export function OperationsBriefDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{client?.companyName ?? "Client Operations Brief"}</DialogTitle>
+          <DialogTitle>
+            {client?.companyName ?? b("Client Operations Brief", "ملخص عمليات العميل")}
+          </DialogTitle>
           <DialogDescription>
             {client
-              ? `${ownerPreview(client.assignedStaff.map((staff) => staff.name))} · ${client.nextBestAction}`
-              : "Operational status"}
+              ? `${fx(ownerPreview(client.assignedStaff.map((staff) => staff.name)))} · ${fx(client.nextBestAction)}`
+              : b("Operational status", "الحالة التشغيلية")}
           </DialogDescription>
         </DialogHeader>
 
@@ -133,14 +138,14 @@ export function OperationsBriefDialog({
                   <T k="pages.owner" />
                 </p>
                 <p className="text-sm font-medium mt-1 truncate">
-                  {ownerPreview(client.assignedStaff.map((staff) => staff.name))}
+                  {fx(ownerPreview(client.assignedStaff.map((staff) => staff.name)))}
                 </p>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">
                   <T k="pages.lastActivity" />
                 </p>
-                <p className="text-sm font-medium mt-1">{formatDateShort(client.lastActivity)}</p>
+                <p className="text-sm font-medium mt-1">{fdShort(client.lastActivity)}</p>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">
@@ -165,9 +170,9 @@ export function OperationsBriefDialog({
                       <div>
                         <p className="text-sm font-medium flex items-center gap-2">
                           <Icon className="w-4 h-4 text-primary" />
-                          {lane.title}
+                          {fx(lane.title)}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">{lane.period}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{fx(lane.period)}</p>
                       </div>
                       <PriorityBadge priority={lane.status} />
                     </div>
@@ -194,7 +199,7 @@ export function OperationsBriefDialog({
                         lane.blockers.slice(0, 4).map((blocker) => (
                           <div key={blocker} className="flex items-start gap-2 text-xs">
                             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-warning shrink-0" />
-                            <span>{blocker}</span>
+                            <span>{fx(blocker)}</span>
                           </div>
                         ))
                       )}

@@ -61,6 +61,7 @@ import {
 } from "@/lib/vat-workpaper-grid";
 import { format } from "date-fns";
 import { POSTABLE_VAT_CATEGORIES } from "./types";
+import { useFirmText } from "./text";
 import { resolveSelectedId } from "@/lib/selection";
 import type {
   BookkeeperClient,
@@ -84,6 +85,104 @@ import {
   todayInput,
 } from "./helpers";
 
+const VX_AR: Record<string, string> = {
+  "VAT workpaper ready": "ورقة عمل الضريبة جاهزة",
+  row: "صف",
+  rows: "صفوف",
+  parsed: "تم تحليلها",
+  "VAT Submission Workspace": "مساحة تقديم ضريبة القيمة المضافة",
+  "Bookkeeper VAT workbook for invoice entry, scanned evidence, draft OCR review, VAT 201 totals, and copy-paste FTA filing figures. No FTA submission happens here.":
+    "مصنف ضريبة القيمة المضافة لمسك الدفاتر: إدخال الفواتير والأدلة الممسوحة ومراجعة مسودات القراءة الضوئية وإجماليات إقرار 201 وأرقام التقديم الجاهزة للنسخ إلى الهيئة. لا يتم أي تقديم إلى الهيئة من هنا.",
+  "Create/Open": "إنشاء/فتح",
+  "Pull from books": "السحب من الدفاتر",
+  "Pulling…": "جارٍ السحب…",
+  "Exporting…": "جارٍ التصدير…",
+  "Select workpaper": "اختر ورقة العمل",
+  "Draft / excluded": "مسودة / مستبعد",
+  "Output / input VAT": "ضريبة المخرجات / المدخلات",
+  "VAT 201 Review": "مراجعة إقرار 201",
+  "Edit rows, approve drafts, exclude mistakes, then review totals in VAT 201 Review.":
+    "عدّل الصفوف واعتمد المسودات واستبعد الأخطاء ثم راجع الإجماليات في مراجعة إقرار 201.",
+  Date: "التاريخ",
+  "Customer / vendor": "العميل / المورد",
+  TRN: "الرقم الضريبي",
+  VAT: "ضريبة القيمة المضافة",
+  editing: "قيد التعديل",
+  "new row": "صف جديد",
+  Save: "حفظ",
+  Add: "إضافة",
+  Edit: "تعديل",
+  Post: "ترحيل",
+  "Tip: you can type a sum like 7800+1850": "تلميح: يمكنك كتابة مجموع مثل 7800+1850",
+  "Posted to the general ledger": "رُحّل إلى دفتر الأستاذ",
+  "Post this sale to the ledger so it shows in the journal, P&L and balance sheet":
+    "رحّل هذا البيع إلى دفتر الأستاذ ليظهر في القيود وقائمة الدخل والميزانية",
+  "Approve draft VAT row": "اعتماد صف الضريبة المسودة",
+  "Exclude draft VAT row": "استبعاد صف الضريبة المسودة",
+  "Delete this row": "حذف هذا الصف",
+  "Delete this draft row": "حذف هذا الصف المسودة",
+  "Delete this VAT row? This removes it and any attached evidence and updates the totals.":
+    "حذف صف الضريبة هذا؟ سيُزال مع أي أدلة مرفقة وتُحدَّث الإجماليات.",
+  "Delete this draft row? This removes it and any attached evidence.":
+    "حذف هذا الصف المسودة؟ سيُزال مع أي أدلة مرفقة.",
+  "No VAT rows yet. Add invoice lines manually, paste rows from Excel, or upload evidence as OCR drafts.":
+    "لا توجد صفوف ضريبة بعد. أضف بنود الفواتير يدويًا أو الصق صفوفًا من Excel أو ارفع الأدلة كمسودات قراءة ضوئية.",
+  "Manual adjustments must explain the audit reason before they can be saved.":
+    "يجب أن تشرح التسويات اليدوية سبب التدقيق قبل حفظها.",
+  "VAT 201 box, e.g. box9ExpensesVat": "خانة إقرار 201، مثل box9ExpensesVat",
+  "Adjustment amount": "مبلغ التسوية",
+  "Notes / OCR text": "ملاحظات / نص القراءة الضوئية",
+  "Audit reason for overrides or manual adjustments": "سبب التدقيق للتجاوزات أو التسويات اليدوية",
+  "Headers are supported: category, invoice number, date, customer/vendor, TRN, emirate, taxable amount, VAT amount, gross amount, notes.":
+    "العناوين المدعومة: الفئة، رقم الفاتورة، التاريخ، العميل/المورد، الرقم الضريبي، الإمارة، المبلغ الخاضع، مبلغ الضريبة، الإجمالي، الملاحظات.",
+  "Import .xlsx": "استيراد .xlsx",
+  "Importing…": "جارٍ الاستيراد…",
+  "Uploaded files create draft OCR rows. They do not count until approved.":
+    "تنشئ الملفات المرفوعة صفوف مسودة بالقراءة الضوئية. ولا تُحتسب حتى تُعتمد.",
+  "Approve only after the bookkeeper has checked the scanned values against evidence.":
+    "اعتمد فقط بعد أن يطابق المحاسب القيم الممسوحة مع الأدلة.",
+  "Approved rows are aggregated below. Copy each value into the FTA portal manually; this does not submit to FTA.":
+    "تُجمّع الصفوف المعتمدة أدناه. انسخ كل قيمة إلى بوابة الهيئة يدويًا؛ هذا لا يقدّم أي شيء إلى الهيئة.",
+  "Uploaded invoices and receipts stay linked to VAT rows for refund support and later review.":
+    "تبقى الفواتير والإيصالات المرفوعة مرتبطة بصفوف الضريبة لدعم الاسترداد والمراجعة لاحقًا.",
+  "Create a VAT workpaper to start entering VAT rows and reviewing OCR drafts.":
+    "أنشئ ورقة عمل ضريبة لبدء إدخال صفوف الضريبة ومراجعة مسودات القراءة الضوئية.",
+  Delete: "حذف",
+  "Could not create VAT workpaper": "تعذّر إنشاء ورقة عمل الضريبة",
+  "Could not add VAT row": "تعذّرت إضافة صف الضريبة",
+  "Could not update VAT row": "تعذّر تحديث صف الضريبة",
+  "Could not log OCR draft": "تعذّر تسجيل مسودة القراءة الضوئية",
+  "Could not delete VAT row": "تعذّر حذف صف الضريبة",
+  "Posted to ledger": "تم الترحيل إلى الدفتر",
+  "This entry now shows in the journal, P&L and balance sheet.":
+    "يظهر هذا القيد الآن في القيود وقائمة الدخل والميزانية.",
+  "Could not post to ledger": "تعذّر الترحيل إلى الدفتر",
+  "Could not recalculate VAT workpaper": "تعذّرت إعادة حساب ورقة عمل الضريبة",
+  "No FTA submission was performed.": "لم يتم أي تقديم إلى الهيئة.",
+  "Could not generate VAT return": "تعذّر إنشاء إقرار الضريبة",
+  "Evidence file is not downloadable": "ملف الدليل غير قابل للتنزيل",
+  "This evidence record was logged before file storage was enabled.":
+    "سُجّل هذا الدليل قبل تفعيل تخزين الملفات.",
+  "Could not download evidence": "تعذّر تنزيل الدليل",
+  "No draft rows to approve": "لا توجد صفوف مسودة للاعتماد",
+  "Bulk approve failed": "فشل الاعتماد الجماعي",
+  "Totals recalculated — approved rows now flow into the VAT 201.":
+    "أُعيد حساب الإجماليات — الصفوف المعتمدة تنتقل الآن إلى إقرار 201.",
+  "Books already up to date": "الدفاتر محدّثة بالفعل",
+  "Issued invoices and posted receipts for the period are in as drafts — review and approve.":
+    "أُضيفت الفواتير الصادرة والإيصالات المرحّلة للفترة كمسودات — راجعها واعتمدها.",
+  "Every document in this period is already on the workpaper.":
+    "كل مستند في هذه الفترة موجود بالفعل في ورقة العمل.",
+  "Could not pull from books": "تعذّر السحب من الدفاتر",
+  "Could not download template": "تعذّر تنزيل القالب",
+  "Workpaper exported": "تم تصدير ورقة العمل",
+  "Excel copy saved — grid plus copy-ready VAT 201 sheet.":
+    "حُفظت نسخة Excel — الشبكة مع ورقة إقرار 201 الجاهزة للنسخ.",
+  "Could not export workpaper": "تعذّر تصدير ورقة العمل",
+  "Could not read the file": "تعذّرت قراءة الملف",
+  "No invoice": "بلا فاتورة",
+};
+
 export function VatWorkspacePanel({
   dashboard,
   clients,
@@ -93,6 +192,7 @@ export function VatWorkspacePanel({
   clients: ClientWithStats[];
   onOpenWorkspace: (companyId: string) => void;
 }) {
+  const { b, fx, status } = useFirmText();
   const { data } = useQuery<{ workpapers: VatWorkpaperSummary[] }>({
     queryKey: ["/api/firm/vat-workpapers"],
   });
@@ -116,11 +216,15 @@ export function VatWorkspacePanel({
               <T k="pages.vatSubmissionWorkspace" />
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              VAT-only workpapers for invoice rows, OCR drafts, evidence, and copy-ready VAT 201
-              figures.
+              {b(
+                "VAT-only workpapers for invoice rows, OCR drafts, evidence, and copy-ready VAT 201 figures.",
+                "أوراق عمل خاصة بضريبة القيمة المضافة لصفوف الفواتير ومسودات القراءة الضوئية والأدلة وأرقام إقرار 201 الجاهزة للنسخ."
+              )}
             </p>
           </div>
-          <Badge variant="outline">{draftCount} draft/review workpapers</Badge>
+          <Badge variant="outline">
+            {draftCount} {b("draft/review workpapers", "أوراق عمل مسودة/قيد المراجعة")}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -130,7 +234,7 @@ export function VatWorkspacePanel({
               <T k="pages.vatQueue2" />
             </p>
             <span className="text-xs text-muted-foreground">
-              {dashboard?.summary.vatDue28Days ?? 0} due in 28d
+              {dashboard?.summary.vatDue28Days ?? 0} {b("due in 28d", "مستحقة خلال 28 يومًا")}
             </span>
           </div>
           {dueClients.length === 0 ? (
@@ -146,9 +250,9 @@ export function VatWorkspacePanel({
                 <div className="min-w-0">
                   <p className="font-medium truncate">{client.companyName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {client.vat.cohortLabel} ·{" "}
-                    {formatPeriod(client.vat.periodStart, client.vat.periodEnd)} ·{" "}
-                    {formatDays(client.vat.daysTilDue)}
+                    {fx(client.vat.cohortLabel)} ·{" "}
+                    {fx(formatPeriod(client.vat.periodStart, client.vat.periodEnd))} ·{" "}
+                    {fx(formatDays(client.vat.daysTilDue))}
                   </p>
                 </div>
                 <Button
@@ -168,11 +272,16 @@ export function VatWorkspacePanel({
             <p className="text-sm font-medium">
               <T k="pages.recentWorkpapers" />
             </p>
-            <span className="text-xs text-muted-foreground">{workpapers.length} total</span>
+            <span className="text-xs text-muted-foreground">
+              {workpapers.length} {b("total", "الإجمالي")}
+            </span>
           </div>
           {recentWorkpapers.length === 0 ? (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              No VAT workpapers yet. Open a client from the VAT queue to create one.
+              {b(
+                "No VAT workpapers yet. Open a client from the VAT queue to create one.",
+                "لا توجد أوراق عمل ضريبة قيمة مضافة بعد. افتح عميلًا من قائمة الضريبة لإنشاء واحدة."
+              )}
             </div>
           ) : (
             recentWorkpapers.map((workpaper) => (
@@ -183,7 +292,8 @@ export function VatWorkspacePanel({
                 <div className="min-w-0">
                   <p className="font-medium truncate">{workpaper.companyName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} · {workpaper.status}
+                    {fx(formatPeriod(workpaper.periodStart, workpaper.periodEnd))} ·{" "}
+                    {status(workpaper.status)}
                   </p>
                 </div>
                 <Button
@@ -191,7 +301,7 @@ export function VatWorkspacePanel({
                   variant="outline"
                   onClick={() => onOpenWorkspace(workpaper.companyId)}
                 >
-                  Open
+                  {b("Open", "فتح")}
                 </Button>
               </div>
             ))
@@ -218,6 +328,8 @@ export function VatWorkspaceDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { isAr, vat, fx, status: statusWord } = useFirmText();
+  const vx = (text: string) => (isAr ? (VX_AR[text] ?? text) : text);
   const { toast } = useToast();
   const [pickedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState("");
@@ -293,12 +405,12 @@ export function VatWorkspaceDialog({
       setSelectedWorkpaperId(workpaper.id);
       queryClient.invalidateQueries({ queryKey: ["/api/firm/vat-workpapers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/vat-workpapers", client?.id] });
-      toast({ title: "VAT workpaper ready" });
+      toast({ title: vx("VAT workpaper ready") });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not create VAT workpaper",
+        title: vx("Could not create VAT workpaper"),
         description: e?.message,
       }),
   });
@@ -399,7 +511,11 @@ export function VatWorkspaceDialog({
       resetRowForm();
     },
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Could not add VAT row", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Could not add VAT row"),
+        description: e?.message,
+      }),
   });
 
   const saveRowMutation = useMutation({
@@ -417,7 +533,11 @@ export function VatWorkspaceDialog({
       toast({ title: "VAT row updated" });
     },
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Could not update VAT row", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Could not update VAT row"),
+        description: e?.message,
+      }),
   });
 
   const pastePreviewRows = useMemo(
@@ -490,7 +610,11 @@ export function VatWorkspaceDialog({
       toast({ title: "OCR draft row logged for review" });
     },
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Could not log OCR draft", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Could not log OCR draft"),
+        description: e?.message,
+      }),
   });
 
   const updateRowMutation = useMutation({
@@ -500,7 +624,11 @@ export function VatWorkspaceDialog({
       }),
     onSuccess: invalidateWorkspace,
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Could not update VAT row", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Could not update VAT row"),
+        description: e?.message,
+      }),
   });
 
   const deleteRowMutation = useMutation({
@@ -512,7 +640,11 @@ export function VatWorkspaceDialog({
       toast({ title: "VAT row deleted" });
     },
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Could not delete VAT row", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Could not delete VAT row"),
+        description: e?.message,
+      }),
   });
 
   const postRowMutation = useMutation({
@@ -521,12 +653,16 @@ export function VatWorkspaceDialog({
     onSuccess: () => {
       invalidateWorkspace();
       toast({
-        title: "Posted to ledger",
-        description: "This entry now shows in the journal, P&L and balance sheet.",
+        title: vx("Posted to ledger"),
+        description: vx("This entry now shows in the journal, P&L and balance sheet."),
       });
     },
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Could not post to ledger", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Could not post to ledger"),
+        description: e?.message,
+      }),
   });
 
   const recalculateMutation = useMutation({
@@ -536,7 +672,7 @@ export function VatWorkspaceDialog({
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not recalculate VAT workpaper",
+        title: vx("Could not recalculate VAT workpaper"),
         description: e?.message,
       }),
   });
@@ -548,13 +684,13 @@ export function VatWorkspaceDialog({
       invalidateWorkspace();
       toast({
         title: "VAT return generated for review",
-        description: "No FTA submission was performed.",
+        description: vx("No FTA submission was performed."),
       });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not generate VAT return",
+        title: vx("Could not generate VAT return"),
         description: e?.message,
       }),
   });
@@ -578,8 +714,8 @@ export function VatWorkspaceDialog({
     if (!selectedWorkpaperId || !attachment.filePath) {
       toast({
         variant: "destructive",
-        title: "Evidence file is not downloadable",
-        description: "This evidence record was logged before file storage was enabled.",
+        title: vx("Evidence file is not downloadable"),
+        description: vx("This evidence record was logged before file storage was enabled."),
       });
       return;
     }
@@ -606,7 +742,7 @@ export function VatWorkspaceDialog({
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not download evidence",
+        title: vx("Could not download evidence"),
         description: error?.message,
       });
     }
@@ -626,12 +762,16 @@ export function VatWorkspaceDialog({
           result.updated > 0 ? `${result.updated} draft rows approved` : "No draft rows to approve",
         description:
           result.updated > 0
-            ? "Totals recalculated — approved rows now flow into the VAT 201."
+            ? vx("Totals recalculated — approved rows now flow into the VAT 201.")
             : undefined,
       });
     },
     onError: (e: any) =>
-      toast({ variant: "destructive", title: "Bulk approve failed", description: e?.message }),
+      toast({
+        variant: "destructive",
+        title: vx("Bulk approve failed"),
+        description: e?.message,
+      }),
   });
 
   const pullFromBooksMutation = useMutation({
@@ -646,14 +786,18 @@ export function VatWorkspaceDialog({
             : "Books already up to date",
         description:
           result.created > 0
-            ? "Issued invoices and posted receipts for the period are in as drafts — review and approve."
+            ? vx(
+                vx(
+                  "Issued invoices and posted receipts for the period are in as drafts — review and approve."
+                )
+              )
             : "Every document in this period is already on the workpaper.",
       });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not pull from books",
+        title: vx("Could not pull from books"),
         description: e?.message,
       }),
   });
@@ -663,7 +807,7 @@ export function VatWorkspaceDialog({
       const fileDataBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-        reader.onerror = () => reject(new Error("Could not read the file"));
+        reader.onerror = () => reject(new Error(vx("Could not read the file")));
         reader.readAsDataURL(file);
       });
       return apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/import-file`, {
@@ -702,7 +846,7 @@ export function VatWorkspaceDialog({
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not download template",
+        title: vx("Could not download template"),
         description: error?.message,
       });
     }
@@ -732,13 +876,13 @@ export function VatWorkspaceDialog({
       link.remove();
       URL.revokeObjectURL(url);
       toast({
-        title: "Workpaper exported",
-        description: "Excel copy saved — grid plus copy-ready VAT 201 sheet.",
+        title: vx("Workpaper exported"),
+        description: vx("Excel copy saved — grid plus copy-ready VAT 201 sheet."),
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not export workpaper",
+        title: vx("Could not export workpaper"),
         description: error?.message,
       });
     } finally {
@@ -752,8 +896,9 @@ export function VatWorkspaceDialog({
         <DialogHeader>
           <DialogTitle>{client?.name ?? "VAT Submission Workspace"}</DialogTitle>
           <DialogDescription>
-            Bookkeeper VAT workbook for invoice entry, scanned evidence, draft OCR review, VAT 201
-            totals, and copy-paste FTA filing figures. No FTA submission happens here.
+            {vx(
+              "Bookkeeper VAT workbook for invoice entry, scanned evidence, draft OCR review, VAT 201 totals, and copy-paste FTA filing figures. No FTA submission happens here."
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -792,13 +937,13 @@ export function VatWorkspaceDialog({
                 </Label>
                 <Select value={selectedWorkpaperId ?? ""} onValueChange={setSelectedWorkpaperId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select workpaper" />
+                    <SelectValue placeholder={vx("Select workpaper")} />
                   </SelectTrigger>
                   <SelectContent>
                     {workpapers.map((workpaper) => (
                       <SelectItem key={workpaper.id} value={workpaper.id}>
-                        {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} ·{" "}
-                        {workpaper.status}
+                        {fx(formatPeriod(workpaper.periodStart, workpaper.periodEnd))} ·{" "}
+                        {statusWord(workpaper.status)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -811,7 +956,7 @@ export function VatWorkspaceDialog({
                 disabled={!client || !periodStart || !periodEnd || createMutation.isPending}
               >
                 <Plus className="w-4 h-4 me-2" />
-                Create/Open
+                {vx("Create/Open")}
               </Button>
               <Button
                 variant="outline"
@@ -827,7 +972,7 @@ export function VatWorkspaceDialog({
                 data-testid="button-export-workpaper"
               >
                 <Download className="w-4 h-4 me-2" />
-                {exportingWorkbook ? "Exporting…" : "Excel"}
+                {exportingWorkbook ? vx("Exporting…") : "Excel"}
               </Button>
               <Button
                 variant="outline"
@@ -836,7 +981,7 @@ export function VatWorkspaceDialog({
                 data-testid="button-pull-from-books"
               >
                 <BookOpen className="w-4 h-4 me-2" />
-                {pullFromBooksMutation.isPending ? "Pulling…" : "Pull from books"}
+                {pullFromBooksMutation.isPending ? vx("Pulling…") : vx("Pull from books")}
               </Button>
             </div>
           </div>
@@ -849,7 +994,7 @@ export function VatWorkspaceDialog({
                     <T k="pages.status" />
                   </p>
                   <p className="font-semibold">
-                    {detail?.workpaper.status ?? selectedSummary?.status}
+                    {statusWord(detail?.workpaper.status ?? selectedSummary?.status)}
                   </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
@@ -859,7 +1004,7 @@ export function VatWorkspaceDialog({
                   <p className="font-semibold">{approvedRows.length}</p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Draft / excluded</p>
+                  <p className="text-xs text-muted-foreground">{vx("Draft / excluded")}</p>
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold">
                       {draftRows.length} / {excludedRows.length}
@@ -886,7 +1031,7 @@ export function VatWorkspaceDialog({
                   <p className="font-semibold">{sourceBackedRows.length}</p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Output / input VAT</p>
+                  <p className="text-xs text-muted-foreground">{vx("Output / input VAT")}</p>
                   <p className="font-semibold">
                     {formatAed(outputVat)} / {formatAed(inputVat)}
                   </p>
@@ -907,7 +1052,7 @@ export function VatWorkspaceDialog({
                   <TabsTrigger value="drafts">
                     <T k="pages.ocrDrafts" />
                   </TabsTrigger>
-                  <TabsTrigger value="return">VAT 201 Review</TabsTrigger>
+                  <TabsTrigger value="return">{vx("VAT 201 Review")}</TabsTrigger>
                   <TabsTrigger value="evidence">
                     <T k="pages.evidence" />
                   </TabsTrigger>
@@ -922,12 +1067,13 @@ export function VatWorkspaceDialog({
                             <T k="pages.invoiceAndBillEntryGrid" />
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Edit rows, approve drafts, exclude mistakes, then review totals in VAT
-                            201 Review.
+                            {vx(
+                              "Edit rows, approve drafts, exclude mistakes, then review totals in VAT 201 Review."
+                            )}
                           </p>
                         </div>
                         <Badge variant="outline">
-                          {rows.length} row{rows.length === 1 ? "" : "s"}
+                          {rows.length} {rows.length === 1 ? vx("row") : vx("rows")}
                         </Badge>
                       </div>
                       <div className="overflow-x-auto">
@@ -940,9 +1086,9 @@ export function VatWorkspaceDialog({
                               <TableHead className="min-w-36">
                                 <T k="pages.invoice" />
                               </TableHead>
-                              <TableHead className="min-w-36">Date</TableHead>
-                              <TableHead className="min-w-56">Customer / vendor</TableHead>
-                              <TableHead className="min-w-36">TRN</TableHead>
+                              <TableHead className="min-w-36">{vx("Date")}</TableHead>
+                              <TableHead className="min-w-56">{vx("Customer / vendor")}</TableHead>
+                              <TableHead className="min-w-36">{vx("TRN")}</TableHead>
                               <TableHead className="min-w-40">
                                 <T k="pages.category" />
                               </TableHead>
@@ -953,7 +1099,7 @@ export function VatWorkspaceDialog({
                                 <T k="pages.taxable" />
                               </TableHead>
                               <TableHead data-numeric className="min-w-28">
-                                VAT
+                                {vx("VAT")}
                               </TableHead>
                               <TableHead data-numeric className="min-w-28">
                                 <T k="pages.gross" />
@@ -973,7 +1119,7 @@ export function VatWorkspaceDialog({
                             <TableRow className="bg-background">
                               <TableCell>
                                 <Badge variant={editingRowId ? "secondary" : "outline"}>
-                                  {editingRowId ? "editing" : "new row"}
+                                  {editingRowId ? vx("editing") : "new row"}
                                 </Badge>
                               </TableCell>
                               <TableCell>
@@ -1005,7 +1151,7 @@ export function VatWorkspaceDialog({
                               <TableCell>
                                 <Input
                                   className="h-8 min-w-48"
-                                  placeholder="Customer / vendor"
+                                  placeholder={vx("Customer / vendor")}
                                   value={rowForm.counterpartyName}
                                   onChange={(e) =>
                                     setRowForm((form) => ({
@@ -1018,7 +1164,7 @@ export function VatWorkspaceDialog({
                               <TableCell>
                                 <Input
                                   className="h-8 min-w-32"
-                                  placeholder="TRN"
+                                  placeholder={vx("TRN")}
                                   value={rowForm.counterpartyTrn}
                                   onChange={(e) =>
                                     setRowForm((form) => ({
@@ -1044,7 +1190,7 @@ export function VatWorkspaceDialog({
                                   <SelectContent>
                                     {vatRowCategories.map((category) => (
                                       <SelectItem key={category.value} value={category.value}>
-                                        {category.label}
+                                        {vat(category.label)}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -1063,7 +1209,7 @@ export function VatWorkspaceDialog({
                                   <SelectContent>
                                     {vatEmirates.map((emirate) => (
                                       <SelectItem key={emirate.value} value={emirate.value}>
-                                        {emirate.label}
+                                        {vat(emirate.label)}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -1081,7 +1227,7 @@ export function VatWorkspaceDialog({
                                     }))
                                   }
                                   onBlur={() => normalizeAmountField("taxableAmount")}
-                                  title="Tip: you can type a sum like 7800+1850"
+                                  title={vx("Tip: you can type a sum like 7800+1850")}
                                 />
                               </TableCell>
                               <TableCell>
@@ -1093,7 +1239,7 @@ export function VatWorkspaceDialog({
                                     setRowForm((form) => ({ ...form, vatAmount: e.target.value }))
                                   }
                                   onBlur={() => normalizeAmountField("vatAmount")}
-                                  title="Tip: you can type a sum like 7800+1850"
+                                  title={vx("Tip: you can type a sum like 7800+1850")}
                                 />
                               </TableCell>
                               <TableCell>
@@ -1105,7 +1251,7 @@ export function VatWorkspaceDialog({
                                     setRowForm((form) => ({ ...form, grossAmount: e.target.value }))
                                   }
                                   onBlur={() => normalizeAmountField("grossAmount")}
-                                  title="Tip: you can type a sum like 7800+1850"
+                                  title={vx("Tip: you can type a sum like 7800+1850")}
                                 />
                               </TableCell>
                               <TableCell>
@@ -1145,7 +1291,7 @@ export function VatWorkspaceDialog({
                                       onClick={() => saveRowMutation.mutate()}
                                       disabled={!selectedWorkpaperId || saveRowMutation.isPending}
                                     >
-                                      Save
+                                      {vx("Save")}
                                     </Button>
                                   ) : (
                                     <Button
@@ -1153,7 +1299,7 @@ export function VatWorkspaceDialog({
                                       onClick={() => addRowMutation.mutate()}
                                       disabled={!selectedWorkpaperId || addRowMutation.isPending}
                                     >
-                                      Add
+                                      {vx("Add")}
                                     </Button>
                                   )}
                                   <Button size="sm" variant="outline" onClick={resetRowForm}>
@@ -1168,8 +1314,9 @@ export function VatWorkspaceDialog({
                                   colSpan={12}
                                   className="text-sm text-muted-foreground text-center py-8"
                                 >
-                                  No VAT rows yet. Add invoice lines manually, paste rows from
-                                  Excel, or upload evidence as OCR drafts.
+                                  {vx(
+                                    "No VAT rows yet. Add invoice lines manually, paste rows from Excel, or upload evidence as OCR drafts."
+                                  )}
                                 </TableCell>
                               </TableRow>
                             ) : (
@@ -1221,7 +1368,7 @@ export function VatWorkspaceDialog({
                                             : "secondary"
                                       }
                                     >
-                                      {row.status}
+                                      {statusWord(row.status)}
                                     </Badge>
                                   </TableCell>
                                   <TableCell
@@ -1236,13 +1383,13 @@ export function VatWorkspaceDialog({
                                         variant="outline"
                                         onClick={() => editVatRow(row)}
                                       >
-                                        Edit
+                                        {vx("Edit")}
                                       </Button>
                                       {row.journalEntryId ? (
                                         <Badge
                                           variant="outline"
                                           className="gap-1 text-success border-success/40"
-                                          title="Posted to the general ledger"
+                                          title={vx("Posted to the general ledger")}
                                         >
                                           <CheckCircle2 className="w-3.5 h-3.5" />
                                           <T k="pages.posted" />
@@ -1252,11 +1399,15 @@ export function VatWorkspaceDialog({
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          title="Post this sale to the ledger so it shows in the journal, P&L and balance sheet"
+                                          title={vx(
+                                            vx(
+                                              "Post this sale to the ledger so it shows in the journal, P&L and balance sheet"
+                                            )
+                                          )}
                                           disabled={postRowMutation.isPending}
                                           onClick={() => postRowMutation.mutate(row.id)}
                                         >
-                                          Post
+                                          {vx("Post")}
                                         </Button>
                                       ) : null}
                                       {row.status === "draft" ? (
@@ -1265,7 +1416,7 @@ export function VatWorkspaceDialog({
                                             size="sm"
                                             variant="outline"
                                             aria-label={`Approve ${row.invoiceNumber || "draft VAT row"}`}
-                                            title="Approve draft VAT row"
+                                            title={vx("Approve draft VAT row")}
                                             onClick={() =>
                                               updateRowMutation.mutate({
                                                 rowId: row.id,
@@ -1282,7 +1433,7 @@ export function VatWorkspaceDialog({
                                             size="sm"
                                             variant="ghost"
                                             aria-label={`Exclude ${row.invoiceNumber || "draft VAT row"}`}
-                                            title="Exclude draft VAT row"
+                                            title={vx("Exclude draft VAT row")}
                                             onClick={() =>
                                               updateRowMutation.mutate({
                                                 rowId: row.id,
@@ -1316,12 +1467,14 @@ export function VatWorkspaceDialog({
                                         variant="ghost"
                                         className="text-destructive hover:text-destructive"
                                         aria-label={`Delete ${row.invoiceNumber || "VAT row"}`}
-                                        title="Delete this row"
+                                        title={vx("Delete this row")}
                                         disabled={deleteRowMutation.isPending}
                                         onClick={() => {
                                           if (
                                             window.confirm(
-                                              "Delete this VAT row? This removes it and any attached evidence and updates the totals."
+                                              vx(
+                                                "Delete this VAT row? This removes it and any attached evidence and updates the totals."
+                                              )
                                             )
                                           ) {
                                             deleteRowMutation.mutate(row.id);
@@ -1350,13 +1503,14 @@ export function VatWorkspaceDialog({
                             <T k="pages.rowNotesAndOverrideReason" />
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Manual adjustments must explain the audit reason before they can be
-                            saved.
+                            {vx(
+                              "Manual adjustments must explain the audit reason before they can be saved."
+                            )}
                           </p>
                         </div>
                         {rowForm.rowCategory === "manual_adjustment" && (
                           <Input
-                            placeholder="VAT 201 box, e.g. box9ExpensesVat"
+                            placeholder={vx("VAT 201 box, e.g. box9ExpensesVat")}
                             value={rowForm.vat201Box}
                             onChange={(e) =>
                               setRowForm((form) => ({ ...form, vat201Box: e.target.value }))
@@ -1364,16 +1518,16 @@ export function VatWorkspaceDialog({
                           />
                         )}
                         <Input
-                          placeholder="Adjustment amount"
+                          placeholder={vx("Adjustment amount")}
                           value={rowForm.adjustmentAmount}
                           onChange={(e) =>
                             setRowForm((form) => ({ ...form, adjustmentAmount: e.target.value }))
                           }
                           onBlur={() => normalizeAmountField("adjustmentAmount")}
-                          title="Tip: you can type a sum like 7800+1850"
+                          title={vx("Tip: you can type a sum like 7800+1850")}
                         />
                         <Textarea
-                          placeholder="Notes / OCR text"
+                          placeholder={vx("Notes / OCR text")}
                           value={rowForm.notes}
                           onChange={(e) =>
                             setRowForm((form) => ({ ...form, notes: e.target.value }))
@@ -1381,7 +1535,7 @@ export function VatWorkspaceDialog({
                           className="min-h-24"
                         />
                         <Textarea
-                          placeholder="Audit reason for overrides or manual adjustments"
+                          placeholder={vx("Audit reason for overrides or manual adjustments")}
                           value={rowForm.auditReason}
                           onChange={(e) =>
                             setRowForm((form) => ({ ...form, auditReason: e.target.value }))
@@ -1397,12 +1551,14 @@ export function VatWorkspaceDialog({
                               <T k="pages.pasteRowsFromExcel" />
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Headers are supported: category, invoice number, date,
-                              customer/vendor, TRN, emirate, taxable amount, VAT amount, gross
-                              amount, notes.
+                              {vx(
+                                "Headers are supported: category, invoice number, date, customer/vendor, TRN, emirate, taxable amount, VAT amount, gross amount, notes."
+                              )}
                             </p>
                           </div>
-                          <Badge variant="outline">{pastePreviewRows.length} parsed</Badge>
+                          <Badge variant="outline">
+                            {pastePreviewRows.length} {vx("parsed")}
+                          </Badge>
                         </div>
                         <Textarea
                           value={pastedVatRows}
@@ -1470,7 +1626,7 @@ export function VatWorkspaceDialog({
                             data-testid="button-vat-import-file"
                           >
                             <Upload className="w-4 h-4 me-2" />
-                            {importFileMutation.isPending ? "Importing…" : "Import .xlsx"}
+                            {importFileMutation.isPending ? vx("Importing…") : vx("Import .xlsx")}
                           </Button>
                         </div>
                       </div>
@@ -1487,7 +1643,9 @@ export function VatWorkspaceDialog({
                             <T k="pages.uploadInvoiceOrReceiptEvidence" />
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Uploaded files create draft OCR rows. They do not count until approved.
+                            {vx(
+                              "Uploaded files create draft OCR rows. They do not count until approved."
+                            )}
                           </p>
                         </div>
                         {evidenceFile ? (
@@ -1536,8 +1694,9 @@ export function VatWorkspaceDialog({
                           <T k="pages.draftReviewQueue" />
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Approve only after the bookkeeper has checked the scanned values against
-                          evidence.
+                          {vx(
+                            "Approve only after the bookkeeper has checked the scanned values against evidence."
+                          )}
                         </p>
                       </div>
                       <Table>
@@ -1552,7 +1711,7 @@ export function VatWorkspaceDialog({
                             <TableHead>
                               <T k="pages.category" />
                             </TableHead>
-                            <TableHead data-numeric>VAT</TableHead>
+                            <TableHead data-numeric>{vx("VAT")}</TableHead>
                             <TableHead data-numeric>
                               <T k="pages.review" />
                             </TableHead>
@@ -1584,7 +1743,7 @@ export function VatWorkspaceDialog({
                                       variant="outline"
                                       onClick={() => editVatRow(row)}
                                     >
-                                      Edit
+                                      {vx("Edit")}
                                     </Button>
                                     <Button
                                       size="sm"
@@ -1615,12 +1774,14 @@ export function VatWorkspaceDialog({
                                       variant="ghost"
                                       className="text-muted-foreground hover:text-destructive"
                                       aria-label={`Delete ${row.invoiceNumber || "draft VAT row"}`}
-                                      title="Delete this draft row"
+                                      title={vx("Delete this draft row")}
                                       disabled={deleteRowMutation.isPending}
                                       onClick={() => {
                                         if (
                                           window.confirm(
-                                            "Delete this draft row? This removes it and any attached evidence."
+                                            vx(
+                                              "Delete this draft row? This removes it and any attached evidence."
+                                            )
                                           )
                                         ) {
                                           deleteRowMutation.mutate(row.id);
@@ -1646,8 +1807,9 @@ export function VatWorkspaceDialog({
                       <div>
                         <p className="font-medium">FTA VAT 201 copy fields</p>
                         <p className="text-xs text-muted-foreground">
-                          Approved rows are aggregated below. Copy each value into the FTA portal
-                          manually; this does not submit to FTA.
+                          {vx(
+                            "Approved rows are aggregated below. Copy each value into the FTA portal manually; this does not submit to FTA."
+                          )}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -1673,7 +1835,7 @@ export function VatWorkspaceDialog({
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                       {vat201CopyGroups.map((group) => (
                         <div key={group.title} className="rounded-md border bg-background p-3">
-                          <p className="text-sm font-semibold mb-2">{group.title}</p>
+                          <p className="text-sm font-semibold mb-2">{vat(group.title)}</p>
                           <div className="grid gap-2">
                             {group.fields.map(([key, label]) => {
                               const value = Number(totals[key] ?? 0).toFixed(2);
@@ -1685,7 +1847,9 @@ export function VatWorkspaceDialog({
                                   className="rounded-md border p-2 text-start hover:bg-muted/50 transition-colors"
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="text-xs text-muted-foreground">{label}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {vat(label)}
+                                    </span>
                                     <Copy className="w-3.5 h-3.5 text-muted-foreground" />
                                   </div>
                                   <p className="font-semibold mt-1">{value}</p>
@@ -1707,8 +1871,9 @@ export function VatWorkspaceDialog({
                           <T k="pages.evidenceFiles" />
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Uploaded invoices and receipts stay linked to VAT rows for refund support
-                          and later review.
+                          {vx(
+                            "Uploaded invoices and receipts stay linked to VAT rows for refund support and later review."
+                          )}
                         </p>
                       </div>
                       <Badge variant="outline">
@@ -1751,7 +1916,7 @@ export function VatWorkspaceDialog({
             </>
           ) : (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
-              Create a VAT workpaper to start entering VAT rows and reviewing OCR drafts.
+              {vx("Create a VAT workpaper to start entering VAT rows and reviewing OCR drafts.")}
             </div>
           )}
         </div>

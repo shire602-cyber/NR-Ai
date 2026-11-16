@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import { notificationCopy } from "../../shared/server-copy";
 import { pq } from "../services/connectors/pq";
 
 export function registerReferralRoutes(app: Express) {
@@ -138,8 +139,10 @@ export function registerReferralRoutes(app: Express) {
       await storage.createNotification({
         userId: referralCode.userId,
         type: "referral",
-        title: "New Referral Signup!",
-        message: `Someone signed up using your referral code. They'll need to complete a qualifying action for you to earn your reward.`,
+        ...notificationCopy(
+          "notification.referralSignup.title",
+          "notification.referralSignup.message"
+        ),
         priority: "normal",
         actionUrl: "/referrals",
       });

@@ -57,7 +57,10 @@ export function NotificationBell() {
           data-testid="button-notifications"
           aria-label={
             unreadCount > 0
-              ? t["components.notificationsUnreadAria"].replace("{count}", String(unreadCount))
+              ? t["components.notificationsUnreadAria"].replace(
+                  "{count}",
+                  unreadCount > 9 ? "9+" : String(unreadCount)
+                )
               : t["components.notificationsTitle"]
           }
         >

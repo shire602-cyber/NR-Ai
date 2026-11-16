@@ -68,7 +68,6 @@ import type {
 import {
   clientNeedsAttention,
   formatAed,
-  formatDateShort,
   formatDays,
   hasClientService,
   ownerPreview,
@@ -80,6 +79,7 @@ import { OperationsBriefDialog } from "./portfolio/OperationsBriefDialog";
 import { BookkeeperCommandCenter } from "./portfolio/BookkeeperCommandCenter";
 import { RevenueGrowthPanel } from "./portfolio/RevenueGrowthPanel";
 import { VatWorkspaceDialog, VatWorkspacePanel } from "./portfolio/VatWorkspace";
+import { useFirmText } from "./portfolio/text";
 
 interface AddClientFormData {
   name: string;
@@ -159,6 +159,7 @@ export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const { b, fx, fdShort } = useFirmText();
   const { setActiveClientCompany } = useActiveCompany();
   const [view, setView] = useState<"card" | "table">("card");
   const [search, setSearch] = useState("");
@@ -438,7 +439,7 @@ export default function ClientPortfolio() {
           variant={quickFilter === "all" ? "secondary" : "outline"}
           onClick={() => setQuickFilter("all")}
         >
-          All ({clients.length})
+          {b("All", "الكل")} ({clients.length})
         </Button>
         <Button
           size="sm"
@@ -447,7 +448,7 @@ export default function ClientPortfolio() {
           data-testid="filter-critical"
         >
           <AlertTriangle className="w-3.5 h-3.5 me-1.5" />
-          Critical ({bookkeeperDashboard?.summary.critical ?? 0})
+          {b("Critical", "حرج")} ({bookkeeperDashboard?.summary.critical ?? 0})
         </Button>
         <Button
           size="sm"
@@ -456,7 +457,7 @@ export default function ClientPortfolio() {
           data-testid="filter-attention"
         >
           <AlertTriangle className="w-3.5 h-3.5 me-1.5" />
-          Needs Attention (
+          {b("Needs Attention", "يحتاج انتباهًا")} (
           {(bookkeeperDashboard?.summary.critical ?? 0) +
             (bookkeeperDashboard?.summary.attention ?? 0)}
           )
@@ -468,7 +469,8 @@ export default function ClientPortfolio() {
           data-testid="filter-vat-due"
         >
           <Calendar className="w-3.5 h-3.5 me-1.5" />
-          VAT Due Soon ({bookkeeperDashboard?.summary.vatDue28Days ?? 0})
+          {b("VAT Due Soon", "ضريبة قيمة مضافة قريبة الاستحقاق")} (
+          {bookkeeperDashboard?.summary.vatDue28Days ?? 0})
         </Button>
         {VAT_GROUP_FILTERS.map((group) => {
           const cohort = bookkeeperDashboard?.vatCohorts?.find(
@@ -483,7 +485,8 @@ export default function ClientPortfolio() {
               data-testid={`filter-${group.filter}`}
             >
               <Calendar className="w-3.5 h-3.5 me-1.5" />
-              {group.label} ({cohort?.clientCount ?? 0})
+              {b(group.label, group.label.replace("Group", "المجموعة"))} ({cohort?.clientCount ?? 0}
+              )
             </Button>
           );
         })}
@@ -494,7 +497,8 @@ export default function ClientPortfolio() {
           data-testid="filter-close-blocked"
         >
           <TrendingUp className="w-3.5 h-3.5 me-1.5" />
-          Close Blocked ({bookkeeperDashboard?.summary.bookkeepingBlocked ?? 0})
+          {b("Close Blocked", "إقفال معوق")} ({bookkeeperDashboard?.summary.bookkeepingBlocked ?? 0}
+          )
         </Button>
         <Button
           size="sm"
@@ -503,7 +507,7 @@ export default function ClientPortfolio() {
           data-testid="filter-unassigned"
         >
           <UserCheck className="w-3.5 h-3.5 me-1.5" />
-          Unassigned ({bookkeeperDashboard?.workload?.unassignedClients ?? 0})
+          {b("Unassigned", "غير معيّن")} ({bookkeeperDashboard?.workload?.unassignedClients ?? 0})
         </Button>
         <Button
           size="sm"
@@ -521,7 +525,7 @@ export default function ClientPortfolio() {
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name or TRN..."
+            placeholder={b("Search by name or TRN...", "ابحث بالاسم أو رقم التسجيل الضريبي...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="ps-9"
@@ -553,11 +557,13 @@ export default function ClientPortfolio() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold text-lg">
-            {clients.length === 0 ? "No clients yet" : "No clients match your filters"}
+            {clients.length === 0
+              ? b("No clients yet", "لا يوجد عملاء بعد")
+              : b("No clients match your filters", "لا يوجد عملاء يطابقون عوامل التصفية")}
           </h3>
           <p className="text-muted-foreground mt-1 mb-4">
             {clients.length === 0
-              ? "Add your first client company to get started."
+              ? b("Add your first client company to get started.", "أضف أول شركة عميل للبدء.")
               : "Try adjusting your search or quick filter."}
           </p>
           {clients.length === 0 && (
@@ -577,7 +583,9 @@ export default function ClientPortfolio() {
                 <LayoutGrid className="w-4 h-4 text-primary" />
                 <T k="pages.portfolioProductionMatrix" />
               </CardTitle>
-              <Badge variant="outline">{filtered.length} shown</Badge>
+              <Badge variant="outline">
+                {filtered.length} {b("shown", "معروض")}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="overflow-x-auto">
@@ -622,13 +630,13 @@ export default function ClientPortfolio() {
                           {client.name}
                         </button>
                         <p className="text-xs text-muted-foreground">
-                          {client.trnVatNumber || "No TRN"}
+                          {client.trnVatNumber || b("No TRN", "بلا رقم تسجيل ضريبي")}
                         </p>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {ops
-                          ? ownerPreview(ops.assignedStaff.map((staff) => staff.name))
-                          : ownerPreview(client.assignedStaff.map((staff) => staff.name))}
+                          ? fx(ownerPreview(ops.assignedStaff.map((staff) => staff.name)))
+                          : fx(ownerPreview(client.assignedStaff.map((staff) => staff.name)))}
                       </TableCell>
                       <TableCell>
                         <ServiceScopeBadges
@@ -649,9 +657,11 @@ export default function ClientPortfolio() {
                         {ops && hasClientService(ops, "vat") ? (
                           <div>
                             <span>
-                              {formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}
+                              {fdShort(ops.vat.dueDate)} · {fx(formatDays(ops.vat.daysTilDue))}
                             </span>
-                            <p className="text-xs text-muted-foreground">{ops.vat.cohortLabel}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {fx(ops.vat.cohortLabel)}
+                            </p>
                           </div>
                         ) : (
                           <Badge variant="outline">
@@ -661,8 +671,8 @@ export default function ClientPortfolio() {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {ops && hasClientService(ops, "corporate_tax")
-                          ? `${formatDateShort(ops.corporateTax.dueDate)} · ${formatDays(ops.corporateTax.daysTilDue)}`
-                          : "Not scoped"}
+                          ? `${fdShort(ops.corporateTax.dueDate)} · ${fx(formatDays(ops.corporateTax.daysTilDue))}`
+                          : b("Not scoped", "خارج النطاق")}
                       </TableCell>
                       <TableCell>
                         {ops && hasClientService(ops, "bookkeeping") ? (
@@ -670,7 +680,7 @@ export default function ClientPortfolio() {
                             <div className="flex items-center justify-between text-xs">
                               <span>{ops.bookkeeping.closeProgress}%</span>
                               <span className="text-muted-foreground">
-                                {priorityLabel(ops.bookkeeping.status)}
+                                {fx(priorityLabel(ops.bookkeeping.status))}
                               </span>
                             </div>
                             <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -681,13 +691,13 @@ export default function ClientPortfolio() {
                             </div>
                           </div>
                         ) : (
-                          "Not scoped"
+                          b("Not scoped", "خارج النطاق")
                         )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-between gap-2 min-w-64">
                           <p className="text-sm text-muted-foreground truncate">
-                            {ops?.nextBestAction ?? "Open client profile"}
+                            {fx(ops?.nextBestAction) || b("Open client profile", "فتح ملف العميل")}
                           </p>
                           <div className="flex gap-1">
                             {ops && (
@@ -705,7 +715,7 @@ export default function ClientPortfolio() {
                                 variant="outline"
                                 onClick={() => setVatWorkspaceClientId(client.id)}
                               >
-                                VAT
+                                {b("VAT", "ضريبة القيمة المضافة")}
                               </Button>
                             )}
                             <Button
@@ -715,7 +725,7 @@ export default function ClientPortfolio() {
                               disabled={switchMutation.isPending}
                             >
                               <BookOpen className="w-3.5 h-3.5 me-1" />
-                              Open
+                              {b("Open", "فتح")}
                             </Button>
                           </div>
                         </div>
@@ -727,8 +737,10 @@ export default function ClientPortfolio() {
             </Table>
             {filtered.length > 12 && (
               <p className="text-xs text-muted-foreground mt-3">
-                Showing the first 12 clients for the selected filter. Use search or table view for
-                the full list.
+                {b(
+                  "Showing the first 12 clients for the selected filter. Use search or table view for the full list.",
+                  "تظهر أول 12 عميلًا لعامل التصفية المحدد. استخدم البحث أو عرض الجدول للقائمة الكاملة."
+                )}
               </p>
             )}
           </CardContent>
@@ -751,7 +763,9 @@ export default function ClientPortfolio() {
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-base truncate">{client.name}</CardTitle>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : "No TRN registered"}
+                        {client.trnVatNumber
+                          ? `${b("TRN", "الرقم الضريبي")}: ${client.trnVatNumber}`
+                          : b("No TRN registered", "لا يوجد رقم تسجيل ضريبي")}
                       </p>
                       <div className="mt-2">
                         <ServiceScopeBadges
@@ -775,10 +789,10 @@ export default function ClientPortfolio() {
                           <p className="text-xs text-muted-foreground">
                             <T k="pages.nextAction" />
                           </p>
-                          <p className="text-sm font-medium truncate">{ops.nextBestAction}</p>
+                          <p className="text-sm font-medium truncate">{fx(ops.nextBestAction)}</p>
                         </div>
                         <span className="text-xs font-medium shrink-0">
-                          {ops.bookkeeping.closeProgress}% close
+                          {ops.bookkeeping.closeProgress}% {b("close", "إقفال")}
                         </span>
                       </div>
                       <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -827,13 +841,13 @@ export default function ClientPortfolio() {
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <span>
                         {hasClientService(ops, "vat")
-                          ? `${ops.vat.cohortLabel} · ${formatDays(ops.vat.daysTilDue)}`
-                          : "VAT not scoped"}
+                          ? `${fx(ops.vat.cohortLabel)} · ${fx(formatDays(ops.vat.daysTilDue))}`
+                          : b("VAT not scoped", "ضريبة القيمة المضافة خارج النطاق")}
                       </span>
                       <span>
                         {hasClientService(ops, "corporate_tax")
-                          ? `CT ${formatDays(ops.corporateTax.daysTilDue)}`
-                          : "CT not scoped"}
+                          ? `${b("CT", "ضريبة الشركات")} ${fx(formatDays(ops.corporateTax.daysTilDue))}`
+                          : b("CT not scoped", "ضريبة الشركات خارج النطاق")}
                       </span>
                     </div>
                   )}
@@ -845,8 +859,8 @@ export default function ClientPortfolio() {
                     </span>
                     <span>
                       {client.lastReceiptDate
-                        ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
-                        : "Never"}
+                        ? `${fdShort(client.lastReceiptDate)}, ${new Date(client.lastReceiptDate).getFullYear()}`
+                        : b("Never", "أبدًا")}
                     </span>
                   </div>
 
@@ -969,7 +983,7 @@ export default function ClientPortfolio() {
                       {ops && hasClientService(ops, "vat") ? (
                         <div className="space-y-1">
                           <PriorityBadge priority={ops.vat.status} />
-                          <p className="text-xs text-muted-foreground">{ops.vat.cohortLabel}</p>
+                          <p className="text-xs text-muted-foreground">{fx(ops.vat.cohortLabel)}</p>
                         </div>
                       ) : (
                         <Badge variant="outline">

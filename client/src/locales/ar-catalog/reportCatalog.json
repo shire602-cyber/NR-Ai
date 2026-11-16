@@ -195,5 +195,11 @@
   "reportCatalog.category.Management.label": "الإدارة",
   "reportCatalog.category.Inventory.label": "المخزون",
   "reportCatalog.category.Assets.label": "الأصول",
-  "reportCatalog.category.Payroll.label": "الرواتب"
+  "reportCatalog.category.Payroll.label": "الرواتب",
+  "reportCatalog.delivery.owner-weekly-executive-delivery.title": "التقرير التنفيذي الأسبوعي للمالك",
+  "reportCatalog.delivery.owner-tax-deadline-delivery.title": "تسليم مواعيد الضرائب للمالك",
+  "reportCatalog.delivery.freelancer-client-chase-delivery.title": "تسليم متابعة عملاء العمل الحر",
+  "reportCatalog.delivery.freelancer-monthly-close-delivery.title": "تسليم الإقفال الشهري للعمل الحر",
+  "reportCatalog.delivery.accountant-close-workpaper-delivery.title": "تسليم أوراق عمل الإقفال للمحاسب",
+  "reportCatalog.delivery.accountant-advisory-pack-delivery.title": "تسليم حزمة الاستشارات للمحاسب"
 }

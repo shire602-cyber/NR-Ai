@@ -54,6 +54,7 @@ import {
 } from "../services/receipt-duplicates";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { createAndEmitNotification } from "../services/socket.service";
+import { notificationCopy } from "../../shared/server-copy";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import {
@@ -547,9 +548,16 @@ export function registerReceiptRoutes(app: Express) {
         userId,
         companyId,
         type: "document_uploaded",
-        title: "Receipt uploaded",
-        message:
-          `New receipt from ${receipt.merchant || "unknown merchant"} for ${receipt.amount ?? ""} ${receipt.currency || ""}`.trim(),
+        ...notificationCopy(
+          "notification.receiptUploaded.title",
+          receipt.merchant
+            ? "notification.receiptUploaded.message"
+            : "notification.receiptUploadedUnknown.message",
+          {
+            merchant: receipt.merchant,
+            amount: `${receipt.amount ?? ""} ${receipt.currency || ""}`.trim(),
+          }
+        ),
         priority: "normal",
         relatedEntityType: "receipt",
         relatedEntityId: receipt.id,
