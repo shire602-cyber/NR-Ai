@@ -21,16 +21,15 @@ import {
   companies,
   firmAlerts,
   firmMetricsCache,
-  firmStaffAssignments,
   invoices,
   receipts,
-  users,
   vatReturns,
   type FirmAlert,
   type FirmAlertSeverity,
   type FirmAlertType,
 } from "../../shared/schema";
-import { NotFoundError, ValidationError } from "../errors";
+import { listAccessibleClientIds, resolveFirmContext, type FirmContext } from "./firm/scope";
+import { assignStaff, staffWorkloadInput } from "./firm/staff.service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -851,70 +850,25 @@ export async function resolveAlert(firmId: string, alertId: string): Promise<Fir
 
 // ─── DB-backed: staff workload ────────────────────────────────────────────────
 
-export async function fetchStaffWorkload(): Promise<StaffWorkloadRow[]> {
-  type Row = {
-    userId: string;
-    userName: string;
-    userEmail: string;
-    companyId: string | null;
-    role: string | null;
-  };
-  const rows = (await db
-    .select({
-      userId: users.id,
-      userName: users.name,
-      userEmail: users.email,
-      companyId: firmStaffAssignments.companyId,
-      role: firmStaffAssignments.role,
-    })
-    .from(users)
-    .leftJoin(firmStaffAssignments, eq(firmStaffAssignments.userId, users.id))
-    .where(eq(users.firmRole, "firm_admin"))) as Row[];
-
-  const grouped = new Map<string, StaffWorkloadInput>();
-  for (const r of rows) {
-    let entry = grouped.get(r.userId);
-    if (!entry) {
-      entry = {
-        userId: r.userId,
-        userName: r.userName,
-        userEmail: r.userEmail,
-        assignments: [],
-      };
-      grouped.set(r.userId, entry);
-    }
-    if (r.companyId && r.role) {
-      entry.assignments.push({ companyId: r.companyId, role: r.role });
-    }
-  }
-  return computeStaffWorkload(Array.from(grouped.values()));
+/**
+ * Staff workload (R15-03): the same staff definition as GET /firm/staff
+ * (users with a firm role in the caller's firm), counted over that firm's
+ * clients only.
+ */
+export async function fetchStaffWorkload(ctx: FirmContext): Promise<StaffWorkloadRow[]> {
+  return computeStaffWorkload(await staffWorkloadInput(ctx));
 }
 
+/**
+ * @deprecated Delegates to the one assignment service (server/services/firm/staff.service.ts).
+ */
 export async function assignStaffToCompany(
+  ctx: FirmContext,
   userId: string,
   companyId: string,
   role: string = "accountant"
 ): Promise<void> {
-  // Validate the user is firm_admin. firm_owner doesn't need explicit assignment.
-  const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!u) throw new NotFoundError("User");
-  if (u.firmRole !== "firm_admin") {
-    throw new ValidationError("Only firm_admin users can be assigned via this endpoint");
-  }
-  // Validate the target is a managed client company.
-  const [c] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
-  if (!c) throw new NotFoundError("Company");
-  if (c.companyType !== "client") {
-    throw new ValidationError("Only managed client companies can have staff assignments");
-  }
-
-  await db
-    .insert(firmStaffAssignments)
-    .values({ userId, companyId, role })
-    .onConflictDoUpdate({
-      target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
-      set: { role },
-    });
+  await assignStaff(ctx, { staffUserId: userId, companyId, role, action: "assign" });
 }
 
 // ─── DB-backed: cache ─────────────────────────────────────────────────────────
@@ -989,29 +943,17 @@ export async function writeMetricsCache<T>(
 // ─── Helpers re-exported from rbac ────────────────────────────────────────────
 
 /**
- * Resolve the companyIds the firm staff member can access. firm_owner gets all
- * client companies; firm_admin gets only assigned companies.
+ * Resolve the companyIds the firm staff member can access, scoped to the
+ * caller's firm (R15-12): firm_owner gets every client of the firm; other
+ * firm roles only assigned clients. Delegates to server/services/firm/scope.ts.
  */
 export async function resolveAccessibleClientIds(
   userId: string,
   firmRole: string | null
 ): Promise<string[]> {
-  if (firmRole === "firm_owner") {
-    const rows = await db
-      .select({ id: companies.id })
-      .from(companies)
-      .where(eq(companies.companyType, "client"));
-    return rows.map((r: { id: string }) => r.id);
-  }
-  if (firmRole === "firm_admin") {
-    const rows = await db
-      .select({ id: firmStaffAssignments.companyId })
-      .from(firmStaffAssignments)
-      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
-      .where(and(eq(firmStaffAssignments.userId, userId), eq(companies.companyType, "client")));
-    return rows.map((r: { id: string }) => r.id);
-  }
-  return [];
+  const ctx = await resolveFirmContext({ id: userId, firmRole: firmRole ?? null, isAdmin: false });
+  if (!ctx) return [];
+  return listAccessibleClientIds(ctx);
 }
 
 // ─── Aggregate composer ───────────────────────────────────────────────────────

@@ -1,11 +1,17 @@
 import type { Request, Response } from "express";
+import { parsedBody } from "../http/parsed-body";
 import { Router } from "express";
 import type { Express } from "express";
 import { z } from "zod";
 
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
+import {
+  firmContextOf,
+  getAccessibleCompanyIds,
+  requireFirmAccess,
+  requireFirmPermission,
+} from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
@@ -14,8 +20,10 @@ import {
   mapImportRow,
   nextCorporateTaxFilingWindow,
   resolveNrClientVatPeriodStartMonth,
+  clientNameKey,
   validateImportedClient,
   vatPeriodStartMonthForNrClientName,
+  zOptionalClientTrn,
   vatCohortFromPeriodStart,
   withNrClientVatGroup,
   type VatCohort,
@@ -30,6 +38,15 @@ import {
   type ClientServicePlan,
 } from "@shared/client-services";
 import { parseSpreadsheet } from "../services/spreadsheet.service";
+import { strictBody } from "../http/strict-body";
+import { ASSIGNMENT_ROLES, assignStaff, listFirmStaff } from "../services/firm/staff.service";
+import { canAccessFirmClient } from "../services/firm/scope";
+import {
+  endClientLink,
+  findDuplicateClient,
+  linkNewClientToFirm,
+} from "../services/firm/clients.service";
+import { registerFirmWorkflowJobs } from "../services/firm/workflow.service";
 import { db } from "../db";
 import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from "drizzle-orm";
 import {
@@ -49,6 +66,11 @@ import {
 const logger = createLogger("firm-routes");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Is the client in the caller's firm and visible to this staff member? (R15-12/13) */
+async function canAccessClient(_req: Request, res: Response, companyId: string): Promise<boolean> {
+  return canAccessFirmClient(firmContextOf(res), companyId);
+}
 
 async function seedChartOfAccounts(companyId: string): Promise<void> {
   const hasAccounts = await storage.companyHasAccounts(companyId);
@@ -576,8 +598,9 @@ const optionalVatPeriodStartMonthSchema = z.preprocess((value) => {
 }, z.coerce.number().int().min(1).max(12).optional());
 
 const createClientSchema = z.object({
-  name: z.string().min(1),
-  trnVatNumber: z.string().optional(),
+  name: z.string().trim().min(1).max(200),
+  // R15-05: UAE TRN is 15 digits (format check only; no FTA lookup API exists).
+  trnVatNumber: zOptionalClientTrn,
   legalStructure: z.string().optional(),
   industry: z.string().optional(),
   registrationNumber: z.string().optional(),
@@ -599,7 +622,7 @@ const updateClientSchema = createClientSchema.partial();
 const assignStaffSchema = z.object({
   staffUserId: z.string().uuid(),
   action: z.enum(["assign", "unassign"]),
-  role: z.string().default("accountant"),
+  role: z.enum(ASSIGNMENT_ROLES).default("accountant"),
 });
 
 const importPayloadSchema = z.object({
@@ -611,7 +634,12 @@ export function registerFirmRoutes(app: Express): void {
 
   // Scope to /firm prefix so unrelated /api/* paths don't get 403
   router.use("/firm", authMiddleware as any);
-  router.use("/firm", requireFirmRole());
+  // Multi-firm practice tools (R15-12): any approved firm; every handler is
+  // scoped to the caller's firm through getAccessibleCompanyIds / firm scope.
+  router.use("/firm", requireFirmAccess());
+
+  // W5-D: recurring practice tasks job (routes live in firm-practice.routes.ts).
+  registerFirmWorkflowJobs();
 
   // ─── GET /api/firm/clients ─────────────────────────────────────────────────
   router.get(
@@ -633,7 +661,7 @@ export function registerFirmRoutes(app: Express): void {
         clientCompanies = await db
           .select()
           .from(companies)
-          .where(and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds)));
+          .where(inArray(companies.id, accessibleIds));
       }
 
       const servicePlans = await loadActiveServicePlans(
@@ -663,14 +691,7 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/clients/:companyId/summary",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
-
-      const accessibleIds = await getAccessibleCompanyIds(
-        userId,
-        firmRole ?? "",
-        (req as any).user?.isAdmin === true
-      );
-      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+      if (!(await canAccessClient(req, res, companyId))) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
 
@@ -678,9 +699,6 @@ export function registerFirmRoutes(app: Express): void {
 
       if (!company) {
         return res.status(404).json({ message: "Client not found" });
-      }
-      if (company.companyType !== "client") {
-        return res.status(400).json({ message: "Company is not an NRA client" });
       }
 
       const [stats, companyUserList, recentInvoices, recentReceipts, servicePlanMap] =
@@ -723,14 +741,22 @@ export function registerFirmRoutes(app: Express): void {
   // ─── POST /api/firm/clients ────────────────────────────────────────────────
   router.post(
     "/firm/clients",
+    requireFirmPermission("firm.clients.create"),
+    strictBody(createClientSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
-      const validated = createClientSchema.parse(req.body);
+      const { id: userId } = (req as any).user;
+      const ctx = firmContextOf(res);
+      const validated = parsedBody<z.output<typeof createClientSchema>>(req);
       const { serviceScope, ...companyInput } = validated;
 
-      const existing = await storage.getCompanyByName(companyInput.name);
-      if (existing) {
-        return res.status(400).json({ message: "Company name already exists" });
+      // R15-04: case-insensitive duplicate check within the firm's clients.
+      const duplicate = await findDuplicateClient(ctx, companyInput.name);
+      if (duplicate) {
+        return res.status(409).json({
+          message: "A client with this name already exists",
+          code: "CLIENT_DUPLICATE",
+          details: { existingCompanyId: duplicate.id, existingName: duplicate.name },
+        });
       }
 
       const company = await storage.createCompany({
@@ -761,15 +787,7 @@ export function registerFirmRoutes(app: Express): void {
       );
 
       await seedChartOfAccounts(company.id);
-
-      // Auto-assign firm_admin who created the client so they retain access.
-      // firm_owner already has implicit access to all client companies via firmRole.
-      if (firmRole === "firm_admin") {
-        await db
-          .insert(companyUsers)
-          .values({ companyId: company.id, userId, role: "accountant" })
-          .onConflictDoNothing();
-      }
+      await linkNewClientToFirm(ctx, company.id);
 
       await storage.createActivityLog({
         userId,
@@ -777,7 +795,7 @@ export function registerFirmRoutes(app: Express): void {
         action: "create",
         entityType: "company",
         entityId: company.id,
-        description: `NRA firm created client: ${company.name}`,
+        description: `Firm created client: ${company.name}`,
       });
 
       res.status(201).json({
@@ -791,24 +809,35 @@ export function registerFirmRoutes(app: Express): void {
   // ─── PUT /api/firm/clients/:companyId ──────────────────────────────────────
   router.put(
     "/firm/clients/:companyId",
+    requireFirmPermission("firm.clients.write"),
+    strictBody(updateClientSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
-      const validated = updateClientSchema.parse(req.body);
+      const { id: userId } = (req as any).user;
+      const validated = parsedBody<z.output<typeof updateClientSchema>>(req);
       const { serviceScope, ...companyPatch } = validated;
 
-      const accessibleIds = await getAccessibleCompanyIds(
-        userId,
-        firmRole ?? "",
-        (req as any).user?.isAdmin === true
-      );
-      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+      if (!(await canAccessClient(req, res, companyId))) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Client not found" });
+      }
+      if (companyPatch.name) {
+        const duplicate = await findDuplicateClient(
+          firmContextOf(res),
+          companyPatch.name,
+          companyId
+        );
+        if (duplicate) {
+          return res.status(409).json({
+            message: "A client with this name already exists",
+            code: "CLIENT_DUPLICATE",
+            details: { existingCompanyId: duplicate.id, existingName: duplicate.name },
+          });
+        }
       }
 
       const updated =
@@ -827,7 +856,7 @@ export function registerFirmRoutes(app: Express): void {
         action: "update",
         entityType: "company",
         entityId: companyId,
-        description: `NRA firm updated client: ${updated.name}`,
+        description: `Firm updated client: ${updated.name}`,
       });
 
       res.json({
@@ -839,106 +868,42 @@ export function registerFirmRoutes(app: Express): void {
   );
 
   // ─── POST /api/firm/clients/:companyId/assign-staff ───────────────────────
-  // Only firm_owner may assign or unassign staff. Without this restriction a
-  // firm_admin could call this endpoint with any companyId — there is no
-  // per-company access check inside the handler — and self-assign onto an
-  // unrelated client (or even a customer-type self-signup company), gaining
-  // full read/write access via the company_users → hasCompanyAccess path.
+  // R15-03: delegates to the one assignment service (staff.service.ts). Only
+  // roles holding firm.staff.manage (firm_owner) may assign; the client must
+  // be in the caller's firm and the staff member must hold a firm role in the
+  // same firm (never isAdmin-based).
   router.post(
     "/firm/clients/:companyId/assign-staff",
+    requireFirmPermission("firm.staff.manage"),
+    strictBody(assignStaffSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const requestingUserId = (req as any).user.id;
-      const requestingFirmRole = (req as any).user.firmRole as string | null;
-
-      if (requestingFirmRole !== "firm_owner") {
-        return res.status(403).json({ message: "Only firm owners may assign staff" });
-      }
-
-      const { staffUserId, action, role } = assignStaffSchema.parse(req.body);
-
-      const company = await storage.getCompany(companyId);
-      if (!company) {
-        return res.status(404).json({ message: "Client not found" });
-      }
-      if (company.companyType !== "client" || company.deletedAt) {
-        return res.status(400).json({ message: "Company is not an active NRA client" });
-      }
-
-      const staffUser = await storage.getUser(staffUserId);
-      if (!staffUser) {
-        return res.status(404).json({ message: "Staff user not found" });
-      }
-      if (!staffUser.isAdmin) {
-        return res.status(400).json({ message: "User is not a firm staff member" });
-      }
-
-      if (action === "assign") {
-        const existing = await storage.getUserRole(companyId, staffUserId);
-        if (!existing) {
-          await storage.createCompanyUser({
-            companyId,
-            userId: staffUserId,
-            role,
-          });
-        }
-        await storage.createActivityLog({
-          userId: requestingUserId,
-          companyId,
-          action: "create",
-          entityType: "company_user",
-          entityId: staffUserId,
-          description: `Assigned ${staffUser.name} to ${company.name}`,
-        });
-      } else {
-        // Unassign: remove from companyUsers
-        await db
-          .delete(companyUsers)
-          .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, staffUserId)));
-        await storage.createActivityLog({
-          userId: requestingUserId,
-          companyId,
-          action: "delete",
-          entityType: "company_user",
-          entityId: staffUserId,
-          description: `Unassigned ${staffUser.name} from ${company.name}`,
-        });
-      }
-
-      res.json({ success: true, action, companyId, staffUserId });
+      const { staffUserId, action, role } = parsedBody<z.output<typeof assignStaffSchema>>(req);
+      const result = await assignStaff(firmContextOf(res), {
+        staffUserId,
+        companyId,
+        action,
+        role,
+      });
+      await storage.createActivityLog({
+        userId: requestingUserId,
+        companyId,
+        action: action === "assign" ? "create" : "delete",
+        entityType: "firm_staff_assignment",
+        entityId: staffUserId,
+        description: `${action === "assign" ? "Assigned" : "Unassigned"} firm staff ${staffUserId}`,
+      });
+      res.json({ success: true, ...result });
     })
   );
 
   // ─── GET /api/firm/staff ───────────────────────────────────────────────────
+  // R15-03: firm staff = users with a firm role in the caller's firm.
   router.get(
     "/firm/staff",
     asyncHandler(async (_req: Request, res: Response) => {
-      const allUsers = await storage.getAllUsers();
-      const firmStaff = allUsers.filter((u) => u.isAdmin);
-
-      const staffWithAssignments = await Promise.all(
-        firmStaff.map(async (staff) => {
-          const assignments = await db
-            .select({
-              companyId: companyUsers.companyId,
-              role: companyUsers.role,
-              companyName: companies.name,
-              companyType: companies.companyType,
-            })
-            .from(companyUsers)
-            .innerJoin(companies, eq(companies.id, companyUsers.companyId))
-            .where(and(eq(companyUsers.userId, staff.id), eq(companies.companyType, "client")));
-
-          const { passwordHash: _ph, ...safeStaff } = staff;
-          return {
-            ...safeStaff,
-            assignedClients: assignments,
-            assignedClientCount: assignments.length,
-          };
-        })
-      );
-
-      res.json(staffWithAssignments);
+      res.json(await listFirmStaff(firmContextOf(res)));
     })
   );
 
@@ -997,13 +962,7 @@ export function registerFirmRoutes(app: Express): void {
             createdAt: companies.createdAt,
           })
           .from(companies)
-          .where(
-            and(
-              eq(companies.companyType, "client"),
-              inArray(companies.id, accessibleIds),
-              sql`${companies.deletedAt} IS NULL`
-            )
-          );
+          .where(and(inArray(companies.id, accessibleIds), sql`${companies.deletedAt} IS NULL`));
       }
 
       const clientIds = clientList.map((client) => client.id);
@@ -1803,13 +1762,7 @@ export function registerFirmRoutes(app: Express): void {
             createdAt: companies.createdAt,
           })
           .from(companies)
-          .where(
-            and(
-              eq(companies.companyType, "client"),
-              inArray(companies.id, accessibleIds),
-              sql`${companies.deletedAt} IS NULL`
-            )
-          );
+          .where(and(inArray(companies.id, accessibleIds), sql`${companies.deletedAt} IS NULL`));
       }
 
       const clientIds = clientList.map((c: { id: string }) => c.id);
@@ -2083,7 +2036,11 @@ export function registerFirmRoutes(app: Express): void {
         .from(vatReturns)
         .innerJoin(companies, eq(companies.id, vatReturns.companyId))
         .where(
-          and(whereClause, eq(companies.companyType, "client"), sql`${companies.deletedAt} IS NULL`)
+          and(
+            whereClause,
+            accessibleIds === null ? eq(companies.companyType, "client") : undefined,
+            sql`${companies.deletedAt} IS NULL`
+          )
         )
         .orderBy(vatReturns.dueDate);
 
@@ -2121,23 +2078,15 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/clients/:companyId/switch",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(
-        userId,
-        firmRole ?? "",
-        (req as any).user?.isAdmin === true
-      );
-      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+      if (!(await canAccessClient(req, res, companyId))) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Client not found" });
-      }
-      if (company.companyType !== "client") {
-        return res.status(400).json({ message: "Company is not an NRA client" });
       }
 
       await storage.createActivityLog({
@@ -2146,7 +2095,7 @@ export function registerFirmRoutes(app: Express): void {
         action: "view",
         entityType: "company",
         entityId: companyId,
-        description: `NRA staff switched into ${company.name}`,
+        description: `Firm staff switched into ${company.name}`,
       });
 
       res.json({ company });
@@ -2158,21 +2107,26 @@ export function registerFirmRoutes(app: Express): void {
   // delete). The company is hidden from listings via deletedAt.
   router.delete(
     "/firm/clients/:companyId",
+    // Only roles with firm.clients.archive (firm_owner) may archive a client.
+    requireFirmPermission("firm.clients.archive"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId } = (req as any).user;
+      const ctx = firmContextOf(res);
 
-      // Only firm_owner may archive a client.
-      if (firmRole !== "firm_owner") {
-        return res.status(403).json({ message: "Only firm owners may archive clients" });
+      if (!(await canAccessClient(req, res, companyId))) {
+        return res.status(404).json({ message: "Client not found", code: "CLIENT_NOT_FOUND" });
       }
-
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Client not found" });
       }
+
       if (company.companyType !== "client") {
-        return res.status(400).json({ message: "Company is not an NRA client" });
+        // A client organisation that joined by invitation owns its books: the
+        // firm can only end its own link, never archive the company.
+        await endClientLink(ctx, companyId, userId, "Archived by firm");
+        return res.json({ success: true, linkEnded: true, archivedAt: null });
       }
 
       await db
@@ -2186,7 +2140,7 @@ export function registerFirmRoutes(app: Express): void {
         action: "delete",
         entityType: "company",
         entityId: companyId,
-        description: `NRA firm archived client: ${company.name}`,
+        description: `Firm archived client: ${company.name}`,
       });
 
       res.json({ success: true, archivedAt: new Date().toISOString() });
@@ -2202,14 +2156,10 @@ export function registerFirmRoutes(app: Express): void {
   //   - { fileData: <base64 CSV/XLSX> } raw file (server-parsed)
   router.post(
     "/firm/clients/import",
+    requireFirmPermission("firm.clients.create"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
-
-      // firm_admin is allowed to import (their imports are auto-assigned to them);
-      // firm_owner can import freely.
-      if (firmRole !== "firm_owner" && firmRole !== "firm_admin") {
-        return res.status(403).json({ message: "Firm role required" });
-      }
+      const { id: userId } = (req as any).user;
+      const ctx = firmContextOf(res);
 
       // Accept either pre-parsed rows or a base64-encoded file.
       let rows: Record<string, any>[];
@@ -2237,8 +2187,9 @@ export function registerFirmRoutes(app: Express): void {
 
       const results = {
         created: [] as { id: string; name: string }[],
-        errors: [] as { row: number; name: string; error: string }[],
+        errors: [] as { row: number; name: string; error: string; field?: string }[],
       };
+      const seenNames = new Set<string>();
 
       for (let i = 0; i < rows.length; i++) {
         const raw = rows[i];
@@ -2254,17 +2205,32 @@ export function registerFirmRoutes(app: Express): void {
             row: i + 1,
             name: mapped.name,
             error: validated.error,
+            ...(validated.field ? { field: validated.field } : {}),
           });
           continue;
         }
 
+        const key = clientNameKey(validated.value.name);
+        if (seenNames.has(key)) {
+          results.errors.push({
+            row: i + 1,
+            name: validated.value.name,
+            error: "Duplicate of an earlier row in this file",
+            field: "name",
+          });
+          continue;
+        }
+        seenNames.add(key);
+
         try {
-          const existing = await storage.getCompanyByName(validated.value.name);
+          // R15-04: case-insensitive, within the firm's clients.
+          const existing = await findDuplicateClient(ctx, validated.value.name);
           if (existing) {
             results.errors.push({
               row: i + 1,
               name: validated.value.name,
-              error: "A company with this name already exists",
+              error: "A client with this name already exists",
+              field: "name",
             });
             continue;
           }
@@ -2296,15 +2262,7 @@ export function registerFirmRoutes(app: Express): void {
           );
 
           await seedChartOfAccounts(company.id);
-
-          // firm_admin who runs the import becomes auto-assigned so they can
-          // continue to manage what they imported.
-          if (firmRole === "firm_admin") {
-            await db
-              .insert(companyUsers)
-              .values({ companyId: company.id, userId, role: "accountant" })
-              .onConflictDoNothing();
-          }
+          await linkNewClientToFirm(ctx, company.id);
 
           await storage.createActivityLog({
             userId,
@@ -2312,7 +2270,7 @@ export function registerFirmRoutes(app: Express): void {
             action: "create",
             entityType: "company",
             entityId: company.id,
-            description: `Bulk-imported NRA client: ${company.name}`,
+            description: `Bulk-imported firm client: ${company.name}`,
           });
 
           results.created.push({ id: company.id, name: company.name });

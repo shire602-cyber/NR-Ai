@@ -525,7 +525,8 @@ export async function buildFirmValueOps(
     .select({
       companyId: documentRequirements.companyId,
       missing: sql<string>`count(*) filter (where ${documentRequirements.status} in ('pending', 'requested', 'overdue'))`,
-      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or ${documentRequirements.dueDate} < ${now})`,
+      // Received/waived requirements are closed even when their due date passed.
+      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or (${documentRequirements.dueDate} < ${now} and ${documentRequirements.status} in ('pending', 'requested')))`,
     })
     .from(documentRequirements)
     .where(inArray(documentRequirements.companyId, companyIds))
@@ -563,7 +564,7 @@ export async function buildFirmValueOps(
     .select({
       companyId: complianceTasks.companyId,
       openTasks: sql<string>`count(*) filter (where ${complianceTasks.status} in ('pending', 'in_progress', 'overdue'))`,
-      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or ${complianceTasks.dueDate} < ${now})`,
+      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or (${complianceTasks.dueDate} < ${now} and coalesce(${complianceTasks.status}, 'pending') in ('pending', 'in_progress')))`,
     })
     .from(complianceTasks)
     .where(inArray(complianceTasks.companyId, companyIds))
@@ -579,7 +580,8 @@ export async function buildFirmValueOps(
     .select({
       companyId: complianceCalendar.companyId,
       upcoming: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'upcoming' and ${complianceCalendar.eventDate} <= ${new Date(now.getTime() + 30 * 86_400_000)})`,
-      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or ${complianceCalendar.eventDate} < ${now})`,
+      // W4-A carry-over: completed / dismissed obligations are never overdue.
+      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or (${complianceCalendar.eventDate} < ${now} and ${complianceCalendar.status} = 'upcoming'))`,
     })
     .from(complianceCalendar)
     .where(inArray(complianceCalendar.companyId, companyIds))

@@ -1,10 +1,26 @@
 import { Router } from "express";
+import { parsedBody } from "../http/parsed-body";
 import type { Express, Request, Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
+import {
+  firmContextOf,
+  getAccessibleCompanyIds,
+  requireFirmAccess,
+  requireFirmPermission,
+} from "../middleware/rbac";
+import { strictBody } from "../http/strict-body";
+import {
+  buildReportPack,
+  bulkScopeSchema,
+  importJournalsAcrossClients,
+  resolveBulkPeriod,
+  resolveBulkTargets,
+  zBulkCompanyIds,
+  zBulkPeriod,
+} from "../services/firm/bulk.service";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, gte, lte, inArray, count, sum, max, not, desc } from "drizzle-orm";
@@ -27,7 +43,8 @@ import {
 
 const router = Router();
 router.use(authMiddleware);
-router.use(requireFirmRole());
+// Multi-firm (R15-12): every bulk endpoint is scoped to the caller's firm.
+router.use(requireFirmAccess());
 const log = createLogger("firm-bulk");
 
 // ─── OCR helpers ──────────────────────────────────────────────────────────────
@@ -203,21 +220,16 @@ const bulkOcrSchema = z.object({
 
 router.post(
   "/bulk/ocr",
+  requireFirmPermission("firm.clients.write"),
+  strictBody(bulkOcrSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId, firmRole } = (req as any).user;
-    const { items } = bulkOcrSchema.parse(req.body);
-
-    const accessibleIds = await getAccessibleCompanyIds(
-      userId,
-      firmRole ?? "",
-      (req as any).user?.isAdmin === true
+    const { id: userId } = (req as any).user;
+    const { items } = parsedBody<z.output<typeof bulkOcrSchema>>(req);
+    await resolveBulkTargets(
+      firmContextOf(res),
+      items.map((item) => item.companyId),
+      { required: true }
     );
-
-    for (const item of items) {
-      if (accessibleIds !== null && !accessibleIds.includes(item.companyId)) {
-        return res.status(403).json({ message: `Access denied to company ${item.companyId}` });
-      }
-    }
 
     const { anthropic, openai } = createOcrClients();
     if (!anthropic && !openai) {
@@ -274,43 +286,21 @@ router.post(
 
 router.post(
   "/bulk/vat-queue",
+  strictBody(bulkScopeSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId, firmRole } = (req as any).user;
-    const accessibleIds = await getAccessibleCompanyIds(
-      userId,
-      firmRole ?? "",
-      (req as any).user?.isAdmin === true
-    );
+    // R15-07: shared bulk contract { companyIds?, period? } (docs/api/firm-bulk.md).
+    const scope = parsedBody<z.output<typeof bulkScopeSchema>>(req);
+    const targetIds = await resolveBulkTargets(firmContextOf(res), scope.companyIds);
+    const clientCompanies: (typeof companies.$inferSelect)[] = targetIds.length
+      ? await db.select().from(companies).where(inArray(companies.id, targetIds))
+      : [];
 
-    let clientCompanies: (typeof companies.$inferSelect)[];
-
-    if (accessibleIds === null) {
-      clientCompanies = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.companyType, "client"));
-    } else if (accessibleIds.length === 0) {
-      clientCompanies = [];
-    } else {
-      clientCompanies = await db
-        .select()
-        .from(companies)
-        .where(and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds)));
-    }
-
-    const body = req.body as { companyIds?: string[] };
-    if (body.companyIds?.length) {
-      clientCompanies = clientCompanies.filter((c) => body.companyIds!.includes(c.id));
-    }
-
-    const now = new Date();
-    const quarter = Math.floor(now.getMonth() / 3);
-    const period = `Q${quarter + 1} ${now.getFullYear()}`;
-
-    // Restrict aggregation to the current quarter so the queue reflects only
-    // the live VAT period rather than all-time totals across the company.
-    const periodStart = new Date(now.getFullYear(), quarter * 3, 1);
-    const periodEnd = new Date(now.getFullYear(), quarter * 3 + 3, 0, 23, 59, 59);
+    // Restrict aggregation to the requested (default: current) quarter so the
+    // queue reflects only the live VAT period rather than all-time totals.
+    const resolved = resolveBulkPeriod(scope.period);
+    const period = resolved.label;
+    const periodStart = new Date(`${resolved.start}T00:00:00`);
+    const periodEnd = new Date(`${resolved.end}T23:59:59`);
 
     const queue = await Promise.all(
       clientCompanies.map(async (company) => {
@@ -371,7 +361,8 @@ router.post(
 // ─── POST /api/firm/bulk/invoices ─────────────────────────────────────────────
 
 const bulkInvoicesSchema = z.object({
-  companyIds: z.array(z.string().uuid()).min(1),
+  companyIds: zBulkCompanyIds,
+  period: zBulkPeriod.optional(),
   serviceDescription: z.string().min(1).max(500),
   amount: z.number().positive(),
   vatRate: z.number().min(0).max(1).default(UAE_VAT_RATE),
@@ -379,21 +370,14 @@ const bulkInvoicesSchema = z.object({
 
 router.post(
   "/bulk/invoices",
+  requireFirmPermission("firm.clients.write"),
+  strictBody(bulkInvoicesSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId, firmRole } = (req as any).user;
-    const { companyIds, serviceDescription, amount, vatRate } = bulkInvoicesSchema.parse(req.body);
-
-    const accessibleIds = await getAccessibleCompanyIds(
-      userId,
-      firmRole ?? "",
-      (req as any).user?.isAdmin === true
-    );
-
-    for (const companyId of companyIds) {
-      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: `Access denied to company ${companyId}` });
-      }
-    }
+    const { serviceDescription, amount, vatRate, ...scope } =
+      parsedBody<z.output<typeof bulkInvoicesSchema>>(req);
+    const companyIds = await resolveBulkTargets(firmContextOf(res), scope.companyIds, {
+      required: true,
+    });
 
     const targetCompanies = await db
       .select({ id: companies.id, name: companies.name })
@@ -465,28 +449,16 @@ router.post(
 
 // ─── POST /api/firm/bulk/period-close ────────────────────────────────────────
 
-const periodCloseSchema = z.object({
-  companyIds: z.array(z.string().uuid()).min(1),
-  period: z.string().min(1),
-});
-
+// R15-07: same contract as every bulk endpoint — period is optional (default:
+// current quarter) instead of the old required free-text field.
 router.post(
   "/bulk/period-close",
+  strictBody(bulkScopeSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId, firmRole } = (req as any).user;
-    const { companyIds, period } = periodCloseSchema.parse(req.body);
-
-    const accessibleIds = await getAccessibleCompanyIds(
-      userId,
-      firmRole ?? "",
-      (req as any).user?.isAdmin === true
-    );
-
-    for (const companyId of companyIds) {
-      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: `Access denied to company ${companyId}` });
-      }
-    }
+    const scope = parsedBody<z.output<typeof bulkScopeSchema>>(req);
+    const period = resolveBulkPeriod(scope.period).label;
+    const companyIds = await resolveBulkTargets(firmContextOf(res), scope.companyIds);
+    if (companyIds.length === 0) return res.json([]);
 
     const targetCompanies = await db
       .select({ id: companies.id, name: companies.name })
@@ -588,7 +560,7 @@ router.get(
       clientCompanies = await db
         .select()
         .from(companies)
-        .where(and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds)));
+        .where(inArray(companies.id, accessibleIds));
     }
 
     const statuses = await Promise.all(
@@ -637,6 +609,59 @@ router.get(
     );
 
     res.json(statuses);
+  })
+);
+
+// ─── POST /api/firm/bulk/journal-import (R15-16) ──────────────────────────────
+// One CSV for many clients; each entry validated per client and posted through
+// server/ledger. dryRun validates only. Per-row errors are returned.
+
+const journalImportSchema = z.object({
+  csv: z.string().min(1, "csv is required").max(2_000_000, "csv is limited to 2 MB"),
+  dryRun: z.boolean().optional(),
+});
+
+router.post(
+  "/bulk/journal-import",
+  requireFirmPermission("firm.bulk.run"),
+  strictBody(journalImportSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = parsedBody<z.output<typeof journalImportSchema>>(req);
+    const result = await importJournalsAcrossClients(firmContextOf(res), body.csv, {
+      dryRun: body.dryRun,
+      req,
+    });
+    const status = result.summary.posted + result.summary.replayed > 0 || body.dryRun ? 200 : 422;
+    res.status(status).json(result);
+  })
+);
+
+// ─── POST /api/firm/bulk/report-pack (R15-16) ────────────────────────────────
+// Zip of one trial-balance workbook per client for the period.
+
+router.post(
+  "/bulk/report-pack",
+  strictBody(bulkScopeSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const scope = parsedBody<z.output<typeof bulkScopeSchema>>(req);
+    const ctx = firmContextOf(res);
+    const companyIds = await resolveBulkTargets(ctx, scope.companyIds);
+    if (companyIds.length === 0) {
+      return res.status(400).json({
+        message: "Validation error",
+        code: "BULK_VALIDATION_ERROR",
+        fields: { companyIds: ["No accessible clients to include"] },
+      });
+    }
+    const period = resolveBulkPeriod(scope.period);
+    const pack = await buildReportPack(ctx, companyIds, period);
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="client-report-pack-${period.start}-${period.end}.zip"`
+    );
+    res.setHeader("X-Report-Pack-Files", String(pack.files.length));
+    res.send(Buffer.from(pack.zip));
   })
 );
 

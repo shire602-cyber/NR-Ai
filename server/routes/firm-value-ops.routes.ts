@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmAdmin } from "../middleware/rbac";
+import { requireNraAccess } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import {
@@ -40,7 +40,8 @@ export function registerFirmValueOpsRoutes(app: Express): void {
   const router = Router();
 
   router.use(authMiddleware as any);
-  router.use(requireFirmAdmin());
+  // NR-only revenue ops (keyed on NR staff); other firms never reach these.
+  router.use(requireNraAccess());
 
   router.get(
     "/",

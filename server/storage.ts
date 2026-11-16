@@ -264,6 +264,12 @@ import {
   chaseTemplates,
   chaseConfigs,
 } from "@shared/schema";
+import {
+  NR_FIRM_ID,
+  accessibleClientCondition,
+  canAccessFirmClient,
+  type FirmContext,
+} from "./services/firm/scope";
 import { db } from "./db";
 import {
   eq,
@@ -1563,7 +1569,7 @@ export class DatabaseStorage implements IStorage {
     companyId: string,
     firmRole?: string | null
   ): Promise<boolean> {
-    // Direct company_users membership.
+    // Direct company_users membership (includes firm grants, W5-D).
     if (await this.getUserRole(companyId, userId)) return true;
 
     // Look up firm role if caller didn't pass it. This makes all existing
@@ -1578,22 +1584,16 @@ export class DatabaseStorage implements IStorage {
       role = u?.firmRole ?? null;
     }
 
+    // Legacy NR bypass roles only; preparer / reviewer / viewer and staff of
+    // other firms reach client books through company_users grants.
     if (role !== "firm_owner" && role !== "firm_admin") return false;
 
-    const company = await this.getCompany(companyId);
-    if (!company || company.companyType !== "client") return false;
-
-    if (role === "firm_owner") return true;
-
-    // firm_admin: must have an explicit assignment.
-    const [assignment] = await db
-      .select({ id: firmStaffAssignments.id })
-      .from(firmStaffAssignments)
-      .where(
-        and(eq(firmStaffAssignments.userId, userId), eq(firmStaffAssignments.companyId, companyId))
-      )
-      .limit(1);
-    return !!assignment;
+    // firm_owner: any client of the NR firm. firm_admin: assigned NR clients.
+    // A revoked link or another firm's client is never reachable (R15-12).
+    return canAccessFirmClient(
+      { firmId: NR_FIRM_ID, isNr: true, role, userId, platformAdmin: false },
+      companyId
+    );
   }
 
   async getAccessibleCompanies(
@@ -1610,36 +1610,14 @@ export class DatabaseStorage implements IStorage {
     // Add firm-accessible client companies (not already in direct list).
     const directIds = new Set(direct.map((c) => c.id));
 
-    let firmCompanies: Company[];
-    // Platform admins get the same full client scope as firm_owner.
-    if (isAdmin || firmRole === "firm_owner") {
-      firmCompanies = await db
-        .select()
-        .from(companies)
-        .where(and(eq(companies.companyType, "client"), isNull(companies.deletedAt)));
-    } else {
-      // firm_admin: only assigned companies.
-      const assignedIds = await db
-        .select({ companyId: firmStaffAssignments.companyId })
-        .from(firmStaffAssignments)
-        .where(eq(firmStaffAssignments.userId, userId));
-
-      const ids = assignedIds.map((a: { companyId: string }) => a.companyId);
-      if (ids.length === 0) {
-        firmCompanies = [];
-      } else {
-        firmCompanies = await db
-          .select()
-          .from(companies)
-          .where(
-            and(
-              inArray(companies.id, ids),
-              eq(companies.companyType, "client"),
-              isNull(companies.deletedAt)
-            )
-          );
-      }
-    }
+    const ctx: FirmContext =
+      firmRole === "firm_owner" || firmRole === "firm_admin"
+        ? { firmId: NR_FIRM_ID, isNr: true, role: firmRole, userId, platformAdmin: false }
+        : { firmId: NR_FIRM_ID, isNr: true, role: "firm_owner", userId, platformAdmin: true };
+    const firmCompanies: Company[] = await db
+      .select()
+      .from(companies)
+      .where(accessibleClientCondition(ctx));
 
     const merged = [...direct];
     for (const c of firmCompanies) {

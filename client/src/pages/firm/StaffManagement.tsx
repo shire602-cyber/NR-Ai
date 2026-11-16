@@ -30,8 +30,8 @@ interface StaffMember {
   id: string;
   name: string;
   email: string;
-  isAdmin: boolean;
-  userType: string;
+  /** R15-03: staff are users with a firm role (never isAdmin-based). */
+  firmRole: string;
   lastLoginAt: string | null;
   createdAt: string;
   assignedClients: {
@@ -42,6 +42,14 @@ interface StaffMember {
   }[];
   assignedClientCount: number;
 }
+
+const FIRM_ROLE_KEYS: Record<string, string> = {
+  firm_owner: "firm.roleFirmOwner",
+  firm_admin: "firm.roleFirmAdmin",
+  preparer: "firm.rolePreparer",
+  reviewer: "firm.roleReviewer",
+  viewer: "firm.roleViewer",
+};
 
 interface ClientWithStats extends Company {
   invoiceCount: number;
@@ -251,6 +259,9 @@ export default function StaffManagement() {
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{member.name}</p>
                         <Shield className="w-3.5 h-3.5 text-primary" />
+                        <Badge variant="secondary" data-testid={`firm-role-${member.id}`}>
+                          <T k={FIRM_ROLE_KEYS[member.firmRole] ?? "firm.firmRole"} />
+                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground flex items-center gap-1">
                         <Mail className="w-3 h-3" />

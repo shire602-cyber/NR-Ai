@@ -47,13 +47,25 @@ function sessionExpiry(): Date {
   return new Date(Date.now() + 60 * 60 * 1000);
 }
 
-function personalWhatsAppStatusPayload() {
+/**
+ * R15-08: report the truth. No WhatsApp provider (Business API / BSP) is
+ * connected, so nothing is ever sent by the server: messages open as
+ * WhatsApp Web drafts that staff send by hand, and the server only logs them.
+ */
+export function personalWhatsAppStatusPayload() {
   return {
-    connected: true,
-    configured: true,
+    connected: false,
+    providerConnected: false,
+    configured: false,
+    capability: "requires_external" as const,
+    canSend: false,
     mode: "personal",
     deliveryMode: "personal_link",
     deliveryStatus: "logged_only",
+    note: {
+      en: "No WhatsApp provider is connected. Messages open as WhatsApp Web drafts that staff send themselves; Muhasib.ai only logs them and cannot confirm delivery.",
+      ar: "لا يوجد مزود واتساب متصل. تُفتح الرسائل كمسودات في واتساب ويب يرسلها الموظف بنفسه؛ يكتفي Muhasib.ai بتسجيلها ولا يمكنه تأكيد التسليم.",
+    },
   };
 }
 
@@ -261,7 +273,9 @@ export function registerWhatsAppRoutes(app: Express) {
 
       res.json({
         provider: WHATSAPP_BRIDGE_PROVIDER,
+        // A live extension session is not a delivery channel: staff still send by hand.
         connected: activeSessions.length > 0,
+        providerConnected: false,
         configured: true,
         canAutoSend: false,
         deliveryMode: "whatsapp_web_human_confirmed",

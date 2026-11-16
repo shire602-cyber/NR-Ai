@@ -10,9 +10,39 @@ import { normalizeClientServices, type ClientServiceCode } from "@shared/client-
  * variations across spreadsheets exported from QuickBooks, Zoho, Excel, etc.
  */
 
+/** Error message for a malformed UAE TRN (shared by create, update and import). */
+export const TRN_FORMAT_MESSAGE = "TRN must be exactly 15 digits";
+
+/**
+ * Optional UAE TRN (R15-05): blank means "not registered"; otherwise 15 digits
+ * after removing spaces and hyphens. Format check only — there is no FTA
+ * lookup API; staff verify the TRN on the FTA website.
+ */
+export const zOptionalClientTrn = z.preprocess(
+  (value) => {
+    if (value == null) return undefined;
+    if (typeof value === "number") value = String(value);
+    if (typeof value !== "string") return value;
+    const compact = value.replace(/[\s-]/g, "");
+    return compact === "" ? undefined : compact;
+  },
+  z
+    .string()
+    .regex(/^\d{15}$/, TRN_FORMAT_MESSAGE)
+    .optional()
+);
+
+/** Public FTA TRN verification page staff use for the manual check (R15-14). */
+export const FTA_TRN_LOOKUP_URL = "https://tax.gov.ae";
+
+/** Case- and whitespace-insensitive key for the duplicate-client check (R15-04). */
+export function clientNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export const importedClientSchema = z.object({
-  name: z.string().min(1),
-  trnVatNumber: z.string().optional().or(z.literal("")),
+  name: z.string().trim().min(1),
+  trnVatNumber: zOptionalClientTrn,
   industry: z.string().optional().or(z.literal("")),
   legalStructure: z.string().optional().or(z.literal("")),
   contactEmail: z.string().email().optional().or(z.literal("")),
@@ -677,10 +707,16 @@ export function mapImportRow(row: Record<string, unknown>): ImportedClient | { e
  */
 export function validateImportedClient(
   mapped: ImportedClient
-): { ok: true; value: ImportedClient } | { ok: false; error: string } {
+): { ok: true; value: ImportedClient } | { ok: false; error: string; field?: string } {
   const result = importedClientSchema.safeParse(mapped);
   if (!result.success) {
-    return { ok: false, error: result.error.errors[0]?.message ?? "Invalid row" };
+    const issue = result.error.errors[0];
+    const field = issue?.path?.[0];
+    return {
+      ok: false,
+      error: issue?.message ?? "Invalid row",
+      ...(typeof field === "string" ? { field } : {}),
+    };
   }
   return { ok: true, value: result.data };
 }

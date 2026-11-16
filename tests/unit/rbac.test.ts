@@ -7,7 +7,11 @@ import type { Request, Response, NextFunction } from "express";
 // supports that shape (and also bare `.from().where()` for forward-compat).
 const mockDbSelect = vi.fn();
 vi.mock("../../server/db", () => {
-  const where = () => mockDbSelect();
+  // where() is awaitable and also supports .limit() (firm membership lookup).
+  const where = () => {
+    const p = Promise.resolve(mockDbSelect());
+    return Object.assign(p, { limit: () => p });
+  };
   const builder: any = { where, innerJoin: () => ({ where }) };
   return {
     db: {
@@ -104,50 +108,32 @@ describe("rbac.requireFirmRole", () => {
   });
 });
 
-describe("rbac.getAccessibleCompanyIds", () => {
+describe("rbac.getAccessibleCompanyIds (W5-D firm-scoped)", () => {
   beforeEach(() => {
     mockDbSelect.mockReset();
   });
 
-  it("returns null for firm_owner — caller should not filter", async () => {
-    const result = await getAccessibleCompanyIds("user-1", "firm_owner");
-    expect(result).toBeNull();
+  it("returns null only for platform admins without a firm role", async () => {
+    expect(await getAccessibleCompanyIds("admin-1", "", true)).toBeNull();
     expect(mockDbSelect).not.toHaveBeenCalled();
   });
 
-  it("unions firm_staff_assignments + company_users for firm_admin", async () => {
-    // First call → firm_staff_assignments rows; second → company_users rows.
-    mockDbSelect.mockResolvedValueOnce([{ companyId: "c1" }]);
-    mockDbSelect.mockResolvedValueOnce([{ companyId: "c2" }]);
-
-    const result = await getAccessibleCompanyIds("user-1", "firm_admin");
-    expect(result).not.toBeNull();
-    expect((result as string[]).sort()).toEqual(["c1", "c2"]);
+  it("[R15-12] firm_owner gets the firm's client ids, never null (no cross-firm 'all')", async () => {
+    mockDbSelect.mockResolvedValueOnce([{ id: "c1" }, { id: "c2" }]);
+    const result = await getAccessibleCompanyIds("user-1", "firm_owner");
+    expect(result).toEqual(["c1", "c2"]);
   });
 
-  it("deduplicates companies that appear in both access tables", async () => {
-    mockDbSelect.mockResolvedValueOnce([{ companyId: "c1" }, { companyId: "c2" }]);
-    mockDbSelect.mockResolvedValueOnce([{ companyId: "c2" }, { companyId: "c3" }]);
-
+  it("firm_admin gets the assigned client ids from one scoped query", async () => {
+    mockDbSelect.mockResolvedValueOnce([{ id: "c3" }]);
     const result = await getAccessibleCompanyIds("user-1", "firm_admin");
-    expect((result as string[]).sort()).toEqual(["c1", "c2", "c3"]);
+    expect(result).toEqual(["c3"]);
   });
 
-  it("returns an empty array when firm_admin has no access via either table", async () => {
-    mockDbSelect.mockResolvedValueOnce([]);
-    mockDbSelect.mockResolvedValueOnce([]);
-
-    const result = await getAccessibleCompanyIds("user-1", "firm_admin");
-    expect(result).toEqual([]);
-  });
-
-  it("treats unknown role strings as restricted (does not return null)", async () => {
-    // Defensive default: unknown roles fall through to the restricted-list
-    // path so a misconfigured user never accidentally sees every client.
-    mockDbSelect.mockResolvedValueOnce([{ companyId: "c1" }]);
-    mockDbSelect.mockResolvedValueOnce([]);
+  it("treats unknown role strings as non-staff unless a firm membership exists", async () => {
+    mockDbSelect.mockResolvedValueOnce([]); // no firm_members row
     const result = await getAccessibleCompanyIds("user-1", "visitor");
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toEqual([]);
   });
 });
 

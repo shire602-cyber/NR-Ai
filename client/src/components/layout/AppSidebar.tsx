@@ -186,6 +186,7 @@ const NRA_GROUP: NavGroup = {
     { titleKey: "valueOps", url: "/firm/value-ops" },
     { titleKey: "clientPortfolio", url: "/firm/clients" },
     { titleKey: "staffManagement", url: "/firm/staff" },
+    { titleKey: "firm.practiceWorkspace", url: "/firm/practice" },
     { titleKey: "healthDashboard", url: "/firm/health" },
     { titleKey: "communications", url: "/firm/comms" },
     { titleKey: "documentChasing", url: "/firm/document-chasing" },
