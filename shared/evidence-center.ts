@@ -1,3 +1,9 @@
+/** Stable message key + params for a server-composed sentence (see shared/server-copy.ts). */
+export interface EvidenceCopyRef {
+  key: string;
+  params: Record<string, string>;
+}
+
 export type EvidenceSeverity = "critical" | "warning" | "info" | "good";
 export type EvidenceIssueStatus = "open" | "resolved" | "waived";
 
@@ -27,6 +33,8 @@ export interface EvidenceIssue {
   href?: string;
   amount?: number;
   actionLabel?: string;
+  /** Stable keys + params; the English strings above stay for exports and API back-compat. */
+  copy?: { title?: EvidenceCopyRef; detail?: EvidenceCopyRef; actionLabel?: EvidenceCopyRef };
 }
 
 export interface EvidenceProofLine {
@@ -48,6 +56,11 @@ export interface EvidenceProofLine {
   documentHref?: string;
   attachmentCount: number;
   href?: string;
+  copy?: {
+    label?: EvidenceCopyRef;
+    documentLabel?: EvidenceCopyRef;
+    documentPreview?: EvidenceCopyRef;
+  };
 }
 
 export interface EvidenceWorkflow {
@@ -62,6 +75,13 @@ export interface EvidenceWorkflow {
   bullets: string[];
   issueCount: number;
   proofCount: number;
+  copy?: {
+    title?: EvidenceCopyRef;
+    metric?: EvidenceCopyRef;
+    description?: EvidenceCopyRef;
+    primaryAction?: EvidenceCopyRef;
+    bullets: Array<EvidenceCopyRef | null>;
+  };
 }
 
 export interface EvidenceTimelineItem {
@@ -73,6 +93,7 @@ export interface EvidenceTimelineItem {
   consequence: string;
   readinessScore: number;
   href: string;
+  copy?: { title?: EvidenceCopyRef; consequence?: EvidenceCopyRef };
 }
 
 export interface EvidenceOwnerAction {
@@ -82,6 +103,7 @@ export interface EvidenceOwnerAction {
   detail: string;
   href: string;
   actionLabel: string;
+  copy?: { title?: EvidenceCopyRef; detail?: EvidenceCopyRef; actionLabel?: EvidenceCopyRef };
 }
 
 export interface EvidenceAuditEntry {
@@ -93,6 +115,7 @@ export interface EvidenceAuditEntry {
   reason?: string;
   actorId?: string | null;
   createdAt: string;
+  copy?: { description?: EvidenceCopyRef };
 }
 
 export interface EvidenceRefundPack {

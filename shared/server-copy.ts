@@ -187,9 +187,12 @@ export function renderCopyTemplate(
 let byKeyCache: Map<string, CopyTemplate> | null = null;
 const templateByKey = (key: string): CopyTemplate | undefined => {
   byKeyCache ??= new Map<string, CopyTemplate>(
-    [...NOTIFICATION_TITLE_TEMPLATES, ...NOTIFICATION_MESSAGE_TEMPLATES, ...FIRM_TEMPLATES].map(
-      (t) => [t.key, t]
-    )
+    [
+      ...NOTIFICATION_TITLE_TEMPLATES,
+      ...NOTIFICATION_MESSAGE_TEMPLATES,
+      ...FIRM_TEMPLATES,
+      ...EVIDENCE_TEMPLATES,
+    ].map((t) => [t.key, t])
   );
   return byKeyCache.get(key);
 };
@@ -505,6 +508,448 @@ export function localizeFirmText(
   return renderDescriptor(d.key, params, text, catalog);
 }
 
+// ─── Evidence Center (server-composed payload + stored audit descriptions) ───
+
+/**
+ * Evidence Center sentences. `buildEvidenceCenter` writes the English text from these templates and
+ * attaches `{ key, params }` descriptors (`copy`) so the client renders the same key from its
+ * en/ar catalogs; the English stays in the payload for exports and API back-compat. Specific
+ * templates come before generic ones (`Missing {type}`) because `parseServerCopy` is first-match.
+ */
+export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
+  T("evidence.issue.missingTrn.title", "Company TRN is missing"),
+  T(
+    "evidence.issue.missingTrn.detail",
+    "VAT and official filing drafts need the company TRN before they can be finalized."
+  ),
+  T("evidence.action.addTrn", "Add TRN"),
+  T("evidence.issue.noWorkpaper.title", "No VAT evidence workpaper exists yet"),
+  T(
+    "evidence.issue.noWorkpaper.detail",
+    "Create the period workpaper before relying on VAT return or refund support totals."
+  ),
+  T("evidence.action.openVatWorkpaper", "Open VAT workpaper"),
+  T("evidence.issue.draftRows.title", "{count} VAT workpaper row(s) still draft"),
+  T(
+    "evidence.issue.draftRows.detail",
+    "Draft rows are excluded from VAT 201 totals until reviewed and approved."
+  ),
+  T("evidence.action.reviewRows", "Review rows"),
+  T("evidence.issue.inputProof.title", "Input VAT proof needed for {ref}"),
+  T("evidence.issue.inputProofRow.title", "Input VAT proof needed for row"),
+  T(
+    "evidence.issue.inputProof.detail",
+    "Refund support is stronger when each input VAT row links to the source tax invoice or receipt."
+  ),
+  T("evidence.action.attachProof", "Attach proof"),
+  T("evidence.issue.supplierTrn.title", "Supplier TRN missing on {ref}"),
+  T("evidence.issue.supplierTrnRow.title", "Supplier TRN missing on input VAT row"),
+  T(
+    "evidence.issue.supplierTrn.detail",
+    "Input VAT recovery may be challenged when the supplier TRN is absent from the evidence row."
+  ),
+  T("evidence.issue.docRequirement.title", "Missing {type}"),
+  T("evidence.issue.docRequirement.detail", "Required document is {status}."),
+  T("evidence.action.requestDocument", "Request document"),
+  T("evidence.issue.receiptImage.title", "Tax invoice image missing for {merchant}"),
+  T("evidence.issue.receiptImageGeneric.title", "Tax invoice image missing for receipt"),
+  T(
+    "evidence.issue.receiptImage.detail",
+    "Claimed input VAT should be backed by a readable tax invoice or receipt image."
+  ),
+  T("evidence.action.uploadReceipt", "Upload receipt"),
+  T("evidence.issue.receiptUnposted.title", "Input VAT receipt is not posted"),
+  T(
+    "evidence.issue.receiptUnposted.detail",
+    "{merchant} has VAT but is not posted to the ledger yet."
+  ),
+  T(
+    "evidence.issue.receiptUnpostedGeneric.detail",
+    "Receipt has VAT but is not posted to the ledger yet."
+  ),
+  T("evidence.issue.customerTrn.title", "Customer TRN missing on invoice {number}"),
+  T(
+    "evidence.issue.customerTrn.detail",
+    "Output VAT is still reported, but missing customer tax details weaken evidence quality."
+  ),
+  T("evidence.issue.draftInvoice.title", "Draft invoice in VAT period: {number}"),
+  T(
+    "evidence.issue.draftInvoice.detail",
+    "Draft invoices are not issued evidence and should be resolved before filing."
+  ),
+  T("evidence.issue.billPending.title", "Supplier bill pending: {ref}"),
+  T("evidence.issue.billPendingGeneric.title", "Supplier bill pending: bill"),
+  T(
+    "evidence.issue.billPending.detail",
+    "Pending supplier bills with VAT should be approved before claiming input VAT."
+  ),
+  T("evidence.issue.bankUnreconciled.title", "{count} bank transaction(s) unreconciled this month"),
+  T(
+    "evidence.issue.bankUnreconciled.detail",
+    "Close and tax evidence should be reviewed after bank reconciliation is current."
+  ),
+  T("evidence.action.reconcileBank", "Reconcile bank"),
+  T("evidence.issue.ctNotStarted.title", "Corporate tax workpaper is not started"),
+  T(
+    "evidence.issue.ctNotStarted.detail",
+    "Start a CT workpaper so taxable-profit adjustments can be tracked from evidence."
+  ),
+  T("evidence.action.openCorporateTax", "Open corporate tax"),
+  T("evidence.issue.ctNoAdjustments.title", "Corporate tax bridge has no adjustment review"),
+  T(
+    "evidence.issue.ctNoAdjustments.detail",
+    "Confirm disallowable expenses, exempt income, related-party items, and loss relief before filing."
+  ),
+  T("evidence.action.openClose", "Open close"),
+  T("evidence.issue.overdueTask.title", "Overdue: {title}"),
+  T("evidence.issue.overdueTask.detail", "Due {date}."),
+  T("evidence.issue.overdueTaskNoDate.detail", "Due date unknown."),
+  T("evidence.action.resolveNow", "Resolve now"),
+  T("evidence.proof.label.vatOutput", "VAT output row"),
+  T("evidence.proof.label.vatInput", "VAT input row"),
+  T("evidence.proof.label.salesInvoice", "Sales invoice"),
+  T("evidence.proof.label.purchaseReceipt", "Purchase receipt"),
+  T("evidence.proof.doc.linkedSource", "Linked source document"),
+  T("evidence.proof.doc.noSourceLinked", "No source file linked"),
+  T("evidence.proof.doc.linkedTaxInvoice", "Linked tax invoice"),
+  T("evidence.proof.doc.taxInvoiceNotLinked", "Tax invoice not linked"),
+  T("evidence.proof.doc.draftInvoice", "Draft invoice"),
+  T("evidence.proof.doc.generatedInvoice", "Generated invoice record"),
+  T("evidence.proof.doc.receiptAttached", "Receipt image attached"),
+  T("evidence.proof.doc.ocrOnly", "OCR/source text only"),
+  T("evidence.proof.doc.receiptMissing", "Receipt image missing"),
+  T("evidence.proof.preview.outputLinked", "Document {id} linked to this output VAT row."),
+  T(
+    "evidence.proof.preview.outputUnlinked",
+    "Review whether the generated invoice or source document is linked before filing."
+  ),
+  T("evidence.proof.preview.inputLinked", "Document {id} supports the input VAT claim."),
+  T(
+    "evidence.proof.preview.inputUnlinked",
+    "Input VAT recovery should have a readable supplier tax invoice or receipt image."
+  ),
+  T(
+    "evidence.proof.preview.draftInvoice",
+    "Draft invoices are not issued evidence until finalized."
+  ),
+  T(
+    "evidence.proof.preview.invoiceAvailable",
+    "Invoice record is available from the sales module."
+  ),
+  T(
+    "evidence.proof.preview.receiptAttached",
+    "Readable receipt image is attached to this source row."
+  ),
+  T(
+    "evidence.proof.preview.sourceTextOnly",
+    "Source text exists, but a readable tax invoice image is stronger refund support."
+  ),
+  T(
+    "evidence.proof.preview.receiptMissing",
+    "No readable source file is attached for this input VAT claim."
+  ),
+  T("evidence.timeline.vatWorkpaperDue", "VAT workpaper due"),
+  T("evidence.timeline.ctDeadline", "Corporate tax filing deadline"),
+  T(
+    "evidence.timeline.consequence.vat",
+    "VAT penalties, blocked refund support, or late payment exposure."
+  ),
+  T(
+    "evidence.timeline.consequence.task",
+    "Compliance task can block close, filing, or document readiness."
+  ),
+  T(
+    "evidence.timeline.consequence.vatWorkpaper",
+    "Incomplete evidence can delay filing and weaken refund support."
+  ),
+  T(
+    "evidence.timeline.consequence.ct",
+    "Unreviewed taxable-profit adjustments can create incorrect CT exposure."
+  ),
+  T("evidence.owner.refund.title", "Refund support needed for AED {amount}"),
+  T(
+    "evidence.owner.refund.detail",
+    "{count} evidence gap(s) should be closed before relying on the refund claim."
+  ),
+  T("evidence.action.buildRefundPack", "Build refund pack"),
+  T("evidence.owner.monthEnd.title", "{count} month-end check(s) open"),
+  T(
+    "evidence.owner.monthEnd.detail",
+    "Close the month before trusting tax, reports, or cash decisions."
+  ),
+  T("evidence.action.openCloseCockpit", "Open close cockpit"),
+  T("evidence.owner.ct.title", "Start the corporate tax workpaper"),
+  T(
+    "evidence.owner.ct.detail",
+    "Pull revenue and expense totals into the CT bridge and review UAE tax adjustments."
+  ),
+  T("evidence.action.openCtWorkpaper", "Open CT workpaper"),
+  T("evidence.owner.monitor.title", "Evidence pack is in good shape"),
+  T(
+    "evidence.owner.monitor.detail",
+    "Keep recording source rows and proof links as new documents arrive."
+  ),
+  T("evidence.action.monitorEvidence", "Monitor evidence"),
+  T("evidence.workflow.refundPack.title", "Refund Pack Builder"),
+  T(
+    "evidence.workflow.refundPack.description",
+    "Builds a refund-ready support pack from input VAT rows, attachments, and evidence gaps."
+  ),
+  T("evidence.workflow.refundPack.metric", "AED {amount} refund exposure"),
+  T("evidence.workflow.refundPack.noExposure", "No refund exposure"),
+  T("evidence.workflow.refundPack.bullet.inputRows", "{count} approved input VAT row(s)"),
+  T("evidence.workflow.refundPack.bullet.gaps", "{count} refund evidence gap(s)"),
+  T("evidence.workflow.refundPack.bullet.certs", "{count} tax certificate document(s) in vault"),
+  T("evidence.action.openVatEvidence", "Open VAT evidence"),
+  T("evidence.workflow.proof.title", "Every Number Has Proof"),
+  T(
+    "evidence.workflow.proof.description",
+    "Shows the exact invoices, receipts, and workpaper rows behind each headline number."
+  ),
+  T("evidence.workflow.proof.metric", "{ready}/{total} proof lines ready"),
+  T("evidence.workflow.proof.bullet.output", "VAT output rows: {count}"),
+  T("evidence.workflow.proof.bullet.input", "VAT input rows: {count}"),
+  T("evidence.workflow.proof.bullet.invoices", "Current-period invoices: {count}"),
+  T("evidence.action.reviewProof", "Review proof"),
+  T("evidence.workflow.ct.title", "Corporate Tax Workpaper"),
+  T(
+    "evidence.workflow.ct.description",
+    "Turns accounting profit into a taxable-profit bridge with add-backs, deductions, relief, and loss review."
+  ),
+  T("evidence.workflow.ct.metric", "AED {amount} CT payable"),
+  T("evidence.workflow.ct.notStarted", "Not started"),
+  T("evidence.workflow.ct.bullet.status", "Latest status: {status}"),
+  T("evidence.workflow.ct.bullet.noReturn", "No CT return found"),
+  T("evidence.workflow.ct.bullet.workpaperExists", "Workpaper data exists"),
+  T("evidence.workflow.ct.bullet.adjustmentNeeded", "Adjustment review needed"),
+  T(
+    "evidence.workflow.ct.bullet.engine",
+    "Uses UAE zero-rate band and existing CT computation engine"
+  ),
+  T("evidence.workflow.missing.title", "Missing Evidence Inbox"),
+  T(
+    "evidence.workflow.missing.description",
+    "Collects missing documents, TRNs, tax invoices, and source proof into one queue."
+  ),
+  T("evidence.workflow.missing.metric", "{count} open item(s)"),
+  T("evidence.workflow.missing.bullet.requirements", "{count} document requirement(s) open"),
+  T("evidence.workflow.missing.bullet.receipts", "{count} receipt(s) scanned in VAT period"),
+  T("evidence.workflow.missing.bullet.critical", "{count} critical blocker(s)"),
+  T("evidence.action.workInbox", "Work inbox"),
+  T("evidence.workflow.request.title", "Client Request Autopilot"),
+  T(
+    "evidence.workflow.request.description",
+    "Creates a focused draft message for missing evidence without sending anything automatically."
+  ),
+  T("evidence.workflow.request.metric", "{count} request item(s) drafted"),
+  T(
+    "evidence.workflow.request.bullet.draftOnly",
+    "Draft only - no email, WhatsApp, or upload side effect"
+  ),
+  T("evidence.workflow.request.bullet.queue", "Uses current missing evidence queue"),
+  T("evidence.workflow.request.bullet.otp", "Reminds users not to send OTPs or credentials"),
+  T("evidence.action.reviewDraft", "Review draft"),
+  T("evidence.workflow.monthEnd.title", "Month-End Close Cockpit"),
+  T(
+    "evidence.workflow.monthEnd.description",
+    "Combines bank, invoices, receipts, anomaly review, AI inbox, reports, and lock readiness."
+  ),
+  T("evidence.workflow.monthEnd.metric", "{done}/{total} checks complete"),
+  T(
+    "evidence.workflow.monthEnd.bullet.bank",
+    "{reconciled}/{total} bank transaction(s) reconciled"
+  ),
+  T("evidence.workflow.monthEnd.bullet.blockers", "{count} close blocker(s)"),
+  T("evidence.workflow.monthEnd.bullet.period", "Period {start} to {end}"),
+  T("evidence.action.openMonthEnd", "Open month-end"),
+  T("evidence.workflow.risk.title", "Error Detector Before Filing"),
+  T(
+    "evidence.workflow.risk.description",
+    "Flags missing TRNs, draft rows, unposted input VAT, pending bills, and close blockers."
+  ),
+  T("evidence.workflow.risk.metric", "{count} risk signal(s)"),
+  T("evidence.workflow.risk.bullet.critical", "{count} critical risk(s)"),
+  T("evidence.workflow.risk.bullet.draftRows", "{count} draft VAT workpaper row(s)"),
+  T("evidence.workflow.risk.bullet.bills", "{count} supplier bill(s) in VAT period"),
+  T("evidence.action.reviewRisks", "Review risks"),
+  T("evidence.workflow.excel.title", "Smart Import From Excel"),
+  T(
+    "evidence.workflow.excel.description",
+    "Accepts spreadsheet-style VAT rows and maps columns such as Date, Vendor, Sr. Number, and Amount."
+  ),
+  T("evidence.workflow.excel.ready", "VAT paste/import ready"),
+  T("evidence.workflow.excel.createFirst", "Create workpaper first"),
+  T("evidence.workflow.excel.bullet.tab", "Supports tab-delimited Excel paste"),
+  T("evidence.workflow.excel.bullet.dates", "Normalizes DD/MM/YYYY evidence dates"),
+  T("evidence.workflow.excel.bullet.category", "Defaults pasted rows into the active VAT category"),
+  T("evidence.action.pasteVatRows", "Paste VAT rows"),
+  T("evidence.workflow.timeline.title", "Filing Timeline With Consequences"),
+  T(
+    "evidence.workflow.timeline.description",
+    "Shows deadlines together with the operational consequence and readiness score."
+  ),
+  T("evidence.workflow.timeline.metric", "{count} deadline(s) tracked"),
+  T("evidence.workflow.timeline.bullet.overdue", "{count} overdue deadline(s)"),
+  T("evidence.workflow.timeline.bullet.openTasks", "{count} open compliance task(s)"),
+  T(
+    "evidence.workflow.timeline.bullet.tied",
+    "VAT and CT deadlines are tied back to evidence readiness"
+  ),
+  T("evidence.action.openCalendar", "Open calendar"),
+  T("evidence.workflow.owner.title", "Owner-Friendly What Should I Do?"),
+  T(
+    "evidence.workflow.owner.description",
+    "Translates accounting evidence into plain business actions for the owner."
+  ),
+  T("evidence.workflow.owner.metric", "{count} recommended action(s)"),
+  T("evidence.action.reviewActions", "Review actions"),
+  T("evidence.audit.resolved", "Resolved evidence issue: {title}"),
+  T("evidence.audit.waived", "Waived evidence issue: {title}"),
+  T("evidence.audit.requestReviewed", "Reviewed evidence request for {recipient}"),
+  T("evidence.audit.ctPackExported", "Exported corporate tax evidence pack for {company}"),
+  T("evidence.audit.refundPackExported", "Exported evidence refund pack for {company}"),
+  T("evidence.audit.refundCoverExported", "Exported evidence refund pack cover for {company}"),
+  T("evidence.audit.refundBundleExported", "Exported evidence refund pack bundle for {company}"),
+  T("evidence.ct.check.return_exists", "Corporate tax return prepared for the latest period"),
+  T("evidence.ct.check.computed", "Computation run on the books"),
+  T("evidence.ct.check.reviewed", "Reviewed by a second person"),
+  T(
+    "evidence.ct.check.adjustments_supported",
+    "Every adjustment has support (ledger account or notes)"
+  ),
+  T("evidence.ct.check.related_party_register", "Related-party register maintained"),
+  T("evidence.ct.detail.status", "Status: {status}"),
+  T("evidence.ct.detail.noReturn", "No corporate tax return yet"),
+  T("evidence.ct.detail.computedOn", "Computed {date}"),
+  T("evidence.ct.detail.notComputed", "Not computed"),
+  T("evidence.ct.detail.reviewerRecorded", "Reviewer recorded"),
+  T("evidence.ct.detail.noReviewer", "No reviewer recorded"),
+  T("evidence.ct.detail.noAdjustments", "No adjustments"),
+  T("evidence.ct.detail.adjustmentsSupported", "{supported} of {total} adjustments supported"),
+  T("evidence.ct.detail.relatedRecorded", "{count} related parties recorded"),
+  T("evidence.ct.detail.noRelatedActivity", "No related-party activity found"),
+  T("evidence.close.title.bank", "Bank Reconciliation Complete"),
+  T("evidence.close.title.invoices", "All Invoices Posted"),
+  T("evidence.close.title.receipts", "All Receipts Categorized"),
+  T("evidence.close.title.anomaly", "Anomaly Scan Clean"),
+  T("evidence.close.title.aiInbox", "AI Inbox Clear"),
+  T("evidence.close.title.depreciation", "Depreciation Entries Posted"),
+  T("evidence.close.title.vat", "VAT Return Prepared"),
+  T("evidence.close.title.accruals", "Accruals Recorded"),
+  T("evidence.close.title.prepayments", "Prepayments Amortised"),
+  T("evidence.close.title.fx", "FX Revaluation Run"),
+  T("evidence.close.desc.bank", "All bank transactions for the period are reconciled"),
+  T("evidence.close.desc.invoices", "No draft invoices remain for the period"),
+  T("evidence.close.desc.receipts", "Every receipt has an assigned expense account"),
+  T("evidence.close.desc.anomaly", "No critical anomalies detected in transactions"),
+  T("evidence.close.desc.aiEntries", "All AI-suggested entries reviewed and processed"),
+  T("evidence.close.desc.aiClassifications", "All AI-suggested classifications reviewed"),
+  T(
+    "evidence.close.desc.depreciation",
+    "Monthly depreciation has been recorded for all active fixed assets"
+  ),
+  T("evidence.close.desc.vat", "VAT 201 return has been prepared or filed for the period"),
+  T(
+    "evidence.close.desc.accruals",
+    "Expenses incurred but not yet billed are accrued (auto-reversing journals)"
+  ),
+  T(
+    "evidence.close.desc.prepayments",
+    "The period's share of prepaid expenses has been released to the P&L"
+  ),
+  T("evidence.close.desc.fx", "Foreign-currency balances revalued at the period-end rate"),
+  T("evidence.close.detail.noBank", "No bank transactions in this period"),
+  T("evidence.close.detail.bank", "{reconciled}/{total} reconciled ({remaining} remaining)"),
+  T("evidence.close.detail.noInvoices", "No invoices in this period"),
+  T("evidence.close.detail.invoices", "{posted}/{total} posted ({drafts} drafts remaining)"),
+  T("evidence.close.detail.noReceipts", "No receipts in this period"),
+  T("evidence.close.detail.receipts", "{categorized}/{total} categorized ({remaining} remaining)"),
+  T("evidence.close.detail.anomalyClean", "Scan clean ({count} non-critical items)"),
+  T("evidence.close.detail.anomalyCritical", "{count} critical anomalies require attention"),
+  T("evidence.close.detail.anomalyFailed", "Unable to run anomaly scan"),
+  T("evidence.close.detail.aiDone", "All AI suggestions processed"),
+  T("evidence.close.detail.aiItems", "{count} items pending review"),
+  T("evidence.close.detail.aiClassifications", "{count} classifications pending review"),
+  T("evidence.close.detail.noAssets", "No active fixed assets"),
+  T("evidence.close.detail.assets", "{posted}/{total} assets depreciated for this period"),
+  T("evidence.close.detail.noAssetsModule", "Fixed assets module not configured"),
+  T("evidence.close.detail.vatPrepared", "{count} VAT return(s) prepared"),
+  T("evidence.close.detail.noVat", "No VAT return prepared for this period"),
+  T("evidence.close.detail.noExpenseActivity", "No expense activity in this period"),
+  T("evidence.close.detail.accrualOne", "{count} accrual entry posted"),
+  T("evidence.close.detail.accrualMany", "{count} accrual entries posted"),
+  T(
+    "evidence.close.detail.noAccruals",
+    "No accrual entries found. Post accruals or sign this step off as not required."
+  ),
+  T("evidence.close.detail.noPrepaid", "No prepaid balance"),
+  T("evidence.close.detail.prepaidReleased", "AED {released} released; AED {remaining} remaining"),
+  T(
+    "evidence.close.detail.prepaidNoRelease",
+    "AED {remaining} prepaid with no release this period"
+  ),
+  T("evidence.close.detail.noFx", "No foreign-currency balances"),
+  T("evidence.close.detail.fxOne", "{count} revaluation entry posted"),
+  T("evidence.close.detail.fxMany", "{count} revaluation entries posted"),
+  T(
+    "evidence.close.detail.fxRun",
+    "{count} account(s) hold foreign-currency balances; run the revaluation"
+  ),
+];
+
+/** Stored audit-trail descriptions written by the evidence routes (parsed on read). */
+export const EVIDENCE_AUDIT_TEMPLATES: readonly CopyTemplate[] = EVIDENCE_TEMPLATES.filter((t) =>
+  t.key.startsWith("evidence.audit.")
+);
+
+/** Parse order: fewest parameters first, then the longest literal text, so `... for row` wins over `... for {ref}`. */
+const EVIDENCE_PARSE_ORDER: readonly CopyTemplate[] = [...EVIDENCE_TEMPLATES].sort((a, b) => {
+  const params = (t: CopyTemplate) => (t.en.match(/\{\w+\}/g) ?? []).length;
+  return (
+    params(a) - params(b) ||
+    b.en.replace(/\{\w+\}/g, "").length - a.en.replace(/\{\w+\}/g, "").length
+  );
+});
+
+/** Map an English Evidence Center sentence (payload or stored audit row) back to its key. */
+export function describeEvidenceText(text: string | null | undefined): CopyDescriptor | null {
+  return parseServerCopy(text, EVIDENCE_PARSE_ORDER);
+}
+
+/** Localise an Evidence Center sentence: params that are themselves known sentences are localised too. */
+export function localizeEvidenceText(
+  text: string | null | undefined,
+  catalog: Record<string, string | undefined>,
+  descriptor?: CopyDescriptor | null
+): string {
+  if (!text) return text ?? "";
+  const d = descriptor ?? describeEvidenceText(text);
+  if (!d) return text;
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(d.params)) {
+    if (describeEvidenceText(v)) params[k] = localizeEvidenceText(v, catalog);
+    else if (k === "status" || k === "type") {
+      // Enum-like data (document type, record status): `evidenceCenter.status.<slug>`.
+      params[k] = catalog[`evidenceCenter.status.${v.trim().replace(/\s+/g, "_")}`] ?? v;
+    } else params[k] = v;
+  }
+  return renderDescriptor(d.key, params, text, catalog);
+}
+
+const evidenceByKey = new Map(EVIDENCE_TEMPLATES.map((t) => [t.key, t]));
+
+/** English text for an Evidence Center key plus its descriptor (all params stringified). */
+export function evidenceCopy(
+  key: string,
+  params: Record<string, string | number> = {}
+): { text: string; copy: CopyDescriptor } {
+  const t = evidenceByKey.get(key);
+  if (!t) throw new Error(`Unknown evidence copy key: ${key}`);
+  const stringParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) stringParams[k] = String(v);
+  return { text: renderCopyTemplate(t.en, stringParams), copy: { key, params: stringParams } };
+}
+
 /** Every server copy template (for catalog coverage tests). */
 export const ALL_SERVER_COPY_TEMPLATES: readonly CopyTemplate[] = [
   ...NOTIFICATION_TITLE_TEMPLATES,
@@ -512,6 +957,7 @@ export const ALL_SERVER_COPY_TEMPLATES: readonly CopyTemplate[] = [
   ...CASH_FORECAST_TEMPLATES,
   ...CASH_FORECAST_ITEM_TEMPLATES,
   ...FIRM_TEMPLATES,
+  ...EVIDENCE_TEMPLATES,
 ];
 
 type CopyParams = Record<string, string | number | null | undefined>;

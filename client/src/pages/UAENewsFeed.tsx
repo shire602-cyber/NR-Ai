@@ -142,9 +142,18 @@ export default function UAENewsFeed() {
                 <p>{t["pages.uaeNewsNoNewsAvailable"]}</p>
                 {feedStatus?.status === "requires_external" && (
                   <p className="mt-2 text-xs" data-testid="news-feed-not-configured">
-                    {locale === "ar"
-                      ? "لم يتم ربط مصدر أخبار خارجي بعد. " + feedStatus.externalAction.ar
-                      : "No external news feed is connected yet. " + feedStatus.externalAction.en}
+                    {t["pages.uaeNewsFeedNotConnected"]}{" "}
+                    {(locale === "ar" ? feedStatus.externalAction.ar : feedStatus.externalAction.en)
+                      .split(/(NEWS_FEED_URLS|RSS\/Atom|https)/)
+                      .map((part, index) =>
+                        index % 2 === 1 ? (
+                          <bdi key={index} lang="en" dir="ltr" translate="no">
+                            {part}
+                          </bdi>
+                        ) : (
+                          part
+                        )
+                      )}
                   </p>
                 )}
               </CardContent>

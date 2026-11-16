@@ -14,6 +14,7 @@ import {
   cashForecastCopy,
   describeCashForecastItemText,
   describeCashForecastText,
+  describeEvidenceText,
   describeFirmText,
   localizeFirmText,
   describeNotificationCopy,
@@ -70,10 +71,13 @@ describe("server copy templates", () => {
         expect(key, t.key).toBe(t.key);
         expect(got, t.key).toEqual(p);
       } else {
-        const d =
-          describeCashForecastText(text) ??
-          describeCashForecastItemText(text) ??
-          describeFirmText(text);
+        // Evidence sentences are resolved in their own family first ("AED {amount} CT payable"
+        // would otherwise also read as the firm "AED {amount} payable" template).
+        const d = t.key.startsWith("evidence.")
+          ? describeEvidenceText(text)
+          : (describeCashForecastText(text) ??
+            describeCashForecastItemText(text) ??
+            describeFirmText(text));
         expect(d?.key, t.key).toBe(t.key);
         expect(d?.params, t.key).toEqual(p);
       }

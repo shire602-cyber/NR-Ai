@@ -29,6 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { activityActionLabel } from "@/lib/activity-log-labels";
 import { apiUrl } from "@/lib/api";
 import { isStepUpRequired, securityFetch, SecurityApiError } from "@/lib/securityApi";
 
@@ -500,9 +501,7 @@ export default function SecuritySettings() {
             <ul className="divide-y text-sm">
               {history.data.events.map((e) => (
                 <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2">
-                  <span className="tabular-nums" dir="ltr">
-                    {e.action}
-                  </span>
+                  <span className="tabular-nums">{activityActionLabel(t, e.action)}</span>
                   <span className="text-muted-foreground" dir="ltr">
                     {fmt(e.at, locale)} · {e.ipAddress ?? "—"}
                   </span>
@@ -713,9 +712,7 @@ function CompanySecurity({
                       <td className="py-1" dir="ltr">
                         {fmt(e.at, locale)}
                       </td>
-                      <td className="py-1 tabular-nums" dir="ltr">
-                        {e.action}
-                      </td>
+                      <td className="py-1 tabular-nums">{activityActionLabel(t, e.action)}</td>
                       <td className="py-1" dir="ltr">
                         {e.userEmail ?? "—"}
                       </td>

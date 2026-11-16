@@ -144,5 +144,18 @@
   "portal.inviteFilterStatus": "تصفية حسب الحالة",
   "portal.docReceivedByNra": "تم الاستلام بواسطة NRA",
   "portal.messageSubjectOptional": "الموضوع (اختياري)",
-  "portal.messageWritePlaceholder": "اكتب رسالتك..."
+  "portal.messageWritePlaceholder": "اكتب رسالتك...",
+  "portal.sso.title": "تسجيل الدخول الموحّد",
+  "portal.sso.configured": "مفعّل",
+  "portal.sso.notConfigured": "غير مفعّل",
+  "portal.sso.saml": "بروتوكول SAML",
+  "portal.sso.status.requires_external": "يتطلب إعدادًا خارجيًا",
+  "portal.sso.status.not_configured": "غير مفعّل",
+  "portal.sso.status.configured": "مفعّل",
+  "portal.invitations.role": "الدور",
+  "portal.invitations.sent": "تاريخ الإرسال",
+  "portal.invitations.roleValue.client": "عميل",
+  "portal.invitations.roleValue.staff": "موظف",
+  "portal.invitations.roleStandard": "قياسي (عرض شركتهم فقط)",
+  "portal.invitations.roleStaff": "موظف (صلاحية إدارية)"
 }

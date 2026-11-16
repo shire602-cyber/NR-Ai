@@ -960,5 +960,6 @@
   "pages.referralsCopy": "Copy",
   "pages.referralsTierBronze": "5 Referrals - Bronze",
   "pages.referralsTierSilver": "10 Referrals - Silver",
-  "pages.referralsTierGold": "25 Referrals - Gold"
+  "pages.referralsTierGold": "25 Referrals - Gold",
+  "pages.uaeNewsFeedNotConnected": "No external news feed is connected yet."
 }

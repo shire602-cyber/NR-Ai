@@ -136,5 +136,9 @@
   "firm.valueOpsReviewerQueue": "قائمة المراجعة",
   "firm.valueOpsServiceAr": "ذمم خدمات NRA المدينة",
   "firm.valueOpsScoreDefense": "الدفاع",
-  "firm.revenueOpportunitiesRefreshed": "تم تحديث فرص الإيرادات"
+  "firm.revenueOpportunitiesRefreshed": "تم تحديث فرص الإيرادات",
+  "firm.staff.pendingCount": "{count} قيد الانتظار",
+  "firm.staff.clientCount": "{count} عميل/عملاء",
+  "firm.staff.assignedLabel": "مُسنَد",
+  "firm.staff.noTrn": "بلا رقم تسجيل ضريبي"
 }
