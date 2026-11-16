@@ -33,7 +33,12 @@ export const LEDGER_WRITE_PATTERNS = [
   },
 ];
 
-const isAllowed = (rel) => rel.startsWith("server/ledger/") || rel === "server/storage.ts";
+// server/storage/ledger.ts holds the legacy storage journal adapter split out of
+// server/storage.ts (R20-09).
+const isAllowed = (rel) =>
+  rel.startsWith("server/ledger/") ||
+  rel === "server/storage.ts" ||
+  rel === "server/storage/ledger.ts";
 
 const code = runGuard({
   name: "check-ledger-writes",

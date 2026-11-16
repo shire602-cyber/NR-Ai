@@ -183,8 +183,9 @@ describe("report discoverability", () => {
   );
   const routesSource = read("server/routes.ts");
   const schedulerSource = read("server/services/scheduler.service.ts");
-  const storageSource = read("server/storage.ts");
-  const schemaSource = read("shared/schema.ts");
+  // R20-09: storage.ts and schema.ts are barrels over per-domain modules.
+  const storageSource = read("server/storage/report-delivery.ts");
+  const schemaSource = read("shared/schema/report-delivery.ts");
   const reportDeliveryMigrationSource = read(
     "migrations/0075_report_delivery_subscription_settings.sql"
   );

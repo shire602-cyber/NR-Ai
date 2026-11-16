@@ -140,7 +140,7 @@ describe("welcome tour and onboarding redirect", () => {
   });
 
   it("R18-03: user_onboarding gains tour_dismissed_at in the Drizzle schema", () => {
-    expect(read("shared/schema.ts")).toContain('tourDismissedAt: timestamp("tour_dismissed_at")');
+    expect(read("shared/schema/platform.ts")).toContain('tourDismissedAt: timestamp("tour_dismissed_at")');
   });
 
   it("R18-08: the onboarding redirect is deterministic per-user state, not a session flag", () => {

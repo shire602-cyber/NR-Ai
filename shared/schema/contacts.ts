@@ -1,0 +1,60 @@
+// Customer contacts.
+// Part of the shared/schema.ts barrel (R20-09); import from "@shared/schema".
+
+import { boolean, index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import type { z } from "zod";
+import { sql } from "drizzle-orm";
+import { companies } from "./companies";
+
+// ===========================
+// Customer Contacts (for invoicing)
+// ===========================
+export const customerContacts = pgTable(
+  "customer_contacts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    nameAr: text("name_ar"),
+    email: text("email"),
+    phone: text("phone"),
+    whatsappNumber: text("whatsapp_number"),
+    trnNumber: text("trn_number"),
+    address: text("address"),
+    city: text("city"),
+    country: text("country").default("UAE"),
+    emirate: text("emirate"), // W3-A (0095): default place of supply
+    contactPerson: text("contact_person"),
+    paymentTerms: integer("payment_terms").default(30),
+    notes: text("notes"),
+    isActive: boolean("is_active").default(true).notNull(),
+    // Legacy plaintext portal token: always NULL since W4-D (0103) — portal links are stored
+    // hashed in portal_access_tokens.
+    portalAccessToken: text("portal_access_token").unique(),
+    portalAccessExpiresAt: timestamp("portal_access_expires_at"),
+    // W4-D (0103): dunning opt-out and preferred language for customer emails (en | ar).
+    doNotChase: boolean("do_not_chase").notNull().default(false),
+    preferredLanguage: text("preferred_language"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => ({
+    companyIdIdx: index("idx_customer_contacts_company_id").on(table.companyId),
+  })
+);
+
+export const insertCustomerContactSchema = createInsertSchema(customerContacts).omit({
+  id: true,
+  portalAccessToken: true,
+  portalAccessExpiresAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCustomerContact = z.infer<typeof insertCustomerContactSchema>;
+export type CustomerContact = typeof customerContacts.$inferSelect;
