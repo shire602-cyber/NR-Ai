@@ -203,5 +203,6 @@
   "forms.budget.cat.Technology": "Technology",
   "forms.budget.cat.Miscellaneous": "Miscellaneous",
   "forms.budget.cat.Other": "Other",
-  "forms.costCenter.update": "Update cost centre"
+  "forms.costCenter.update": "Update cost centre",
+  "forms.settings.complianceNotePrefix": "Tax registration type, filing frequency and other compliance details are on the"
 }

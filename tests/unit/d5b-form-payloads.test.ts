@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  COMPANY,
   COMPANY_ID,
   apiCalls,
   byTestId,
@@ -80,6 +81,41 @@ const COST_CENTER_BODY = {
   description: "Mall kiosk",
   parentId: null,
   isActive: true,
+};
+const SETTINGS_BODY = {
+  name: "Synthetic Trading Group",
+  legalName: "Synthetic Trading L.L.C.",
+  trnVatNumber: "100000000000003",
+  baseCurrency: "AED",
+  fiscalYearStartMonth: 1,
+  defaultVatRate: 0.05,
+  addressStreet: "Office 1204, Bay Square",
+  addressCity: "Abu Dhabi",
+  emirate: "dubai",
+  addressCountry: "AE",
+  contactPhone: "+971 4 555 0100",
+  contactEmail: "finance@synthetic.example",
+  industry: "Trading",
+  logoUrl: "",
+  dateFormat: "DD/MM/YYYY",
+  locale: "en",
+};
+const PROFILE_BODY = {
+  name: "Synthetic Trading Group",
+  baseCurrency: "AED",
+  locale: "en",
+  legalStructure: "LLC",
+  industry: "Trading",
+  registrationNumber: "CN-1234567",
+  businessAddress: "Office 1204, Bay Square, Dubai",
+  contactPhone: "+971 4 555 0100",
+  contactEmail: "finance@synthetic.example",
+  websiteUrl: "https://group.synthetic.example",
+  trnVatNumber: "100000000000003",
+  taxRegistrationType: "Standard",
+  vatFilingFrequency: "Quarterly",
+  taxRegistrationDate: "2024-01-01T00:00:00.000Z",
+  corporateTaxId: "CT-998877",
 };
 const PRODUCT_BODY = {
   name: "A4 copier paper",
@@ -577,6 +613,54 @@ describe("[D5b] cost centre form payload unchanged", () => {
     await type(named("description"), "Mall kiosk");
     await submit(dialog().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/cost-centers`)).toStrictEqual(COST_CENTER_BODY);
+  });
+});
+
+const COMPANY_ROW = {
+  ...COMPANY,
+  legalName: "Synthetic Trading L.L.C.",
+  baseCurrency: "AED",
+  fiscalYearStartMonth: 1,
+  defaultVatRate: 0.05,
+  addressStreet: "Office 1204, Bay Square",
+  addressCity: "Dubai",
+  addressCountry: "AE",
+  contactPhone: "+971 4 555 0100",
+  contactEmail: "finance@synthetic.example",
+  industry: "Trading",
+  logoUrl: "",
+  dateFormat: "DD/MM/YYYY",
+  legalStructure: "LLC",
+  registrationNumber: "CN-1234567",
+  businessAddress: "Office 1204, Bay Square, Dubai",
+  websiteUrl: "https://synthetic.example",
+  taxRegistrationType: "Standard",
+  vatFilingFrequency: "Quarterly",
+  taxRegistrationDate: "2024-01-01T00:00:00.000Z",
+  corporateTaxId: "CT-998877",
+};
+
+describe("[D5b] company settings forms payload unchanged", () => {
+  it("company preferences PATCH body", async () => {
+    setFixtures({ [`/api/companies/${COMPANY_ID}`]: COMPANY_ROW });
+    const { default: CompanySettings } = await import("../../client/src/pages/CompanySettings");
+    await renderPage(CompanySettings);
+    const form = document.querySelector("form")!;
+    await type(form.querySelector('[name="name"]'), "Synthetic Trading Group");
+    await type(form.querySelector('[name="addressCity"]'), "Abu Dhabi");
+    await submit(byTestId("button-save-company-settings"));
+    expect(body("PATCH", `${C}/preferences`)).toStrictEqual(SETTINGS_BODY);
+  });
+
+  it("company profile PATCH body", async () => {
+    setFixtures({ [`/api/companies/${COMPANY_ID}`]: COMPANY_ROW });
+    const { default: CompanyProfile } = await import("../../client/src/pages/CompanyProfile");
+    await renderPage(CompanyProfile);
+    const form = document.querySelector("form")!;
+    await type(form.querySelector('[name="name"]'), "Synthetic Trading Group");
+    await type(form.querySelector('[name="websiteUrl"]'), "https://group.synthetic.example");
+    await submit(byTestId("button-save-company-profile"));
+    expect(body("PATCH", `${C}`)).toStrictEqual(PROFILE_BODY);
   });
 });
 
