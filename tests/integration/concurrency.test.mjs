@@ -193,11 +193,21 @@ async function main() {
 
   // 6. Privilege: a customer cannot promote their own company type
   {
+    // R17-05: the field is server-owned, so the request is refused (403), not
+    // silently ignored, and the stored company type does not change.
+    const before = await api("GET", `/api/companies/${cid}`, { token });
     const r = await api("PATCH", `/api/companies/${cid}`, { token, body: { companyType: "nra" } });
+    const after = await api("GET", `/api/companies/${cid}`, { token });
+    ok("companyType self-promotion is refused with 403", r.s === 403, {
+      status: r.s,
+      body: r.j,
+    });
     ok(
-      "companyType self-promotion is ignored, not a 500",
-      r.s === 200 && r.j?.companyType !== "nra",
-      { status: r.s, companyType: r.j?.companyType }
+      "companyType is unchanged after the refused self-promotion",
+      after.s === 200 &&
+        after.j?.companyType !== "nra" &&
+        after.j?.companyType === before.j?.companyType,
+      { before: before.j?.companyType, after: after.j?.companyType }
     );
   }
 

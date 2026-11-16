@@ -242,7 +242,9 @@ export default function Admin() {
 
   const updatePlanMutation = useMutation({
     mutationFn: async (plan: Partial<SubscriptionPlan> & { id: string }) => {
-      return apiRequest("PUT", `/api/admin/plans/${plan.id}`, plan);
+      // The server contract is strict (R17-20): send plan fields only, never id / createdAt.
+      const { id, createdAt: _createdAt, ...fields } = plan;
+      return apiRequest("PUT", `/api/admin/plans/${id}`, fields);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });

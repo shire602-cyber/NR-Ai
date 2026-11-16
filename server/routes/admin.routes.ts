@@ -13,6 +13,18 @@ import { eq, and, desc, gte, lte, type SQL } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
 import { errorMessage } from "../errors";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import {
+  adminUpdateCompanyBody,
+  createSubscriptionPlanBody,
+  updateClientNoteBody,
+  updateSubscriptionPlanBody,
+  type AdminUpdateCompanyBody,
+  type CreateSubscriptionPlanBody,
+  type UpdateClientNoteBody,
+  type UpdateSubscriptionPlanBody,
+} from "../../shared/validators/admin";
 
 const logger = createLogger("admin-routes");
 
@@ -50,6 +62,15 @@ async function seedChartOfAccounts(
     }
     throw error;
   }
+}
+
+/** Defined, storable company fields from a parsed admin body (drops the legacy no-op flag). */
+function companyUpdates(body: AdminUpdateCompanyBody): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== undefined && key !== "vatRegistered") out[key] = value;
+  }
+  return out;
 }
 
 // =============================================
@@ -116,8 +137,11 @@ export function registerAdminRoutes(app: Express): void {
   // Create subscription plan
   router.post(
     "/admin/plans",
+    strictBody(createSubscriptionPlanBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const plan = await storage.createSubscriptionPlan(req.body);
+      const plan = await storage.createSubscriptionPlan(
+        parsedBody<CreateSubscriptionPlanBody>(req)
+      );
       res.status(201).json(plan);
     })
   );
@@ -125,9 +149,14 @@ export function registerAdminRoutes(app: Express): void {
   // Update subscription plan
   router.put(
     "/admin/plans/:id",
+    strictBody(updateSubscriptionPlanBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const plan = await storage.updateSubscriptionPlan(id, req.body);
+      const plan = await storage.updateSubscriptionPlan(
+        id,
+        parsedBody<UpdateSubscriptionPlanBody>(req)
+      );
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
       res.json(plan);
     })
   );
@@ -158,14 +187,16 @@ export function registerAdminRoutes(app: Express): void {
   // Update company (admin)
   router.patch(
     "/admin/companies/:companyId",
+    strictBody(adminUpdateCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const updates = req.body;
+      const updates = companyUpdates(parsedBody<AdminUpdateCompanyBody>(req));
 
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Company not found" });
       }
+      if (Object.keys(updates).length === 0) return res.json(company);
 
       const updatedCompany = await storage.updateCompany(companyId, updates);
       res.json(updatedCompany);
@@ -348,11 +379,16 @@ export function registerAdminRoutes(app: Express): void {
   // Update client (company) - Admin only
   router.patch(
     "/admin/clients/:clientId",
+    strictBody(adminUpdateCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const userId = req.user!.id;
+      const updates = companyUpdates(parsedBody<AdminUpdateCompanyBody>(req));
 
-      const company = await storage.updateCompany(clientId, req.body);
+      const existing = await storage.getCompany(clientId);
+      if (!existing) return res.status(404).json({ message: "Client not found" });
+      if (Object.keys(updates).length === 0) return res.json(existing);
+      const company = await storage.updateCompany(clientId, updates);
 
       // Log activity
       await storage.createActivityLog({
@@ -652,9 +688,11 @@ export function registerAdminRoutes(app: Express): void {
   // Update note - Admin only
   router.patch(
     "/admin/notes/:noteId",
+    strictBody(updateClientNoteBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { noteId } = req.params;
-      const note = await storage.updateClientNote(noteId, req.body);
+      const note = await storage.updateClientNote(noteId, parsedBody<UpdateClientNoteBody>(req));
+      if (!note) return res.status(404).json({ message: "Note not found" });
       res.json(note);
     })
   );
