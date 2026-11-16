@@ -1,0 +1,58 @@
+{
+  "description": "DOC-DERIVED, NOT RECORDED. Webhook payloads from docs.acubeapi.com (gov-ae/webhooks, webhooks/types, documents/send, documents/receive). The signed example was produced with a throwaway Ed25519 TEST keypair (private key discarded) following documentation/common/http-signature; A-Cube's real key comes from common.api.acubeapi.com/signature-public-key. Re-record a real signed delivery from the sandbox before go-live.",
+  "payloads": {
+    "document.received": {
+      "documentId": "01a0c453-5398-728c-8b10-84dd471cd797",
+      "documentNumber": "AE-INV-005",
+      "documentType": "invoice",
+      "status": "received"
+    },
+    "document.delivered": {
+      "documentId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+      "documentNumber": "INV-2026-0001",
+      "documentType": "invoice",
+      "status": "delivered"
+    },
+    "document.delivery_error": {
+      "documentId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+      "documentNumber": "INV-2026-0001",
+      "documentType": "invoice",
+      "status": "delivery_error"
+    },
+    "legal_entity.synchronized.LINK": {
+      "eventId": "019e91b7-f799-7df7-a469-4824b2656b0e",
+      "eventType": "legal_entity.synchronized",
+      "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+      "tin": "1001234567",
+      "name": "Pearl Trading L.L.C.",
+      "status": "Active",
+      "action": "LINK",
+      "timestamp": "2026-11-16T08:04:55+00:00"
+    },
+    "legal_entity.synchronized.DELINK": {
+      "eventId": "019e91b7-f799-7df7-a469-4824b2656c11",
+      "eventType": "legal_entity.synchronized",
+      "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+      "tin": "1001234567",
+      "name": "Pearl Trading L.L.C.",
+      "status": "Inactive",
+      "action": "DELINK",
+      "timestamp": "2026-11-20T10:00:00+00:00"
+    }
+  },
+  "signed": {
+    "name": "document.received",
+    "method": "POST",
+    "targetUri": "https://app.muhasib.example/api/webhooks/einvoice/acube/sandbox",
+    "created": 1794830700,
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAv+af/1I5YbmdYjdPd/9H3L0EFVN9UZV+z1LZ7X0oLgY=\n-----END PUBLIC KEY-----\n",
+    "headers": {
+      "content-type": "application/json",
+      "date": "Mon, 16 Nov 2026 12:05:00 GMT",
+      "content-digest": "sha-256=:Ok3eGulc3we6bfdYvtXihRbb9j8wCguHN1dpTEh3VOs=:",
+      "signature-input": "pyhms=(\"@method\" \"@authority\" \"@target-uri\" \"date\" \"content-digest\");created=1794830700;keyid=\"acube\";alg=\"ed25519\"",
+      "signature": "pyhms=:7Mt5Qa43EYEwN+T6ZrmIZTZ14uc39dSYx3jga5C/X7xtnla4wYtuEmtDVz7AnYP2eRJj8qilNeCRGDBLK0hHDQ==:"
+    },
+    "body": "{\"documentId\":\"01a0c453-5398-728c-8b10-84dd471cd797\",\"documentNumber\":\"AE-INV-005\",\"documentType\":\"invoice\",\"status\":\"received\"}"
+  }
+}

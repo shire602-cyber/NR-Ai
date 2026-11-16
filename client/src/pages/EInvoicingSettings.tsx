@@ -29,6 +29,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
+import { AcubeConnectCard } from "@/components/einvoice/AcubeConnectCard";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
 // validation, archive and inbound documents (W4-C, R07-04/R07-13/R03-18/R04-23).
@@ -443,6 +444,9 @@ export default function EInvoicingSettings() {
             </CardContent>
           </Card>
 
+          {/* E1: guided A-Cube connection (five corners, EmaraTax steps, timeline, scope). */}
+          {companyId && <AcubeConnectCard companyId={companyId} />}
+
           <Card>
             <CardHeader>
               <CardTitle>{s.scopeTitle}</CardTitle>
@@ -451,7 +455,7 @@ export default function EInvoicingSettings() {
               <div className="space-y-2">
                 <Label>{s.scope}</Label>
                 <Select value={form.einvoiceScope} onValueChange={set("einvoiceScope")}>
-                  <SelectTrigger data-testid="einvoice-scope">
+                  <SelectTrigger data-testid="einvoice-scope" aria-label={s.scope}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -469,7 +473,7 @@ export default function EInvoicingSettings() {
                   value={form.einvoiceTurnoverBand}
                   onValueChange={set("einvoiceTurnoverBand")}
                 >
-                  <SelectTrigger data-testid="einvoice-band">
+                  <SelectTrigger data-testid="einvoice-band" aria-label={s.band}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -563,7 +567,7 @@ export default function EInvoicingSettings() {
                   value={form.einvoicePaymentMeansCode}
                   onValueChange={set("einvoicePaymentMeansCode")}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label={s.paymentMeans}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

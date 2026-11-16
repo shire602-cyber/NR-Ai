@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -43,11 +44,29 @@ export const einvoiceDocuments = pgTable(
     lastError: text("last_error"),
     rejectionReasons: jsonb("rejection_reasons"),
     clearedAt: timestamp("cleared_at"),
+    // E1 (migration 0116): two-track status. Delivery to the buyer over Peppol and FTA tax
+    // reporting move independently (server/services/einvoice/tracks.ts).
+    deliveryStatus: text("delivery_status"),
+    deliveryStatusAt: timestamp("delivery_status_at"),
+    reportingStatus: text("reporting_status"),
+    reportingStatusAt: timestamp("reporting_status_at"),
+    reportBy: pgDate("report_by"),
+    providerStatus: text("provider_status"),
+    lastErrorCode: text("last_error_code"),
+    submittedAt: timestamp("submitted_at"),
+    deliveredAt: timestamp("delivered_at"),
+    reportedAt: timestamp("reported_at"),
+    /** Set while one request is handing the document to the ASP (double-submit guard). */
+    submitClaimedAt: timestamp("submit_claimed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => ({
     invoiceUnique: unique("einvoice_documents_invoice_unique").on(table.invoiceId),
+    providerMessageIdx: index("idx_einvoice_documents_provider_message").on(
+      table.provider,
+      table.providerMessageId
+    ),
     companyStatusIdx: index("idx_einvoice_documents_company_status").on(
       table.companyId,
       table.status
@@ -56,6 +75,117 @@ export const einvoiceDocuments = pgTable(
   })
 );
 export type EInvoiceDocument = typeof einvoiceDocuments.$inferSelect;
+
+/** E1 (migration 0116): per-invoice e-invoice history (status drawer). */
+export const einvoiceDocumentEvents = pgTable(
+  "einvoice_document_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id").notNull(),
+    track: text("track").notNull(), // validation | delivery | reporting
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    provider: text("provider"),
+    providerStatus: text("provider_status"),
+    code: text("code"),
+    message: text("message"),
+    source: text("source").notNull().default("system"), // user | webhook | poll | job | system
+    providerEventId: text("provider_event_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    invoiceIdx: index("idx_einvoice_document_events_invoice").on(
+      table.companyId,
+      table.invoiceId,
+      table.createdAt
+    ),
+  })
+);
+export type EInvoiceDocumentEvent = typeof einvoiceDocumentEvents.$inferSelect;
+
+/**
+ * E1 (migration 0116): durable inbox for ASP webhooks and poll results. Stored first (unique per
+ * provider event id), processed by the "einvoice.providerEvents" job with backoff.
+ */
+export const einvoiceProviderEvents = pgTable(
+  "einvoice_provider_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    provider: text("provider").notNull(),
+    environment: text("environment").notNull(),
+    eventId: text("event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    companyId: uuid("company_id"),
+    payload: jsonb("payload").notNull(),
+    status: text("status").notNull().default("pending"), // pending | processing | processed | ignored | dead
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+    lockedUntil: timestamp("locked_until"),
+    lastError: text("last_error"),
+    receivedAt: timestamp("received_at").defaultNow().notNull(),
+    processedAt: timestamp("processed_at"),
+  },
+  (table) => ({
+    eventUnique: uniqueIndex("uq_einvoice_provider_events_event").on(
+      table.provider,
+      table.environment,
+      table.eventId
+    ),
+    dueIdx: index("idx_einvoice_provider_events_due").on(table.status, table.nextAttemptAt),
+  })
+);
+export type EInvoiceProviderEvent = typeof einvoiceProviderEvents.$inferSelect;
+
+/** E1 (migration 0116): a company's legal entity at the ASP (A-Cube), linked through EmaraTax. */
+export const einvoiceLegalEntities = pgTable(
+  "einvoice_legal_entities",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    environment: text("environment").notNull(),
+    legalEntityId: text("legal_entity_id"),
+    tin: text("tin").notNull(),
+    status: text("status").notNull().default("reserved"), // reserved | pending | active | inactive
+    nameEn: text("name_en"),
+    nameAr: text("name_ar"),
+    vatTrn: text("vat_trn"),
+    capabilities: jsonb("capabilities"),
+    peppolAddress: text("peppol_address"),
+    approver: text("approver"), // me | someone_else
+    approverEmail: text("approver_email"),
+    lastAction: text("last_action"), // LINK | REVERIFY | DELINK | SYNC
+    lastError: text("last_error"),
+    reservationExpiresAt: timestamp("reservation_expires_at"),
+    smpSyncAt: timestamp("smp_sync_at"),
+    registrySyncAt: timestamp("registry_sync_at"),
+    lastSyncAt: timestamp("last_sync_at"),
+    activatedAt: timestamp("activated_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyUnique: uniqueIndex("uq_einvoice_legal_entities_company").on(
+      table.companyId,
+      table.provider,
+      table.environment
+    ),
+    entityIdx: index("idx_einvoice_legal_entities_entity").on(table.provider, table.legalEntityId),
+    tinIdx: index("idx_einvoice_legal_entities_tin").on(table.provider, table.tin),
+  })
+);
+export type EInvoiceLegalEntity = typeof einvoiceLegalEntities.$inferSelect;
 
 /**
  * Five-year archive of submitted / cleared / received XML. Rows are immutable:

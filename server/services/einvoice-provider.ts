@@ -17,6 +17,8 @@ import {
   type EInvoiceStatus,
 } from "./einvoice-status";
 import { HttpEInvoiceProvider } from "./einvoice-provider-http";
+import type { DeliveryStatus, ReportingStatus } from "./einvoice/tracks";
+import { AcubeEInvoiceProvider, acubeConfigured } from "./einvoice/providers/acube";
 
 export interface EInvoiceSubmission {
   invoiceId: string;
@@ -34,6 +36,27 @@ export interface EInvoiceProviderResult {
   detail?: string | null;
   reasons?: EInvoiceRejectionReason[];
   raw?: unknown;
+  /** E1 two-track status, when the provider reports it (else derived from `status`). */
+  delivery?: DeliveryStatus;
+  reporting?: ReportingStatus;
+  /** The provider's own status word, kept for the history drawer. */
+  providerStatus?: string | null;
+  /** Stable error code (tracks.ts EINVOICE_ERROR_CODES) for the UI to localise. */
+  errorCode?: string | null;
+}
+
+/** Options for a status/source call: credit notes live under a separate resource at some ASPs. */
+export interface EInvoiceDocumentRef {
+  documentType?: string | null;
+}
+
+/** A document listed in the ASP's incoming collection (fetch its XML with fetchSource). */
+export interface InboundListing {
+  providerMessageId: string;
+  documentType: string | null;
+  documentNumber?: string | null;
+  legalEntityId?: string | null;
+  ownerFiscalId?: string | null;
 }
 
 /** A supplier e-invoice the ASP received for us (Peppol corner 3). */
@@ -59,11 +82,22 @@ export interface EInvoiceProvider {
   /** Send a generated PINT-AE document to the ASP for validation/transmission. */
   submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult>;
   /** Poll the ASP for the current status of a submitted document. */
-  getStatus(providerMessageId: string): Promise<EInvoiceProviderResult>;
+  getStatus(providerMessageId: string, ref?: EInvoiceDocumentRef): Promise<EInvoiceProviderResult>;
   /** Pull supplier documents the ASP received since `since`. */
   receive(since?: Date | null): Promise<InboundEInvoice[]>;
   /** Withdraw a document before clearance. */
   cancel(providerMessageId: string, reason: string): Promise<EInvoiceProviderResult>;
+  /** E1: FTA reporting track for a delivered document (A-Cube: the Tax Data Document). */
+  getReportingStatus?(
+    providerMessageId: string,
+    ref?: EInvoiceDocumentRef
+  ): Promise<{ reporting: ReportingStatus; detail?: string | null }>;
+  /** E1: find a document we may already have handed over (ambiguous transport failure). */
+  lookupSubmission?(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult | null>;
+  /** E1: list incoming documents (two-step receive: list, then fetchSource). */
+  listInbound?(): Promise<InboundListing[]>;
+  /** E1: the original XML of a document held by the ASP. */
+  fetchSource?(providerMessageId: string, ref?: EInvoiceDocumentRef): Promise<string>;
   /** Map an inbound ASP status webhook payload to a normalised status update. */
   parseWebhook(
     payload: unknown
@@ -160,10 +194,17 @@ export class MockEInvoiceProvider implements EInvoiceProvider {
 }
 
 /** True when an ASP base URL + key are configured (new or legacy variable names). */
-export function aspConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+export function httpAspConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
   const base = env.EINVOICE_ASP_BASE_URL || env.EINVOICE_API_BASE_URL;
   const key = env.EINVOICE_ASP_API_KEY || env.EINVOICE_API_KEY;
   return !!base && !!key;
+}
+
+/** True when a real ASP is configured: the generic HTTP adapter or A-Cube (E1). */
+export function aspConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const name = (env.EINVOICE_PROVIDER ?? "").toLowerCase();
+  if (name === "acube") return acubeConfigured(env);
+  return httpAspConfigured(env);
 }
 
 /**
@@ -175,7 +216,7 @@ export function getEInvoiceProvider(
   env: NodeJS.ProcessEnv = process.env,
   deps: { fetch?: typeof fetch } = {}
 ): EInvoiceProvider {
-  const name = (env.EINVOICE_PROVIDER || (aspConfigured(env) ? "http" : "mock")).toLowerCase();
+  const name = (env.EINVOICE_PROVIDER || (httpAspConfigured(env) ? "http" : "mock")).toLowerCase();
 
   if (name === "mock" && env.NODE_ENV === "production") {
     throw new EInvoiceProviderError(
@@ -189,8 +230,17 @@ export function getEInvoiceProvider(
   switch (name) {
     case "mock":
       return new MockEInvoiceProvider();
+    case "acube":
+      // E1: A-Cube (MoF accreditation no. 188961). Credentials come from env/secrets only.
+      if (!acubeConfigured(env)) {
+        throw new EInvoiceProviderError(
+          "EINVOICE_PROVIDER_NOT_CONFIGURED",
+          "The A-Cube e-invoicing provider requires ACUBE_EMAIL and ACUBE_PASSWORD."
+        );
+      }
+      return new AcubeEInvoiceProvider(env, deps);
     case "http":
-      if (!aspConfigured(env)) {
+      if (!httpAspConfigured(env)) {
         throw new EInvoiceProviderError(
           "EINVOICE_PROVIDER_NOT_CONFIGURED",
           "E-invoicing HTTP provider requires EINVOICE_ASP_BASE_URL and EINVOICE_ASP_API_KEY, " +
@@ -201,7 +251,7 @@ export function getEInvoiceProvider(
     default:
       throw new EInvoiceProviderError(
         "EINVOICE_PROVIDER_NOT_CONFIGURED",
-        `Unknown EINVOICE_PROVIDER "${name}". Use "http" with an ASP mapping file.`
+        `Unknown EINVOICE_PROVIDER "${name}". Use "acube", or "http" with an ASP mapping file.`
       );
   }
 }

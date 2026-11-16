@@ -49,8 +49,14 @@ import {
   cancelAndPersist,
   refreshAndPersist,
   runEInvoiceRetries,
+  invoiceReportingRequired,
   submitAndPersist,
 } from "../services/einvoice/workflow";
+import { einvoiceStatusView } from "../services/einvoice/status-view";
+import { applyTracks, recordValidationEvent } from "../services/einvoice/history";
+import { reportByDate } from "../services/einvoice/tracks";
+import { AcubeEInvoiceProvider } from "../services/einvoice/providers/acube";
+import { runAcubePoll, runProviderEvents } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
   PAYMENT_MEANS,
@@ -304,7 +310,13 @@ export function registerEInvoiceRoutes(app: Express) {
         company,
         ctx.customer,
         // S1: product GTIN / reverse-charge goods type per line, margin-scheme flag.
-        { ...(ctx.options ?? {}), originalInvoice: ctx.originalInvoice, lineExtras: ctx.lineExtras }
+        {
+          ...(ctx.options ?? {}),
+          // E1: regenerating keeps the e-invoice UUID (the ASP's idempotency key).
+          uuid: invoice.einvoiceUuid ?? undefined,
+          originalInvoice: ctx.originalInvoice,
+          lineExtras: ctx.lineExtras,
+        }
       );
       const validation = summariseValidation(await validateEInvoiceXml(xml));
       if (!validation.valid) {
@@ -333,6 +345,20 @@ export function registerEInvoiceRoutes(app: Express) {
         rejectionReasons: null,
         nextRetryAt: null,
       });
+      // E1: generated and validated, not sent; reporting is pending unless out of scope.
+      const required = invoiceReportingRequired(invoice, company);
+      await recordValidationEvent(company.id, invoice.id, true, { source: "user" });
+      await applyTracks(
+        company.id,
+        invoice.id,
+        {
+          delivery: "validated",
+          reporting: required ? "pending" : "not_required",
+          reportBy: required ? reportByDate(invoice.date) : null,
+          errorCode: null,
+        },
+        { source: "user" }
+      );
       log.info({ id: invoice.id, uuid }, "Generated e-invoice");
       res.json({ uuid, hash, status: "generated", documentType, validation });
     })
@@ -362,12 +388,61 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
+      // E1: two tracks, checklist, rejection state and history (status-view.ts).
+      res.json(await einvoiceStatusView(invoice, company));
+    })
+  );
+
+  // E1 "Fix and resubmit": regenerate the XML from the corrected invoice (same e-invoice
+  // UUID) and hand it to the provider again. Only after a rejection or a delivery failure.
+  app.post(
+    "/api/invoices/:id/einvoice/resubmit",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { invoice, company } = await loadInvoiceAndCompany(req);
       const doc = await getEInvoiceDocument(company.id, invoice.id);
-      res.json({
-        status: invoice.einvoiceStatus ?? "not_generated",
-        detail: invoice.einvoiceStatusDetail ?? null,
-        document: doc ?? null,
+      const legacy = invoice.einvoiceStatus ?? "not_generated";
+      const delivery = doc?.deliveryStatus ?? null;
+      if (
+        !["rejected", "failed"].includes(legacy) &&
+        !["rejected", "delivery_failed"].includes(delivery ?? "")
+      ) {
+        throw new DomainError(
+          "EINVOICE_NOT_RESUBMITTABLE",
+          409,
+          { status: legacy, delivery },
+          "Only a rejected or failed e-invoice can be resubmitted."
+        );
+      }
+      const provider = activeProvider();
+      const reset = legacy === "failed" ? { ...invoice, einvoiceStatus: "rejected" } : invoice;
+      const result = await submitAndPersist({
+        invoice: reset as Invoice,
+        company,
+        provider,
+        regenerate: true,
       });
+      if (!result.ok) {
+        return res.status(result.status).json({
+          message: result.message,
+          code: result.code,
+          issues: "issues" in result ? result.issues : undefined,
+          validation: "validation" in result ? result.validation : undefined,
+        });
+      }
+      await recordAudit({
+        userId: userOf(req),
+        companyId: invoice.companyId,
+        action: "invoice.einvoice_resubmit",
+        entityType: "invoice",
+        entityId: invoice.id,
+        after: { provider: provider.name, status: result.update.einvoiceStatus },
+        req,
+      });
+      res.json(
+        await einvoiceStatusView((await storage.getInvoice(invoice.id, company.id))!, company)
+      );
     })
   );
 
@@ -573,6 +648,13 @@ export function registerEInvoiceRoutes(app: Express) {
       const provider = activeProvider();
       if (!provider.capabilities.receive) {
         throw new DomainError("EINVOICE_CAPABILITY_UNSUPPORTED", 501);
+      }
+      if (provider instanceof AcubeEInvoiceProvider) {
+        // E1: A-Cube's inbox spans every linked company, so incoming documents go through the
+        // durable event inbox, which routes each one to its own company by legal entity.
+        const poll = await runAcubePoll({ provider });
+        const run = await runProviderEvents({ provider, limit: 50 });
+        return res.json({ received: poll.enqueued, results: [], processed: run.processed });
       }
       const items = await provider.receive(null);
       const results = [];

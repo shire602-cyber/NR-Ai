@@ -76,7 +76,12 @@ const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
 // signature, so it gets a raw-body parser and is skipped by the JSON parser.
 app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
 // W4-D: payment-gateway and email-delivery webhooks are verified over the raw bytes too.
-const RAW_WEBHOOK_PREFIXES = ["/api/webhooks/invoice-payments", "/api/webhooks/email-events"];
+// E1: A-Cube webhooks are signed over the raw bytes (HTTP Message Signatures + content-digest).
+const RAW_WEBHOOK_PREFIXES = [
+  "/api/webhooks/invoice-payments",
+  "/api/webhooks/email-events",
+  "/api/webhooks/einvoice/acube",
+];
 app.use(RAW_WEBHOOK_PREFIXES, express.raw({ type: "*/*", limit: "1mb" }));
 
 app.use((req, res, next) => {
