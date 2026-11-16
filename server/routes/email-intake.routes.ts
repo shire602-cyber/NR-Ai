@@ -68,11 +68,13 @@ function emailToTaskStatus() {
   };
 }
 
-const updateSourceBody = z.object({
-  status: z.enum(["active", "paused"]).optional(),
-  label: z.string().max(120).optional(),
-  requireDkimPass: z.boolean().optional(),
-});
+const updateSourceBody = z
+  .object({
+    status: z.enum(["active", "paused"]).optional(),
+    label: z.string().max(120).optional(),
+    requireDkimPass: z.boolean().optional(),
+  })
+  .strict();
 
 /** Load a company's bank transactions as the BankLine shape the completeness math expects. */
 async function loadBankLines(companyId: string): Promise<BankLine[]> {
@@ -218,10 +220,11 @@ export function registerEmailIntakeRoutes(app: Express) {
     "/api/firm/email-intake/sources/:id",
     authMiddleware,
     requireFirmRole(),
-    validate({ body: updateSourceBody }),
+    strictBody(updateSourceBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const firmId = req.user!.id as string;
-      const updated = await storage.updateClientEmailSource(req.params.id, firmId, req.body);
+      const patch = parsedBody<z.output<typeof updateSourceBody>>(req);
+      const updated = await storage.updateClientEmailSource(req.params.id, firmId, patch);
       if (!updated) return res.status(404).json({ message: "Source not found" });
       res.json(updated);
     })

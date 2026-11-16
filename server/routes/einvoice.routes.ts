@@ -225,8 +225,10 @@ export function registerEInvoiceRoutes(app: Express) {
   // E-Invoicing (PINT AE / UBL 2.1)
   // =====================================
 
-  // Pre-submission validation: the fix-it list on the stored data, plus the
-  // full XSD / schematron / rule result for a generated document.
+  // Pre-submission validation (G7): the fix-it list on the stored data, plus the
+  // same three-layer XSD / PINT AE schematron / rule validation generate-einvoice
+  // runs, on a dry-run document built from the current data (nothing is stored).
+  // `valid: true` here means generate-einvoice would accept the invoice.
   app.get(
     "/api/invoices/:id/einvoice/validate",
     authMiddleware,
@@ -235,11 +237,36 @@ export function registerEInvoiceRoutes(app: Express) {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const ctx = await loadEInvoiceContext(invoice, company, lines);
-      const issues = validateForEInvoicing(invoice, lines, company, ctx);
-      const document = invoice.einvoiceXml
+      const issues: Array<{ field: string; message: string; ruleId?: string; layer?: string }> =
+        validateForEInvoicing(invoice, lines, company, ctx);
+      let document: ReturnType<typeof summariseValidation> | null = null;
+      if (issues.length === 0) {
+        const { xml } = generateEInvoiceXML(invoice, lines, company, ctx.customer, {
+          ...(ctx.options ?? {}),
+          originalInvoice: ctx.originalInvoice,
+          lineExtras: ctx.lineExtras,
+        });
+        document = summariseValidation(await validateEInvoiceXml(xml));
+        for (const layer of ["xsd", "schematron", "rules"] as const) {
+          for (const e of document[layer].errors) {
+            issues.push({
+              field: `document.${layer}`,
+              message: `${e.id}: ${e.message}`,
+              ruleId: e.id,
+              layer,
+            });
+          }
+        }
+      }
+      const stored = invoice.einvoiceXml
         ? summariseValidation(await validateEInvoiceXml(invoice.einvoiceXml))
         : null;
-      res.json({ valid: issues.length === 0 && (document?.valid ?? true), issues, document });
+      res.json({
+        valid: issues.length === 0 && (document?.valid ?? false),
+        issues,
+        document,
+        stored,
+      });
     })
   );
 

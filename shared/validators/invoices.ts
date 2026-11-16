@@ -212,7 +212,8 @@ const headerShape = {
     .union([zTrn, z.literal("")])
     .optional()
     .nullable()
-    .transform((v) => (v ? v : null)),
+    // Omitted stays undefined (keep the stored TRN on PUT); only explicit null / "" clears it.
+    .transform((v) => (v === undefined ? undefined : v ? v : null)),
   customerAddress: zText(1000).optional().nullable(),
   date: zInvoiceDate,
   dueDate: zDate.optional().nullable(),

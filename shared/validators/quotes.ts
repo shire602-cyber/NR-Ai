@@ -19,7 +19,8 @@ const trn = z
   .union([zTrn, z.literal("")])
   .optional()
   .nullable()
-  .transform((v) => (v ? v : null));
+  // Omitted stays undefined (PUT/PATCH keep the stored TRN); only explicit null / "" clears it.
+  .transform((v) => (v === undefined ? undefined : v ? v : null));
 
 const quoteShape = {
   contactId: zUuid.optional().nullable(),

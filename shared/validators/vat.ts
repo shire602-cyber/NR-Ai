@@ -21,7 +21,8 @@ export const zOptionalUaeTrn = z
   .union([z.literal(""), zUaeTrn])
   .optional()
   .nullable()
-  .transform((v) => (v ? v : null));
+  // Omitted stays undefined; only explicit null / "" clears it.
+  .transform((v) => (v === undefined ? undefined : v ? v : null));
 
 const zAmount = z.coerce
   .number()

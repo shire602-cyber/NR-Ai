@@ -23,7 +23,9 @@ const lifeYears = z
   .union([z.number(), z.string(), z.null()])
   .optional()
   .transform((v, ctx) => {
-    if (v === null || v === undefined || v === "") return null;
+    // Omitted stays undefined so PATCH keeps the stored life; null / "" clears it.
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
     const n = Number(v);
     if (!Number.isInteger(n) || n < 1 || n > 100) {
       ctx.addIssue({
