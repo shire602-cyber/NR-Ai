@@ -38,7 +38,7 @@ import type { Company } from "@shared/schema";
 import { T } from "@/components/layout/T";
 
 const companySchema = z.object({
-  name: z.string().min(2, "Company name must be at least 2 characters"),
+  name: z.string().min(2, "forms.errors.companyNameMin2"),
   baseCurrency: z.string().default("AED"),
   locale: z.enum(["en", "ar"]).default("en"),
 });

@@ -96,12 +96,12 @@ interface RuleAccountOption {
 }
 
 const ruleFormSchema = z.object({
-  name: z.string().min(1, "Rule name is required"),
+  name: z.string().min(1, "forms.errors.ruleNameRequired"),
   priority: z.coerce.number().int().min(0).default(0),
   matchField: z.enum(["description", "reference", "amount"]),
   matchType: z.enum(["contains", "exact", "starts_with", "regex"]),
-  matchValue: z.string().min(1, "Match value is required"),
-  accountId: z.string().guid("Choose the GL account this rule posts to"),
+  matchValue: z.string().min(1, "forms.errors.matchValueRequired"),
+  accountId: z.string().guid("forms.errors.ruleAccountRequired"),
   vatTreatment: z.enum(["none", "standard", "zero_rated", "exempt"]),
   requireReview: z.boolean().default(false),
   direction: z.enum(["any", "inflow", "outflow"]).default("any"),

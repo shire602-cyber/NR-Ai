@@ -126,8 +126,8 @@ interface CostCenterProfitabilityReport {
 // ─── Schemas ─────────────────────────────────────────────
 
 const costCenterFormSchema = z.object({
-  code: z.string().min(1, "Code is required"),
-  name: z.string().min(1, "Name is required"),
+  code: z.string().min(1, "forms.errors.codeRequired"),
+  name: z.string().min(1, "forms.errors.nameRequired"),
   nameAr: z.string().optional().nullable(),
   type: z.enum(["cost_centre", "project", "job"]).default("cost_centre"),
   description: z.string().optional(),

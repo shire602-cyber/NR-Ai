@@ -30,7 +30,7 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { useTranslation } from "@/lib/i18n";
 
 const forgotSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
+  email: z.string().email("components.validation.emailInvalid"),
 });
 
 type ForgotFormData = z.infer<typeof forgotSchema>;

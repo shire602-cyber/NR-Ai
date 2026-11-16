@@ -156,11 +156,11 @@ const EXPENSE_CATEGORIES = [
 // ─── Schemas ──────────────────────────────────────────────
 
 const expenseItemSchema = z.object({
-  expense_date: z.string().min(1, "Date is required"),
-  category: z.string().min(1, "Category is required"),
-  description: z.string().min(1, "Description is required"),
-  amount: z.coerce.number().min(0.01, "Amount must be greater than 0"),
-  vat_amount: z.coerce.number().min(0, "VAT amount must be >= 0"),
+  expense_date: z.string().min(1, "forms.errors.dateRequired"),
+  category: z.string().min(1, "forms.errors.categoryRequired"),
+  description: z.string().min(1, "forms.errors.descriptionRequired"),
+  amount: z.coerce.number().min(0.01, "forms.errors.amountGreaterThanZero"),
+  vat_amount: z.coerce.number().min(0, "forms.errors.vatAmountNonNegative"),
   merchant_name: z.string().optional().nullable(),
   receipt_url: z.string().optional().nullable(),
   supplier_trn: z.string().optional().nullable(),
@@ -168,15 +168,15 @@ const expenseItemSchema = z.object({
 });
 
 const claimFormSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: z.string().min(1, "forms.errors.titleRequired"),
   description: z.string().optional().nullable(),
-  items: z.array(expenseItemSchema).min(1, "At least one expense item is required"),
+  items: z.array(expenseItemSchema).min(1, "forms.errors.expenseItemRequired"),
 });
 
 type ClaimFormData = z.infer<typeof claimFormSchema>;
 
 const reviewFormSchema = z.object({
-  review_notes: z.string().min(1, "Review notes are required"),
+  review_notes: z.string().min(1, "forms.errors.reviewNotesRequired"),
 });
 
 type ReviewFormData = z.infer<typeof reviewFormSchema>;

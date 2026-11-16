@@ -162,15 +162,15 @@ interface VarianceData {
 
 const budgetFormSchema = z
   .object({
-    name: z.string().min(1, "Budget name is required"),
+    name: z.string().min(1, "forms.errors.budgetNameRequired"),
     fiscalYear: z.coerce.number().int().min(2000).max(2100),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().min(1, "End date is required"),
+    startDate: z.string().min(1, "forms.errors.startDateRequired"),
+    endDate: z.string().min(1, "forms.errors.endDateRequired"),
     notes: z.string().optional().nullable(),
   })
   .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
     path: ["endDate"],
-    message: "End date must be on or after the start date",
+    message: "forms.errors.endDateBeforeStart",
   })
   .refine(
     (v) => {
@@ -181,13 +181,13 @@ const budgetFormSchema = z
         1;
       return months <= 12;
     },
-    { path: ["endDate"], message: "A budget plan covers at most 12 months" }
+    { path: ["endDate"], message: "forms.errors.budgetMax12Months" }
   );
 
 type BudgetFormData = z.infer<typeof budgetFormSchema>;
 
 const budgetLineFormSchema = z.object({
-  category: z.string().min(1, "Category is required"),
+  category: z.string().min(1, "forms.errors.categoryRequired"),
   description: z.string().optional().nullable(),
   jan: z.coerce.number().min(0).optional(),
   feb: z.coerce.number().min(0).optional(),

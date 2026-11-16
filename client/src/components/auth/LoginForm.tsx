@@ -28,8 +28,8 @@ import { LogIn } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
 
 const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("components.validation.emailInvalid"),
+  password: z.string().min(6, "components.validation.passwordMin6"),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;

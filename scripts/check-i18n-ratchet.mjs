@@ -14,7 +14,14 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { repoRoot, scanPages, scanComponents, scanLibHooks } from "./i18n-scan.mjs";
+import {
+  repoRoot,
+  scanPages,
+  scanComponents,
+  scanLibHooks,
+  scanZodMessages,
+  scanBlindSpots,
+} from "./i18n-scan.mjs";
 
 const baselinePath = join(repoRoot, "scripts", "guard-baselines", "i18n.json");
 const update = process.argv.includes("--update");
@@ -23,6 +30,7 @@ const pageScan = scanPages();
 const componentScan = scanComponents();
 const { pages, translated } = pageScan;
 const libHookScan = scanLibHooks();
+const blindSpots = scanBlindSpots();
 const hardcoded = pageScan.hardcoded + componentScan.hardcoded;
 const justified = pageScan.justified + componentScan.justified;
 
@@ -49,6 +57,7 @@ function writeBaseline() {
         pages,
         libHooksHardcoded: libHookScan.hardcoded,
         libHooksJustified: libHookScan.justified,
+        blindSpotHardcoded: blindSpots.hardcoded,
       },
       null,
       2
@@ -64,7 +73,22 @@ console.log(
     `${libHookScan.justified} justified`
 );
 
+// F11: zod/form validation messages must be catalog keys (baseline 0, never raised).
+const zodScan = scanZodMessages();
+if (zodScan.hardcoded > 0) {
+  console.error(
+    `✗ ${zodScan.hardcoded} English literal(s) used as zod validation messages in client/src. ` +
+      `Use a catalog key ("forms.errors.*" / "components.validation.*") so the message follows the UI language.\n  ` +
+      zodScan.samples.join("\n  ")
+  );
+  process.exit(1);
+}
+
 if (update) {
+  if (baseline && blindSpots.hardcoded > (baseline.blindSpotHardcoded ?? Infinity)) {
+    console.error(`✗ refusing to raise the blind-spot baseline to ${blindSpots.hardcoded}`);
+    process.exit(1);
+  }
   if (baseline && libHookScan.hardcoded > libHookBaseline) {
     console.error(
       `✗ refusing to raise the lib/hooks baseline from ${libHookBaseline} to ${libHookScan.hardcoded}`
@@ -84,6 +108,14 @@ if (update) {
 
 if (!baseline) {
   console.error("✗ scripts/guard-baselines/i18n.json is missing; run with --update to create it");
+  process.exit(1);
+}
+
+if (blindSpots.hardcoded > (baseline.blindSpotHardcoded ?? Infinity)) {
+  console.error(
+    `✗ multi-line / ternary / attribute English in JSX rose to ${blindSpots.hardcoded} ` +
+      `(baseline ${baseline.blindSpotHardcoded}). Use catalog keys (client/src/locales/{en,ar}).`
+  );
   process.exit(1);
 }
 

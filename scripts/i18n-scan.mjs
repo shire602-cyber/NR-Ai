@@ -169,3 +169,92 @@ export function scanLibHooks() {
   }
   return { files: files.length, hardcoded, justified, perFile, ignoredFiles, samples };
 }
+
+// ── F11: English literals used as zod / form validation messages ─────────────
+// Client schemas must carry a catalog key ("forms.errors.nameRequired", "components.validation.*")
+// as their message; lib/validation-messages.ts resolves it to the active language. A plain English
+// literal would show in Arabic mode. Baseline 0 (scripts/check-i18n-ratchet.mjs).
+const ZOD_FILE = /\bz\.\w+\(|from "zod"|zodResolver/;
+const MESSAGE_KEY = /^(?:forms|components)\.[A-Za-z0-9_.]+$/;
+const ZOD_LINE_PATTERNS = [
+  /\bmessage:\s*(["'`])((?:(?!\1).)+)\1/g,
+  /\.(?:email|guid|uuid|url|nonempty|positive|negative|nonnegative|int|trim)\(\s*(["'`])((?:(?!\1).)+)\1/g,
+  /\.(?:min|max|length|gt|gte|lt|lte)\(\s*[-\d.]+\s*,\s*(["'`])((?:(?!\1).)+)\1/g,
+  /\.regex\([^,]+,\s*(["'`])((?:(?!\1).)+)\1/g,
+  /\.(?:refine|superRefine)\(.*,\s*(["'`])((?:(?!\1).)+)\1\s*\)/g,
+  /^\s*\}\s*,\s*(["'`])((?:(?!\1).)+)\1\s*\)/g,
+];
+
+/** Hits (line index, literal) of non-key string messages in one client source file. */
+export function scanZodMessageSource(src) {
+  if (!ZOD_FILE.test(src)) return [];
+  const hits = [];
+  src.split("\n").forEach((line, i) => {
+    if (/i18n-ignore/.test(line)) return;
+    for (const re of ZOD_LINE_PATTERNS) {
+      re.lastIndex = 0;
+      for (const m of line.matchAll(re)) {
+        const text = m[2];
+        if (/[A-Za-z]{2}/.test(text) && !MESSAGE_KEY.test(text)) hits.push([i, text]);
+      }
+    }
+  });
+  return hits;
+}
+
+export function scanZodMessages() {
+  const root = join(repoRoot, "client", "src");
+  const files = walkSources(root);
+  const samples = [];
+  let hardcoded = 0;
+  for (const f of files) {
+    const rel = f.replace(repoRoot + "/", "");
+    for (const [line, text] of scanZodMessageSource(readFileSync(f, "utf8"))) {
+      hardcoded++;
+      samples.push(`${rel}:${line + 1}: "${text}"`);
+    }
+  }
+  return { files: files.length, hardcoded, samples };
+}
+
+// ── F11: JSX blind spots of the line-based scan above ────────────────────────
+// scanPages/scanComponents only see single-line `>Text<` nodes, so multi-line paragraphs, English
+// in ternaries (`{x ? "Open" : "Closed"}`) and English in title/description/placeholder
+// attributes were never counted (the firm onboarding wizard shipped English in Arabic that way).
+// This pass counts them as a separate ratchet (`blindSpotHardcoded` in guard-baselines/i18n.json,
+// may only decrease); firm onboarding must stay at 0 (tests/unit/f11-form-validation-ar.test.ts).
+const BLIND_SPOT_PATTERNS = [
+  />[ \t]*\n[ \t]*([A-Z][A-Za-z0-9 ,.'’!?&—-]{6,}(?:\n[ \t]*[A-Za-z0-9 ,.'’!?&—-]+)*)\n[ \t]*</g,
+  /[?:]\s*"([A-Z][a-z]+(?: [A-Za-z'’…]+)+…?)"\s*(?:[:}])/g,
+  /\b(?:title|description|placeholder|aria-label|label|nextLabel)="([A-Z][^"{}]*[a-z][^"{}]*)"/g,
+];
+
+/** Hits (1-based line, text) of English the line-based scan cannot see, for one source file. */
+export function scanBlindSpotSource(src) {
+  const lines = src.split("\n");
+  const hits = [];
+  for (const re of BLIND_SPOT_PATTERNS) {
+    re.lastIndex = 0;
+    for (const m of src.matchAll(re)) {
+      const line = src.slice(0, m.index).split("\n").length;
+      const context = lines.slice(Math.max(0, line - 3), line + 1).join("\n");
+      if (/i18n-ignore/.test(context)) continue;
+      hits.push([line, m[1].replace(/\s+/g, " ").trim()]);
+    }
+  }
+  return hits;
+}
+
+export function scanBlindSpots() {
+  const dirs = [pagesDir, ...componentDirs.filter((d) => existsSync(d))];
+  const perFile = {};
+  let hardcoded = 0;
+  for (const f of dirs.flatMap((d) => walk(d))) {
+    const n = scanBlindSpotSource(readFileSync(f, "utf8")).length;
+    if (n) {
+      perFile[f.replace(repoRoot + "/", "")] = n;
+      hardcoded += n;
+    }
+  }
+  return { hardcoded, perFile };
+}

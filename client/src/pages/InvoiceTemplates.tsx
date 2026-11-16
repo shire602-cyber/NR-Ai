@@ -45,7 +45,7 @@ import { useTranslation } from "@/lib/i18n";
 import { Plus, Layout, Loader2, Check, Trash2, Edit, Star } from "lucide-react";
 
 const templateSchema = z.object({
-  name: z.string().min(1, "Template name is required"),
+  name: z.string().min(1, "forms.errors.templateNameRequired"),
   primaryColor: z.string().default("#1a56db"),
   accentColor: z.string().default("#e5edff"),
   layout: z.enum(["standard", "modern", "minimal"]).default("standard"),

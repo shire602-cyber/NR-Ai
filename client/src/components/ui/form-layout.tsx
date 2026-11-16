@@ -3,6 +3,7 @@ import { useFormContext, type FieldErrors, type FieldValues } from "react-hook-f
 import { AlertCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { localizeMessage } from "@/lib/validation-messages";
 import { focusField, type SummaryItem } from "@/hooks/use-form-gate";
 
 /**
@@ -180,7 +181,7 @@ function flattenErrors(errors: FieldErrors<FieldValues>, prefix = ""): Array<[st
     if (!value) continue;
     const path = prefix ? `${prefix}.${key}` : key;
     const v = value as { message?: unknown; type?: unknown };
-    if (typeof v.message === "string" && v.message) out.push([path, v.message]);
+    if (typeof v.message === "string" && v.message) out.push([path, localizeMessage(v.message)]);
     else if (typeof value === "object") {
       if (v.message === undefined && v.type === undefined) {
         out.push(...flattenErrors(value as FieldErrors<FieldValues>, path));

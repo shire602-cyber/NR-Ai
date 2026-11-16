@@ -85,14 +85,14 @@ import { isValidGtin, RCM_GOODS_TYPES } from "@shared/vat-classification";
 // ─── Schemas ──────────────────────────────────────────────
 
 const productFormSchema = z.object({
-  name: z.string().min(1, "Product name is required"),
+  name: z.string().min(1, "forms.errors.productNameRequired"),
   nameAr: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  unitPrice: z.coerce.number().min(0, "Unit price must be >= 0"),
-  costPrice: z.coerce.number().min(0, "Cost price must be >= 0").optional().nullable(),
-  vatRate: z.coerce.number().min(0).max(1, "VAT rate must be between 0 and 1"),
-  unit: z.string().min(1, "Unit is required"),
+  unitPrice: z.coerce.number().min(0, "forms.errors.unitPriceNonNegative"),
+  costPrice: z.coerce.number().min(0, "forms.errors.costPriceNonNegative").optional().nullable(),
+  vatRate: z.coerce.number().min(0).max(1, "forms.errors.vatRateRange"),
+  unit: z.string().min(1, "forms.errors.unitRequired"),
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
   productType: z.enum(["inventory", "service", "bundle"]).optional(),
   reorderPoint: z
@@ -133,13 +133,13 @@ const movementFormSchema = z
     quantity: z.coerce
       .number()
       .int()
-      .refine((n) => n !== 0, "Quantity must not be zero"),
+      .refine((n) => n !== 0, "forms.errors.quantityNotZero"),
     unitCost: z.coerce.number().min(0).optional().nullable(),
     date: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
   })
   .refine((v) => v.type === "adjustment" || v.quantity > 0, {
-    message: "Quantity must be positive",
+    message: "forms.errors.quantityPositive",
     path: ["quantity"],
   });
 
