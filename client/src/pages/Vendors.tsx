@@ -1,11 +1,19 @@
 import { useState } from "react";
+import {
+  ErrorSummary,
+  Field,
+  FormActions,
+  FormGrid,
+  FormSection,
+} from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -161,7 +169,7 @@ const EMPTY = {
 };
 
 export default function Vendors() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const c = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -220,16 +228,27 @@ export default function Vendors() {
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });
 
-  const field = (key: keyof typeof EMPTY, label: string, props: Record<string, string> = {}) => (
-    <div className="space-y-1">
-      <Label htmlFor={`vendor-${key}`}>{label}</Label>
+  const gate = useFormGate([{ id: "vendor-name", label: c.name, invalid: !form.name }]);
+  const field = (
+    key: keyof typeof EMPTY,
+    label: string,
+    props: Record<string, string> = {},
+    opts: { required?: boolean; help?: string; ltr?: boolean } = {}
+  ) => (
+    <Field
+      id={`vendor-${key}`}
+      label={label}
+      required={opts.required}
+      help={opts.help}
+      error={gate.errorFor(`vendor-${key}`)}
+    >
       <Input
-        id={`vendor-${key}`}
+        ltr={opts.ltr}
         value={form[key] ?? ""}
         onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
         {...props}
       />
-    </div>
+    </Field>
   );
 
   return (
@@ -380,35 +399,77 @@ export default function Vendors() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) gate.reset();
+        }}
+      >
+        <DialogContent size="md" data-testid="dialog-vendor-form">
           <DialogHeader>
             <DialogTitle>{c.newVendor}</DialogTitle>
+            <DialogDescription>{t["forms.vendor.desc"]}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {field("name", c.name)}
-            {field("name_ar", c.nameAr, { dir: "rtl" })}
-            {field("trn", c.trn, { inputMode: "numeric", maxLength: "15", dir: "ltr" })}
-            {field("email", c.email, { type: "email", dir: "ltr" })}
-            {field("phone", c.phone, { dir: "ltr" })}
-            {field("payment_terms_days", c.terms, { inputMode: "numeric", dir: "ltr" })}
-            {field("currency", c.currency, { maxLength: "3", dir: "ltr" })}
-            {field("iban", c.iban, { dir: "ltr" })}
-            {field("bank_name", c.bank)}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {c.cancel}
-            </Button>
-            <Button onClick={() => create.mutate()} disabled={!form.name || create.isPending}>
-              {c.save}
-            </Button>
-          </DialogFooter>
+          <form
+            noValidate
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (create.isPending || !gate.attempt()) return;
+              create.mutate();
+            }}
+          >
+            <ErrorSummary items={gate.summary} />
+            <FormSection title={t["forms.section.vendor"]}>
+              <FormGrid>
+                {field("name", c.name, { dir: "auto" }, { required: true })}
+                {field("name_ar", c.nameAr, { dir: "rtl", lang: "ar" })}
+              </FormGrid>
+            </FormSection>
+            <FormSection title={t["forms.section.tax"]} description={t["forms.section.taxDesc"]}>
+              <FormGrid>
+                {field(
+                  "trn",
+                  c.trn,
+                  { inputMode: "numeric", maxLength: "15" },
+                  { ltr: true, help: t["forms.contact.trnHelp"] }
+                )}
+                {field(
+                  "payment_terms_days",
+                  c.terms,
+                  { inputMode: "numeric" },
+                  { ltr: true, help: t["forms.vendor.termsHelp"] }
+                )}
+                {field("currency", c.currency, { maxLength: "3" }, { ltr: true })}
+              </FormGrid>
+            </FormSection>
+            <FormSection title={t["forms.section.contact"]}>
+              <FormGrid>
+                {field("email", c.email, { type: "email", dir: "ltr", autoComplete: "email" })}
+                {field("phone", c.phone, { type: "tel", dir: "ltr", autoComplete: "tel" })}
+              </FormGrid>
+            </FormSection>
+            <FormSection title={t["forms.section.bank"]}>
+              <FormGrid>
+                {field("iban", c.iban, { autoComplete: "off" }, { ltr: true })}
+                {field("bank_name", c.bank, { dir: "auto" })}
+              </FormGrid>
+            </FormSection>
+            <FormActions sticky>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                {c.cancel}
+              </Button>
+              <Button type="submit" className="sm:min-w-32" disabled={create.isPending}>
+                {create.isPending ? t["forms.saving"] : c.save}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!statementFor} onOpenChange={(o) => !o && setStatementFor(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               {c.statement}: <span dir="auto">{statementFor?.name}</span>

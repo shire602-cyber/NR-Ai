@@ -1,4 +1,13 @@
 import { useMemo, useState } from "react";
+import {
+  ErrorSummary,
+  Field,
+  FormActions,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,6 +127,10 @@ export default function BankAccounts() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [relinkFor, setRelinkFor] = useState<BankAccount | null>(null);
+  const gate = useFormGate([
+    { id: "ba-name", label: tr("banking.accounts.name"), invalid: !form.nameEn },
+    { id: "ba-bank", label: tr("banking.accounts.bankName"), invalid: !form.bankName },
+  ]);
   const [relinkGl, setRelinkGl] = useState("");
   const [statementFor, setStatementFor] = useState<BankAccount | null>(null);
 
@@ -371,149 +384,181 @@ export default function BankAccounts() {
       </section>
 
       {/* Create */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) gate.reset();
+        }}
+      >
+        <DialogContent size="md" data-testid="dialog-bank-account-form">
           <DialogHeader>
             <DialogTitle>{tr("banking.accounts.add")}</DialogTitle>
             <DialogDescription>{tr("banking.accounts.description")}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div>
-              <Label htmlFor="ba-name">{tr("banking.accounts.name")}</Label>
-              <Input
-                id="ba-name"
-                value={form.nameEn}
-                onChange={(e) => setForm({ ...form, nameEn: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ba-bank">{tr("banking.accounts.bankName")}</Label>
-              <Input
-                id="ba-bank"
-                list="bank-name-suggestions"
-                value={form.bankName}
-                onChange={(e) => setForm({ ...form, bankName: e.target.value })}
-              />
-              <datalist id="bank-name-suggestions">
-                {(suggestions?.suggestions ?? []).map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
-              <p className="text-xs text-muted-foreground mt-1">
-                {tr("banking.accounts.bankNameHint")}
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="ba-number">{tr("banking.accounts.accountNumber")}</Label>
-                <Input
-                  id="ba-number"
-                  value={form.accountNumber}
-                  onChange={(e) => setForm({ ...form, accountNumber: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="ba-currency">{tr("banking.accounts.currency")}</Label>
-                <Input
-                  id="ba-currency"
-                  maxLength={3}
-                  value={form.currency}
-                  onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="ba-iban">{tr("banking.accounts.iban")}</Label>
-              <Input
-                id="ba-iban"
-                value={form.iban}
-                onChange={(e) => setForm({ ...form, iban: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>{tr("banking.accounts.glAccount")}</Label>
-              <Select
-                value={form.glAccountId}
-                onValueChange={(v) => setForm({ ...form, glAccountId: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">{tr("banking.accounts.glAuto")}</SelectItem>
-                  {bankGlAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} {a.nameEn}
-                    </SelectItem>
+          <form
+            noValidate
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (createMutation.isPending || !gate.attempt()) return;
+              createMutation.mutate();
+            }}
+          >
+            <ErrorSummary items={gate.summary} />
+            <FormSection title={t["forms.section.account"]}>
+              <FormGrid>
+                <Field
+                  id="ba-name"
+                  label={tr("banking.accounts.name")}
+                  required
+                  error={gate.errorFor("ba-name")}
+                  className={formSpanFull}
+                >
+                  <Input
+                    dir="auto"
+                    value={form.nameEn}
+                    onChange={(e) => setForm({ ...form, nameEn: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  id="ba-bank"
+                  label={tr("banking.accounts.bankName")}
+                  required
+                  help={tr("banking.accounts.bankNameHint")}
+                  error={gate.errorFor("ba-bank")}
+                >
+                  <Input
+                    dir="auto"
+                    list="bank-name-suggestions"
+                    value={form.bankName}
+                    onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+                  />
+                </Field>
+                <datalist id="bank-name-suggestions">
+                  {(suggestions?.suggestions ?? []).map((s) => (
+                    <option key={s} value={s} />
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="ba-ob">{tr("banking.accounts.openingBalance")}</Label>
-                <Input
-                  id="ba-ob"
-                  inputMode="decimal"
-                  value={form.openingBalance}
-                  onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="ba-obd">{tr("banking.accounts.openingBalanceDate")}</Label>
-                <Input
-                  id="ba-obd"
-                  type="date"
-                  value={form.openingBalanceDate}
-                  onChange={(e) => setForm({ ...form, openingBalanceDate: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              {tr("banking.common.cancel")}
-            </Button>
-            <Button
-              onClick={() => createMutation.mutate()}
-              disabled={!form.nameEn || !form.bankName || createMutation.isPending}
+                </datalist>
+                <Field id="ba-currency" label={tr("banking.accounts.currency")}>
+                  <Input
+                    ltr
+                    maxLength={3}
+                    value={form.currency}
+                    onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
+                  />
+                </Field>
+                <Field id="ba-number" label={tr("banking.accounts.accountNumber")}>
+                  <Input
+                    ltr
+                    autoComplete="off"
+                    value={form.accountNumber}
+                    onChange={(e) => setForm({ ...form, accountNumber: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  id="ba-iban"
+                  label={tr("banking.accounts.iban")}
+                  help={t["forms.bank.ibanHelp"]}
+                >
+                  <Input
+                    ltr
+                    autoComplete="off"
+                    value={form.iban}
+                    onChange={(e) => setForm({ ...form, iban: e.target.value })}
+                  />
+                </Field>
+              </FormGrid>
+            </FormSection>
+
+            <FormSection
+              title={t["forms.section.accounting"]}
+              description={t["forms.section.accountingDesc"]}
             >
-              {tr("banking.common.save")}
-            </Button>
-          </DialogFooter>
+              <FormGrid>
+                <Field id="ba-gl" label={tr("banking.accounts.glAccount")} className={formSpanFull}>
+                  <Select
+                    value={form.glAccountId}
+                    onValueChange={(v) => setForm({ ...form, glAccountId: v })}
+                  >
+                    <SelectTrigger id="ba-gl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{tr("banking.accounts.glAuto")}</SelectItem>
+                      {bankGlAccounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.code} {a.nameEn}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field id="ba-ob" label={tr("banking.accounts.openingBalance")}>
+                  <Input
+                    inputMode="decimal"
+                    value={form.openingBalance}
+                    onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
+                  />
+                </Field>
+                <Field id="ba-obd" label={tr("banking.accounts.openingBalanceDate")}>
+                  <Input
+                    type="date"
+                    dir="ltr"
+                    value={form.openingBalanceDate}
+                    onChange={(e) => setForm({ ...form, openingBalanceDate: e.target.value })}
+                  />
+                </Field>
+              </FormGrid>
+            </FormSection>
+
+            <FormActions sticky>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                {tr("banking.common.cancel")}
+              </Button>
+              <Button type="submit" className="sm:min-w-32" disabled={createMutation.isPending}>
+                {createMutation.isPending ? t["forms.saving"] : tr("banking.common.save")}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 
       {/* Relink */}
       <Dialog open={!!relinkFor} onOpenChange={(o) => !o && setRelinkFor(null)}>
-        <DialogContent>
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>{tr("banking.accounts.relink")}</DialogTitle>
             <DialogDescription>{tr("banking.accounts.relinkHint")}</DialogDescription>
           </DialogHeader>
-          <Select value={relinkGl} onValueChange={setRelinkGl}>
-            <SelectTrigger>
-              <SelectValue placeholder={tr("banking.accounts.glAccount")} />
-            </SelectTrigger>
-            <SelectContent>
-              {bankGlAccounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} {a.nameEn}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRelinkFor(null)}>
-              {tr("banking.common.cancel")}
-            </Button>
-            <Button
-              onClick={() => relinkMutation.mutate()}
-              disabled={!relinkGl || relinkMutation.isPending}
-            >
-              {tr("banking.common.save")}
-            </Button>
-          </DialogFooter>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (relinkGl && !relinkMutation.isPending) relinkMutation.mutate();
+            }}
+          >
+            <Select value={relinkGl} onValueChange={setRelinkGl}>
+              <SelectTrigger aria-label={tr("banking.accounts.glAccount")}>
+                <SelectValue placeholder={tr("banking.accounts.glAccount")} />
+              </SelectTrigger>
+              <SelectContent>
+                {bankGlAccounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.code} {a.nameEn}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormActions>
+              <Button type="button" variant="outline" onClick={() => setRelinkFor(null)}>
+                {tr("banking.common.cancel")}
+              </Button>
+              <Button type="submit" disabled={!relinkGl || relinkMutation.isPending}>
+                {tr("banking.common.save")}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -620,7 +665,7 @@ function StatementDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {tr("banking.statement.title")} — {account.nameEn}

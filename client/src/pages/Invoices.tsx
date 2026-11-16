@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -20,6 +20,7 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import { FormActions, FormErrorSummary, FormGrid, FormSection } from "@/components/ui/form-layout";
 import {
   Dialog,
   DialogContent,
@@ -120,6 +121,11 @@ import {
   parseInvoiceStatusFilter,
   type InvoiceStatusFilter,
 } from "@/lib/invoice-filters";
+
+// D5b: the bilingual preview is its own chunk (only loaded when the invoice dialog opens).
+const InvoicePreview = lazy(() =>
+  import("@/components/invoices/InvoicePreview").then((m) => ({ default: m.InvoicePreview }))
+);
 
 // R07-01: each line carries an explicit UAE supply type; the VAT rate follows
 // from it (5% standard, 0% for zero-rated / exempt / out of scope).
@@ -1246,13 +1252,13 @@ export default function Invoices() {
                 }
               }}
             >
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogContent size="xl" data-testid="dialog-invoice-form">
                 <DialogHeader>
-                  <DialogTitle>{editingInvoice ? "Edit Invoice" : t.newInvoice}</DialogTitle>
+                  <DialogTitle>
+                    {editingInvoice ? t["forms.invoice.editTitle"] : t.newInvoice}
+                  </DialogTitle>
                   <DialogDescription>
-                    {editingInvoice
-                      ? "Update invoice details"
-                      : "Create a new invoice with automatic VAT calculation"}
+                    {editingInvoice ? t["forms.invoice.editDesc"] : t["forms.invoice.newDesc"]}
                   </DialogDescription>
                 </DialogHeader>
                 {/* E1: e-invoice status of an issued invoice (re-checked after each save). */}
@@ -1260,438 +1266,491 @@ export default function Invoices() {
                   <EInvoicePanel invoiceId={editingInvoice.id} compact />
                 )}
                 <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="number"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.invoiceNumber}</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                data-testid="input-invoice-number"
-                                readOnly={!editingInvoice}
-                                placeholder={
-                                  editingInvoice ? undefined : t["invoices.numberAssignedOnSave"]
-                                }
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="date"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.date}</FormLabel>
-                            <Popover>
-                              <PopoverTrigger asChild>
+                  <form
+                    onSubmit={form.handleSubmit(onSubmit)}
+                    noValidate
+                    className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)]"
+                  >
+                    <div className="min-w-0 space-y-6">
+                      <FormErrorSummary />
+                      <FormSection
+                        title={t["forms.section.document"]}
+                        description={t["forms.section.documentDesc"]}
+                      >
+                        <FormGrid>
+                          <FormField
+                            control={form.control}
+                            name="number"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t.invoiceNumber}</FormLabel>
                                 <FormControl>
-                                  <Button
-                                    variant="outline"
-                                    className={cn(
-                                      "w-full justify-start text-start font-normal",
-                                      !field.value && "text-muted-foreground"
-                                    )}
-                                    data-testid="button-date-picker"
-                                  >
-                                    <CalendarIcon className="h-4 w-4" />
-                                    {field.value ? (
-                                      format(field.value, "PPP")
-                                    ) : (
-                                      <span>
-                                        <T k="pages.pickADate" />
-                                      </span>
-                                    )}
-                                  </Button>
+                                  <Input
+                                    {...field}
+                                    ltr
+                                    data-testid="input-invoice-number"
+                                    readOnly={!editingInvoice}
+                                    placeholder={
+                                      editingInvoice
+                                        ? undefined
+                                        : t["invoices.numberAssignedOnSave"]
+                                    }
+                                  />
                                 </FormControl>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value}
-                                  onSelect={field.onChange}
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="customerName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.customerName}</FormLabel>
-                            <FormControl>
-                              <Input {...field} data-testid="input-customer-name" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="customerTrn"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.customerTRN}</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="Optional"
-                                data-testid="input-customer-trn"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="contactId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t["invoices.contact"]}</FormLabel>
-                            <Select
-                              value={field.value || "none"}
-                              onValueChange={(val) => {
-                                const id = val === "none" ? undefined : val;
-                                field.onChange(id);
-                                const c = contacts.find((x) => x.id === id);
-                                if (c) {
-                                  form.setValue("customerName", c.name);
-                                  form.setValue("customerTrn", c.trnNumber || "");
-                                  if (c.emirate) form.setValue("placeOfSupplyEmirate", c.emirate);
-                                }
-                              }}
-                            >
-                              <FormControl>
-                                <SelectTrigger data-testid="select-invoice-contact">
-                                  <SelectValue />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="none">{t["invoices.noContact"]}</SelectItem>
-                                {contacts.map((c) => (
-                                  <SelectItem key={c.id} value={c.id}>
-                                    {c.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>{t["invoices.contactHint"]}</FormDescription>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="placeOfSupplyEmirate"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t["invoices.placeOfSupply"]}</FormLabel>
-                            <Select value={field.value || ""} onValueChange={field.onChange}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-place-of-supply">
-                                  <SelectValue placeholder={t["invoices.placeOfSupplyDefault"]} />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {EMIRATE_OPTIONS.map((e) => (
-                                  <SelectItem key={e} value={e}>
-                                    {t[`invoices.emirate.${e}`]}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-medium">
-                          <T k="pages.lineItems" />
-                        </h3>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => append({ ...EMPTY_LINE })}
-                          data-testid="button-add-line"
-                        >
-                          <Plus className="w-4 h-4" />
-                          {t.addLine}
-                        </Button>
-                      </div>
-
-                      {fields.map((field, index) => (
-                        <div
-                          key={field.id}
-                          className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
-                        >
-                          <div className="col-span-3">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.description`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      {...field}
-                                      placeholder={t.description}
-                                      data-testid={`input-line-description-${index}`}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-1.5">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.quantity`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      placeholder="Qty"
-                                      aria-label={`Line ${index + 1} quantity`}
-                                      value={field.value ?? ""}
-                                      onChange={(e) =>
-                                        field.onChange(
-                                          e.target.value ? parseFloat(e.target.value) : ""
-                                        )
-                                      }
-                                      data-testid={`input-line-quantity-${index}`}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-1.5">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.unitPrice`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      placeholder="Price"
-                                      aria-label={`Line ${index + 1} unit price`}
-                                      value={field.value ?? ""}
-                                      onChange={(e) =>
-                                        field.onChange(
-                                          e.target.value ? parseFloat(e.target.value) : ""
-                                        )
-                                      }
-                                      data-testid={`input-line-price-${index}`}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-1.5">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.vatSupplyType`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Select
-                                      value={field.value}
-                                      onValueChange={(val) => {
-                                        field.onChange(val);
-                                        form.setValue(
-                                          `lines.${index}.vatRate`,
-                                          lineVatRate(val as SupplyTypeOption, standardRate)
-                                        );
-                                        if (val !== "standard_rated") {
-                                          form.setValue(`lines.${index}.marginScheme`, false);
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger
-                                        aria-label={t["invoices.supplyType"]}
-                                        data-testid={`select-line-vat-${index}`}
-                                      >
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {SUPPLY_TYPE_OPTIONS.map((st) => (
-                                          <SelectItem key={st} value={st}>
-                                            {t[`invoices.supply.${st}`]}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-1">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.discountPercent`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      min={0}
-                                      max={100}
-                                      placeholder={t["invoices.discountPercent"]}
-                                      aria-label={t["invoices.discountPercent"]}
-                                      value={field.value ?? ""}
-                                      onChange={(e) =>
-                                        field.onChange(
-                                          e.target.value ? parseFloat(e.target.value) : 0
-                                        )
-                                      }
-                                      data-testid={`input-line-discount-${index}`}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <div className="h-10 flex items-center justify-end text-sm">
-                              {formatCurrency(
-                                computeInvoiceFormLine(
-                                  watchLines[index] ?? EMPTY_LINE,
-                                  standardRate
-                                ).lineTotal,
-                                "AED",
-                                locale
-                              )}
-                            </div>
-                          </div>
-                          <div className="col-span-1 flex items-center justify-center">
-                            {fields.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => remove(index)}
-                                data-testid={`button-remove-line-${index}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
+                                <FormMessage />
+                              </FormItem>
                             )}
-                          </div>
-                          {(watchLines[index]?.vatSupplyType ?? "standard_rated") ===
-                            "standard_rated" && (
-                            <div className="col-span-12 flex flex-wrap items-center gap-3">
-                              <FormField
-                                control={form.control}
-                                name={`lines.${index}.marginScheme`}
-                                render={({ field }) => (
-                                  <FormItem className="flex items-center gap-2 space-y-0">
+                          />
+                          <FormField
+                            control={form.control}
+                            name="date"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel required>{t.date}</FormLabel>
+                                <Popover>
+                                  <PopoverTrigger asChild>
                                     <FormControl>
-                                      <Switch
-                                        checked={!!field.value}
-                                        onCheckedChange={field.onChange}
-                                        aria-label={t["invoices.marginScheme"]}
-                                        data-testid={`switch-line-margin-${index}`}
-                                      />
+                                      <Button
+                                        variant="outline"
+                                        className={cn(
+                                          "w-full justify-start text-start font-normal",
+                                          !field.value && "text-muted-foreground"
+                                        )}
+                                        data-testid="button-date-picker"
+                                      >
+                                        <CalendarIcon className="h-4 w-4" />
+                                        {field.value ? (
+                                          formatDate(field.value, locale)
+                                        ) : (
+                                          <span>
+                                            <T k="pages.pickADate" />
+                                          </span>
+                                        )}
+                                      </Button>
                                     </FormControl>
-                                    <span className="text-sm">{t["invoices.marginScheme"]}</span>
-                                  </FormItem>
-                                )}
-                              />
-                              {watchLines[index]?.marginScheme && (
-                                <>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-auto p-0">
+                                    <Calendar
+                                      mode="single"
+                                      selected={field.value}
+                                      onSelect={field.onChange}
+                                      initialFocus
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </FormGrid>
+                      </FormSection>
+
+                      <FormSection
+                        title={t["forms.section.customer"]}
+                        description={t["forms.section.customerDesc"]}
+                      >
+                        <FormGrid>
+                          <FormField
+                            control={form.control}
+                            name="contactId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t["invoices.contact"]}</FormLabel>
+                                <Select
+                                  value={field.value || "none"}
+                                  onValueChange={(val) => {
+                                    const id = val === "none" ? undefined : val;
+                                    field.onChange(id);
+                                    const c = contacts.find((x) => x.id === id);
+                                    if (c) {
+                                      form.setValue("customerName", c.name);
+                                      form.setValue("customerTrn", c.trnNumber || "");
+                                      if (c.emirate)
+                                        form.setValue("placeOfSupplyEmirate", c.emirate);
+                                    }
+                                  }}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-invoice-contact">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="none">{t["invoices.noContact"]}</SelectItem>
+                                    {contacts.map((c) => (
+                                      <SelectItem key={c.id} value={c.id}>
+                                        {c.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>{t["invoices.contactHint"]}</FormDescription>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="placeOfSupplyEmirate"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t["invoices.placeOfSupply"]}</FormLabel>
+                                <Select value={field.value || ""} onValueChange={field.onChange}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-place-of-supply">
+                                      <SelectValue
+                                        placeholder={t["invoices.placeOfSupplyDefault"]}
+                                      />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {EMIRATE_OPTIONS.map((e) => (
+                                      <SelectItem key={e} value={e}>
+                                        {t[`invoices.emirate.${e}`]}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="customerName"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel required>{t.customerName}</FormLabel>
+                                <FormControl>
+                                  <Input {...field} dir="auto" data-testid="input-customer-name" />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="customerTrn"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t.customerTRN}</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    ltr
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    placeholder={t["forms.optional"]}
+                                    data-testid="input-customer-trn"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </FormGrid>
+                      </FormSection>
+
+                      <FormSection
+                        title={<T k="pages.lineItems" />}
+                        description={t["forms.section.linesDesc"]}
+                        actions={
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => append({ ...EMPTY_LINE })}
+                            data-testid="button-add-line"
+                          >
+                            <Plus className="h-4 w-4" />
+                            {t.addLine}
+                          </Button>
+                        }
+                      >
+                        <ol className="divide-y divide-border rounded-lg bg-surface-sunken/60 px-3">
+                          {fields.map((field, index) => (
+                            <li key={field.id} className="space-y-3 py-3">
+                              <div className="flex items-start gap-2">
+                                <span
+                                  aria-hidden
+                                  className="mt-2 w-5 shrink-0 text-caption tabular-nums text-muted-foreground"
+                                >
+                                  {index + 1}
+                                </span>
+                                <FormField
+                                  control={form.control}
+                                  name={`lines.${index}.description`}
+                                  render={({ field }) => (
+                                    <FormItem className="flex-1">
+                                      <FormControl>
+                                        <Input
+                                          {...field}
+                                          dir="auto"
+                                          placeholder={t.description}
+                                          aria-label={formatMessage(t["forms.lineDescription"], {
+                                            n: index + 1,
+                                          })}
+                                          data-testid={`input-line-description-${index}`}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="shrink-0 text-muted-foreground hover:text-danger"
+                                  disabled={fields.length <= 1}
+                                  aria-label={formatMessage(t["forms.removeLine"], {
+                                    n: index + 1,
+                                  })}
+                                  onClick={() => remove(index)}
+                                  data-testid={
+                                    fields.length > 1 ? `button-remove-line-${index}` : undefined
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="mobile-keep-cols grid grid-cols-2 gap-x-3 gap-y-3 ps-7 sm:grid-cols-[5rem_7rem_minmax(0,1fr)_5rem_minmax(6.5rem,auto)]">
+                                <FormField
+                                  control={form.control}
+                                  name={`lines.${index}.quantity`}
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="text-caption text-muted-foreground">
+                                        {t["forms.col.qty"]}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          name={field.name}
+                                          ref={field.ref}
+                                          onBlur={field.onBlur}
+                                          value={field.value ?? ""}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              e.target.value ? parseFloat(e.target.value) : ""
+                                            )
+                                          }
+                                          data-testid={`input-line-quantity-${index}`}
+                                        />
+                                      </FormControl>
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name={`lines.${index}.unitPrice`}
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="text-caption text-muted-foreground">
+                                        {t["forms.col.unitPrice"]}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          name={field.name}
+                                          ref={field.ref}
+                                          onBlur={field.onBlur}
+                                          value={field.value ?? ""}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              e.target.value ? parseFloat(e.target.value) : ""
+                                            )
+                                          }
+                                          data-testid={`input-line-price-${index}`}
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name={`lines.${index}.vatSupplyType`}
+                                  render={({ field }) => (
+                                    <FormItem className="col-span-2 sm:col-span-1">
+                                      <FormLabel className="text-caption text-muted-foreground">
+                                        {t["invoices.supplyType"]}
+                                      </FormLabel>
+                                      <Select
+                                        value={field.value}
+                                        onValueChange={(val) => {
+                                          field.onChange(val);
+                                          form.setValue(
+                                            `lines.${index}.vatRate`,
+                                            lineVatRate(val as SupplyTypeOption, standardRate)
+                                          );
+                                          if (val !== "standard_rated") {
+                                            form.setValue(`lines.${index}.marginScheme`, false);
+                                          }
+                                        }}
+                                      >
+                                        <FormControl>
+                                          <SelectTrigger data-testid={`select-line-vat-${index}`}>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                          {SUPPLY_TYPE_OPTIONS.map((st) => (
+                                            <SelectItem key={st} value={st}>
+                                              {t[`invoices.supply.${st}`]}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name={`lines.${index}.discountPercent`}
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="text-caption text-muted-foreground">
+                                        {t["forms.col.discount"]}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          min={0}
+                                          max={100}
+                                          name={field.name}
+                                          ref={field.ref}
+                                          onBlur={field.onBlur}
+                                          value={field.value ?? ""}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              e.target.value ? parseFloat(e.target.value) : 0
+                                            )
+                                          }
+                                          data-testid={`input-line-discount-${index}`}
+                                        />
+                                      </FormControl>
+                                    </FormItem>
+                                  )}
+                                />
+                                <div className="flex flex-col items-end justify-end gap-1.5">
+                                  <span className="text-caption text-muted-foreground">
+                                    {t["forms.col.amount"]}
+                                  </span>
+                                  <span className="flex h-9 items-center text-sm font-medium">
+                                    <Money
+                                      amount={
+                                        computeInvoiceFormLine(
+                                          watchLines[index] ?? EMPTY_LINE,
+                                          standardRate
+                                        ).lineTotal
+                                      }
+                                      currency="AED"
+                                    />
+                                  </span>
+                                </div>
+                              </div>
+                              {(watchLines[index]?.vatSupplyType ?? "standard_rated") ===
+                                "standard_rated" && (
+                                <div className="flex flex-wrap items-center gap-3 ps-7">
                                   <FormField
                                     control={form.control}
-                                    name={`lines.${index}.marginPurchaseCost`}
+                                    name={`lines.${index}.marginScheme`}
                                     render={({ field }) => (
-                                      <FormItem className="w-40">
+                                      <FormItem className="flex items-center gap-2 space-y-0">
                                         <FormControl>
-                                          <Input
-                                            type="number"
-                                            step="0.01"
-                                            min={0}
-                                            placeholder={t["invoices.marginPurchaseCost"]}
-                                            aria-label={t["invoices.marginPurchaseCost"]}
-                                            value={field.value ?? ""}
-                                            onChange={(e) =>
-                                              field.onChange(
-                                                e.target.value ? parseFloat(e.target.value) : 0
-                                              )
-                                            }
-                                            data-testid={`input-line-margin-cost-${index}`}
+                                          <Switch
+                                            checked={!!field.value}
+                                            onCheckedChange={field.onChange}
+                                            aria-label={t["invoices.marginScheme"]}
+                                            data-testid={`switch-line-margin-${index}`}
                                           />
                                         </FormControl>
+                                        <span className="text-small text-muted-foreground">
+                                          {t["invoices.marginScheme"]}
+                                        </span>
                                       </FormItem>
                                     )}
                                   />
-                                  <span className="text-xs text-muted-foreground">
-                                    {t["invoices.marginSchemeHint"]}
-                                  </span>
-                                </>
+                                  {watchLines[index]?.marginScheme && (
+                                    <>
+                                      <FormField
+                                        control={form.control}
+                                        name={`lines.${index}.marginPurchaseCost`}
+                                        render={({ field }) => (
+                                          <FormItem className="w-40">
+                                            <FormControl>
+                                              <Input
+                                                type="number"
+                                                step="0.01"
+                                                min={0}
+                                                placeholder={t["invoices.marginPurchaseCost"]}
+                                                aria-label={t["invoices.marginPurchaseCost"]}
+                                                value={field.value ?? ""}
+                                                onChange={(e) =>
+                                                  field.onChange(
+                                                    e.target.value ? parseFloat(e.target.value) : 0
+                                                  )
+                                                }
+                                                data-testid={`input-line-margin-cost-${index}`}
+                                              />
+                                            </FormControl>
+                                          </FormItem>
+                                        )}
+                                      />
+                                      <span className="text-caption text-muted-foreground">
+                                        {t["invoices.marginSchemeHint"]}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
                               )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                            </li>
+                          ))}
+                        </ol>
+                      </FormSection>
                     </div>
 
-                    <div className="border-t pt-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{t.subtotal}</span>
-                        <span className="font-medium">
-                          {formatCurrency(subtotal, "AED", locale)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          {t.vat} (
-                          {formTotals.ratesCharged.length
-                            ? formTotals.ratesCharged
-                                .map((r) => `${Math.round(r * 100)}%`)
-                                .join(" / ")
-                            : "0%"}
-                          )
-                        </span>
-                        <span className="font-medium">
-                          {formatCurrency(vatAmount, "AED", locale)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                        <span>{t.total}</span>
-                        <span>{formatCurrency(total, "AED", locale)}</span>
-                      </div>
-                    </div>
+                    <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
+                      <Suspense fallback={<Skeleton className="h-96 w-full rounded-xl" />}>
+                        <InvoicePreview
+                          sellerName={company?.legalName || company?.name}
+                          sellerTrn={company?.trnVatNumber}
+                          sellerAddress={company?.businessAddress}
+                          number={editingInvoice ? form.watch("number") : null}
+                          date={form.watch("date")}
+                          customerName={form.watch("customerName")}
+                          customerTrn={form.watch("customerTrn")}
+                          placeOfSupply={
+                            form.watch("placeOfSupplyEmirate")
+                              ? t[`invoices.emirate.${form.watch("placeOfSupplyEmirate")}`]
+                              : null
+                          }
+                          currency="AED"
+                          lines={watchLines.map((line, i) => ({
+                            description: line.description,
+                            quantity: Number(line.quantity) || 0,
+                            unitPrice: Number(line.unitPrice) || 0,
+                            vatRate: formTotals.lines[i]?.vatRate ?? 0,
+                            lineTotal: formTotals.lines[i]?.lineTotal ?? 0,
+                          }))}
+                          subtotal={subtotal}
+                          vatAmount={vatAmount}
+                          total={total}
+                          ratesLabel={
+                            formTotals.ratesCharged.length
+                              ? formTotals.ratesCharged
+                                  .map((r) => `${Math.round(r * 100)}%`)
+                                  .join(" / ")
+                              : "0%"
+                          }
+                        />
+                      </Suspense>
+                    </aside>
 
-                    <div className="flex gap-3 pt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setDialogOpen(false)}
-                        className="flex-1"
-                      >
+                    <FormActions sticky className="lg:col-span-2">
+                      <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                         {t.cancel}
                       </Button>
                       <Button
@@ -1701,16 +1760,16 @@ export default function Invoices() {
                           editMutation.isPending ||
                           checkSimilarMutation.isPending
                         }
-                        className="flex-1"
+                        className="sm:min-w-32"
                         data-testid="button-submit-invoice"
                       >
                         {createMutation.isPending ||
                         editMutation.isPending ||
                         checkSimilarMutation.isPending
-                          ? t.loading
+                          ? t["forms.saving"]
                           : t.save}
                       </Button>
-                    </div>
+                    </FormActions>
                   </form>
                 </Form>
               </DialogContent>
@@ -2354,7 +2413,7 @@ export default function Invoices() {
 
       {/* Similar Invoices Warning Dialog */}
       <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
@@ -2418,7 +2477,7 @@ export default function Invoices() {
 
       {/* Set Recurring Dialog */}
       <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-accent" />
@@ -2563,7 +2622,7 @@ export default function Invoices() {
 
       {/* Add Payment Dialog */}
       <Dialog open={addPaymentDialogOpen} onOpenChange={setAddPaymentDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-success" />
@@ -2697,7 +2756,7 @@ export default function Invoices() {
 
       {/* View Payments Dialog */}
       <Dialog open={viewPaymentsDialogOpen} onOpenChange={setViewPaymentsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
             <DialogDescription>
@@ -2770,7 +2829,7 @@ export default function Invoices() {
 
       {/* Payment Account Selection Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent>
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.selectPaymentAccount" />

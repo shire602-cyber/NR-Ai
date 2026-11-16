@@ -1107,6 +1107,14 @@ export function loadLocale(locale: Locale): Promise<void> {
   return p;
 }
 
+/**
+ * D5b: load one namespace of a locale that is not the active one (the bilingual invoice
+ * preview shows English and Arabic labels side by side). Resolves once merged into `t[locale]`.
+ */
+export function loadNamespace(locale: Locale, namespace: string): Promise<void> {
+  return loadPaths(locale, pathsFor(locale, [namespace]));
+}
+
 /** Load only the namespaces `pathname` needs (every namespace for app routes). */
 export function loadLocaleForPath(locale: Locale, pathname: string): Promise<void> {
   const namespaces = namespacesForPath(pathname);

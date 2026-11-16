@@ -1,4 +1,13 @@
 import { T } from "@/components/layout/T";
+import {
+  ErrorSummary,
+  Field,
+  FormActions,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -47,7 +56,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -155,133 +163,176 @@ function ContactForm({
     paymentTerms: contact?.paymentTerms ?? 30,
   });
   const { t } = useTranslation();
+  const idp = contact ? `contact-${contact.id}` : "contact-new";
+  const gate = useFormGate([
+    { id: `${idp}-name`, label: t["forms.contact.name"], invalid: !formData.name },
+    { id: `${idp}-email`, label: t["forms.contact.email"], invalid: !formData.email },
+  ]);
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Name *</Label>
-          <Input
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Company or contact name"
-            data-testid="input-contact-name"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Email *</Label>
-          <Input
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            placeholder="email@example.com"
-            data-testid="input-contact-email"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>
-            <T k="pages.phone" />
-          </Label>
-          <Input
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            placeholder="+971-50-XXX-XXXX"
-            data-testid="input-contact-phone"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>
-            <T k="pageLabels.tRNNumber" />
-          </Label>
-          <Input
-            value={formData.trnNumber}
-            onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
-            placeholder="100XXXXXXXXX003"
-            data-testid="input-contact-trn"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>{t["invoices.placeOfSupply"]}</Label>
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            value={formData.emirate}
-            onChange={(e) => setFormData({ ...formData, emirate: e.target.value })}
-            data-testid="select-contact-emirate"
+    <form
+      noValidate
+      className="space-y-6"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!gate.attempt()) return;
+        onSubmit({ ...formData, emirate: formData.emirate || null });
+      }}
+    >
+      <ErrorSummary items={gate.summary} />
+      <FormSection title={t["forms.section.contact"]}>
+        <FormGrid>
+          <Field
+            id={`${idp}-name`}
+            label={t["forms.contact.name"]}
+            required
+            error={gate.errorFor(`${idp}-name`)}
+            className={formSpanFull}
           >
-            <option value="">{t["invoices.placeOfSupplyDefault"]}</option>
-            {CONTACT_EMIRATES.map((e) => (
-              <option key={e} value={e}>
-                {t[`invoices.emirate.${e}`]}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>{t["invoices.contactPaymentTermsDays"]}</Label>
-          <Input
-            type="number"
-            min={0}
-            max={365}
-            value={formData.paymentTerms}
-            onChange={(e) =>
-              setFormData({ ...formData, paymentTerms: Math.max(0, Number(e.target.value) || 0) })
-            }
-            data-testid="input-contact-payment-terms"
-          />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label>
-          <T k="pageLabels.address" />
-        </Label>
-        <Input
-          value={formData.address}
-          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          placeholder="Street address"
-          data-testid="input-contact-address"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>City</Label>
-          <Input
-            value={formData.city}
-            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-            placeholder="Dubai"
-            data-testid="input-contact-city"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>
-            <T k="pageLabels.country" />
-          </Label>
-          <Input
-            value={formData.country}
-            onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-            placeholder="UAE"
-            data-testid="input-contact-country"
-          />
-        </div>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
+            <Input
+              dir="auto"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder={t["forms.contact.namePlaceholder"]}
+              data-testid="input-contact-name"
+            />
+          </Field>
+          <Field
+            id={`${idp}-email`}
+            label={t["forms.contact.email"]}
+            required
+            error={gate.errorFor(`${idp}-email`)}
+          >
+            <Input
+              type="email"
+              autoComplete="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="email@example.com"
+              data-testid="input-contact-email"
+            />
+          </Field>
+          <Field id={`${idp}-phone`} label={<T k="pages.phone" />}>
+            <Input
+              type="tel"
+              autoComplete="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="+971 50 000 0000"
+              data-testid="input-contact-phone"
+            />
+          </Field>
+        </FormGrid>
+      </FormSection>
+
+      <FormSection title={t["forms.section.tax"]} description={t["forms.section.taxDesc"]}>
+        <FormGrid>
+          <Field
+            id={`${idp}-trn`}
+            label={<T k="pageLabels.tRNNumber" />}
+            help={t["forms.contact.trnHelp"]}
+          >
+            <Input
+              ltr
+              inputMode="numeric"
+              value={formData.trnNumber}
+              onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
+              placeholder="100XXXXXXXXX003"
+              data-testid="input-contact-trn"
+            />
+          </Field>
+          <Field
+            id={`${idp}-emirate`}
+            label={t["invoices.placeOfSupply"]}
+            help={t["forms.contact.emirateHelp"]}
+          >
+            <select
+              className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20"
+              value={formData.emirate}
+              onChange={(e) => setFormData({ ...formData, emirate: e.target.value })}
+              data-testid="select-contact-emirate"
+            >
+              <option value="">{t["invoices.placeOfSupplyDefault"]}</option>
+              {CONTACT_EMIRATES.map((e) => (
+                <option key={e} value={e}>
+                  {t[`invoices.emirate.${e}`]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            id={`${idp}-terms`}
+            label={t["invoices.contactPaymentTermsDays"]}
+            help={t["forms.contact.termsHelp"]}
+          >
+            <Input
+              type="number"
+              min={0}
+              max={365}
+              value={formData.paymentTerms}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  paymentTerms: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+              data-testid="input-contact-payment-terms"
+            />
+          </Field>
+        </FormGrid>
+      </FormSection>
+
+      <FormSection title={t["forms.section.address"]}>
+        <FormGrid>
+          <Field
+            id={`${idp}-address`}
+            label={<T k="pageLabels.address" />}
+            className={formSpanFull}
+          >
+            <Input
+              dir="auto"
+              autoComplete="street-address"
+              value={formData.address}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              placeholder={t["forms.contact.streetPlaceholder"]}
+              data-testid="input-contact-address"
+            />
+          </Field>
+          <Field id={`${idp}-city`} label={t["forms.contact.city"]}>
+            <Input
+              dir="auto"
+              value={formData.city}
+              onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+              placeholder={t["forms.contact.cityPlaceholder"]}
+              data-testid="input-contact-city"
+            />
+          </Field>
+          <Field id={`${idp}-country`} label={<T k="pageLabels.country" />}>
+            <Input
+              dir="auto"
+              value={formData.country}
+              onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+              placeholder="UAE"
+              data-testid="input-contact-country"
+            />
+          </Field>
+        </FormGrid>
+      </FormSection>
+
+      <FormActions sticky>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          data-testid="button-cancel-contact"
+        >
           <T k="pages.cancel" />
         </Button>
-        <Button
-          onClick={() => onSubmit({ ...formData, emirate: formData.emirate || null })}
-          disabled={!formData.name || !formData.email}
-          data-testid="button-save-contact"
-        >
-          {contact ? "Update" : "Create"} Contact
+        <Button type="submit" className="sm:min-w-32" data-testid="button-save-contact">
+          {contact ? t["forms.contact.update"] : t["forms.contact.create"]}
         </Button>
-      </DialogFooter>
-    </div>
+      </FormActions>
+    </form>
   );
 }
 
@@ -595,7 +646,7 @@ export default function CustomerContacts() {
                   <T k="pageLabels.addContact" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
+              <DialogContent size="md">
                 <DialogHeader>
                   <DialogTitle>
                     <T k="pageLabels.addNewContact" />
@@ -1055,7 +1106,7 @@ export default function CustomerContacts() {
       </Tabs>
 
       <Dialog open={!!editContact} onOpenChange={(open) => !open && setEditContact(null)}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.editContact" />
@@ -1081,7 +1132,7 @@ export default function CustomerContacts() {
           !open && setPortalLinkDialog({ open: false, url: "", contactName: "" })
         }
       >
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="w-5 h-5" />

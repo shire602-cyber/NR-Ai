@@ -1,4 +1,6 @@
 import { T } from "@/components/layout/T";
+import { SectionCard } from "@/components/ui/section-card";
+import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
 import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
@@ -7,7 +9,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,7 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
-import { Building2, FileText, Save } from "lucide-react";
+import { Building2, Save } from "lucide-react";
 import type { Company } from "@shared/schema";
 
 const companyProfileSchema = z.object({
@@ -256,30 +258,21 @@ export default function CompanyProfile() {
       />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+          <FormErrorSummary />
           {/* Company Information Section */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Building2 className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle>
-                    <T k="pages.companyInformation" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pages.basicDetailsAboutYourBusiness" />
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SectionCard
+            title={<T k="pages.companyInformation" />}
+            description={<T k="pages.basicDetailsAboutYourBusiness" />}
+          >
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t["pages.companyProfileNameLabel"]}</FormLabel>
+                      <FormLabel required>{t["pages.companyProfileNameLabel"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -297,7 +290,7 @@ export default function CompanyProfile() {
                   name="legalStructure"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t["pages.companyProfileLegalStructureLabel"]}</FormLabel>
+                      <FormLabel required>{t["pages.companyProfileLegalStructureLabel"]}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-legal-structure">
@@ -374,7 +367,7 @@ export default function CompanyProfile() {
                 name="businessAddress"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t["pages.companyProfileAddressLabel"]}</FormLabel>
+                    <FormLabel required>{t["pages.companyProfileAddressLabel"]}</FormLabel>
                     <FormControl>
                       <Textarea
                         {...field}
@@ -388,7 +381,7 @@ export default function CompanyProfile() {
                 )}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="contactPhone"
@@ -432,7 +425,7 @@ export default function CompanyProfile() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="websiteUrl"
@@ -484,37 +477,28 @@ export default function CompanyProfile() {
                   </div>
                 </FormItem>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </SectionCard>
 
           {/* Tax & Compliance Section */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <FileText className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle>
-                    <T k="pages.taxComplianceSettings" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pages.vatRegistrationAndTaxComplianceInformation" />
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SectionCard
+            title={<T k="pages.taxComplianceSettings" />}
+            description={<T k="pages.vatRegistrationAndTaxComplianceInformation" />}
+          >
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="trnVatNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t["pages.companyProfileTrnLabel"]}</FormLabel>
+                      <FormLabel required>{t["pages.companyProfileTrnLabel"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
+                          ltr
+                          inputMode="numeric"
                           placeholder="123456789012345"
-                          className="tabular-nums"
                           data-testid="input-trn-vat-number"
                         />
                       </FormControl>
@@ -529,7 +513,7 @@ export default function CompanyProfile() {
                   name="taxRegistrationType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
+                      <FormLabel required>
                         <T k="pages.taxRegistrationType" />
                       </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
@@ -565,7 +549,7 @@ export default function CompanyProfile() {
                   name="vatFilingFrequency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t["pages.companyProfileVatFrequencyLabel"]}</FormLabel>
+                      <FormLabel required>{t["pages.companyProfileVatFrequencyLabel"]}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-vat-filing-frequency">
@@ -631,11 +615,11 @@ export default function CompanyProfile() {
                   )}
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </SectionCard>
 
           {/* Save Button */}
-          <div className="flex justify-end gap-3">
+          <FormActions sticky variant="page">
             <Button
               type="submit"
               disabled={updateMutation.isPending}
@@ -646,12 +630,12 @@ export default function CompanyProfile() {
                 t["pages.companyProfileSaving"]
               ) : (
                 <>
-                  <Save className="w-4 h-4 me-2" />
+                  <Save className="h-4 w-4" />
                   <T k="pages.saveChanges" />
                 </>
               )}
             </Button>
-          </div>
+          </FormActions>
         </form>
       </Form>
     </div>

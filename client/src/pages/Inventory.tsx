@@ -1,4 +1,11 @@
 import { T } from "@/components/layout/T";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -64,6 +71,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -651,310 +659,313 @@ export default function Inventory() {
 
       {/* ─── Product Create/Edit Dialog ──────────────────── */}
       <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-product-form">
           <DialogHeader>
             <DialogTitle>
               {editingProduct ? t["screens.editProduct"] : t["pageLabels.addProduct"]}
             </DialogTitle>
             <DialogDescription>
-              {editingProduct ? "Update product details." : "Add a new product to your inventory."}
+              {editingProduct ? t["forms.product.editDesc"] : t["forms.product.newDesc"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...productForm}>
-            <form onSubmit={productForm.handleSubmit(handleProductSubmit)} className="space-y-4">
-              <FormField
-                control={productForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t["screens.invName"]} <span className="text-danger">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input placeholder={t["screens.inv2ProductName"]} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={productForm.control}
-                name="nameAr"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t["screens.inv2NameArabic"]}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="اسم المنتج"
-                        dir="rtl"
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={productForm.control}
-                  name="sku"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["screens.invSku"]}</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., PROD-001" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={productForm.control}
-                  name="unit"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {t["screens.invUnit"]} <span className="text-danger">*</span>
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+            <form
+              onSubmit={productForm.handleSubmit(handleProductSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.item"]}>
+                <FormGrid>
+                  <FormField
+                    control={productForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.invName"]}</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t["screens.inv2SelectUnit"]} />
-                          </SelectTrigger>
+                          <Input dir="auto" placeholder={t["screens.inv2ProductName"]} {...field} />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="pcs">Pieces (pcs)</SelectItem>
-                          <SelectItem value="kg">Kilograms (kg)</SelectItem>
-                          <SelectItem value="m">Meters (m)</SelectItem>
-                          <SelectItem value="hr">Hours (hr)</SelectItem>
-                          <SelectItem value="box">Box</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={productForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t.description || "Description"}</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder={t["screens.inv2ProductDescriptionOptional"]}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={productForm.control}
-                  name="unitPrice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t.unitPrice || "Unit Price"} *</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" min="0" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={productForm.control}
-                  name="costPrice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.costPrice" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          {...field}
-                          value={field.value ?? 0}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={productForm.control}
-                  name="vatRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.vatRate" />
-                      </FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(parseFloat(v))}
-                        value={String(field.value)}
-                      >
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="nameAr"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.inv2NameArabic"]}</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t["screens.inv2SelectVatRate"]} />
-                          </SelectTrigger>
+                          <Input
+                            placeholder="اسم المنتج"
+                            dir="rtl"
+                            {...field}
+                            value={field.value || ""}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="0">0% (Exempt)</SelectItem>
-                          <SelectItem value="0.05">5% (Standard)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={productForm.control}
-                  name="productType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{c.productType}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "inventory"}>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="sku"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.invSku"]}</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Input ltr placeholder="PROD-001" {...field} value={field.value || ""} />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="inventory">{c.typeInventory}</SelectItem>
-                          <SelectItem value="service">{c.typeService}</SelectItem>
-                          <SelectItem value="bundle">{c.typeBundle}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={productForm.control}
-                  name="gtin"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.productGtin" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          inputMode="numeric"
-                          {...field}
-                          value={field.value ?? ""}
-                          data-testid="input-product-gtin"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={productForm.control}
-                  name="rcmGoodsType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.productRcmGoodsType" />
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || "none"}>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="unit"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.invUnit"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.inv2SelectUnit"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="pcs">{t["forms.product.unit.pcs"]}</SelectItem>
+                            <SelectItem value="kg">{t["forms.product.unit.kg"]}</SelectItem>
+                            <SelectItem value="m">{t["forms.product.unit.m"]}</SelectItem>
+                            <SelectItem value="hr">{t["forms.product.unit.hr"]}</SelectItem>
+                            <SelectItem value="box">{t["forms.product.unit.box"]}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="productType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{c.productType}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "inventory"}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="inventory">{c.typeInventory}</SelectItem>
+                            <SelectItem value="service">{c.typeService}</SelectItem>
+                            <SelectItem value="bundle">{c.typeBundle}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="hidden sm:block" aria-hidden />
+                  <FormField
+                    control={productForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel>{t.description}</FormLabel>
                         <FormControl>
-                          <SelectTrigger data-testid="select-product-rcm-goods-type">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Textarea
+                            placeholder={t["screens.inv2ProductDescriptionOptional"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">{t["pages.productRcmNone"]}</SelectItem>
-                          {RCM_GOODS_TYPES.map((code) => (
-                            <SelectItem key={code} value={code}>
-                              {code}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.section.pricing"]}>
+                <FormGrid>
+                  <FormField
+                    control={productForm.control}
+                    name="unitPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t.unitPrice}</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.01" min="0" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="costPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.costPrice" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            {...field}
+                            value={field.value ?? 0}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="vatRate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.vatRate" />
+                        </FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(parseFloat(v))}
+                          value={String(field.value)}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.inv2SelectVatRate"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="0">{t["forms.product.vat0"]}</SelectItem>
+                            <SelectItem value="0.05">{t["forms.product.vat5"]}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="hidden sm:block" aria-hidden />
+                  <FormField
+                    control={productForm.control}
+                    name="reorderPoint"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{c.reorderPoint}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="lowStockThreshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.lowStockThreshold" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            {...field}
+                            value={field.value ?? 10}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection
+                title={t["forms.product.einvoiceTitle"]}
+                description={t["forms.product.einvoiceDesc"]}
+              >
+                <FormGrid>
+                  <FormField
+                    control={productForm.control}
+                    name="gtin"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.productGtin" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            ltr
+                            inputMode="numeric"
+                            {...field}
+                            value={field.value ?? ""}
+                            data-testid="input-product-gtin"
+                          />
+                        </FormControl>
+                        <FormDescription>{t["forms.product.gtinHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={productForm.control}
+                    name="rcmGoodsType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.productRcmGoodsType" />
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || "none"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-product-rcm-goods-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">{t["pages.productRcmNone"]}</SelectItem>
+                            {RCM_GOODS_TYPES.map((code) => (
+                              <SelectItem key={code} value={code}>
+                                {code}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
 
-                <FormField
-                  control={productForm.control}
-                  name="reorderPoint"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{c.reorderPoint}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          {...field}
-                          value={field.value ?? ""}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={productForm.control}
-                  name="lowStockThreshold"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.lowStockThreshold" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          {...field}
-                          value={field.value ?? 10}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setProductDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createProductMutation.isPending || updateProductMutation.isPending}
                 >
                   {createProductMutation.isPending || updateProductMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingProduct
-                      ? t.save || "Save"
-                      : "Add Product"}
+                      ? t.save
+                      : t["pageLabels.addProduct"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -962,7 +973,7 @@ export default function Inventory() {
 
       {/* ─── Add Stock Dialog ────────────────────────────── */}
       <Dialog open={addStockDialogOpen} onOpenChange={setAddStockDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.addStock" />

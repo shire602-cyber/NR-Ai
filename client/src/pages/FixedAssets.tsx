@@ -1,4 +1,11 @@
 import { T } from "@/components/layout/T";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
@@ -66,6 +73,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -814,7 +822,7 @@ export default function FixedAssets() {
 
       {/* ─── Create/Edit Asset Dialog ──────────────────────── */}
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-asset-form">
           <DialogHeader>
             <DialogTitle>
               {editingAsset ? t["screens.editFixedAsset"] : t["screens.addFixedAsset"]}
@@ -825,230 +833,270 @@ export default function FixedAssets() {
           </DialogHeader>
 
           <Form {...assetForm}>
-            <form onSubmit={assetForm.handleSubmit(handleAssetSubmit)} className="space-y-4">
-              <FormField
-                control={assetForm.control}
-                name="assetName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t["screens.faAssetName"]} <span className="text-danger">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Toyota Hilux 2024" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={assetForm.control}
-                name="assetNameAr"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t["screens.faAssetNameArabic"]}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="اسم الأصل"
-                        dir="rtl"
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={assetForm.control}
-                  name="assetNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.assetNumber" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., FA-001" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={assetForm.control}
-                  name="category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {t["screens.faCategory"]} <span className="text-danger">*</span>
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t["screens.faSelectCategory"]} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat}>
-                              {cat}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={assetForm.control}
-                  name="purchaseDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {t["screens.faPurchaseDate"]} <span className="text-danger">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={assetForm.control}
-                  name="purchaseCost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {t["screens.faPurchaseCostAed"]} <span className="text-danger">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" min="0" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={assetForm.control}
-                  name="salvageValue"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["screens.faSalvageValueAed"]}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          {...field}
-                          value={field.value ?? 0}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {!editingAsset && (
+            <form
+              onSubmit={assetForm.handleSubmit(handleAssetSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.asset"]}>
+                <FormGrid>
                   <FormField
                     control={assetForm.control}
-                    name="paymentAccountId"
+                    name="assetName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{fa.paidFrom}</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormLabel required>{t["screens.faAssetName"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.asset.namePlaceholder"]}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="assetNameAr"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.faAssetNameArabic"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="اسم الأصل"
+                            dir="rtl"
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="assetNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.assetNumber" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input ltr placeholder="FA-001" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faCategory"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder={fa.notCapitalised} />
+                              <SelectValue placeholder={t["screens.faSelectCategory"]} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {cashAccounts.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.code} — {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                            {CATEGORIES.map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {t[`forms.asset.cat.${cat}`] || cat}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
-                )}
-
-                <FormField
-                  control={assetForm.control}
-                  name="usefulLifeYears"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{fa.usefulLife}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          {...field}
-                          value={field.value ?? ""}
-                          disabled={assetCategory?.toLowerCase() === "land"}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  <FormField
+                    control={assetForm.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.location" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.asset.locationPlaceholder"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="serialNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.serialNumber" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input ltr placeholder="SN-12345" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.section.acquisition"]}>
+                <FormGrid>
+                  <FormField
+                    control={assetForm.control}
+                    name="purchaseDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faPurchaseDate"]}</FormLabel>
+                        <FormControl>
+                          <Input type="date" dir="ltr" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="purchaseCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faPurchaseCostAed"]}</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.01" min="0" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {!editingAsset && (
+                    <FormField
+                      control={assetForm.control}
+                      name="paymentAccountId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{fa.paidFrom}</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={fa.notCapitalised} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {cashAccounts.map((a) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  {a.code} — {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>{t["forms.asset.paidFromHelp"]}</FormDescription>
+                        </FormItem>
+                      )}
+                    />
                   )}
-                />
-              </div>
-
-              <FormField
-                control={assetForm.control}
-                name="depreciationMethod"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pageLabels.depreciationMethod" />
-                    </FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || "straight_line"}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t["screens.faSelectMethod"]} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="straight_line">
-                          <T k="pageLabels.straightLine" />
-                        </SelectItem>
-                        <SelectItem value="declining_balance">
-                          <T k="pageLabels.decliningBalance" />
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
+                </FormGrid>
+              </FormSection>
+              <FormSection
+                title={t["forms.section.depreciation"]}
+                description={t["forms.section.depreciationDesc"]}
+              >
+                <FormGrid>
+                  <FormField
+                    control={assetForm.control}
+                    name="depreciationMethod"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.depreciationMethod" />
+                        </FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || "straight_line"}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.faSelectMethod"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="straight_line">
+                              <T k="pageLabels.straightLine" />
+                            </SelectItem>
+                            <SelectItem value="declining_balance">
+                              <T k="pageLabels.decliningBalance" />
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="usefulLifeYears"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{fa.usefulLife}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            step="1"
+                            {...field}
+                            value={field.value ?? ""}
+                            disabled={assetCategory?.toLowerCase() === "land"}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="salvageValue"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.faSalvageValueAed"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            {...field}
+                            value={field.value ?? 0}
+                          />
+                        </FormControl>
+                        <FormDescription>{t["forms.asset.salvageHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.section.notes"]}>
                 <FormField
                   control={assetForm.control}
-                  name="location"
+                  name="notes"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className={formSpanFull}>
                       <FormLabel>
-                        <T k="pageLabels.location" />
+                        <T k="pages.notes" />
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Dubai Office"
+                        <Textarea
+                          placeholder={t["screens.faOptionalNotesAboutThisAsset"]}
                           {...field}
                           value={field.value || ""}
                         />
@@ -1057,59 +1105,24 @@ export default function FixedAssets() {
                     </FormItem>
                   )}
                 />
+              </FormSection>
 
-                <FormField
-                  control={assetForm.control}
-                  name="serialNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.serialNumber" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., SN-12345" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={assetForm.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.notes" />
-                    </FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder={t["screens.faOptionalNotesAboutThisAsset"]}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setAssetDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createAssetMutation.isPending || updateAssetMutation.isPending}
                 >
                   {createAssetMutation.isPending || updateAssetMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingAsset
-                      ? t.save || "Save"
-                      : "Add Asset"}
+                      ? t.save
+                      : t["pageLabels.addAsset"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -1117,7 +1130,7 @@ export default function FixedAssets() {
 
       {/* ─── Dispose Dialog ────────────────────────────────── */}
       <Dialog open={disposeDialogOpen} onOpenChange={setDisposeDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.disposeAsset" />
@@ -1276,7 +1289,7 @@ export default function FixedAssets() {
 
       {/* ─── Run Depreciation Dialog ───────────────────────── */}
       <Dialog open={depRunDialogOpen} onOpenChange={setDepRunDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.runMonthlyDepreciation" />

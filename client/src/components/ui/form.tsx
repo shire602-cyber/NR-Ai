@@ -13,7 +13,7 @@ import {
 } from "react-hook-form";
 
 import { cn } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 
 const Form = FormProvider;
 
@@ -74,7 +74,7 @@ const FormItem = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
 
     return (
       <FormItemContext.Provider value={{ id }}>
-        <div ref={ref} className={cn("space-y-2", className)} {...props} />
+        <div ref={ref} className={cn("min-w-0 space-y-1.5", className)} {...props} />
       </FormItemContext.Provider>
     );
   }
@@ -83,17 +83,23 @@ FormItem.displayName = "FormItem";
 
 const FormLabel = React.forwardRef<
   React.ElementRef<typeof LabelPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
->(({ className, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> & {
+    /** D5b: append the required marker (text-danger asterisk, announced as "required"). */
+    required?: boolean;
+  }
+>(({ className, required, children, ...props }, ref) => {
   const { error, formItemId } = useFormField();
 
   return (
     <Label
       ref={ref}
-      className={cn(error && "text-destructive", className)}
+      className={cn(error && "text-danger", className)}
       htmlFor={formItemId}
       {...props}
-    />
+    >
+      {children}
+      {required && <RequiredMark />}
+    </Label>
   );
 });
 FormLabel.displayName = "FormLabel";
@@ -126,7 +132,7 @@ const FormDescription = React.forwardRef<
     <p
       ref={ref}
       id={formDescriptionId}
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-caption text-muted-foreground", className)}
       {...props}
     />
   );
@@ -148,7 +154,7 @@ const FormMessage = React.forwardRef<
     <p
       ref={ref}
       id={formMessageId}
-      className={cn("text-sm font-medium text-destructive", className)}
+      className={cn("text-caption font-medium text-danger", className)}
       {...props}
     >
       {body}

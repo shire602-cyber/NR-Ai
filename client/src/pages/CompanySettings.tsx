@@ -1,11 +1,13 @@
 import { T } from "@/components/layout/T";
+import { SectionCard } from "@/components/ui/section-card";
+import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
 import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,7 +33,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
 import type { Company, CompanyPreferences } from "@shared/schema";
 import { companyPreferencesSchema } from "@shared/schema-values";
-import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
+import { Building2, FileText, Save, Upload } from "lucide-react";
 import { WpsSettingsCard } from "./payroll/WpsTab";
 
 const CURRENCY_OPTIONS = [
@@ -112,15 +114,6 @@ function monthLabel(index: number, locale: string, fallback: string) {
   } catch {
     return fallback;
   }
-}
-
-/** Required marker after a label: a danger-coloured asterisk (D3 form rule). */
-function RequiredMark({ label }: { label: string }) {
-  return (
-    <span aria-hidden title={label} className="ms-0.5 text-danger">
-      *
-    </span>
-  );
 }
 
 export default function CompanySettings() {
@@ -235,7 +228,7 @@ export default function CompanySettings() {
 
   if (isLoading) {
     return (
-      <div className="space-y-8 max-w-4xl">
+      <div className="mx-auto max-w-narrow space-y-8">
         <Skeleton className="h-12 w-72" />
         <Skeleton className="h-96" />
       </div>
@@ -268,33 +261,21 @@ export default function CompanySettings() {
       />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+          <FormErrorSummary />
           {/* Identity */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Building2 className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle>
-                    <T k="pageLabels.companyIdentity" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pageLabels.namesRegistrationAndLogoShownOnInvoices" />
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SectionCard
+            title={<T k="pageLabels.companyIdentity" />}
+            description={<T k="pageLabels.namesRegistrationAndLogoShownOnInvoices" />}
+          >
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        {t["pageLabels.companySettings.companyName"]}
-                        <RequiredMark label={t["pageLabels.companySettings.requiredMark"]} />
-                      </FormLabel>
+                      <FormLabel required>{t["pageLabels.companySettings.companyName"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -345,7 +326,7 @@ export default function CompanySettings() {
                           placeholder="100123456789012"
                           inputMode="numeric"
                           maxLength={15}
-                          className="tabular-nums"
+                          ltr
                           data-testid="input-trn"
                         />
                       </FormControl>
@@ -413,34 +394,23 @@ export default function CompanySettings() {
                   </div>
                 </div>
               </FormItem>
-            </CardContent>
-          </Card>
+            </div>
+          </SectionCard>
 
           {/* Localization & Finance */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Globe className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle>
-                    <T k="pageLabels.localizationAndFinance" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pageLabels.currencyFiscalYearVATLanguageAndDateFormat" />
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SectionCard
+            title={<T k="pageLabels.localizationAndFinance" />}
+            description={<T k="pageLabels.currencyFiscalYearVATLanguageAndDateFormat" />}
+          >
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="baseCurrency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
+                      <FormLabel required>
                         {t["pageLabels.companySettings.preferredCurrency"]}
-                        <RequiredMark label={t["pageLabels.companySettings.requiredMark"]} />
                       </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "AED"}>
                         <FormControl>
@@ -582,25 +552,15 @@ export default function CompanySettings() {
                   )}
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </SectionCard>
 
           {/* Address & Contact */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle>
-                    <T k="pageLabels.addressAndContact" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pageLabels.usedOnInvoicesStatementsAndTaxFilings" />
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <SectionCard
+            title={<T k="pageLabels.addressAndContact" />}
+            description={<T k="pageLabels.usedOnInvoicesStatementsAndTaxFilings" />}
+          >
+            <div className="space-y-6">
               <FormField
                 control={form.control}
                 name="addressStreet"
@@ -622,7 +582,7 @@ export default function CompanySettings() {
                 )}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
                 <FormField
                   control={form.control}
                   name="addressCity"
@@ -695,7 +655,7 @@ export default function CompanySettings() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="contactPhone"
@@ -740,10 +700,10 @@ export default function CompanySettings() {
                   )}
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </SectionCard>
 
-          <div className="flex justify-end gap-3">
+          <FormActions sticky variant="page">
             <Button
               type="button"
               variant="outline"
@@ -760,29 +720,28 @@ export default function CompanySettings() {
               data-testid="button-save-company-settings"
             >
               {updateMutation.isPending ? (
-                "Saving…"
+                t["forms.saving"]
               ) : (
                 <>
-                  <Save className="w-4 h-4 me-2" />
+                  <Save className="h-4 w-4" />
                   <T k="pages.saveChanges" />
                 </>
               )}
             </Button>
-          </div>
+          </FormActions>
 
-          <Card className="bg-muted/30 border-dashed">
-            <CardContent className="py-4 flex items-start gap-3 text-sm text-muted-foreground">
-              <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <div>
-                Need to update tax registration type, filing frequency, or other compliance fields?
-                Visit the{" "}
-                <a href="/company-profile" className="text-primary underline">
-                  <T k="pageLabels.companyProfile" />
-                </a>{" "}
-                page.
-              </div>
-            </CardContent>
-          </Card>
+          <p className="flex items-start gap-3 rounded-lg bg-surface-sunken px-4 py-3 text-small text-muted-foreground">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              {t["forms.settings.complianceNotePrefix"]}{" "}
+              <a
+                href="/company-profile"
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                <T k="pageLabels.companyProfile" />
+              </a>
+            </span>
+          </p>
         </form>
       </Form>
 

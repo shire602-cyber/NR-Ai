@@ -1,4 +1,11 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
 import { T } from "@/components/layout/T";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -98,6 +105,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 
 interface ExtractedData {
@@ -2355,7 +2363,7 @@ export default function Receipts() {
 
       {/* Edit Receipt Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent>
+        <DialogContent size="md" data-testid="dialog-edit-receipt">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.editReceipt" />
@@ -2365,140 +2373,138 @@ export default function Receipts() {
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="merchant"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.merchant" />
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} data-testid="input-edit-merchant" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="date" data-testid="input-edit-date" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="banking.common.amount" />
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={field.value ?? ""}
-                        onChange={(e) =>
-                          field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                        }
-                        data-testid="input-edit-amount"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="vatAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>VAT Amount (Optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="number"
-                        step="0.01"
-                        value={field.value ?? ""}
-                        onChange={(e) =>
-                          field.onChange(e.target.value ? parseFloat(e.target.value) : null)
-                        }
-                        data-testid="input-edit-vat"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.category" />
-                    </FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+            <form onSubmit={form.handleSubmit(onEditSubmit)} noValidate className="space-y-6">
+              <FormErrorSummary />
+              <FormGrid>
+                <FormField
+                  control={form.control}
+                  name="merchant"
+                  render={({ field }) => (
+                    <FormItem className={formSpanFull}>
+                      <FormLabel required>
+                        <T k="pages.merchant" />
+                      </FormLabel>
                       <FormControl>
-                        <SelectTrigger data-testid="select-edit-category">
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
+                        <Input {...field} dir="auto" data-testid="input-edit-merchant" />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Office Supplies">
-                          <T k="pageLabels.officeSupplies" />
-                        </SelectItem>
-                        <SelectItem value="Meals & Entertainment">
-                          <T k="pageLabels.mealsEntertainment" />
-                        </SelectItem>
-                        <SelectItem value="Travel">
-                          <T k="pages.travel" />
-                        </SelectItem>
-                        <SelectItem value="Utilities">
-                          <T k="pages.utilities" />
-                        </SelectItem>
-                        <SelectItem value="Marketing">
-                          <T k="pageLabels.marketing" />
-                        </SelectItem>
-                        <SelectItem value="Software">
-                          <T k="pageLabels.software" />
-                        </SelectItem>
-                        <SelectItem value="Other">
-                          <T k="pages.other" />
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex gap-3 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setEditDialogOpen(false)}
-                  className="flex-1"
-                >
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t.date}</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="date" dir="ltr" data-testid="input-edit-date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>
+                        <T k="banking.common.amount" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                          }
+                          data-testid="input-edit-amount"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="vatAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["screens.vatAmountAed"]}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          step="0.01"
+                          value={field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                          }
+                          data-testid="input-edit-vat"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.category" />
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-category">
+                            <SelectValue placeholder={t["screens.selectCategory"]} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Office Supplies">
+                            <T k="pageLabels.officeSupplies" />
+                          </SelectItem>
+                          <SelectItem value="Meals & Entertainment">
+                            <T k="pageLabels.mealsEntertainment" />
+                          </SelectItem>
+                          <SelectItem value="Travel">
+                            <T k="pages.travel" />
+                          </SelectItem>
+                          <SelectItem value="Utilities">
+                            <T k="pages.utilities" />
+                          </SelectItem>
+                          <SelectItem value="Marketing">
+                            <T k="pageLabels.marketing" />
+                          </SelectItem>
+                          <SelectItem value="Software">
+                            <T k="pageLabels.software" />
+                          </SelectItem>
+                          <SelectItem value="Other">
+                            <T k="pages.other" />
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </FormGrid>
+              <FormActions sticky>
+                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
                   <T k="banking.common.cancel" />
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={editMutation.isPending}
-                  className="flex-1"
                   data-testid="button-submit-edit-receipt"
                 >
-                  {editMutation.isPending ? "Saving..." : "Save"}
+                  {editMutation.isPending ? t["forms.saving"] : t.save}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -2506,7 +2512,7 @@ export default function Receipts() {
 
       {/* Similar Transactions Warning Dialog */}
       <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
@@ -2575,7 +2581,7 @@ export default function Receipts() {
 
       {/* Create Account Dialog */}
       <Dialog open={createAccountDialogOpen} onOpenChange={setCreateAccountDialogOpen}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.createNewAccount" />
@@ -2655,7 +2661,7 @@ export default function Receipts() {
 
       {/* Post Expense Dialog */}
       <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.postExpenseToJournal" />
@@ -2821,7 +2827,7 @@ export default function Receipts() {
 
       {/* Manual Expense Entry Dialog */}
       <Dialog open={manualExpenseDialogOpen} onOpenChange={setManualExpenseDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="md" data-testid="dialog-manual-expense">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.addExpenseManually" />
@@ -2833,113 +2839,123 @@ export default function Receipts() {
           <Form {...manualExpenseForm}>
             <form
               onSubmit={manualExpenseForm.handleSubmit(onManualExpenseSubmit)}
-              className="space-y-4"
+              noValidate
+              className="space-y-6"
             >
-              <FormField
-                control={manualExpenseForm.control}
-                name="merchant"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Merchant/Vendor</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., Office Depot"
-                        {...field}
-                        data-testid="input-manual-merchant"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={manualExpenseForm.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} data-testid="input-manual-date" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={manualExpenseForm.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (AED)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                        data-testid="input-manual-amount"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={manualExpenseForm.control}
-                name="vatAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>VAT Amount (Optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                        value={field.value ?? ""}
-                        data-testid="input-manual-vat"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={manualExpenseForm.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category (Optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., Office Supplies"
-                        {...field}
-                        value={field.value ?? ""}
-                        data-testid="input-manual-category"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex gap-3 pt-4">
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.expense"]}>
+                <FormGrid>
+                  <FormField
+                    control={manualExpenseForm.control}
+                    name="merchant"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel required>{t["forms.receipt.merchant"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.receipt.merchantPlaceholder"]}
+                            {...field}
+                            data-testid="input-manual-merchant"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={manualExpenseForm.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t.date}</FormLabel>
+                        <FormControl>
+                          <Input type="date" dir="ltr" {...field} data-testid="input-manual-date" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={manualExpenseForm.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["forms.claim.category"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.receipt.categoryPlaceholder"]}
+                            {...field}
+                            value={field.value ?? ""}
+                            data-testid="input-manual-category"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={manualExpenseForm.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.claim.amountAed"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            data-testid="input-manual-amount"
+                          />
+                        </FormControl>
+                        <FormDescription>{t["forms.receipt.amountHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={manualExpenseForm.control}
+                    name="vatAmount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.vatAmountAed"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            value={field.value ?? ""}
+                            data-testid="input-manual-vat"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormActions sticky>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setManualExpenseDialogOpen(false)}
-                  className="flex-1"
                 >
                   <T k="banking.common.cancel" />
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={manualExpenseMutation.isPending}
-                  className="flex-1"
                   data-testid="button-submit-manual-expense"
                 >
-                  {manualExpenseMutation.isPending ? "Creating..." : "Create Expense"}
+                  {manualExpenseMutation.isPending
+                    ? t["forms.saving"]
+                    : t["forms.receipt.createExpense"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>

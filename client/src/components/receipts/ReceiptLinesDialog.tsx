@@ -12,7 +12,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -20,7 +19,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
+import {
+  FormActions,
+  FormSection,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import {
@@ -77,7 +83,7 @@ const ERROR_KEY: Record<ReceiptSplitError, string> = {
 };
 
 const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  "flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20";
 
 function emptyPart(receipt: ReceiptForSplit | null): ReceiptPartDraft {
   return {
@@ -172,202 +178,243 @@ export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl" data-testid="receipt-lines-dialog">
+      <DialogContent size="lg" data-testid="receipt-lines-dialog">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{hint}</DialogDescription>
         </DialogHeader>
 
-        {mode === "lines" ? (
-          <div className="space-y-3">
-            {lines.map((l, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-12 gap-2 items-end"
-                data-testid={`receipt-line-${i}`}
-              >
-                <div className="col-span-12 sm:col-span-4">
-                  <Label htmlFor={`rl-account-${i}`}>{t["purchases.account"]}</Label>
-                  <select
-                    id={`rl-account-${i}`}
-                    className={selectClass}
-                    value={l.accountId}
-                    onChange={(e) => updateLine(i, { accountId: e.target.value })}
+        <form
+          noValidate
+          className="space-y-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg border border-danger/30 bg-danger-subtle px-4 py-3 text-small font-medium text-danger-subtle-foreground"
+              data-testid="receipt-lines-error"
+            >
+              {error}
+            </div>
+          )}
+
+          {mode === "lines" ? (
+            <FormSection
+              title={t["forms.section.lines"]}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                >
+                  <Plus className="h-4 w-4" />
+                  {t["purchases.addLine"]}
+                </Button>
+              }
+            >
+              <LineItemList>
+                {lines.map((l, i) => (
+                  <LineItem
+                    key={i}
+                    index={i}
+                    onRemove={() => setLines((prev) => prev.filter((_, k) => k !== i))}
+                    canRemove={lines.length > 1}
+                    gridClassName="sm:grid-cols-[8rem_8rem_minmax(0,1fr)]"
+                    main={
+                      <div className="space-y-1.5" data-testid={`receipt-line-${i}`}>
+                        <Label htmlFor={`rl-account-${i}`} className={lineLabelClass}>
+                          {t["purchases.account"]}
+                        </Label>
+                        <select
+                          id={`rl-account-${i}`}
+                          className={selectClass}
+                          value={l.accountId}
+                          onChange={(e) => updateLine(i, { accountId: e.target.value })}
+                        >
+                          <option value="">{t["purchases.chooseAccount"]}</option>
+                          {expenseAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {[a.code, a.nameEn || a.name].filter(Boolean).join(" · ")}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    }
                   >
-                    <option value="">{t["purchases.chooseAccount"]}</option>
-                    {expenseAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {[a.code, a.nameEn || a.name].filter(Boolean).join(" · ")}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-span-6 sm:col-span-2">
-                  <Label htmlFor={`rl-amount-${i}`}>{t["purchases.netAmount"]}</Label>
-                  <Input
-                    id={`rl-amount-${i}`}
-                    inputMode="decimal"
-                    value={l.amount}
-                    onChange={(e) => updateLine(i, { amount: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-6 sm:col-span-2">
-                  <Label htmlFor={`rl-vat-${i}`}>{t["purchases.vat"]}</Label>
-                  <Input
-                    id={`rl-vat-${i}`}
-                    inputMode="decimal"
-                    value={l.vatAmount}
-                    onChange={(e) => updateLine(i, { vatAmount: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-10 sm:col-span-3">
-                  <Label htmlFor={`rl-desc-${i}`}>{t["purchases.description"]}</Label>
-                  <Input
-                    id={`rl-desc-${i}`}
-                    value={l.description}
-                    onChange={(e) => updateLine(i, { description: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-2 sm:col-span-1 flex justify-end">
-                  {lines.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t["purchases.removeLine"]}
-                      onClick={() => setLines((prev) => prev.filter((_, k) => k !== i))}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-            <div className="flex items-center justify-between">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`rl-amount-${i}`} className={lineLabelClass}>
+                        {t["purchases.netAmount"]}
+                      </Label>
+                      <Input
+                        id={`rl-amount-${i}`}
+                        inputMode="decimal"
+                        value={l.amount}
+                        onChange={(e) => updateLine(i, { amount: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`rl-vat-${i}`} className={lineLabelClass}>
+                        {t["purchases.vat"]}
+                      </Label>
+                      <Input
+                        id={`rl-vat-${i}`}
+                        inputMode="decimal"
+                        value={l.vatAmount}
+                        onChange={(e) => updateLine(i, { vatAmount: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1.5 sm:col-span-1">
+                      <Label htmlFor={`rl-desc-${i}`} className={lineLabelClass}>
+                        {t["purchases.description"]}
+                      </Label>
+                      <Input
+                        id={`rl-desc-${i}`}
+                        dir="auto"
+                        value={l.description}
+                        onChange={(e) => updateLine(i, { description: e.target.value })}
+                      />
+                    </div>
+                  </LineItem>
+                ))}
+              </LineItemList>
+              <p
+                className="text-end text-small tabular-nums text-muted-foreground"
+                data-testid="receipt-lines-total"
               >
-                <Plus className="w-4 h-4 me-2" />
-                {t["purchases.addLine"]}
-              </Button>
-              <span className="text-sm text-muted-foreground" data-testid="receipt-lines-total">
                 {formatMessage(t["purchases.receiptLinesTotal"], {
                   net: formatFils(totals.netFils),
                   vat: formatFils(totals.vatFils),
                   gross: formatFils(totals.grossFils),
                 })}
-              </span>
-            </div>
-            {posted && (
-              <div>
-                <Label htmlFor="rl-reason">{t["purchases.reviseReason"]}</Label>
-                <Textarea
-                  id="rl-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  maxLength={500}
-                />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {parts.map((p, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-12 gap-2 items-end"
-                data-testid={`receipt-part-${i}`}
+              </p>
+              {posted && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="rl-reason">
+                    {t["purchases.reviseReason"]}
+                    <span aria-hidden="true" className="ms-0.5 text-danger">
+                      *
+                    </span>
+                  </Label>
+                  <Textarea
+                    id="rl-reason"
+                    dir="auto"
+                    value={reason}
+                    aria-required
+                    onChange={(e) => setReason(e.target.value)}
+                    maxLength={500}
+                  />
+                </div>
+              )}
+            </FormSection>
+          ) : (
+            <FormSection
+              title={t["forms.receipt.parts"]}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={parts.length >= 20}
+                  onClick={() => setParts((prev) => [...prev, emptyPart(receipt)])}
+                >
+                  <Plus className="h-4 w-4" />
+                  {t["purchases.addReceipt"]}
+                </Button>
+              }
+            >
+              <LineItemList>
+                {parts.map((p, i) => (
+                  <LineItem
+                    key={i}
+                    index={i}
+                    onRemove={() => setParts((prev) => prev.filter((_, k) => k !== i))}
+                    canRemove={parts.length > 2}
+                    gridClassName="sm:grid-cols-[8rem_8rem_minmax(0,1fr)]"
+                    main={
+                      <div className="space-y-1.5" data-testid={`receipt-part-${i}`}>
+                        <Label htmlFor={`rp-merchant-${i}`} className={lineLabelClass}>
+                          {t["purchases.merchant"]}
+                        </Label>
+                        <Input
+                          id={`rp-merchant-${i}`}
+                          dir="auto"
+                          value={p.merchant}
+                          onChange={(e) => updatePart(i, { merchant: e.target.value })}
+                        />
+                      </div>
+                    }
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`rp-amount-${i}`} className={lineLabelClass}>
+                        {t["purchases.netAmount"]}
+                      </Label>
+                      <Input
+                        id={`rp-amount-${i}`}
+                        inputMode="decimal"
+                        value={p.amount}
+                        onChange={(e) => updatePart(i, { amount: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`rp-vat-${i}`} className={lineLabelClass}>
+                        {t["purchases.vat"]}
+                      </Label>
+                      <Input
+                        id={`rp-vat-${i}`}
+                        inputMode="decimal"
+                        value={p.vatAmount}
+                        onChange={(e) => updatePart(i, { vatAmount: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1.5 sm:col-span-1">
+                      <Label htmlFor={`rp-category-${i}`} className={lineLabelClass}>
+                        {t["purchases.category"]}
+                      </Label>
+                      <Input
+                        id={`rp-category-${i}`}
+                        dir="auto"
+                        value={p.category}
+                        onChange={(e) => updatePart(i, { category: e.target.value })}
+                      />
+                    </div>
+                  </LineItem>
+                ))}
+              </LineItemList>
+              <p
+                className="text-end text-small tabular-nums text-muted-foreground"
+                data-testid="receipt-parts-total"
               >
-                <div className="col-span-12 sm:col-span-4">
-                  <Label htmlFor={`rp-merchant-${i}`}>{t["purchases.merchant"]}</Label>
-                  <Input
-                    id={`rp-merchant-${i}`}
-                    value={p.merchant}
-                    onChange={(e) => updatePart(i, { merchant: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-6 sm:col-span-2">
-                  <Label htmlFor={`rp-amount-${i}`}>{t["purchases.netAmount"]}</Label>
-                  <Input
-                    id={`rp-amount-${i}`}
-                    inputMode="decimal"
-                    value={p.amount}
-                    onChange={(e) => updatePart(i, { amount: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-6 sm:col-span-2">
-                  <Label htmlFor={`rp-vat-${i}`}>{t["purchases.vat"]}</Label>
-                  <Input
-                    id={`rp-vat-${i}`}
-                    inputMode="decimal"
-                    value={p.vatAmount}
-                    onChange={(e) => updatePart(i, { vatAmount: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-10 sm:col-span-3">
-                  <Label htmlFor={`rp-category-${i}`}>{t["purchases.category"]}</Label>
-                  <Input
-                    id={`rp-category-${i}`}
-                    value={p.category}
-                    onChange={(e) => updatePart(i, { category: e.target.value })}
-                  />
-                </div>
-                <div className="col-span-2 sm:col-span-1 flex justify-end">
-                  {parts.length > 2 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t["purchases.removeLine"]}
-                      onClick={() => setParts((prev) => prev.filter((_, k) => k !== i))}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-            <div className="flex items-center justify-between">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={parts.length >= 20}
-                onClick={() => setParts((prev) => [...prev, emptyPart(receipt)])}
-              >
-                <Plus className="w-4 h-4 me-2" />
-                {t["purchases.addReceipt"]}
-              </Button>
-              <span className="text-sm text-muted-foreground" data-testid="receipt-parts-total">
                 {formatMessage(t["purchases.receiptPartsTotal"], {
                   parts: formatFils(parts.reduce((s, p) => s + (toFilsInput(p.amount) ?? 0), 0)),
                   total: formatFils(Math.round(Number(receipt?.amount ?? 0) * 100)),
                 })}
-              </span>
-            </div>
-          </div>
-        )}
+              </p>
+            </FormSection>
+          )}
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive" data-testid="receipt-lines-error">
-            {error}
-          </p>
-        )}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            {t["purchases.cancel"]}
-          </Button>
-          <Button type="button" onClick={save} disabled={saving} data-testid="receipt-lines-save">
-            {mode === "split"
-              ? t["purchases.splitReceiptSave"]
-              : posted
-                ? t["purchases.reviseReceiptSave"]
-                : t["purchases.receiptLinesSave"]}
-          </Button>
-        </DialogFooter>
+          <FormActions sticky>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {t["purchases.cancel"]}
+            </Button>
+            <Button
+              type="submit"
+              className="sm:min-w-32"
+              disabled={saving}
+              data-testid="receipt-lines-save"
+            >
+              {mode === "split"
+                ? t["purchases.splitReceiptSave"]
+                : posted
+                  ? t["purchases.reviseReceiptSave"]
+                  : t["purchases.receiptLinesSave"]}
+            </Button>
+          </FormActions>
+        </form>
       </DialogContent>
     </Dialog>
   );
