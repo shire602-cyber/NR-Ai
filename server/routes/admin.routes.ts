@@ -16,14 +16,30 @@ import { errorMessage } from "../errors";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import {
+  adminCreateClientBody,
+  adminCreateClientDocumentBody,
+  adminCreateInvitationBody,
+  adminImportClientsBody,
+  adminImportPreviewBody,
   adminUpdateCompanyBody,
+  adminUpdateUserBody,
+  createClientNoteBody,
   createSubscriptionPlanBody,
   updateClientNoteBody,
   updateSubscriptionPlanBody,
+  upsertAdminSettingBody,
+  type AdminCreateClientBody,
+  type AdminCreateClientDocumentBody,
+  type AdminCreateInvitationBody,
+  type AdminImportClientsBody,
+  type AdminImportPreviewBody,
   type AdminUpdateCompanyBody,
+  type AdminUpdateUserBody,
+  type CreateClientNoteBody,
   type CreateSubscriptionPlanBody,
   type UpdateClientNoteBody,
   type UpdateSubscriptionPlanBody,
+  type UpsertAdminSettingBody,
 } from "../../shared/validators/admin";
 
 const logger = createLogger("admin-routes");
@@ -100,11 +116,9 @@ export function registerAdminRoutes(app: Express): void {
   // Update admin setting
   router.put(
     "/admin/settings",
+    strictBody(upsertAdminSettingBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { key, value } = req.body;
-      if (!key || value === undefined) {
-        return res.status(400).json({ message: "Key and value required" });
-      }
+      const { key, value } = parsedBody<UpsertAdminSettingBody>(req);
 
       const existing = await storage.getAdminSettingByKey(key);
       if (existing) {
@@ -337,26 +351,28 @@ export function registerAdminRoutes(app: Express): void {
   // Create new client (company) - Admin only
   router.post(
     "/admin/clients",
+    strictBody(adminCreateClientBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
+      const body = parsedBody<AdminCreateClientBody>(req);
 
       const company = await storage.createCompany({
-        name: req.body.name,
-        baseCurrency: req.body.baseCurrency || "AED",
-        locale: req.body.locale || "en",
-        companyType: req.body.companyType || "client", // 'client' for NR-managed, 'customer' for SaaS
-        legalStructure: req.body.legalStructure,
-        industry: req.body.industry,
-        registrationNumber: req.body.registrationNumber,
-        businessAddress: req.body.businessAddress,
-        contactPhone: req.body.contactPhone,
-        contactEmail: req.body.contactEmail,
-        websiteUrl: req.body.websiteUrl,
-        logoUrl: req.body.logoUrl,
-        trnVatNumber: req.body.trnVatNumber,
-        taxRegistrationType: req.body.taxRegistrationType,
-        vatFilingFrequency: req.body.vatFilingFrequency,
-        corporateTaxId: req.body.corporateTaxId,
+        name: body.name,
+        baseCurrency: body.baseCurrency || "AED",
+        locale: body.locale || "en",
+        companyType: body.companyType || "client", // 'client' for NR-managed, 'customer' for SaaS
+        legalStructure: body.legalStructure,
+        industry: body.industry,
+        registrationNumber: body.registrationNumber,
+        businessAddress: body.businessAddress,
+        contactPhone: body.contactPhone,
+        contactEmail: body.contactEmail,
+        websiteUrl: body.websiteUrl,
+        logoUrl: body.logoUrl,
+        trnVatNumber: body.trnVatNumber,
+        taxRegistrationType: body.taxRegistrationType,
+        vatFilingFrequency: body.vatFilingFrequency,
+        corporateTaxId: body.corporateTaxId,
       });
 
       // Seed chart of accounts for the new company
@@ -450,14 +466,16 @@ export function registerAdminRoutes(app: Express): void {
   // Update user (admin can promote to admin, change details) - Admin only
   router.patch(
     "/admin/users/:userId",
+    strictBody(adminUpdateUserBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
       const adminUserId = req.user!.id;
+      const body = parsedBody<AdminUpdateUserBody>(req);
 
       const updates: { name?: string; email?: string; isAdmin?: boolean } = {};
-      if (req.body.name) updates.name = req.body.name;
-      if (req.body.email) updates.email = req.body.email;
-      if (typeof req.body.isAdmin === "boolean") updates.isAdmin = req.body.isAdmin;
+      if (body.name) updates.name = body.name;
+      if (body.email) updates.email = body.email;
+      if (typeof body.isAdmin === "boolean") updates.isAdmin = body.isAdmin;
 
       const user = await storage.updateUser(targetUserId, updates);
 
@@ -515,6 +533,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get all invitations - Admin only
   router.get(
     "/admin/invitations",
+    strictBody(adminCreateInvitationBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const invitations = await storage.getInvitations();
       res.json(invitations);
@@ -524,11 +543,13 @@ export function registerAdminRoutes(app: Express): void {
   // Create invitation - Admin only
   router.post(
     "/admin/invitations",
+    strictBody(adminCreateInvitationBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const adminUserId = req.user!.id;
+      const body = parsedBody<AdminCreateInvitationBody>(req);
 
       // Check if email already has pending invitation
-      const existing = await storage.getInvitationByEmail(req.body.email);
+      const existing = await storage.getInvitationByEmail(body.email);
       if (existing && existing.status === "pending") {
         return res
           .status(400)
@@ -541,10 +562,10 @@ export function registerAdminRoutes(app: Express): void {
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
       const invitation = await storage.createInvitation({
-        email: req.body.email,
-        companyId: req.body.companyId || null,
-        role: req.body.role || "client",
-        userType: req.body.userType || "client", // admin | client | customer
+        email: body.email,
+        companyId: body.companyId || null,
+        role: body.role || "client",
+        userType: body.userType || "client", // admin | client | customer
         token,
         invitedBy: adminUserId,
         status: "pending",
@@ -554,11 +575,11 @@ export function registerAdminRoutes(app: Express): void {
       // Log activity
       await storage.createActivityLog({
         userId: adminUserId,
-        companyId: req.body.companyId || null,
+        companyId: body.companyId || null,
         action: "invite",
         entityType: "invitation",
         entityId: invitation.id,
-        description: `Sent invitation to ${req.body.email}`,
+        description: `Sent invitation to ${body.email}`,
       });
 
       res.status(201).json(invitation);
@@ -670,15 +691,17 @@ export function registerAdminRoutes(app: Express): void {
   // Create note for a client - Admin only
   router.post(
     "/admin/clients/:clientId/notes",
+    strictBody(createClientNoteBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const authorId = req.user!.id;
+      const body = parsedBody<CreateClientNoteBody>(req);
 
       const note = await storage.createClientNote({
         companyId: clientId,
         authorId,
-        content: req.body.content,
-        isPinned: req.body.isPinned || false,
+        content: body.content,
+        isPinned: body.isPinned || false,
       });
 
       res.status(201).json(note);
@@ -714,8 +737,12 @@ export function registerAdminRoutes(app: Express): void {
   // Import clients from Excel - Admin only
   router.post(
     "/admin/import/clients",
+    strictBody(adminImportClientsBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { data, createInvitations, sendEmails: _sendEmails } = req.body;
+      const { createInvitations } = parsedBody<AdminImportClientsBody>(req);
+      // Spreadsheet rows are free-form records; the loop below reads the known columns defensively.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = parsedBody<AdminImportClientsBody>(req).data as any[];
 
       if (!data || !Array.isArray(data)) {
         return res
@@ -823,8 +850,9 @@ export function registerAdminRoutes(app: Express): void {
   // Parse Excel file and return preview - Admin only
   router.post(
     "/admin/import/preview",
+    strictBody(adminImportPreviewBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { fileData, fileName } = req.body;
+      const { fileData, fileName } = parsedBody<AdminImportPreviewBody>(req);
 
       if (!fileData) {
         return res.status(400).json({ message: "No file data provided" });
@@ -994,24 +1022,26 @@ export function registerAdminRoutes(app: Express): void {
   // Admin upload document for client
   router.post(
     "/admin/clients/:clientId/documents",
+    strictBody(adminCreateClientDocumentBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const userId = req.user!.id;
+      const body = parsedBody<AdminCreateClientDocumentBody>(req);
 
       const documentData = {
         companyId: clientId,
-        name: req.body.name,
-        nameAr: req.body.nameAr || null,
-        category: req.body.category,
-        description: req.body.description || null,
-        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: req.body.fileName || "document.pdf",
-        fileSize: req.body.fileSize || null,
-        mimeType: req.body.mimeType || "application/pdf",
-        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-        reminderDays: req.body.reminderDays || 30,
+        name: body.name,
+        nameAr: body.nameAr || null,
+        category: body.category,
+        description: body.description || null,
+        fileUrl: body.fileUrl || "/uploads/placeholder.pdf",
+        fileName: body.fileName || "document.pdf",
+        fileSize: body.fileSize || null,
+        mimeType: body.mimeType || "application/pdf",
+        expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
+        reminderDays: body.reminderDays || 30,
         reminderSent: false,
-        tags: req.body.tags || null,
+        tags: body.tags || null,
         isArchived: false,
         uploadedBy: userId,
       };

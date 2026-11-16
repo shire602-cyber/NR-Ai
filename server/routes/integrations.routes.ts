@@ -1,4 +1,11 @@
 import { type Express, type Request, type Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import {
+  sheetsCustomExportBody,
+  sheetsExportBody,
+  sheetsImportBody,
+} from "../../shared/validators/route-bodies";
 import { storage } from "../storage";
 import * as googleSheets from "../integrations/googleSheets";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
@@ -119,8 +126,12 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
         return res.status(400).json({ message: "Company ID required" });
       }
@@ -163,8 +174,12 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
         return res.status(400).json({ message: "Company ID required" });
       }
@@ -207,8 +222,12 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
         return res.status(400).json({ message: "Company ID required" });
       }
@@ -274,8 +293,12 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
         return res.status(400).json({ message: "Company ID required" });
       }
@@ -316,8 +339,9 @@ export function registerIntegrationRoutes(app: Express) {
     "/api/integrations/google-sheets/import/invoices",
     authMiddleware,
     requireCompanyAccess("body"),
+    strictBody(sheetsImportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, sheetUrl } = req.body;
+      const { companyId, sheetUrl } = parsedBody<{ companyId: string; sheetUrl: string }>(req);
       if (!companyId || !sheetUrl) {
         return res.status(400).json({ message: "Company ID and sheet URL required" });
       }
@@ -382,9 +406,10 @@ export function registerIntegrationRoutes(app: Express) {
     "/api/integrations/google-sheets/import/expenses",
     authMiddleware,
     requireCompanyAccess("body"),
+    strictBody(sheetsImportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user?.id;
-      const { companyId, sheetUrl } = req.body;
+      const { companyId, sheetUrl } = parsedBody<{ companyId: string; sheetUrl: string }>(req);
       if (!companyId || !sheetUrl || !userId) {
         return res
           .status(400)
@@ -454,8 +479,13 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsCustomExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, title, sheets } = req.body;
+      const { companyId, title, sheets } = parsedBody<{
+        companyId: string;
+        title: string;
+        sheets: Array<{ name: string; headers: string[]; rows: (string | number | null)[][] }>;
+      }>(req);
       if (!companyId || !title || !sheets) {
         return res.status(400).json({ message: "Company ID, title, and sheets data required" });
       }

@@ -1,4 +1,7 @@
 import { type Express, type Request, type Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import { ocrProcessBody } from "../../shared/validators/route-bodies";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { z } from "zod";
@@ -57,13 +60,24 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     "/api/ocr/process",
     authMiddleware,
     aiLimiter,
+    strictBody(ocrProcessBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const { messageId, content, imageData, companyId: requestedCompanyId } = req.body;
+      const {
+        messageId,
+        content,
+        imageData,
+        companyId: requestedCompanyId,
+      } = parsedBody<{
+        messageId?: string | null;
+        content?: string | null;
+        imageData?: string | null;
+        companyId?: string | null;
+      }>(req);
 
       // Phase 2 enriches the OCR result with the company's per-tenant classifier
       // (training data + rules). The active company MUST come from the request so
@@ -122,13 +136,11 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
           await assertAiQuota(companyId);
         } catch (err: unknown) {
           if (errorCode(err) === "AI_QUOTA_EXCEEDED") {
-            return res
-              .status(429)
-              .json({
-                message: errorMessage(err),
-                code: "AI_QUOTA_EXCEEDED",
-                usage: errorProperty(err, "detail"),
-              });
+            return res.status(429).json({
+              message: errorMessage(err),
+              code: "AI_QUOTA_EXCEEDED",
+              usage: errorProperty(err, "detail"),
+            });
           }
           throw err;
         }

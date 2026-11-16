@@ -74,6 +74,10 @@ export function scan(cfg) {
       const re = new RegExp(p.re.source, p.re.flags.includes("g") ? p.re.flags : p.re.flags + "g");
       let m;
       while ((m = re.exec(content))) {
+        if (p.accept && !p.accept(content, m)) {
+          if (m[0].length === 0) re.lastIndex++;
+          continue;
+        }
         (counts[rel] ??= {})[p.id] = (counts[rel]?.[p.id] ?? 0) + 1;
         hits.push({
           file: rel,
