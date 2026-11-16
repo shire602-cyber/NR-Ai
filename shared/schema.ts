@@ -1189,6 +1189,352 @@ export type InsertFirmStaffAssignment = z.infer<typeof insertFirmStaffAssignment
 export type FirmStaffAssignment = typeof firmStaffAssignments.$inferSelect;
 
 // ===========================
+// Firms (W5-D multi-firm tenancy, migration 0108)
+// ===========================
+// NR is seeded as the first firm (is_nr = true, NR_FIRM_ID). Other accounting
+// firms apply through POST /api/firms/apply and are approved by a platform admin.
+export const firms = pgTable("firms", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  isNr: boolean("is_nr").notNull().default(false),
+  status: text("status").notNull().default("pending"), // pending | active | rejected | suspended
+  trn: text("trn"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  country: text("country").notNull().default("AE"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type Firm = typeof firms.$inferSelect;
+
+/** One firm per user; role is one of shared/access.ts FIRM_ROLES. */
+export const firmMembers = pgTable(
+  "firm_members",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userUnique: uniqueIndex("uniq_firm_members_user").on(table.userId),
+    firmIdx: index("idx_firm_members_firm").on(table.firmId),
+  })
+);
+export type FirmMember = typeof firmMembers.$inferSelect;
+
+/** Which firm manages which company; the client owner accepts and can revoke. */
+export const firmClientLinks = pgTable(
+  "firm_client_links",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+    inviteeEmail: text("invitee_email"),
+    status: text("status").notNull().default("invited"), // invited | active | revoked | declined
+    permissions: jsonb("permissions")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    message: text("message"),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    invitedAt: timestamp("invited_at").defaultNow().notNull(),
+    acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+    acceptedAt: timestamp("accepted_at"),
+    revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at"),
+    revokeReason: text("revoke_reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    firmIdx: index("idx_firm_client_links_firm").on(table.firmId, table.status),
+    companyIdx: index("idx_firm_client_links_company").on(table.companyId),
+  })
+);
+export type FirmClientLink = typeof firmClientLinks.$inferSelect;
+
+/** company_users rows a firm created for its staff; removed when the link ends. */
+export const firmCompanyGrants = pgTable(
+  "firm_company_grants",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    createdMembership: boolean("created_membership").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    grantUnique: uniqueIndex("uniq_firm_company_grants").on(
+      table.firmId,
+      table.userId,
+      table.companyId
+    ),
+  })
+);
+
+export const firmTaskTemplates = pgTable(
+  "firm_task_templates",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    title: text("title").notNull(),
+    titleAr: text("title_ar"),
+    cadence: text("cadence").notNull(), // monthly | quarterly | annual | vat_period
+    dueDaysAfterPeriod: integer("due_days_after_period").notNull().default(28),
+    appliesTo: text("applies_to").notNull().default("all"), // all | vat_registered | ct_registered | payroll
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    codeUnique: uniqueIndex("uniq_firm_task_templates_code").on(table.firmId, table.code),
+  })
+);
+export type FirmTaskTemplate = typeof firmTaskTemplates.$inferSelect;
+
+export const firmTasks = pgTable(
+  "firm_tasks",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    templateId: uuid("template_id").references(() => firmTaskTemplates.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    periodStart: pgDate("period_start", { mode: "string" }),
+    periodEnd: pgDate("period_end", { mode: "string" }),
+    dueDate: pgDate("due_date", { mode: "string" }).notNull(),
+    status: text("status").notNull().default("open"), // open | in_progress | review | done | cancelled
+    assigneeUserId: uuid("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
+    source: text("source").notNull().default("manual"), // manual | template | compliance
+    sourceKey: text("source_key"),
+    completedAt: timestamp("completed_at"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    firmDueIdx: index("idx_firm_tasks_firm_due").on(table.firmId, table.dueDate),
+    companyIdx: index("idx_firm_tasks_company").on(table.companyId),
+  })
+);
+export type FirmTask = typeof firmTasks.$inferSelect;
+
+export const firmDocumentRequests = pgTable(
+  "firm_document_requests",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    listName: text("list_name").notNull().default("General"),
+    title: text("title").notNull(),
+    description: text("description"),
+    dueDate: pgDate("due_date", { mode: "string" }),
+    status: text("status").notNull().default("requested"), // requested | uploaded | accepted | rejected | cancelled
+    documentId: uuid("document_id"),
+    requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+    uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    uploadedAt: timestamp("uploaded_at"),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNote: text("review_note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_firm_document_requests_company").on(table.companyId, table.status),
+    firmIdx: index("idx_firm_document_requests_firm").on(table.firmId),
+  })
+);
+export type FirmDocumentRequest = typeof firmDocumentRequests.$inferSelect;
+
+export const firmEngagementTemplates = pgTable(
+  "firm_engagement_templates",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").notNull().default("engagement"), // engagement | proposal
+    body: text("body").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    firmIdx: index("idx_firm_engagement_templates_firm").on(table.firmId),
+  })
+);
+export type FirmEngagementTemplate = typeof firmEngagementTemplates.$inferSelect;
+
+export const firmEngagementLetters = pgTable(
+  "firm_engagement_letters",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    templateId: uuid("template_id").references(() => firmEngagementTemplates.id, {
+      onDelete: "set null",
+    }),
+    engagementId: uuid("engagement_id").references(() => engagements.id, { onDelete: "set null" }),
+    kind: text("kind").notNull().default("engagement"), // engagement | proposal
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    feeAmount: money("fee_amount"),
+    billingCycle: text("billing_cycle"),
+    status: text("status").notNull().default("draft"), // draft | sent | accepted | declined | withdrawn
+    sentAt: timestamp("sent_at"),
+    respondedAt: timestamp("responded_at"),
+    acceptedByUserId: uuid("accepted_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    acceptedName: text("accepted_name"),
+    acceptedIp: text("accepted_ip"),
+    acceptedUserAgent: text("accepted_user_agent"),
+    esignProvider: text("esign_provider"),
+    esignStatus: text("esign_status").notNull().default("requires_external"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_firm_engagement_letters_company").on(table.companyId, table.status),
+    firmIdx: index("idx_firm_engagement_letters_firm").on(table.firmId),
+  })
+);
+export type FirmEngagementLetter = typeof firmEngagementLetters.$inferSelect;
+
+export const firmTimeEntries = pgTable(
+  "firm_time_entries",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").references(() => firmTasks.id, { onDelete: "set null" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    entryDate: pgDate("entry_date", { mode: "string" }).notNull(),
+    minutes: integer("minutes").notNull().default(0),
+    description: text("description"),
+    billable: boolean("billable").notNull().default(true),
+    hourlyRate: money("hourly_rate").notNull().default(0),
+    status: text("status").notNull().default("logged"), // running | logged | billed | written_off
+    startedAt: timestamp("started_at"),
+    stoppedAt: timestamp("stopped_at"),
+    serviceInvoiceId: uuid("service_invoice_id").references(() => serviceInvoices.id, {
+      onDelete: "set null",
+    }),
+    billedAmount: money("billed_amount"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_firm_time_entries_company").on(table.companyId, table.status),
+    firmIdx: index("idx_firm_time_entries_firm").on(table.firmId, table.entryDate),
+  })
+);
+export type FirmTimeEntry = typeof firmTimeEntries.$inferSelect;
+
+export const firmFilingRecords = pgTable(
+  "firm_filing_records",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => firms.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    filingType: text("filing_type").notNull(), // vat201 | ct | faf
+    periodStart: pgDate("period_start", { mode: "string" }).notNull(),
+    periodEnd: pgDate("period_end", { mode: "string" }).notNull(),
+    filedOn: pgDate("filed_on", { mode: "string" }).notNull(),
+    referenceNumber: text("reference_number").notNull(),
+    checklist: jsonb("checklist")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    notes: text("notes"),
+    recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    periodUnique: uniqueIndex("uniq_firm_filing_records_period").on(
+      table.companyId,
+      table.filingType,
+      table.periodStart,
+      table.periodEnd
+    ),
+  })
+);
+export type FirmFilingRecord = typeof firmFilingRecords.$inferSelect;
+
+// ===========================
 // Firm Growth Opportunities
 // ===========================
 // Internal revenue-ops opportunities surfaced to NRA bookkeepers. These records
@@ -6087,6 +6433,7 @@ export const engagements = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
     accountManagerId: uuid("account_manager_id").references(() => users.id), // NR staff assigned
+    firmId: uuid("firm_id").references(() => firms.id, { onDelete: "set null" }), // 0108
 
     // Engagement Details
     engagementType: text("engagement_type").notNull().default("full_service"), // full_service | vat_only | bookkeeping | advisory
@@ -6106,6 +6453,8 @@ export const engagements = pgTable(
     // Onboarding
     onboardingCompleted: boolean("onboarding_completed").default(false),
     onboardingCompletedAt: timestamp("onboarding_completed_at"),
+    hourlyRate: money("hourly_rate"), // 0108: WIP valuation default
+    nextBillingDate: pgDate("next_billing_date", { mode: "string" }), // 0108: recurring billing
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -6141,6 +6490,9 @@ export const serviceInvoices = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
+    firmId: uuid("firm_id").references(() => firms.id, { onDelete: "set null" }), // 0108
+    source: text("source"), // 0108: recurring | time | manual
+    sourceKey: text("source_key"), // 0108: idempotency key for generated invoices
 
     // Invoice Details
     invoiceNumber: text("invoice_number").notNull(),
@@ -6626,6 +6978,7 @@ export const firmLeads = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+    firmId: uuid("firm_id").references(() => firms.id, { onDelete: "cascade" }), // 0108
 
     stage: text("stage").notNull().default("prospect"), // prospect | contacted | interested | converted | lost
     source: text("source").notNull().default("manual"), // saas_signup | referral | manual | website

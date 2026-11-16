@@ -83,8 +83,11 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // Scope auth + firm-role guards to /firm/* so this router (mounted at /api)
   // does not short-circuit unrelated /api requests like /api/health.
-  router.use("/firm", authMiddleware as any);
-  router.use("/firm", requireFirmRole());
+  // NR-only client comms (WhatsApp + email to NR clients). Scoped to
+  // /firm/comms so this NR guard never shadows the multi-firm /firm/* routers
+  // registered after it.
+  router.use("/firm/comms", authMiddleware as any);
+  router.use("/firm/comms", requireFirmRole());
 
   // ─── GET /api/firm/comms/log ──────────────────────────────────────────────
   router.get(

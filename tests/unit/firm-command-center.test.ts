@@ -86,6 +86,7 @@ function mockRes(): Response {
   return {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
+    locals: {},
   } as unknown as Response;
 }
 

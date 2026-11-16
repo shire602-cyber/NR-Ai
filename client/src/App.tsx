@@ -59,6 +59,7 @@ const EmailIntake = lazyWithReload(() => import("@/pages/firm/EmailIntake"));
 const FirmAnalytics = lazyWithReload(() => import("@/pages/firm/FirmAnalytics"));
 const LeadPipeline = lazyWithReload(() => import("@/pages/firm/LeadPipeline"));
 const ValueOps = lazyWithReload(() => import("@/pages/firm/ValueOps"));
+const PracticeWorkspace = lazyWithReload(() => import("@/pages/firm/PracticeWorkspace"));
 const FirmCommandCenter = lazyWithReload(() => import("@/pages/FirmCommandCenter"));
 
 // Core accounting
@@ -748,6 +749,11 @@ function Router() {
             <Route path="/firm/clients">
               <FirmRoute>
                 <ClientPortfolio />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/practice">
+              <FirmRoute>
+                <PracticeWorkspace />
               </FirmRoute>
             </Route>
             <Route path="/firm/staff">
