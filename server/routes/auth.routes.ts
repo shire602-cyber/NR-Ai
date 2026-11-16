@@ -67,6 +67,7 @@ import {
 import { hasEmailProvider, sendEmail, sendPasswordResetEmail } from "../services/email.service";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
+import { ensureFreeSubscription } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
 import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
@@ -325,21 +326,9 @@ async function provisionCustomerCompany(
   await storage.createCompanyUser({ companyId: company.id, userId, role: "owner" });
   await seedChartOfAccounts(company.id);
 
-  const now = new Date();
-  const periodEnd = new Date(now);
-  periodEnd.setFullYear(periodEnd.getFullYear() + 100); // Free tier never expires
-  await storage.createSubscription({
-    companyId: company.id,
-    planId: "free",
-    planName: "Free",
-    status: "active",
-    currentPeriodStart: now,
-    currentPeriodEnd: periodEnd,
-    maxUsers: 1,
-    maxInvoices: 20,
-    maxReceipts: 20,
-    aiCreditsRemaining: 10,
-  } as unknown as Parameters<typeof storage.createSubscription>[0]);
+  // S5: the Free row is created by the companies INSERT trigger (migration 0114);
+  // ensureFreeSubscription is idempotent, so this never creates a second row.
+  await ensureFreeSubscription(company.id);
   return company;
 }
 

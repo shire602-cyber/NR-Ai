@@ -1150,7 +1150,9 @@ export const companyReportDeliveryArtifacts = pgTable(
     contentType: text("content_type").notNull(),
     sizeBytes: integer("size_bytes").notNull().default(0),
     sha256: text("sha256").notNull(),
-    content: w5aBytea("content").notNull(),
+    // S5: NULL when the bytes live in object storage (storage_key); dev/test fallback keeps them here.
+    content: w5aBytea("content"),
+    storageKey: text("storage_key"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({

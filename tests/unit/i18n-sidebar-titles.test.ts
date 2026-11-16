@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { t } from "../../client/src/lib/i18n";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadLocale, t } from "../../client/src/lib/i18n";
+
+// S5: namespace catalogs are code-split and loaded on demand.
+beforeAll(async () => {
+  await Promise.all([loadLocale("en"), loadLocale("ar")]);
+});
 
 const sidebar = readFileSync(
   join(process.cwd(), "client", "src", "components", "layout", "AppSidebar.tsx"),

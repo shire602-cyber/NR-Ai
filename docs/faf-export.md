@@ -6,6 +6,13 @@
 **Generated for upload/inspection — not transmitted to FTA.** Muhasib.ai does not submit the
 file anywhere. The response carries `X-FAF-Notice` and the JSON form carries the same `label`.
 
+> **Verify against the current FTA specification (EXTERNAL).** The markers and field names
+> below were written from the 2017/2018 FTA FAF User Guide. A re-check against the current
+> edition was attempted in the S5 sweep (2026-11) but tax.gov.ae was not reachable from the
+> build environment, so the layout is unverified against the latest edition. The JSON form
+> carries this as `specNotice` (`FAF_SPEC_NOTICE`). Re-check and adjust before relying on the
+> file for an audit request.
+
 ## Source
 
 Field names and section order follow the FTA's _Tax Audit File (FAF) — User Guide_ published

@@ -24,7 +24,7 @@ import { safeOutboundFetch, OutboundUrlBlockedError } from "./url-guard";
 import { decryptSecret } from "./secret-vault";
 import { onDomainEvent, type DomainEvent, type DomainEventType } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
-import { billingEnforced, getTierFeatures } from "../middleware/featureGate";
+import { billingEnforced, companyPlanId, getTierFeatures } from "../middleware/featureGate";
 
 const log = createLogger("webhook-service");
 
@@ -138,11 +138,9 @@ function subscribes(events: string, type: string): boolean {
 
 async function companyHasWebhooks(companyId: string): Promise<boolean> {
   if (!billingEnforced()) return true;
-  const { rows } = await pq<{ plan_id: string }>(
-    `SELECT plan_id FROM subscriptions WHERE company_id = $1 ORDER BY created_at DESC LIMIT 1`,
-    [companyId]
-  );
-  return !rows[0] || !!getTierFeatures(rows[0].plan_id || "free").webhooks;
+  // Fails closed (S5): no subscription row = Free; null only for firm-billed client books.
+  const planId = await companyPlanId(companyId);
+  return planId === null || !!getTierFeatures(planId).webhooks;
 }
 
 /**

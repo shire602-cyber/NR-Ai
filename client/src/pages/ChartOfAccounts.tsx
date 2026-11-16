@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,25 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { apiUrl } from "@/lib/api";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { orderByHierarchy, parentCandidates } from "@/lib/account-hierarchy";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Account } from "@shared/schema";
 import {
   ChevronDown,
@@ -26,6 +45,9 @@ import {
   Receipt,
   BookOpen,
   ArrowRight,
+  Download,
+  Upload,
+  GitBranch,
 } from "lucide-react";
 
 interface AccountWithBalance {
@@ -37,40 +59,8 @@ interface AccountWithBalance {
 
 const ACCOUNT_TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"];
 
-/**
- * Depth-first order for a flat account list using `account.parentId` (W2-D, R02-16c). A child
- * follows its parent and is indented by `depth`; a child whose parent is filtered out (or
- * missing) is shown at the top level. A cycle guard keeps bad data from looping.
- */
-function orderByHierarchy(
-  items: AccountWithBalance[]
-): Array<AccountWithBalance & { depth: number }> {
-  const ids = new Set(items.map((i) => i.account.id));
-  const children = new Map<string, AccountWithBalance[]>();
-  const roots: AccountWithBalance[] = [];
-  for (const item of items) {
-    const parentId = item.account.parentId;
-    if (parentId && ids.has(parentId) && parentId !== item.account.id) {
-      const list = children.get(parentId) ?? [];
-      list.push(item);
-      children.set(parentId, list);
-    } else {
-      roots.push(item);
-    }
-  }
-  const out: Array<AccountWithBalance & { depth: number }> = [];
-  const seen = new Set<string>();
-  const visit = (item: AccountWithBalance, depth: number) => {
-    if (seen.has(item.account.id)) return;
-    seen.add(item.account.id);
-    out.push({ ...item, depth });
-    for (const child of children.get(item.account.id) ?? []) visit(child, depth + 1);
-  };
-  for (const root of roots) visit(root, 0);
-  // Anything unreachable (a parent cycle) is appended flat rather than dropped.
-  for (const item of items) visit(item, 0);
-  return out;
-}
+/** Select value for "no parent" (Radix Select items cannot use an empty string). */
+const NO_PARENT = "__none__";
 
 const ACCOUNT_TYPE_CONFIG: Record<
   string,
@@ -125,6 +115,9 @@ export default function ChartOfAccounts() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(ACCOUNT_TYPE_ORDER));
+  const { toast } = useToast();
+  const [parentFor, setParentFor] = useState<Account | null>(null);
+  const [parentChoice, setParentChoice] = useState<string>(NO_PARENT);
 
   const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
@@ -145,7 +138,10 @@ export default function ChartOfAccounts() {
 
     const grouped: Record<string, Array<AccountWithBalance & { depth: number }>> = {};
     ACCOUNT_TYPE_ORDER.forEach((type) => {
-      const accounts = orderByHierarchy(filtered.filter((item) => item.account.type === type));
+      const accounts = orderByHierarchy(
+        filtered.filter((item) => item.account.type === type),
+        (item) => item.account
+      );
       if (accounts.length > 0) {
         grouped[type] = accounts;
       }
@@ -176,6 +172,43 @@ export default function ChartOfAccounts() {
     navigate(`/accounts/${accountId}/ledger`);
   };
 
+  const allAccounts = useMemo(
+    () => (accountsWithBalances ?? []).map((item) => item.account),
+    [accountsWithBalances]
+  );
+  const candidates = useMemo(
+    () => (parentFor ? parentCandidates(allAccounts, parentFor.id) : []),
+    [allAccounts, parentFor]
+  );
+
+  const openParentDialog = (account: Account) => {
+    setParentFor(account);
+    setParentChoice(account.parentId ?? NO_PARENT);
+  };
+
+  const saveParent = useMutation({
+    mutationFn: () =>
+      apiRequest("PUT", `/api/accounts/${parentFor!.id}`, {
+        parentId: parentChoice === NO_PARENT ? null : parentChoice,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "accounts"],
+      });
+      toast({ title: t["journal.coaParentSaved"] });
+      setParentFor(null);
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: t["journal.coaParentFailed"],
+        description: (e as Error)?.message,
+        variant: "destructive",
+      }),
+  });
+
   if (!selectedCompanyId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
@@ -198,14 +231,34 @@ export default function ChartOfAccounts() {
         title={t.chartOfAccounts}
         description={t.chartOfAccountsDescription}
         actions={
-          <Button
-            size="default"
-            data-testid="button-add-account"
-            onClick={() => navigate("/journal")}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            {t.addAccount}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild data-testid="button-export-coa-csv">
+              <a
+                href={apiUrl(
+                  `/api/companies/${selectedCompanyId}/imports/chart-of-accounts/export`
+                )}
+              >
+                <Download className="h-4 w-4 me-2" />
+                <T k="journal.coaExportCsv" />
+              </a>
+            </Button>
+            <Button
+              variant="outline"
+              data-testid="button-import-coa-csv"
+              onClick={() => navigate("/import?kind=chart_of_accounts")}
+            >
+              <Upload className="h-4 w-4 me-2" />
+              <T k="journal.coaImportCsv" />
+            </Button>
+            <Button
+              size="default"
+              data-testid="button-add-account"
+              onClick={() => navigate("/journal")}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              {t.addAccount}
+            </Button>
+          </div>
         }
       />
 
@@ -363,6 +416,19 @@ export default function ChartOfAccounts() {
                                       <span>Cr: {formatCurrency(item.creditTotal)}</span>
                                     </div>
                                   </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={t["journal.coaSetParent"]}
+                                    title={t["journal.coaSetParent"]}
+                                    data-testid={`button-set-parent-${item.account.id}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openParentDialog(item.account);
+                                    }}
+                                  >
+                                    <GitBranch className="h-4 w-4" />
+                                  </Button>
                                   <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
                               </motion.div>
@@ -378,6 +444,49 @@ export default function ChartOfAccounts() {
           </AnimatePresence>
         </div>
       )}
+
+      <Dialog open={!!parentFor} onOpenChange={(open) => !open && setParentFor(null)}>
+        <DialogContent data-testid="dialog-set-parent">
+          <DialogHeader>
+            <DialogTitle>
+              <T k="journal.coaSetParent" />
+            </DialogTitle>
+            <DialogDescription>
+              {parentFor ? `${parentFor.code} · ${parentFor.nameEn}` : null}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            <T k="journal.coaParentHelp" />
+          </p>
+          <Select value={parentChoice} onValueChange={setParentChoice}>
+            <SelectTrigger data-testid="select-parent-account">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_PARENT}>
+                <T k="journal.coaNoParent" />
+              </SelectItem>
+              {candidates.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.code} · {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setParentFor(null)}>
+              <T k="pages.cancel" />
+            </Button>
+            <Button
+              data-testid="button-save-parent"
+              disabled={saveParent.isPending}
+              onClick={() => saveParent.mutate()}
+            >
+              <T k="journal.coaSaveParent" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="mt-6">
         <CardHeader className="py-4">

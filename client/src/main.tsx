@@ -14,8 +14,15 @@ import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
 import "./index.css";
 import { registerServiceWorker } from "@/lib/pwa";
+import { loadLocale, useI18n } from "@/lib/i18n";
 
-createRoot(document.getElementById("root")!).render(<App />);
+// S5: locale catalogs are code-split; load the active locale's namespaces before the first
+// render so translated copy never flashes keys. A failed chunk still renders (keys fall back).
+void loadLocale(useI18n.getState().locale)
+  .catch(() => undefined)
+  .finally(() => {
+    createRoot(document.getElementById("root")!).render(<App />);
+  });
 
 // Register the service worker after the React app has mounted so the initial
 // render isn't blocked by network registration.

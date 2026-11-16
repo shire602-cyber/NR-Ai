@@ -89,6 +89,7 @@ export const FIELD_ALIASES: Record<ImportKind, FieldAliases> = {
     total: ["total", "amount", "invoicetotal", "totalamount"],
     amountDue: ["amountdue", "openbalance", "balance", "balancedue", "due", "outstanding"],
     currency: ["currency", "currencycode"],
+    exchangeRate: ["exchangerate", "currencyrate", "fxrate", "rate"],
   },
   open_bills: {
     number: ["billnumber", "invoicenumber", "num", "number", "billno", "reference"],
@@ -98,6 +99,7 @@ export const FIELD_ALIASES: Record<ImportKind, FieldAliases> = {
     total: ["total", "amount", "billtotal", "totalamount"],
     amountDue: ["amountdue", "openbalance", "balance", "balancedue", "due", "outstanding"],
     currency: ["currency", "currencycode"],
+    exchangeRate: ["exchangerate", "currencyrate", "fxrate", "rate"],
   },
 };
 

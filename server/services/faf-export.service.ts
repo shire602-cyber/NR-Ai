@@ -20,6 +20,13 @@ import { pool } from "../db";
 export const FAF_VERSION = "FAFv1.0.0";
 export const FAF_PRODUCT = "Muhasib.ai";
 export const FAF_LABEL = "Generated for upload/inspection — not transmitted to FTA";
+/**
+ * S5 (EXTERNAL): the section markers and field names follow the FTA FAF User Guide
+ * (2017/2018 editions). The current FTA edition could not be retrieved from this environment
+ * (tax.gov.ae unreachable), so the layout is not yet re-verified; every file says so.
+ */
+export const FAF_SPEC_NOTICE =
+  "Layout follows the FTA FAF User Guide (2017/2018 editions); verify against the current FTA specification before submitting to an auditor.";
 
 export type FafTaxCode = "SR" | "ZR" | "EX" | "RC" | "IM" | "OA";
 
@@ -70,6 +77,8 @@ export interface FafGlRecord {
 
 export interface FafFile {
   label: string;
+  /** Spec-verification banner (FAF_SPEC_NOTICE). */
+  specNotice?: string;
   company: {
     name: string;
     trn: string;
@@ -275,6 +284,7 @@ export async function buildFaf(input: {
 
   return {
     label: FAF_LABEL,
+    specNotice: FAF_SPEC_NOTICE,
     company: {
       name: company.legal_name || company.name || "",
       trn: company.trn_vat_number ?? "",

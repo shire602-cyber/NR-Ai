@@ -1,9 +1,15 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error - plain .mjs script without type declarations
 import { scanPages } from "../../scripts/i18n-scan.mjs";
-import { formatMessage, t } from "../../client/src/lib/i18n";
+import { formatMessage, isLocaleLoaded, loadLocale, t } from "../../client/src/lib/i18n";
+
+// S5: namespace catalogs are code-split (one lazy chunk per namespace and locale).
+beforeAll(async () => {
+  expect(isLocaleLoaded("ar")).toBe(false);
+  await Promise.all([loadLocale("en"), loadLocale("ar")]);
+});
 
 const repoRoot = process.cwd();
 const localesDir = join(repoRoot, "client", "src", "locales");

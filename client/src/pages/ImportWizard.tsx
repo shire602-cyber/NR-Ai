@@ -122,6 +122,8 @@ const COPY = {
     } as Record<Source, string>,
     order:
       "Recommended order: chart of accounts, then opening balances, then contacts and items, then open invoices and bills.",
+    fxHint:
+      "Foreign-currency documents are supported: amounts stay in the document currency (Currency column) and are converted at the document-date rate, from an Exchange Rate column or your Exchange Rates. Settlement books the realised FX difference.",
   },
   ar: {
     eyebrow: "الإعداد",
@@ -177,6 +179,8 @@ const COPY = {
     } as Record<Source, string>,
     order:
       "الترتيب المقترح: دليل الحسابات، ثم الأرصدة الافتتاحية، ثم جهات الاتصال والأصناف، ثم الفواتير المفتوحة.",
+    fxHint:
+      "المستندات بالعملات الأجنبية مدعومة: تبقى المبالغ بعملة المستند (عمود العملة) وتُحوَّل بسعر تاريخ المستند من عمود سعر الصرف أو من أسعار الصرف لديك. ويُقيَّد فرق الصرف المحقق عند التسوية.",
   },
 };
 
@@ -193,12 +197,20 @@ const SOURCES: Source[] = ["xero", "quickbooks", "zoho", "wafeq", "generic"];
 const needsCutOver = (k: Kind) =>
   k === "trial_balance" || k === "open_invoices" || k === "open_bills";
 
+/** Initial kind from `?kind=` (e.g. the Chart of Accounts "Import CSV" button). */
+function kindFromSearch(search: string): Kind {
+  const k = new URLSearchParams(search).get("kind");
+  return (KINDS as string[]).includes(k ?? "") ? (k as Kind) : "chart_of_accounts";
+}
+
 export default function ImportWizard() {
   const { locale } = useI18n();
   const c = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
-  const [kind, setKind] = useState<Kind>("chart_of_accounts");
+  const [kind, setKind] = useState<Kind>(() =>
+    kindFromSearch(typeof window === "undefined" ? "" : window.location.search)
+  );
   const [source, setSource] = useState<Source>("xero");
   const [cutOver, setCutOver] = useState("");
   const [mode, setMode] = useState<"balance" | "documents">("balance");
@@ -300,6 +312,14 @@ export default function ImportWizard() {
               </SelectContent>
             </Select>
           </div>
+          {(kind === "open_invoices" || kind === "open_bills") && (
+            <p
+              className="text-sm text-muted-foreground md:col-span-2"
+              data-testid="text-import-fx-hint"
+            >
+              {c.fxHint}
+            </p>
+          )}
           {needsCutOver(kind) && (
             <div className="space-y-2">
               <Label htmlFor="cut-over">{c.cutOver}</Label>

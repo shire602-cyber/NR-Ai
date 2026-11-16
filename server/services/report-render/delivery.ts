@@ -26,6 +26,8 @@ import {
 import { activeProviderName, deliverOutboxMessage, enqueueEmail } from "../../outbox";
 import { isCapabilityLive } from "../../../shared/capabilities";
 import { createLogger } from "../../config/logger";
+import { DomainError } from "../../errors";
+import { getObject, hasDurableObjectStore, putObject } from "../fileStorage";
 import { buildDeliveryPack, deliveryPeriod, type RenderedFile } from "./pack";
 import { STATEMENT_TITLES } from "./statements";
 
@@ -126,6 +128,18 @@ async function storeArtifacts(
   files: RenderedFile[]
 ): Promise<void> {
   for (const f of files) {
+    const sha256 = crypto.createHash("sha256").update(f.content).digest("hex");
+    // S5: bytes go to durable object storage when it is configured (S3 / Blob); the row keeps
+    // only the key. Without object storage (dev/test) the bytes stay in the row (bytea).
+    let storageKey: string | null = null;
+    if (hasDurableObjectStore()) {
+      storageKey = await putObject(
+        "report-artifacts",
+        `${companyId}/${runId}/${sha256.slice(0, 16)}-${f.filename}`.replace(/\//g, "_"),
+        f.content,
+        f.contentType
+      );
+    }
     await db.insert(companyReportDeliveryArtifacts).values({
       companyId,
       runId,
@@ -133,8 +147,9 @@ async function storeArtifacts(
       filename: f.filename,
       contentType: f.contentType,
       sizeBytes: f.content.length,
-      sha256: crypto.createHash("sha256").update(f.content).digest("hex"),
-      content: f.content,
+      sha256,
+      content: storageKey ? null : f.content,
+      storageKey,
     });
   }
 }
@@ -441,7 +456,7 @@ export async function cancelPendingRunEmails(run: CompanyReportDeliveryRun): Pro
 export async function listRunArtifacts(
   companyId: string,
   runId: string
-): Promise<Array<Omit<CompanyReportDeliveryArtifact, "content">>> {
+): Promise<Array<Omit<CompanyReportDeliveryArtifact, "content" | "storageKey">>> {
   return db
     .select({
       id: companyReportDeliveryArtifacts.id,
@@ -467,7 +482,7 @@ export async function getRunArtifact(
   companyId: string,
   runId: string,
   artifactId: string
-): Promise<CompanyReportDeliveryArtifact | undefined> {
+): Promise<(CompanyReportDeliveryArtifact & { content: Buffer }) | undefined> {
   const [row] = await db
     .select()
     .from(companyReportDeliveryArtifacts)
@@ -479,5 +494,28 @@ export async function getRunArtifact(
       )
     )
     .limit(1);
-  return row as CompanyReportDeliveryArtifact | undefined;
+  if (!row) return undefined;
+  const artifact = row as CompanyReportDeliveryArtifact;
+  if (artifact.storageKey) {
+    const stored = await getObject(artifact.storageKey);
+    if (!stored) {
+      throw new DomainError(
+        "ARTIFACT_STORAGE_UNAVAILABLE",
+        503,
+        { storageKey: artifact.storageKey },
+        "The report file could not be read from file storage."
+      );
+    }
+    if (crypto.createHash("sha256").update(stored.buffer).digest("hex") !== artifact.sha256) {
+      throw new DomainError(
+        "ARTIFACT_INTEGRITY_FAILED",
+        409,
+        undefined,
+        "The stored report file does not match its checksum."
+      );
+    }
+    return { ...artifact, content: stored.buffer };
+  }
+  const content = artifact.content;
+  return { ...artifact, content: Buffer.isBuffer(content) ? content : Buffer.from(content ?? []) };
 }

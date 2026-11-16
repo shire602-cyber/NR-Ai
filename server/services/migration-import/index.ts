@@ -11,7 +11,9 @@
  *                                   Equity 3040 here and are posted per document)
  *   customers, vendors, items
  *   open_invoices      AR subledger: one issued invoice per open document (outstanding
- *   open_bills         amount) plus a per-document opening journal Dr A/R / Cr 3040
+ *   open_bills         amount, in its own currency: S5 adds foreign-currency documents at the
+ *                      document-date rate from the file or fx.getRate, so settlement books
+ *                      realised FX) plus a per-document opening journal Dr A/R / Cr 3040
  *                      (Dr 3040 / Cr A/P). Control totals are checked against the
  *                      trial balance so the opening balance is never counted twice.
  *
@@ -26,7 +28,9 @@ import {
   invoices,
   products,
 } from "../../../shared/schema";
-import { fromFils } from "../../../shared/money";
+import { fromFils, mulRate } from "../../../shared/money";
+import { resolve } from "../../platform/service-registry";
+import type { FxGetRate } from "../fx";
 import { DomainError } from "../../errors";
 import { postJournal, withLedgerTx, type PostJournalLineInput } from "../../ledger";
 import { emitDomainEvent } from "../../platform/domain-events";
@@ -278,11 +282,18 @@ function normaliseRows(
           return;
         }
         if (total !== null && due > total) err("DUE_EXCEEDS_TOTAL", "Amount due exceeds the total");
-        if (currency !== "AED") {
-          err(
-            "FOREIGN_CURRENCY_UNSUPPORTED",
-            `Only AED open documents can be imported (got ${currency}); convert at the cut-over rate first`
-          );
+        if (!/^[A-Z]{3}$/.test(currency)) {
+          err("INVALID_CURRENCY", `Currency "${currency}" is not an ISO 4217 code`);
+        }
+        // S5: foreign-currency documents are supported. Amounts are in the document currency;
+        // the rate (1 unit = rate base units) comes from the file or fx.getRate at the
+        // document date during validation.
+        let givenRate: number | null = null;
+        if (clean(r.exchangeRate)) {
+          const n = Number(clean(r.exchangeRate).replace(/,/g, ""));
+          if (!Number.isFinite(n) || n <= 0) {
+            err("INVALID_EXCHANGE_RATE", `Exchange rate "${clean(r.exchangeRate)}" is not valid`);
+          } else givenRate = Number(n.toFixed(6));
         }
         out.push({
           number,
@@ -292,6 +303,7 @@ function normaliseRows(
           totalFils: total,
           amountDueFils: due,
           currency,
+          givenRate,
         });
         break;
       }
@@ -439,6 +451,67 @@ async function openingState(companyId: string): Promise<OpeningState> {
     else state.billsFils += Number(s.controlTotalFils ?? 0);
   }
   return state;
+}
+
+async function companyBaseCurrency(companyId: string): Promise<string> {
+  const { rows } = await pq<{ base_currency: string | null }>(
+    `SELECT base_currency FROM companies WHERE id = $1`,
+    [companyId]
+  );
+  return (rows[0]?.base_currency || "AED").toUpperCase();
+}
+
+/**
+ * S5: resolve each open document's rate (file column, else fx.getRate at the document date,
+ * tenant-scoped) and its outstanding amount in the company base currency. Mutates `rows`:
+ * exchangeRate, amountDueBaseFils, baseCurrency, foreign. A missing rate is an error; a stale
+ * rate is a warning (the settlement books realised FX against this rate either way).
+ */
+async function resolveDocumentRates(
+  companyId: string,
+  rows: Array<Record<string, unknown>>,
+  err: (row: number | null, code: string, message: string) => void,
+  warn: (row: number | null, code: string, message: string) => void
+): Promise<void> {
+  const base = await companyBaseCurrency(companyId);
+  const getRate = resolve<FxGetRate>("fx.getRate");
+  for (const [i, r] of rows.entries()) {
+    const currency = String(r.currency || base).toUpperCase();
+    const due = Number(r.amountDueFils);
+    r.baseCurrency = base;
+    if (currency === base) {
+      r.exchangeRate = 1;
+      r.amountDueBaseFils = due;
+      r.foreign = false;
+      continue;
+    }
+    r.foreign = true;
+    let rate = typeof r.givenRate === "number" && r.givenRate > 0 ? r.givenRate : null;
+    if (rate === null) {
+      try {
+        const found = await getRate(companyId, currency, base, String(r.date));
+        rate = found.rate;
+        if (found.stale) {
+          warn(
+            i + 1,
+            "STALE_EXCHANGE_RATE",
+            `The ${currency}/${base} rate on file is ${found.ageDays} day(s) older than ${r.date}; add the document-date rate or a rate column for an exact opening balance`
+          );
+        }
+      } catch {
+        err(
+          i + 1,
+          "NO_EXCHANGE_RATE",
+          `No ${currency}/${base} exchange rate for ${r.date}: add it under Exchange Rates or include a rate column`
+        );
+        r.exchangeRate = null;
+        r.amountDueBaseFils = 0;
+        continue;
+      }
+    }
+    r.exchangeRate = rate;
+    r.amountDueBaseFils = mulRate(due, rate);
+  }
 }
 
 export async function validateImport(companyId: string, jobId: string): Promise<ImportJobView> {
@@ -631,6 +704,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
       const taken = new Set(nums.map((x) => String(x.n)));
       const seen = new Set<string>();
       let total = 0;
+      await resolveDocumentRates(companyId, rows, err, warn);
       rows.forEach((r, i) => {
         const n = String(r.number);
         if (taken.has(n) || seen.has(n))
@@ -643,8 +717,10 @@ export async function validateImport(companyId: string, jobId: string): Promise<
             `Document ${n} is dated after the cut-over date; enter it as a normal document`
           );
         }
-        total += Number(r.amountDueFils);
+        total += Number(r.amountDueBaseFils ?? r.amountDueFils);
       });
+      const foreign = rows.filter((r) => r.foreign === true).length;
+      if (foreign) summary.foreignCurrencyDocuments = foreign;
       const state = await openingState(companyId);
       if (state.tb) {
         const tbControl = invoicesKind ? state.tb.arFils : state.tb.apFils;
@@ -680,7 +756,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
 
   const hasErrors = issues.some((i) => i.level === "error");
   const { rows: updated } = await pq<JobRow>(
-    `UPDATE import_jobs SET status = $3, issues = $4, summary = $5, validated_at = now()
+    `UPDATE import_jobs SET status = $3, issues = $4, summary = $5, rows = $6, validated_at = now()
       WHERE id = $1 AND company_id = $2 RETURNING ${JOB_COLS}`,
     [
       jobId,
@@ -688,6 +764,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
       hasErrors ? "previewed" : "validated",
       JSON.stringify(issues),
       JSON.stringify(summary),
+      JSON.stringify(rows),
     ]
   );
   return view(updated[0]);
@@ -978,6 +1055,8 @@ async function commitOpenInvoices(
   for (const r of rows) {
     const contactId = await contactIdFor(companyId, String(r.contactName));
     const due = Number(r.amountDueFils);
+    const fx = docFx(r);
+    const dueBase = fx.dueBaseFils;
     const date = new Date(`${r.date}T00:00:00.000Z`);
     await withLedgerTx(async (tx) => {
       const [inv] = await tx
@@ -989,16 +1068,16 @@ async function commitOpenInvoices(
           customerName: String(r.contactName),
           date,
           dueDate: r.dueDate ? new Date(`${r.dueDate}T00:00:00.000Z`) : null,
-          currency: "AED",
-          exchangeRate: 1,
+          currency: fx.currency,
+          exchangeRate: fx.rate,
           subtotal: Number(fromFils(due)),
           vatAmount: 0,
           total: Number(fromFils(due)),
-          baseCurrencyAmount: Number(fromFils(due)),
+          baseCurrencyAmount: Number(fromFils(dueBase)),
           status: "sent",
           invoiceType: "invoice",
           issuedAt: date,
-          notes: `Opening balance imported from ${system} (original total ${fromFils(Number(r.totalFils))}, outstanding ${fromFils(due)} at ${cutOver}).`,
+          notes: `Opening balance imported from ${system} (original total ${fx.currency} ${fromFils(Number(r.totalFils))}, outstanding ${fx.currency} ${fromFils(due)} at ${cutOver}${fx.foreign ? `, rate ${fx.rate}` : ""}).`,
         } as typeof invoices.$inferInsert)
         .returning();
       await tx.insert(invoiceLines).values({
@@ -1022,17 +1101,53 @@ async function commitOpenInvoices(
           status: "posted",
           kind: "opening",
           lines: [
-            { accountId: control.id, debitFils: due, description: `Opening A/R ${r.number}` },
-            { accountId: obe.id, creditFils: due, description: `Opening A/R ${r.number}` },
+            {
+              accountId: control.id,
+              debitFils: dueBase,
+              description: `Opening A/R ${r.number}`,
+              ...fx.debitLine(due),
+            },
+            { accountId: obe.id, creditFils: dueBase, description: `Opening A/R ${r.number}` },
           ],
         },
         { actorId: userId, tx }
       );
     });
     created++;
-    totalFils += due;
+    totalFils += dueBase;
   }
   return { documentsCreated: created, controlTotalFils: totalFils };
+}
+
+/** Rate and base amount resolved by validateImport (resolveDocumentRates). */
+function docFx(r: Record<string, unknown>) {
+  const base = String(r.baseCurrency || "AED");
+  const currency = String(r.currency || base).toUpperCase();
+  const foreign = r.foreign === true && currency !== base;
+  const rate = foreign ? Number(r.exchangeRate) : 1;
+  const dueBaseFils = foreign ? Number(r.amountDueBaseFils) : Number(r.amountDueFils);
+  if (foreign && !(rate > 0)) {
+    throw new DomainError("NO_EXCHANGE_RATE", 422, { number: r.number }, "Missing exchange rate");
+  }
+  return {
+    currency,
+    foreign,
+    rate,
+    dueBaseFils,
+    /** Foreign-currency columns for the control-account line (none for base currency). */
+    debitLine: (dueFils: number) =>
+      foreign
+        ? { foreignCurrency: currency, foreignDebit: fromFils(dueFils), exchangeRate: String(rate) }
+        : {},
+    creditLine: (dueFils: number) =>
+      foreign
+        ? {
+            foreignCurrency: currency,
+            foreignCredit: fromFils(dueFils),
+            exchangeRate: String(rate),
+          }
+        : {},
+  };
 }
 
 async function commitOpenBills(
@@ -1047,6 +1162,8 @@ async function commitOpenBills(
   let totalFils = 0;
   for (const r of rows) {
     const due = Number(r.amountDueFils);
+    const fx = docFx(r);
+    const dueBase = fx.dueBaseFils;
     const { rows: vendor } = await pq<{ id: string }>(
       `SELECT id FROM vendors WHERE company_id = $1 AND lower(name) = lower($2) LIMIT 1`,
       [companyId, r.contactName]
@@ -1064,9 +1181,9 @@ async function commitOpenBills(
       const [bill] = await txRows<{ id: string }>(
         tx,
         `INSERT INTO vendor_bills (company_id, vendor_id, vendor_name, bill_number, bill_date, due_date,
-            currency, subtotal, vat_amount, total_amount, amount_paid, status, notes, origin, origin_ref,
-            created_by, approved_by, approved_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'AED', $7, 0, $7, 0, 'approved', $8, 'import', $4, $9, $9, now())
+            currency, exchange_rate, subtotal, vat_amount, total_amount, amount_paid, status, notes,
+            origin, origin_ref, created_by, approved_by, approved_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $10, $11, $7, 0, $7, 0, 'approved', $8, 'import', $4, $9, $9, now())
          RETURNING id`,
         [
           companyId,
@@ -1076,8 +1193,10 @@ async function commitOpenBills(
           r.date,
           r.dueDate ?? null,
           fromFils(due),
-          `Opening balance imported from ${system} (original total ${fromFils(Number(r.totalFils))}, outstanding ${fromFils(due)} at ${cutOver}).`,
+          `Opening balance imported from ${system} (original total ${fx.currency} ${fromFils(Number(r.totalFils))}, outstanding ${fx.currency} ${fromFils(due)} at ${cutOver}${fx.foreign ? `, rate ${fx.rate}` : ""}).`,
           userId,
+          fx.currency,
+          String(fx.rate),
         ]
       );
       await postJournal(
@@ -1091,15 +1210,20 @@ async function commitOpenBills(
           status: "posted",
           kind: "opening",
           lines: [
-            { accountId: obe.id, debitFils: due, description: `Opening A/P ${r.number}` },
-            { accountId: control.id, creditFils: due, description: `Opening A/P ${r.number}` },
+            { accountId: obe.id, debitFils: dueBase, description: `Opening A/P ${r.number}` },
+            {
+              accountId: control.id,
+              creditFils: dueBase,
+              description: `Opening A/P ${r.number}`,
+              ...fx.creditLine(due),
+            },
           ],
         },
         { actorId: userId, tx }
       );
     });
     created++;
-    totalFils += due;
+    totalFils += dueBase;
   }
   return { documentsCreated: created, controlTotalFils: totalFils };
 }

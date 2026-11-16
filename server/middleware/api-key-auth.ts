@@ -18,7 +18,7 @@ import crypto from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { pq } from "../services/connectors/pq";
 import { createLogger } from "../config/logger";
-import { billingEnforced, getTierFeatures } from "./featureGate";
+import { billingEnforced, companyPlanId, getTierFeatures } from "./featureGate";
 
 const log = createLogger("api-key-auth");
 
@@ -196,11 +196,8 @@ export const apiKeyAuth: RequestHandler = (req: Request, res: Response, next: Ne
 
     // Plan gate: the public API is the `apiAccess` feature (same matrix as the pricing page).
     if (billingEnforced()) {
-      const sub = await pq<{ plan_id: string }>(
-        `SELECT plan_id FROM subscriptions WHERE company_id = $1 ORDER BY created_at DESC LIMIT 1`,
-        [key.company_id]
-      );
-      const planId = sub.rows[0] ? sub.rows[0].plan_id || "free" : null; // no row: not tier-gated
+      // Fails closed (S5): no subscription row = Free; null only for firm-billed client books.
+      const planId = await companyPlanId(key.company_id);
       if (planId !== null && !getTierFeatures(planId).apiAccess) {
         res.status(403).json({
           message: "Upgrade required to use the public API",

@@ -128,8 +128,28 @@ for (const feature of Object.keys(TIER_FEATURES.free)) {
 }
 
 /**
+ * Plan resolution (S5, fail closed).
+ *
+ * Every company gets a Free subscription row when it is created (migration
+ * 0114 trigger + ensureFreeSubscription) and existing companies were backfilled,
+ * so a missing row is an anomaly, never an implicit upgrade: it resolves to the
+ * Free plan. The only companies outside plan gating are NR-managed client books
+ * (company_type = 'client'), which are billed through the firm engagement — an
+ * explicit, documented exemption keyed on a field only platform admins / NR staff
+ * can set (R17-05), not on the absence of a row.
+ */
+export const FREE_PLAN_ID = "free";
+
+/** True for NR-managed client books (firm-billed, not plan-gated). */
+export function isFirmBilledCompany(company: { companyType?: string | null } | null | undefined) {
+  return company?.companyType === "client";
+}
+
+/**
  * Get the subscription for the current request's company.
- * Caches on req.subscription to avoid repeated DB calls.
+ * Caches on req.subscription to avoid repeated DB calls. Returns null only for
+ * firm-billed companies (or no company id): every other company resolves to its
+ * row, or to the Free plan when the row is missing.
  */
 async function getRequestSubscription(req: Request): Promise<any | null> {
   if (req.subscription) return req.subscription;
@@ -138,15 +158,37 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
   if (!companyId) return null;
 
   try {
-    const subscription = await storage.getSubscription(companyId);
-    if (subscription) {
-      req.subscription = subscription;
-    }
-    return subscription || null;
+    const company = await storage.getCompany(companyId);
+    if (isFirmBilledCompany(company)) return null;
+    const subscription = (await storage.getSubscription(companyId)) || {
+      companyId,
+      planId: FREE_PLAN_ID,
+      implicit: true,
+    };
+    req.subscription = subscription;
+    return subscription;
   } catch (error) {
-    log.error({ error, companyId }, "Failed to fetch subscription");
-    return null;
+    // Fail closed: a lookup failure must not unlock paid features.
+    log.error({ error, companyId }, "Failed to fetch subscription; treating as Free plan");
+    return { companyId, planId: FREE_PLAN_ID, implicit: true };
   }
+}
+
+/**
+ * Create the company's Free subscription row if it has none (idempotent). The
+ * 0114 trigger does this on INSERT INTO companies; callers that provision a
+ * company may call it too so the row exists even on a database without the trigger.
+ */
+export async function ensureFreeSubscription(companyId: string): Promise<void> {
+  const { pq } = await import("../services/connectors/pq");
+  await pq(
+    `INSERT INTO subscriptions (company_id, plan_id, plan_name, status, current_period_start,
+                                current_period_end, max_users, max_invoices, max_receipts,
+                                ai_credits_remaining)
+     SELECT $1, 'free', 'Free', 'active', now(), now() + interval '100 years', 1, 20, 20, 10
+      WHERE NOT EXISTS (SELECT 1 FROM subscriptions WHERE company_id = $1)`,
+    [companyId]
+  );
 }
 
 /**
@@ -210,12 +252,13 @@ export function requireFeature(feature: string) {
     }
     const subscription = await getRequestSubscription(req);
 
+    // null = firm-billed client books (explicit exemption) or no company in the request.
     if (!subscription) {
       next();
       return;
     }
 
-    const planId = subscription.planId || "free";
+    const planId = subscription.planId || FREE_PLAN_ID;
     const tierFeatures = TIER_FEATURES[planId] || TIER_FEATURES.free;
 
     if (!tierFeatures[feature]) {
@@ -242,8 +285,14 @@ export function requireTier(minimumTier: string) {
       next();
       return;
     }
+    const companyId = req.params.companyId || req.body?.companyId;
     const subscription = await getRequestSubscription(req);
-    const currentTier = subscription?.planId || "free";
+    // Firm-billed client books are not tier-gated (explicit exemption).
+    if (companyId && !subscription) {
+      next();
+      return;
+    }
+    const currentTier = subscription?.planId || FREE_PLAN_ID;
 
     const currentIndex = TIER_ORDER.indexOf(currentTier);
     const requiredIndex = TIER_ORDER.indexOf(minimumTier);
@@ -431,16 +480,23 @@ export function usagePeriod(now = new Date()): string {
 }
 
 /**
- * The company's plan, or null when it has no subscription row (firm-managed
- * client books): like requireFeature, such companies are not tier-gated.
+ * The company's plan for the central gates. Fails closed: a company without a
+ * subscription row is on the Free plan. Returns null only when the company does
+ * not exist (the route answers 404) or is NR-managed client books
+ * (company_type = 'client', firm-billed: explicit exemption).
  */
-async function companyPlanId(companyId: string): Promise<string | null> {
+export async function companyPlanId(companyId: string): Promise<string | null> {
   const { pq } = await import("../services/connectors/pq");
-  const { rows } = await pq<{ plan_id: string }>(
-    `SELECT plan_id FROM subscriptions WHERE company_id = $1 ORDER BY created_at DESC LIMIT 1`,
+  const { rows } = await pq<{ company_type: string | null; plan_id: string | null }>(
+    `SELECT c.company_type,
+            (SELECT s.plan_id FROM subscriptions s WHERE s.company_id = c.id
+              ORDER BY s.created_at DESC LIMIT 1) AS plan_id
+       FROM companies c WHERE c.id = $1`,
     [companyId]
   );
-  return rows[0] ? rows[0].plan_id || "free" : null;
+  const row = rows[0];
+  if (!row || isFirmBilledCompany({ companyType: row.company_type })) return null;
+  return row.plan_id || FREE_PLAN_ID;
 }
 
 /** Current month's count for a metric. */

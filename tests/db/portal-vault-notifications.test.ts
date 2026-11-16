@@ -363,7 +363,7 @@ describe("W4-D notification engine", () => {
     expect(mails.map((m) => m.status)).toEqual(["blocked_no_provider"]);
     const prefs = await t.as.get("/api/notification-preferences");
     expect(prefs.body.channels.email.status).toBe("disabled");
-    expect(prefs.body.channels.push.status).toBe("disabled");
+    expect(prefs.body.channels.push.status).toBe("requires_external"); // S5: VAPID keys are external
 
     const d = await h.createSecondTenant();
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
