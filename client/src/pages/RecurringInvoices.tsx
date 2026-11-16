@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FormActions, FormErrorSummary, FormGrid, FormSection, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -7,14 +8,7 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import {
   Dialog,
   DialogContent,
@@ -43,7 +37,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
 import { DataTableCard } from "@/components/ui/data-table";
-import { MoneyCell } from "@/components/ui/money";
+import { MoneyCell, Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Calendar } from "@/components/ui/calendar";
@@ -57,7 +51,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -135,6 +129,8 @@ export default function RecurringInvoices() {
     control: form.control,
     name: "lines",
   });
+  const watchedLines = form.watch("lines");
+  const watchedCurrency = form.watch("currency");
 
   const createMutation = useMutation({
     mutationFn: async (data: RecurringInvoiceFormData) => {
@@ -335,257 +331,246 @@ export default function RecurringInvoices() {
             <DialogTrigger asChild>
               <Button onClick={handleCreate}>
                 <Plus className="w-4 h-4" />
-                {locale === "ar" ? "فاتورة متكررة جديدة" : "New Recurring Invoice"}
+                {t["forms.recurring.newTitle"]}
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent size="lg" data-testid="dialog-recurring-form">
               <DialogHeader>
                 <DialogTitle>
-                  {editingItem
-                    ? locale === "ar"
-                      ? "تعديل الفاتورة المتكررة"
-                      : "Edit Recurring Invoice"
-                    : locale === "ar"
-                      ? "فاتورة متكررة جديدة"
-                      : "New Recurring Invoice"}
+                  {editingItem ? t["forms.recurring.editTitle"] : t["forms.recurring.newTitle"]}
                 </DialogTitle>
-                <DialogDescription>
-                  {locale === "ar"
-                    ? "حدد تفاصيل قالب الفاتورة المتكررة"
-                    : "Define the recurring invoice template details"}
-                </DialogDescription>
+                <DialogDescription>{t["forms.recurring.desc"]}</DialogDescription>
               </DialogHeader>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="customerName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t.customerName || "Customer Name"}</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="customerTrn"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t.customerTRN || "Customer TRN"}</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="currency"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{locale === "ar" ? "العملة" : "Currency"}</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+                  <FormErrorSummary />
+                  <FormSection title={t["forms.section.customer"]}>
+                    <FormGrid>
+                      <FormField
+                        control={form.control}
+                        name="customerName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>{t.customerName}</FormLabel>
                             <FormControl>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
+                              <Input {...field} dir="auto" />
                             </FormControl>
-                            <SelectContent>
-                              <SelectItem value="AED">AED</SelectItem>
-                              <SelectItem value="USD">USD</SelectItem>
-                              <SelectItem value="EUR">EUR</SelectItem>
-                              <SelectItem value="GBP">GBP</SelectItem>
-                              <SelectItem value="SAR">SAR</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="frequency"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{locale === "ar" ? "التكرار" : "Frequency"}</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="customerTrn"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t.customerTRN}</FormLabel>
                             <FormControl>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
+                              <Input
+                                {...field}
+                                ltr
+                                inputMode="numeric"
+                                placeholder={t["forms.optional"]}
+                              />
                             </FormControl>
-                            <SelectContent>
-                              <SelectItem value="weekly">
-                                {locale === "ar" ? "اسبوعي" : "Weekly"}
-                              </SelectItem>
-                              <SelectItem value="monthly">
-                                {locale === "ar" ? "شهري" : "Monthly"}
-                              </SelectItem>
-                              <SelectItem value="quarterly">
-                                {locale === "ar" ? "ربع سنوي" : "Quarterly"}
-                              </SelectItem>
-                              <SelectItem value="yearly">
-                                {locale === "ar" ? "سنوي" : "Yearly"}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="startDate"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel>{locale === "ar" ? "تاريخ البدء" : "Start Date"}</FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="currency"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t["forms.recurring.currency"]}</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full ps-3 text-start font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  {field.value
-                                    ? format(field.value, "PPP")
-                                    : locale === "ar"
-                                      ? "اختر التاريخ"
-                                      : "Pick a date"}
-                                  <CalendarIcon className="ms-auto h-4 w-4 opacity-50" />
-                                </Button>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
                               </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="endDate"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel>
-                            {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "End Date (optional)"}
-                          </FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
+                              <SelectContent>
+                                <SelectItem value="AED">AED</SelectItem>
+                                <SelectItem value="USD">USD</SelectItem>
+                                <SelectItem value="EUR">EUR</SelectItem>
+                                <SelectItem value="GBP">GBP</SelectItem>
+                                <SelectItem value="SAR">SAR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </FormGrid>
+                  </FormSection>
+
+                  <FormSection
+                    title={t["forms.section.schedule"]}
+                    description={t["forms.section.scheduleDesc"]}
+                  >
+                    <FormGrid>
+                      <FormField
+                        control={form.control}
+                        name="frequency"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>{t["forms.recurring.frequency"]}</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full ps-3 text-start font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  {field.value
-                                    ? format(field.value, "PPP")
-                                    : locale === "ar"
-                                      ? "غير محدد"
-                                      : "Indefinite"}
-                                  <CalendarIcon className="ms-auto h-4 w-4 opacity-50" />
-                                </Button>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
                               </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={field.value || undefined}
-                                onSelect={(date) => field.onChange(date || null)}
-                                initialFocus
+                              <SelectContent>
+                                {(["weekly", "monthly", "quarterly", "yearly"] as const).map(
+                                  (f) => (
+                                    <SelectItem key={f} value={f}>
+                                      {getFreqLabel(f)}
+                                    </SelectItem>
+                                  )
+                                )}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="hidden sm:block" aria-hidden />
+                      <FormField
+                        control={form.control}
+                        name="startDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>{t["forms.recurring.startDate"]}</FormLabel>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <FormControl>
+                                  <Button
+                                    variant="outline"
+                                    className={cn(
+                                      "w-full justify-start text-start font-normal",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="h-4 w-4" />
+                                    {field.value
+                                      ? formatDate(field.value, locale)
+                                      : t["pages.pickADate"]}
+                                  </Button>
+                                </FormControl>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={field.value}
+                                  onSelect={field.onChange}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="endDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t["forms.recurring.endDate"]}</FormLabel>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <FormControl>
+                                  <Button
+                                    variant="outline"
+                                    className={cn(
+                                      "w-full justify-start text-start font-normal",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="h-4 w-4" />
+                                    {field.value
+                                      ? formatDate(field.value, locale)
+                                      : t["forms.recurring.indefinite"]}
+                                  </Button>
+                                </FormControl>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={field.value || undefined}
+                                  onSelect={(date) => field.onChange(date || null)}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <FormDescription>{t["forms.recurring.endDateHelp"]}</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </FormGrid>
+                    <div className="space-y-3 rounded-lg bg-surface-sunken/60 p-4">
+                      <FormField
+                        control={form.control}
+                        name="autoIssue"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-3 space-y-0">
+                            <FormControl>
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-primary"
+                                checked={field.value}
+                                onChange={(e) => field.onChange(e.target.checked)}
+                                data-testid="checkbox-recurring-auto-issue"
                               />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                            </FormControl>
+                            <FormLabel className="font-normal">{t["invoices.autoIssue"]}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="autoSend"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-3 space-y-0">
+                            <FormControl>
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-primary"
+                                checked={field.value}
+                                onChange={(e) => field.onChange(e.target.checked)}
+                                data-testid="checkbox-recurring-auto-send"
+                              />
+                            </FormControl>
+                            <FormLabel className="font-normal">{t["invoices.autoSend"]}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="sendToEmail"
+                        render={({ field }) => (
+                          <FormItem className="sm:max-w-sm">
+                            <FormLabel className="sr-only">{t["invoices.sendToEmail"]}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="email"
+                                placeholder={t["invoices.sendToEmail"]}
+                                {...field}
+                                data-testid="input-recurring-send-to"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </FormSection>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <FormField
-                      control={form.control}
-                      name="autoIssue"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2">
-                          <FormControl>
-                            <input
-                              type="checkbox"
-                              checked={field.value}
-                              onChange={(e) => field.onChange(e.target.checked)}
-                              data-testid="checkbox-recurring-auto-issue"
-                            />
-                          </FormControl>
-                          <FormLabel className="!mt-0">{t["invoices.autoIssue"]}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="autoSend"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2">
-                          <FormControl>
-                            <input
-                              type="checkbox"
-                              checked={field.value}
-                              onChange={(e) => field.onChange(e.target.checked)}
-                              data-testid="checkbox-recurring-auto-send"
-                            />
-                          </FormControl>
-                          <FormLabel className="!mt-0">{t["invoices.autoSend"]}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="sendToEmail"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input
-                              type="email"
-                              placeholder={t["invoices.sendToEmail"]}
-                              aria-label={t["invoices.sendToEmail"]}
-                              {...field}
-                              data-testid="input-recurring-send-to"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Line Items */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <FormLabel className="text-base font-semibold">
-                        {locale === "ar" ? "بنود الفاتورة" : "Line Items"}
-                      </FormLabel>
+                  <FormSection
+                    title={t["forms.section.lines"]}
+                    actions={
                       <Button
                         type="button"
                         variant="outline"
@@ -594,36 +579,47 @@ export default function RecurringInvoices() {
                           append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
                         }
                       >
-                        <Plus className="w-4 h-4" />
-                        {t.addLine || "Add Line"}
+                        <Plus className="h-4 w-4" />
+                        {t.addLine}
                       </Button>
-                    </div>
-                    {fields.map((field, index) => (
-                      <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-                        <div className="col-span-5">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.description`}
-                            render={({ field }) => (
-                              <FormItem>
-                                {index === 0 && (
-                                  <FormLabel>{t.description || "Description"}</FormLabel>
-                                )}
-                                <FormControl>
-                                  <Input {...field} placeholder={t.description || "Description"} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-2">
+                    }
+                  >
+                    <LineItemList>
+                      {fields.map((field, index) => (
+                        <LineItem
+                          key={field.id}
+                          index={index}
+                          onRemove={() => remove(index)}
+                          canRemove={fields.length > 1}
+                          gridClassName="sm:grid-cols-[6rem_8rem_7rem_minmax(0,1fr)]"
+                          main={
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.description`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      dir="auto"
+                                      placeholder={t.description}
+                                      aria-label={formatMessage(t["forms.lineDescription"], {
+                                        n: index + 1,
+                                      })}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          }
+                        >
                           <FormField
                             control={form.control}
                             name={`lines.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
-                                {index === 0 && <FormLabel>{t.quantity || "Qty"}</FormLabel>}
+                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
                                 <FormControl>
                                   <Input {...field} type="number" step="0.01" />
                                 </FormControl>
@@ -631,14 +627,14 @@ export default function RecurringInvoices() {
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-2">
                           <FormField
                             control={form.control}
                             name={`lines.${index}.unitPrice`}
                             render={({ field }) => (
                               <FormItem>
-                                {index === 0 && <FormLabel>{t.unitPrice || "Price"}</FormLabel>}
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.unitPrice"]}
+                                </FormLabel>
                                 <FormControl>
                                   <Input {...field} type="number" step="0.01" />
                                 </FormControl>
@@ -646,14 +642,12 @@ export default function RecurringInvoices() {
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-2">
                           <FormField
                             control={form.control}
                             name={`lines.${index}.vatRate`}
                             render={({ field }) => (
                               <FormItem>
-                                {index === 0 && <FormLabel>{t.vat || "VAT"}</FormLabel>}
+                                <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
                                 <Select
                                   onValueChange={(val) => field.onChange(parseFloat(val))}
                                   defaultValue={String(field.value)}
@@ -672,37 +666,35 @@ export default function RecurringInvoices() {
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-1 flex items-end">
-                          {fields.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => remove(index)}
-                              className={cn(index === 0 && "mt-6")}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                          <LineAmount label={t["forms.col.amount"]}>
+                            <Money
+                              amount={
+                                Number(watchedLines[index]?.quantity || 0) *
+                                Number(watchedLines[index]?.unitPrice || 0) *
+                                (1 + Number(watchedLines[index]?.vatRate || 0))
+                              }
+                              currency={watchedCurrency || "AED"}
+                            />
+                          </LineAmount>
+                        </LineItem>
+                      ))}
+                    </LineItemList>
+                  </FormSection>
 
-                  <div className="flex justify-end gap-2 pt-4">
+                  <FormActions sticky>
                     <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                      {t.cancel || "Cancel"}
+                      {t.cancel}
                     </Button>
                     <Button
                       type="submit"
+                      className="sm:min-w-32"
                       disabled={createMutation.isPending || updateMutation.isPending}
                     >
                       {createMutation.isPending || updateMutation.isPending
-                        ? t.loading || "Loading..."
-                        : t.save || "Save"}
+                        ? t["forms.saving"]
+                        : t.save}
                     </Button>
-                  </div>
+                  </FormActions>
                 </form>
               </Form>
             </DialogContent>

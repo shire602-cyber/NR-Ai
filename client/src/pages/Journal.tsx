@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FormActions, FormErrorSummary, FormGrid, FormSection, lineLabelClass } from "@/components/ui/form-layout";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -403,83 +404,87 @@ export default function Journal() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-journal-form">
           <DialogHeader>
-            <DialogTitle>{editingEntry ? "Edit Journal Entry" : t.newEntry}</DialogTitle>
+            <DialogTitle>{editingEntry ? t["forms.journal.editTitle"] : t.newEntry}</DialogTitle>
             <DialogDescription>
-              {editingEntry
-                ? "Update journal entry details"
-                : "Create a balanced double-entry journal entry"}
+              {editingEntry ? t["forms.journal.editDesc"] : t["forms.journal.newDesc"]}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t.date}</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full justify-start text-start font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                              data-testid="button-date-picker"
-                            >
-                              <CalendarIcon className="h-4 w-4" />
-                              {field.value ? (
-                                format(field.value, "PPP")
-                              ) : (
-                                <span>
-                                  <T k="pages.pickADate" />
-                                </span>
-                              )}
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            initialFocus
+            <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+              <FormErrorSummary />
+              <FormSection
+                title={t["forms.section.entry"]}
+                description={t["forms.section.entryDesc"]}
+              >
+                <FormGrid>
+                  <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t.date}</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                className={cn(
+                                  "w-full justify-start text-start font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                                data-testid="button-date-picker"
+                              >
+                                <CalendarIcon className="h-4 w-4" />
+                                {field.value ? (
+                                  formatDate(field.value, locale)
+                                ) : (
+                                  <span>
+                                    <T k="pages.pickADate" />
+                                  </span>
+                                )}
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={field.onChange}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="memo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t.memo}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            dir="auto"
+                            placeholder={t["forms.journal.memoPlaceholder"]}
+                            data-testid="input-memo"
                           />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="memo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t.memo}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="Optional description"
-                          data-testid="input-memo"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">
-                    <T k="pageLabels.journalLines" />
-                  </h3>
+              <FormSection
+                title={<T k="pageLabels.journalLines" />}
+                description={t["forms.journal.linesDesc"]}
+                actions={
                   <Button
                     type="button"
                     variant="outline"
@@ -487,161 +492,175 @@ export default function Journal() {
                     onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
                     data-testid="button-add-line"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="h-4 w-4" />
                     <T k="pages.addLine" />
                   </Button>
-                </div>
-
-                <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground px-3 pb-2">
-                  <div className="col-span-5">
-                    <T k="consolidation.account" />
-                  </div>
-                  <div className="col-span-3 text-end">{t.debit}</div>
-                  <div className="col-span-3 text-end">{t.credit}</div>
-                  <div className="col-span-1"></div>
-                </div>
-
-                {fields.map((field, index) => (
+                }
+              >
+                <div className="rounded-lg bg-surface-sunken/60">
                   <div
-                    key={field.id}
-                    className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
+                    aria-hidden
+                    className="hidden grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] gap-3 border-b border-border px-3 py-2 text-caption font-medium text-muted-foreground sm:grid"
                   >
-                    <div className="col-span-5">
-                      <FormField
-                        control={form.control}
-                        name={`lines.${index}.accountId`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                    <span>
+                      <T k="consolidation.account" />
+                    </span>
+                    <span className="text-end">{t.debit}</span>
+                    <span className="text-end">{t.credit}</span>
+                    <span />
+                  </div>
+                  <ol className="divide-y divide-border px-3">
+                    {fields.map((field, index) => (
+                      <li
+                        key={field.id}
+                        className="grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] sm:items-start"
+                      >
+                        <FormField
+                          control={form.control}
+                          name={`lines.${index}.accountId`}
+                          render={({ field }) => (
+                            <FormItem className="col-span-2 sm:col-span-1">
+                              <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                                {formatMessage(t["forms.lineN"], { n: index + 1 })} ·{" "}
+                                <T k="consolidation.account" />
+                              </FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger data-testid={`select-account-${index}`}>
+                                    <SelectValue placeholder={t["forms.journal.selectAccount"]} />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {accounts?.map((acc: any) => (
+                                    <SelectItem key={acc.id} value={acc.id}>
+                                      <span className="me-2 tabular-nums text-muted-foreground">
+                                        {acc.code}
+                                      </span>
+                                      {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`lines.${index}.debit`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                                {t.debit}
+                              </FormLabel>
                               <FormControl>
-                                <SelectTrigger data-testid={`select-account-${index}`}>
-                                  <SelectValue placeholder="Select account" />
-                                </SelectTrigger>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  className="text-end"
+                                  name={field.name}
+                                  ref={field.ref}
+                                  onBlur={field.onBlur}
+                                  value={field.value ?? ""}
+                                  onChange={(e) =>
+                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                  }
+                                  data-testid={`input-debit-${index}`}
+                                />
                               </FormControl>
-                              <SelectContent>
-                                {accounts?.map((acc: any) => (
-                                  <SelectItem key={acc.id} value={acc.id}>
-                                    <span className="text-xs me-2">{acc.code}</span>
-                                    {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <FormField
-                        control={form.control}
-                        name={`lines.${index}.debit`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="0.00"
-                                className="text-end"
-                                value={field.value ?? ""}
-                                onChange={(e) =>
-                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                }
-                                data-testid={`input-debit-${index}`}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <FormField
-                        control={form.control}
-                        name={`lines.${index}.credit`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="0.00"
-                                className="text-end"
-                                value={field.value ?? ""}
-                                onChange={(e) =>
-                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                }
-                                data-testid={`input-credit-${index}`}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center">
-                      {fields.length > 2 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => remove(index)}
-                          data-testid={`button-remove-line-${index}`}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t pt-4 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total {t.debit}</span>
-                  <span className="font-medium">{formatNumber(totalDebit, locale)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total {t.credit}</span>
-                  <span className="font-medium">{formatNumber(totalCredit, locale)}</span>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <span className="font-semibold">{t.balance}</span>
-                  <div className="flex items-center gap-2">
-                    {isBalanced ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-success" />
-                        <StatusBadge tone="success">{t.balanced}</StatusBadge>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-destructive" />
-                        <StatusBadge tone="danger">
-                          {t.notBalanced} (
-                          {formatNumber(Math.abs(totalDebitFils - totalCreditFils) / 100, locale)})
-                        </StatusBadge>
-                      </>
-                    )}
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`lines.${index}.credit`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                                {t.credit}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  className="text-end"
+                                  name={field.name}
+                                  ref={field.ref}
+                                  onBlur={field.onBlur}
+                                  value={field.value ?? ""}
+                                  onChange={(e) =>
+                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                  }
+                                  data-testid={`input-credit-${index}`}
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <div className="col-span-2 flex justify-end sm:col-span-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="text-muted-foreground hover:text-danger"
+                            disabled={fields.length <= 2}
+                            aria-label={formatMessage(t["forms.removeLine"], { n: index + 1 })}
+                            onClick={() => remove(index)}
+                            data-testid={
+                              fields.length > 2 ? `button-remove-line-${index}` : undefined
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem]">
+                    <span className="col-span-2 text-muted-foreground sm:col-span-1">
+                      {t["forms.preview.total"]}
+                    </span>
+                    <span className="text-end" data-testid="journal-total-debit">
+                      <Money amount={totalDebit} currency="AED" />
+                    </span>
+                    <span className="text-end" data-testid="journal-total-credit">
+                      <Money amount={totalCredit} currency="AED" />
+                    </span>
                   </div>
                 </div>
-              </div>
+                <div className="flex items-center justify-end gap-2" aria-live="polite">
+                  {isBalanced ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+                      <StatusBadge tone="success">{t.balanced}</StatusBadge>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-4 w-4 text-danger" aria-hidden />
+                      <StatusBadge tone="danger">
+                        {t.notBalanced} (
+                        {formatNumber(Math.abs(totalDebitFils - totalCreditFils) / 100, locale)})
+                      </StatusBadge>
+                    </>
+                  )}
+                </div>
+              </FormSection>
 
-              <div className="flex gap-3 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                  className="flex-1"
-                >
+              <FormActions sticky>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={!isBalanced || createMutation.isPending || editMutation.isPending}
-                  className="flex-1"
                   data-testid="button-submit-entry"
                 >
-                  {createMutation.isPending || editMutation.isPending ? t.loading : t.save}
+                  {createMutation.isPending || editMutation.isPending ? t["forms.saving"] : t.save}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>

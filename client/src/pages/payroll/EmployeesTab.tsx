@@ -31,6 +31,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Money } from "@/components/ui/money";
+import {
+  ErrorSummary,
+  Field,
+  FormActions,
+  FormGrid,
+  FormSection,
+  useFormGate,
+} from "@/components/ui/form-layout";
 import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
 import { StatusBadge } from "./StatusBadge";
 
@@ -91,6 +99,57 @@ const TEXT_FIELDS: Array<{ key: string; label: string; type?: string; col?: keyo
   },
 ];
 
+const FIELD_BY_KEY = new Map(TEXT_FIELDS.map((f) => [f.key, f]));
+/** D5b: the employee form grouped into sections (every TEXT_FIELDS key appears once). */
+const EMPLOYEE_SECTIONS: Array<{ title: string; keys: string[] }> = [
+  {
+    title: "forms.section.personal",
+    keys: ["fullName", "fullNameAr", "employeeNumber", "nationality", "email"],
+  },
+  {
+    title: "forms.employee.documents",
+    keys: [
+      "emiratesId",
+      "emiratesIdExpiry",
+      "passportNumber",
+      "passportExpiry",
+      "visaNumber",
+      "visaExpiry",
+      "laborCardNumber",
+      "laborCardExpiry",
+      "molPersonId",
+    ],
+  },
+  {
+    title: "forms.section.employment",
+    keys: ["department", "designation", "joinDate", "contractType", "contractStart", "contractEnd"],
+  },
+  {
+    title: "forms.section.pay",
+    keys: [
+      "salaryCurrency",
+      "basicSalary",
+      "housingAllowance",
+      "transportAllowance",
+      "otherAllowance",
+    ],
+  },
+  { title: "forms.section.wps", keys: ["bankName", "iban", "routingCode"] },
+];
+/** Latin identifiers and codes: LTR, tabular, start-aligned in Arabic. */
+const LTR_KEYS = new Set([
+  "employeeNumber",
+  "email",
+  "emiratesId",
+  "passportNumber",
+  "visaNumber",
+  "laborCardNumber",
+  "molPersonId",
+  "iban",
+  "routingCode",
+  "salaryCurrency",
+]);
+
 const CONTRACT_TYPES = ["full_time", "part_time", "temporary", "flexible", "remote", "job_sharing"];
 const DATE_KEYS = new Set(TEXT_FIELDS.filter((f) => f.type === "date").map((f) => f.key));
 
@@ -114,6 +173,9 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(toForm(null));
   const [terminating, setTerminating] = useState<Employee | null>(null);
+  const gate = useFormGate([
+    { id: "emp-fullName", label: tx("hr.field.fullName"), invalid: !form.fullName },
+  ]);
   const [termDate, setTermDate] = useState("");
   const [termReason, setTermReason] = useState("");
   const [search, setSearch] = useState("");
@@ -299,52 +361,93 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         <p className="text-xs text-muted-foreground">{tx("hr.deleteGuardHint")}</p>
       </CardContent>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) gate.reset();
+        }}
+      >
+        <DialogContent size="lg" data-testid="dialog-employee-form">
           <DialogHeader>
             <DialogTitle>{tx(editing ? "hr.editEmployee" : "hr.addEmployee")}</DialogTitle>
             <DialogDescription>{tx("hr.employeeFormHint")}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {TEXT_FIELDS.map((f) => (
-              <div key={f.key} className="space-y-1">
-                <Label htmlFor={`emp-${f.key}`}>{tx(f.label)}</Label>
-                <Input
-                  id={`emp-${f.key}`}
-                  type={f.type === "number" ? "text" : (f.type ?? "text")}
-                  inputMode={f.type === "number" ? "decimal" : undefined}
-                  value={form[f.key] ?? ""}
-                  onChange={(ev) => setForm({ ...form, [f.key]: ev.target.value })}
-                />
-              </div>
+          <form
+            noValidate
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (save.isPending || !gate.attempt()) return;
+              save.mutate();
+            }}
+          >
+            <ErrorSummary items={gate.summary} />
+            {EMPLOYEE_SECTIONS.map((section) => (
+              <FormSection key={section.title} title={tx(section.title)}>
+                <FormGrid>
+                  {section.keys.map((k) => {
+                    if (k === "contractType") {
+                      return (
+                        <Field key={k} id="emp-contractType" label={tx("hr.field.contractType")}>
+                          <Select
+                            value={form.contractType || undefined}
+                            onValueChange={(v) => setForm({ ...form, contractType: v })}
+                          >
+                            <SelectTrigger id="emp-contractType">
+                              <SelectValue placeholder={tx("hr.select")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CONTRACT_TYPES.map((c) => (
+                                <SelectItem key={c} value={c}>
+                                  {tx(`hr.contract.${c}`)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      );
+                    }
+                    const f = FIELD_BY_KEY.get(k)!;
+                    return (
+                      <Field
+                        key={f.key}
+                        id={`emp-${f.key}`}
+                        label={tx(f.label)}
+                        required={f.key === "fullName"}
+                        error={gate.errorFor(`emp-${f.key}`)}
+                      >
+                        <Input
+                          type={f.type === "number" ? "text" : (f.type ?? "text")}
+                          inputMode={f.type === "number" ? "decimal" : undefined}
+                          ltr={LTR_KEYS.has(f.key)}
+                          dir={
+                            f.key === "fullNameAr"
+                              ? "rtl"
+                              : f.type === "date"
+                                ? "ltr"
+                                : LTR_KEYS.has(f.key)
+                                  ? undefined
+                                  : "auto"
+                          }
+                          value={form[f.key] ?? ""}
+                          onChange={(ev) => setForm({ ...form, [f.key]: ev.target.value })}
+                        />
+                      </Field>
+                    );
+                  })}
+                </FormGrid>
+              </FormSection>
             ))}
-            <div className="space-y-1">
-              <Label>{tx("hr.field.contractType")}</Label>
-              <Select
-                value={form.contractType || undefined}
-                onValueChange={(v) => setForm({ ...form, contractType: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={tx("hr.select")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONTRACT_TYPES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {tx(`hr.contract.${c}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {tx("hr.cancel")}
-            </Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || !form.fullName}>
-              {tx("hr.save")}
-            </Button>
-          </DialogFooter>
+            <FormActions sticky>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                {tx("hr.cancel")}
+              </Button>
+              <Button type="submit" className="sm:min-w-32" disabled={save.isPending}>
+                {tx("hr.save")}
+              </Button>
+            </FormActions>
+          </form>
         </DialogContent>
       </Dialog>
 

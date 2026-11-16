@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
 import { DataTableCard } from "@/components/ui/data-table";
-import { MoneyCell } from "@/components/ui/money";
+import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,11 +49,11 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -308,7 +309,7 @@ export default function Quotes() {
                 <T k="pageLabels.newQuote" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent size="lg" data-testid="dialog-quote-form">
               <DialogHeader>
                 <DialogTitle>
                   {editingQuote ? t["screens.editQuote"] : t["pageLabels.newQuote"]}
@@ -320,194 +321,145 @@ export default function Quotes() {
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pageLabels.quoteNumber" />
-                          </FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t.date}</FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full justify-start text-start font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  <CalendarIcon className="h-4 w-4" />
-                                  {field.value ? (
-                                    format(field.value, "PPP")
-                                  ) : (
-                                    <span>
-                                      <T k="pages.pickADate" />
-                                    </span>
-                                  )}
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="customerName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.customerName" />
-                          </FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="customerTrn"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.customerTrn" />
-                          </FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder={t["screens.optional"]} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="expiryDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pageLabels.expiryDate" />
-                          </FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full justify-start text-start font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  <CalendarIcon className="h-4 w-4" />
-                                  {field.value ? (
-                                    format(field.value, "PPP")
-                                  ) : (
-                                    <span>
-                                      <T k="pages.pickADate" />
-                                    </span>
-                                  )}
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="currency"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.currency" />
-                          </FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+                  <FormErrorSummary />
+                  <FormSection
+                    title={t["forms.section.document"]}
+                    description={t["forms.section.documentDesc"]}
+                  >
+                    <FormGrid>
+                      <FormField
+                        control={form.control}
+                        name="number"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>
+                              <T k="pageLabels.quoteNumber" />
+                            </FormLabel>
                             <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={t["screens.selectCurrency"]} />
-                              </SelectTrigger>
+                              <Input {...field} ltr />
                             </FormControl>
-                            <SelectContent>
-                              <SelectItem value="AED">AED</SelectItem>
-                              <SelectItem value="USD">USD</SelectItem>
-                              <SelectItem value="EUR">EUR</SelectItem>
-                              <SelectItem value="GBP">GBP</SelectItem>
-                              <SelectItem value="SAR">SAR</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="currency"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <T k="pages.currency" />
+                            </FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={t["screens.selectCurrency"]} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="AED">AED</SelectItem>
+                                <SelectItem value="USD">USD</SelectItem>
+                                <SelectItem value="EUR">EUR</SelectItem>
+                                <SelectItem value="GBP">GBP</SelectItem>
+                                <SelectItem value="SAR">SAR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {(["date", "expiryDate"] as const).map((name) => (
+                        <FormField
+                          key={name}
+                          control={form.control}
+                          name={name}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>
+                                {name === "date" ? t.date : <T k="pageLabels.expiryDate" />}
+                              </FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      className={cn(
+                                        "w-full justify-start text-start font-normal",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                    >
+                                      <CalendarIcon className="h-4 w-4" />
+                                      {field.value ? (
+                                        formatDate(field.value, locale)
+                                      ) : (
+                                        <span>
+                                          <T k="pages.pickADate" />
+                                        </span>
+                                      )}
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      ))}
+                    </FormGrid>
+                  </FormSection>
 
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.notes" />
-                        </FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder={t["screens.quoteNotesPlaceholder"]}
-                            rows={3}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <FormSection title={t["forms.section.customer"]}>
+                    <FormGrid>
+                      <FormField
+                        control={form.control}
+                        name="customerName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>
+                              <T k="pages.customerName" />
+                            </FormLabel>
+                            <FormControl>
+                              <Input {...field} dir="auto" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="customerTrn"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <T k="pages.customerTrn" />
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                ltr
+                                inputMode="numeric"
+                                placeholder={t["screens.optional"]}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </FormGrid>
+                  </FormSection>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium">
-                        <T k="pages.lineItems" />
-                      </h3>
+                  <FormSection
+                    title={<T k="pages.lineItems" />}
+                    actions={
                       <Button
                         type="button"
                         variant="outline"
@@ -516,40 +468,54 @@ export default function Quotes() {
                           append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
                         }
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="h-4 w-4" />
                         <T k="pages.addLine" />
                       </Button>
-                    </div>
-
-                    {fields.map((field, index) => (
-                      <div
-                        key={field.id}
-                        className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
-                      >
-                        <div className="col-span-4">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.description`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormControl>
-                                  <Input {...field} placeholder={t.description} />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-2">
+                    }
+                  >
+                    <LineItemList>
+                      {fields.map((field, index) => (
+                        <LineItem
+                          key={field.id}
+                          index={index}
+                          onRemove={() => remove(index)}
+                          canRemove={fields.length > 1}
+                          gridClassName="sm:grid-cols-[6rem_8rem_7rem_minmax(0,1fr)]"
+                          main={
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.description`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      dir="auto"
+                                      placeholder={t.description}
+                                      aria-label={formatMessage(t["forms.lineDescription"], {
+                                        n: index + 1,
+                                      })}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          }
+                        >
                           <FormField
                             control={form.control}
                             name={`lines.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
+                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
                                 <FormControl>
                                   <Input
                                     type="number"
                                     step="0.01"
-                                    placeholder={t["screens.qty"]}
+                                    name={field.name}
+                                    ref={field.ref}
+                                    onBlur={field.onBlur}
                                     value={field.value ?? ""}
                                     onChange={(e) =>
                                       field.onChange(
@@ -558,21 +524,25 @@ export default function Quotes() {
                                     }
                                   />
                                 </FormControl>
+                                <FormMessage />
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-2">
                           <FormField
                             control={form.control}
                             name={`lines.${index}.unitPrice`}
                             render={({ field }) => (
                               <FormItem>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.unitPrice"]}
+                                </FormLabel>
                                 <FormControl>
                                   <Input
                                     type="number"
                                     step="0.01"
-                                    placeholder={t["screens.price"]}
+                                    name={field.name}
+                                    ref={field.ref}
+                                    onBlur={field.onBlur}
                                     value={field.value ?? ""}
                                     onChange={(e) =>
                                       field.onChange(
@@ -581,100 +551,102 @@ export default function Quotes() {
                                     }
                                   />
                                 </FormControl>
+                                <FormMessage />
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-2">
                           <FormField
                             control={form.control}
                             name={`lines.${index}.vatRate`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormControl>
-                                  <Select
-                                    value={String(field.value * 100)}
-                                    onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
-                                  >
+                                <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
+                                <Select
+                                  value={String(field.value * 100)}
+                                  onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                                >
+                                  <FormControl>
                                     <SelectTrigger>
                                       <SelectValue />
                                     </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="0">0%</SelectItem>
-                                      <SelectItem value="5">5%</SelectItem>
-                                      <SelectItem value="10">10%</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </FormControl>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="0">0%</SelectItem>
+                                    <SelectItem value="5">5%</SelectItem>
+                                    <SelectItem value="10">10%</SelectItem>
+                                  </SelectContent>
+                                </Select>
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-1">
-                          <div className="h-10 flex items-center justify-end text-sm">
-                            {formatCurrency(
-                              (watchLines[index]?.quantity || 0) *
+                          <LineAmount label={t["forms.col.amount"]}>
+                            <Money
+                              amount={
+                                (watchLines[index]?.quantity || 0) *
                                 (watchLines[index]?.unitPrice || 0) *
-                                (1 + (watchLines[index]?.vatRate || 0)),
-                              "AED",
-                              locale
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-span-1 flex items-center justify-center">
-                          {fields.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => remove(index)}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                                (1 + (watchLines[index]?.vatRate || 0))
+                              }
+                              currency="AED"
+                            />
+                          </LineAmount>
+                        </LineItem>
+                      ))}
+                    </LineItemList>
+                    <FormTotals
+                      rows={[
+                        {
+                          label: <T k="pages.subtotal" />,
+                          value: <Money amount={subtotal} currency="AED" />,
+                        },
+                        {
+                          label: t["forms.col.vat"],
+                          value: <Money amount={vatAmount} currency="AED" />,
+                        },
+                      ]}
+                      total={{
+                        label: <T k="pages.total2" />,
+                        value: <Money amount={total} currency="AED" />,
+                      }}
+                    />
+                  </FormSection>
 
-                  <div className="border-t pt-4 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        <T k="pages.subtotal" />
-                      </span>
-                      <span className="font-medium">{formatCurrency(subtotal, "AED", locale)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">VAT</span>
-                      <span className="font-medium">
-                        {formatCurrency(vatAmount, "AED", locale)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                      <span>
-                        <T k="pages.total2" />
-                      </span>
-                      <span>{formatCurrency(total, "AED", locale)}</span>
-                    </div>
-                  </div>
+                  <FormSection title={t["forms.section.notes"]}>
+                    <FormField
+                      control={form.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="sr-only">
+                            <T k="pages.notes" />
+                          </FormLabel>
+                          <FormControl>
+                            <Textarea
+                              {...field}
+                              dir="auto"
+                              placeholder={t["screens.quoteNotesPlaceholder"]}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </FormSection>
 
-                  <div className="flex gap-3 pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialogOpen(false)}
-                      className="flex-1"
-                    >
+                  <FormActions sticky>
+                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                       <T k="pages.cancel" />
                     </Button>
                     <Button
                       type="submit"
+                      className="sm:min-w-32"
                       disabled={createMutation.isPending || editMutation.isPending}
-                      className="flex-1"
                     >
-                      {createMutation.isPending || editMutation.isPending ? t.loading : t.save}
+                      {createMutation.isPending || editMutation.isPending
+                        ? t["forms.saving"]
+                        : t.save}
                     </Button>
-                  </div>
+                  </FormActions>
                 </form>
               </Form>
             </DialogContent>

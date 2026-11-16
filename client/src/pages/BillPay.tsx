@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -9,14 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import {
   Dialog,
   DialogContent,
@@ -866,7 +860,7 @@ export default function BillPay() {
                 <T k="pages.newBill" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent size="lg" data-testid="dialog-bill-form">
               <DialogHeader>
                 <DialogTitle>
                   {editingBill ? t["screens.editBill"] : t["screens.newVendorBill"]}
@@ -876,326 +870,310 @@ export default function BillPay() {
                 </DialogDescription>
               </DialogHeader>
               <Form {...billForm}>
-                <form onSubmit={billForm.handleSubmit(onBillSubmit)} className="space-y-6">
-                  {/* Vendor Info */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={billForm.control}
-                      name="vendor_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.vendorName" />
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              dir="auto"
-                              placeholder={t["screens.vendorCompanyName"]}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={billForm.control}
-                      name="vendor_trn"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.vendorTrn" />
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              dir="ltr"
-                              inputMode="numeric"
-                              placeholder={t["screens.trnOptional"]}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Bill Info */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <FormField
-                      control={billForm.control}
-                      name="bill_number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.billNumber" />
-                          </FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="e.g. BILL-001" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={billForm.control}
-                      name="bill_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.billDate" />
-                          </FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full justify-start text-start font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  <CalendarIcon className="h-4 w-4" />
-                                  {field.value ? format(field.value, "PPP") : "Pick a date"}
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={billForm.control}
-                      name="due_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.dueDate" />
-                          </FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  className={cn(
-                                    "w-full justify-start text-start font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  <CalendarIcon className="h-4 w-4" />
-                                  {field.value ? format(field.value, "PPP") : "Pick a date"}
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Category & Notes */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={billForm.control}
-                      name="category"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.category" />
-                          </FormLabel>
-                          <Select value={field.value || ""} onValueChange={field.onChange}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={t["screens.selectCategory"]} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="utilities">
-                                <T k="pages.utilities" />
-                              </SelectItem>
-                              <SelectItem value="rent">Rent</SelectItem>
-                              <SelectItem value="supplies">
-                                <T k="pages.supplies" />
-                              </SelectItem>
-                              <SelectItem value="services">
-                                <T k="pages.professionalServices" />
-                              </SelectItem>
-                              <SelectItem value="equipment">
-                                <T k="pages.equipment" />
-                              </SelectItem>
-                              <SelectItem value="travel">
-                                <T k="pages.travel" />
-                              </SelectItem>
-                              <SelectItem value="insurance">
-                                <T k="pages.insurance" />
-                              </SelectItem>
-                              <SelectItem value="maintenance">
-                                <T k="pages.maintenance" />
-                              </SelectItem>
-                              <SelectItem value="other">
-                                <T k="pages.other" />
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={billForm.control}
-                      name="currency"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            <T k="pages.currency" />
-                          </FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="AED">AED</SelectItem>
-                              <SelectItem value="USD">USD</SelectItem>
-                              <SelectItem value="EUR">EUR</SelectItem>
-                              <SelectItem value="GBP">GBP</SelectItem>
-                              <SelectItem value="SAR">SAR</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {watchCurrency !== "AED" && (
+                <form
+                  onSubmit={billForm.handleSubmit(onBillSubmit)}
+                  noValidate
+                  className="space-y-6"
+                >
+                  <FormErrorSummary />
+                  <FormSection
+                    title={t["forms.section.vendor"]}
+                    description={t["forms.section.vendorDesc"]}
+                  >
+                    <FormGrid>
                       <FormField
                         control={billForm.control}
-                        name="exchange_rate"
+                        name="vendor_name"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{c.exchangeRate}</FormLabel>
+                            <FormLabel required>
+                              <T k="pages.vendorName" />
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 {...field}
-                                inputMode="decimal"
-                                placeholder={c.exchangeRateHint}
+                                dir="auto"
+                                placeholder={t["screens.vendorCompanyName"]}
                               />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
-                    )}
-                    <FormField
-                      control={billForm.control}
-                      name="place_of_supply"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{c.placeOfSupply}</FormLabel>
-                          <Select value={field.value || ""} onValueChange={field.onChange}>
+                      <FormField
+                        control={billForm.control}
+                        name="vendor_trn"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <T k="pages.vendorTrn" />
+                            </FormLabel>
                             <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={c.placeOfSupply} />
-                              </SelectTrigger>
+                              <Input
+                                {...field}
+                                ltr
+                                inputMode="numeric"
+                                placeholder={t["screens.trnOptional"]}
+                              />
                             </FormControl>
-                            <SelectContent>
-                              {EMIRATE_CODES.map((e) => (
-                                <SelectItem key={e} value={e}>
-                                  {e.replace(/_/g, " ")}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={billForm.control}
-                      name="reverse_charge"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={(v) => field.onChange(v === true)}
-                            />
-                          </FormControl>
-                          <FormLabel className="font-normal">{c.reverseCharge}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={billForm.control}
-                      name="is_import"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={(v) => field.onChange(v === true)}
-                            />
-                          </FormControl>
-                          <FormLabel className="font-normal">{c.isImport}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    {watchIsImport && (
-                      <>
-                        <FormField
-                          control={billForm.control}
-                          name="customs_declaration_no"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>{c.customsNo}</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={billForm.control}
-                          name="import_vat_amount"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>{c.importVat}</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="decimal" />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </>
-                    )}
-                  </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </FormGrid>
+                  </FormSection>
 
-                  {/* Line Items */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium">
-                        <T k="pages.lineItems" />
-                      </h3>
+                  <FormSection
+                    title={t["forms.section.document"]}
+                    description={t["forms.section.documentDesc"]}
+                  >
+                    <FormGrid>
+                      <FormField
+                        control={billForm.control}
+                        name="bill_number"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <T k="pages.billNumber" />
+                            </FormLabel>
+                            <FormControl>
+                              <Input {...field} ltr placeholder={t["forms.bill.numberHint"]} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={billForm.control}
+                        name="category"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <T k="pages.category" />
+                            </FormLabel>
+                            <Select value={field.value || ""} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={t["screens.selectCategory"]} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="utilities">
+                                  <T k="pages.utilities" />
+                                </SelectItem>
+                                <SelectItem value="rent">{t["forms.bill.rent"]}</SelectItem>
+                                <SelectItem value="supplies">
+                                  <T k="pages.supplies" />
+                                </SelectItem>
+                                <SelectItem value="services">
+                                  <T k="pages.professionalServices" />
+                                </SelectItem>
+                                <SelectItem value="equipment">
+                                  <T k="pages.equipment" />
+                                </SelectItem>
+                                <SelectItem value="travel">
+                                  <T k="pages.travel" />
+                                </SelectItem>
+                                <SelectItem value="insurance">
+                                  <T k="pages.insurance" />
+                                </SelectItem>
+                                <SelectItem value="maintenance">
+                                  <T k="pages.maintenance" />
+                                </SelectItem>
+                                <SelectItem value="other">
+                                  <T k="pages.other" />
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {(["bill_date", "due_date"] as const).map((name) => (
+                        <FormField
+                          key={name}
+                          control={billForm.control}
+                          name={name}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required={name === "bill_date"}>
+                                {name === "bill_date" ? (
+                                  <T k="pages.billDate" />
+                                ) : (
+                                  <T k="pages.dueDate" />
+                                )}
+                              </FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      className={cn(
+                                        "w-full justify-start text-start font-normal",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                    >
+                                      <CalendarIcon className="h-4 w-4" />
+                                      {field.value
+                                        ? formatDate(field.value, locale)
+                                        : t["pages.pickADate"]}
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      ))}
+                      <FormField
+                        control={billForm.control}
+                        name="currency"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              <T k="pages.currency" />
+                            </FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="AED">AED</SelectItem>
+                                <SelectItem value="USD">USD</SelectItem>
+                                <SelectItem value="EUR">EUR</SelectItem>
+                                <SelectItem value="GBP">GBP</SelectItem>
+                                <SelectItem value="SAR">SAR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {watchCurrency !== "AED" && (
+                        <FormField
+                          control={billForm.control}
+                          name="exchange_rate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{c.exchangeRate}</FormLabel>
+                              <FormControl>
+                                <Input {...field} ltr inputMode="decimal" />
+                              </FormControl>
+                              <FormDescription>{c.exchangeRateHint}</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </FormGrid>
+                  </FormSection>
+
+                  <FormSection
+                    title={t["forms.section.tax"]}
+                    description={t["forms.bill.taxDesc"]}
+                  >
+                    <FormGrid>
+                      <FormField
+                        control={billForm.control}
+                        name="place_of_supply"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{c.placeOfSupply}</FormLabel>
+                            <Select value={field.value || ""} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={c.placeOfSupply} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {EMIRATE_CODES.map((e) => (
+                                  <SelectItem key={e} value={e}>
+                                    {t[`invoices.emirate.${e}`] ?? e.replace(/_/g, " ")}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <div className="flex flex-col justify-end gap-3 sm:pb-2">
+                        <FormField
+                          control={billForm.control}
+                          name="reverse_charge"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={(v) => field.onChange(v === true)}
+                                />
+                              </FormControl>
+                              <FormLabel className="font-normal">{c.reverseCharge}</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={billForm.control}
+                          name="is_import"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={(v) => field.onChange(v === true)}
+                                />
+                              </FormControl>
+                              <FormLabel className="font-normal">{c.isImport}</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      {watchIsImport && (
+                        <>
+                          <FormField
+                            control={billForm.control}
+                            name="customs_declaration_no"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{c.customsNo}</FormLabel>
+                                <FormControl>
+                                  <Input {...field} ltr />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={billForm.control}
+                            name="import_vat_amount"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{c.importVat}</FormLabel>
+                                <FormControl>
+                                  <Input {...field} ltr inputMode="decimal" />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </>
+                      )}
+                    </FormGrid>
+                  </FormSection>
+
+                  <FormSection
+                    title={<T k="pages.lineItems" />}
+                    description={t["forms.section.linesDesc"]}
+                    actions={
                       <Button
                         type="button"
                         variant="outline"
@@ -1212,74 +1190,87 @@ export default function BillPay() {
                           })
                         }
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="h-4 w-4" />
                         <T k="pages.addLine" />
                       </Button>
-                    </div>
-
-                    {lineFields.map((field, index) => (
-                      <div
-                        key={field.id}
-                        className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
-                      >
-                        <div className="col-span-3">
-                          <FormField
-                            control={billForm.control}
-                            name={`line_items.${index}.description`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormControl>
-                                  <Input {...field} placeholder={t.description} />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-1">
+                    }
+                  >
+                    <LineItemList>
+                      {lineFields.map((field, index) => (
+                        <LineItem
+                          key={field.id}
+                          index={index}
+                          onRemove={() => removeLine(index)}
+                          canRemove={lineFields.length > 1}
+                          gridClassName="sm:grid-cols-3"
+                          main={
+                            <FormField
+                              control={billForm.control}
+                              name={`line_items.${index}.description`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      dir="auto"
+                                      placeholder={t.description}
+                                      aria-label={formatMessage(t["forms.lineDescription"], {
+                                        n: index + 1,
+                                      })}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          }
+                        >
                           <FormField
                             control={billForm.control}
                             name={`line_items.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
+                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
                                 <FormControl>
-                                  <Input
-                                    {...field}
-                                    type="number"
-                                    step="0.01"
-                                    placeholder={t["screens.qty"]}
-                                  />
+                                  <Input {...field} type="number" step="0.01" />
                                 </FormControl>
+                                <FormMessage />
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-2">
                           <FormField
                             control={billForm.control}
                             name={`line_items.${index}.unit_price`}
                             render={({ field }) => (
                               <FormItem>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.unitPrice"]}
+                                </FormLabel>
                                 <FormControl>
-                                  <Input
-                                    {...field}
-                                    type="number"
-                                    step="0.01"
-                                    placeholder={t["screens.unitPrice"]}
-                                  />
+                                  <Input {...field} type="number" step="0.01" />
                                 </FormControl>
+                                <FormMessage />
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-1">
+                          <LineAmount label={t["forms.col.amount"]}>
+                            <Money
+                              amount={
+                                (Number(watchLines[index]?.quantity) || 0) *
+                                (Number(watchLines[index]?.unit_price) || 0)
+                              }
+                              currency="AED"
+                            />
+                          </LineAmount>
                           <FormField
                             control={billForm.control}
                             name={`line_items.${index}.vat_supply_type`}
                             render={({ field }) => (
                               <FormItem>
+                                <FormLabel className={lineLabelClass}>{c.supplyType}</FormLabel>
                                 <Select value={field.value} onValueChange={field.onChange}>
                                   <FormControl>
-                                    <SelectTrigger aria-label={c.supplyType}>
+                                    <SelectTrigger>
                                       <SelectValue placeholder={c.supplyType} />
                                     </SelectTrigger>
                                   </FormControl>
@@ -1294,50 +1285,14 @@ export default function BillPay() {
                               </FormItem>
                             )}
                           />
-                        </div>
-                        {costCenterList.length > 0 && (
-                          <div className="col-span-1">
-                            <FormField
-                              control={billForm.control}
-                              name={`line_items.${index}.cost_center_id`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <Select
-                                    value={field.value || NO_COST_CENTER}
-                                    onValueChange={(v) =>
-                                      field.onChange(v === NO_COST_CENTER ? "" : v)
-                                    }
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger
-                                        aria-label={t["purchases.costCenter"]}
-                                        data-testid={`bill-line-cost-center-${index}`}
-                                      >
-                                        <SelectValue placeholder={t["purchases.costCenter"]} />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      <SelectItem value={NO_COST_CENTER}>
-                                        {t["purchases.noCostCenter"]}
-                                      </SelectItem>
-                                      {costCenterList.map((cc) => (
-                                        <SelectItem key={cc.id} value={cc.id}>
-                                          {cc.code} · {cc.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                        )}
-                        <div className={costCenterList.length > 0 ? "col-span-2" : "col-span-3"}>
                           <FormField
                             control={billForm.control}
                             name={`line_items.${index}.account_id`}
                             render={({ field }) => (
                               <FormItem>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.account"]}
+                                </FormLabel>
                                 <Select value={field.value || ""} onValueChange={field.onChange}>
                                   <FormControl>
                                     <SelectTrigger>
@@ -1355,71 +1310,86 @@ export default function BillPay() {
                               </FormItem>
                             )}
                           />
-                        </div>
-                        <div className="col-span-2 flex items-center justify-between">
-                          <span className="text-sm font-medium">
-                            {formatCurrency(
-                              (Number(watchLines[index]?.quantity) || 0) *
-                                (Number(watchLines[index]?.unit_price) || 0),
-                              "AED"
-                            )}
-                          </span>
-                          {lineFields.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeLine(index)}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                          {costCenterList.length > 0 && (
+                            <FormField
+                              control={billForm.control}
+                              name={`line_items.${index}.cost_center_id`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className={lineLabelClass}>
+                                    {t["purchases.costCenter"]}
+                                  </FormLabel>
+                                  <Select
+                                    value={field.value || NO_COST_CENTER}
+                                    onValueChange={(v) =>
+                                      field.onChange(v === NO_COST_CENTER ? "" : v)
+                                    }
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger data-testid={`bill-line-cost-center-${index}`}>
+                                        <SelectValue placeholder={t["purchases.costCenter"]} />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value={NO_COST_CENTER}>
+                                        {t["purchases.noCostCenter"]}
+                                      </SelectItem>
+                                      {costCenterList.map((cc) => (
+                                        <SelectItem key={cc.id} value={cc.id}>
+                                          {cc.code} · {cc.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </FormItem>
+                              )}
+                            />
                           )}
-                        </div>
-                      </div>
-                    ))}
+                        </LineItem>
+                      ))}
+                    </LineItemList>
+                    <FormTotals
+                      rows={[
+                        {
+                          label: t["forms.preview.subtotal"],
+                          value: <Money amount={subtotal} currency="AED" />,
+                        },
+                        {
+                          label: t["forms.col.vat"],
+                          value: <Money amount={vatAmount} currency="AED" />,
+                        },
+                      ]}
+                      total={{
+                        label: t["forms.preview.total"],
+                        value: <Money amount={totalAmount} currency="AED" />,
+                      }}
+                    />
+                  </FormSection>
 
-                    {/* Totals */}
-                    <div className="flex justify-end">
-                      <div className="w-64 space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Subtotal:</span>
-                          <span>{formatCurrency(subtotal, "AED")}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">VAT:</span>
-                          <span>{formatCurrency(vatAmount, "AED")}</span>
-                        </div>
-                        <div className="flex justify-between font-semibold border-t pt-1">
-                          <span>Total:</span>
-                          <span>{formatCurrency(totalAmount, "AED")}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <FormSection title={t["forms.section.notes"]}>
+                    <FormField
+                      control={billForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="sr-only">
+                            <T k="pages.notes" />
+                          </FormLabel>
+                          <FormControl>
+                            <Textarea
+                              {...field}
+                              dir="auto"
+                              placeholder={t["screens.billNotesPlaceholder"]}
+                              rows={2}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </FormSection>
 
-                  {/* Notes */}
-                  <FormField
-                    control={billForm.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.notes" />
-                        </FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder={t["screens.billNotesPlaceholder"]}
-                            rows={2}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="flex justify-end gap-2">
+                  <FormActions sticky>
                     <Button
                       type="button"
                       variant="outline"
@@ -1432,15 +1402,16 @@ export default function BillPay() {
                     </Button>
                     <Button
                       type="submit"
+                      className="sm:min-w-32"
                       disabled={createBillMutation.isPending || updateBillMutation.isPending}
                     >
                       {createBillMutation.isPending || updateBillMutation.isPending
-                        ? "Saving..."
+                        ? t["forms.saving"]
                         : editingBill
                           ? t["screens.updateBill"]
                           : t["screens.createBill"]}
                     </Button>
-                  </div>
+                  </FormActions>
                 </form>
               </Form>
             </DialogContent>

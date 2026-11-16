@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -937,59 +938,67 @@ export default function ExpenseClaims() {
 
       {/* ─── Create/Edit Claim Dialog ────────────────────── */}
       <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-claim-form">
           <DialogHeader>
-            <DialogTitle>{editingClaim ? "Edit Expense Claim" : "New Expense Claim"}</DialogTitle>
+            <DialogTitle>
+              {editingClaim ? t["forms.claim.editTitle"] : t["forms.claim.newTitle"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingClaim
-                ? "Update your expense claim details and items."
-                : "Create a new expense claim with your expense items. You can save as draft and submit later."}
+              {editingClaim ? t["forms.claim.editDesc"] : t["forms.claim.newDesc"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...claimForm}>
-            <form onSubmit={claimForm.handleSubmit(handleClaimSubmit)} className="space-y-6">
-              {/* Claim details */}
-              <div className="space-y-4">
-                <FormField
-                  control={claimForm.control}
-                  name="title"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Title *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Business trip to Dubai - March 2026" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <form
+              onSubmit={claimForm.handleSubmit(handleClaimSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.claim"]}>
+                <FormGrid cols={1}>
+                  <FormField
+                    control={claimForm.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.claim.title"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.claim.titlePlaceholder"]}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={claimForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t.description}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            dir="auto"
+                            rows={2}
+                            placeholder={t["screens.claimDescPlaceholder"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
 
-                <FormField
-                  control={claimForm.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t.description || "Description"}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder={t["screens.claimDescPlaceholder"]}
-                          {...field}
-                          value={field.value || ""}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Expense items */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">
-                    <T k="pages.expenseItems" />
-                  </h3>
+              <FormSection
+                title={<T k="pages.expenseItems" />}
+                actions={
                   <Button
                     type="button"
                     variant="outline"
@@ -1007,51 +1016,64 @@ export default function ExpenseClaims() {
                       })
                     }
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="h-4 w-4" />
                     <T k="pages.addItem" />
                   </Button>
-                </div>
-
-                {fields.map((field, index) => (
-                  <Card key={field.id} className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        Item {index + 1}
-                      </span>
-                      {fields.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => remove(index)}
-                          className="text-destructive hover:text-destructive h-6 w-6 p-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                }
+              >
+                <LineItemList>
+                  {fields.map((field, index) => (
+                    <LineItem
+                      key={field.id}
+                      index={index}
+                      onRemove={() => remove(index)}
+                      canRemove={fields.length > 1}
+                      gridClassName="sm:grid-cols-3"
+                      main={
+                        <FormField
+                          control={claimForm.control}
+                          name={`items.${index}.description`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required className={lineLabelClass}>
+                                {t.description}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  dir="auto"
+                                  placeholder={t["screens.describeExpense"]}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      }
+                    >
                       <FormField
                         control={claimForm.control}
                         name={`items.${index}.expense_date`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t.date || "Date"} *</FormLabel>
+                            <FormLabel required className={lineLabelClass}>
+                              {t.date}
+                            </FormLabel>
                             <FormControl>
-                              <Input type="date" {...field} />
+                              <Input type="date" dir="ltr" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
-
                       <FormField
                         control={claimForm.control}
                         name={`items.${index}.category`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Category *</FormLabel>
+                            <FormLabel required className={lineLabelClass}>
+                              {t["forms.claim.category"]}
+                            </FormLabel>
                             <Select onValueChange={field.onChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger>
@@ -1061,7 +1083,7 @@ export default function ExpenseClaims() {
                               <SelectContent>
                                 {EXPENSE_CATEGORIES.map((cat) => (
                                   <SelectItem key={cat} value={cat}>
-                                    {cat}
+                                    {t[`forms.claim.cat.${cat}`] || cat}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -1070,18 +1092,61 @@ export default function ExpenseClaims() {
                           </FormItem>
                         )}
                       />
-
                       <FormField
                         control={claimForm.control}
                         name={`items.${index}.merchant_name`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>
+                            <FormLabel className={lineLabelClass}>
                               <T k="pages.merchant" />
                             </FormLabel>
                             <FormControl>
+                              <Input dir="auto" {...field} value={field.value || ""} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={claimForm.control}
+                        name={`items.${index}.amount`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required className={lineLabelClass}>
+                              {t["forms.claim.amountAed"]}
+                            </FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" min="0" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={claimForm.control}
+                        name={`items.${index}.vat_amount`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={lineLabelClass}>
+                              {t["screens.vatAmountAed"]}
+                            </FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" min="0" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={claimForm.control}
+                        name={`items.${index}.supplier_trn`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={lineLabelClass}>{cc.supplierTrn}</FormLabel>
+                            <FormControl>
                               <Input
-                                placeholder="e.g., Emirates Airlines"
+                                ltr
+                                inputMode="numeric"
                                 {...field}
                                 value={field.value || ""}
                               />
@@ -1090,72 +1155,31 @@ export default function ExpenseClaims() {
                           </FormItem>
                         )}
                       />
-                    </div>
-
-                    <div className="mt-3">
                       <FormField
                         control={claimForm.control}
-                        name={`items.${index}.description`}
+                        name={`items.${index}.receipt_url`}
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.description || "Description"} *</FormLabel>
+                          <FormItem className="col-span-2">
+                            <FormLabel className={lineLabelClass}>
+                              <T k="pages.receipt" />
+                            </FormLabel>
                             <FormControl>
-                              <Input placeholder={t["screens.describeExpense"]} {...field} />
+                              <Input
+                                ltr
+                                placeholder={t["forms.claim.receiptUrlHint"]}
+                                {...field}
+                                value={field.value || ""}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-                      <FormField
-                        control={claimForm.control}
-                        name={`items.${index}.amount`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.amount || "Amount"} (AED) *</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" min="0" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={claimForm.control}
-                        name={`items.${index}.vat_amount`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t["screens.vatAmountAed"]}</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" min="0" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={claimForm.control}
-                        name={`items.${index}.supplier_trn`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{cc.supplierTrn}</FormLabel>
-                            <FormControl>
-                              <Input inputMode="numeric" {...field} value={field.value || ""} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
                       <FormField
                         control={claimForm.control}
                         name={`items.${index}.has_tax_invoice`}
                         render={({ field }) => (
-                          <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormItem className="col-span-2 flex items-center gap-2 space-y-0 sm:col-span-1 sm:mt-6">
                             <FormControl>
                               <Checkbox
                                 checked={field.value}
@@ -1166,62 +1190,41 @@ export default function ExpenseClaims() {
                           </FormItem>
                         )}
                       />
-
-                      <FormField
-                        control={claimForm.control}
-                        name={`items.${index}.receipt_url`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <T k="pages.receipt" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Receipt URL (upload coming soon)"
-                                {...field}
-                                value={field.value || ""}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </Card>
-                ))}
+                    </LineItem>
+                  ))}
+                </LineItemList>
 
                 {claimForm.formState.errors.items?.message && (
-                  <p className="text-sm text-destructive">
+                  <p className="text-caption font-medium text-danger">
                     {claimForm.formState.errors.items.message}
                   </p>
                 )}
 
-                {/* Total */}
-                <div className="flex justify-end">
-                  <div className="text-end">
-                    <span className="text-sm text-muted-foreground">Claim Total: </span>
-                    <span className="text-lg font-bold">
-                      {formatCurrency(calculateItemsTotal(), "AED", locale)}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                <FormTotals
+                  rows={[]}
+                  total={{
+                    label: t["forms.claim.total"],
+                    value: <Money amount={calculateItemsTotal()} currency="AED" />,
+                  }}
+                />
+              </FormSection>
 
-              <DialogFooter>
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setClaimDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createClaimMutation.isPending || updateClaimMutation.isPending}
                 >
                   {createClaimMutation.isPending || updateClaimMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingClaim
-                      ? "Update Claim"
-                      : "Save as Draft"}
+                      ? t["forms.claim.update"]
+                      : t["forms.claim.saveDraft"]}
                 </Button>
-              </DialogFooter>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
