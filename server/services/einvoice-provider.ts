@@ -7,17 +7,22 @@
 // mock (no ASP account needed), and means switching/ adding a provider later is
 // a new adapter class, not a rewrite.
 //
-// To add a real ASP (e.g. ClearTax / Complyance / Storecove / Pagero): implement
-// EInvoiceProvider against their REST API and register it in getEInvoiceProvider.
+// Real adapters: "acube" (einvoice-provider-acube.ts) and "complyance"
+// (einvoice-provider-complyance.ts), selected with EINVOICE_PROVIDER. To add
+// another ASP, implement EInvoiceProvider and register it in getEInvoiceProvider.
 
 import type { EInvoiceStatus } from "./einvoice-status";
 import { HttpEInvoiceProvider } from "./einvoice-provider-http";
+import { ACubeEInvoiceProvider } from "./einvoice-provider-acube";
+import { ComplyanceEInvoiceProvider } from "./einvoice-provider-complyance";
 
 export interface EInvoiceSubmission {
   invoiceId: string;
   invoiceNumber: string;
   uuid: string;
   xml: string;
+  /** Seller (supplier) TRN, for ASPs that route per client company. */
+  sellerTrn?: string | null;
 }
 
 export interface EInvoiceProviderResult {
@@ -105,6 +110,12 @@ export function getEInvoiceProvider(env: NodeJS.ProcessEnv = process.env): EInvo
   switch (name) {
     case "mock":
       return new MockEInvoiceProvider();
+    case "acube":
+      // A-Cube (MoF-accredited). See einvoice-provider-acube.ts for env vars.
+      return new ACubeEInvoiceProvider(env);
+    case "complyance":
+      // Complyance (MoF-accredited). See einvoice-provider-complyance.ts for env vars.
+      return new ComplyanceEInvoiceProvider(env);
     case "http":
       // Generic REST adapter for an MoF-accredited service provider. Going live
       // is configuration, not code: set EINVOICE_API_BASE_URL + EINVOICE_API_KEY

@@ -66,6 +66,7 @@ export async function submitEInvoice(args: {
     invoiceNumber: invoice.number,
     uuid: built.uuid,
     xml: built.xml,
+    sellerTrn: company.trnVatNumber ?? null,
   });
 
   return {
