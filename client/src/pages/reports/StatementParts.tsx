@@ -6,7 +6,8 @@
  * - StatementDownloads: server-rendered PDF / Excel for a statement (R11-12).
  * - DataBasisBadge: "Indicator" badge for document/snapshot-based reports (R12-13).
  */
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, ScrollText } from "lucide-react";
+import { Link } from "wouter";
 import { T } from "@/components/layout/T";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -369,6 +370,18 @@ export function StatementsQuickPanel({
         ) : null}
         <span className="text-xs text-muted-foreground">
           <T k="reportCenter.ftaAuditFileHint" />
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* S4 (R12-09): statements of account per customer / supplier (W4-D service). */}
+        <Button asChild size="sm" variant="outline">
+          <Link href="/reports/statements-of-account" data-testid="link-party-statements">
+            <ScrollText className="w-4 h-4 me-2" />
+            <T k="reportCenter.partyStatementsTitle" />
+          </Link>
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          <T k="reportCenter.partyStatementsHint" />
         </span>
       </div>
     </section>

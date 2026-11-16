@@ -12,7 +12,7 @@ import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { canAccessNraCenter } from "@shared/access";
+import { useFirmAccess } from "@/components/FirmRouteAccess";
 import { Button } from "@/components/ui/button";
 import { User, Building2, ArrowLeft, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -69,6 +69,8 @@ const Invoices = lazyWithReload(() => import("@/pages/Invoices"));
 const Journal = lazyWithReload(() => import("@/pages/Journal"));
 const JournalEntryDetail = lazyWithReload(() => import("@/pages/JournalEntryDetail"));
 const Reports = lazyWithReload(() => import("@/pages/Reports"));
+const PartyStatements = lazyWithReload(() => import("@/pages/reports/PartyStatements"));
+const FirmRelationship = lazyWithReload(() => import("@/pages/portal/FirmRelationship"));
 const Receipts = lazyWithReload(() => import("@/pages/Receipts"));
 const ReceiptAutopilot = lazyWithReload(() => import("@/pages/ReceiptAutopilot"));
 const CompanyProfile = lazyWithReload(() => import("@/pages/CompanyProfile"));
@@ -448,13 +450,16 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Guard: NRA Center routes — platform admins and firm staff only (canonical
-// model in shared/access.ts, mirrored server-side by requireNraAccess()).
-function FirmRoute({ children }: { children: React.ReactNode }) {
+// Guard: firm workspace routes — platform admins, NR staff and staff of any
+// approved accounting firm (/api/firms/me). `nrOnly` surfaces (firm messaging,
+// document chasing, email intake, value-ops) stay NR-only. Logic lives in
+// components/FirmRouteAccess.ts; the server enforces the same split.
+function FirmRoute({ children, nrOnly = false }: { children: React.ReactNode; nrOnly?: boolean }) {
   const { data: user, isLoading } = useCurrentUser();
+  const access = useFirmAccess(user);
   const { t } = useTranslation();
 
-  if (isLoading) return null;
+  if (isLoading || access.isLoading) return null;
   if (!user)
     return (
       <AccessRedirect
@@ -464,12 +469,21 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
         actionLabel={t["shell.signIn"]}
       />
     );
-  if (!canAccessNraCenter(user)) {
+  if (!access.canAccessFirm) {
     return (
       <AccessRedirect
         title={t["shell.firmAccessTitle"]}
         description={t["shell.firmAccessDescription"]}
         redirectTo="/dashboard"
+      />
+    );
+  }
+  if (nrOnly && !access.isNr) {
+    return (
+      <AccessRedirect
+        title={t["firm.nrOnlyTitle"]}
+        description={t["firm.nrOnlyDescription"]}
+        redirectTo="/firm/practice"
       />
     );
   }
@@ -612,6 +626,7 @@ function Router() {
           <Switch>
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/company-profile" component={CompanyProfile} />
+            <Route path="/firm-relationship" component={FirmRelationship} />
             <Route path="/settings/company" component={CompanySettings} />
             <Route path="/settings/security" component={SecuritySettings} />
             <Route path="/settings/einvoicing" component={EInvoicingSettings} />
@@ -628,6 +643,7 @@ function Router() {
             <Route path="/journal" component={Journal} />
             <Route path="/journal/:id" component={JournalEntryDetail} />
             <Route path="/reports" component={Reports} />
+            <Route path="/reports/statements-of-account" component={PartyStatements} />
             <Route path="/receipts" component={Receipts} />
             <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
             <Route path="/contacts" component={CustomerContacts} />
@@ -736,7 +752,7 @@ function Router() {
               </FirmRoute>
             </Route>
             <Route path="/firm/value-ops">
-              <FirmRoute>
+              <FirmRoute nrOnly>
                 <ValueOps />
               </FirmRoute>
             </Route>
@@ -771,17 +787,17 @@ function Router() {
               </FirmRoute>
             </Route>
             <Route path="/firm/comms">
-              <FirmRoute>
+              <FirmRoute nrOnly>
                 <FirmComms />
               </FirmRoute>
             </Route>
             <Route path="/firm/document-chasing">
-              <FirmRoute>
+              <FirmRoute nrOnly>
                 <DocumentChasing />
               </FirmRoute>
             </Route>
             <Route path="/firm/email-intake">
-              <FirmRoute>
+              <FirmRoute nrOnly>
                 <EmailIntake />
               </FirmRoute>
             </Route>

@@ -93,5 +93,20 @@
   "firm.rolePreparer": "Preparer",
   "firm.roleReviewer": "Reviewer",
   "firm.roleViewer": "Viewer (read-only)",
-  "firm.firmRole": "Firm role"
+  "firm.firmRole": "Firm role",
+  "firm.navFirmWorkspace": "Firm workspace",
+  "firm.nrOnlyTitle": "Available to NR staff only",
+  "firm.nrOnlyDescription": "This tool is part of NR's own firm management (WhatsApp, document chasing, email intake, value operations) and is not available to other accounting firms.",
+  "firm.emailTasksTab": "Email → tasks",
+  "firm.emailTasksTitle": "Client emails and their review tasks",
+  "firm.emailTasksHint": "Each stored client email becomes a review task in Practice → Tasks.",
+  "firm.emailTasksMailboxConnected": "Mailbox connected",
+  "firm.emailTasksMailboxExternal": "Requires an external mailbox",
+  "firm.emailTasksNoMessages": "No emails stored for this client yet.",
+  "firm.emailTasksSubject": "Subject",
+  "firm.emailTasksReceived": "Received",
+  "firm.emailTaskCreate": "Create task",
+  "firm.emailTaskExists": "Task created",
+  "firm.emailTaskCreated": "Review task created",
+  "firm.emailTaskFailed": "Could not create the task"
 }

@@ -9,6 +9,13 @@
  *
  * Generated obligations (VAT/CT/registration/UBO/licence/excise/e-invoicing/
  * WPS) come from services/compliance-obligations.service.ts.
+ *
+ * S4: every GET is read-only. Reads merge the live obligation specs over the
+ * stored rows; the stored calendar is refreshed by the daily job
+ * `compliance.deadlineScan`, by POST .../generate and by the change observer
+ * (compliance-obligation-refresh.ts) after company settings, VAT stagger,
+ * filings and payroll change. An obligation that is shown but not stored yet
+ * has id `preview:<key>`; PATCHing it stores the calendar first.
  */
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
@@ -27,6 +34,8 @@ import {
   ensureGenerated,
   generateObligations,
   getCalendarRow,
+  getCalendarRowByKey,
+  PREVIEW_ID_PREFIX,
   listCalendar,
   listUpcoming,
   registerComplianceObligations,
@@ -50,6 +59,7 @@ const zCalendarDate = zDateIn({ min: "2000-01-01", maxDaysAhead: 3700 });
 const rangeQuery = z.object({
   from: zCalendarDate.optional(),
   to: zCalendarDate.optional(),
+  /** Legacy: GET never generates any more; accepted and ignored. */
   generate: z.enum(["true", "false"]).optional(),
 });
 
@@ -82,8 +92,7 @@ export function registerComplianceCalendarRoutes(app: Express) {
       const { companyId } = req.params;
       await requireCalendarAccess(req, companyId);
       const q = rangeQuery.parse(req.query);
-      // Statuses derive from the live return state, so refresh before reading.
-      if (q.generate !== "false") await ensureGenerated(companyId);
+      // Read-only: statuses follow the live return state via the merged specs.
       res.json(
         await listCalendar(companyId, {
           from: q.from,
@@ -101,7 +110,6 @@ export function registerComplianceCalendarRoutes(app: Express) {
       const { companyId } = req.params;
       await requireCalendarAccess(req, companyId);
       const days = Math.min(366, Math.max(1, Number(req.query.days) || 30));
-      await ensureGenerated(companyId);
       res.json(await listUpcoming(companyId, { days }));
     })
   );
@@ -173,8 +181,18 @@ export function registerComplianceCalendarRoutes(app: Express) {
     requirePermission("tax.submit"),
     strictBody(updateEventSchema, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, eventId } = req.params;
+      const { companyId } = req.params;
+      let { eventId } = req.params;
       await requireCalendarAccess(req, companyId);
+      if (eventId.startsWith(PREVIEW_ID_PREFIX)) {
+        // A computed-but-unstored obligation: store the calendar (a write), then act on it.
+        const key = eventId.slice(PREVIEW_ID_PREFIX.length);
+        if (!/^[a-z_]+(:[0-9a-z_-]+)?$/i.test(key)) throw new DomainError("NOT_FOUND", 404);
+        await ensureGenerated(companyId);
+        const stored = await getCalendarRowByKey(companyId, key);
+        if (!stored) throw new DomainError("NOT_FOUND", 404);
+        eventId = stored.id;
+      }
       if (!zUuid.safeParse(eventId).success) throw new DomainError("NOT_FOUND", 404);
       const row = await getCalendarRow(companyId, eventId);
       if (!row) throw new DomainError("NOT_FOUND", 404);

@@ -8,7 +8,8 @@ import { z } from "zod";
 import { ValidationError } from "../errors";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmAdmin } from "../middleware/rbac";
+import { firmContextOf, requireFirmAdmin } from "../middleware/rbac";
+import { canPrepareFirmWorkpaper, canReviewFirmWorkpaper } from "../../shared/access";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
@@ -24,6 +25,7 @@ import {
   generateVatReturnFromWorkpaper,
   getVatWorkpaperDetail,
   listVatWorkpapers,
+  normalizeWorkpaperStatus,
   recalculateVatWorkpaper,
   scanVatWorkpaperEvidence,
   updateVatWorkpaperRow,
@@ -212,11 +214,56 @@ async function requireWorkpaperAccess(req: Request, res: Response, workpaperId: 
   return detail;
 }
 
+export type WorkpaperSide = "prepare" | "review" | null;
+
+/**
+ * S4 (W5-D follow-up): which side of the maker-checker a workpaper request
+ * needs. Building the workpaper (create, rows, pull/import/scan, row status,
+ * recalculate) is the maker side; generating the return is the checker side;
+ * status changes are decided per transition (statusSide). Reads need neither.
+ */
+export function workpaperRequestSide(method: string, path: string): WorkpaperSide {
+  const m = method.toUpperCase();
+  if (m === "GET" || m === "HEAD" || m === "OPTIONS") return null;
+  if (/^\/[^/]+\/status\/?$/.test(path)) return null; // decided by the transition
+  if (/^\/[^/]+\/generate-return\/?$/.test(path)) return "review";
+  return "prepare";
+}
+
+/** Draft <-> prepared is the maker side; review, send-back, file and lock the checker side. */
+export function statusSide(from: string, to: string): Exclude<WorkpaperSide, null> {
+  const current = normalizeWorkpaperStatus(from);
+  if (to === "draft" || (to === "prepared" && current === "draft")) return "prepare";
+  return "review";
+}
+
+function hasWorkpaperSide(res: Response, side: Exclude<WorkpaperSide, null>): boolean {
+  const role = firmContextOf(res).role;
+  const ok = side === "prepare" ? canPrepareFirmWorkpaper(role) : canReviewFirmWorkpaper(role);
+  if (!ok) {
+    res.status(403).json({
+      message:
+        side === "prepare"
+          ? "Your firm role cannot prepare VAT workpapers"
+          : "Your firm role cannot review, file or lock VAT workpapers",
+      code: side === "prepare" ? "FIRM_WORKPAPER_PREPARE_DENIED" : "FIRM_WORKPAPER_REVIEW_DENIED",
+      role,
+    });
+  }
+  return ok;
+}
+
 export function registerFirmVatWorkspaceRoutes(app: Express): void {
   const router = Router();
 
   router.use(authMiddleware as any);
   router.use(requireFirmAdmin());
+  // Maker-checker by firm role (shared/access.ts canPrepare/canReviewFirmWorkpaper).
+  router.use((req: Request, res: Response, next) => {
+    const side = workpaperRequestSide(req.method, req.path);
+    if (side && !hasWorkpaperSide(res, side)) return;
+    next();
+  });
 
   router.get(
     "/",
@@ -680,6 +727,7 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       if (!detail) return;
 
       const parsed = parsedBody<z.output<typeof vatWorkpaperStatusBody>>(req);
+      if (!hasWorkpaperSide(res, statusSide(detail.workpaper.status, parsed.status))) return;
       // R15-02: maker-checker state machine; the reviewer is always the caller.
       const workpaper = await updateVatWorkpaperStatus(
         parsedParams.data.id,

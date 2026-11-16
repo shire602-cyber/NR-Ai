@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useTranslation } from "@/lib/i18n";
 import { Inbox, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
@@ -39,10 +40,25 @@ interface EmailSource {
   requireDkimPass: boolean;
   createdAt: string;
 }
+interface EmailToTaskStatus {
+  automatic: boolean;
+  mailbox: "disabled" | "connected" | "requires_external";
+  note: { en: string; ar: string };
+}
 interface SourcesResponse {
   sources: EmailSource[];
   featureEnabled: boolean;
   mailboxConfigured: boolean;
+  emailToTask?: EmailToTaskStatus;
+}
+interface IntakeMessage {
+  id: string;
+  fromEmail: string;
+  subject: string | null;
+  receivedAt: string;
+  attachmentCount: number;
+  status: string;
+  taskId: string | null;
 }
 interface ClientCompany {
   id: string;
@@ -130,6 +146,9 @@ export default function EmailIntake() {
           <TabsTrigger value="completeness" data-testid="tab-completeness">
             <T k="pages.completenessCheck" />
           </TabsTrigger>
+          <TabsTrigger value="tasks" data-testid="tab-email-tasks">
+            <T k="firm.emailTasksTab" />
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="senders" className="mt-4">
@@ -138,6 +157,10 @@ export default function EmailIntake() {
 
         <TabsContent value="completeness" className="mt-4">
           <CompletenessTab clients={clients} toast={toast} />
+        </TabsContent>
+
+        <TabsContent value="tasks" className="mt-4">
+          <EmailTasksTab clients={clients} status={sourcesData?.emailToTask} toast={toast} />
         </TabsContent>
       </Tabs>
     </div>
@@ -459,6 +482,137 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border p-3">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+// ─── Email-to-task (S4, R15-15) ─────────────────────────────────────────────
+function EmailTasksTab({
+  clients,
+  status,
+  toast,
+}: {
+  clients: ClientCompany[];
+  status: EmailToTaskStatus | undefined;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const { t, locale } = useTranslation();
+  const [companyId, setCompanyId] = useState("");
+  const messagesKey = [`/api/firm/email-intake/messages/${companyId}`];
+  const { data, isLoading } = useQuery<{ messages: IntakeMessage[] }>({
+    queryKey: messagesKey,
+    queryFn: () => apiRequest("GET", `/api/firm/email-intake/messages/${companyId}`),
+    enabled: !!companyId,
+  });
+  const createTask = useMutation({
+    mutationFn: (messageId: string) =>
+      apiRequest("POST", `/api/firm/email-intake/messages/${messageId}/task`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: messagesKey });
+      toast({ title: t["firm.emailTaskCreated"] });
+    },
+    onError: (e: Error) =>
+      toast({ title: t["firm.emailTaskFailed"], description: e.message, variant: "destructive" }),
+  });
+  const messages = data?.messages ?? [];
+  const note = status ? (locale === "ar" ? status.note.ar : status.note.en) : null;
+
+  return (
+    <div className="space-y-4">
+      <Alert data-testid="email-task-boundary">
+        <Mail className="h-4 w-4" />
+        <AlertTitle>
+          {status?.mailbox === "connected" ? (
+            <T k="firm.emailTasksMailboxConnected" />
+          ) : (
+            <T k="firm.emailTasksMailboxExternal" />
+          )}
+        </AlertTitle>
+        <AlertDescription>
+          {note ?? <T k="firm.emailTasksHint" />}
+        </AlertDescription>
+      </Alert>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            <T k="firm.emailTasksTitle" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-sm space-y-1">
+            <Label>
+              <T k="pages.client" />
+            </Label>
+            <Select value={companyId} onValueChange={setCompanyId}>
+              <SelectTrigger data-testid="select-email-task-client">
+                <SelectValue placeholder={t["firm.selectClient"]} />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {companyId && !isLoading && messages.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              <T k="firm.emailTasksNoMessages" />
+            </p>
+          )}
+          {messages.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <T k="pages.sender" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="firm.emailTasksSubject" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="firm.emailTasksReceived" />
+                  </TableHead>
+                  <TableHead className="text-end">
+                    <T k="firm.task" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {messages.map((m) => (
+                  <TableRow key={m.id} data-testid={`row-intake-message-${m.id}`}>
+                    <TableCell className="font-mono text-xs">{m.fromEmail}</TableCell>
+                    <TableCell>{m.subject ?? "—"}</TableCell>
+                    <TableCell className="text-xs">
+                      {new Date(m.receivedAt).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE")}
+                    </TableCell>
+                    <TableCell className="text-end">
+                      {m.taskId ? (
+                        <Badge variant="secondary">
+                          <CheckCircle2 className="h-3 w-3 me-1" />
+                          <T k="firm.emailTaskExists" />
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={createTask.isPending}
+                          onClick={() => createTask.mutate(m.id)}
+                          data-testid={`button-create-email-task-${m.id}`}
+                        >
+                          <Plus className="h-4 w-4 me-1" />
+                          <T k="firm.emailTaskCreate" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
