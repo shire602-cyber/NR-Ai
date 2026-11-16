@@ -104,6 +104,7 @@ import { registerPublicPaymentRoutes } from "./routes/public-payments.routes";
 import { registerOutboxRoutes } from "./outbox";
 import { registerDocumentChasingRoutes } from "./routes/document-chasing.routes";
 import { registerComplianceCalendarRoutes } from "./routes/compliance-calendar.routes";
+import { complianceObligationRefreshObserver } from "./routes/compliance-obligation-refresh";
 import { registerEvidenceCenterRoutes } from "./routes/evidence-center.routes";
 
 const log = createLogger("routes");
@@ -128,6 +129,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // METHOD + path tables in server/middleware/featureGate.ts: feature flags
   // (403 TIER_LOCKED) and monthly quotas (402 USAGE_LIMIT_REACHED).
   app.use("/api", planFeaturePolicy, usageLimitPolicy);
+  // S4: refresh the stored compliance calendar after writes that change its inputs.
+  app.use("/api", complianceObligationRefreshObserver);
 
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);

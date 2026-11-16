@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { shouldShowNraCenterNav } from "@shared/access";
+import { firmPathAllowed, useFirmAccess } from "@/components/FirmRouteAccess";
 import { useTranslation, useI18n } from "@/lib/i18n";
 import { useRTL } from "@/components/RTLProvider";
 import { removeToken } from "@/lib/auth";
@@ -162,6 +163,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "companySettings", url: "/settings/company" },
       { titleKey: "companyProfile", url: "/company-profile" },
       { titleKey: "teamManagement", url: "/team" },
+      { titleKey: "portal.firmRelationshipNav", url: "/firm-relationship" },
       { titleKey: "security.pageTitle", url: "/settings/security", testId: "security-settings" },
       { titleKey: "integrations", url: "/integrations-hub" },
       {
@@ -271,16 +273,33 @@ export function AppSidebar() {
   // so we hide that group while a specific client file is the active workspace.
   // The user re-enters the firm via the "Firm workspace" entry in CompanySwitcher.
   const { isFirmContext } = useActiveCompany();
-  const showNraCenter = shouldShowNraCenterNav(currentUser, { inClientContext: isFirmContext });
+  // S4: staff of any approved firm (GET /api/firms/me) get the firm group too,
+  // without the NR-only links (firm messaging, document chasing, email intake,
+  // value-ops). NR staff and admins keep the full NRA Center.
+  const firmAccess = useFirmAccess(currentUser);
+  const showNraCenter =
+    shouldShowNraCenterNav(currentUser, { inClientContext: isFirmContext }) ||
+    (firmAccess.canAccessFirm && !isFirmContext);
+  const firmGroup = useMemo<NavGroup>(
+    () =>
+      firmAccess.isNr
+        ? NRA_GROUP
+        : {
+            ...NRA_GROUP,
+            titleKey: "firm.navFirmWorkspace",
+            items: NRA_GROUP.items.filter((item) => firmPathAllowed(firmAccess, item.url)),
+          },
+    [firmAccess]
+  );
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
     () => [
       ...CUSTOMER_GROUPS,
-      ...(showNraCenter ? [NRA_GROUP] : []),
+      ...(showNraCenter ? [firmGroup] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
     ],
-    [showNraCenter, isAdmin]
+    [showNraCenter, firmGroup, isAdmin]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage

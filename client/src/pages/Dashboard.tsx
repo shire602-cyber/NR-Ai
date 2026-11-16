@@ -108,6 +108,7 @@ import { useCountUp } from "./dashboard/useCountUp";
 import { CHART_COLORS, PIE_PALETTE } from "./dashboard/chart-colors";
 import { KpiCard } from "./dashboard/KpiCard";
 import { ScoreRing, FilingStatusBadge, FixItRow } from "./dashboard/CompliancePulse";
+import { openAuditChecks } from "./dashboard/auditChecks";
 import { QuickAction, SectionHeader } from "./dashboard/Layout";
 import { EmptyState } from "./dashboard/EmptyState";
 
@@ -1948,8 +1949,8 @@ function CustomerDashboard() {
                   {(t as any).raiseYourScore ?? "Raise your score"}
                 </div>
                 <div className="divide-y divide-border/40 pb-1.5">
-                  {compliance.auditReadiness.issues.map((issue: string) => (
-                    <FixItRow key={issue} issue={issue} />
+                  {openAuditChecks(compliance.auditReadiness).map((check) => (
+                    <FixItRow key={check.key} check={check} />
                   ))}
                 </div>
               </div>

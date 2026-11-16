@@ -4,11 +4,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { DomainError } from "../errors";
-import {
-  ensureGenerated,
-  listCalendar,
-  type CalendarRow,
-} from "../services/compliance-obligations.service";
+import { listCalendar, type CalendarRow } from "../services/compliance-obligations.service";
 import { getEffectiveLock } from "../services/period-lock.service";
 import { addDays, lastDayOfMonth, uaeToday } from "../services/corporate-tax/deadlines";
 
@@ -21,7 +17,17 @@ export interface AuditCheck {
   weight: number;
   score: number;
   status: "pass" | "partial" | "fail" | "not_applicable";
+  /** English explanation (fallback); clients translate `explanationKey` with `explanationParams`. */
   explanation: string;
+  /** Stable i18n key: `<check key>.<variant>` (S4: CompliancePulse maps on keys, not strings). */
+  explanationKey: string;
+  explanationParams: Record<string, string | number>;
+}
+
+interface Explained {
+  variant: string;
+  params?: Record<string, string | number>;
+  text: string;
 }
 
 /**
@@ -57,10 +63,23 @@ function check(
   labelAr: string,
   weight: number,
   ratio: number | null,
-  explanation: string
+  explained: Explained
 ): AuditCheck {
+  const explanation = explained.text;
+  const explanationKey = `${key}.${explained.variant}`;
+  const explanationParams = explained.params ?? {};
   if (ratio === null) {
-    return { key, label, labelAr, weight, score: weight, status: "not_applicable", explanation };
+    return {
+      key,
+      label,
+      labelAr,
+      weight,
+      score: weight,
+      status: "not_applicable",
+      explanation,
+      explanationKey,
+      explanationParams,
+    };
   }
   const clamped = Math.max(0, Math.min(1, ratio));
   const score = Math.round(weight * clamped * 10) / 10;
@@ -72,6 +91,8 @@ function check(
     score,
     status: clamped >= 1 ? "pass" : clamped <= 0 ? "fail" : "partial",
     explanation,
+    explanationKey,
+    explanationParams,
   };
 }
 
@@ -102,8 +123,12 @@ export async function computeAuditReadiness(
       25,
       bankTotal === 0 ? null : bankRec / bankTotal,
       bankTotal === 0
-        ? "No bank transactions in the last 90 days."
-        : `${bankRec} of ${bankTotal} bank transactions in the last 90 days are reconciled.`
+        ? { variant: "none", text: "No bank transactions in the last 90 days." }
+        : {
+            variant: "ratio",
+            params: { done: bankRec, total: bankTotal },
+            text: `${bankRec} of ${bankTotal} bank transactions in the last 90 days are reconciled.`,
+          }
     )
   );
 
@@ -118,8 +143,15 @@ export async function computeAuditReadiness(
       25,
       vatDue.length === 0 ? null : vatFiled / vatDue.length,
       vatDue.length === 0
-        ? "No VAT return was due yet (or the company is not VAT registered)."
-        : `${vatFiled} of ${vatDue.length} VAT returns that were due are filed.`
+        ? {
+            variant: "none",
+            text: "No VAT return was due yet (or the company is not VAT registered).",
+          }
+        : {
+            variant: "ratio",
+            params: { done: vatFiled, total: vatDue.length },
+            text: `${vatFiled} of ${vatDue.length} VAT returns that were due are filed.`,
+          }
     )
   );
 
@@ -136,8 +168,16 @@ export async function computeAuditReadiness(
       15,
       lock ? 1 : 0,
       lock
-        ? `Books are locked through ${lastMonthEnd}.`
-        : `The month ending ${lastMonthEnd} is not locked yet.`
+        ? {
+            variant: "locked",
+            params: { date: lastMonthEnd },
+            text: `Books are locked through ${lastMonthEnd}.`,
+          }
+        : {
+            variant: "open",
+            params: { date: lastMonthEnd },
+            text: `The month ending ${lastMonthEnd} is not locked yet.`,
+          }
     )
   );
 
@@ -165,8 +205,18 @@ export async function computeAuditReadiness(
       20,
       totalDocs === 0 ? null : 1 - unposted / totalDocs,
       totalDocs === 0
-        ? "No invoices, receipts or journals yet."
-        : `${unposted} of ${totalDocs} documents are still unposted (${Number(d.inv_draft) || 0} draft invoices, ${Number(d.rec_unposted) || 0} receipts, ${Number(d.je_draft) || 0} draft journals).`
+        ? { variant: "none", text: "No invoices, receipts or journals yet." }
+        : {
+            variant: "ratio",
+            params: {
+              unposted,
+              total: totalDocs,
+              invoices: Number(d.inv_draft) || 0,
+              receipts: Number(d.rec_unposted) || 0,
+              journals: Number(d.je_draft) || 0,
+            },
+            text: `${unposted} of ${totalDocs} documents are still unposted (${Number(d.inv_draft) || 0} draft invoices, ${Number(d.rec_unposted) || 0} receipts, ${Number(d.je_draft) || 0} draft journals).`,
+          }
     )
   );
 
@@ -183,8 +233,12 @@ export async function computeAuditReadiness(
       15,
       ctDue.length === 0 ? null : ctFiled / ctDue.length,
       ctDue.length === 0
-        ? "No corporate tax return was due yet."
-        : `${ctFiled} of ${ctDue.length} corporate tax returns that were due are filed.`
+        ? { variant: "none", text: "No corporate tax return was due yet." }
+        : {
+            variant: "ratio",
+            params: { done: ctFiled, total: ctDue.length },
+            text: `${ctFiled} of ${ctDue.length} corporate tax returns that were due are filed.`,
+          }
     )
   );
 
@@ -211,7 +265,7 @@ export function registerComplianceDashboardRoutes(app: Express) {
 
       const now = new Date();
       const today = uaeToday(now);
-      await ensureGenerated(companyId, now);
+      // Read-only (S4): live specs are merged on read; nothing is generated here.
       const rows = await listCalendar(companyId, { now });
 
       const vat = filingStatus(rows, "vat_return", today, 14);

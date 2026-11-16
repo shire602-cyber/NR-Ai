@@ -422,6 +422,16 @@ function deriveStatus(
   return spec.dueDate < today ? "overdue" : "upcoming";
 }
 
+/** Obligation types whose stale generated rows are removed on regeneration. */
+const REMOVABLE_TYPES: readonly string[] = [
+  "trade_licence_renewal",
+  "excise_return",
+  "wps_payroll",
+  "einvoicing_milestone",
+  "vat_return",
+  "corporate_tax_return",
+];
+
 export interface GenerateResult {
   year: number;
   generated: number;
@@ -498,9 +508,8 @@ export async function generateObligations(
       WHERE company_id = $1 AND source = 'generated'
         AND EXTRACT(YEAR FROM event_date) = $2
         AND NOT (obligation_key = ANY($3::text[]))
-        AND obligation_type IN ('trade_licence_renewal', 'excise_return', 'wps_payroll',
-                                'einvoicing_milestone', 'vat_return', 'corporate_tax_return')`,
-    [companyId, year, keys]
+        AND obligation_type = ANY($4::text[])`,
+    [companyId, year, keys, REMOVABLE_TYPES]
   );
   return { year, generated: specs.length, removed: removed.rowCount ?? 0 };
 }
@@ -527,6 +536,8 @@ export interface CalendarRow {
   reminderDays: string;
   remindersSent: string;
   completedAt: string | null;
+  /** False for an obligation computed on read but not stored yet (id `preview:<key>`). */
+  persisted: boolean;
   linkedRequirementId?: string | null;
 }
 
@@ -550,6 +561,7 @@ interface CalendarDbRow {
   reminders_sent: string;
   completed_at: string | null;
   linked_requirement_id: string | null;
+  persisted?: boolean;
 }
 
 function toRow(r: CalendarDbRow, today: IsoDate, includeFirmLinks: boolean): CalendarRow {
@@ -583,6 +595,7 @@ function toRow(r: CalendarDbRow, today: IsoDate, includeFirmLinks: boolean): Cal
     reminderDays: r.reminder_days,
     remindersSent: r.reminders_sent,
     completedAt: r.completed_at ? new Date(r.completed_at).toISOString() : null,
+    persisted: r.persisted !== false,
   };
   // Document requirements are an NR-firm-only feature: hide the link from customers.
   if (includeFirmLinks) row.linkedRequirementId = r.linked_requirement_id;
@@ -596,22 +609,143 @@ const SELECT_ROWS = `SELECT id, company_id, source, obligation_key, obligation_t
          linked_requirement_id
     FROM compliance_calendar`;
 
+/** The id given to an obligation that is computed but not stored yet. */
+export const PREVIEW_ID_PREFIX = "preview:";
+
+function specDescription(spec: ObligationSpec): string {
+  return spec.detail ? `${spec.title} — ${spec.detail}` : spec.title;
+}
+
+/**
+ * Overlay the live obligation specs on the stored rows (read-only, S4).
+ *
+ * GET never writes: the stored calendar is refreshed by the daily job and when
+ * the inputs change (compliance-obligation-refresh observer). Reads merge the
+ * freshly computed specs of the current and next year so statuses that follow
+ * a return, new periods after a stagger change and companies whose calendar
+ * was never stored are still shown correctly. Computed-but-unstored rows carry
+ * `persisted: false` and an id of `preview:<obligation key>`.
+ */
+async function mergeLiveSpecs(
+  companyId: string,
+  stored: CalendarDbRow[],
+  today: IsoDate
+): Promise<CalendarDbRow[]> {
+  const year = Number(today.slice(0, 4));
+  const specsByYear = new Map<number, ObligationSpec[]>();
+  const specByKey = new Map<string, ObligationSpec>();
+  for (const y of [year, year + 1]) {
+    const specs = await buildObligationSpecs(companyId, y);
+    specsByYear.set(y, specs);
+    for (const spec of specs) specByKey.set(spec.key, spec);
+  }
+  const out: CalendarDbRow[] = [];
+  const storedKeys = new Set<string>();
+  for (const row of stored) {
+    if (row.obligation_key) storedKeys.add(row.obligation_key);
+    if (row.source !== "generated" || !row.obligation_key) {
+      out.push(row);
+      continue;
+    }
+    const spec = specByKey.get(row.obligation_key);
+    if (!spec) {
+      // Regeneration would delete this row (settings changed); hide it now.
+      const rowYear = Number(row.due.slice(0, 4));
+      const regenerated = specsByYear.get(rowYear);
+      if (regenerated && REMOVABLE_TYPES.includes(row.obligation_type ?? "")) continue;
+      out.push(row);
+      continue;
+    }
+    out.push({
+      ...row,
+      event_type: EVENT_TYPE[spec.type],
+      description: specDescription(spec),
+      due: spec.dueDate,
+      event_date: spec.dueDate,
+      status: deriveStatus(spec, row.status, today),
+      obligation_type: spec.type,
+      title_ar: spec.titleAr,
+      period_start: spec.periodStart ?? null,
+      period_end: spec.periodEnd ?? null,
+      related_entity_id: spec.relatedEntityId ?? null,
+      legal_source: spec.legalSource,
+    });
+  }
+  for (const spec of specByKey.values()) {
+    if (storedKeys.has(spec.key)) continue;
+    out.push({
+      id: `${PREVIEW_ID_PREFIX}${spec.key}`,
+      company_id: companyId,
+      source: "generated",
+      obligation_key: spec.key,
+      obligation_type: spec.type,
+      event_type: EVENT_TYPE[spec.type],
+      description: specDescription(spec),
+      title_ar: spec.titleAr,
+      due: spec.dueDate,
+      event_date: spec.dueDate,
+      period_start: spec.periodStart ?? null,
+      period_end: spec.periodEnd ?? null,
+      status: deriveStatus(spec, null, today),
+      related_entity_id: spec.relatedEntityId ?? null,
+      legal_source: spec.legalSource,
+      reminder_days: REMINDER_OFFSETS.join(","),
+      reminders_sent: "",
+      completed_at: null,
+      linked_requirement_id: null,
+      persisted: false,
+    });
+  }
+  return out;
+}
+
+function compareRows(a: CalendarDbRow, b: CalendarDbRow): number {
+  if (a.due !== b.due) return a.due < b.due ? -1 : 1;
+  const ak = a.obligation_key;
+  const bk = b.obligation_key;
+  if (ak !== bk) {
+    if (ak === null) return 1;
+    if (bk === null) return -1;
+    return ak < bk ? -1 : 1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * The company's calendar. Read-only: stored rows merged with the live specs
+ * (pass `live: false` for the stored rows only).
+ */
 export async function listCalendar(
   companyId: string,
-  opts: { from?: IsoDate; to?: IsoDate; includeFirmLinks?: boolean; now?: Date } = {}
+  opts: {
+    from?: IsoDate;
+    to?: IsoDate;
+    includeFirmLinks?: boolean;
+    now?: Date;
+    live?: boolean;
+  } = {}
 ): Promise<CalendarRow[]> {
   const today = uaeToday(opts.now);
-  const r = await pool.query(
-    `${SELECT_ROWS}
-      WHERE company_id = $1
-        AND ($2::date IS NULL OR event_date::date >= $2::date)
-        AND ($3::date IS NULL OR event_date::date <= $3::date)
-      ORDER BY event_date, obligation_key NULLS LAST, id`,
-    [companyId, opts.from ?? null, opts.to ?? null]
-  );
-  return (r.rows as CalendarDbRow[]).map((row) =>
-    toRow(row, today, opts.includeFirmLinks === true)
-  );
+  const r = await pool.query(`${SELECT_ROWS} WHERE company_id = $1`, [companyId]);
+  let rows = r.rows as CalendarDbRow[];
+  if (opts.live !== false) rows = await mergeLiveSpecs(companyId, rows, today);
+  return rows
+    .filter((row) => (!opts.from || row.due >= opts.from) && (!opts.to || row.due <= opts.to))
+    .sort(compareRows)
+    .map((row) => toRow(row, today, opts.includeFirmLinks === true));
+}
+
+/** A stored generated row by obligation key (used to persist a preview row on write). */
+export async function getCalendarRowByKey(
+  companyId: string,
+  obligationKey: string
+): Promise<CalendarRow | null> {
+  const r = await pool.query(`${SELECT_ROWS} WHERE company_id = $1 AND obligation_key = $2`, [
+    companyId,
+    obligationKey,
+  ]);
+  const row = r.rows[0] as CalendarDbRow | undefined;
+  return row ? toRow(row, uaeToday(), false) : null;
 }
 
 export async function getCalendarRow(
@@ -649,7 +783,7 @@ export async function nextOpenObligation(
   );
 }
 
-/** Make sure the current and next year are generated (lazy, cheap when fresh). */
+/** Store the current and next year (daily job, change observer and explicit generate). */
 export async function ensureGenerated(companyId: string, now: Date = new Date()): Promise<void> {
   const year = Number(uaeToday(now).slice(0, 4));
   await generateObligations(companyId, year, now);
@@ -669,7 +803,12 @@ export async function runDeadlineScan(now: Date = new Date()): Promise<{ emitted
   for (const { id } of companies.rows as Array<{ id: string }>) {
     try {
       await ensureGenerated(id, now);
-      const rows = await listCalendar(id, { from: today, to: addDays(today, 31), now });
+      const rows = await listCalendar(id, {
+        from: today,
+        to: addDays(today, 31),
+        now,
+        live: false,
+      });
       for (const row of rows) {
         if (row.status !== "upcoming") continue;
         const offset = REMINDER_OFFSETS.find((d) => d === row.daysUntilDue);

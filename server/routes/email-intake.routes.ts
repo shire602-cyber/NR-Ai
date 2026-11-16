@@ -22,6 +22,15 @@ import { verifyInboundSignature, parseInboundEmail } from "../services/email-int
 import { ingestRawMessages } from "../services/email-intake-poller.service";
 import { getEnv } from "../config/env";
 import type { EmailSourceRef } from "../services/email-intake";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { zDate } from "../../shared/validators/primitives";
+import {
+  createTaskFromIntakeMessage,
+  createTasksForUntriagedMessages,
+  intakeMessageCompany,
+  tasksForMessages,
+} from "../services/firm/email-tasks.service";
 
 const log = createLogger("email-intake-routes");
 
@@ -31,6 +40,33 @@ const createSourceBody = z.object({
   label: z.string().max(120).optional(),
   requireDkimPass: z.boolean().optional(),
 });
+
+/** Email-to-task (S4): turn an ingested client email into a practice task. */
+const emailTaskBody = z
+  .object({
+    dueDate: zDate.optional(),
+    title: z.string().trim().min(3).max(300).optional(),
+    assigneeUserId: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+
+/**
+ * Honest boundary for email-to-task: tasks are created automatically for
+ * every stored message, but messages only arrive through an external mailbox
+ * or inbound-email provider that the deployment must connect.
+ */
+function emailToTaskStatus() {
+  const configured = isEmailIntakeConfigured();
+  const enabled = isEmailIntakeEnabled();
+  return {
+    automatic: true,
+    mailbox: !enabled ? "disabled" : configured ? "connected" : "requires_external",
+    note: {
+      en: "Each stored client email becomes a review task in Practice → Tasks. Emails only arrive once an external mailbox or inbound-email provider is connected (EMAIL_INTAKE_* settings); nothing is fetched otherwise.",
+      ar: "تتحول كل رسالة بريد من العميل يتم حفظها إلى مهمة مراجعة في الممارسة ← المهام. لا تصل الرسائل إلا بعد ربط صندوق بريد خارجي أو مزوّد بريد وارد (إعدادات EMAIL_INTAKE_*)؛ وإلا فلا يتم جلب أي شيء.",
+    },
+  };
+}
 
 const updateSourceBody = z.object({
   status: z.enum(["active", "paused"]).optional(),
@@ -99,8 +135,13 @@ export function registerEmailIntakeRoutes(app: Express) {
       }));
 
       const summary = await ingestRawMessages({ raw: messages, refs });
-      log.info({ summary }, "inbound email webhook processed");
-      res.json(summary);
+      // Email-to-task (S4): one review task per newly stored message.
+      const tasks = await createTasksForUntriagedMessages({
+        companyIds: [...new Set(refs.map((r) => r.companyId))],
+        since: new Date(Date.now() - 60 * 60 * 1000),
+      });
+      log.info({ summary, tasksCreated: tasks.created }, "inbound email webhook processed");
+      res.json({ ...summary, tasksCreated: tasks.created });
     })
   );
 
@@ -110,7 +151,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (_req: Request, res: Response) => {
-      res.json(getEmailIntakeStatus());
+      res.json({ ...getEmailIntakeStatus(), emailToTask: emailToTaskStatus() });
     })
   );
 
@@ -128,6 +169,7 @@ export function registerEmailIntakeRoutes(app: Express) {
         mailboxConfigured: isEmailIntakeConfigured(),
         // Honest capture status: disabled | requires_configuration | enabled (R05-19a).
         intake: getEmailIntakeStatus(),
+        emailToTask: emailToTaskStatus(),
       });
     })
   );
@@ -216,7 +258,48 @@ export function registerEmailIntakeRoutes(app: Express) {
       if (!allowed)
         return res.status(403).json({ message: "Company not in your firm's client list" });
       const messages = await storage.listEmailIntakeMessagesByCompany(req.params.companyId);
-      res.json({ messages });
+      const taskIds = await tasksForMessages(messages.map((m: { id: string }) => m.id));
+      res.json({
+        messages: messages.map((m: { id: string }) => ({
+          ...m,
+          taskId: taskIds.get(m.id) ?? null,
+        })),
+        emailToTask: emailToTaskStatus(),
+      });
+    })
+  );
+
+  // Email-to-task (S4, R15-15): create (or return) the review task for a message.
+  app.post(
+    "/api/firm/email-intake/messages/:messageId/task",
+    authMiddleware,
+    requireFirmRole(),
+    strictBody(emailTaskBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = (req as any).user;
+      const companyId = await intakeMessageCompany(req.params.messageId);
+      if (!companyId) return res.status(404).json({ message: "Message not found" });
+      const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
+      if (!allowed) return res.status(404).json({ message: "Message not found" });
+      const body = parsedBody<z.output<typeof emailTaskBody>>(req);
+      const { task, created } = await createTaskFromIntakeMessage(req.params.messageId, {
+        actorId: user.id,
+        dueDate: body.dueDate,
+        title: body.title,
+        assigneeUserId: body.assigneeUserId ?? null,
+      });
+      if (created) {
+        await recordAudit({
+          userId: user.id,
+          companyId,
+          action: "email_intake.task_create",
+          entityType: "firm_task",
+          entityId: task.id,
+          after: { sourceKey: task.sourceKey, dueDate: task.dueDate },
+          req,
+        });
+      }
+      res.status(created ? 201 : 200).json({ task, created });
     })
   );
 
@@ -302,8 +385,9 @@ export function registerEmailIntakeRoutes(app: Express) {
       const companyIds = await resolveAccessibleClientIds(user.id, user.firmRole);
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // last 24h window
       const summary = await pollEmailIntakeOnce({ accessibleCompanyIds: companyIds, since });
-      log.info({ firmId: user.id, summary }, "manual intake poll");
-      res.json(summary);
+      const tasks = await createTasksForUntriagedMessages({ companyIds, since });
+      log.info({ firmId: user.id, summary, tasksCreated: tasks.created }, "manual intake poll");
+      res.json({ ...summary, tasksCreated: tasks.created });
     })
   );
 }

@@ -139,7 +139,19 @@ describe("W4-A compliance calendar (R08-03, R08-21)", () => {
       "corporate_tax_returns",
     ]);
     expect(checks.reduce((s, c) => s + c.weight, 0)).toBe(100);
-    for (const c of checks) expect(c.explanation.length).toBeGreaterThan(10);
+    for (const c of checks) {
+      expect(c.explanation.length).toBeGreaterThan(10);
+      // S4: clients translate by stable key + params, never by English text.
+      expect(
+        (c as unknown as { explanationKey: string }).explanationKey.startsWith(`${c.key}.`)
+      ).toBe(true);
+    }
+    const vatCheck = checks.find((c) => c.key === "vat_returns") as unknown as {
+      explanationKey: string;
+      explanationParams: Record<string, number>;
+    };
+    expect(vatCheck.explanationKey).toBe("vat_returns.ratio");
+    expect(vatCheck.explanationParams.total).toBeGreaterThan(0);
     // VAT returns were due and none is filed; the last month is not locked.
     expect(checks.find((c) => c.key === "vat_returns")!.score).toBe(0);
     expect(checks.find((c) => c.key === "period_locks")!.score).toBe(0);
@@ -316,5 +328,115 @@ describe("W4-A month-end depth (R08-23)", () => {
     expect(actions).toContain("close.step_sign_off");
     const again = await t.as.post(`${base}/reopen-requests/${request.body.id}/approve`, {});
     expect(again.status).toBe(409);
+  });
+});
+
+describe("S4 compliance GETs are read-only (W4-A follow-up)", () => {
+  async function snapshot(companyId: string) {
+    const [row] = await h.sql<{ n: number; sig: string }>(
+      `SELECT COUNT(*)::int AS n,
+              COALESCE(string_agg(id::text || ':' || status || ':' || updated_at::text, ',' ORDER BY id), '') AS sig
+         FROM compliance_calendar WHERE company_id = $1`,
+      [companyId]
+    );
+    return row;
+  }
+
+  it("[S4-compliance-get] calendar, upcoming and overview GETs write nothing yet show live obligations", async () => {
+    restore = freezeTime("2026-06-01T08:00:00Z");
+    const t = await h.createTenant({ name: "CalReadOnly", companyColumns: quarterly });
+    const { flushObligationRefreshes } =
+      await import("../../server/routes/compliance-obligation-refresh");
+    await flushObligationRefreshes();
+    const before = await snapshot(t.company.id);
+    expect(before.n).toBe(0);
+
+    const cal = await t.as.get(
+      `/api/companies/${t.company.id}/compliance-calendar?from=2026-01-01&to=2026-12-31`
+    );
+    expect(cal.status, cal.text).toBe(200);
+    const vat = (cal.body as Array<Record<string, unknown>>).filter(
+      (r) => r.obligationType === "vat_return"
+    );
+    expect(vat).toHaveLength(4);
+    expect(vat[0]).toMatchObject({ persisted: false, id: "preview:vat:2025-12-31" });
+    expect(vat[0].status).toBe("overdue");
+    const upcoming = await t.as.get(
+      `/api/companies/${t.company.id}/compliance-calendar/upcoming?days=60`
+    );
+    expect(upcoming.status).toBe(200);
+    expect(upcoming.body.length).toBeGreaterThan(0);
+    const overview = await t.as.get(`/api/companies/${t.company.id}/compliance/overview`);
+    expect(overview.status, overview.text).toBe(200);
+    expect(overview.body.vatStatus.filingStatus).toBe("overdue");
+    await flushObligationRefreshes();
+    expect(await snapshot(t.company.id)).toEqual(before);
+
+    // A settings change (VAT stagger) refreshes the stored calendar after the write.
+    const patched = await t.as.patch(`/api/companies/${t.company.id}`, {
+      vatFilingFrequency: "Monthly",
+    });
+    expect(patched.status, patched.text).toBe(200);
+    await flushObligationRefreshes();
+    const stored = await h.sql<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM compliance_calendar
+        WHERE company_id = $1 AND obligation_type = 'vat_return'
+          AND EXTRACT(YEAR FROM event_date) = 2026`,
+      [t.company.id]
+    );
+    expect(stored[0].n).toBe(12);
+    const afterRefresh = await snapshot(t.company.id);
+    await t.as.get(`/api/companies/${t.company.id}/compliance-calendar`);
+    await t.as.get(`/api/companies/${t.company.id}/compliance/overview`);
+    await flushObligationRefreshes();
+    expect(await snapshot(t.company.id)).toEqual(afterRefresh);
+  });
+
+  it("[S4-compliance-get] a preview obligation can be completed: the PATCH stores the calendar first", async () => {
+    restore = freezeTime("2026-06-01T08:00:00Z");
+    const t = await h.createTenant({ name: "CalPreviewPatch" });
+    const cal = await t.as.get(`/api/companies/${t.company.id}/compliance-calendar`);
+    const ubo = (cal.body as Array<{ id: string; obligationKey: string }>).find(
+      (r) => r.obligationKey === "ubo:2026"
+    );
+    expect(ubo?.id).toBe("preview:ubo:2026");
+    const done = await t.as.patch(
+      `/api/companies/${t.company.id}/compliance-calendar/${encodeURIComponent(ubo!.id)}`,
+      { status: "completed" }
+    );
+    expect(done.status, done.text).toBe(200);
+    expect(done.body).toMatchObject({ status: "completed", persisted: true });
+    const bogus = await t.as.patch(
+      `/api/companies/${t.company.id}/compliance-calendar/preview:nope`,
+      { status: "completed" }
+    );
+    expect(bogus.status).toBe(404);
+  });
+
+  it("[S4-compliance-get] filing a corporate tax return refreshes the stored row's status", async () => {
+    restore = freezeTime("2026-06-01T08:00:00Z");
+    const t = await h.createTenant({ name: "CalCtRefresh" });
+    const reviewer = await addMember(t, "accountant", "CalCtRefreshReviewer");
+    const { flushObligationRefreshes } =
+      await import("../../server/routes/compliance-obligation-refresh");
+    const created = await t.as.post(`/api/companies/${t.company.id}/corporate-tax/returns`, {
+      taxPeriodStart: "2025-01-01",
+      taxPeriodEnd: "2025-12-31",
+      totalRevenue: 1_000_000,
+      totalExpenses: 400_000,
+    });
+    expect(created.status, created.text).toBe(201);
+    const id = created.body.id;
+    await t.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "computed" });
+    await reviewer.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "reviewed" });
+    const filed = await t.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "filed" });
+    expect(filed.status, filed.text).toBe(200);
+    await flushObligationRefreshes();
+    const rows = await h.sql<{ status: string; related_entity_id: string }>(
+      `SELECT status, related_entity_id FROM compliance_calendar
+        WHERE company_id = $1 AND obligation_key = 'ct:2025-12-31'`,
+      [t.company.id]
+    );
+    expect(rows).toEqual([{ status: "completed", related_entity_id: id }]);
   });
 });

@@ -93,5 +93,20 @@
   "firm.rolePreparer": "مُعِدّ",
   "firm.roleReviewer": "مراجِع",
   "firm.roleViewer": "مشاهد (قراءة فقط)",
-  "firm.firmRole": "دور المكتب"
+  "firm.firmRole": "دور المكتب",
+  "firm.navFirmWorkspace": "مساحة عمل المكتب",
+  "firm.nrOnlyTitle": "متاح لموظفي NR فقط",
+  "firm.nrOnlyDescription": "هذه الأداة جزء من إدارة مكتب NR (واتساب، ومتابعة المستندات، واستلام البريد، وعمليات القيمة) ولا تتوفر لمكاتب المحاسبة الأخرى.",
+  "firm.emailTasksTab": "البريد ← المهام",
+  "firm.emailTasksTitle": "رسائل العملاء ومهام مراجعتها",
+  "firm.emailTasksHint": "تتحول كل رسالة بريد من العميل يتم حفظها إلى مهمة مراجعة في الممارسة ← المهام.",
+  "firm.emailTasksMailboxConnected": "صندوق البريد متصل",
+  "firm.emailTasksMailboxExternal": "يتطلب صندوق بريد خارجيًا",
+  "firm.emailTasksNoMessages": "لا توجد رسائل محفوظة لهذا العميل بعد.",
+  "firm.emailTasksSubject": "الموضوع",
+  "firm.emailTasksReceived": "تاريخ الاستلام",
+  "firm.emailTaskCreate": "إنشاء مهمة",
+  "firm.emailTaskExists": "تم إنشاء المهمة",
+  "firm.emailTaskCreated": "تم إنشاء مهمة المراجعة",
+  "firm.emailTaskFailed": "تعذّر إنشاء المهمة"
 }

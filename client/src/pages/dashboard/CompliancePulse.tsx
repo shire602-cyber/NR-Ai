@@ -2,6 +2,7 @@ import { useCountUp } from "./useCountUp";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n";
+import { CHECK_ACTIONS, auditCheckExplanation, type AuditReadinessCheck } from "./auditChecks";
 import { ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 
@@ -70,62 +71,17 @@ export function FilingStatusBadge({
   );
 }
 
-/**
- * Maps audit-readiness issue strings from /compliance/overview to the screen
- * where the user can resolve them. Strings must match the server exactly
- * (server/routes/compliance-dashboard.routes.ts).
- */
-const ISSUE_ACTIONS: Record<
-  string,
-  { href: string; cta: string; issueKey: string; ctaKey: string }
-> = {
-  "No VAT returns filed": {
-    href: "/vat-filing",
-    cta: "File VAT 201",
-    issueKey: "dashboard.checkNoVatReturns",
-    ctaKey: "dashboard.actionFileVat",
-  },
-  "No chart of accounts configured": {
-    href: "/chart-of-accounts",
-    cta: "Set up accounts",
-    issueKey: "dashboard.checkNoChartOfAccounts",
-    ctaKey: "dashboard.actionSetupAccounts",
-  },
-  "No journal entries in the last 90 days": {
-    href: "/journal",
-    cta: "Post an entry",
-    issueKey: "dashboard.checkNoJournalEntries",
-    ctaKey: "dashboard.actionPostEntry",
-  },
-  "No bank reconciliation rules configured": {
-    href: "/bank-reconciliation",
-    cta: "Set up reconciliation",
-    issueKey: "dashboard.checkNoReconRules",
-    ctaKey: "dashboard.actionSetupRecon",
-  },
-  "Bank reconciliation not set up": {
-    href: "/bank-reconciliation",
-    cta: "Set up reconciliation",
-    issueKey: "dashboard.checkReconNotSetUp",
-    ctaKey: "dashboard.actionSetupRecon",
-  },
-  "No completed data backups": {
-    href: "/backup-restore",
-    cta: "Run a backup",
-    issueKey: "dashboard.checkNoBackups",
-    ctaKey: "dashboard.actionRunBackup",
-  },
-};
-
-export function FixItRow({ issue }: { issue: string }) {
+export function FixItRow({ check }: { check: AuditReadinessCheck }) {
   const { t } = useTranslation();
-  const action = ISSUE_ACTIONS[issue];
+  const catalog = t as unknown as Record<string, string>;
+  const action = CHECK_ACTIONS[check.key]?.(check);
+  const explanation = auditCheckExplanation(check, catalog);
   return (
     <div className="flex items-center justify-between gap-3 px-5 py-2.5">
       <div className="flex items-center gap-2.5 min-w-0">
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
-        <span className="text-[13px] text-foreground/80 truncate">
-          {(action && t[action.issueKey]) || issue}
+        <span className="text-[13px] text-foreground/80 truncate" title={explanation}>
+          {explanation}
         </span>
       </div>
       {action && (
@@ -135,7 +91,7 @@ export function FixItRow({ issue }: { issue: string }) {
             size="sm"
             className="gap-1 text-accent hover:text-accent shrink-0 -me-2"
           >
-            {t[action.ctaKey] || action.cta} <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
+            {catalog[action.ctaKey]} <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
           </Button>
         </Link>
       )}
