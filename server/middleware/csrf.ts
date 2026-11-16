@@ -25,6 +25,8 @@ const CSRF_BEARER_EXEMPT = [
   // W4-D: invoice payment gateways and email delivery events (signed by the provider).
   /^\/api\/webhooks\/invoice-payments\/[a-z]+$/,
   /^\/api\/webhooks\/email-events\/[a-z-]+$/,
+  // W5-B: the public API authenticates by API key only (never cookies).
+  /^\/api\/v1\//,
   // Client-side error telemetry sink: a fire-and-forget endpoint that returns
   // 204 and takes no state-changing action. It MUST accept reports even when
   // the app is broken (e.g. a chunk failed to load before a CSRF token was

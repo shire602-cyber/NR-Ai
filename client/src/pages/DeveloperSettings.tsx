@@ -52,7 +52,8 @@ interface ApiKeyItem {
   companyId: string;
   name: string;
   keyPrefix: string;
-  scopes: string;
+  scopes: string[];
+  rateLimitPerMinute?: number;
   lastUsedAt: string | null;
   expiresAt: string | null;
   isActive: boolean;
@@ -80,6 +81,10 @@ interface WebhookDeliveryItem {
   responseBody: string | null;
   success: boolean;
   attemptNumber: number;
+  maxAttempts?: number;
+  status?: "pending" | "in_flight" | "retrying" | "delivered" | "dead";
+  nextAttemptAt?: string | null;
+  lastError?: string | null;
   createdAt: string;
 }
 
@@ -87,18 +92,32 @@ interface WebhookDeliveryItem {
 // Constants
 // ===========================
 
-const API_KEY_SCOPES = ["read", "write", "admin"] as const;
+// W5-B: must match API_SCOPES in server/middleware/api-key-auth.ts and WEBHOOK_EVENTS in
+// server/services/webhook.service.ts (the server rejects anything else).
+const API_KEY_SCOPES = [
+  "read:invoices",
+  "write:invoices",
+  "read:contacts",
+  "write:contacts",
+  "read:bills",
+  "read:payments",
+  "write:payments",
+  "read:accounts",
+  "read:reports",
+] as const;
 
 const WEBHOOK_EVENTS = [
   "invoice.created",
+  "invoice.issued",
   "invoice.paid",
-  "invoice.overdue",
+  "invoice.voided",
   "payment.received",
-  "quote.created",
-  "quote.accepted",
-  "receipt.uploaded",
-  "credit_note.created",
-  "vat_return.filed",
+  "credit_note.issued",
+  "bill.approved",
+  "bill.paid",
+  "contact.created",
+  "payroll.approved",
+  "payroll.paid",
 ] as const;
 
 // ===========================
@@ -169,7 +188,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
 
   // Form state
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read"]);
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read:invoices"]);
 
   const { data: apiKeys, isLoading } = useQuery<ApiKeyItem[]>({
     queryKey: ["/api/companies", companyId, "api-keys"],
@@ -177,7 +196,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; scopes: string }) =>
+    mutationFn: (data: { name: string; scopes: string[] }) =>
       apiRequest("POST", `/api/companies/${companyId}/api-keys`, data),
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
@@ -251,6 +270,13 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             <CardDescription>
               Create and manage API keys for programmatic access to Muhasib.ai.
             </CardDescription>
+            {/* W5-B (R19-15): keys authenticate the versioned public API only. */}
+            <p className="mt-2 text-xs text-muted-foreground" dir="ltr">
+              {"Authorization: ApiKey muh_…  ·  /api/v1  ·  "}
+              <a className="underline" href="/api/v1/openapi.json" target="_blank" rel="noreferrer">
+                {"openapi.json"}
+              </a>
+            </p>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
@@ -285,9 +311,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
-                        {key.scopes.split(",").map((scope) => (
-                          <Badge key={scope} variant="secondary" className="text-xs">
-                            {scope.trim()}
+                        {key.scopes.map((scope) => (
+                          <Badge key={scope} variant="secondary" className="text-xs" dir="ltr">
+                            {scope}
                           </Badge>
                         ))}
                       </div>
@@ -343,11 +369,8 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       checked={newKeyScopes.includes(scope)}
                       onCheckedChange={() => handleScopeToggle(scope)}
                     />
-                    <Label htmlFor={`scope-${scope}`} className="font-normal capitalize">
+                    <Label htmlFor={`scope-${scope}`} className="font-mono text-xs font-normal" dir="ltr">
                       {scope}
-                      {scope === "read" && " — Read-only access to your data"}
-                      {scope === "write" && " — Create and update records"}
-                      {scope === "admin" && " — Full access including deletions"}
                     </Label>
                   </div>
                 ))}
@@ -362,7 +385,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               onClick={() =>
                 createMutation.mutate({
                   name: newKeyName,
-                  scopes: newKeyScopes.join(","),
+                  scopes: newKeyScopes,
                 })
               }
               disabled={!newKeyName.trim() || newKeyScopes.length === 0 || createMutation.isPending}
@@ -471,6 +494,16 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     queryKey: ["/api/webhooks", deliveriesEndpointId, "deliveries"],
     queryFn: () => apiRequest("GET", `/api/webhooks/${deliveriesEndpointId}/deliveries`),
     enabled: !!deliveriesEndpointId,
+  });
+
+  // W5-B (R19-02): replay any delivery (same event id, new signed attempt).
+  const replayMutation = useMutation({
+    mutationFn: (deliveryId: string) =>
+      apiRequest("POST", `/api/webhooks/${deliveriesEndpointId}/deliveries/${deliveryId}/replay`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ["/api/webhooks", deliveriesEndpointId, "deliveries"],
+      }),
   });
 
   const createMutation = useMutation({
@@ -801,6 +834,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     <TableHead><T k="pages.status" /></TableHead>
                     <TableHead>Response</TableHead>
                     <TableHead>Time</TableHead>
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -812,11 +846,16 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       <TableCell>
                         {delivery.success ? (
                           <Badge className="bg-success-subtle text-success-subtle-foreground ">
-                            Success
+                            {delivery.status ?? "delivered"}
                           </Badge>
                         ) : (
-                          <Badge variant="destructive"><T k="pages.failed" /></Badge>
+                          <Badge variant={delivery.status === "retrying" ? "outline" : "destructive"}>
+                            {delivery.status ?? "failed"}
+                          </Badge>
                         )}
+                        <span className="ms-2 text-xs text-muted-foreground">
+                          {delivery.attemptNumber}/{delivery.maxAttempts ?? 1}
+                        </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {delivery.responseStatus
@@ -825,6 +864,23 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(delivery.createdAt).toLocaleString()}
+                        {delivery.status === "retrying" && delivery.nextAttemptAt && (
+                          <span className="block text-xs">
+                            → {new Date(delivery.nextAttemptAt).toLocaleTimeString()}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Replay"
+                          onClick={() => replayMutation.mutate(delivery.id)}
+                          disabled={replayMutation.isPending}
+                          data-testid={`button-replay-${delivery.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

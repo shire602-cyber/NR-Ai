@@ -1,0 +1,8 @@
+*Code,*Name,*Type,*Tax Code,Description,Dashboard,Expense Claims,Enable Payments
+1020,Bank Accounts,Bank,No VAT,Main operating account,Yes,No,Yes
+1040,Accounts Receivable,Current Asset,No VAT,,No,No,No
+2010,Accounts Payable,Current Liability,No VAT,,No,No,No
+1110,Security Deposits,Current Asset,No VAT,Rent deposits,No,No,No
+4110,Consulting Income,Revenue,Standard Rated Income,Advisory fees,No,No,No
+5210,Subscriptions & Tools,Overhead,Standard Rated Expenses,SaaS tools,No,Yes,No
+5220,Cost of Goods Sold - Imports,Direct Costs,Standard Rated Expenses,,No,No,No

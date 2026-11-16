@@ -12,6 +12,10 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createLogger } from "./config/logger";
 import { companyRolePolicy } from "./middleware/companyRolePolicy";
+import { rejectApiKeysOutsidePublicApi } from "./middleware/api-key-auth";
+import { planFeaturePolicy, usageLimitPolicy } from "./middleware/featureGate";
+import { registerPublicApiRoutes } from "./routes/public-api.routes";
+import { registerImportRoutes } from "./routes/import.routes";
 
 // ─── Route modules ──────────────────────────────────────────
 import { registerAuthRoutes } from "./routes/auth.routes";
@@ -105,11 +109,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   log.info("Registering route modules...");
   app.use(periodLockContextMiddleware); // W2-B: soft-lock override reason visible to write paths
 
+  // ─── Public API (W5-B, R19-01) ──────────────────────────
+  // API keys authenticate /api/v1 only; anywhere else a key is refused.
+  app.use("/api", rejectApiKeysOutsidePublicApi);
+  registerPublicApiRoutes(app);
+
   // ─── Central company-role policy (W2-C, R01-02) ─────────
   // Runs before every route module: resolves the permission for METHOD+path
   // and the company the request acts on, then checks the caller's
   // company_users role. See server/middleware/companyRolePolicy.ts.
   app.use("/api", companyRolePolicy);
+
+  // ─── Plan gates and usage meter (W5-B, R19-04, R19-05) ──
+  // METHOD + path tables in server/middleware/featureGate.ts: feature flags
+  // (403 TIER_LOCKED) and monthly quotas (402 USAGE_LIMIT_REACHED).
+  app.use("/api", planFeaturePolicy, usageLimitPolicy);
 
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);
@@ -185,6 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerEvidenceCenterRoutes(app);
   registerOnboardingRoutes(app);
   registerBackupRoutes(app);
+  registerImportRoutes(app);
   registerReferralRoutes(app);
   registerFeedbackRoutes(app);
   registerClientErrorRoutes(app);

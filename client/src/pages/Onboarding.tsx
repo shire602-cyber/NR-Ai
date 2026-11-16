@@ -528,6 +528,7 @@ function CustomerOnboarding() {
               )}
               {currentStep === "accounts" && (
                 <AccountsStep
+                  companyId={company?.id ?? null}
                   accountCount={accountsData?.length ?? 0}
                   onNext={goNext}
                   onBack={goBack}
@@ -915,10 +916,12 @@ function CompanyStep({
 // ─── Step: Chart of Accounts ────────────────────────────────────────────────
 
 function AccountsStep({
+  companyId,
   accountCount,
   onNext,
   onBack,
 }: {
+  companyId: string | null;
   accountCount: number;
   onNext: () => void;
   onBack: () => void;
@@ -977,7 +980,105 @@ function AccountsStep({
         .
       </p>
 
+      {companyId && <GuidedSetupExtras companyId={companyId} />}
+
       <StepNav onBack={onBack} onNext={onNext} nextLabel="Looks good, continue" />
+    </div>
+  );
+}
+
+// ─── W5-B (R19-18): industry COA template, TRN check, optional import ────────
+
+const GUIDED_COPY = {
+  en: {
+    templateTitle: "Add accounts for your industry",
+    apply: "Add accounts",
+    added: "accounts added",
+    trnTitle: "TRN check",
+    trnValid: "TRN format is valid. Confirm it on the FTA EmaraTax TRN verification page.",
+    trnMissing: "No TRN saved yet. Add it in company settings when you register for VAT.",
+    importTitle: "Moving from Xero, QuickBooks, Zoho Books or Wafeq?",
+    importHelp: "Import your chart of accounts, opening balances, contacts, items and open invoices.",
+    importDone: "Data imported",
+    importCta: "Open Import data",
+  },
+  ar: {
+    templateTitle: "أضف حسابات لنشاطك",
+    apply: "إضافة الحسابات",
+    added: "حسابات أُضيفت",
+    trnTitle: "التحقق من الرقم الضريبي",
+    trnValid: "صيغة الرقم الضريبي صحيحة. تحقق منه في صفحة التحقق على منصة إمارات تاكس.",
+    trnMissing: "لم يُحفظ رقم ضريبي بعد. أضفه في إعدادات الشركة عند التسجيل في ضريبة القيمة المضافة.",
+    importTitle: "تنتقل من زيرو أو كويك بوكس أو زوهو بوكس أو وافق؟",
+    importHelp: "استورد دليل الحسابات والأرصدة الافتتاحية وجهات الاتصال والأصناف والفواتير المفتوحة.",
+    importDone: "تم استيراد البيانات",
+    importCta: "فتح استيراد البيانات",
+  },
+};
+
+function GuidedSetupExtras({ companyId }: { companyId: string }) {
+  const { locale } = useTranslation();
+  const c = GUIDED_COPY[locale === "ar" ? "ar" : "en"];
+  const { toast } = useToast();
+  const [templateId, setTemplateId] = useState("general");
+  const { data: templates } = useQuery<
+    Array<{ id: string; label: { en: string; ar: string }; accounts: number }>
+  >({ queryKey: ["/api/onboarding/coa-templates"] });
+  const { data: steps } = useQuery<{
+    importData: { done: boolean };
+    trn: { done: boolean; value: string | null; reason: string | null };
+  }>({ queryKey: ["/api/onboarding/optional-steps"] });
+  const apply = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/onboarding/coa-template`, { templateId }),
+    onSuccess: (r: { added: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "accounts"] });
+      toast({ title: `${r.added} ${c.added}` });
+    },
+  });
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border p-3 space-y-2">
+        <p className="text-sm font-medium">{c.templateTitle}</p>
+        <div className="flex flex-wrap gap-2">
+          {(templates ?? []).map((tpl) => (
+            <Button
+              key={tpl.id}
+              type="button"
+              size="sm"
+              variant={templateId === tpl.id ? "default" : "outline"}
+              onClick={() => setTemplateId(tpl.id)}
+              data-testid={`coa-template-${tpl.id}`}
+            >
+              {locale === "ar" ? tpl.label.ar : tpl.label.en}
+            </Button>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={templateId === "general" || apply.isPending}
+            onClick={() => apply.mutate()}
+          >
+            {c.apply}
+          </Button>
+        </div>
+      </div>
+      <div className="rounded-lg border p-3">
+        <p className="text-sm font-medium">{c.trnTitle}</p>
+        <p className="text-xs text-muted-foreground" data-testid="onboarding-trn-check">
+          {steps?.trn.value ? (steps.trn.done ? c.trnValid : steps.trn.reason) : c.trnMissing}
+        </p>
+      </div>
+      <div className="rounded-lg border p-3">
+        <p className="text-sm font-medium">{c.importTitle}</p>
+        <p className="text-xs text-muted-foreground">
+          {steps?.importData.done ? c.importDone : c.importHelp}
+        </p>
+        <Link href="/import" className="text-xs underline text-primary">
+          {c.importCta}
+        </Link>
+      </div>
     </div>
   );
 }

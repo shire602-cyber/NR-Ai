@@ -63,8 +63,98 @@ import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { Backup } from "@shared/schema";
+import { useI18n } from "@/lib/i18n";
 
 type BackupWithoutData = Omit<Backup, "dataSnapshot">;
+
+interface TableDiff {
+  table: string;
+  snapshotRows: number;
+  currentRows: number;
+  insert: number;
+  update: number;
+  delete: number;
+}
+interface RestorePreview {
+  backup: { id: string; name: string; createdAt: string };
+  mode: "merge" | "replace";
+  tables: TableDiff[];
+  totals: { insert: number; update: number; delete: number };
+  warning: string;
+}
+interface BackupSchedule {
+  frequency: "daily" | "weekly" | "monthly" | "off";
+  retentionDays: number;
+  isActive: boolean;
+  lastRunAt: string | null;
+}
+
+// W5-B (R19-06, R19-07, R17-22): wording matches what the server does.
+const BACKUP_COPY = {
+  en: {
+    restoreTitle: "Restore from backup",
+    restoreDescription: "Choose how to restore, review the dry-run changes, then confirm.",
+    modeMerge: "Merge: add missing records only",
+    modeMergeHelp: "Records that were deleted are added back. Edited records keep their current values; nothing is deleted.",
+    modeReplace: "Replace: make company data match the backup",
+    modeReplaceHelp: "Records created after the backup are deleted and edited records are reverted. A pre-restore backup is taken first.",
+    table: "Table",
+    insert: "Add",
+    update: "Revert",
+    del: "Delete",
+    noChanges: "Nothing would change.",
+    confirmName: "Type the backup name to confirm",
+    restore: "Restore",
+    restoring: "Restoring...",
+    preview: "Preview changes",
+    restoreDone: "Restore complete",
+    restoreFailed: "Restore failed",
+    aboutTitle: "About backups",
+    about1: "A backup is an encrypted snapshot of every company table: ledger, invoices, bills, payments, contacts, products, bank, payroll, fixed assets, budgets, claims and VAT.",
+    about2: "Audit logs, team access, API keys, billing and the email queue are never captured or overwritten by a restore.",
+    about3: "Snapshots are checksummed and verified before a restore; a restore either completes in one transaction or changes nothing.",
+    about4: "Point-in-time recovery and an off-site copy are set up on the database host and storage bucket (outside the app).",
+    scheduleTitle: "Scheduled backups",
+    scheduleHelp: "Runs nightly when due and keeps scheduled backups for the retention period.",
+    frequency: { off: "Off", daily: "Daily", weekly: "Weekly", monthly: "Monthly" } as Record<string, string>,
+    retention: "Keep for (days)",
+    save: "Save schedule",
+    saved: "Schedule saved",
+    lastRun: "Last run",
+  },
+  ar: {
+    restoreTitle: "الاستعادة من نسخة احتياطية",
+    restoreDescription: "اختر طريقة الاستعادة وراجع التغييرات التجريبية ثم أكد.",
+    modeMerge: "دمج: إضافة السجلات المفقودة فقط",
+    modeMergeHelp: "تُعاد السجلات المحذوفة. تحتفظ السجلات المعدلة بقيمها الحالية ولا يُحذف شيء.",
+    modeReplace: "استبدال: مطابقة بيانات الشركة للنسخة الاحتياطية",
+    modeReplaceHelp: "تُحذف السجلات المنشأة بعد النسخة وتُعاد السجلات المعدلة. تُؤخذ نسخة قبل الاستعادة أولاً.",
+    table: "الجدول",
+    insert: "إضافة",
+    update: "استرجاع",
+    del: "حذف",
+    noChanges: "لن يتغير شيء.",
+    confirmName: "اكتب اسم النسخة الاحتياطية للتأكيد",
+    restore: "استعادة",
+    restoring: "جارٍ الاستعادة...",
+    preview: "معاينة التغييرات",
+    restoreDone: "اكتملت الاستعادة",
+    restoreFailed: "فشلت الاستعادة",
+    aboutTitle: "حول النسخ الاحتياطية",
+    about1: "النسخة الاحتياطية لقطة مشفرة لكل جداول الشركة: الدفاتر والفواتير والمدفوعات وجهات الاتصال والمنتجات والبنوك والرواتب والأصول والميزانيات والمطالبات والضريبة.",
+    about2: "لا تُنسخ سجلات التدقيق وصلاحيات الفريق ومفاتيح API والفوترة وقائمة البريد ولا تُستبدل عند الاستعادة.",
+    about3: "يتم التحقق من بصمة كل لقطة قبل الاستعادة؛ إما أن تكتمل الاستعادة في معاملة واحدة أو لا يتغير شيء.",
+    about4: "الاستعادة لنقطة زمنية والنسخة خارج الموقع تُعدّان لدى مزود قاعدة البيانات والتخزين (خارج التطبيق).",
+    scheduleTitle: "النسخ الاحتياطي المجدول",
+    scheduleHelp: "يعمل ليلاً عند الاستحقاق ويحتفظ بالنسخ المجدولة طوال مدة الاحتفاظ.",
+    frequency: { off: "إيقاف", daily: "يومي", weekly: "أسبوعي", monthly: "شهري" } as Record<string, string>,
+    retention: "مدة الاحتفاظ (أيام)",
+    save: "حفظ الجدولة",
+    saved: "تم حفظ الجدولة",
+    lastRun: "آخر تشغيل",
+  },
+};
+
 
 export default function BackupRestore() {
   const { toast } = useToast();
@@ -72,7 +162,11 @@ export default function BackupRestore() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newBackupName, setNewBackupName] = useState("");
   const [newBackupDescription, setNewBackupDescription] = useState("");
-  const [restorePreview, setRestorePreview] = useState<any>(null);
+  const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [restoreMode, setRestoreMode] = useState<"merge" | "replace">("merge");
+  const [confirmName, setConfirmName] = useState("");
+  const { locale } = useI18n();
+  const c = BACKUP_COPY[locale === "ar" ? "ar" : "en"];
   const [selectedBackupForRestore, setSelectedBackupForRestore] =
     useState<BackupWithoutData | null>(null);
 
@@ -133,42 +227,61 @@ export default function BackupRestore() {
   });
 
   const getRestorePreviewMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("POST", `/api/backups/${id}/restore-preview`);
+    mutationFn: async (args: { id: string; mode: "merge" | "replace" }) => {
+      return apiRequest("POST", `/api/backups/${args.id}/restore-preview`, { mode: args.mode });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: RestorePreview) => {
       setRestorePreview(data);
     },
-    onError: (error: any) => {
-      toast({
-        title: "Preview Failed",
-        description: error?.message || "Failed to get restore preview",
-        variant: "destructive",
-      });
+    onError: (error: Error) => {
+      toast({ title: c.restoreFailed, description: error?.message, variant: "destructive" });
     },
   });
 
   const restoreMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("POST", `/api/backups/${id}/restore`, { confirmRestore: true });
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
-      toast({
-        title: "Restore Initiated",
-        description: data.message || "Backup restore process has started.",
+      return apiRequest("POST", `/api/backups/${id}/restore`, {
+        mode: restoreMode,
+        confirmRestore: true,
+        ...(restoreMode === "replace" ? { confirmName } : {}),
       });
+    },
+    onSuccess: (data: { message?: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      toast({ title: c.restoreDone, description: data.message });
       setRestorePreview(null);
       setSelectedBackupForRestore(null);
+      setConfirmName("");
     },
-    onError: (error: any) => {
-      toast({
-        title: "Restore Failed",
-        description: error?.message || "Failed to restore backup",
-        variant: "destructive",
-      });
+    onError: (error: Error) => {
+      toast({ title: c.restoreFailed, description: error?.message, variant: "destructive" });
     },
   });
+
+  const { data: schedule } = useQuery<BackupSchedule>({
+    queryKey: ["/api/companies", selectedCompanyId, "backups", "schedule"],
+    enabled: !!selectedCompanyId,
+  });
+  const [scheduleDraft, setScheduleDraft] = useState<{ frequency: string; retentionDays: number } | null>(
+    null
+  );
+  const scheduleMutation = useMutation({
+    mutationFn: async (body: { frequency: string; retentionDays: number }) =>
+      apiRequest("PUT", `/api/companies/${selectedCompanyId}/backups/schedule`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "backups", "schedule"],
+      });
+      setScheduleDraft(null);
+      toast({ title: c.saved });
+    },
+    onError: (error: Error) =>
+      toast({ title: c.restoreFailed, description: error?.message, variant: "destructive" }),
+  });
+  const effectiveSchedule = scheduleDraft ?? {
+    frequency: schedule?.isActive ? schedule.frequency : "off",
+    retentionDays: schedule?.retentionDays ?? 90,
+  };
 
   const handleDownload = async (backup: BackupWithoutData) => {
     try {
@@ -275,10 +388,7 @@ export default function BackupRestore() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Backup</DialogTitle>
-            <DialogDescription>
-              Create a complete backup of your financial data including accounts, invoices, journal
-              entries, and receipts.
-            </DialogDescription>
+            <DialogDescription>{c.about1}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -474,7 +584,8 @@ export default function BackupRestore() {
                           size="sm"
                           onClick={() => {
                             setSelectedBackupForRestore(backup);
-                            getRestorePreviewMutation.mutate(backup.id);
+                            setRestoreMode("merge");
+                            getRestorePreviewMutation.mutate({ id: backup.id, mode: "merge" });
                           }}
                           disabled={backup.status !== "completed"}
                           data-testid={`button-restore-${backup.id}`}
@@ -526,54 +637,82 @@ export default function BackupRestore() {
         onOpenChange={() => {
           setRestorePreview(null);
           setSelectedBackupForRestore(null);
+          setConfirmName("");
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              Confirm Restore
+              {c.restoreTitle}
             </DialogTitle>
-            <DialogDescription>Review the changes before restoring from backup</DialogDescription>
+            <DialogDescription>{c.restoreDescription}</DialogDescription>
           </DialogHeader>
           {restorePreview && (
-            <div className="space-y-4 py-4">
-              <div className="bg-warning-subtle border border-warning/30 rounded-lg p-4">
-                <p className="text-sm text-warning-subtle-foreground ">
-                  {restorePreview.warning}
-                </p>
+            <div className="space-y-4 py-2">
+              <div className="grid gap-2 md:grid-cols-2">
+                {(["merge", "replace"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    data-testid={`button-restore-mode-${m}`}
+                    onClick={() => {
+                      setRestoreMode(m);
+                      if (selectedBackupForRestore) {
+                        getRestorePreviewMutation.mutate({ id: selectedBackupForRestore.id, mode: m });
+                      }
+                    }}
+                    className={`rounded-lg border p-3 text-start text-sm ${
+                      restoreMode === m ? "border-primary bg-primary/5" : ""
+                    }`}
+                  >
+                    <p className="font-medium">{m === "merge" ? c.modeMerge : c.modeReplace}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {m === "merge" ? c.modeMergeHelp : c.modeReplaceHelp}
+                    </p>
+                  </button>
+                ))}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Current Data</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm space-y-1">
-                    <p>{restorePreview.current?.accountsCount || 0} accounts</p>
-                    <p>{restorePreview.current?.journalEntriesCount || 0} journal entries</p>
-                    <p>{restorePreview.current?.invoicesCount || 0} invoices</p>
-                    <p>{restorePreview.current?.receiptsCount || 0} receipts</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Backup Data</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm space-y-1">
-                    <p>{restorePreview.backup?.accountsCount || 0} accounts</p>
-                    <p>{restorePreview.backup?.journalEntriesCount || 0} journal entries</p>
-                    <p>{restorePreview.backup?.invoicesCount || 0} invoices</p>
-                    <p>{restorePreview.backup?.receiptsCount || 0} receipts</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <p className="text-sm text-muted-foreground">
-                Backup created:{" "}
-                {restorePreview.backup?.createdAt &&
-                  format(new Date(restorePreview.backup.createdAt), "PPpp")}
-              </p>
+              {restorePreview.tables.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{c.noChanges}</p>
+              ) : (
+                <div className="max-h-64 overflow-auto rounded border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{c.table}</TableHead>
+                        <TableHead className="text-end">{c.insert}</TableHead>
+                        <TableHead className="text-end">{c.update}</TableHead>
+                        <TableHead className="text-end">{c.del}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {restorePreview.tables.map((d) => (
+                        <TableRow key={d.table}>
+                          <TableCell className="font-mono text-xs" dir="ltr">
+                            {d.table}
+                          </TableCell>
+                          <TableCell className="text-end">{d.insert}</TableCell>
+                          <TableCell className="text-end">{d.update}</TableCell>
+                          <TableCell className="text-end">{d.delete}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              {restoreMode === "replace" && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-backup-name">{c.confirmName}</Label>
+                  <Input
+                    id="confirm-backup-name"
+                    value={confirmName}
+                    placeholder={restorePreview.backup.name}
+                    onChange={(e) => setConfirmName(e.target.value)}
+                    data-testid="input-confirm-backup-name"
+                  />
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -582,6 +721,7 @@ export default function BackupRestore() {
               onClick={() => {
                 setRestorePreview(null);
                 setSelectedBackupForRestore(null);
+                setConfirmName("");
               }}
             >
               <T k="pages.cancel" />
@@ -591,43 +731,83 @@ export default function BackupRestore() {
               onClick={() =>
                 selectedBackupForRestore && restoreMutation.mutate(selectedBackupForRestore.id)
               }
-              disabled={restoreMutation.isPending}
+              disabled={
+                restoreMutation.isPending ||
+                (restoreMode === "replace" && confirmName !== restorePreview?.backup.name)
+              }
+              data-testid="button-confirm-restore"
             >
-              {restoreMutation.isPending ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Restoring...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Restore Data
-                </>
-              )}
+              <Upload className="me-2 h-4 w-4" />
+              {restoreMutation.isPending ? c.restoring : c.restore}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            {c.scheduleTitle}
+          </CardTitle>
+          <CardDescription>{c.scheduleHelp}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-3">
+          <div className="flex gap-2">
+            {(["off", "daily", "weekly", "monthly"] as const).map((f) => (
+              <Button
+                key={f}
+                type="button"
+                size="sm"
+                variant={effectiveSchedule.frequency === f ? "default" : "outline"}
+                onClick={() => setScheduleDraft({ ...effectiveSchedule, frequency: f })}
+                data-testid={`button-schedule-${f}`}
+              >
+                {c.frequency[f]}
+              </Button>
+            ))}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="retention-days">{c.retention}</Label>
+            <Input
+              id="retention-days"
+              type="number"
+              min={7}
+              max={3650}
+              className="w-28"
+              value={effectiveSchedule.retentionDays}
+              onChange={(e) =>
+                setScheduleDraft({ ...effectiveSchedule, retentionDays: Number(e.target.value) })
+              }
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={!scheduleDraft || scheduleMutation.isPending}
+            onClick={() => scheduleDraft && scheduleMutation.mutate(scheduleDraft)}
+          >
+            {c.save}
+          </Button>
+          {schedule?.lastRunAt && (
+            <p className="text-xs text-muted-foreground">
+              {c.lastRun}: {format(new Date(schedule.lastRunAt), "PPpp")}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="bg-muted/50">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <FileJson className="h-5 w-5" />
-            About Backups
+            {c.aboutTitle}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>
-            Backups capture all your financial data including chart of accounts, journal entries,
-            invoices, receipts, and VAT returns.
-          </p>
-          <p>
-            Backups are stored for 90 days and can be downloaded as JSON files for external storage.
-          </p>
-          <p>
-            Before any restore operation, an automatic backup of your current data is created so you
-            can recover if needed.
-          </p>
+          <p>{c.about1}</p>
+          <p>{c.about2}</p>
+          <p>{c.about3}</p>
+          <p>{c.about4}</p>
         </CardContent>
       </Card>
     </div>

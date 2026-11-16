@@ -5,6 +5,8 @@ import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middle
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertWaitlistSchema } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { getCapability } from "../../shared/capabilities";
+import { connectorStatuses } from "../services/connectors/oauth";
 
 const log = createLogger("integrations");
 
@@ -37,30 +39,34 @@ export function registerIntegrationRoutes(app: Express) {
   // Integration Routes
   // =====================================
 
-  // Get integration status
+  // Get integration status (R19-09): only integrations with code behind them, each with an
+  // honest status. Accounting / POS connectors report `requires_external` until their
+  // provider app is registered; their data comes in through the CSV migration import.
   app.get(
     "/api/integrations/status",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const googleSheetsConnected = await googleSheets.isGoogleSheetsConnected();
-
       res.json({
         googleSheets: {
           connected: googleSheetsConnected,
           name: "Google Sheets",
           description: "Export financial data to spreadsheets",
         },
-        xero: {
-          connected: false,
-          name: "Xero",
-          description: "Sync with Xero accounting",
-          comingSoon: true,
-        },
-        quickbooks: {
-          connected: false,
-          name: "QuickBooks Online",
-          description: "Sync with QuickBooks",
-          comingSoon: true,
+        ecommerce: (["shopify", "stripe_payouts"] as const).map((id) => {
+          const cap = getCapability(id);
+          return {
+            id,
+            label: cap.label,
+            // Per-merchant credentials: the platform app registration is optional.
+            status: "available_with_merchant_credentials",
+            platformCapability: cap.status,
+          };
+        }),
+        connectors: connectorStatuses(),
+        migrationImport: {
+          status: "live",
+          sources: ["xero", "quickbooks", "zoho", "wafeq", "generic"],
         },
       });
     })

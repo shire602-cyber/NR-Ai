@@ -54,13 +54,12 @@ interface IntegrationStatus {
   connected: boolean;
   name: string;
   description: string;
-  comingSoon?: boolean;
 }
 
+/** W5-B (R19-09): only integrations with code behind them; connectors carry their real status. */
 interface IntegrationsStatusResponse {
   googleSheets: IntegrationStatus;
-  xero: IntegrationStatus;
-  quickbooks: IntegrationStatus;
+  connectors?: Array<{ id: string; status: "requires_external" | "sandbox" }>;
 }
 
 export default function Integrations() {
@@ -83,7 +82,8 @@ export default function Integrations() {
         : "اربط تطبيقاتك وخدماتك المفضلة لمزامنة بياناتك المالية",
     connected: locale === "en" ? "Connected" : "متصل",
     notConnected: locale === "en" ? "Not Connected" : "غير متصل",
-    comingSoon: locale === "en" ? "Coming Soon" : "قريباً",
+    comingSoon: locale === "en" ? "Requires app registration" : "يتطلب تسجيل تطبيق",
+    useCsvImport: locale === "en" ? "Import CSV exports now" : "استورد ملفات CSV الآن",
     export: locale === "en" ? "Export" : "تصدير",
     import: locale === "en" ? "Import" : "استيراد",
     sync: locale === "en" ? "Sync" : "مزامنة",
@@ -110,19 +110,20 @@ export default function Integrations() {
     noHistory: locale === "en" ? "No sync history yet" : "لا يوجد سجل مزامنة بعد",
     records: locale === "en" ? "records" : "سجلات",
     availableIntegrations: locale === "en" ? "Available Integrations" : "التكاملات المتاحة",
-    upcomingIntegrations: locale === "en" ? "Coming Soon" : "قريباً",
+    upcomingIntegrations:
+      locale === "en" ? "Accounting systems (CSV import today)" : "أنظمة المحاسبة (الاستيراد عبر CSV متاح الآن)",
     googleSheetsDesc:
       locale === "en"
         ? "Export invoices, expenses, and reports to Google Sheets for easy sharing and analysis"
         : "صدّر الفواتير والمصروفات والتقارير إلى Google Sheets للمشاركة والتحليل بسهولة",
     xeroDesc:
       locale === "en"
-        ? "Two-way sync with Xero for seamless accounting workflow integration"
-        : "مزامنة ثنائية الاتجاه مع Xero للتكامل السلس مع سير العمل المحاسبي",
+        ? "Chart of accounts, trial balance, contacts, items and open documents import from Xero CSV exports. A direct connection needs a registered Xero app."
+        : "يُستورد دليل الحسابات وميزان المراجعة وجهات الاتصال والأصناف والمستندات المفتوحة من ملفات Xero. يتطلب الاتصال المباشر تطبيق Xero مسجلاً.",
     quickbooksDesc:
       locale === "en"
-        ? "Sync transactions, invoices, and accounts with QuickBooks Online"
-        : "مزامنة المعاملات والفواتير والحسابات مع QuickBooks Online",
+        ? "Customers, vendors, items, open invoices and bills import from QuickBooks Online CSV exports. A direct connection needs a registered Intuit app."
+        : "يُستورد العملاء والموردون والأصناف والفواتير المفتوحة من ملفات QuickBooks Online. يتطلب الاتصال المباشر تطبيق Intuit مسجلاً.",
   };
 
   const { data: integrationStatus, isLoading: statusLoading } =
@@ -455,6 +456,9 @@ export default function Integrations() {
                   <Badge variant="outline">{t.comingSoon}</Badge>
                 </div>
                 <CardDescription className="mt-1 text-sm">{t.xeroDesc}</CardDescription>
+                <a href="/import" className="mt-2 inline-block text-xs underline">
+                  {t.useCsvImport}
+                </a>
               </div>
             </CardHeader>
           </Card>
@@ -475,6 +479,9 @@ export default function Integrations() {
                   <Badge variant="outline">{t.comingSoon}</Badge>
                 </div>
                 <CardDescription className="mt-1 text-sm">{t.quickbooksDesc}</CardDescription>
+                <a href="/import" className="mt-2 inline-block text-xs underline">
+                  {t.useCsvImport}
+                </a>
               </div>
             </CardHeader>
           </Card>
