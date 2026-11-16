@@ -192,21 +192,21 @@ export default function Reminders() {
         return (
           <Badge className="bg-info">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Delivered
+            <T k="s6b.delivered" />
           </Badge>
         );
       case "failed":
         return (
           <Badge variant="destructive">
             <XCircle className="w-3 h-3 mr-1" />
-            Failed
+            <T k="pages.failed" />
           </Badge>
         );
       case "pending":
         return (
           <Badge variant="secondary">
             <Clock className="w-3 h-3 mr-1" />
-            Pending
+            <T k="hr.status.pending" />
           </Badge>
         );
       default:
@@ -239,9 +239,11 @@ export default function Reminders() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
         <AlertTriangle className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Set up your company</h2>
+        <h2 className="text-xl font-semibold mb-2">
+          <T k="s6b.setUpYourCompany" />
+        </h2>
         <p className="text-muted-foreground mb-4">
-          You need a company before you can configure reminders.
+          <T k="s6b.youNeedACompanyBeforeYou" />
         </p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
           <T k="pages.createYourCompany" />
@@ -268,7 +270,7 @@ export default function Reminders() {
             </Button>
             <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-reminder">
               <Plus className="w-4 h-4 mr-2" />
-              Create Reminder
+              <T k="s6b.createReminder" />
             </Button>
           </div>
         }
@@ -285,12 +287,18 @@ export default function Reminders() {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Create Reminder Setting</DialogTitle>
-            <DialogDescription>Configure when and how reminders are sent</DialogDescription>
+            <DialogTitle>
+              <T k="s6b.createReminderSetting" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="s6b.configureWhenAndHowRemindersAre" />
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label>Reminder Type</Label>
+              <Label>
+                <T k="s6b.reminderType" />
+              </Label>
               <Select
                 value={newSetting.reminderType}
                 onValueChange={(value) => setNewSetting({ ...newSetting, reminderType: value })}
@@ -313,7 +321,9 @@ export default function Reminders() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Days Before Due</Label>
+                <Label>
+                  <T k="s6b.daysBeforeDue" />
+                </Label>
                 <Input
                   type="number"
                   value={newSetting.daysBeforeDue}
@@ -352,7 +362,9 @@ export default function Reminders() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Max Reminders</Label>
+                <Label>
+                  <T k="s6b.maxReminders" />
+                </Label>
                 <Input
                   type="number"
                   value={newSetting.maxReminders}
@@ -365,7 +377,9 @@ export default function Reminders() {
             </div>
 
             <div className="space-y-4">
-              <Label>Channels</Label>
+              <Label>
+                <T k="s6b.channels" />
+              </Label>
               <div className="flex gap-6 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Switch
@@ -376,7 +390,7 @@ export default function Reminders() {
                     data-testid="switch-in-app"
                   />
                   <Label className="flex items-center gap-1">
-                    <Bell className="w-4 h-4" /> In-App
+                    <Bell className="w-4 h-4" /> <T k="s6b.inApp" />
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
@@ -388,7 +402,7 @@ export default function Reminders() {
                     data-testid="switch-email"
                   />
                   <Label className="flex items-center gap-1">
-                    <Mail className="w-4 h-4" /> Email
+                    <Mail className="w-4 h-4" /> <T k="hr.field.email" />
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
@@ -422,7 +436,9 @@ export default function Reminders() {
                 data-testid="select-reminder-language"
               >
                 <option value="bilingual">English + العربية</option>
-                <option value="en">English</option>
+                <option value="en">
+                  <T k="s6b.english" />
+                </option>
                 <option value="ar">العربية</option>
               </select>
             </div>
@@ -457,7 +473,7 @@ export default function Reminders() {
               disabled={!newSetting.reminderType || createSettingMutation.isPending}
               data-testid="button-save-reminder"
             >
-              Create Reminder Setting
+              <T k="s6b.createReminderSetting" />
             </Button>
           </div>
         </DialogContent>
@@ -467,11 +483,11 @@ export default function Reminders() {
         <TabsList>
           <TabsTrigger value="settings" data-testid="tab-settings">
             <Settings className="w-4 h-4 mr-2" />
-            Settings
+            <T k="pages.settings" />
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <History className="w-4 h-4 mr-2" />
-            History
+            <T k="pages.history" />
           </TabsTrigger>
         </TabsList>
 
@@ -486,13 +502,15 @@ export default function Reminders() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Clock className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No reminder settings</h3>
+                <h3 className="text-lg font-medium">
+                  <T k="s6b.noReminderSettings" />
+                </h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  Create reminder settings to automate payment follow-ups
+                  <T k="s6b.createReminderSettingsToAutomatePayment" />
                 </p>
                 <Button onClick={() => setShowCreateDialog(true)}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Create First Reminder
+                  <T k="s6b.createFirstReminder" />
                 </Button>
               </CardContent>
             </Card>
@@ -551,13 +569,13 @@ export default function Reminders() {
                         {setting.sendInApp && (
                           <Badge variant="outline">
                             <Bell className="w-3 h-3 mr-1" />
-                            In-App
+                            <T k="s6b.inApp" />
                           </Badge>
                         )}
                         {setting.sendEmail && (
                           <Badge variant="outline">
                             <Mail className="w-3 h-3 mr-1" />
-                            Email
+                            <T k="hr.field.email" />
                           </Badge>
                         )}
                         {setting.sendSms && (
@@ -586,8 +604,12 @@ export default function Reminders() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <History className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No reminder history</h3>
-                <p className="text-muted-foreground text-center">Sent reminders will appear here</p>
+                <h3 className="text-lg font-medium">
+                  <T k="s6b.noReminderHistory" />
+                </h3>
+                <p className="text-muted-foreground text-center">
+                  <T k="s6b.sentRemindersWillAppearHere" />
+                </p>
               </CardContent>
             </Card>
           ) : (

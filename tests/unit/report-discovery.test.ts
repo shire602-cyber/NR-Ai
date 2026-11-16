@@ -1038,7 +1038,9 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain(
       'reportSectionHref(selectedWorkspace, "automation-operations")'
     );
-    expect(onboardingSource).toContain("Open report operations");
+    expect(onboardingSource + read("client/src/locales/en/s6b.json")).toContain(
+      "Open report operations"
+    );
     expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
     expect(onboardingSource).toContain(
       'reportSectionHref(selectedWorkspace, "automation-command-center")'
@@ -3722,8 +3724,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("recommendations.slice(0, 3)");
   });
 
-  it("surfaces report-level favorite pins in the report library", () => {
-  });
+  it("surfaces report-level favorite pins in the report library", () => {});
 
   it("surfaces the five product-depth headers and subgoals", () => {
     expect(reportsSource).toContain("Reporting workflow map");

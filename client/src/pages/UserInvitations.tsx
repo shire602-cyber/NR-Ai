@@ -238,7 +238,7 @@ export default function UserInvitations() {
         actions={
           <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-send-invite">
             <Mail className="w-4 h-4 mr-2" />
-            Send Invitation
+            <T k="s6b.sendInvitation" />
           </Button>
         }
       />
@@ -262,7 +262,9 @@ export default function UserInvitations() {
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Send Client Invitation</DialogTitle>
+            <DialogTitle>
+              <T k="s6b.sendClientInvitation" />
+            </DialogTitle>
             <DialogDescription>
               Invite a new user to access the client portal. They will receive a link to register.
             </DialogDescription>
@@ -289,7 +291,9 @@ export default function UserInvitations() {
                   <SelectValue placeholder="Select a client company" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No company assigned</SelectItem>
+                  <SelectItem value="none">
+                    <T k="s6b.noCompanyAssigned" />
+                  </SelectItem>
                   {clients.map((client) => (
                     <SelectItem key={client.id} value={client.id}>
                       {client.name}
@@ -298,7 +302,7 @@ export default function UserInvitations() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                If assigned, the user will have access to this client's data.
+                <T k="s6b.ifAssignedTheUserWillHave" />
               </p>
             </div>
             <div className="space-y-2">
@@ -318,7 +322,9 @@ export default function UserInvitations() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="role">Access Level</Label>
+              <Label htmlFor="role">
+                <T k="s6b.accessLevel" />
+              </Label>
               <Select name="role" defaultValue="client">
                 <SelectTrigger data-testid="select-invite-role">
                   <SelectValue placeholder="Select access level" />
@@ -349,7 +355,9 @@ export default function UserInvitations() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Invitations</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="s6b.totalInvitations" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{invitations.length}</div>
@@ -396,7 +404,9 @@ export default function UserInvitations() {
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="all">
+                    <T k="s6b.allStatus" />
+                  </SelectItem>
                   <SelectItem value="pending">
                     <T k="pages.pending" />
                   </SelectItem>
@@ -429,7 +439,9 @@ export default function UserInvitations() {
                   <TableHead>
                     <T k="pages.status" />
                   </TableHead>
-                  <TableHead>Expires</TableHead>
+                  <TableHead>
+                    <T k="s6b.expires" />
+                  </TableHead>
                   <TableHead>Sent</TableHead>
                   <TableHead className="text-right">
                     <T k="pages.actions" />
@@ -453,7 +465,9 @@ export default function UserInvitations() {
                             {client.name}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground">Not assigned</span>
+                          <span className="text-muted-foreground">
+                            <T k="s6b.notAssigned" />
+                          </span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -493,7 +507,7 @@ export default function UserInvitations() {
                             {invitation.status === "pending" && !isExpired && (
                               <DropdownMenuItem onClick={() => copyInviteLink(invitation.token)}>
                                 <Copy className="w-4 h-4 mr-2" />
-                                Copy Invite Link
+                                <T k="s6b.copyInviteLink" />
                               </DropdownMenuItem>
                             )}
                             {canResend && (
@@ -502,7 +516,7 @@ export default function UserInvitations() {
                                 disabled={resendInvitationMutation.isPending}
                               >
                                 <RefreshCw className="w-4 h-4 mr-2" />
-                                Resend Invitation
+                                <T k="s6b.resendInvitation" />
                               </DropdownMenuItem>
                             )}
                             {invitation.status === "pending" && (
@@ -514,7 +528,7 @@ export default function UserInvitations() {
                                   disabled={revokeInvitationMutation.isPending}
                                 >
                                   <XCircle className="w-4 h-4 mr-2" />
-                                  Revoke
+                                  <T k="s6b.revoke" />
                                 </DropdownMenuItem>
                               </>
                             )}

@@ -132,13 +132,17 @@ export default function ResetPassword() {
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-lg">Muhasib.ai</span>
+          <span className="font-bold text-lg">
+            {/* i18n-ignore: brand or sample data */}Muhasib.ai
+          </span>
         </Link>
       </div>
 
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">Set a new password</CardTitle>
+          <CardTitle className="text-2xl font-semibold">
+            <T k="s6b.setANewPassword" />
+          </CardTitle>
           <CardDescription>Choose a password of at least 8 characters.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -146,7 +150,9 @@ export default function ResetPassword() {
             <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
               <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-success-subtle-foreground ">Password reset</p>
+                <p className="font-medium text-success-subtle-foreground ">
+                  <T k="s6b.passwordReset" />
+                </p>
                 <p className="text-success mt-0.5">Redirecting you to sign in…</p>
                 <p className="text-muted-foreground mt-1" data-testid="text-sessions-revoked">
                   {locale === "ar" ? RESET_COPY.signedOut.ar : RESET_COPY.signedOut.en}
@@ -161,7 +167,9 @@ export default function ResetPassword() {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>New password</FormLabel>
+                      <FormLabel>
+                        <T k="s6b.newPassword" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -182,7 +190,9 @@ export default function ResetPassword() {
                   name="confirmPassword"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Confirm new password</FormLabel>
+                      <FormLabel>
+                        <T k="s6b.confirmNewPassword" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -214,7 +224,7 @@ export default function ResetPassword() {
           <div className="text-sm text-muted-foreground text-center">
             Need a new link?{" "}
             <Link href="/forgot-password" className="text-primary hover:underline font-medium">
-              Start over
+              <T k="s6b.startOver" />
             </Link>
           </div>
         </CardFooter>

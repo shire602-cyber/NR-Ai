@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
 
 export default function TermsOfService() {
@@ -31,7 +32,9 @@ export default function TermsOfService() {
           You must notify us immediately of any unauthorised access at{" "}
           <a href="mailto:security@muhasib.ai">security@muhasib.ai</a>.
         </li>
-        <li>You are responsible for all activity under your account.</li>
+        <li>
+          <T k="s6b.youAreResponsibleForAllActivity" />
+        </li>
       </ul>
 
       <h2>3. Subscription and Billing</h2>
@@ -120,8 +123,9 @@ export default function TermsOfService() {
 
       <h2>14. Contact</h2>
       <p>
-        Questions about these Terms? Email <a href="mailto:legal@muhasib.ai">legal@muhasib.ai</a> or
-        write to: Najma Al Raeda Accounting LLC, Dubai, United Arab Emirates.
+        <T k="s6b.questionsAboutTheseTermsEmail" />{" "}
+        <a href="mailto:legal@muhasib.ai">legal@muhasib.ai</a> or write to: Najma Al Raeda
+        Accounting LLC, Dubai, United Arab Emirates.
       </p>
     </LegalLayout>
   );

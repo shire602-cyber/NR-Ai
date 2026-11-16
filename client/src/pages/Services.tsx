@@ -396,7 +396,7 @@ export default function Services() {
                 className="text-xl font-bold text-primary cursor-pointer"
                 data-testid="link-logo"
               >
-                Muhasib.ai
+                Muhasib.ai{/* i18n-ignore: brand or sample data */}
               </span>
             </Link>
             <div className="flex items-center gap-3">
@@ -453,9 +453,7 @@ export default function Services() {
                 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight"
                 data-testid="text-hero-headline"
               >
-                <span className="text-primary">
-                  {t.hero.headline}
-                </span>
+                <span className="text-primary">{t.hero.headline}</span>
                 <br />
                 <span className="text-foreground">{t.hero.headlineAccent}</span>
               </h1>

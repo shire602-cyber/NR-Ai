@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { T } from "@/components/layout/T";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,14 +45,20 @@ export default function PortalMessages() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Messages</h2>
-        <p className="text-sm text-muted-foreground mt-1">Communicate with your NR Accounting team.</p>
+        <h2 className="text-xl font-semibold text-foreground">
+          <T k="shell.portalMessages" />
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          <T k="s6b.communicateWithYourNrAccountingTeam" />
+        </p>
       </div>
 
       {/* Compose */}
       <Card>
         <CardContent className="pt-4 space-y-3">
-          <p className="text-sm font-medium text-foreground">New Message</p>
+          <p className="text-sm font-medium text-foreground">
+            <T k="s6b.newMessage" />
+          </p>
           <Input
             placeholder="Subject (optional)"
             value={subject}
@@ -90,7 +97,9 @@ export default function PortalMessages() {
           ) : sorted.length === 0 ? (
             <div className="text-center py-12">
               <MessageSquare className="w-9 h-9 text-muted-foreground/70 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground/70">No messages yet.</p>
+              <p className="text-sm text-muted-foreground/70">
+                <T k="s6b.noMessagesYet" />
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -113,7 +122,7 @@ export default function PortalMessages() {
                   </div>
                   {!msg.isRead && (
                     <span className="inline-block mt-1 text-xs bg-info-subtle text-info rounded px-1.5 py-0.5">
-                      Unread
+                      <T k="s6b.unread" />
                     </span>
                   )}
                 </div>

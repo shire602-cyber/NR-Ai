@@ -83,21 +83,21 @@ export default function Referrals() {
         return (
           <Badge className="bg-success">
             <Trophy className="w-3 h-3 mr-1" />
-            Rewarded
+            <T k="s6b.rewarded" />
           </Badge>
         );
       case "qualified":
         return (
           <Badge className="bg-info">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Qualified
+            <T k="s6b.qualified" />
           </Badge>
         );
       case "signed_up":
         return (
           <Badge className="bg-warning">
             <Users className="w-3 h-3 mr-1" />
-            Signed Up
+            <T k="s6b.signedUp" />
           </Badge>
         );
       case "pending":
@@ -133,27 +133,35 @@ export default function Referrals() {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="s6b.totalReferrals" />
+                </CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-total-referrals">
                   {stats?.totalReferrals || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">People you've invited</p>
+                <p className="text-xs text-muted-foreground">
+                  <T k="s6b.peopleYouVeInvited" />
+                </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Successful</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="s6b.successful" />
+                </CardTitle>
                 <CheckCircle className="h-4 w-4 text-success" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-successful">
                   {stats?.successfulReferrals || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">Qualified referrals</p>
+                <p className="text-xs text-muted-foreground">
+                  <T k="s6b.qualifiedReferrals" />
+                </p>
               </CardContent>
             </Card>
 
@@ -168,20 +176,26 @@ export default function Referrals() {
                 <div className="text-2xl font-bold" data-testid="stat-pending">
                   {stats?.pendingReferrals || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">Awaiting qualification</p>
+                <p className="text-xs text-muted-foreground">
+                  <T k="s6b.awaitingQualification" />
+                </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Rewards Earned</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="s6b.rewardsEarned" />
+                </CardTitle>
                 <DollarSign className="h-4 w-4 text-success" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-rewards">
                   {formatCurrency(stats?.totalRewardsEarned || 0)}
                 </div>
-                <p className="text-xs text-muted-foreground">Total credits earned</p>
+                <p className="text-xs text-muted-foreground">
+                  <T k="s6b.totalCreditsEarned" />
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -190,7 +204,9 @@ export default function Referrals() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" />
-                <CardTitle>Your Referral Link</CardTitle>
+                <CardTitle>
+                  <T k="s6b.yourReferralLink" />
+                </CardTitle>
               </div>
               <CardDescription>
                 Share this link with friends. They get {referralCode?.refereeRewardValue || 20}%
@@ -219,14 +235,16 @@ export default function Referrals() {
                   </Button>
                   <Button onClick={shareReferral} data-testid="button-share-link">
                     <Share2 className="w-4 h-4 mr-2" />
-                    Share
+                    <T k="s6b.share" />
                   </Button>
                 </div>
               </div>
 
               <div className="mt-6 p-4 rounded-lg bg-background border">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Your Referral Code</span>
+                  <span className="text-sm font-medium">
+                    <T k="s6b.yourReferralCode" />
+                  </span>
                   <Badge variant="outline" className="font-mono text-lg px-3">
                     {referralCode?.code || "Loading..."}
                   </Badge>
@@ -240,7 +258,7 @@ export default function Referrals() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Gift className="w-5 h-5" />
-                  How It Works
+                  <T k="s6b.howItWorks" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -250,9 +268,11 @@ export default function Referrals() {
                       <span className="text-sm font-bold text-primary">1</span>
                     </div>
                     <div>
-                      <h4 className="font-medium">Share Your Link</h4>
+                      <h4 className="font-medium">
+                        <T k="s6b.shareYourLink" />
+                      </h4>
                       <p className="text-sm text-muted-foreground">
-                        Send your unique referral link to friends and colleagues
+                        <T k="s6b.sendYourUniqueReferralLinkTo" />
                       </p>
                     </div>
                   </div>
@@ -261,9 +281,11 @@ export default function Referrals() {
                       <span className="text-sm font-bold text-primary">2</span>
                     </div>
                     <div>
-                      <h4 className="font-medium">They Sign Up</h4>
+                      <h4 className="font-medium">
+                        <T k="s6b.theySignUp" />
+                      </h4>
                       <p className="text-sm text-muted-foreground">
-                        Your friend creates an account using your link
+                        <T k="s6b.yourFriendCreatesAnAccountUsing" />
                       </p>
                     </div>
                   </div>
@@ -272,7 +294,9 @@ export default function Referrals() {
                       <span className="text-sm font-bold text-primary">3</span>
                     </div>
                     <div>
-                      <h4 className="font-medium">Both Get Rewarded</h4>
+                      <h4 className="font-medium">
+                        <T k="s6b.bothGetRewarded" />
+                      </h4>
                       <p className="text-sm text-muted-foreground">
                         They get {referralCode?.refereeRewardValue || 20}% off, you get AED{" "}
                         {referralCode?.referrerRewardValue || 50} credit
@@ -287,15 +311,19 @@ export default function Referrals() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Trophy className="w-5 h-5" />
-                  Recent Referrals
+                  <T k="s6b.recentReferrals" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {!stats?.recentReferrals?.length ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No referrals yet</p>
-                    <p className="text-sm">Share your link to get started!</p>
+                    <p>
+                      <T k="s6b.noReferralsYet" />
+                    </p>
+                    <p className="text-sm">
+                      <T k="s6b.shareYourLinkToGetStarted" />
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -322,8 +350,12 @@ export default function Referrals() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Referral Milestones</CardTitle>
-              <CardDescription>Unlock bonus rewards as you refer more users</CardDescription>
+              <CardTitle>
+                <T k="s6b.referralMilestones" />
+              </CardTitle>
+              <CardDescription>
+                <T k="s6b.unlockBonusRewardsAsYouRefer" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">

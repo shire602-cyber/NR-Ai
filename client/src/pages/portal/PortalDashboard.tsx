@@ -16,7 +16,12 @@ function formatAed(n: number) {
 }
 
 function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) {
-  if (!vat) return <Badge variant="outline">No VAT Return</Badge>;
+  if (!vat)
+    return (
+      <Badge variant="outline">
+        <T k="s6b.noVatReturn" />
+      </Badge>
+    );
   const due = new Date(vat.dueDate);
   const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
   if (vat.status === "filed" || vat.status === "submitted") {
@@ -65,7 +70,9 @@ export default function PortalDashboard() {
         <h2 className="text-xl font-semibold text-foreground">
           <T k="pages.overview" />
         </h2>
-        <p className="text-sm text-muted-foreground mt-1">Your account summary at a glance.</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          <T k="s6b.yourAccountSummaryAtAGlance" />
+        </p>
       </div>
 
       {/* Stats */}
@@ -75,7 +82,7 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Outstanding
+                  <T k="reportCenter.outstanding" />
                 </p>
                 <p className="text-2xl font-bold text-foreground mt-1">
                   {formatAed(inv.outstandingTotal ?? 0)}
@@ -158,7 +165,9 @@ export default function PortalDashboard() {
         </CardHeader>
         <CardContent>
           {recentInvoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 py-4 text-center">No invoices yet.</p>
+            <p className="text-sm text-muted-foreground/70 py-4 text-center">
+              <T k="portal.noInvoices" />
+            </p>
           ) : (
             <div className="divide-y divide-border">
               {recentInvoices.map((inv: any) => (

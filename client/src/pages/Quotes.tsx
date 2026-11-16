@@ -340,7 +340,7 @@ export default function Quotes() {
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
-              New Quote
+              <T k="s6b.newQuote" />
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -360,7 +360,9 @@ export default function Quotes() {
                     name="number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Quote Number</FormLabel>
+                        <FormLabel>
+                          <T k="s6b.quoteNumber" />
+                        </FormLabel>
                         <FormControl>
                           <Input {...field} className="font-mono" />
                         </FormControl>
@@ -449,7 +451,9 @@ export default function Quotes() {
                     name="expiryDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Expiry Date</FormLabel>
+                        <FormLabel>
+                          <T k="s6b.expiryDate" />
+                        </FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -776,7 +780,7 @@ export default function Quotes() {
                               disabled={quote.status === "converted"}
                             >
                               <ArrowRightLeft className="w-4 h-4 mr-2" />
-                              Convert to Invoice
+                              <T k="s6b.convertToInvoice" />
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => window.open(`/api/quotes/${quote.id}/pdf`, "_blank")}

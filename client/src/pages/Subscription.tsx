@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useI18n } from "@/lib/i18n";
@@ -241,7 +242,9 @@ export default function Subscription() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Current Plan</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="s6b.currentPlan" />
+              </CardTitle>
               <Badge
                 variant={tierName === "free" ? "secondary" : "default"}
                 className={tierName !== "free" ? "" : ""}
@@ -255,7 +258,9 @@ export default function Subscription() {
           <CardContent className="space-y-4">
             {subscription?.status && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Status</span>
+                <span className="text-muted-foreground">
+                  <T k="banking.common.status" />
+                </span>
                 <Badge variant={subscription.status === "active" ? "default" : "destructive"}>
                   {subscription.status}
                 </Badge>
@@ -263,13 +268,17 @@ export default function Subscription() {
             )}
             {subscription?.billingCycle && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Billing Cycle</span>
+                <span className="text-muted-foreground">
+                  <T k="s6b.billingCycle" />
+                </span>
                 <span className="font-medium capitalize">{subscription.billingCycle}</span>
               </div>
             )}
             {subscription?.currentPeriodEnd && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Current Period Ends</span>
+                <span className="text-muted-foreground">
+                  <T k="s6b.currentPeriodEnds" />
+                </span>
                 <span className="font-medium">
                   {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
                 </span>
@@ -296,9 +305,11 @@ export default function Subscription() {
         {/* Usage Card */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Usage This Month</CardTitle>
+            <CardTitle className="text-lg">
+              <T k="s6b.usageThisMonth" />
+            </CardTitle>
             <CardDescription>
-              Your resource consumption for the current billing period
+              <T k="s6b.yourResourceConsumptionForTheCurrent" />
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -345,7 +356,7 @@ export default function Subscription() {
         <span
           className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}
         >
-          Monthly
+          <T k="firm.cycleMonthly" />
         </span>
         <Switch
           aria-label="Yearly billing"
@@ -355,7 +366,7 @@ export default function Subscription() {
         <span
           className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}
         >
-          Yearly
+          <T k="s6b.yearly" />
         </span>
         {billingCycle === "yearly" && (
           <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
@@ -384,7 +395,7 @@ export default function Subscription() {
             >
               {plan.popular && (
                 <div className="absolute top-0 right-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
-                  Most Popular
+                  <T k="s6b.mostPopular" />
                 </div>
               )}
 
@@ -430,15 +441,11 @@ export default function Subscription() {
                 <div className="pt-2">
                   {isCurrent ? (
                     <Button variant="outline" className="w-full" disabled>
-                      Current Plan
+                      <T k="s6b.currentPlan" />
                     </Button>
                   ) : (
                     <Button
-                      className={`w-full ${
-                        plan.popular
-                          ? "hover:"
-                          : ""
-                      }`}
+                      className={`w-full ${plan.popular ? "hover:" : ""}`}
                       variant={plan.popular ? "default" : "outline"}
                       onClick={() => checkoutMutation.mutate(plan.id)}
                       disabled={checkoutMutation.isPending}
@@ -466,15 +473,21 @@ export default function Subscription() {
       {/* Feature Comparison */}
       <Card>
         <CardHeader>
-          <CardTitle>Feature Comparison</CardTitle>
-          <CardDescription>See what each plan includes at a glance</CardDescription>
+          <CardTitle>
+            <T k="s6b.featureComparison" />
+          </CardTitle>
+          <CardDescription>
+            <T k="s6b.seeWhatEachPlanIncludesAt" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-3 pr-4 font-medium text-muted-foreground">Feature</th>
+                  <th className="text-left py-3 pr-4 font-medium text-muted-foreground">
+                    <T k="s6b.feature" />
+                  </th>
                   {PLANS.map((plan) => (
                     <th key={plan.id} className="text-center py-3 px-4 font-medium">
                       {plan.name}

@@ -349,21 +349,21 @@ export default function VATFiling() {
         return (
           <Badge variant="secondary">
             <Clock className="w-3 h-3 mr-1" />
-            Draft
+            <T k="banking.statement.draft" />
           </Badge>
         );
       case "pending_review":
         return (
           <Badge variant="secondary" className="bg-warning-subtle text-warning-subtle-foreground">
             <AlertTriangle className="w-3 h-3 mr-1" />
-            Review
+            <T k="pages.review" />
           </Badge>
         );
       case "submitted":
         return (
           <Badge variant="default" className="bg-info-subtle text-info-subtle-foreground">
             <Send className="w-3 h-3 mr-1" />
-            Submitted
+            <T k="pages.submitted" />
           </Badge>
         );
       case "filed":
@@ -1378,7 +1378,7 @@ export default function VATFiling() {
             </div>
             {!canGenerateVatReturn && (
               <div className="rounded-md border border-warning/30 bg-warning-subtle p-3 text-sm text-warning-subtle-foreground">
-                Add the company TRN before creating an official VAT draft.
+                <T k="s6b.addTheCompanyTrnBeforeCreating" />
               </div>
             )}
           </div>

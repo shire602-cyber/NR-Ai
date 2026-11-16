@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { T } from "@/components/layout/T";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileSearch, Home, ArrowLeft } from "lucide-react";
@@ -11,19 +12,21 @@ export default function NotFound() {
           <div className="p-4 rounded-full bg-muted mb-6">
             <FileSearch className="h-10 w-10 text-muted-foreground" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Page not found</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">
+            <T k="s6b.pageNotFound" />
+          </h1>
           <p className="text-muted-foreground mb-8 max-w-xs">
-            The page you're looking for doesn't exist or has been moved.
+            <T k="s6b.thePageYouReLookingFor" />
           </p>
           <div className="flex gap-3 w-full">
             <Button variant="outline" onClick={() => window.history.back()} className="flex-1">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Go Back
+              <T k="s6b.goBack" />
             </Button>
             <Link href="/dashboard">
               <Button className="flex-1">
                 <Home className="h-4 w-4 mr-2" />
-                Dashboard
+                <T k="shell.navDashboard" />
               </Button>
             </Link>
           </div>

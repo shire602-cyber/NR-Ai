@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -120,17 +121,17 @@ export default function ReceiptAutopilot() {
                 </div>
                 <Badge variant="secondary" className="text-xs font-medium">
                   <Sparkles className="w-3 h-3 mr-1" />
-                  Receipt Autopilot
+                  <T k="s6b.receiptAutopilot" />
                 </Badge>
                 {stats?.belowThreshold && (
                   <Badge variant="destructive" className="text-xs">
                     <AlertTriangle className="w-3 h-3 mr-1" />
-                    Failsafe Active
+                    <T k="s6b.failsafeActive" />
                   </Badge>
                 )}
               </div>
               <h1 className="text-3xl font-bold mb-2" data-testid="text-autopilot-title">
-                Receipt Autopilot
+                <T k="s6b.receiptAutopilot" />
               </h1>
               <p className="text-muted-foreground">
                 Internal classifier with OpenAI fallback. The system learns your accepted
@@ -148,7 +149,9 @@ export default function ReceiptAutopilot() {
             <Activity className="w-6 h-6 text-success" />
           </div>
           <div className="flex-1">
-            <CardTitle>AI Accuracy</CardTitle>
+            <CardTitle>
+              <T k="s6b.aiAccuracy" />
+            </CardTitle>
             <CardDescription>
               Overall acceptance rate across all classifier methods. Threshold: {thresholdPct}%.
             </CardDescription>
@@ -215,7 +218,7 @@ export default function ReceiptAutopilot() {
                       {METHOD_LABELS[m.method]}
                       {m.method === "openai" && (
                         <Badge variant="outline" className="text-xs">
-                          Fallback
+                          <T k="s6b.fallback" />
                         </Badge>
                       )}
                     </CardTitle>
@@ -263,7 +266,9 @@ export default function ReceiptAutopilot() {
               <ShieldCheck className="w-6 h-6 text-info" />
             </div>
             <div className="flex-1">
-              <CardTitle>Autopilot Settings</CardTitle>
+              <CardTitle>
+                <T k="s6b.autopilotSettings" />
+              </CardTitle>
               <CardDescription>
                 Hybrid mode runs the internal classifier first; OpenAI is used only as a fallback.
               </CardDescription>
@@ -273,7 +278,7 @@ export default function ReceiptAutopilot() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="autopilot-toggle" className="text-base font-semibold">
-                  Auto-post high-confidence receipts
+                  <T k="s6b.autoPostHighConfidenceReceipts" />
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
                   When enabled, receipts matching a rule with ≥5 acceptances and confidence at or
@@ -292,7 +297,7 @@ export default function ReceiptAutopilot() {
             <div className="flex items-center justify-between gap-6">
               <div>
                 <Label htmlFor="autopost-threshold" className="text-base font-semibold">
-                  Auto-post confidence threshold
+                  <T k="s6b.autoPostConfidenceThreshold" />
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
                   Minimum classification confidence before a receipt may post without review

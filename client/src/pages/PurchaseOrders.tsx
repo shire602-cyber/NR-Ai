@@ -417,7 +417,7 @@ export default function PurchaseOrders() {
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
-              New Purchase Order
+              <T k="s6b.newPurchaseOrder" />
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -437,7 +437,9 @@ export default function PurchaseOrders() {
                     name="number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>PO Number</FormLabel>
+                        <FormLabel>
+                          <T k="s6b.poNumber" />
+                        </FormLabel>
                         <FormControl>
                           <Input
                             {...field}
@@ -531,7 +533,9 @@ export default function PurchaseOrders() {
                     name="expectedDeliveryDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Expected Delivery Date</FormLabel>
+                        <FormLabel>
+                          <T k="s6b.expectedDeliveryDate" />
+                        </FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -807,7 +811,9 @@ export default function PurchaseOrders() {
                     <T k="pages.vendor" />
                   </TableHead>
                   <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="font-semibold">Expected Delivery</TableHead>
+                  <TableHead className="font-semibold">
+                    <T k="s6b.expectedDelivery" />
+                  </TableHead>
                   <TableHead className="font-semibold text-right">
                     <T k="pages.total2" />
                   </TableHead>

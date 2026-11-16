@@ -480,7 +480,9 @@ export default function PaymentChasing() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Total outstanding</CardTitle>
+          <CardTitle>
+            <T k="s6b.totalOutstanding" />
+          </CardTitle>
           <CardDescription>
             {overdueQuery.isLoading
               ? "Loading…"
@@ -507,27 +509,27 @@ export default function PaymentChasing() {
         <TabsList>
           <TabsTrigger value="overdue">
             <AlertTriangle className="mr-2 h-4 w-4" />
-            Overdue
+            <T k="invoices.payStatus.overdue" />
           </TabsTrigger>
           <TabsTrigger value="queue">
             <Inbox className="mr-2 h-4 w-4" />
-            Queue
+            <T k="s6b.queue" />
           </TabsTrigger>
           <TabsTrigger value="history">
             <Clock className="mr-2 h-4 w-4" />
-            History
+            <T k="pages.history" />
           </TabsTrigger>
           <TabsTrigger value="effectiveness">
             <BarChart3 className="mr-2 h-4 w-4" />
-            Effectiveness
+            <T k="pages.effectiveness" />
           </TabsTrigger>
           <TabsTrigger value="templates">
             <FileText className="mr-2 h-4 w-4" />
-            Templates
+            <T k="s6b.templates" />
           </TabsTrigger>
           <TabsTrigger value="settings">
             <SettingsIcon className="mr-2 h-4 w-4" />
-            Settings
+            <T k="pages.settings" />
           </TabsTrigger>
         </TabsList>
 
@@ -535,7 +537,9 @@ export default function PaymentChasing() {
         <TabsContent value="overdue">
           <Card>
             <CardHeader>
-              <CardTitle>Overdue invoices</CardTitle>
+              <CardTitle>
+                <T k="s6b.overdueInvoices" />
+              </CardTitle>
               <CardDescription>Sorted by days overdue (oldest first)</CardDescription>
             </CardHeader>
             <CardContent>
@@ -543,20 +547,34 @@ export default function PaymentChasing() {
               {!overdueQuery.isLoading && sortedOverdue.length === 0 && (
                 <div className="text-muted-foreground text-sm py-8 text-center">
                   <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success" />
-                  No overdue invoices. Nice.
+                  <T k="s6b.noOverdueInvoicesNice" />
                 </div>
               )}
               {sortedOverdue.length > 0 && (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="text-right">Outstanding</TableHead>
-                      <TableHead className="text-right">Days overdue</TableHead>
-                      <TableHead>Bucket</TableHead>
-                      <TableHead>Last chase</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>
+                        <T k="invoices.publicInvoice" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="pages.customer" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="reportCenter.outstanding" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="s6b.daysOverdue" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="reportCenter.bucket" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="s6b.lastChase" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="banking.common.actions" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -628,7 +646,9 @@ export default function PaymentChasing() {
         <TabsContent value="queue">
           <Card>
             <CardHeader>
-              <CardTitle>Next chase queue</CardTitle>
+              <CardTitle>
+                <T k="s6b.nextChaseQueue" />
+              </CardTitle>
               <CardDescription>
                 Invoices eligible for the next chase action (frequency ={" "}
                 {queueQuery.data?.config.frequencyDays ?? 7} days, max level ={" "}
@@ -648,7 +668,7 @@ export default function PaymentChasing() {
               )}
               {!queueQuery.isLoading && !queueQuery.isError && queue.length === 0 ? (
                 <div className="text-muted-foreground text-sm py-8 text-center">
-                  Nothing waiting in the queue.
+                  <T k="s6b.nothingWaitingInTheQueue" />
                 </div>
               ) : (
                 !queueQuery.isLoading &&
@@ -656,12 +676,22 @@ export default function PaymentChasing() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Next level</TableHead>
-                        <TableHead className="text-right">Outstanding</TableHead>
+                        <TableHead>
+                          <T k="invoices.publicInvoice" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.customer" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="reportCenter.nextLevel" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="reportCenter.outstanding" />
+                        </TableHead>
                         <TableHead className="text-right">Days</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.action" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -704,7 +734,9 @@ export default function PaymentChasing() {
         <TabsContent value="history">
           <Card>
             <CardHeader>
-              <CardTitle>Chase history</CardTitle>
+              <CardTitle>
+                <T k="s6b.chaseHistory" />
+              </CardTitle>
               <CardDescription>Last 180 days</CardDescription>
             </CardHeader>
             <CardContent>
@@ -724,7 +756,7 @@ export default function PaymentChasing() {
                 !historyQuery.isError &&
                 historyQuery.data?.length === 0 && (
                   <div className="text-muted-foreground text-sm py-8 text-center">
-                    No chase history yet.
+                    <T k="s6b.noChaseHistoryYet" />
                   </div>
                 )}
               {historyQuery.data && historyQuery.data.length > 0 && (
@@ -732,13 +764,25 @@ export default function PaymentChasing() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Sent</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Method</TableHead>
+                      <TableHead>
+                        <T k="portal.level" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="consolidation.method" />
+                      </TableHead>
                       <TableHead>Lang</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Days overdue</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Paid?</TableHead>
+                      <TableHead>
+                        <T k="banking.common.status" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="s6b.daysOverdue" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="banking.common.amount" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="s6b.paid" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -794,7 +838,9 @@ export default function PaymentChasing() {
           <div className="grid gap-4 md:grid-cols-3">
             <Card data-testid="metric-conversion-rate">
               <CardHeader>
-                <CardDescription>Conversion rate</CardDescription>
+                <CardDescription>
+                  <T k="s6b.conversionRate" />
+                </CardDescription>
                 <CardTitle className="text-3xl">
                   {effQuery.isLoading ? (
                     <Skeleton className="h-9 w-20" />
@@ -813,7 +859,9 @@ export default function PaymentChasing() {
             </Card>
             <Card data-testid="metric-avg-days">
               <CardHeader>
-                <CardDescription>Avg days to payment</CardDescription>
+                <CardDescription>
+                  <T k="s6b.avgDaysToPayment" />
+                </CardDescription>
                 <CardTitle className="text-3xl">
                   {effQuery.isLoading ? (
                     <Skeleton className="h-9 w-16" />
@@ -826,7 +874,9 @@ export default function PaymentChasing() {
             </Card>
             <Card data-testid="metric-windowed">
               <CardHeader>
-                <CardDescription>Paid within window</CardDescription>
+                <CardDescription>
+                  <T k="s6b.paidWithinWindow" />
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <div>
@@ -843,13 +893,17 @@ export default function PaymentChasing() {
           </div>
           <Card className="mt-4">
             <CardHeader>
-              <CardTitle>By escalation level</CardTitle>
+              <CardTitle>
+                <T k="s6b.byEscalationLevel" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Level</TableHead>
+                    <TableHead>
+                      <T k="portal.level" />
+                    </TableHead>
                     <TableHead className="text-right">Sent</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead className="text-right">Rate</TableHead>
@@ -882,7 +936,9 @@ export default function PaymentChasing() {
         <TabsContent value="templates">
           <Card>
             <CardHeader>
-              <CardTitle>Message templates</CardTitle>
+              <CardTitle>
+                <T k="s6b.messageTemplates" />
+              </CardTitle>
               <CardDescription>
                 Customize each escalation level. Placeholders:
                 <code className="ml-2 text-xs">
@@ -918,12 +974,18 @@ export default function PaymentChasing() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Level</TableHead>
+                        <TableHead>
+                          <T k="portal.level" />
+                        </TableHead>
                         <TableHead>
                           <T k="pages.language" />
                         </TableHead>
-                        <TableHead>Source</TableHead>
-                        <TableHead>Subject</TableHead>
+                        <TableHead>
+                          <T k="journal.source" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="firm.emailTasksSubject" />
+                        </TableHead>
                         <TableHead className="text-right">Edit</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -958,7 +1020,9 @@ export default function PaymentChasing() {
         <TabsContent value="settings">
           <Card>
             <CardHeader>
-              <CardTitle>Chase configuration</CardTitle>
+              <CardTitle>
+                <T k="s6b.chaseConfiguration" />
+              </CardTitle>
               <CardDescription>
                 Controls how aggressively the autopilot chases overdue invoices
               </CardDescription>
@@ -980,9 +1044,11 @@ export default function PaymentChasing() {
                 <>
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label>Auto-chase enabled</Label>
+                      <Label>
+                        <T k="s6b.autoChaseEnabled" />
+                      </Label>
                       <p className="text-xs text-muted-foreground">
-                        Automatically queue chases as invoices age
+                        <T k="s6b.automaticallyQueueChasesAsInvoicesAge" />
                       </p>
                     </div>
                     <Switch
@@ -1019,7 +1085,9 @@ export default function PaymentChasing() {
                       />
                     </div>
                     <div>
-                      <Label>Max escalation level</Label>
+                      <Label>
+                        <T k="s6b.maxEscalationLevel" />
+                      </Label>
                       <Select
                         value={String(configQuery.data?.maxLevel ?? 4)}
                         onValueChange={(v) => saveConfig.mutate({ maxLevel: Number(v) })}
@@ -1037,7 +1105,9 @@ export default function PaymentChasing() {
                       </Select>
                     </div>
                     <div>
-                      <Label>Default language</Label>
+                      <Label>
+                        <T k="s6b.defaultLanguage" />
+                      </Label>
                       <Select
                         value={configQuery.data?.defaultLanguage ?? "en"}
                         onValueChange={(v) => saveConfig.mutate({ defaultLanguage: v })}
@@ -1046,7 +1116,9 @@ export default function PaymentChasing() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="en">English</SelectItem>
+                          <SelectItem value="en">
+                            <T k="s6b.english" />
+                          </SelectItem>
                           <SelectItem value="ar">العربية</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1063,7 +1135,9 @@ export default function PaymentChasing() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Reminder ready</DialogTitle>
+            <DialogTitle>
+              <T k="s6b.reminderReady" />
+            </DialogTitle>
             <DialogDescription>
               Review the message, then send it by email or copy it into your workflow.
             </DialogDescription>
@@ -1113,7 +1187,9 @@ export default function PaymentChasing() {
       <Dialog open={!!historyInvoiceId} onOpenChange={(open) => !open && setHistoryInvoiceId(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Invoice chase timeline</DialogTitle>
+            <DialogTitle>
+              <T k="s6b.invoiceChaseTimeline" />
+            </DialogTitle>
           </DialogHeader>
           {invoiceHistoryQuery.isLoading && <Skeleton className="h-32" />}
           {invoiceHistoryQuery.isError && (
@@ -1128,7 +1204,9 @@ export default function PaymentChasing() {
             </Alert>
           )}
           {invoiceHistoryQuery.data && invoiceHistoryQuery.data.length === 0 && (
-            <p className="text-sm text-muted-foreground">No chases yet for this invoice.</p>
+            <p className="text-sm text-muted-foreground">
+              <T k="s6b.noChasesYetForThisInvoice" />
+            </p>
           )}
           <div className="space-y-3">
             {invoiceHistoryQuery.data?.map((c) => (
@@ -1266,11 +1344,14 @@ export default function PaymentChasing() {
       <Dialog open={!!bulkResults} onOpenChange={(open) => !open && setBulkResults(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Bulk chase results</DialogTitle>
+            <DialogTitle>
+              <T k="s6b.bulkChaseResults" />
+            </DialogTitle>
             <DialogDescription>
               {bulkResults && (
                 <>
-                  Sent <strong className="text-foreground">{bulkResults.sent}</strong>
+                  <T k="invoices.statusFilter.sent" />{" "}
+                  <strong className="text-foreground">{bulkResults.sent}</strong>
                   {" • "}Skipped <strong className="text-foreground">{bulkResults.skipped}</strong>
                   {" • "}Failed{" "}
                   <strong
@@ -1287,10 +1368,18 @@ export default function PaymentChasing() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Level</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Detail</TableHead>
+                    <TableHead>
+                      <T k="invoices.publicInvoice" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="portal.level" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="banking.common.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="s6b.detail" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1339,7 +1428,7 @@ export default function PaymentChasing() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkResults(null)}>
-              Close
+              <T k="banking.common.close" />
             </Button>
           </DialogFooter>
         </DialogContent>
