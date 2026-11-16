@@ -118,7 +118,7 @@
   "einvoicing.sandbox": "بيئة تجريبية",
   "einvoicing.acubeNotConnected": "غير متصل",
   "einvoicing.acubeNotConnectedTitle": "A-Cube غير متصل بهذا الحساب",
-  "einvoicing.acubeNotConnectedBody": "تُنشأ الفواتير الإلكترونية ويُتحقق منها هنا، لكن لا يُرسل شيء حتى يتم ربط حساب A-Cube. تواصل مع دعم محاسب لإتمام الربط.",
+  "einvoicing.acubeNotConnectedBody": "تُنشأ الفواتير الإلكترونية ويُتحقق منها هنا، لكن لا يُرسل شيء حتى يتم ربط حساب A-Cube. اطلب الربط وسيتولى فريقنا إعداده معك.",
   "einvoicing.leStatus_none": "لم يُربط بعد",
   "einvoicing.leStatus_reserved": "بانتظار إمارات تاكس",
   "einvoicing.leStatus_pending": "قيد الربط",
@@ -169,7 +169,7 @@
   "einvoicing.lastSync": "آخر مزامنة",
   "einvoicing.goLive": "تاريخ التطبيق الخاص بك",
   "einvoicing.goLiveUnset": "اختر شريحة إيراداتك أدناه",
-  "einvoicing.accreditation": "رقم اعتماد وزارة المالية",
+  "einvoicing.accreditation": "رقم اعتماد A-Cube",
   "einvoicing.registerLabel": "السجل الرسمي",
   "einvoicing.registerLink": "عرض في سجل وزارة المالية",
   "einvoicing.timelineTitle": "الجدول الزمني للإلزام",
@@ -185,5 +185,12 @@
   "einvoicing.scopeB2c": "المبيعات للأفراد خارج النطاق حالياً: تُسجّل كالمعتاد دون فوترة إلكترونية.",
   "einvoicing.scopeCreditNotes": "الإشعارات الدائنة فواتير إلكترونية قائمة بذاتها: تُرسل ويُبلغ عنها مثل الفواتير.",
   "einvoicing.scopeVoid": "لا يمكن إلغاء فاتورة إلكترونية مُرسلة؛ صحّحها بإشعار دائن.",
-  "einvoicing.delivery_validated_short": "لم تُرسل"
+  "einvoicing.delivery_validated_short": "لم تُرسل",
+  "einvoicing.requestConnection": "طلب الربط",
+  "einvoicing.requestConnectionSubject": "طلب ربط A-Cube للفوترة الإلكترونية",
+  "einvoicing.headerTitle": "الفاتورة الإلكترونية",
+  "einvoicing.headerDetails": "التفاصيل",
+  "einvoicing.headerFix": "إصلاح",
+  "einvoicing.headerIssueOne": "يلزم توفير «{field}» قبل إرسال هذه الفاتورة الإلكترونية.",
+  "einvoicing.headerIssueMany": "يلزم توفير «{field}» و{count} عناصر أخرى قبل إرسال هذه الفاتورة الإلكترونية."
 }

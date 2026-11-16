@@ -24,7 +24,14 @@ import {
   Newspaper,
   ChevronRight,
   Check,
+  MoreHorizontal,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Notification, RegulatoryNews } from "@shared/schema";
 
 export default function Notifications() {
@@ -174,7 +181,11 @@ export default function Notifications() {
             <Card className="overflow-hidden">
               <ul className="divide-hairline" aria-label={t["components.notificationsTitle"]}>
                 {notificationsData.notifications.map((notification) => {
-                  const copy = localizeNotification(notification, t as Record<string, string>);
+                  const copy = localizeNotification(
+                    notification,
+                    t as Record<string, string>,
+                    locale === "ar" ? "ar" : "en"
+                  );
                   const unread = !notification.isRead;
                   return (
                     <li
@@ -197,7 +208,16 @@ export default function Notifications() {
                             className={`text-body ${unread ? "font-semibold text-foreground" : "font-medium text-foreground/90"}`}
                             dir="auto"
                           >
-                            {copy.title}
+                            {notification.actionUrl ? (
+                              <a
+                                href={notification.actionUrl}
+                                className="after:absolute after:inset-0 after:content-[''] sm:after:hidden"
+                              >
+                                {copy.title}
+                              </a>
+                            ) : (
+                              copy.title
+                            )}
                           </h4>
                           {getPriorityBadge(notification.priority)}
                           {unread && (
@@ -224,7 +244,41 @@ export default function Notifications() {
                           })}
                         </p>
                       </div>
-                      <div className="-me-2 flex shrink-0 flex-col items-center gap-0.5 sm:me-0 sm:flex-row">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="relative z-10 -me-2 shrink-0 text-muted-foreground hover:text-foreground sm:hidden"
+                            aria-label={t["components.notificationMore"]}
+                            data-testid={`button-more-${notification.id}`}
+                          >
+                            <MoreHorizontal aria-hidden />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {notification.actionUrl && (
+                            <DropdownMenuItem asChild>
+                              <a href={notification.actionUrl}>
+                                {t["pageLabels.notificationOpen"]}
+                              </a>
+                            </DropdownMenuItem>
+                          )}
+                          {unread && (
+                            <DropdownMenuItem
+                              onSelect={() => markAsReadMutation.mutate(notification.id)}
+                            >
+                              {t["pageLabels.notificationMarkRead"]}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onSelect={() => dismissMutation.mutate(notification.id)}
+                          >
+                            {t["pageLabels.notificationDismiss"]}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <div className="hidden shrink-0 items-center gap-0.5 sm:flex">
                         {notification.actionUrl && (
                           <Button
                             variant="ghost"

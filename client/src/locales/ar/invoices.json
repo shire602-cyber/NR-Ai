@@ -85,5 +85,7 @@
   "invoices.colDue": "الاستحقاق",
   "invoices.colBalance": "الرصيد",
   "invoices.overdueDays": "متأخر {days} يومًا",
-  "invoices.overdueDay": "متأخر يوم واحد"
+  "invoices.overdueDay": "متأخر يوم واحد",
+  "invoices.einvoiceBuyerHint": "الفوترة الإلكترونية مفعّلة لهذه الشركة. يحتاج المشتري المسجّل في ضريبة القيمة المضافة إلى الشارع والمدينة والإمارة في بيانات جهة الاتصال قبل إصدار هذه الفاتورة كفاتورة إلكترونية.",
+  "invoices.einvoiceBuyerHintLink": "تحديث جهة الاتصال"
 }

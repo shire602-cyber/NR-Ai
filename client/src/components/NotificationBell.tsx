@@ -104,7 +104,11 @@ export function NotificationBell() {
             </p>
           ) : (
             recent.map((n) => {
-              const view = localizeNotification(n, t as Record<string, string>);
+              const view = localizeNotification(
+                n,
+                t as Record<string, string>,
+                locale === "ar" ? "ar" : "en"
+              );
               return (
                 <div
                   key={n.id}

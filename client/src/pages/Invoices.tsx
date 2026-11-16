@@ -78,7 +78,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { einvoiceIssuesFromError, type EInvoiceIssueItem } from "@/lib/einvoice-issues";
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
-import { EInvoicePanel } from "@/components/einvoice/EInvoiceStatus";
+import { EInvoiceHeaderStrip } from "@/components/einvoice/EInvoiceHeaderStrip";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -97,6 +97,7 @@ import {
   Save,
   Info,
   XCircle,
+  AlertTriangle,
   AlertCircle,
   FileSpreadsheet,
   DollarSign,
@@ -339,11 +340,26 @@ export default function Invoices() {
     apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`);
 
   const { data: contacts = [] } = useQuery<
-    Array<{ id: string; name: string; trnNumber?: string | null; emirate?: string | null }>
+    Array<{
+      id: string;
+      name: string;
+      trnNumber?: string | null;
+      emirate?: string | null;
+      address?: string | null;
+      city?: string | null;
+    }>
   >({
     queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
     enabled: !!selectedCompanyId,
   });
+
+  // R1: tell the user up front when the e-invoice buyer-address rule (ibr-144-ae) will bite.
+  const { data: einvoiceSettings } = useQuery<{ scope?: { scope?: string | null } }>({
+    queryKey: ["/api/companies", selectedCompanyId, "einvoicing", "settings"],
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+  const einvoiceEnabled = ["b2b", "b2g", "b2b_b2g"].includes(einvoiceSettings?.scope?.scope ?? "");
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
@@ -1298,7 +1314,10 @@ export default function Invoices() {
                 </DialogHeader>
                 {/* E1: e-invoice status of an issued invoice (re-checked after each save). */}
                 {editingInvoice && editingInvoice.status !== "draft" && (
-                  <EInvoicePanel invoiceId={editingInvoice.id} compact />
+                  <EInvoiceHeaderStrip
+                    invoiceId={editingInvoice.id}
+                    invoiceNumber={editingInvoice.number}
+                  />
                 )}
                 <Form {...form}>
                   <form
@@ -1482,6 +1501,37 @@ export default function Invoices() {
                             )}
                           />
                         </FormGrid>
+                        {einvoiceEnabled &&
+                          (() => {
+                            const buyer = contacts.find((x) => x.id === form.watch("contactId"));
+                            const vatRegistered = /^\d{15}$/.test(
+                              (form.watch("customerTrn") ?? "").trim()
+                            );
+                            const incomplete =
+                              !buyer || !buyer.address || !buyer.city || !buyer.emirate;
+                            if (!vatRegistered || !incomplete) return null;
+                            return (
+                              <div
+                                className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
+                                role="status"
+                                data-testid="einvoice-buyer-address-hint"
+                              >
+                                <AlertTriangle
+                                  aria-hidden
+                                  className="mt-0.5 h-4 w-4 shrink-0 text-warning"
+                                />
+                                <p className="min-w-0 flex-1">
+                                  {t["invoices.einvoiceBuyerHint"]}{" "}
+                                  <Link
+                                    href="/contacts"
+                                    className="font-medium underline underline-offset-4"
+                                  >
+                                    {t["invoices.einvoiceBuyerHintLink"]}
+                                  </Link>
+                                </p>
+                              </div>
+                            );
+                          })()}
                       </FormSection>
 
                       <FormSection

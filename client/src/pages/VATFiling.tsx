@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { statusDotClass } from "@/components/ui/status-meta";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -1108,17 +1109,17 @@ export default function VATFiling() {
                   {
                     label: locale === "ar" ? "إجمالي الإقرارات" : "Total returns",
                     value: String(stats.total),
-                    tone: "text-foreground",
+                    tone: "neutral",
                   },
                   {
                     label: locale === "ar" ? "قيد المراجعة" : "Pending review",
                     value: String(stats.pending),
-                    tone: stats.pending > 0 ? "text-warning" : "text-foreground",
+                    tone: stats.pending > 0 ? "warning" : "neutral",
                   },
                   {
                     label: locale === "ar" ? "مقدَّمة" : "Filed",
                     value: String(stats.filed),
-                    tone: "text-success",
+                    tone: "success",
                   },
                   {
                     label:
@@ -1130,15 +1131,16 @@ export default function VATFiling() {
                           ? "إجمالي الاسترداد"
                           : "Total refundable",
                     value: <Money amount={Math.abs(stats.totalPayable)} />,
-                    tone: stats.totalPayable >= 0 ? "text-destructive" : "text-success",
+                    tone: stats.totalPayable >= 0 ? "info" : "success",
                   },
                 ] as const
               ).map((s) => (
                 <Card key={s.label} className="p-5">
-                  <p className="text-caption font-semibold text-muted-foreground">{s.label}</p>
-                  <p
-                    className={`mt-2 font-display text-2xl leading-none tracking-tight tabular-nums ${s.tone}`}
-                  >
+                  <p className="flex items-center gap-2 text-caption font-semibold text-muted-foreground">
+                    <span aria-hidden className={statusDotClass(s.tone)} />
+                    {s.label}
+                  </p>
+                  <p className="mt-2 font-display text-2xl leading-none tracking-tight tabular-nums text-foreground">
                     {s.value}
                   </p>
                 </Card>

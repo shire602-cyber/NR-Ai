@@ -209,6 +209,15 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
           >
             <p className="font-medium text-foreground">{t["einvoicing.acubeNotConnectedTitle"]}</p>
             <p className="mt-1 text-muted-foreground">{t["einvoicing.acubeNotConnectedBody"]}</p>
+            <Button asChild className="mt-3" data-testid="acube-request-connection">
+              <a
+                href={`mailto:hello@muhasib.ai?subject=${encodeURIComponent(
+                  t["einvoicing.requestConnectionSubject"]
+                )}`}
+              >
+                {t["einvoicing.requestConnection"]}
+              </a>
+            </Button>
           </div>
         ) : (
           <section aria-labelledby="acube-steps-title" className="space-y-3">

@@ -419,5 +419,7 @@
   "components.validation.notMultiple": "Must be a multiple of {n}",
   "components.validation.unknownField": "Unknown field",
   "components.validation.serverGeneric": "The data could not be saved. Check the form and try again.",
-  "components.validation.serverFields": "The data could not be saved. Check these fields: {fields}"
+  "components.validation.serverFields": "The data could not be saved. Check these fields: {fields}",
+  "components.notificationPayrollApproved": "Payroll for {period} was approved.",
+  "components.notificationMore": "More actions"
 }

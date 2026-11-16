@@ -403,10 +403,10 @@
   "pages.notificationChannels": "Notification Channels",
   "pages.notificationTypes": "Notification Types",
   "pages.november": "November",
-  "pages.nrBookkeeperCommandCenter": "NR Bookkeeper Command Center",
+  "pages.nrBookkeeperCommandCenter": "Practice command centre",
   "pages.nrServiceScope": "NR Service Scope",
   "pages.nrServicesForThisClient": "NR services for this client",
-  "pages.nraClientPortfolio": "NRA Client Portfolio",
+  "pages.nraClientPortfolio": "Client portfolio",
   "pages.number": "Number",
   "pages.ocrDrafts": "OCR Drafts",
   "pages.october": "October",
@@ -859,5 +859,7 @@
   "pages.contactsColEmail": "Email",
   "pages.contactsColPhone": "Phone",
   "pages.contactsColLocation": "Location",
-  "pages.contactsColActions": "Actions"
+  "pages.contactsColActions": "Actions",
+  "pages.subscriptionNoRenewal": "No renewal — free plan",
+  "pages.subscriptionRenewal": "Renewal"
 }
