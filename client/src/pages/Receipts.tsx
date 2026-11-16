@@ -171,9 +171,9 @@ function isOcrRetryable(receipt: ProcessedReceipt): boolean {
 }
 
 const receiptSchema = z.object({
-  merchant: z.string().min(1, "Merchant name is required"),
-  date: z.string().min(1, "Date is required"),
-  amount: z.coerce.number().min(0, "Amount must be positive"),
+  merchant: z.string().min(1, "forms.errors.merchantNameRequired"),
+  date: z.string().min(1, "forms.errors.dateRequired"),
+  amount: z.coerce.number().min(0, "forms.errors.amountPositive"),
   vatAmount: z.coerce.number().nullable(),
   category: z.string().nullable(),
   currency: z.string().default("AED"),

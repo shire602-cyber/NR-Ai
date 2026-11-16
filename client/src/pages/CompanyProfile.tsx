@@ -39,12 +39,12 @@ import type { Company } from "@shared/schema";
 
 const companyProfileSchema = z.object({
   // Basic Info
-  name: z.string().min(2, "Company name is required"),
+  name: z.string().min(2, "forms.errors.companyNameRequired"),
   baseCurrency: z.string().default("AED"),
   locale: z.enum(["en", "ar"]).default("en"),
 
   // Company Information
-  legalStructure: z.string().min(1, "Legal structure is required"),
+  legalStructure: z.string().min(1, "forms.errors.legalStructureRequired"),
   industry: z
     .string()
     .transform((val) => val || undefined)
@@ -53,20 +53,20 @@ const companyProfileSchema = z.object({
     .string()
     .transform((val) => val || undefined)
     .optional(),
-  businessAddress: z.string().min(1, "Business address is required"),
+  businessAddress: z.string().min(1, "forms.errors.businessAddressRequired"),
   contactPhone: z
     .string()
     .transform((val) => val || undefined)
     .optional(),
   contactEmail: z
     .string()
-    .email("Invalid email")
+    .email("forms.errors.invalidEmail")
     .or(z.literal(""))
     .transform((val) => val || undefined)
     .optional(),
   websiteUrl: z
     .string()
-    .url("Invalid URL")
+    .url("forms.errors.invalidUrl")
     .or(z.literal(""))
     .transform((val) => val || undefined)
     .optional(),
@@ -78,10 +78,10 @@ const companyProfileSchema = z.object({
   // Tax & Compliance
   trnVatNumber: z
     .string()
-    .min(1, "TRN/VAT Number is required")
-    .regex(/^\d{15}$/, "TRN must be exactly 15 digits"),
-  taxRegistrationType: z.string().min(1, "Tax registration type is required"),
-  vatFilingFrequency: z.string().min(1, "VAT filing frequency is required"),
+    .min(1, "forms.errors.trnRequired")
+    .regex(/^\d{15}$/, "forms.errors.trn15Digits"),
+  taxRegistrationType: z.string().min(1, "forms.errors.taxRegistrationTypeRequired"),
+  vatFilingFrequency: z.string().min(1, "forms.errors.vatFilingFrequencyRequired"),
   taxRegistrationDate: z
     .string()
     .transform((val) => val || undefined)

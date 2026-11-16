@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { localizeMessage, zodErrorMap } from "@/lib/validation-messages";
 import {
   getPreferredReportPersona,
   reportAutomationImpactProfiles,
@@ -289,25 +290,28 @@ function CustomerOnboarding() {
     // shapes the server will obviously reject. Empty TRN is allowed (this
     // step is partially optional), but if supplied it must be 15 digits.
     const localSchema = z.object({
-      name: z.string().trim().min(1, "Company name is required").max(200),
+      name: z.string().trim().min(1, "forms.errors.companyNameRequired").max(200),
       trnVatNumber: z
         .string()
         .trim()
         .optional()
-        .refine((v) => !v || /^[0-9]{15}$/.test(v), "UAE TRN must be exactly 15 digits"),
+        .refine((v) => !v || /^[0-9]{15}$/.test(v), "forms.errors.uaeTrn15Digits"),
       contactEmail: z
         .string()
         .trim()
         .optional()
-        .refine((v) => !v || z.string().email().safeParse(v).success, "Enter a valid email"),
+        .refine(
+          (v) => !v || z.string().email().safeParse(v).success,
+          "forms.errors.enterValidEmail"
+        ),
     });
 
-    const parsed = localSchema.safeParse(companyForm);
+    const parsed = localSchema.safeParse(companyForm, { error: zodErrorMap });
     if (!parsed.success) {
       const fieldErrors: Partial<Record<keyof CompanyFormState, string>> = {};
       for (const issue of parsed.error.issues) {
         const key = issue.path[0] as keyof CompanyFormState;
-        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+        if (!fieldErrors[key]) fieldErrors[key] = localizeMessage(issue.message);
       }
       setCompanyFieldErrors(fieldErrors);
       setCompanySaveError(null);
@@ -338,7 +342,7 @@ function CustomerOnboarding() {
 
       if (status && status >= 400 && status < 500) {
         // Heuristic: route the message back to the most likely field.
-        const lower = message.toLowerCase();
+        const lower = (apiErr?.rawMessage ?? message).toLowerCase();
         if (lower.includes("trn")) {
           setCompanyFieldErrors({ trnVatNumber: message });
         } else if (lower.includes("email")) {
@@ -592,11 +596,11 @@ function WelcomeStep({
   async function handleExpress() {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("Company name is required");
+      setError(tr["forms.errors.companyNameRequired"]);
       return;
     }
     if (trn.trim() && !/^[0-9]{15}$/.test(trn.trim())) {
-      setError("UAE TRN must be exactly 15 digits");
+      setError(tr["forms.errors.uaeTrn15Digits"]);
       return;
     }
     setError(null);
@@ -711,7 +715,7 @@ function WelcomeStep({
           <ArrowRight className="w-4 h-4" />
         </Button>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-start">
           {[
             {
               icon: Building2,
@@ -1147,7 +1151,7 @@ function BankStep({
             ))}
           </CardContent>
         </Card>
-        <StepNav onBack={onBack} onNext={onNext} nextLabel="Continue" />
+        <StepNav onBack={onBack} onNext={onNext} />
       </div>
     );
   }
@@ -1295,7 +1299,7 @@ function FirstDocStep({
             onClick={() => handleOptionClick(action)}
             disabled={completing}
             data-testid={testId}
-            className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
+            className="text-start p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           >
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
               <Icon className="w-5 h-5 text-primary" />
@@ -1869,7 +1873,7 @@ function StepHeader({
 function StepNav({
   onBack,
   onNext,
-  nextLabel = "Continue",
+  nextLabel,
   loading = false,
 }: {
   onBack: () => void;
@@ -1877,11 +1881,13 @@ function StepNav({
   nextLabel?: string;
   loading?: boolean;
 }) {
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   return (
     <div className="flex gap-3">
       <Button variant="outline" onClick={onBack} className="gap-1">
-        <ArrowLeft className="w-4 h-4" />
-        Back
+        <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+        {tr["components.back"]}
       </Button>
       <Button
         onClick={onNext}
@@ -1889,7 +1895,7 @@ function StepNav({
         className="flex-1 gap-2"
         data-testid="onboarding-next"
       >
-        {loading ? "Saving…" : nextLabel}
+        {loading ? tr["forms.saving"] : (nextLabel ?? tr["onboarding.continue"])}
         {!loading && <ArrowRight className="w-4 h-4" />}
       </Button>
     </div>
@@ -1904,16 +1910,18 @@ function StepNav({
 
 type FirmStep = "welcome" | "team" | "clients" | "complete";
 const FIRM_STEPS: FirmStep[] = ["welcome", "team", "clients", "complete"];
-const FIRM_STEP_LABELS: Record<FirmStep, string> = {
-  welcome: "Welcome",
-  team: "Invite your team",
-  clients: "Add your first client",
-  complete: "Ready to go",
+const FIRM_STEP_LABEL_KEYS: Record<FirmStep, string> = {
+  welcome: "onboarding.firm.stepWelcome",
+  team: "onboarding.firm.stepTeam",
+  clients: "onboarding.firm.stepClients",
+  complete: "onboarding.firm.stepComplete",
 };
 
-function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" }) {
+export function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   const [step, setStep] = useState<FirmStep>("welcome");
   const [direction, setDirection] = useState<1 | -1>(1);
 
@@ -1932,7 +1940,7 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
     },
     onError: (err: Error) => {
       toast({
-        title: "Could not finish setup",
+        title: tr["onboarding.firm.setupFailed"],
         description: err.message,
         variant: "destructive",
       });
@@ -2010,9 +2018,12 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
         <div className="px-6 pt-6 max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-muted-foreground">
-              Step {idx + 1} of {FIRM_STEPS.length}
+              {formatMessage(tr["onboarding.firm.stepCounter"], {
+                n: idx + 1,
+                total: FIRM_STEPS.length,
+              })}
             </span>
-            <span className="text-sm text-muted-foreground">{FIRM_STEP_LABELS[step]}</span>
+            <span className="text-sm text-muted-foreground">{tr[FIRM_STEP_LABEL_KEYS[step]]}</span>
           </div>
           <Progress value={progressPercent} className="h-1.5" />
         </div>
@@ -2065,6 +2076,8 @@ function FirmWelcomeStep({
   firmRole: "firm_owner" | "firm_admin";
   onNext: () => void;
 }) {
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   return (
     <div className="text-center space-y-8">
       <div className="flex justify-center">
@@ -2074,23 +2087,37 @@ function FirmWelcomeStep({
       </div>
       <div className="space-y-3">
         <Badge variant="secondary" className="px-3 py-1">
-          {firmRole === "firm_owner" ? "Firm Owner" : "Firm Admin"}
+          {firmRole === "firm_owner"
+            ? tr["onboarding.firm.roleOwner"]
+            : tr["onboarding.firm.roleAdmin"]}
         </Badge>
         <h1 className="text-3xl font-bold tracking-tight">
           <T k="pageLabels.welcomeToYourFirmWorkspace" />
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           {firmRole === "firm_owner"
-            ? "Invite your team, onboard your clients, and manage their books from one place."
-            : "Onboard your assigned clients and start managing their books."}
+            ? tr["onboarding.firm.welcomeOwner"]
+            : tr["onboarding.firm.welcomeAdmin"]}
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
         {[
-          { icon: Users, title: "Team", desc: "Invite staff with the right permissions" },
-          { icon: Building2, title: "Clients", desc: "Onboard companies you manage" },
-          { icon: BarChart3, title: "Analytics", desc: "Firm-wide health and KPIs" },
+          {
+            icon: Users,
+            title: tr["onboarding.firm.cardTeamTitle"],
+            desc: tr["onboarding.firm.cardTeamDesc"],
+          },
+          {
+            icon: Building2,
+            title: tr["onboarding.firm.cardClientsTitle"],
+            desc: tr["onboarding.firm.cardClientsDesc"],
+          },
+          {
+            icon: BarChart3,
+            title: tr["onboarding.firm.cardAnalyticsTitle"],
+            desc: tr["onboarding.firm.cardAnalyticsDesc"],
+          },
         ].map(({ icon: Icon, title, desc }) => (
           <Card key={title} className="border border-border/50">
             <CardContent className="p-4 space-y-2">
@@ -2123,25 +2150,22 @@ function FirmTeamStep({
   onGoTo: (path: string) => void;
   canManageStaff: boolean;
 }) {
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   return (
     <div className="space-y-6">
       <StepHeader
         icon={Users}
-        title="Invite your team"
+        title={tr["onboarding.firm.stepTeam"]}
         description={
-          canManageStaff
-            ? "Add your accountants and assign them to client portfolios."
-            : "Your firm owner manages staff. You can move on to onboarding clients."
+          canManageStaff ? tr["onboarding.firm.teamOwnerDesc"] : tr["onboarding.firm.teamStaffDesc"]
         }
       />
 
       {canManageStaff ? (
         <Card className="border border-border/50">
           <CardContent className="p-5 space-y-3">
-            <p className="text-sm">
-              Open Staff Management in a new tab to send invites — your team gets an email link to
-              set their password and join.
-            </p>
+            <p className="text-sm">{tr["onboarding.firm.teamOwnerBody"]}</p>
             <Button
               variant="outline"
               onClick={() => onGoTo("/firm/staff")}
@@ -2156,14 +2180,12 @@ function FirmTeamStep({
       ) : (
         <Card className="border border-border/50">
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">
-              Staff invitations are managed by the firm owner. Skip ahead to add clients.
-            </p>
+            <p className="text-sm text-muted-foreground">{tr["onboarding.firm.teamStaffBody"]}</p>
           </CardContent>
         </Card>
       )}
 
-      <StepNav onBack={onBack} onNext={onNext} nextLabel="Continue" />
+      <StepNav onBack={onBack} onNext={onNext} />
     </div>
   );
 }
@@ -2179,12 +2201,14 @@ function FirmClientsStep({
   onGoTo: (path: string) => void;
   completing: boolean;
 }) {
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   return (
     <div className="space-y-6">
       <StepHeader
         icon={Building2}
-        title="Add your first client"
-        description="Onboard a client company so you can start managing their books."
+        title={tr["onboarding.firm.stepClients"]}
+        description={tr["onboarding.firm.clientsDesc"]}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2192,7 +2216,7 @@ function FirmClientsStep({
           type="button"
           onClick={() => onGoTo("/firm/clients")}
           disabled={completing}
-          className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
+          className="text-start p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           data-testid="firm-onboarding-add-client"
         >
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
@@ -2202,7 +2226,7 @@ function FirmClientsStep({
             <T k="pageLabels.addAClient" />
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Create a new client workspace and invite their team to the portal.
+            {tr["onboarding.firm.addClientDesc"]}
           </p>
           <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
             <T k="firm.statusOpen" /> <ChevronRight className="w-3 h-3" />
@@ -2212,7 +2236,7 @@ function FirmClientsStep({
           type="button"
           onClick={() => onGoTo("/firm/bulk")}
           disabled={completing}
-          className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
+          className="text-start p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           data-testid="firm-onboarding-bulk"
         >
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
@@ -2222,7 +2246,7 @@ function FirmClientsStep({
             <T k="pageLabels.importInBulk" />
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Migrating from another tool? Bring your client list across with a CSV.
+            {tr["onboarding.firm.bulkDesc"]}
           </p>
           <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
             <T k="firm.statusOpen" /> <ChevronRight className="w-3 h-3" />
@@ -2232,8 +2256,8 @@ function FirmClientsStep({
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} className="gap-1">
-          <ArrowLeft className="w-4 h-4" />
-          Back
+          <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+          {tr["components.back"]}
         </Button>
         <Button
           variant="ghost"
@@ -2242,7 +2266,7 @@ function FirmClientsStep({
           className="flex-1 text-muted-foreground"
           data-testid="firm-onboarding-finish"
         >
-          {completing ? "Finishing…" : "I'll add clients later"}
+          {completing ? tr["onboarding.firm.finishing"] : tr["onboarding.firm.later"]}
         </Button>
       </div>
     </div>
@@ -2250,6 +2274,8 @@ function FirmClientsStep({
 }
 
 function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   return (
     <div className="text-center space-y-8">
       <motion.div
@@ -2267,7 +2293,7 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
           <T k="pageLabels.yourFirmIsSetUp" />
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Jump straight into the client portfolio to start managing books.
+          {tr["onboarding.firm.completeDesc"]}
         </p>
       </div>
       <Button

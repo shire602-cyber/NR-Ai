@@ -142,9 +142,9 @@ const EMIRATE_OPTIONS = [
 ] as const;
 
 const invoiceLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0.01, "Price must be greater than 0"),
+  description: z.string().min(1, "forms.errors.descriptionRequired"),
+  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  unitPrice: z.coerce.number().min(0.01, "forms.errors.priceGreaterThanZero"),
   vatRate: z.coerce.number().default(0.05),
   vatSupplyType: z.enum(SUPPLY_TYPE_OPTIONS).default("standard_rated"),
   // R03-07: line discount in percent (0 = none). Sent as discountType/discountValue.
@@ -173,13 +173,13 @@ const invoiceSchema = z.object({
   // R18-06: the server allocates the gap-free FTA number on save, so new
   // invoices carry no client-side number.
   number: z.string(),
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, "forms.errors.customerNameRequired"),
   customerTrn: z.string().optional(),
   contactId: z.string().optional(),
   placeOfSupplyEmirate: z.string().optional(),
   date: z.date(),
   currency: z.string().default("AED"),
-  lines: z.array(invoiceLineSchema).min(1, "At least one line item is required"),
+  lines: z.array(invoiceLineSchema).min(1, "forms.errors.lineItemRequired"),
 });
 
 const invoiceBrandingSchema = z.object({

@@ -77,20 +77,20 @@ import type { RecurringInvoice } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
 const lineItemSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, "forms.errors.descriptionRequired"),
+  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const recurringInvoiceSchema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, "forms.errors.customerNameRequired"),
   customerTrn: z.string().optional(),
   currency: z.string().default("AED"),
   frequency: z.enum(["weekly", "monthly", "quarterly", "yearly"]),
   startDate: z.date(),
   endDate: z.date().optional().nullable(),
-  lines: z.array(lineItemSchema).min(1, "At least one line item is required"),
+  lines: z.array(lineItemSchema).min(1, "forms.errors.lineItemRequired"),
   // R03-23: draft vs auto-issue, optional auto-send through the email provider.
   autoIssue: z.boolean().default(true),
   autoSend: z.boolean().default(false),

@@ -82,22 +82,22 @@ import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 
 const poLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, "forms.errors.descriptionRequired"),
+  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const purchaseOrderSchema = z.object({
   companyId: z.string().guid(),
-  number: z.string().min(1, "PO number is required"),
-  vendorName: z.string().min(1, "Vendor name is required"),
+  number: z.string().min(1, "forms.errors.poNumberRequired"),
+  vendorName: z.string().min(1, "forms.errors.vendorNameRequired"),
   vendorTrn: z.string().optional(),
   date: z.date(),
   expectedDeliveryDate: z.date(),
   currency: z.string().default("AED"),
   notes: z.string().optional(),
-  lines: z.array(poLineSchema).min(1, "At least one line item is required"),
+  lines: z.array(poLineSchema).min(1, "forms.errors.lineItemRequired"),
 });
 
 type PurchaseOrderFormData = z.infer<typeof purchaseOrderSchema>;

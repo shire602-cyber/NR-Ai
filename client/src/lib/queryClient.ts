@@ -3,6 +3,7 @@ import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
+import { localizeApiError } from "./validation-messages";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
@@ -10,7 +11,9 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     /** Parsed JSON error body (code, issues, details, ...) when the server sent one. */
-    public readonly body?: Record<string, unknown>
+    public readonly body?: Record<string, unknown>,
+    /** The server's own message, unchanged (`message` is Arabic for known errors in Arabic mode). */
+    public readonly rawMessage: string = message
   ) {
     super(message);
     this.name = "ApiError";
@@ -39,7 +42,7 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
-    throw new ApiError(errorMessage, res.status, body);
+    throw new ApiError(localizeApiError(body) ?? errorMessage, res.status, body, errorMessage);
   }
 }
 

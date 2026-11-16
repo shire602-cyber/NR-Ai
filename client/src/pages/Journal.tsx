@@ -92,7 +92,7 @@ import { VirtualList } from "@/components/VirtualList";
 const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
 
 const journalLineSchema = z.object({
-  accountId: z.string().guid("Please select an account"),
+  accountId: z.string().guid("forms.errors.accountRequired"),
   debit: z.coerce.number().min(0).default(0),
   credit: z.coerce.number().min(0).default(0),
 });
@@ -102,7 +102,7 @@ const journalSchema = z
     companyId: z.string().guid(),
     date: z.date(),
     memo: z.string().optional(),
-    lines: z.array(journalLineSchema).min(2, "At least two line items are required"),
+    lines: z.array(journalLineSchema).min(2, "forms.errors.twoLineItemsRequired"),
   })
   .refine(
     (data) => {
@@ -111,7 +111,7 @@ const journalSchema = z
       return totalDebit === totalCredit;
     },
     {
-      message: "Total debits must equal total credits",
+      message: "forms.errors.debitsEqualCredits",
       path: ["lines"],
     }
   );

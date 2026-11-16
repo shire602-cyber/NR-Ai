@@ -144,17 +144,21 @@ const CATEGORIES = [
 
 const assetFormSchema = z
   .object({
-    assetName: z.string().min(1, "Asset name is required"),
+    assetName: z.string().min(1, "forms.errors.assetNameRequired"),
     assetNameAr: z.string().optional().nullable(),
     assetNumber: z.string().optional().nullable(),
-    category: z.string().min(1, "Category is required"),
-    purchaseDate: z.string().min(1, "Purchase date is required"),
-    purchaseCost: z.coerce.number().min(0, "Purchase cost must be >= 0"),
-    salvageValue: z.coerce.number().min(0, "Salvage value must be >= 0").optional().nullable(),
+    category: z.string().min(1, "forms.errors.categoryRequired"),
+    purchaseDate: z.string().min(1, "forms.errors.purchaseDateRequired"),
+    purchaseCost: z.coerce.number().min(0, "forms.errors.purchaseCostNonNegative"),
+    salvageValue: z.coerce
+      .number()
+      .min(0, "forms.errors.salvageValueNonNegative")
+      .optional()
+      .nullable(),
     // Land (IAS 16) has no useful life; every other category needs one.
     usefulLifeYears: z.preprocess(
       (v) => (v === "" || v === null || v === undefined ? null : v),
-      z.coerce.number().int().min(1, "Useful life must be at least 1 year").nullable()
+      z.coerce.number().int().min(1, "forms.errors.usefulLifeMin1").nullable()
     ),
     depreciationMethod: z.enum(["straight_line", "declining_balance"]).optional().nullable(),
     location: z.string().optional().nullable(),
@@ -163,15 +167,15 @@ const assetFormSchema = z
     paymentAccountId: z.string().optional().nullable(),
   })
   .refine((v) => v.category.trim().toLowerCase() === "land" || !!v.usefulLifeYears, {
-    message: "Useful life is required for depreciable assets",
+    message: "forms.errors.usefulLifeRequired",
     path: ["usefulLifeYears"],
   });
 
 type AssetFormData = z.infer<typeof assetFormSchema>;
 
 const disposeFormSchema = z.object({
-  disposalDate: z.string().min(1, "Disposal date is required"),
-  disposalAmount: z.coerce.number().min(0, "Disposal amount must be >= 0"),
+  disposalDate: z.string().min(1, "forms.errors.disposalDateRequired"),
+  disposalAmount: z.coerce.number().min(0, "forms.errors.disposalAmountNonNegative"),
   proceedsAccountId: z.string().optional().nullable(),
   onCredit: z.boolean().optional(),
   buyerName: z.string().optional().nullable(),

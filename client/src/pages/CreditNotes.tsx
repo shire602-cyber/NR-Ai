@@ -59,23 +59,23 @@ import { Plus, CalendarIcon, Trash2, Download, FileText, Loader2, Ban } from "lu
 import { cn } from "@/lib/utils";
 
 const creditNoteLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, "forms.errors.descriptionRequired"),
+  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const creditNoteSchema = z.object({
   companyId: z.string().guid(),
-  number: z.string().min(1, "Credit note number is required"),
+  number: z.string().min(1, "forms.errors.creditNoteNumberRequired"),
   invoiceId: z.string().optional(),
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, "forms.errors.customerNameRequired"),
   customerTrn: z.string().optional(),
   date: z.date(),
-  reason: z.string().min(1, "Reason is required"),
+  reason: z.string().min(1, "forms.errors.reasonRequired"),
   // S1 (W4-B): product lines go back into stock (default) or are written off.
   restock: z.boolean().default(true),
-  lines: z.array(creditNoteLineSchema).min(1, "At least one line item is required"),
+  lines: z.array(creditNoteLineSchema).min(1, "forms.errors.lineItemRequired"),
 });
 
 type CreditNoteFormData = z.infer<typeof creditNoteSchema>;

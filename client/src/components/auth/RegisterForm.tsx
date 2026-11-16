@@ -32,14 +32,14 @@ import { OAuthButtons } from "./OAuthButtons";
 // when supplied it must match the FTA's 15-digit format so the company record
 // isn't seeded with a malformed value that breaks VAT filing later.
 const registerSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z.string().min(2, "components.validation.nameMin2"),
+  email: z.string().email("components.validation.emailInvalid"),
+  password: z.string().min(8, "components.validation.passwordMin8"),
   trn: z
     .string()
     .trim()
     .optional()
-    .refine((v) => !v || /^[0-9]{15}$/.test(v), "UAE TRN must be exactly 15 digits"),
+    .refine((v) => !v || /^[0-9]{15}$/.test(v), "forms.errors.uaeTrn15Digits"),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;

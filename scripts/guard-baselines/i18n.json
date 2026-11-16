@@ -4,8 +4,9 @@
   "justified": 21,
   "pagesHardcoded": 0,
   "componentsHardcoded": 0,
-  "pagesImportingTranslation": 164,
+  "pagesImportingTranslation": 163,
   "pages": 182,
   "libHooksHardcoded": 0,
-  "libHooksJustified": 255
+  "libHooksJustified": 255,
+  "blindSpotHardcoded": 846
 }

@@ -294,9 +294,9 @@ interface AgingReport {
 // ===========================
 
 const billLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unit_price: z.coerce.number().min(0, "Price must be non-negative"),
+  description: z.string().min(1, "forms.errors.descriptionRequired"),
+  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  unit_price: z.coerce.number().min(0, "forms.errors.priceNonNegative"),
   vat_rate: z.coerce.number().default(5),
   vat_supply_type: z.string().default("standard_rated"),
   account_id: z.string().optional(),
@@ -304,7 +304,7 @@ const billLineSchema = z.object({
 });
 
 const billFormSchema = z.object({
-  vendor_name: z.string().min(1, "Vendor name is required"),
+  vendor_name: z.string().min(1, "forms.errors.vendorNameRequired"),
   vendor_trn: z.string().optional(),
   bill_number: z.string().optional(),
   bill_date: z.date(),
@@ -318,12 +318,12 @@ const billFormSchema = z.object({
   place_of_supply: z.string().optional(),
   category: z.string().optional(),
   notes: z.string().optional(),
-  line_items: z.array(billLineSchema).min(1, "At least one line item is required"),
+  line_items: z.array(billLineSchema).min(1, "forms.errors.lineItemRequired"),
 });
 
 const paymentFormSchema = z.object({
   payment_date: z.date(),
-  amount: z.coerce.number().min(0.01, "Amount must be positive"),
+  amount: z.coerce.number().min(0.01, "forms.errors.amountPositive"),
   payment_method: z.string().default("bank_transfer"),
   payment_account_id: z.string().optional(),
   exchange_rate: z.string().optional(),
