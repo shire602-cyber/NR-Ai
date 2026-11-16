@@ -13,6 +13,7 @@ import { getCtProfile, listRelatedParties } from "./corporate-tax/repository";
 import { getVatWorkpaperDetail, listVatWorkpapers } from "./firm-vat-workspace.service";
 import type {
   EvidenceAuditEntry,
+  EvidenceCopyRef,
   EvidenceCenterResponse,
   EvidenceIssue,
   EvidenceOwnerAction,
@@ -22,6 +23,12 @@ import type {
   EvidenceWorkflow,
   EvidenceWorkflowId,
 } from "../../shared/evidence-center";
+import {
+  EVIDENCE_AUDIT_TEMPLATES,
+  describeEvidenceText,
+  evidenceCopy,
+  parseServerCopy,
+} from "../../shared/server-copy";
 import {
   formatEvidenceRequestDraft,
   scoreEvidenceReadiness,
@@ -106,6 +113,31 @@ async function optionalRows<T = AnyRecord>(sql: string, params: unknown[]): Prom
   } catch {
     return [];
   }
+}
+
+/**
+ * Request-scoped registry that pairs every English sentence composed for the payload with its
+ * stable key + params (shared/server-copy.ts EVIDENCE_TEMPLATES). The English text stays in the
+ * payload (exports, back-compat); the client renders `copy` from its en/ar catalogs.
+ */
+function createEvidenceCopy() {
+  const byText = new Map<string, EvidenceCopyRef>();
+  /** English sentence for `key`, remembered so `ref(text)` can return its descriptor. */
+  const ec = (key: string, params: Record<string, string | number> = {}): string => {
+    const { text, copy } = evidenceCopy(key, params);
+    byText.set(text, copy);
+    return text;
+  };
+  /** Adopt a sentence composed elsewhere (month-end checklist) when it matches a known template. */
+  const adopt = (text: string | null | undefined): string => {
+    const value = text ?? "";
+    const d = describeEvidenceText(value);
+    if (d) byText.set(value, d);
+    return value;
+  };
+  const ref = (text: string | null | undefined): EvidenceCopyRef | undefined =>
+    text ? byText.get(text) : undefined;
+  return { ec, adopt, ref };
 }
 
 function makeIssue(input: EvidenceIssue): EvidenceIssue {
@@ -776,6 +808,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     throw new Error("Company not found");
   }
 
+  const { ec, adopt, ref } = createEvidenceCopy();
   const quarter = currentQuarter();
   const month = currentMonth();
   const [invoices, receipts, _vatReturns, ctReturns, complianceTasks] = await Promise.all([
@@ -889,10 +922,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       id: "company:missing-trn",
       severity: "critical",
       workflowId: "missing_evidence",
-      title: "Company TRN is missing",
-      detail: "VAT and official filing drafts need the company TRN before they can be finalized.",
+      title: ec("evidence.issue.missingTrn.title"),
+      detail: ec("evidence.issue.missingTrn.detail"),
       href: "/company-profile",
-      actionLabel: "Add TRN",
+      actionLabel: ec("evidence.action.addTrn"),
     });
     missingEvidence.push(issue);
     filingRiskScan.push({ ...issue, workflowId: "filing_risk_scan" });
@@ -904,11 +937,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: "vat:no-workpaper",
         severity: "warning",
         workflowId: "refund_pack",
-        title: "No VAT evidence workpaper exists yet",
-        detail:
-          "Create the period workpaper before relying on VAT return or refund support totals.",
+        title: ec("evidence.issue.noWorkpaper.title"),
+        detail: ec("evidence.issue.noWorkpaper.detail"),
         href: "/vat-filing",
-        actionLabel: "Open VAT workpaper",
+        actionLabel: ec("evidence.action.openVatWorkpaper"),
       })
     );
   }
@@ -919,10 +951,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: "vat:draft-rows",
         severity: "warning",
         workflowId: "filing_risk_scan",
-        title: `${draftVatRows.length} VAT workpaper row(s) still draft`,
-        detail: "Draft rows are excluded from VAT 201 totals until reviewed and approved.",
+        title: ec("evidence.issue.draftRows.title", { count: draftVatRows.length }),
+        detail: ec("evidence.issue.draftRows.detail"),
         href: "/vat-filing",
-        actionLabel: "Review rows",
+        actionLabel: ec("evidence.action.reviewRows"),
       })
     );
   }
@@ -934,14 +966,18 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `vat-input-proof:${row.id}`,
           severity: "warning",
           workflowId: "refund_pack",
-          title: `Input VAT proof needed for ${row.invoiceNumber || row.counterpartyName || "row"}`,
-          detail:
-            "Refund support is stronger when each input VAT row links to the source tax invoice or receipt.",
+          title: (() => {
+            const rowRef = String(row.invoiceNumber || row.counterpartyName || "");
+            return rowRef
+              ? ec("evidence.issue.inputProof.title", { ref: rowRef })
+              : ec("evidence.issue.inputProofRow.title");
+          })(),
+          detail: ec("evidence.issue.inputProof.detail"),
           sourceType: "vat_workpaper_row",
           sourceId: row.id,
           href: "/vat-filing",
           amount: toMoney(row.vatAmount),
-          actionLabel: "Attach proof",
+          actionLabel: ec("evidence.action.attachProof"),
         })
       );
     }
@@ -951,9 +987,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `vat-input-trn:${row.id}`,
           severity: "warning",
           workflowId: "filing_risk_scan",
-          title: `Supplier TRN missing on ${row.invoiceNumber || "input VAT row"}`,
-          detail:
-            "Input VAT recovery may be challenged when the supplier TRN is absent from the evidence row.",
+          title: row.invoiceNumber
+            ? ec("evidence.issue.supplierTrn.title", { ref: String(row.invoiceNumber) })
+            : ec("evidence.issue.supplierTrnRow.title"),
+          detail: ec("evidence.issue.supplierTrn.detail"),
           sourceType: "vat_workpaper_row",
           sourceId: row.id,
           href: "/vat-filing",
@@ -969,13 +1006,17 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: `document-requirement:${requirement.id}`,
         severity: overdue ? "critical" : "warning",
         workflowId: "missing_evidence",
-        title: `Missing ${String(requirement.document_type).replace(/_/g, " ")}`,
+        title: ec("evidence.issue.docRequirement.title", {
+          type: String(requirement.document_type).replace(/_/g, " "),
+        }),
         detail: (requirement.description ||
-          `Required document is ${requirement.status}.`) as string,
+          ec("evidence.issue.docRequirement.detail", {
+            status: String(requirement.status),
+          })) as string,
         sourceType: "document_requirement",
         sourceId: requirement.id as string | null | undefined,
         href: "/document-vault",
-        actionLabel: "Request document",
+        actionLabel: ec("evidence.action.requestDocument"),
       })
     );
   }
@@ -988,13 +1029,15 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `receipt-proof:${receipt.id}`,
           severity: "warning",
           workflowId: "refund_pack",
-          title: `Tax invoice image missing for ${receipt.merchant || "receipt"}`,
-          detail: "Claimed input VAT should be backed by a readable tax invoice or receipt image.",
+          title: receipt.merchant
+            ? ec("evidence.issue.receiptImage.title", { merchant: String(receipt.merchant) })
+            : ec("evidence.issue.receiptImageGeneric.title"),
+          detail: ec("evidence.issue.receiptImage.detail"),
           sourceType: "receipt",
           sourceId: receipt.id,
           href: "/receipts",
           amount: toMoney(receipt.vatAmount),
-          actionLabel: "Upload receipt",
+          actionLabel: ec("evidence.action.uploadReceipt"),
         })
       );
     }
@@ -1004,8 +1047,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `receipt-unposted:${receipt.id}`,
           severity: "warning",
           workflowId: "filing_risk_scan",
-          title: `Input VAT receipt is not posted`,
-          detail: `${receipt.merchant || "Receipt"} has VAT but is not posted to the ledger yet.`,
+          title: ec("evidence.issue.receiptUnposted.title"),
+          detail: receipt.merchant
+            ? ec("evidence.issue.receiptUnposted.detail", { merchant: String(receipt.merchant) })
+            : ec("evidence.issue.receiptUnpostedGeneric.detail"),
           sourceType: "receipt",
           sourceId: receipt.id,
           href: "/receipts",
@@ -1021,9 +1066,8 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `invoice-customer-trn:${invoice.id}`,
           severity: "info",
           workflowId: "filing_risk_scan",
-          title: `Customer TRN missing on invoice ${invoice.number}`,
-          detail:
-            "Output VAT is still reported, but missing customer tax details weaken evidence quality.",
+          title: ec("evidence.issue.customerTrn.title", { number: String(invoice.number) }),
+          detail: ec("evidence.issue.customerTrn.detail"),
           sourceType: "invoice",
           sourceId: invoice.id,
           href: "/invoices",
@@ -1036,8 +1080,8 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `invoice-draft:${invoice.id}`,
           severity: "warning",
           workflowId: "filing_risk_scan",
-          title: `Draft invoice in VAT period: ${invoice.number}`,
-          detail: "Draft invoices are not issued evidence and should be resolved before filing.",
+          title: ec("evidence.issue.draftInvoice.title", { number: String(invoice.number) }),
+          detail: ec("evidence.issue.draftInvoice.detail"),
           sourceType: "invoice",
           sourceId: invoice.id,
           href: "/invoices",
@@ -1053,8 +1097,13 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           id: `vendor-bill-pending:${bill.id}`,
           severity: "warning",
           workflowId: "filing_risk_scan",
-          title: `Supplier bill pending: ${bill.bill_number || bill.vendor_name || "bill"}`,
-          detail: "Pending supplier bills with VAT should be approved before claiming input VAT.",
+          title:
+            bill.bill_number || bill.vendor_name
+              ? ec("evidence.issue.billPending.title", {
+                  ref: String(bill.bill_number || bill.vendor_name),
+                })
+              : ec("evidence.issue.billPendingGeneric.title"),
+          detail: ec("evidence.issue.billPending.detail"),
           sourceType: "vendor_bill",
           sourceId: bill.id as string | null | undefined,
           href: "/bill-pay",
@@ -1070,10 +1119,12 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: "bank:unreconciled",
         severity: "warning",
         workflowId: "month_end_cockpit",
-        title: `${bankSummary.unreconciled} bank transaction(s) unreconciled this month`,
-        detail: "Close and tax evidence should be reviewed after bank reconciliation is current.",
+        title: ec("evidence.issue.bankUnreconciled.title", {
+          count: String(bankSummary.unreconciled),
+        }),
+        detail: ec("evidence.issue.bankUnreconciled.detail"),
         href: "/bank-reconciliation",
-        actionLabel: "Reconcile bank",
+        actionLabel: ec("evidence.action.reconcileBank"),
       })
     );
   }
@@ -1084,10 +1135,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: "ct:no-return",
         severity: "warning",
         workflowId: "corporate_tax_workpaper",
-        title: "Corporate tax workpaper is not started",
-        detail: "Start a CT workpaper so taxable-profit adjustments can be tracked from evidence.",
+        title: ec("evidence.issue.ctNotStarted.title"),
+        detail: ec("evidence.issue.ctNotStarted.detail"),
         href: "/corporate-tax",
-        actionLabel: "Open corporate tax",
+        actionLabel: ec("evidence.action.openCorporateTax"),
       })
     );
   } else if (!Array.isArray((latestCtReturn.workpaper as AnyRecord | undefined)?.adjustments)) {
@@ -1096,9 +1147,8 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: `ct:no-adjustments:${latestCtReturn.id}`,
         severity: "info",
         workflowId: "corporate_tax_workpaper",
-        title: "Corporate tax bridge has no adjustment review",
-        detail:
-          "Confirm disallowable expenses, exempt income, related-party items, and loss relief before filing.",
+        title: ec("evidence.issue.ctNoAdjustments.title"),
+        detail: ec("evidence.issue.ctNoAdjustments.detail"),
         href: "/corporate-tax",
         sourceType: "corporate_tax_return",
         sourceId: latestCtReturn.id as string | null | undefined,
@@ -1112,10 +1162,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: `month-end:${item.id}`,
         severity: "warning",
         workflowId: "month_end_cockpit",
-        title: item.title,
-        detail: item.details || item.description,
+        title: adopt(item.title),
+        detail: adopt(item.details || item.description),
         href: "/month-end",
-        actionLabel: "Open close",
+        actionLabel: ec("evidence.action.openClose"),
       })
     );
   }
@@ -1126,8 +1176,12 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         id: `compliance-task:${task.id}`,
         severity: "critical",
         workflowId: "filing_timeline",
-        title: `Overdue: ${task.title}`,
-        detail: `Due ${isoDate(task.dueDate)?.slice(0, 10) || "date unknown"}.`,
+        title: ec("evidence.issue.overdueTask.title", { title: String(task.title) }),
+        detail: isoDate(task.dueDate)
+          ? ec("evidence.issue.overdueTask.detail", {
+              date: String(isoDate(task.dueDate)).slice(0, 10),
+            })
+          : ec("evidence.issue.overdueTaskNoDate.detail"),
         href: "/compliance-calendar",
         sourceType: "compliance_task",
         sourceId: task.id as string | null | undefined,
@@ -1139,7 +1193,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     ...outputVatRows.slice(0, 8).map(
       (row: AnyRecord): EvidenceProofLine => ({
         id: `vat-output:${row.id}`,
-        label: "VAT output row",
+        label: ec("evidence.proof.label.vatOutput"),
         sourceType: "vat_workpaper_row",
         sourceId: row.id as string | null | undefined,
         sourceDocumentId: (row.sourceDocumentId ?? null) as string | null | undefined,
@@ -1151,10 +1205,12 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         status: row.status as string,
         proofStatus: row.sourceDocumentId ? "ready" : "needs_review",
         documentStatus: row.sourceDocumentId ? "attached" : "needs_review",
-        documentLabel: row.sourceDocumentId ? "Linked source document" : "No source file linked",
+        documentLabel: row.sourceDocumentId
+          ? ec("evidence.proof.doc.linkedSource")
+          : ec("evidence.proof.doc.noSourceLinked"),
         documentPreview: row.sourceDocumentId
-          ? `Document ${row.sourceDocumentId} linked to this output VAT row.`
-          : "Review whether the generated invoice or source document is linked before filing.",
+          ? ec("evidence.proof.preview.outputLinked", { id: String(row.sourceDocumentId) })
+          : ec("evidence.proof.preview.outputUnlinked"),
         documentHref: row.sourceDocumentId ? "/document-vault" : "/vat-filing",
         attachmentCount: row.sourceDocumentId ? 1 : 0,
         href: "/vat-filing",
@@ -1163,7 +1219,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     ...inputVatRows.slice(0, 8).map(
       (row: AnyRecord): EvidenceProofLine => ({
         id: `vat-input:${row.id}`,
-        label: "VAT input row",
+        label: ec("evidence.proof.label.vatInput"),
         sourceType: "vat_workpaper_row",
         sourceId: row.id as string | null | undefined,
         sourceDocumentId: (row.sourceDocumentId ?? null) as string | null | undefined,
@@ -1175,10 +1231,12 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         status: row.status as string,
         proofStatus: row.sourceDocumentId ? "ready" : "needs_review",
         documentStatus: row.sourceDocumentId ? "attached" : "missing",
-        documentLabel: row.sourceDocumentId ? "Linked tax invoice" : "Tax invoice not linked",
+        documentLabel: row.sourceDocumentId
+          ? ec("evidence.proof.doc.linkedTaxInvoice")
+          : ec("evidence.proof.doc.taxInvoiceNotLinked"),
         documentPreview: row.sourceDocumentId
-          ? `Document ${row.sourceDocumentId} supports the input VAT claim.`
-          : "Input VAT recovery should have a readable supplier tax invoice or receipt image.",
+          ? ec("evidence.proof.preview.inputLinked", { id: String(row.sourceDocumentId) })
+          : ec("evidence.proof.preview.inputUnlinked"),
         documentHref: row.sourceDocumentId ? "/document-vault" : "/vat-filing",
         attachmentCount: row.sourceDocumentId ? 1 : 0,
         href: "/vat-filing",
@@ -1187,7 +1245,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     ...periodInvoices.slice(0, 6).map(
       (invoice: AnyRecord): EvidenceProofLine => ({
         id: `invoice:${invoice.id}`,
-        label: "Sales invoice",
+        label: ec("evidence.proof.label.salesInvoice"),
         sourceType: "invoice",
         sourceId: invoice.id as string | null | undefined,
         documentNumber: invoice.number as string | null | undefined,
@@ -1198,11 +1256,14 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         status: invoice.status as string,
         proofStatus: invoice.status === "draft" ? "needs_review" : "ready",
         documentStatus: invoice.status === "draft" ? "needs_review" : "generated",
-        documentLabel: invoice.status === "draft" ? "Draft invoice" : "Generated invoice record",
+        documentLabel:
+          invoice.status === "draft"
+            ? ec("evidence.proof.doc.draftInvoice")
+            : ec("evidence.proof.doc.generatedInvoice"),
         documentPreview:
           invoice.status === "draft"
-            ? "Draft invoices are not issued evidence until finalized."
-            : "Invoice record is available from the sales module.",
+            ? ec("evidence.proof.preview.draftInvoice")
+            : ec("evidence.proof.preview.invoiceAvailable"),
         documentHref: "/invoices",
         attachmentCount: invoice.status === "draft" ? 0 : 1,
         href: "/invoices",
@@ -1213,7 +1274,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       const hasSourceText = Boolean(receipt.rawText);
       return {
         id: `receipt:${receipt.id}`,
-        label: "Purchase receipt",
+        label: ec("evidence.proof.label.purchaseReceipt"),
         sourceType: "receipt",
         sourceId: receipt.id as string | null | undefined,
         documentNumber: (receipt.invoiceNumber ?? receipt.receiptNumber ?? null) as
@@ -1228,15 +1289,15 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         proofStatus: hasImage || hasSourceText ? "ready" : "missing",
         documentStatus: hasImage ? "attached" : hasSourceText ? "source_text" : "missing",
         documentLabel: hasImage
-          ? "Receipt image attached"
+          ? ec("evidence.proof.doc.receiptAttached")
           : hasSourceText
-            ? "OCR/source text only"
-            : "Receipt image missing",
+            ? ec("evidence.proof.doc.ocrOnly")
+            : ec("evidence.proof.doc.receiptMissing"),
         documentPreview: hasImage
-          ? "Readable receipt image is attached to this source row."
+          ? ec("evidence.proof.preview.receiptAttached")
           : hasSourceText
-            ? "Source text exists, but a readable tax invoice image is stronger refund support."
-            : "No readable source file is attached for this input VAT claim.",
+            ? ec("evidence.proof.preview.sourceTextOnly")
+            : ec("evidence.proof.preview.receiptMissing"),
         documentHref: "/receipts",
         attachmentCount: hasImage ? 1 : 0,
         href: "/receipts",
@@ -1271,8 +1332,8 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       status: task.status as string,
       consequence:
         task.category === "vat_filing"
-          ? "VAT penalties, blocked refund support, or late payment exposure."
-          : "Compliance task can block close, filing, or document readiness.",
+          ? ec("evidence.timeline.consequence.vat")
+          : ec("evidence.timeline.consequence.task"),
       readinessScore:
         task.status === "completed" ? 100 : new Date(task.dueDate as string | Date) < now ? 20 : 70,
       href: "/compliance-calendar",
@@ -1282,11 +1343,11 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
   if (latestVatWorkpaper) {
     timeline.push({
       id: `vat-workpaper:${latestVatWorkpaper.id}`,
-      title: "VAT workpaper due",
+      title: ec("evidence.timeline.vatWorkpaperDue"),
       dueDate: isoDate(latestVatWorkpaper.dueDate) || new Date().toISOString(),
       category: "vat_filing",
       status: latestVatWorkpaper.status,
-      consequence: "Incomplete evidence can delay filing and weaken refund support.",
+      consequence: ec("evidence.timeline.consequence.vatWorkpaper"),
       readinessScore: scoreFromOpenItems(draftVatRows.length, vatRows.length || 1),
       href: "/vat-filing",
     });
@@ -1298,11 +1359,11 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     const ctDueDate = ctFilingDeadline(ctIsoDay(latestCtReturn.taxPeriodEnd));
     timeline.push({
       id: `ct:${latestCtReturn.id}`,
-      title: "Corporate tax filing deadline",
+      title: ec("evidence.timeline.ctDeadline"),
       dueDate: `${ctDueDate}T00:00:00.000Z`,
       category: "corporate_tax",
       status: latestCtReturn.status as string,
-      consequence: "Unreviewed taxable-profit adjustments can create incorrect CT exposure.",
+      consequence: ec("evidence.timeline.consequence.ct"),
       readinessScore: latestCtReturn.status === "filed" ? 100 : latestCtReturn.workpaper ? 75 : 45,
       href: "/corporate-tax",
     });
@@ -1340,47 +1401,47 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       title: firstCritical.title,
       detail: firstCritical.detail,
       href: firstCritical.href || "/evidence-center",
-      actionLabel: firstCritical.actionLabel || "Resolve now",
+      actionLabel: firstCritical.actionLabel || ec("evidence.action.resolveNow"),
     });
   }
   if (refundExposure > 0) {
     ownerActions.push({
       id: "refund-pack",
       priority: "now",
-      title: `Refund support needed for AED ${refundExposure.toLocaleString("en-AE")}`,
-      detail: `${refundProofGaps.length} evidence gap(s) should be closed before relying on the refund claim.`,
+      title: ec("evidence.owner.refund.title", { amount: refundExposure.toLocaleString("en-AE") }),
+      detail: ec("evidence.owner.refund.detail", { count: refundProofGaps.length }),
       href: "/vat-filing",
-      actionLabel: "Build refund pack",
+      actionLabel: ec("evidence.action.buildRefundPack"),
     });
   }
   if (incompleteCloseItems.length > 0) {
     ownerActions.push({
       id: "month-end",
       priority: "next",
-      title: `${incompleteCloseItems.length} month-end check(s) open`,
-      detail: "Close the month before trusting tax, reports, or cash decisions.",
+      title: ec("evidence.owner.monthEnd.title", { count: incompleteCloseItems.length }),
+      detail: ec("evidence.owner.monthEnd.detail"),
       href: "/month-end",
-      actionLabel: "Open close cockpit",
+      actionLabel: ec("evidence.action.openCloseCockpit"),
     });
   }
   if (!latestCtReturn) {
     ownerActions.push({
       id: "ct-workpaper",
       priority: "next",
-      title: "Start the corporate tax workpaper",
-      detail: "Pull revenue and expense totals into the CT bridge and review UAE tax adjustments.",
+      title: ec("evidence.owner.ct.title"),
+      detail: ec("evidence.owner.ct.detail"),
       href: "/corporate-tax",
-      actionLabel: "Open CT workpaper",
+      actionLabel: ec("evidence.action.openCtWorkpaper"),
     });
   }
   if (ownerActions.length === 0) {
     ownerActions.push({
       id: "monitor",
       priority: "monitor",
-      title: "Evidence pack is in good shape",
-      detail: "Keep recording source rows and proof links as new documents arrive.",
+      title: ec("evidence.owner.monitor.title"),
+      detail: ec("evidence.owner.monitor.detail"),
       href: "/evidence-center",
-      actionLabel: "Monitor evidence",
+      actionLabel: ec("evidence.action.monitorEvidence"),
     });
   }
 
@@ -1404,141 +1465,163 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
   const workflows: EvidenceWorkflow[] = [
     workflow({
       id: "refund_pack",
-      title: "Refund Pack Builder",
+      title: ec("evidence.workflow.refundPack.title"),
       score: refundScore,
       metric:
         refundExposure > 0
-          ? `AED ${refundExposure.toLocaleString("en-AE")} refund exposure`
-          : "No refund exposure",
-      description:
-        "Builds a refund-ready support pack from input VAT rows, attachments, and evidence gaps.",
+          ? ec("evidence.workflow.refundPack.metric", {
+              amount: refundExposure.toLocaleString("en-AE"),
+            })
+          : ec("evidence.workflow.refundPack.noExposure"),
+      description: ec("evidence.workflow.refundPack.description"),
       primaryHref: "/vat-filing",
-      primaryAction: "Open VAT evidence",
+      primaryAction: ec("evidence.action.openVatEvidence"),
       bullets: [
-        `${inputVatRows.length} approved input VAT row(s)`,
-        `${refundProofGaps.length} refund evidence gap(s)`,
-        `${documentCategoryCount.get("tax_certificate") || 0} tax certificate document(s) in vault`,
+        ec("evidence.workflow.refundPack.bullet.inputRows", { count: inputVatRows.length }),
+        ec("evidence.workflow.refundPack.bullet.gaps", { count: refundProofGaps.length }),
+        ec("evidence.workflow.refundPack.bullet.certs", {
+          count: documentCategoryCount.get("tax_certificate") || 0,
+        }),
       ],
       issues: refundProofGaps,
       proofCount: inputVatRows.length,
     }),
     workflow({
       id: "proof_drilldown",
-      title: "Every Number Has Proof",
+      title: ec("evidence.workflow.proof.title"),
       score: proofScore,
-      metric: `${proofReady}/${proofDrilldowns.length} proof lines ready`,
-      description:
-        "Shows the exact invoices, receipts, and workpaper rows behind each headline number.",
+      metric: ec("evidence.workflow.proof.metric", {
+        ready: proofReady,
+        total: proofDrilldowns.length,
+      }),
+      description: ec("evidence.workflow.proof.description"),
       primaryHref: "/evidence-center#proof-drilldown",
-      primaryAction: "Review proof",
+      primaryAction: ec("evidence.action.reviewProof"),
       bullets: [
-        `VAT output rows: ${outputVatRows.length}`,
-        `VAT input rows: ${inputVatRows.length}`,
-        `Current-period invoices: ${periodInvoices.length}`,
+        ec("evidence.workflow.proof.bullet.output", { count: outputVatRows.length }),
+        ec("evidence.workflow.proof.bullet.input", { count: inputVatRows.length }),
+        ec("evidence.workflow.proof.bullet.invoices", { count: periodInvoices.length }),
       ],
       issues: openMissingEvidence.filter((issue) => issue.sourceType === "vat_workpaper_row"),
       proofCount: proofDrilldowns.length,
     }),
     workflow({
       id: "corporate_tax_workpaper",
-      title: "Corporate Tax Workpaper",
+      title: ec("evidence.workflow.ct.title"),
       score: ctScore,
       metric: latestCtReturn
-        ? `AED ${corporateTaxPayable.toLocaleString("en-AE")} CT payable`
-        : "Not started",
-      description:
-        "Turns accounting profit into a taxable-profit bridge with add-backs, deductions, relief, and loss review.",
+        ? ec("evidence.workflow.ct.metric", {
+            amount: corporateTaxPayable.toLocaleString("en-AE"),
+          })
+        : ec("evidence.workflow.ct.notStarted"),
+      description: ec("evidence.workflow.ct.description"),
       primaryHref: "/corporate-tax",
-      primaryAction: "Open corporate tax",
+      primaryAction: ec("evidence.action.openCorporateTax"),
       bullets: [
-        latestCtReturn ? `Latest status: ${latestCtReturn.status}` : "No CT return found",
-        latestCtReturn?.workpaper ? "Workpaper data exists" : "Adjustment review needed",
-        "Uses UAE zero-rate band and existing CT computation engine",
+        latestCtReturn
+          ? ec("evidence.workflow.ct.bullet.status", { status: String(latestCtReturn.status) })
+          : ec("evidence.workflow.ct.bullet.noReturn"),
+        latestCtReturn?.workpaper
+          ? ec("evidence.workflow.ct.bullet.workpaperExists")
+          : ec("evidence.workflow.ct.bullet.adjustmentNeeded"),
+        ec("evidence.workflow.ct.bullet.engine"),
       ],
       issues: allIssues.filter((issue) => issue.workflowId === "corporate_tax_workpaper"),
       proofCount: latestCtReturn ? 1 : 0,
     }),
     workflow({
       id: "missing_evidence",
-      title: "Missing Evidence Inbox",
+      title: ec("evidence.workflow.missing.title"),
       score: missingScore,
-      metric: `${openMissingEvidence.length} open item(s)`,
-      description:
-        "Collects missing documents, TRNs, tax invoices, and source proof into one queue.",
+      metric: ec("evidence.workflow.missing.metric", { count: openMissingEvidence.length }),
+      description: ec("evidence.workflow.missing.description"),
       primaryHref: "/evidence-center#missing-evidence",
-      primaryAction: "Work inbox",
+      primaryAction: ec("evidence.action.workInbox"),
       bullets: [
-        `${openDocumentRequirements.length} document requirement(s) open`,
-        `${periodReceipts.length} receipt(s) scanned in VAT period`,
-        `${openMissingEvidence.filter((issue) => issue.severity === "critical").length} critical blocker(s)`,
+        ec("evidence.workflow.missing.bullet.requirements", {
+          count: openDocumentRequirements.length,
+        }),
+        ec("evidence.workflow.missing.bullet.receipts", { count: periodReceipts.length }),
+        ec("evidence.workflow.missing.bullet.critical", {
+          count: openMissingEvidence.filter((issue) => issue.severity === "critical").length,
+        }),
       ],
       issues: openMissingEvidence,
       proofCount: documentRows.length,
     }),
     workflow({
       id: "client_request_autopilot",
-      title: "Client Request Autopilot",
+      title: ec("evidence.workflow.request.title"),
       score: openMissingEvidence.length ? 90 : 100,
-      metric: `${requestDraft.itemCount} request item(s) drafted`,
-      description:
-        "Creates a focused draft message for missing evidence without sending anything automatically.",
+      metric: ec("evidence.workflow.request.metric", { count: requestDraft.itemCount }),
+      description: ec("evidence.workflow.request.description"),
       primaryHref: "/evidence-center#request-draft",
-      primaryAction: "Review draft",
+      primaryAction: ec("evidence.action.reviewDraft"),
       bullets: [
-        "Draft only - no email, WhatsApp, or upload side effect",
-        "Uses current missing evidence queue",
-        "Reminds users not to send OTPs or credentials",
+        ec("evidence.workflow.request.bullet.draftOnly"),
+        ec("evidence.workflow.request.bullet.queue"),
+        ec("evidence.workflow.request.bullet.otp"),
       ],
       issues: [],
       proofCount: requestDraft.itemCount,
     }),
     workflow({
       id: "month_end_cockpit",
-      title: "Month-End Close Cockpit",
+      title: ec("evidence.workflow.monthEnd.title"),
       score: closeScore,
-      metric: `${closeChecklist.length - incompleteCloseItems.length}/${closeChecklist.length} checks complete`,
-      description:
-        "Combines bank, invoices, receipts, anomaly review, AI inbox, reports, and lock readiness.",
+      metric: ec("evidence.workflow.monthEnd.metric", {
+        done: closeChecklist.length - incompleteCloseItems.length,
+        total: closeChecklist.length,
+      }),
+      description: ec("evidence.workflow.monthEnd.description"),
       primaryHref: "/month-end",
-      primaryAction: "Open month-end",
+      primaryAction: ec("evidence.action.openMonthEnd"),
       bullets: [
-        `${Number(bankSummary.reconciled || 0)}/${Number(bankSummary.total || 0)} bank transaction(s) reconciled`,
-        `${incompleteCloseItems.length} close blocker(s)`,
-        `Period ${isoDay(month.start)} to ${isoDay(month.end)}`,
+        ec("evidence.workflow.monthEnd.bullet.bank", {
+          reconciled: Number(bankSummary.reconciled || 0),
+          total: Number(bankSummary.total || 0),
+        }),
+        ec("evidence.workflow.monthEnd.bullet.blockers", { count: incompleteCloseItems.length }),
+        ec("evidence.workflow.monthEnd.bullet.period", {
+          start: isoDay(month.start),
+          end: isoDay(month.end),
+        }),
       ],
       issues: openFilingRiskScan.filter((issue) => issue.workflowId === "month_end_cockpit"),
       proofCount: closeChecklist.length,
     }),
     workflow({
       id: "filing_risk_scan",
-      title: "Error Detector Before Filing",
+      title: ec("evidence.workflow.risk.title"),
       score: riskScore,
-      metric: `${openFilingRiskScan.length} risk signal(s)`,
-      description:
-        "Flags missing TRNs, draft rows, unposted input VAT, pending bills, and close blockers.",
+      metric: ec("evidence.workflow.risk.metric", { count: openFilingRiskScan.length }),
+      description: ec("evidence.workflow.risk.description"),
       primaryHref: "/evidence-center#risk-scan",
-      primaryAction: "Review risks",
+      primaryAction: ec("evidence.action.reviewRisks"),
       bullets: [
-        `${openFilingRiskScan.filter((issue) => issue.severity === "critical").length} critical risk(s)`,
-        `${draftVatRows.length} draft VAT workpaper row(s)`,
-        `${vendorBillRows.length} supplier bill(s) in VAT period`,
+        ec("evidence.workflow.risk.bullet.critical", {
+          count: openFilingRiskScan.filter((issue) => issue.severity === "critical").length,
+        }),
+        ec("evidence.workflow.risk.bullet.draftRows", { count: draftVatRows.length }),
+        ec("evidence.workflow.risk.bullet.bills", { count: vendorBillRows.length }),
       ],
       issues: openFilingRiskScan,
       proofCount: openFilingRiskScan.length,
     }),
     workflow({
       id: "smart_excel_import",
-      title: "Smart Import From Excel",
+      title: ec("evidence.workflow.excel.title"),
       score: latestVatWorkpaper ? 95 : 75,
-      metric: latestVatWorkpaper ? "VAT paste/import ready" : "Create workpaper first",
-      description:
-        "Accepts spreadsheet-style VAT rows and maps columns such as Date, Vendor, Sr. Number, and Amount.",
+      metric: latestVatWorkpaper
+        ? ec("evidence.workflow.excel.ready")
+        : ec("evidence.workflow.excel.createFirst"),
+      description: ec("evidence.workflow.excel.description"),
       primaryHref: "/vat-filing",
-      primaryAction: "Paste VAT rows",
+      primaryAction: ec("evidence.action.pasteVatRows"),
       bullets: [
-        "Supports tab-delimited Excel paste",
-        "Normalizes DD/MM/YYYY evidence dates",
-        "Defaults pasted rows into the active VAT category",
+        ec("evidence.workflow.excel.bullet.tab"),
+        ec("evidence.workflow.excel.bullet.dates"),
+        ec("evidence.workflow.excel.bullet.category"),
       ],
       issues: latestVatWorkpaper
         ? []
@@ -1547,33 +1630,42 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     }),
     workflow({
       id: "filing_timeline",
-      title: "Filing Timeline With Consequences",
+      title: ec("evidence.workflow.timeline.title"),
       score: scoreFromOpenItems(overdueTimelineCount, timeline.length),
-      metric: `${timeline.length} deadline(s) tracked`,
-      description: "Shows deadlines together with the operational consequence and readiness score.",
+      metric: ec("evidence.workflow.timeline.metric", { count: timeline.length }),
+      description: ec("evidence.workflow.timeline.description"),
       primaryHref: "/compliance-calendar",
-      primaryAction: "Open calendar",
+      primaryAction: ec("evidence.action.openCalendar"),
       bullets: [
-        `${overdueTimelineCount} overdue deadline(s)`,
-        `${openComplianceTasks.length} open compliance task(s)`,
-        "VAT and CT deadlines are tied back to evidence readiness",
+        ec("evidence.workflow.timeline.bullet.overdue", { count: overdueTimelineCount }),
+        ec("evidence.workflow.timeline.bullet.openTasks", { count: openComplianceTasks.length }),
+        ec("evidence.workflow.timeline.bullet.tied"),
       ],
       issues: openFilingRiskScan.filter((issue) => issue.workflowId === "filing_timeline"),
       proofCount: timeline.length,
     }),
     workflow({
       id: "owner_actions",
-      title: "Owner-Friendly What Should I Do?",
+      title: ec("evidence.workflow.owner.title"),
       score: readinessScore,
-      metric: `${ownerActions.length} recommended action(s)`,
-      description: "Translates accounting evidence into plain business actions for the owner.",
+      metric: ec("evidence.workflow.owner.metric", { count: ownerActions.length }),
+      description: ec("evidence.workflow.owner.description"),
       primaryHref: "/evidence-center#owner-actions",
-      primaryAction: "Review actions",
+      primaryAction: ec("evidence.action.reviewActions"),
       bullets: ownerActions.slice(0, 3).map((action) => action.title),
       issues: allIssues.filter((issue) => issue.severity === "critical"),
       proofCount: ownerActions.length,
     }),
   ];
+
+  const withIssueCopy = (issue: EvidenceIssue): EvidenceIssue => ({
+    ...issue,
+    copy: {
+      title: ref(issue.title),
+      detail: ref(issue.detail),
+      actionLabel: ref(issue.actionLabel),
+    },
+  });
 
   return {
     company: {
@@ -1601,14 +1693,43 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       purchaseEvidenceAmount,
       corporateTaxPayable,
     },
-    workflows,
-    missingEvidence: auditedMissingEvidence.slice(0, 50),
-    filingRiskScan: auditedFilingRiskScan.slice(0, 50),
-    proofDrilldowns,
-    filingTimeline: timeline.slice(0, 20),
-    ownerActions: ownerActions.slice(0, 6),
+    workflows: workflows.map((item) => ({
+      ...item,
+      copy: {
+        title: ref(item.title),
+        metric: ref(item.metric),
+        description: ref(item.description),
+        primaryAction: ref(item.primaryAction),
+        bullets: item.bullets.map((bullet) => ref(bullet) ?? null),
+      },
+    })),
+    missingEvidence: auditedMissingEvidence.slice(0, 50).map(withIssueCopy),
+    filingRiskScan: auditedFilingRiskScan.slice(0, 50).map(withIssueCopy),
+    proofDrilldowns: proofDrilldowns.map((line) => ({
+      ...line,
+      copy: {
+        label: ref(line.label),
+        documentLabel: ref(line.documentLabel),
+        documentPreview: ref(line.documentPreview),
+      },
+    })),
+    filingTimeline: timeline.slice(0, 20).map((item) => ({
+      ...item,
+      copy: { title: ref(item.title), consequence: ref(item.consequence) },
+    })),
+    ownerActions: ownerActions.slice(0, 6).map((action) => ({
+      ...action,
+      copy: {
+        title: ref(action.title),
+        detail: ref(action.detail),
+        actionLabel: ref(action.actionLabel),
+      },
+    })),
     refundPack,
-    actionTrail: actionTrail.slice(0, 20),
+    actionTrail: actionTrail.slice(0, 20).map((entry) => {
+      const description = parseServerCopy(entry.description, EVIDENCE_AUDIT_TEMPLATES);
+      return description ? { ...entry, copy: { description } } : entry;
+    }),
     clientRequestDraft: requestDraft,
   };
 }
@@ -2012,7 +2133,14 @@ export interface CtEvidencePack {
     relatedPartyTransactionsTotal: number;
   } | null;
   deferredTax: { net: number; itemCount: number } | null;
-  checks: Array<{ key: string; label: string; passed: boolean; detail: string }>;
+  checks: Array<{
+    key: string;
+    label: string;
+    passed: boolean;
+    detail: string;
+    /** Stable keys + params for the client catalogs (English label/detail stay for the workbook). */
+    copy?: { label: EvidenceCopyRef; detail: EvidenceCopyRef };
+  }>;
   readinessScore: number;
   adviserReviewPending: boolean;
   workbookFilename: string;
@@ -2069,44 +2197,58 @@ export async function buildCtEvidencePack(companyId: string): Promise<CtEvidence
   const tp = wp.transferPricing as AnyRecord | undefined;
   const periodEnd = latest ? ctIsoDay(latest.taxPeriodEnd) : "";
   const checks: CtEvidencePack["checks"] = [];
-  checks.push({
-    key: "return_exists",
-    label: "Corporate tax return prepared for the latest period",
-    passed: Boolean(latest),
-    detail: latest ? `Status: ${latest.status}` : "No corporate tax return yet",
-  });
-  checks.push({
-    key: "computed",
-    label: "Computation run on the books",
-    passed: Boolean(wp.computation),
-    detail: wp.computedAt ? `Computed ${String(wp.computedAt).slice(0, 10)}` : "Not computed",
-  });
-  checks.push({
-    key: "reviewed",
-    label: "Reviewed by a second person",
-    passed: Boolean(latest?.reviewedBy),
-    detail: latest?.reviewedBy ? "Reviewer recorded" : "No reviewer recorded",
-  });
+  const addCheck = (
+    key: string,
+    passed: boolean,
+    detailKey: string,
+    detailParams: Record<string, string | number> = {}
+  ) => {
+    const label = evidenceCopy(`evidence.ct.check.${key}`);
+    const detail = evidenceCopy(detailKey, detailParams);
+    checks.push({
+      key,
+      label: label.text,
+      passed,
+      detail: detail.text,
+      copy: { label: label.copy, detail: detail.copy },
+    });
+  };
+  addCheck(
+    "return_exists",
+    Boolean(latest),
+    latest ? "evidence.ct.detail.status" : "evidence.ct.detail.noReturn",
+    latest ? { status: String(latest.status) } : {}
+  );
+  addCheck(
+    "computed",
+    Boolean(wp.computation),
+    wp.computedAt ? "evidence.ct.detail.computedOn" : "evidence.ct.detail.notComputed",
+    wp.computedAt ? { date: String(wp.computedAt).slice(0, 10) } : {}
+  );
+  addCheck(
+    "reviewed",
+    Boolean(latest?.reviewedBy),
+    latest?.reviewedBy ? "evidence.ct.detail.reviewerRecorded" : "evidence.ct.detail.noReviewer"
+  );
   const unsupported = adjustments.filter((a) => a.support === "missing").length;
-  checks.push({
-    key: "adjustments_supported",
-    label: "Every adjustment has support (ledger account or notes)",
-    passed: unsupported === 0,
-    detail:
-      adjustments.length === 0
-        ? "No adjustments"
-        : `${adjustments.length - unsupported} of ${adjustments.length} adjustments supported`,
-  });
+  addCheck(
+    "adjustments_supported",
+    unsupported === 0,
+    adjustments.length === 0
+      ? "evidence.ct.detail.noAdjustments"
+      : "evidence.ct.detail.adjustmentsSupported",
+    adjustments.length === 0
+      ? {}
+      : { supported: adjustments.length - unsupported, total: adjustments.length }
+  );
   const needsRegister =
     Boolean(tp?.disclosureFormRequired) || Number(tp?.relatedPartyTransactionsTotal) > 0;
-  checks.push({
-    key: "related_party_register",
-    label: "Related-party register maintained",
-    passed: !needsRegister || relatedParties.length > 0,
-    detail: needsRegister
-      ? `${relatedParties.length} related parties recorded`
-      : "No related-party activity found",
-  });
+  addCheck(
+    "related_party_register",
+    !needsRegister || relatedParties.length > 0,
+    needsRegister ? "evidence.ct.detail.relatedRecorded" : "evidence.ct.detail.noRelatedActivity",
+    needsRegister ? { count: relatedParties.length } : {}
+  );
   const readinessScore = Math.round((checks.filter((c) => c.passed).length / checks.length) * 100);
   const slug =
     String(company.name ?? "company")

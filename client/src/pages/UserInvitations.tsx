@@ -52,18 +52,13 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format, formatDistanceToNow, isAfter } from "date-fns";
+import { formatDistanceToNow, isAfter } from "date-fns";
+import { dateFnsOptions } from "@/lib/date-locale";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import type { Invitation, Company } from "@shared/schema";
 
-const SSO_LABELS = {
-  title: "Single sign-on",
-  configured: "configured",
-  notConfigured: "not configured",
-  saml: "SAML",
-};
-
 export default function UserInvitations() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -247,16 +242,20 @@ export default function UserInvitations() {
       {sso && (
         <Card data-testid="card-sso-status">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">{SSO_LABELS.title}</CardTitle>
+            <CardTitle className="text-base">{t["portal.sso.title"]}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2 text-sm">
             {sso.providers.map((p) => (
               <Badge key={p.id} variant={p.configured ? "default" : "secondary"}>
-                {p.label}: {p.configured ? SSO_LABELS.configured : SSO_LABELS.notConfigured}
+                {p.label}:{" "}
+                {p.configured ? t["portal.sso.configured"] : t["portal.sso.notConfigured"]}
               </Badge>
             ))}
-            <Badge variant="outline" title={sso.saml.externalAction.en}>
-              {SSO_LABELS.saml}: {sso.saml.status}
+            <Badge
+              variant="outline"
+              title={locale === "ar" ? sso.saml.externalAction.ar : sso.saml.externalAction.en}
+            >
+              {t["portal.sso.saml"]}: {t[`portal.sso.status.${sso.saml.status}`] ?? sso.saml.status}
             </Badge>
           </CardContent>
         </Card>
@@ -332,8 +331,8 @@ export default function UserInvitations() {
                   <SelectValue placeholder={t["portal.inviteSelectAccess"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="client">Standard (view their company only)</SelectItem>
-                  <SelectItem value="staff">Staff (admin access)</SelectItem>
+                  <SelectItem value="client">{t["portal.invitations.roleStandard"]}</SelectItem>
+                  <SelectItem value="staff">{t["portal.invitations.roleStaff"]}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -439,14 +438,14 @@ export default function UserInvitations() {
                   <TableHead>
                     <T k="pages.client" />
                   </TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead>{t["portal.invitations.role"]}</TableHead>
                   <TableHead>
                     <T k="pages.status" />
                   </TableHead>
                   <TableHead>
                     <T k="pageLabels.expires" />
                   </TableHead>
-                  <TableHead>Sent</TableHead>
+                  <TableHead>{t["portal.invitations.sent"]}</TableHead>
                   <TableHead data-numeric>
                     <T k="pages.actions" />
                   </TableHead>
@@ -476,7 +475,7 @@ export default function UserInvitations() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={invitation.role === "staff" ? "default" : "secondary"}>
-                          {invitation.role}
+                          {t[`portal.invitations.roleValue.${invitation.role}`] ?? invitation.role}
                         </Badge>
                       </TableCell>
                       <TableCell>{getStatusBadge(invitation)}</TableCell>
@@ -485,6 +484,7 @@ export default function UserInvitations() {
                           <span className={isExpired ? "text-destructive" : ""}>
                             {formatDistanceToNow(new Date(invitation.expiresAt), {
                               addSuffix: true,
+                              ...dateFnsOptions(locale),
                             })}
                           </span>
                         ) : (
@@ -493,7 +493,7 @@ export default function UserInvitations() {
                       </TableCell>
                       <TableCell>
                         {invitation.createdAt
-                          ? format(new Date(invitation.createdAt), "MMM d, yyyy")
+                          ? formatDisplayDate(invitation.createdAt, locale)
                           : "-"}
                       </TableCell>
                       <TableCell data-numeric>

@@ -136,5 +136,9 @@
   "firm.valueOpsReviewerQueue": "Reviewer queue",
   "firm.valueOpsServiceAr": "NRA service AR",
   "firm.valueOpsScoreDefense": "Defense",
-  "firm.revenueOpportunitiesRefreshed": "Revenue opportunities refreshed"
+  "firm.revenueOpportunitiesRefreshed": "Revenue opportunities refreshed",
+  "firm.staff.pendingCount": "{count} pending",
+  "firm.staff.clientCount": "{count} client(s)",
+  "firm.staff.assignedLabel": "assigned",
+  "firm.staff.noTrn": "No TRN"
 }

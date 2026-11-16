@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
@@ -53,9 +53,12 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
+import { localizeEvidenceText } from "@shared/server-copy";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
   EvidenceCenterResponse,
+  EvidenceCopyRef,
   EvidenceIssue,
   EvidenceOwnerAction,
   EvidenceProofLine,
@@ -86,21 +89,6 @@ function scoreTone(score: number) {
   if (score >= 80) return "text-success";
   if (score >= 55) return "text-warning";
   return "text-destructive";
-}
-
-function statusLabel(status: string) {
-  return status.replace(/_/g, " ");
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("en-AE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 function severityBadge(issue: Pick<EvidenceIssue, "severity">) {
@@ -159,11 +147,17 @@ interface CtEvidencePackSummary {
     taxPeriodEnd: string;
     filingDeadline: string;
   } | null;
-  checks: Array<{ key: string; label: string; passed: boolean; detail: string }>;
+  checks: Array<{
+    key: string;
+    label: string;
+    passed: boolean;
+    detail: string;
+    copy?: { label: EvidenceCopyRef; detail: EvidenceCopyRef };
+  }>;
 }
 
 export default function EvidenceCenter() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { toast } = useToast();
   const search = useSearch();
@@ -176,6 +170,18 @@ export default function EvidenceCenter() {
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [requestRecipient, setRequestRecipient] = useState("");
   const [requestAcknowledged, setRequestAcknowledged] = useState(false);
+
+  /** Server sentence in the active language: stable key + params from the payload, else the English text. */
+  const ev = (text: string, copy?: EvidenceCopyRef | null) =>
+    localizeEvidenceText(text, t, copy ?? null);
+  /** Enum-like value (status, category, entity type) from the catalog; humanised when unknown. */
+  const st = (value: string | null | undefined) => {
+    const slug = String(value ?? "").trim();
+    if (!slug) return "-";
+    return t[`evidenceCenter.status.${slug}`] ?? slug.replace(/_/g, " ");
+  };
+  const formatDate = (value: string | null | undefined) =>
+    value ? formatDisplayDate(value, locale) || "-" : "-";
 
   const evidenceQueryKey = useMemo(
     () => ["/api/companies", companyId, "evidence-center"],
@@ -210,27 +216,31 @@ export default function EvidenceCenter() {
     const openRiskSignalCount = data.filingRiskScan.filter(issueIsOpen).length;
     return [
       {
-        label: "Evidence readiness",
+        id: "readiness",
+        label: t["evidenceCenter.metric.readiness"],
         value: `${data.readinessScore}%`,
-        detail: "All open evidence and filing risks",
+        detail: t["evidenceCenter.metric.readinessDetail"],
       },
       {
-        label: "Refund exposure",
-        value: formatCurrency(data.totals.refundExposure),
-        detail: "Input VAT above output VAT",
+        id: "refund",
+        label: t["evidenceCenter.metric.refund"],
+        value: formatCurrency(data.totals.refundExposure, "AED", locale),
+        detail: t["evidenceCenter.metric.refundDetail"],
       },
       {
-        label: "Missing evidence",
+        id: "missing",
+        label: t["evidenceCenter.metric.missing"],
         value: String(openMissingEvidenceCount),
-        detail: "Documents, TRNs, source proof",
+        detail: t["evidenceCenter.metric.missingDetail"],
       },
       {
-        label: "Risk signals",
+        id: "risk",
+        label: t["evidenceCenter.metric.risk"],
         value: String(openRiskSignalCount),
-        detail: "Pre-filing detector output",
+        detail: t["evidenceCenter.metric.riskDetail"],
       },
     ];
-  }, [data]);
+  }, [data, t, locale]);
 
   useEffect(() => {
     if (!data || typeof window === "undefined") return;
@@ -268,8 +278,10 @@ export default function EvidenceCenter() {
       queryClient.setQueryData(evidenceQueryKey, result);
       toast({
         title:
-          issueDialog?.action === "resolve" ? t["evidenceCenter.issueResolved"] : "Issue waived",
-        description: "The evidence action was audit-logged.",
+          issueDialog?.action === "resolve"
+            ? t["evidenceCenter.issueResolved"]
+            : t["evidenceCenter.toast.issueWaived"],
+        description: t["evidenceCenter.toast.actionLogged"],
       });
       setIssueDialog(null);
       setIssueReason("");
@@ -277,7 +289,7 @@ export default function EvidenceCenter() {
     onError: (mutationError: any) => {
       toast({
         variant: "destructive",
-        title: "Could not update evidence issue",
+        title: t["evidenceCenter.toast.updateFailed"],
         description: mutationError?.message,
       });
     },
@@ -300,8 +312,8 @@ export default function EvidenceCenter() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: evidenceQueryKey });
       toast({
-        title: "Request reviewed",
-        description: "Audit logged for manual delivery. No external message was sent.",
+        title: t["evidenceCenter.toast.requestReviewed"],
+        description: t["evidenceCenter.toast.requestLogged"],
       });
       setRequestDialogOpen(false);
       setRequestAcknowledged(false);
@@ -309,7 +321,7 @@ export default function EvidenceCenter() {
     onError: (mutationError: any) => {
       toast({
         variant: "destructive",
-        title: "Could not log reviewed request",
+        title: t["evidenceCenter.toast.requestFailed"],
         description: mutationError?.message,
       });
     },
@@ -337,11 +349,11 @@ export default function EvidenceCenter() {
       link.remove();
       URL.revokeObjectURL(objectUrl);
       queryClient.invalidateQueries({ queryKey: evidenceQueryKey });
-      toast({ title: "Evidence pack downloaded", description: link.download });
+      toast({ title: t["evidenceCenter.toast.downloaded"], description: link.download });
     } catch (downloadError: any) {
       toast({
         variant: "destructive",
-        title: "Evidence pack download failed",
+        title: t["evidenceCenter.toast.downloadFailed"],
         description: downloadError?.message,
       });
     } finally {
@@ -381,7 +393,7 @@ export default function EvidenceCenter() {
   return (
     <div className="space-y-6 p-6" data-testid="evidence-center-page">
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow={t["evidenceCenter.eyebrow"]}
         title={t["evidenceCenter.proofTrail"]}
         description={t["evidenceCenter.contextualEvidenceBehindVatInvoices"]}
         actions={
@@ -428,12 +440,17 @@ export default function EvidenceCenter() {
                 <T k="pageLabels.focusedSourceProof" />
               </h2>
               <p className="text-sm text-muted-foreground">
-                Showing proof rows for {sourceFilter.sourceType.replace(/_/g, " ")}
-                {sourceFilter.sourceId ? ` ${sourceFilter.sourceId}` : ""}.
+                {formatMessage(t["evidenceCenter.focus.showing"], {
+                  source: `${st(sourceFilter.sourceType)}${
+                    sourceFilter.sourceId ? ` ${sourceFilter.sourceId}` : ""
+                  }`,
+                })}
               </p>
             </div>
             <Badge variant={visibleProofLines.length ? "default" : "secondary"}>
-              {visibleProofLines.length} matching row{visibleProofLines.length === 1 ? "" : "s"}
+              {formatMessage(t["evidenceCenter.focus.matching"], {
+                count: visibleProofLines.length,
+              })}
             </Badge>
           </div>
         </section>
@@ -475,7 +492,7 @@ export default function EvidenceCenter() {
             {ctPack.ctReturn ? (
               <p className="text-muted-foreground">
                 {ctPack.ctReturn.taxPeriodStart} – {ctPack.ctReturn.taxPeriodEnd} ·{" "}
-                {ctPack.ctReturn.status} · <T k="compliance.ctPackDue" />{" "}
+                {st(ctPack.ctReturn.status)} · <T k="compliance.ctPackDue" />{" "}
                 {ctPack.ctReturn.filingDeadline}
               </p>
             ) : (
@@ -493,8 +510,10 @@ export default function EvidenceCenter() {
                     }`}
                   />
                   <span>
-                    {check.label}
-                    <span className="block text-xs text-muted-foreground">{check.detail}</span>
+                    {ev(check.label, check.copy?.label)}
+                    <span className="block text-xs text-muted-foreground">
+                      {ev(check.detail, check.copy?.detail)}
+                    </span>
                   </span>
                 </li>
               ))}
@@ -510,11 +529,11 @@ export default function EvidenceCenter() {
 
       <section className="grid gap-3 md:grid-cols-4" data-testid="evidence-center-summary">
         {topMetrics.map((metric) => (
-          <div key={metric.label} className="rounded-md border bg-card p-4">
+          <div key={metric.id} className="rounded-md border bg-card p-4">
             <p className="text-xs text-muted-foreground">{metric.label}</p>
             <p
               className={`mt-1 text-2xl font-semibold ${
-                metric.label === "Evidence readiness" ? scoreTone(data.readinessScore) : ""
+                metric.id === "readiness" ? scoreTone(data.readinessScore) : ""
               }`}
             >
               {metric.value}
@@ -535,13 +554,17 @@ export default function EvidenceCenter() {
                     <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
                       <Icon className="h-4 w-4" />
                     </span>
-                    <CardTitle className="text-base">{workflow.title}</CardTitle>
+                    <CardTitle className="text-base">
+                      {ev(workflow.title, workflow.copy?.title)}
+                    </CardTitle>
                   </div>
                   <Badge variant={workflow.status === "ready" ? "default" : "secondary"}>
-                    {statusLabel(workflow.status)}
+                    {st(workflow.status)}
                   </Badge>
                 </div>
-                <CardDescription>{workflow.description}</CardDescription>
+                <CardDescription>
+                  {ev(workflow.description, workflow.copy?.description)}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-end justify-between gap-2">
@@ -553,17 +576,19 @@ export default function EvidenceCenter() {
                       {workflow.score}%
                     </p>
                   </div>
-                  <p className="max-w-40 text-right text-sm font-medium">{workflow.metric}</p>
+                  <p className="max-w-40 text-end text-sm font-medium">
+                    {ev(workflow.metric, workflow.copy?.metric)}
+                  </p>
                 </div>
                 <ul className="space-y-1 text-sm text-muted-foreground">
-                  {workflow.bullets.slice(0, 3).map((bullet) => (
-                    <li key={bullet}>{bullet}</li>
+                  {workflow.bullets.slice(0, 3).map((bullet, index) => (
+                    <li key={bullet}>{ev(bullet, workflow.copy?.bullets[index])}</li>
                   ))}
                 </ul>
                 <Button asChild variant="outline" size="sm" className="w-full">
                   <Link href={workflow.primaryHref}>
-                    {workflow.primaryAction}
-                    <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                    {ev(workflow.primaryAction, workflow.copy?.primaryAction)}
+                    <ArrowRight className="ms-2 h-3.5 w-3.5 rtl:rotate-180" />
                   </Link>
                 </Button>
               </CardContent>
@@ -586,13 +611,25 @@ export default function EvidenceCenter() {
               {t["evidenceCenter.downloadOneSourceEvidenceBundle"]}
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">{data.refundPack.sheetCount} sheets</Badge>
-              <Badge variant="outline">{data.refundPack.proofLineCount} proof lines</Badge>
               <Badge variant="outline">
-                {data.refundPack.readyAttachmentCount} linked source files
+                {formatMessage(t["evidenceCenter.pack.sheets"], {
+                  count: data.refundPack.sheetCount,
+                })}
+              </Badge>
+              <Badge variant="outline">
+                {formatMessage(t["evidenceCenter.pack.proofLines"], {
+                  count: data.refundPack.proofLineCount,
+                })}
+              </Badge>
+              <Badge variant="outline">
+                {formatMessage(t["evidenceCenter.pack.linkedFiles"], {
+                  count: data.refundPack.readyAttachmentCount,
+                })}
               </Badge>
               <Badge variant={data.refundPack.gapCount ? "secondary" : "default"}>
-                {data.refundPack.gapCount} open gaps
+                {formatMessage(t["evidenceCenter.pack.openGaps"], {
+                  count: data.refundPack.gapCount,
+                })}
               </Badge>
             </div>
           </div>
@@ -655,12 +692,14 @@ export default function EvidenceCenter() {
           {data.ownerActions.map((action) => (
             <div key={action.id} className="rounded-md border p-3">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-medium">{action.title}</h3>
-                <Badge variant={priorityBadge(action) as any}>{action.priority}</Badge>
+                <h3 className="font-medium">{ev(action.title, action.copy?.title)}</h3>
+                <Badge variant={priorityBadge(action) as any}>{st(action.priority)}</Badge>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">{action.detail}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {ev(action.detail, action.copy?.detail)}
+              </p>
               <Button asChild variant="outline" size="sm" className="mt-3">
-                <Link href={action.href}>{action.actionLabel}</Link>
+                <Link href={action.href}>{ev(action.actionLabel, action.copy?.actionLabel)}</Link>
               </Button>
             </div>
           ))}
@@ -690,7 +729,7 @@ export default function EvidenceCenter() {
                   <TableHead>
                     <T k="banking.common.status" />
                   </TableHead>
-                  <TableHead>Item</TableHead>
+                  <TableHead>{t["evidenceCenter.table.item"]}</TableHead>
                   <TableHead>
                     <T k="journal.source" />
                   </TableHead>
@@ -716,30 +755,38 @@ export default function EvidenceCenter() {
                   data.missingEvidence.slice(0, 12).map((issue) => (
                     <TableRow key={issue.id}>
                       <TableCell>
-                        <Badge variant={severityBadge(issue)}>{issue.severity}</Badge>
+                        <Badge variant={severityBadge(issue)}>{st(issue.severity)}</Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant={resolutionBadge(issue) as any}>
-                          {issue.resolutionStatus ?? "open"}
+                          {st(issue.resolutionStatus ?? "open")}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <p className="font-medium">{issue.title}</p>
-                        <p className="text-sm text-muted-foreground">{issue.detail}</p>
+                        <p className="font-medium">{ev(issue.title, issue.copy?.title)}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {ev(issue.detail, issue.copy?.detail)}
+                        </p>
                         {issue.resolutionReason ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Audit reason: {issue.resolutionReason}
+                          <p className="mt-1 text-xs text-muted-foreground" translate="no">
+                            {formatMessage(t["evidenceCenter.auditReason"], {
+                              reason: issue.resolutionReason,
+                            })}
                           </p>
                         ) : null}
                       </TableCell>
-                      <TableCell>{issue.sourceType || "company"}</TableCell>
+                      <TableCell>{st(issue.sourceType || "company")}</TableCell>
                       <TableCell className="text-right">
-                        {issue.amount ? formatCurrency(issue.amount) : "-"}
+                        {issue.amount ? formatCurrency(issue.amount, "AED", locale) : "-"}
                       </TableCell>
                       <TableCell className="text-right">
                         {issue.href ? (
                           <Button asChild size="sm" variant="outline">
-                            <Link href={issue.href}>{issue.actionLabel || "Open"}</Link>
+                            <Link href={issue.href}>
+                              {issue.actionLabel
+                                ? ev(issue.actionLabel, issue.copy?.actionLabel)
+                                : t["evidenceCenter.table.open"]}
+                            </Link>
                           </Button>
                         ) : (
                           "-"
@@ -808,17 +855,22 @@ export default function EvidenceCenter() {
               <p className="text-xs text-muted-foreground">
                 <T k="firm.emailTasksSubject" />
               </p>
-              <p className="font-medium">{data.clientRequestDraft.subject}</p>
+              <p className="font-medium" lang="en" dir="ltr">
+                {data.clientRequestDraft.subject}
+              </p>
             </div>
             <Textarea
               readOnly
               value={data.clientRequestDraft.body}
+              lang="en"
+              dir="ltr"
               className="min-h-72 font-mono text-xs"
               data-testid="evidence-request-draft"
             />
             <p className="text-xs text-muted-foreground">
               {t["evidenceCenter.thisDraftDeliberatelyWarnsAgainst"]}
             </p>
+            <p className="text-xs text-muted-foreground">{t["evidenceCenter.draftEnglishNote"]}</p>
             <Button
               className="w-full"
               onClick={() => {
@@ -850,7 +902,7 @@ export default function EvidenceCenter() {
                 <TableHead>
                   <T k="journal.source" />
                 </TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead>{t["evidenceCenter.table.date"]}</TableHead>
                 <TableHead>
                   <T k="pageLabels.party" />
                 </TableHead>
@@ -866,8 +918,8 @@ export default function EvidenceCenter() {
                 <TableHead className="text-right">
                   <T k="banking.common.amount" />
                 </TableHead>
-                <TableHead className="text-right">VAT</TableHead>
-                <TableHead className="text-right">Open</TableHead>
+                <TableHead className="text-right">{t["evidenceCenter.table.vat"]}</TableHead>
+                <TableHead className="text-right">{t["evidenceCenter.table.open"]}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -875,20 +927,20 @@ export default function EvidenceCenter() {
                 <TableRow>
                   <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                     {sourceFilter
-                      ? "No proof row is linked to this source yet. Review source documents, VAT workpaper rows, or posting links."
-                      : "No proof rows yet. Start from the VAT evidence workpaper or source documents."}
+                      ? t["evidenceCenter.noProof.filtered"]
+                      : t["evidenceCenter.noProof.empty"]}
                   </TableCell>
                 </TableRow>
               ) : (
                 visibleProofLines.slice(0, 20).map((line) => (
                   <TableRow key={line.id}>
-                    <TableCell>{line.label}</TableCell>
+                    <TableCell>{ev(line.label, line.copy?.label)}</TableCell>
                     <TableCell>{formatDate(line.date)}</TableCell>
                     <TableCell>{line.party || "-"}</TableCell>
                     <TableCell>{line.documentNumber || "-"}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        <Badge variant="outline">{line.status}</Badge>
+                        <Badge variant="outline">{st(line.status)}</Badge>
                         <Badge
                           variant={
                             line.proofStatus === "ready"
@@ -898,7 +950,7 @@ export default function EvidenceCenter() {
                                 : "secondary"
                           }
                         >
-                          {statusLabel(line.proofStatus)}
+                          {st(line.proofStatus)}
                         </Badge>
                       </div>
                     </TableCell>
@@ -906,11 +958,15 @@ export default function EvidenceCenter() {
                       <div className="min-w-52 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant={documentBadge(line) as any}>
-                            {statusLabel(line.documentStatus)}
+                            {st(line.documentStatus)}
                           </Badge>
-                          <span className="text-sm font-medium">{line.documentLabel}</span>
+                          <span className="text-sm font-medium">
+                            {ev(line.documentLabel, line.copy?.documentLabel)}
+                          </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">{line.documentPreview}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {ev(line.documentPreview, line.copy?.documentPreview)}
+                        </p>
                         {line.documentHref ? (
                           <Button asChild size="sm" variant="ghost" className="h-7 px-2">
                             <Link href={line.documentHref}>
@@ -921,14 +977,16 @@ export default function EvidenceCenter() {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">{formatCurrency(line.amount)}</TableCell>
                     <TableCell className="text-right">
-                      {formatCurrency(Number(line.vatAmount || 0))}
+                      {formatCurrency(line.amount, "AED", locale)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(Number(line.vatAmount || 0), "AED", locale)}
                     </TableCell>
                     <TableCell className="text-right">
                       {line.href ? (
                         <Button asChild size="sm" variant="outline">
-                          <Link href={line.href}>Open</Link>
+                          <Link href={line.href}>{t["evidenceCenter.table.open"]}</Link>
                         </Button>
                       ) : (
                         "-"
@@ -964,16 +1022,20 @@ export default function EvidenceCenter() {
                   <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{issue.title}</p>
-                      <Badge variant={severityBadge(issue)}>{issue.severity}</Badge>
+                      <p className="font-medium">{ev(issue.title, issue.copy?.title)}</p>
+                      <Badge variant={severityBadge(issue)}>{st(issue.severity)}</Badge>
                       <Badge variant={resolutionBadge(issue) as any}>
-                        {issue.resolutionStatus ?? "open"}
+                        {st(issue.resolutionStatus ?? "open")}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground">{issue.detail}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {ev(issue.detail, issue.copy?.detail)}
+                    </p>
                     {issue.resolutionReason ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Audit reason: {issue.resolutionReason}
+                      <p className="mt-1 text-xs text-muted-foreground" translate="no">
+                        {formatMessage(t["evidenceCenter.auditReason"], {
+                          reason: issue.resolutionReason,
+                        })}
                       </p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1031,18 +1093,20 @@ export default function EvidenceCenter() {
                 >
                   <div>
                     <p className="text-sm font-medium">{formatDate(item.dueDate)}</p>
-                    <Badge variant="outline">{statusLabel(item.category)}</Badge>
+                    <Badge variant="outline">{st(item.category)}</Badge>
                   </div>
                   <div>
-                    <p className="font-medium">{item.title}</p>
-                    <p className="text-sm text-muted-foreground">{item.consequence}</p>
+                    <p className="font-medium">{ev(item.title, item.copy?.title)}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {ev(item.consequence, item.copy?.consequence)}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className={`font-semibold ${scoreTone(item.readinessScore)}`}>
                       {item.readinessScore}%
                     </p>
                     <Button asChild size="sm" variant="outline" className="mt-2">
-                      <Link href={item.href}>Open</Link>
+                      <Link href={item.href}>{t["evidenceCenter.table.open"]}</Link>
                     </Button>
                   </div>
                 </div>
@@ -1074,16 +1138,18 @@ export default function EvidenceCenter() {
               <div key={entry.id} className="grid gap-2 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
                 <div>
                   <p className="text-sm font-medium">{formatDate(entry.createdAt)}</p>
-                  <Badge variant="outline">{statusLabel(entry.action)}</Badge>
+                  <Badge variant="outline">{st(entry.action)}</Badge>
                 </div>
                 <div>
-                  <p className="font-medium">{entry.description}</p>
+                  <p className="font-medium">{ev(entry.description, entry.copy?.description)}</p>
                   <p className="text-sm text-muted-foreground">
-                    {entry.entityType}
+                    {st(entry.entityType)}
                     {entry.entityId ? ` - ${entry.entityId}` : ""}
                   </p>
                   {entry.reason ? (
-                    <p className="mt-1 text-xs text-muted-foreground">Reason: {entry.reason}</p>
+                    <p className="mt-1 text-xs text-muted-foreground" translate="no">
+                      {formatMessage(t["evidenceCenter.reason"], { reason: entry.reason })}
+                    </p>
                   ) : null}
                 </div>
               </div>
@@ -1104,8 +1170,12 @@ export default function EvidenceCenter() {
           </DialogHeader>
           <div className="space-y-3">
             <div className="rounded-md border p-3">
-              <p className="text-sm font-medium">{issueDialog?.issue.title}</p>
-              <p className="text-sm text-muted-foreground">{issueDialog?.issue.detail}</p>
+              <p className="text-sm font-medium">
+                {issueDialog ? ev(issueDialog.issue.title, issueDialog.issue.copy?.title) : null}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {issueDialog ? ev(issueDialog.issue.detail, issueDialog.issue.copy?.detail) : null}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="evidence-action-reason">
@@ -1129,7 +1199,9 @@ export default function EvidenceCenter() {
               disabled={issueReason.trim().length < 5 || issueActionMutation.isPending}
               data-testid="button-confirm-evidence-action"
             >
-              Confirm {issueDialog?.action}
+              {issueDialog?.action === "waive"
+                ? t["evidenceCenter.confirmWaive"]
+                : t["evidenceCenter.confirmResolve"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1151,18 +1223,24 @@ export default function EvidenceCenter() {
                 <p className="text-xs text-muted-foreground">
                   <T k="pageLabels.recipient" />
                 </p>
-                <p className="break-all font-medium">{requestRecipient || "No recipient set"}</p>
+                <p className="break-all font-medium">
+                  {requestRecipient || t["evidenceCenter.noRecipient"]}
+                </p>
               </div>
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground">
                   <T k="firm.emailTasksSubject" />
                 </p>
-                <p className="font-medium">{data.clientRequestDraft.subject}</p>
+                <p className="font-medium" lang="en" dir="ltr">
+                  {data.clientRequestDraft.subject}
+                </p>
               </div>
             </div>
             <Textarea
               readOnly
               value={data.clientRequestDraft.body}
+              lang="en"
+              dir="ltr"
               className="min-h-72 font-mono text-xs"
             />
             <label className="flex items-start gap-2 rounded-md border p-3 text-sm">

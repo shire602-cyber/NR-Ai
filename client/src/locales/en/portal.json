@@ -144,5 +144,18 @@
   "portal.inviteFilterStatus": "Filter by status",
   "portal.docReceivedByNra": "Received by NRA",
   "portal.messageSubjectOptional": "Subject (optional)",
-  "portal.messageWritePlaceholder": "Write your message..."
+  "portal.messageWritePlaceholder": "Write your message...",
+  "portal.sso.title": "Single sign-on",
+  "portal.sso.configured": "configured",
+  "portal.sso.notConfigured": "not configured",
+  "portal.sso.saml": "SAML",
+  "portal.sso.status.requires_external": "requires external setup",
+  "portal.sso.status.not_configured": "not configured",
+  "portal.sso.status.configured": "configured",
+  "portal.invitations.role": "Role",
+  "portal.invitations.sent": "Sent",
+  "portal.invitations.roleValue.client": "client",
+  "portal.invitations.roleValue.staff": "staff",
+  "portal.invitations.roleStandard": "Standard (view their company only)",
+  "portal.invitations.roleStaff": "Staff (admin access)"
 }

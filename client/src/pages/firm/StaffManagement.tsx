@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -264,15 +264,20 @@ export default function StaffManagement() {
                         variant="outline"
                         className="text-warning border-warning/30 bg-warning-subtle"
                       >
-                        {pendingForMember.length} pending
+                        {formatMessage(t["firm.staff.pendingCount"], {
+                          count: pendingForMember.length,
+                        })}
                       </Badge>
                     )}
                     <div className="text-end">
                       <p className="text-sm font-medium">
-                        {member.assignedClientCount} client
-                        {member.assignedClientCount !== 1 ? "s" : ""}
+                        {formatMessage(t["firm.staff.clientCount"], {
+                          count: member.assignedClientCount,
+                        })}
                       </p>
-                      <p className="text-xs text-muted-foreground">assigned</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t["firm.staff.assignedLabel"]}
+                      </p>
                     </div>
                     {expanded ? (
                       <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -316,7 +321,7 @@ export default function StaffManagement() {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium truncate">{client.name}</p>
                                   <p className="text-xs text-muted-foreground truncate">
-                                    {client.trnVatNumber || "No TRN"}
+                                    {client.trnVatNumber || t["firm.staff.noTrn"]}
                                   </p>
                                 </div>
                                 {assigned && (
