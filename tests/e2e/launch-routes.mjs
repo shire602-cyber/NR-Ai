@@ -24,3 +24,25 @@ export const LAUNCH_ROUTES = [
   "/inventory",
   "/company-profile",
 ];
+
+/**
+ * The 14 public (signed-out) routes: marketing, pricing, auth, legal and help.
+ * Crawled in Arabic by `npm run e2e:arabic-public` (arabic-runtime-crawl.mjs
+ * with ARABIC_PUBLIC=true) and screenshotted by the design passes.
+ */
+export const PUBLIC_ROUTES = [
+  "/",
+  "/pricing",
+  "/services",
+  "/demo",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password?token=synthetic-preview-token",
+  "/privacy",
+  "/terms",
+  "/cookies",
+  "/help",
+  "/trust",
+  "/migration-guides",
+];

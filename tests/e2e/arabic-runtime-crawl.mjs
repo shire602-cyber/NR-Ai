@@ -27,6 +27,8 @@
  *   BASE_URL                    target app (default http://127.0.0.1:5000)
  *   ARABIC_ALLOW_REMOTE=true    required for a non-local BASE_URL (it registers a user)
  *   ARABIC_EMAIL/ARABIC_PASSWORD sign in as an existing user instead of registering
+ *   ARABIC_PUBLIC=true          crawl the 14 signed-out public routes (PUBLIC_ROUTES) instead:
+ *                               no registration, no seeding, a fresh signed-out browser
  *   ARABIC_ROUTES=/a,/b         override the route list
  *   ARABIC_MAX_ENGLISH_LINES=n  per-route tolerance (default 0)
  *   ARABIC_ALLOW=a,b            extra allow-listed tokens (seeded data)
@@ -36,24 +38,27 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { LAUNCH_ROUTES } from "./launch-routes.mjs";
+import { LAUNCH_ROUTES, PUBLIC_ROUTES } from "./launch-routes.mjs";
 import { classifyLines } from "./lib/latin-text.mjs";
 
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "");
 const ALLOW_REMOTE = process.env.ARABIC_ALLOW_REMOTE === "true";
+const PUBLIC_ONLY = process.env.ARABIC_PUBLIC === "true";
 const MAX_ENGLISH = Number(process.env.ARABIC_MAX_ENGLISH_LINES ?? 0);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
 const ROUTES = process.env.ARABIC_ROUTES
   ? process.env.ARABIC_ROUTES.split(",").map((route) => route.trim())
-  : LAUNCH_ROUTES;
+  : PUBLIC_ONLY
+    ? PUBLIC_ROUTES
+    : LAUNCH_ROUTES;
 const EXTRA_ALLOW = (process.env.ARABIC_ALLOW ?? "")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
 
 const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(BASE);
-if (!isLocal && !ALLOW_REMOTE) {
+if (!isLocal && !ALLOW_REMOTE && !PUBLIC_ONLY) {
   console.error(
     `Refusing to register a synthetic customer on ${BASE}. Set ARABIC_ALLOW_REMOTE=true only for disposable targets.`
   );
@@ -116,18 +121,26 @@ async function main() {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  const report = { base: BASE, maxEnglish: MAX_ENGLISH, routes: {}, failures: [] };
+  const report = {
+    base: BASE,
+    mode: PUBLIC_ONLY ? "public" : "app",
+    maxEnglish: MAX_ENGLISH,
+    routes: {},
+    failures: [],
+  };
 
-  await context.addInitScript(() => {
+  await context.addInitScript((PUBLIC_FLAG) => {
     try {
-      localStorage.setItem("muhasib_auth_hint", "1");
+      if (!PUBLIC_FLAG) localStorage.setItem("muhasib_auth_hint", "1");
       localStorage.setItem("i18n-storage", JSON.stringify({ state: { locale: "ar" }, version: 0 }));
     } catch {
       /* storage blocked */
     }
-  });
+  }, PUBLIC_ONLY);
 
-  if (process.env.ARABIC_EMAIL && process.env.ARABIC_PASSWORD) {
+  if (PUBLIC_ONLY) {
+    // Signed-out visitor: nothing to register or seed.
+  } else if (process.env.ARABIC_EMAIL && process.env.ARABIC_PASSWORD) {
     const login = await page.request.post(`${BASE}/api/auth/login`, {
       data: { email: process.env.ARABIC_EMAIL, password: process.env.ARABIC_PASSWORD },
     });
@@ -153,14 +166,16 @@ async function main() {
     bearer = (await login.json().catch(() => ({}))).token ?? "";
   }
 
-  await page.goto(`${BASE}/dashboard`);
-  await page.waitForTimeout(2200);
-  const express = page.locator('[data-testid="onboarding-express"]');
-  if (await express.count()) {
-    await express.click();
-    await page.waitForTimeout(3500);
+  if (!PUBLIC_ONLY) {
+    await page.goto(`${BASE}/dashboard`);
+    await page.waitForTimeout(2200);
+    const express = page.locator('[data-testid="onboarding-express"]');
+    if (await express.count()) {
+      await express.click();
+      await page.waitForTimeout(3500);
+    }
+    if (process.env.ARABIC_SEED !== "false") report.seed = await seed(page);
   }
-  if (process.env.ARABIC_SEED !== "false") report.seed = await seed(page);
 
   for (const route of ROUTES) {
     await page.goto(`${BASE}${route}`, { timeout: 45000 });
@@ -214,7 +229,10 @@ async function main() {
   }
 
   await browser.close();
-  const out = path.join(ARTIFACT_DIR, "arabic-runtime-last-run.json");
+  const out = path.join(
+    ARTIFACT_DIR,
+    PUBLIC_ONLY ? "arabic-public-last-run.json" : "arabic-runtime-last-run.json"
+  );
   await writeFile(out, JSON.stringify(report, null, 2));
   const total = Object.values(report.routes).reduce((sum, r) => sum + r.englishLines, 0);
   console.log(

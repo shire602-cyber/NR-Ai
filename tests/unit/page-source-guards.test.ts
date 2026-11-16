@@ -319,7 +319,9 @@ describe("S5 locale catalogs are code-split (source wiring)", () => {
       /import\.meta\.glob\("\.\.\/locales\/en\/\*\.json", \{ import: "default" \}\)/
     );
     expect(src).not.toMatch(/eager:\s*true/);
-    expect(read("client/src/main.tsx")).toContain("loadLocale(useI18n.getState().locale)");
+    // D1b: main.tsx awaits the first route's catalogs (every namespace for app routes, the
+    // route's own for public pages); the behaviour is covered by tests/unit/public-boot.test.ts.
+    expect(read("client/src/main.tsx")).toContain("loadLocaleForPath(locale,");
   });
 });
 

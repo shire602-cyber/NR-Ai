@@ -13,7 +13,6 @@ import {
   Shield,
   CheckCircle2,
   ArrowRight,
-  Globe,
   Users,
   Building2,
   Briefcase,
@@ -41,15 +40,11 @@ import {
 } from "lucide-react";
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useI18n } from "@/lib/i18n";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 export default function Services() {
   const mounted = useHasMounted();
-  const { locale, setLocale } = useI18n();
-  const isRTL = locale === "ar";
-
-  const toggleLanguage = () => {
-    setLocale(locale === "en" ? "ar" : "en");
-  };
+  const { locale } = useI18n();
 
   const t = {
     nav: {
@@ -135,8 +130,7 @@ export default function Services() {
         locale === "en"
           ? "Complete VAT registration with FTA and ongoing quarterly/monthly filing support."
           : "تسجيل كامل لضريبة القيمة المضافة مع الهيئة الاتحادية للضرائب ودعم التقديم الربعي/الشهري.",
-      color: "from-blue-500 to-cyan-600",
-      bgColor: "bg-info/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: Building2,
@@ -145,8 +139,7 @@ export default function Services() {
         locale === "en"
           ? "UAE Corporate Tax registration and compliance setup for businesses over AED 375,000."
           : "تسجيل ضريبة الشركات الإماراتية وإعداد الامتثال للشركات التي تزيد عن 375,000 درهم.",
-      color: "from-purple-500 to-violet-600",
-      bgColor: "bg-chart-5/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: FileX,
@@ -155,8 +148,7 @@ export default function Services() {
         locale === "en"
           ? "Smooth VAT deregistration process when your business no longer meets thresholds."
           : "عملية إلغاء تسجيل سلسة عندما لم يعد نشاطك يستوفي الحدود.",
-      color: "from-red-500 to-rose-600",
-      bgColor: "bg-destructive/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: FileCheck,
@@ -165,8 +157,7 @@ export default function Services() {
         locale === "en"
           ? "Complete corporate tax deregistration for business closures or restructuring."
           : "إلغاء تسجيل ضريبة الشركات الكامل لإغلاق الأعمال أو إعادة الهيكلة.",
-      color: "from-orange-500 to-amber-600",
-      bgColor: "bg-warning/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: Calculator,
@@ -176,8 +167,7 @@ export default function Services() {
         locale === "en"
           ? "Accurate and timely VAT and Corporate Tax return preparation and submission."
           : "إعداد وتقديم إقرارات ضريبة القيمة المضافة وضريبة الشركات بدقة وفي الوقت المحدد.",
-      color: "from-green-500 to-emerald-600",
-      bgColor: "bg-success/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: BookOpen,
@@ -186,8 +176,7 @@ export default function Services() {
         locale === "en"
           ? "Bring your books up to date with historical data entry and reconciliation."
           : "قم بتحديث دفاترك مع إدخال البيانات التاريخية والمطابقة.",
-      color: "from-teal-500 to-cyan-600",
-      bgColor: "bg-success/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: Sparkles,
@@ -196,8 +185,7 @@ export default function Services() {
         locale === "en"
           ? "Modern bookkeeping with AI automation for expense categorization and data entry."
           : "مسك دفاتر حديث مع أتمتة الذكاء الاصطناعي لتصنيف المصروفات وإدخال البيانات.",
-      color: "from-violet-500 to-purple-600",
-      bgColor: "bg-chart-5/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: BarChart3,
@@ -206,8 +194,7 @@ export default function Services() {
         locale === "en"
           ? "Professional P&L statements, balance sheets, and cash flow reports."
           : "قوائم الأرباح والخسائر والميزانيات وتقارير التدفق النقدي الاحترافية.",
-      color: "from-indigo-500 to-blue-600",
-      bgColor: "bg-info/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
     {
       icon: Shield,
@@ -216,8 +203,7 @@ export default function Services() {
         locale === "en"
           ? "Pre-audit reviews and support during FTA audits and compliance checks."
           : "مراجعات ما قبل التدقيق والدعم أثناء تدقيقات الهيئة وفحوصات الامتثال.",
-      color: "from-emerald-500 to-green-600",
-      bgColor: "bg-success/10",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
     },
   ];
 
@@ -273,8 +259,8 @@ export default function Services() {
         locale === "en"
           ? "Instantly extract merchant, amount, date, and VAT from receipts using advanced OCR technology."
           : "استخراج فوري للتاجر والمبلغ والتاريخ وضريبة القيمة المضافة من الإيصالات باستخدام تقنية التعرف الضوئي المتقدمة.",
-      bgColor: "bg-info/10",
-      iconColor: "text-info",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: Brain,
@@ -283,8 +269,8 @@ export default function Services() {
         locale === "en"
           ? "AI-assisted categorisation prompts help your team review expenses against the chart of accounts."
           : "تساعد تنبيهات التصنيف المدعومة بالذكاء الاصطناعي فريقك على مراجعة المصروفات مقابل دليل الحسابات.",
-      bgColor: "bg-chart-5/10",
-      iconColor: "text-chart-5",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: Zap,
@@ -293,8 +279,8 @@ export default function Services() {
         locale === "en"
           ? "Upload multiple receipts at once. Our AI processes them in parallel for maximum efficiency."
           : "ارفع عدة إيصالات دفعة واحدة. الذكاء الاصطناعي يعالجها بالتوازي لأقصى كفاءة.",
-      bgColor: "bg-warning/10",
-      iconColor: "text-warning",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: FileSearch,
@@ -303,8 +289,8 @@ export default function Services() {
         locale === "en"
           ? "Automatically extract and validate TRN numbers, invoice details, and payment terms."
           : "استخراج والتحقق تلقائياً من أرقام التسجيل الضريبي وتفاصيل الفواتير وشروط الدفع.",
-      bgColor: "bg-success/10",
-      iconColor: "text-success",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
   ];
 
@@ -316,8 +302,8 @@ export default function Services() {
         locale === "en"
           ? "Get personalized financial advice, cash flow predictions, and strategic recommendations from your AI advisor."
           : "احصل على نصائح مالية مخصصة وتنبؤات التدفق النقدي وتوصيات استراتيجية من مستشارك الذكي.",
-      bgColor: "bg-chart-5/10",
-      iconColor: "text-chart-5",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: LineChart,
@@ -326,8 +312,8 @@ export default function Services() {
         locale === "en"
           ? "AI-powered forecasting for revenue, expenses, and cash flow based on historical patterns."
           : "تنبؤات مدعومة بالذكاء الاصطناعي للإيرادات والمصروفات والتدفق النقدي بناءً على الأنماط التاريخية.",
-      bgColor: "bg-info/10",
-      iconColor: "text-info",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: AlertTriangle,
@@ -336,8 +322,8 @@ export default function Services() {
         locale === "en"
           ? "Automatically flag unusual transactions, duplicate payments, and potential fraud."
           : "تحديد تلقائي للمعاملات غير العادية والمدفوعات المكررة والاحتيال المحتمل.",
-      bgColor: "bg-destructive/10",
-      iconColor: "text-destructive",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: Mic,
@@ -346,8 +332,8 @@ export default function Services() {
         locale === "en"
           ? "Create invoices, log expenses, and query reports using natural voice commands in English or Arabic."
           : "إنشاء الفواتير وتسجيل المصروفات والاستعلام عن التقارير باستخدام الأوامر الصوتية بالإنجليزية أو العربية.",
-      bgColor: "bg-chart-5/10",
-      iconColor: "text-chart-5",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: Target,
@@ -356,8 +342,8 @@ export default function Services() {
         locale === "en"
           ? "AI-assisted tax review prompts that help accountants spot planning and documentation gaps."
           : "تنبيهات مراجعة ضريبية مدعومة بالذكاء الاصطناعي تساعد المحاسبين على اكتشاف فجوات التخطيط والتوثيق.",
-      bgColor: "bg-success/10",
-      iconColor: "text-success",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
     {
       icon: Workflow,
@@ -366,8 +352,8 @@ export default function Services() {
         locale === "en"
           ? "Set up automated rules for recurring transactions, approvals, and reminders."
           : "إعداد قواعد آلية للمعاملات المتكررة والموافقات والتذكيرات.",
-      bgColor: "bg-info/10",
-      iconColor: "text-info",
+      bgColor: "bg-brand-50 dark:bg-brand-400/10",
+      iconColor: "text-accent",
     },
   ];
 
@@ -375,120 +361,58 @@ export default function Services() {
     { value: "VAT", label: t.stats.clients, icon: Users },
     { value: "CT", label: t.stats.yearsExp, icon: Clock },
     { value: "CSV", label: t.stats.accuracy, icon: TrendingUp },
-    { value: "Help", label: t.stats.satisfaction, icon: Star },
+    { value: locale === "en" ? "Help" : "مساعدة", label: t.stats.satisfaction, icon: Star },
   ];
 
   return (
-    <div
-      className={`min-h-screen bg-background ${isRTL ? "rtl" : "ltr"}`}
-      dir={isRTL ? "rtl" : "ltr"}
+    <MarketingLayout
+      titleKey="marketing.seoServicesTitle"
+      descriptionKey="marketing.seoServicesDescription"
     >
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/80 border-b">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/">
-              <span
-                className="text-xl font-bold text-primary cursor-pointer"
-                data-testid="link-logo"
-              >
-                Muhasib.ai{/* i18n-ignore: brand or sample data */}
-              </span>
-            </Link>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleLanguage}
-                data-testid="button-language-toggle"
-              >
-                <Globe className="w-4 h-4 mr-2" />
-                {t.nav.languageToggle}
-              </Button>
-              <Link href="/login">
-                <Button variant="ghost" size="sm" data-testid="button-login">
-                  {t.nav.login}
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button size="sm" data-testid="button-get-started">
-                  {t.nav.getStarted}
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
-
       {/* Hero Section - Two Column Layout */}
-      <section className="relative overflow-hidden pt-32 pb-20 lg:pb-32 min-h-screen flex items-center">
-        <div className="absolute inset-0 dark:dark:dark:" />
-        <div
-          className="absolute inset-0 bg-grid-white/5 dark:bg-grid-white/5"
-          style={{ backgroundSize: "40px 40px" }}
-        />
-
+      <section className="relative overflow-hidden pt-16 pb-20 lg:pt-24 lg:pb-28 flex items-center">
         <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-8 w-full">
-          <div
-            className={`grid grid-cols-1 lg:grid-cols-5 gap-12 lg:gap-16 items-center ${isRTL ? "lg:flex-row-reverse" : ""}`}
-          >
+          <div className={`grid grid-cols-1 lg:grid-cols-5 gap-12 lg:gap-16 items-center`}>
             {/* Text Content - 60% */}
             <div
-              className={`lg:col-span-3 ${isRTL ? "text-right" : "text-left"} ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
+              className={`lg:col-span-3 text-start ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
               style={{ animationDuration: "600ms" }}
             >
               <Badge
                 className="mb-6 bg-primary/10 text-primary border-primary/20 px-4 py-1.5"
                 data-testid="badge-hero"
               >
-                <Award className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                <Award className={`w-4 h-4 me-2`} />
                 {t.hero.badge}
               </Badge>
 
-              <h1
-                className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight"
-                data-testid="text-hero-headline"
-              >
-                <span className="text-primary">{t.hero.headline}</span>
+              <h1 className="mk-display mb-6" data-testid="text-hero-headline">
+                <span>{t.hero.headline}</span>
                 <br />
-                <span className="text-foreground">{t.hero.headlineAccent}</span>
+                <span className="mk-accent">{t.hero.headlineAccent}</span>
               </h1>
 
-              <p
-                className="text-xl lg:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed"
-                data-testid="text-hero-subheadline"
-              >
+              <p className="mk-lead mb-8 max-w-2xl" data-testid="text-hero-subheadline">
                 {t.hero.subheadline}
               </p>
 
-              <div
-                className={`flex flex-col sm:flex-row gap-4 ${isRTL ? "justify-end" : "justify-start"}`}
-              >
-                <Link href="/register">
-                  <Button
-                    size="lg"
-                    className="gap-2 px-8 py-6 text-lg"
-                    data-testid="button-book-consultation"
-                  >
+              <div className={`flex flex-col sm:flex-row gap-4 justify-start`}>
+                <Button asChild size="xl" data-testid="button-book-consultation">
+                  <Link href="/register">
                     <Phone className="w-5 h-5" />
                     {t.hero.ctaPrimary}
-                  </Button>
-                </Link>
-                <Link href="/login">
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="gap-2 px-8 py-6 text-lg"
-                    data-testid="button-hero-get-started"
-                  >
+                  </Link>
+                </Button>
+                <Button asChild size="xl" variant="outline" data-testid="button-hero-get-started">
+                  <Link href="/login">
                     {t.hero.ctaSecondary}
-                    <ArrowRight className={`w-5 h-5 ${isRTL ? "rotate-180" : ""}`} />
-                  </Button>
-                </Link>
+                    <ArrowRight className={`w-5 h-5 rtl:-scale-x-100`} />
+                  </Link>
+                </Button>
               </div>
 
               <p
-                className={`mt-6 text-sm text-muted-foreground flex items-center gap-2 ${isRTL ? "justify-end" : "justify-start"}`}
+                className={`mt-6 text-sm text-muted-foreground flex items-center gap-2 justify-start`}
                 data-testid="text-licensed"
               >
                 <Shield className="w-4 h-4" />
@@ -504,30 +428,47 @@ export default function Services() {
               <div className="relative">
                 {/* Glassmorphic Card */}
                 <div
-                  className="relative backdrop-blur-xl bg-card/10 dark:bg-card/5 border border-white/20 dark:border-white/10 rounded-3xl p-8 shadow-2xl"
+                  className="relative rounded-xl border bg-card p-8 shadow-card-soft"
                   data-testid="hero-visual-card"
                 >
-                  {/* Gradient Glow */}
-                  <div className="absolute -inset-4 rounded-3xl blur-2xl opacity-60" />
-
                   <div className="relative z-10 space-y-6">
                     {/* Service Icons Grid */}
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { icon: FileText, color: "bg-info/20", iconColor: "text-info" },
-                        { icon: Calculator, color: "bg-success/20", iconColor: "text-success" },
+                        {
+                          icon: FileText,
+                          color: "bg-brand-50 dark:bg-brand-400/10",
+                          iconColor: "text-accent",
+                        },
+                        {
+                          icon: Calculator,
+                          color: "bg-brand-50 dark:bg-brand-400/10",
+                          iconColor: "text-accent",
+                        },
                         {
                           icon: BarChart3,
-                          color: "bg-chart-5/20",
-                          iconColor: "text-chart-5",
+                          color: "bg-brand-50 dark:bg-brand-400/10",
+                          iconColor: "text-accent",
                         },
-                        { icon: Shield, color: "bg-warning/20", iconColor: "text-warning" },
-                        { icon: Sparkles, color: "bg-chart-5/20", iconColor: "text-chart-5" },
-                        { icon: Building2, color: "bg-success/20", iconColor: "text-success" },
+                        {
+                          icon: Shield,
+                          color: "bg-brand-50 dark:bg-brand-400/10",
+                          iconColor: "text-accent",
+                        },
+                        {
+                          icon: Sparkles,
+                          color: "bg-brand-50 dark:bg-brand-400/10",
+                          iconColor: "text-accent",
+                        },
+                        {
+                          icon: Building2,
+                          color: "bg-brand-50 dark:bg-brand-400/10",
+                          iconColor: "text-accent",
+                        },
                       ].map((item, index) => (
                         <div
                           key={index}
-                          className={`${item.color} rounded-xl p-4 flex items-center justify-center hover:scale-110 transition-transform`}
+                          className={`${item.color} rounded-xl p-4 flex items-center justify-center`}
                           data-testid={`hero-icon-${index}`}
                         >
                           <item.icon className={`w-6 h-6 ${item.iconColor}`} />
@@ -567,16 +508,12 @@ export default function Services() {
                         className="bg-primary text-primary-foreground border-0 px-4 py-2 text-sm font-semibold"
                         data-testid="hero-badge-cta"
                       >
-                        <Star className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                        <Star className={`w-4 h-4 me-2`} />
                         {locale === "en" ? "Since 2017" : "منذ 2017"}
                       </Badge>
                     </div>
                   </div>
                 </div>
-
-                {/* Decorative Elements */}
-                <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full blur-2xl" />
-                <div className="absolute -bottom-4 -left-4 w-32 h-32 rounded-full blur-2xl" />
               </div>
             </div>
           </div>
@@ -596,7 +533,7 @@ export default function Services() {
                   <stat.icon className="w-6 h-6 text-primary opacity-60" />
                 </div>
                 <div
-                  className="text-4xl lg:text-5xl font-bold text-primary mb-1 font-mono"
+                  className="text-xl font-semibold text-foreground mb-1"
                   data-testid={`stat-value-${index}`}
                 >
                   {stat.value}
@@ -626,10 +563,7 @@ export default function Services() {
             >
               {t.services.badge}
             </Badge>
-            <h2
-              className="text-4xl md:text-5xl font-bold mb-4"
-              data-testid="text-services-headline"
-            >
+            <h2 className="mk-h2 mb-4" data-testid="text-services-headline">
               {t.services.headline}
             </h2>
             <p
@@ -651,7 +585,7 @@ export default function Services() {
                 <div className="absolute inset-0 dark:dark:dark:opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
                 <div
-                  className={`w-14 h-14 rounded-xl ${service.bgColor} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform relative z-10`}
+                  className={`w-14 h-14 rounded-xl ${service.bgColor} flex items-center justify-center mb-4 relative z-10`}
                 >
                   <service.icon className="w-7 h-7 text-primary" />
                 </div>
@@ -686,13 +620,10 @@ export default function Services() {
               className="mb-4 bg-success/10 text-success border-success/20 px-4 py-1.5"
               data-testid="badge-why-choose"
             >
-              <CheckCircle2 className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+              <CheckCircle2 className={`w-4 h-4 me-2`} />
               {t.whyChoose.badge}
             </Badge>
-            <h2
-              className="text-4xl md:text-5xl font-bold mb-4"
-              data-testid="text-why-choose-headline"
-            >
+            <h2 className="mk-h2 mb-4" data-testid="text-why-choose-headline">
               {t.whyChoose.headline}
             </h2>
             <p
@@ -707,7 +638,7 @@ export default function Services() {
             {whyChooseUs.map((item, index) => (
               <div
                 key={index}
-                className={`text-center p-6 rounded-2xl border bg-card hover-elevate transition-all duration-300 ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
+                className={`text-center p-6 rounded-xl border bg-card hover-elevate transition-all duration-300 ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
                 style={{ animationDelay: `${250 + index * 75}ms`, animationDuration: "600ms" }}
                 data-testid={`card-why-${index}`}
               >
@@ -739,13 +670,13 @@ export default function Services() {
             style={{ animationDelay: "250ms", animationDuration: "600ms" }}
           >
             <Badge
-              className="mb-4 bg-chart-5/10 text-chart-5 border-chart-5/20 px-4 py-1.5"
+              className="mb-4 bg-success-subtle text-success-subtle-foreground border-transparent px-4 py-1.5"
               data-testid="badge-ai"
             >
-              <Brain className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+              <Brain className={`w-4 h-4 me-2`} />
               {t.ai.badge}
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold mb-4" data-testid="text-ai-headline">
+            <h2 className="mk-h2 mb-4" data-testid="text-ai-headline">
               {t.ai.headline}
             </h2>
             <p
@@ -766,7 +697,7 @@ export default function Services() {
                 className="bg-success/20 text-success border-success/30 px-4 py-2 text-sm font-semibold"
                 data-testid="badge-ai-current"
               >
-                <CheckCircle2 className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                <CheckCircle2 className={`w-4 h-4 me-2`} />
                 {t.ai.currentBadge}
               </Badge>
             </div>
@@ -780,7 +711,7 @@ export default function Services() {
                   data-testid={`card-ai-current-${index}`}
                 >
                   <div
-                    className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}
+                    className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center mb-4`}
                   >
                     <capability.icon className={`w-6 h-6 ${capability.iconColor}`} />
                   </div>
@@ -811,7 +742,7 @@ export default function Services() {
                 className="bg-warning/20 text-warning border-warning/30 px-4 py-2 text-sm font-semibold"
                 data-testid="badge-ai-future"
               >
-                <Rocket className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                <Rocket className={`w-4 h-4 me-2`} />
                 {t.ai.futureBadge}
               </Badge>
             </div>
@@ -826,7 +757,7 @@ export default function Services() {
                 >
                   <div className="flex items-start gap-4">
                     <div
-                      className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                      className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center flex-shrink-0`}
                     >
                       <capability.icon className={`w-6 h-6 ${capability.iconColor}`} />
                     </div>
@@ -860,13 +791,13 @@ export default function Services() {
             style={{ animationDelay: "300ms", animationDuration: "600ms" }}
           >
             <Badge
-              className="mb-4 bg-info/10 text-info border-info/20 px-4 py-1.5"
+              className="mb-4 border-transparent bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 px-4 py-1.5"
               data-testid="badge-clients"
             >
-              <Users className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+              <Users className={`w-4 h-4 me-2`} />
               {t.clients.badge}
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold mb-4" data-testid="text-clients-headline">
+            <h2 className="mk-h2 mb-4" data-testid="text-clients-headline">
               {t.clients.headline}
             </h2>
             <p
@@ -885,7 +816,7 @@ export default function Services() {
                 style={{ animationDelay: `${350 + index * 50}ms`, animationDuration: "600ms" }}
                 data-testid={`card-client-${index}`}
               >
-                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
                   <client.icon className="w-6 h-6 text-primary" />
                 </div>
                 <span
@@ -902,17 +833,11 @@ export default function Services() {
 
       {/* Final CTA Section */}
       <section className="py-20 lg:py-28 relative overflow-hidden">
-        <div className="absolute inset-0 dark:dark:dark:" />
-        <div
-          className="absolute inset-0 bg-grid-white/5 dark:bg-grid-white/5"
-          style={{ backgroundSize: "40px 40px" }}
-        />
-
         <div
           className={`relative z-10 max-w-4xl mx-auto px-6 lg:px-8 text-center ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
           style={{ animationDelay: "400ms", animationDuration: "600ms" }}
         >
-          <h2 className="text-4xl md:text-5xl font-bold mb-6" data-testid="text-cta-headline">
+          <h2 className="mk-h2 mb-6" data-testid="text-cta-headline">
             {t.cta.headline}
           </h2>
           <p
@@ -923,27 +848,24 @@ export default function Services() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Link href="/register">
-              <Button
-                size="lg"
-                className="gap-2 px-8 py-6 text-lg"
-                data-testid="button-cta-consultation"
-              >
+            <Button asChild size="xl" data-testid="button-cta-consultation">
+              <Link href="/register">
                 <Phone className="w-5 h-5" />
                 {t.cta.primary}
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button
-                size="lg"
-                variant="outline"
-                className="gap-2 px-8 py-6 text-lg backdrop-blur-sm"
-                data-testid="button-cta-expert"
-              >
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="xl"
+              variant="outline"
+              className="gap-2 px-8 py-6 text-lg backdrop-blur-sm"
+              data-testid="button-cta-expert"
+            >
+              <Link href="/login">
                 <MessageSquare className="w-5 h-5" />
                 {t.cta.secondary}
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
@@ -952,27 +874,22 @@ export default function Services() {
               {t.cta.freeConsult}
             </span>
             <span className="flex items-center gap-2" data-testid="text-cta-response">
-              <Clock className="w-4 h-4 text-info" />
+              <Clock className="w-4 h-4 text-accent" />
               {t.cta.response}
             </span>
             <span className="flex items-center gap-2" data-testid="text-cta-commitment">
-              <Handshake className="w-4 h-4 text-chart-5" />
+              <Handshake className="w-4 h-4 text-accent" />
               {t.cta.noCommitment}
             </span>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t bg-muted/30">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8 text-center text-sm text-muted-foreground">
-          <p data-testid="text-footer">
-            {locale === "en"
-              ? "© 2025 Muhasib.ai by NR Accounting Services - Licensed Accounting Firm in Dubai, UAE since 2017"
-              : "© 2025 محاسب.ai من NR Accounting Services - شركة محاسبة مرخصة في دبي، الإمارات منذ 2017"}
-          </p>
-        </div>
-      </footer>
-    </div>
+      <p className="sr-only" data-testid="text-footer">
+        {locale === "en"
+          ? "Muhasib.ai accounting services by Najma Al Raeda Accounting LLC, Dubai"
+          : "الخدمات المحاسبية من محاسب بواسطة نجمة الرائدة للمحاسبة ذ.م.م، دبي"}
+      </p>
+    </MarketingLayout>
   );
 }

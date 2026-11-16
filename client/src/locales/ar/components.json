@@ -175,5 +175,7 @@
   "components.switcherNowViewing": "تعرض الآن {name}.",
   "components.switcherUpdated": "تم تحديث الشركة النشطة.",
   "components.switcherFailedTitle": "تعذّر تبديل الشركة",
-  "components.switcherTryAgain": "يُرجى المحاولة مرة أخرى."
+  "components.switcherTryAgain": "يُرجى المحاولة مرة أخرى.",
+  "components.authPasswordHint": "استخدم 8 أحرف على الأقل.",
+  "components.authTrnHelp": "رقم التسجيل الضريبي المكوّن من 15 رقمًا لدى الهيئة الاتحادية للضرائب. يمكنك إضافته لاحقًا من ملف الشركة."
 }

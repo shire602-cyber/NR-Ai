@@ -18,8 +18,9 @@ export const useI18n = create<I18nStore>()(
         set({ locale });
         document.documentElement.lang = locale;
         document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
-        // S5: namespace catalogs are code-split; fetch the new locale's chunks on switch.
-        void loadLocale(locale);
+        // S5: namespace catalogs are code-split; fetch the new locale's chunks on switch
+        // (D1b: only the namespaces the current route needs).
+        void loadLocaleForCurrentRoute(locale);
       },
     }),
     {
@@ -952,8 +953,131 @@ export const t = {
   } as typeof baseT.ar & TranslationCatalog,
 };
 
+// ── Route-scoped loading (D1b) ──────────────────────────────────────────────
+// Signed-out public pages (landing, pricing, auth, legal, help) only need a few
+// namespaces; downloading all of them before first paint cost the landing page
+// its mobile performance. main.tsx calls `setPublicBootScope(pathname)` when the
+// app boots on a public path: while the visitor stays on public paths only the
+// route's namespaces load. The first non-public path (or any boot on one, or any
+// caller that never sets the scope, such as unit tests) loads every namespace,
+// exactly as before.
+
+/** Shared by every public page: the marketing shell, auth forms and shell chrome. */
+const PUBLIC_CORE_NAMESPACES = ["marketing", "components", "shell"];
+/** Extra namespaces used by the content-heavier public pages. */
+const PUBLIC_EXTRA_NAMESPACES = [
+  "pageLabels",
+  "pages",
+  "security",
+  "portal",
+  "banking",
+  "invoices",
+];
+/** Public paths whose pages only read the core namespaces. */
+const PUBLIC_CORE_ONLY = new Set(["/", "/pricing", "/services"]);
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/pricing",
+  "/services",
+  "/demo",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/auth/callback",
+  "/privacy",
+  "/terms",
+  "/cookies",
+  "/help",
+  "/trust",
+  "/migration-guides",
+]);
+
+function normalisePath(pathname: string): string {
+  const path = pathname.split(/[?#]/)[0] || "/";
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
+}
+
+/** True for the signed-out marketing, auth, legal and help routes. */
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(normalisePath(pathname));
+}
+
+/** Namespaces a public path needs, or `null` for "every namespace" (app routes). */
+export function namespacesForPath(pathname: string): string[] | null {
+  const path = normalisePath(pathname);
+  if (!PUBLIC_PATHS.has(path)) return null;
+  return PUBLIC_CORE_ONLY.has(path)
+    ? PUBLIC_CORE_NAMESPACES
+    : [...PUBLIC_CORE_NAMESPACES, ...PUBLIC_EXTRA_NAMESPACES];
+}
+
+let publicScope = false;
+
+/** Called once by main.tsx: restrict loading to route namespaces while on public paths. */
+export function setPublicBootScope(pathname: string): void {
+  publicScope = isPublicPath(pathname);
+}
+
+function currentPathname(): string {
+  return typeof window === "undefined" ? "/" : window.location.pathname;
+}
+
+/** Namespaces needed right now: the route's while in public scope, else all (`null`). */
+function neededNamespaces(): string[] | null {
+  if (!publicScope) return null;
+  const needed = namespacesForPath(currentPathname());
+  // Leaving the public site ends the restricted scope for good.
+  if (needed === null) publicScope = false;
+  return needed;
+}
+
+const namespaceOf = (path: string) => path.replace(/^.*\//, "").replace(/\.json$/, "");
+const loadedPaths: Record<Locale, Set<string>> = { en: new Set(), ar: new Set() };
+const pendingPaths = new Map<string, Promise<void>>();
 const loadedLocales = new Set<Locale>();
 const pendingLocales = new Map<Locale, Promise<void>>();
+
+function pathsFor(locale: Locale, namespaces: string[] | null): string[] {
+  const loaders = namespaceLoaders[locale] ?? {};
+  const all = Object.keys(loaders).sort();
+  if (namespaces === null) return all;
+  // Route subsets come from the locale's own namespace folder (not ar-catalog/).
+  return all.filter(
+    (path) => !path.includes("/ar-catalog/") && namespaces.includes(namespaceOf(path))
+  );
+}
+
+function loadPaths(locale: Locale, paths: string[]): Promise<void> {
+  const loaders = namespaceLoaders[locale] ?? {};
+  const jobs = paths
+    .filter((path) => !loadedPaths[locale].has(path))
+    .map((path) => {
+      const key = `${locale}:${path}`;
+      let job = pendingPaths.get(key);
+      if (!job) {
+        job = loaders[path]()
+          .then((catalog) => {
+            Object.assign(t[locale], catalog);
+            loadedPaths[locale].add(path);
+          })
+          .finally(() => pendingPaths.delete(key));
+        pendingPaths.set(key, job);
+      }
+      return job;
+    });
+  if (jobs.length === 0) return Promise.resolve();
+  return Promise.all(jobs).then(() => {
+    useCatalogVersion.setState((s) => ({ version: s.version + 1 }));
+  });
+}
+
+function hasNamespaces(locale: Locale, namespaces: string[] | null): boolean {
+  if (loadedLocales.has(locale)) return true;
+  if (namespaces === null) return false;
+  return pathsFor(locale, namespaces).every((path) => loadedPaths[locale].has(path));
+}
 
 /** True once every namespace catalog of `locale` is merged into `t[locale]`. */
 export function isLocaleLoaded(locale: Locale): boolean {
@@ -968,17 +1092,25 @@ export function loadLocale(locale: Locale): Promise<void> {
   if (loadedLocales.has(locale)) return Promise.resolve();
   const pending = pendingLocales.get(locale);
   if (pending) return pending;
-  const loaders = namespaceLoaders[locale] ?? {};
-  const paths = Object.keys(loaders).sort();
-  const p = Promise.all(paths.map((path) => loaders[path]()))
-    .then((catalogs) => {
-      for (const catalog of catalogs) Object.assign(t[locale], catalog);
+  const p = loadPaths(locale, pathsFor(locale, null))
+    .then(() => {
       loadedLocales.add(locale);
-      useCatalogVersion.setState((s) => ({ version: s.version + 1 }));
     })
     .finally(() => pendingLocales.delete(locale));
   pendingLocales.set(locale, p);
   return p;
+}
+
+/** Load only the namespaces `pathname` needs (every namespace for app routes). */
+export function loadLocaleForPath(locale: Locale, pathname: string): Promise<void> {
+  const namespaces = namespacesForPath(pathname);
+  return namespaces === null ? loadLocale(locale) : loadPaths(locale, pathsFor(locale, namespaces));
+}
+
+/** Load what the current route needs under the active scope (see setPublicBootScope). */
+export function loadLocaleForCurrentRoute(locale: Locale): Promise<void> {
+  const needed = neededNamespaces();
+  return needed === null ? loadLocale(locale) : loadPaths(locale, pathsFor(locale, needed));
 }
 
 /**
@@ -996,10 +1128,11 @@ export function useTranslation() {
   const { locale } = useI18n();
   // Subscribing re-renders the caller once a lazily loaded catalog lands.
   useCatalogVersion((s) => s.version);
-  if (!loadedLocales.has(locale)) {
-    void loadLocale(locale);
+  const needed = neededNamespaces();
+  if (!hasNamespaces(locale, needed)) {
+    void loadLocaleForCurrentRoute(locale);
     // While Arabic chunks load after a switch, keep showing the loaded English copy.
-    if (locale !== "en" && loadedLocales.has("en")) return { t: t.en, locale };
+    if (locale !== "en" && hasNamespaces("en", needed)) return { t: t.en, locale };
   }
   return { t: t[locale], locale };
 }

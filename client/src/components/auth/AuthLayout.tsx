@@ -1,150 +1,109 @@
+import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
-import { motion } from "framer-motion";
-import { ArrowLeft, ShieldCheck, Landmark, Languages } from "lucide-react";
-import { BrandMark } from "@/components/BrandMark";
-import { MeshGradient } from "@/components/ui/mesh-gradient";
-import { T } from "@/components/layout/T";
-
-const MIDNIGHT = "#0E1320";
-const GOLD = "#C19E50";
+import { ArrowLeft, Languages, Landmark, ShieldCheck } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
+import { LocaleToggle, MarketingBrand, ThemeToggle } from "@/components/marketing/MarketingLayout";
+import { useMarketingPage } from "@/components/marketing/hooks";
+import { SkipLink } from "@/components/SkipLink";
 
 const TRUST_POINTS = [
-  {
-    icon: Landmark,
-    title: "VAT 201 workflow",
-    body: "Review VAT boxes from your ledger and export support workbooks.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Practical security controls",
-    body: "Role-based access with encryption in transit and audit-friendly records.",
-  },
-  {
-    icon: Languages,
-    title: "Bilingual by design",
-    body: "English and Arabic, side by side — invoices included.",
-  },
+  { icon: Landmark, title: "marketing.authPoint1Title", body: "marketing.authPoint1Body" },
+  { icon: ShieldCheck, title: "marketing.authPoint2Title", body: "marketing.authPoint2Body" },
+  { icon: Languages, title: "marketing.authPoint3Title", body: "marketing.authPoint3Body" },
 ];
+
+export type AuthVariant = "login" | "register" | "forgot" | "reset";
+
+const COPY: Record<AuthVariant, { lead: string; accent: string; sub: string; seo: string }> = {
+  login: {
+    lead: "marketing.authLoginLead",
+    accent: "marketing.authLoginAccent",
+    sub: "marketing.authLoginSub",
+    seo: "Login",
+  },
+  register: {
+    lead: "marketing.authRegisterLead",
+    accent: "marketing.authRegisterAccent",
+    sub: "marketing.authRegisterSub",
+    seo: "Register",
+  },
+  forgot: {
+    lead: "marketing.authRecoverLead",
+    accent: "marketing.authRecoverAccent",
+    sub: "marketing.authRecoverSub",
+    seo: "Forgot",
+  },
+  reset: {
+    lead: "marketing.authRecoverLead",
+    accent: "marketing.authRecoverAccent",
+    sub: "marketing.authResetSub",
+    seo: "Reset",
+  },
+};
 
 interface AuthLayoutProps {
   children: ReactNode;
-  headline: ReactNode;
-  subline: string;
+  variant: AuthVariant;
 }
 
 /**
- * Premium split-screen shell for the auth pages: a midnight brand panel with
- * the drifting emerald/gold mesh on the left, the form on warm paper on the
- * right. Mirrors the marketing site so login feels like the same product.
+ * Split-screen shell for sign-in, registration and password recovery: the
+ * midnight brand panel (desktop only) and the form on the public-site canvas.
+ * Shares tokens, header controls and SEO handling with the marketing pages.
  */
-export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
+export function AuthLayout({ children, variant }: AuthLayoutProps) {
+  const { t } = useTranslation();
+  const copy = COPY[variant];
+  useMarketingPage(`marketing.seo${copy.seo}Title`, `marketing.seo${copy.seo}Description`);
+
   return (
-    <div className="min-h-screen grid lg:grid-cols-[1.1fr_1fr] bg-background">
-      {/* ── Brand panel ── */}
-      <aside
-        className="relative hidden lg:flex flex-col justify-between overflow-hidden px-12 xl:px-16 py-12"
-        style={{ background: MIDNIGHT }}
-      >
-        <MeshGradient emerald={0.4} gold={0.3} />
-
-        <Link
-          href="/"
-          className="relative flex items-center gap-2.5 w-fit"
-          data-testid="link-brand-home"
-        >
-          <BrandMark size="md" />
-          {/* i18n-ignore: brand name */}
-          <span className="font-semibold text-[15px] tracking-tight text-white">
-            Muhasib<span style={{ color: "#34A87A" }}>.ai</span>
-          </span>
-        </Link>
-
-        <motion.div
-          className="relative max-w-md"
-          initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
-          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div
-            className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-            style={{ color: GOLD }}
-          >
-            <span className="inline-block w-6 h-px" style={{ background: GOLD }} />
-            AI-native accounting · UAE
+    <div className="mk-root">
+      <SkipLink />
+      <div className="mk-auth">
+        <aside className="mk-auth__panel">
+          <MarketingBrand testId="link-brand-home" />
+          <div>
+            <p className="mk-eyebrow">{t["marketing.authEyebrow"]}</p>
+            <p className="mk-auth__headline">
+              {t[copy.lead]} <em>{t[copy.accent]}</em>
+            </p>
+            <p className="mk-auth__sub">{t[copy.sub]}</p>
+            <ul className="mk-auth__points">
+              {TRUST_POINTS.map(({ icon: Icon, title, body }) => (
+                <li key={title}>
+                  <span className="mk-auth__icon">
+                    <Icon aria-hidden="true" />
+                  </span>
+                  <strong>{t[title]}</strong>
+                  <p>{t[body]}</p>
+                </li>
+              ))}
+            </ul>
           </div>
-          <h1 className="font-display text-[3.4rem] xl:text-[4rem] leading-[1.02] tracking-tight text-white">
-            {headline}
-          </h1>
-          <p className="mt-5 text-[15px] leading-relaxed text-white/55">{subline}</p>
+          <span aria-hidden="true" />
+        </aside>
 
-          <ul className="mt-10 space-y-5">
-            {TRUST_POINTS.map(({ icon: Icon, title, body }, i) => (
-              <motion.li
-                key={title}
-                className="flex items-start gap-3.5"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 + i * 0.12, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <span className="mt-0.5 flex items-center justify-center w-8 h-8 rounded-lg bg-card/[0.06] ring-1 ring-white/10">
-                  <Icon className="w-4 h-4" style={{ color: "#34A87A" }} strokeWidth={1.75} />
-                </span>
-                <span>
-                  <span className="block text-[13.5px] font-semibold tracking-tight text-white/90">
-                    {title}
-                  </span>
-                  <span className="block mt-0.5 text-[12.5px] leading-relaxed text-white/45">
-                    {body}
-                  </span>
-                </span>
-              </motion.li>
-            ))}
-          </ul>
-        </motion.div>
-
-        <div className="relative flex items-center gap-2 text-[11px] font-mono tracking-tight text-white/35">
-          <span className="inline-flex w-1.5 h-1.5 rounded-full bg-success/70 animate-pulse-dot" />
-          <T k="components.authTagline" />
+        <div className="mk-auth__form">
+          <header className="mk-auth__top">
+            <Button asChild variant="ghost" size="sm" className="mk-auth__back">
+              <Link href="/" data-testid="button-back-home">
+                <ArrowLeft className="mk-flip" aria-hidden="true" />
+                {t["marketing.backToHome"]}
+              </Link>
+            </Button>
+            <MarketingBrand className="mk-auth__brand" testId="link-auth-logo" />
+            <div className="mk-header__actions" style={{ marginInlineStart: 0 }}>
+              <LocaleToggle />
+              <ThemeToggle />
+            </div>
+          </header>
+          <main id="main-content" className="mk-auth__body" tabIndex={-1}>
+            <div className="mk-auth__inner">{children}</div>
+          </main>
+          <footer className="mk-auth__foot">{t["marketing.authFooter"]}</footer>
         </div>
-      </aside>
-
-      {/* ── Form panel ── */}
-      <main className="relative flex flex-col min-h-screen">
-        <div aria-hidden className="absolute inset-0 bg-spotlight pointer-events-none" />
-
-        <header className="relative flex items-center justify-between px-6 md:px-10 h-16">
-          <Link href="/" data-testid="button-back-home">
-            <span className="inline-flex items-center gap-2 text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-              <ArrowLeft className="w-4 h-4" />
-              <T k="components.authBackToHome" />
-            </span>
-          </Link>
-          {/* Compact brand for mobile, where the panel is hidden */}
-          <Link href="/" className="flex items-center gap-2 lg:hidden">
-            <BrandMark size="sm" />
-            {/* i18n-ignore: brand name */}
-            <span className="font-semibold text-[14px] tracking-tight text-foreground">
-              Muhasib<span className="text-accent">.ai</span>
-            </span>
-          </Link>
-        </header>
-
-        <div className="relative flex-1 flex items-center justify-center px-4 pb-16 pt-4">
-          <motion.div
-            className="w-full max-w-md"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {children}
-          </motion.div>
-        </div>
-
-        <footer className="relative px-6 pb-6 text-center text-[11px] text-muted-foreground/70">
-          Encrypted in transit · Built for UAE VAT workflows
-        </footer>
-      </main>
+      </div>
     </div>
   );
 }
