@@ -54,6 +54,7 @@ import {
   type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import { cn } from "@/lib/utils";
+import { T } from "@/components/layout/T";
 
 export interface ReportLaunchDeliveryPreview {
   status?: string;
@@ -697,11 +698,11 @@ export function ReportLaunchPicker({
               <div className="overflow-hidden rounded-md border border-border/70">
                 <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
                   <div className="text-xs font-semibold uppercase text-muted-foreground">
-                    Reports
+                    <T k="components.launchReports" />
                   </div>
                   <Link href={workspaceHref(workspace)}>
                     <Button variant="ghost" size="sm" className="h-7 gap-1 text-accent">
-                      Workspace <ArrowRight className="h-3.5 w-3.5" />
+                      <T k="components.launchWorkspace" /> <ArrowRight className="h-3.5 w-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -722,13 +723,19 @@ export function ReportLaunchPicker({
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <Badge variant="outline">{report.category}</Badge>
                             {reportAutomationContext?.starter ? (
-                              <Badge variant="info">Autopilot</Badge>
+                              <Badge variant="info">
+                                <T k="components.launchAutopilot" />
+                              </Badge>
                             ) : null}
                             {reportAutomationContext?.delivery ? (
-                              <Badge variant="success">Scheduled</Badge>
+                              <Badge variant="success">
+                                <T k="components.launchScheduled" />
+                              </Badge>
                             ) : null}
                             {reportAutomationContext?.comparison ? (
-                              <Badge variant="neutral">Comparison</Badge>
+                              <Badge variant="neutral">
+                                <T k="components.launchComparison" />
+                              </Badge>
                             ) : null}
                           </div>
                         </div>
@@ -740,7 +747,8 @@ export function ReportLaunchPicker({
                                 reportItemHref(report, selectedPersona)
                               }
                             >
-                              Open report <ArrowRight className="h-3.5 w-3.5" />
+                              <T k="components.launchOpenReport" />{" "}
+                              <ArrowRight className="h-3.5 w-3.5" />
                             </Link>
                           </Button>
                           {reportAutomationContext?.starter ? (
@@ -749,7 +757,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.starter.href}
                                 data-testid={`report-launch-report-automation-${report.id}`}
                               >
-                                Autopilot
+                                <T k="components.launchAutopilot" />
                               </Link>
                             </Button>
                           ) : null}
@@ -759,7 +767,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.delivery.href}
                                 data-testid={`report-launch-report-delivery-${report.id}`}
                               >
-                                Delivery
+                                <T k="components.launchDelivery" />
                               </Link>
                             </Button>
                           ) : null}
@@ -769,7 +777,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.comparison.href}
                                 data-testid={`report-launch-report-comparison-${report.id}`}
                               >
-                                Compare
+                                <T k="components.launchCompare" />
                               </Link>
                             </Button>
                           ) : null}
@@ -779,7 +787,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.suite.href}
                                 data-testid={`report-launch-report-suite-${report.id}`}
                               >
-                                Suite
+                                <T k="components.launchSuite" />
                               </Link>
                             </Button>
                           ) : null}
@@ -798,7 +806,7 @@ export function ReportLaunchPicker({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                        <Pin className="h-3.5 w-3.5" /> Pinned automation
+                        <Pin className="h-3.5 w-3.5" /> <T k="components.launchPinnedAutomation" />
                       </div>
                       <Badge
                         variant="success"
@@ -855,7 +863,8 @@ export function ReportLaunchPicker({
                             href={pinnedDeliveryCommandHref}
                             data-testid="report-launch-pinned-command-open"
                           >
-                            Open command <ArrowRight className="h-3.5 w-3.5" />
+                            <T k="components.launchOpenCommand" />{" "}
+                            <ArrowRight className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
                       )}
@@ -866,7 +875,8 @@ export function ReportLaunchPicker({
                 {isDeliveryMode ? (
                   <div className="rounded-md border border-border/70 p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                      <FileSpreadsheet className="h-3.5 w-3.5" /> Delivery subscriptions
+                      <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                      <T k="components.launchDeliverySubscriptions" />
                     </div>
                     <div className="mt-3 space-y-2">
                       {visibleDeliverySubscriptions.slice(0, 2).map((subscription) => {
@@ -949,7 +959,7 @@ export function ReportLaunchPicker({
                                 data-testid={`report-launch-delivery-handoff-${subscription.id}`}
                               >
                                 <div className="font-medium text-foreground">
-                                  Accountant handoff
+                                  <T k="components.launchAccountantHandoff" />
                                 </div>
                                 {deliveryPreview.handoffRows.slice(0, 3).map((row) => (
                                   <div key={row.label}>
@@ -1009,7 +1019,8 @@ export function ReportLaunchPicker({
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Button asChild size="sm" variant="outline" className="h-7 px-2">
                                 <Link href={deliveryHref(subscription)}>
-                                  Open <ArrowRight className="h-3.5 w-3.5" />
+                                  <T k="components.launchOpen" />{" "}
+                                  <ArrowRight className="h-3.5 w-3.5" />
                                 </Link>
                               </Button>
                               {onQueueDeliverySubscription ? (
@@ -1036,7 +1047,7 @@ export function ReportLaunchPicker({
                       })}
                       {visibleDeliverySubscriptions.length === 0 ? (
                         <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                          No delivery subscriptions match this role or search yet.
+                          <T k="components.launchNoSubscriptions" />
                         </div>
                       ) : null}
                     </div>
@@ -1045,7 +1056,8 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Report suites
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchReportSuites" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleSuites.slice(0, 2).map((suite) => {
@@ -1080,7 +1092,8 @@ export function ReportLaunchPicker({
                           <div className="mt-2 flex flex-wrap gap-2">
                             <Button asChild size="sm" variant="outline" className="h-7 px-2">
                               <Link href={suiteHref(suite)}>
-                                Open <ArrowRight className="h-3.5 w-3.5" />
+                                <T k="components.launchOpen" />{" "}
+                                <ArrowRight className="h-3.5 w-3.5" />
                               </Link>
                             </Button>
                             {onQueueDeliverySubscription ? (
@@ -1109,7 +1122,7 @@ export function ReportLaunchPicker({
                     })}
                     {visibleSuites.length === 0 ? (
                       <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                        No report suites match this role or search yet.
+                        <T k="components.launchNoSuites" />
                       </div>
                     ) : null}
                   </div>
@@ -1117,7 +1130,8 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Decision shortcuts
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchDecisionShortcuts" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleShortcuts.slice(0, 2).map((shortcut) => (
@@ -1133,7 +1147,8 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Comparison packs
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchComparisonPacks" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleComparisonPresets.slice(0, 2).map((preset) => (
@@ -1155,7 +1170,8 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Pack templates
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchPackTemplates" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visiblePackTemplates.slice(0, 2).map((template) => (
@@ -1177,7 +1193,8 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <Sparkles className="h-3.5 w-3.5" /> Automation starters
+                    <Sparkles className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchAutomationStarters" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleStarters.slice(0, 2).map((starter) => (

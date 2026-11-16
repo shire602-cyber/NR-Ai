@@ -126,9 +126,10 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     <Card className="w-full max-w-md border-border/60 shadow-xl">
       <CardHeader className="space-y-1.5">
         <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
-          Welcome back<span className="text-accent">.</span>
+          {t["components.authWelcomeBack"]}
+          <span className="text-accent">.</span>
         </CardTitle>
-        <CardDescription>Enter your credentials to access your account</CardDescription>
+        <CardDescription>{t["components.authLoginDescription"]}</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -164,7 +165,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                       className="text-xs text-primary hover:underline"
                       data-testid="link-forgot-password"
                     >
-                      Forgot password?
+                      {t["components.authForgotPassword"]}
                     </Link>
                   </div>
                   <FormControl>

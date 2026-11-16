@@ -32,6 +32,7 @@ import {
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -192,6 +193,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const queryClient = useQueryClient();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [queueingDeliverySubscriptionId, setQueueingDeliverySubscriptionId] = useState<
     string | null
   >(null);
@@ -1199,9 +1201,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search or jump to…" data-testid="command-palette-input" />
+      <CommandInput
+        placeholder={t["components.commandSearchPlaceholder"]}
+        data-testid="command-palette-input"
+      />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>{t["components.commandNoResults"]}</CommandEmpty>
         {Object.entries(grouped).map(([group, groupItems], groupIdx) => (
           <div key={group}>
             {groupIdx > 0 && <CommandSeparator />}

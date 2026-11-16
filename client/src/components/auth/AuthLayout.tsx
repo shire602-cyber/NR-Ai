@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, ShieldCheck, Landmark, Languages } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { MeshGradient } from "@/components/ui/mesh-gradient";
+import { T } from "@/components/layout/T";
 
 const MIDNIGHT = "#0E1320";
 const GOLD = "#C19E50";
@@ -53,6 +54,7 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
           data-testid="link-brand-home"
         >
           <BrandMark size="md" />
+          {/* i18n-ignore: brand name */}
           <span className="font-semibold text-[15px] tracking-tight text-white">
             Muhasib<span style={{ color: "#34A87A" }}>.ai</span>
           </span>
@@ -103,7 +105,7 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
 
         <div className="relative flex items-center gap-2 text-[11px] font-mono tracking-tight text-white/35">
           <span className="inline-flex w-1.5 h-1.5 rounded-full bg-success/70 animate-pulse-dot" />
-          The ledger, handled · UAE · AED
+          <T k="components.authTagline" />
         </div>
       </aside>
 
@@ -115,12 +117,13 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
           <Link href="/" data-testid="button-back-home">
             <span className="inline-flex items-center gap-2 text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
               <ArrowLeft className="w-4 h-4" />
-              Back to Home
+              <T k="components.authBackToHome" />
             </span>
           </Link>
           {/* Compact brand for mobile, where the panel is hidden */}
           <Link href="/" className="flex items-center gap-2 lg:hidden">
             <BrandMark size="sm" />
+            {/* i18n-ignore: brand name */}
             <span className="font-semibold text-[14px] tracking-tight text-foreground">
               Muhasib<span className="text-accent">.ai</span>
             </span>

@@ -34,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { T } from "@/components/layout/T";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -535,7 +536,9 @@ export default function VatWorkpaperPanel({
       <CardHeader className="pb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-1">
-            <CardTitle>VAT evidence workpaper</CardTitle>
+            <CardTitle>
+              <T k="components.vwTitle" />
+            </CardTitle>
             <CardDescription>
               Excel-like area for the VAT return. Record each invoice, bill, receipt, refund, or
               import line with date, party, document number, category, and amount; approved rows
@@ -578,7 +581,7 @@ export default function VatWorkpaperPanel({
               <Button asChild data-testid="link-workpaper-add-trn">
                 <Link href="/company-profile">
                   <AlertTriangle className="w-4 h-4 mr-2" />
-                  Add TRN
+                  <T k="components.vwAddTrn" />
                 </Link>
               </Button>
             )}
@@ -589,7 +592,9 @@ export default function VatWorkpaperPanel({
         <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
-              <Label htmlFor="vatWorkpaperPeriodStart">Period start</Label>
+              <Label htmlFor="vatWorkpaperPeriodStart">
+                <T k="components.vwPeriodStart" />
+              </Label>
               <Input
                 id="vatWorkpaperPeriodStart"
                 type="date"
@@ -598,7 +603,9 @@ export default function VatWorkpaperPanel({
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="vatWorkpaperPeriodEnd">Period end</Label>
+              <Label htmlFor="vatWorkpaperPeriodEnd">
+                <T k="components.vwPeriodEnd" />
+              </Label>
               <Input
                 id="vatWorkpaperPeriodEnd"
                 type="date"
@@ -607,7 +614,9 @@ export default function VatWorkpaperPanel({
               />
             </div>
             <div className="space-y-1">
-              <Label>Workpaper</Label>
+              <Label>
+                <T k="components.vwWorkpaper" />
+              </Label>
               <Select value={selectedWorkpaperId ?? ""} onValueChange={setSelectedWorkpaperId}>
                 <SelectTrigger data-testid="select-vat-workpaper">
                   <SelectValue
@@ -651,11 +660,15 @@ export default function VatWorkpaperPanel({
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Approved rows</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwApprovedRows" />
+            </p>
             <p className="text-lg font-semibold">{approvedRows.length}</p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Draft rows</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwDraftRows" />
+            </p>
             <div className="flex items-center justify-between gap-2">
               <p className="text-lg font-semibold">{draftRows.length}</p>
               {draftRows.length > 0 && (
@@ -667,23 +680,29 @@ export default function VatWorkpaperPanel({
                   disabled={approveAllMutation.isPending}
                   data-testid="button-approve-vat-workpaper-drafts"
                 >
-                  Approve
+                  <T k="components.vwApprove" />
                 </Button>
               )}
             </div>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Output amount</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwOutputAmount" />
+            </p>
             <p className="text-lg font-semibold" data-testid="vat-workpaper-total-sales">
               {formatCurrency(outputAmount)}
             </p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Input amount</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwInputAmount" />
+            </p>
             <p className="text-lg font-semibold">{formatCurrency(inputAmount)}</p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Net VAT</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwNetVat" />
+            </p>
             <p
               className={`text-lg font-semibold ${payableVat >= 0 ? "text-destructive" : "text-success"}`}
               data-testid="vat-workpaper-net-vat"
@@ -698,7 +717,9 @@ export default function VatWorkpaperPanel({
 
         <div className="rounded-md border">
           <div className="border-b bg-muted/30 px-3 py-2">
-            <p className="font-medium">Entry grid</p>
+            <p className="font-medium">
+              <T k="components.vwEntryGrid" />
+            </p>
             <p className="text-xs text-muted-foreground">
               Add rows manually or paste rows from Excel. Approved rows are included in VAT 201
               totals; draft rows wait for review.
@@ -711,13 +732,25 @@ export default function VatWorkpaperPanel({
                   <TableHead className="min-w-36">Date</TableHead>
                   <TableHead className="min-w-56">Customer / vendor</TableHead>
                   <TableHead className="min-w-36">Sr. / invoice no.</TableHead>
-                  <TableHead className="min-w-44">VAT category</TableHead>
-                  <TableHead className="min-w-32">Emirate</TableHead>
-                  <TableHead className="min-w-32 text-right">Amount</TableHead>
+                  <TableHead className="min-w-44">
+                    <T k="components.vwColCategory" />
+                  </TableHead>
+                  <TableHead className="min-w-32">
+                    <T k="components.vwColEmirate" />
+                  </TableHead>
+                  <TableHead className="min-w-32 text-right">
+                    <T k="components.vwColAmount" />
+                  </TableHead>
                   <TableHead className="min-w-32 text-right">VAT</TableHead>
-                  <TableHead className="min-w-32 text-right">Gross</TableHead>
-                  <TableHead className="min-w-28">Status</TableHead>
-                  <TableHead className="w-12 text-right">Action</TableHead>
+                  <TableHead className="min-w-32 text-right">
+                    <T k="components.vwColGross" />
+                  </TableHead>
+                  <TableHead className="min-w-28">
+                    <T k="components.vwColStatus" />
+                  </TableHead>
+                  <TableHead className="w-12 text-right">
+                    <T k="components.vwColAction" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -840,7 +873,7 @@ export default function VatWorkpaperPanel({
                       colSpan={10}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
-                      Loading VAT workpaper...
+                      <T k="components.vwLoading" />
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
@@ -942,7 +975,9 @@ export default function VatWorkpaperPanel({
 
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="space-y-2">
-            <Label htmlFor="vatWorkpaperPaste">Paste from Excel</Label>
+            <Label htmlFor="vatWorkpaperPaste">
+              <T k="components.vwPasteFromExcel" />
+            </Label>
             <Textarea
               id="vatWorkpaperPaste"
               value={pastedRows}
@@ -956,11 +991,15 @@ export default function VatWorkpaperPanel({
           </div>
           <div className="space-y-3 rounded-md border bg-muted/20 p-3">
             <div>
-              <p className="text-xs text-muted-foreground">Default pasted-row category</p>
+              <p className="text-xs text-muted-foreground">
+                <T k="components.vwDefaultPastedCategory" />
+              </p>
               <p className="text-sm font-medium">{vatRowCategoryLabel(rowForm.rowCategory)}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Preview rows</p>
+              <p className="text-xs text-muted-foreground">
+                <T k="components.vwPreviewRows" />
+              </p>
               <p className="text-lg font-semibold">{pastePreviewRows.length}</p>
             </div>
             <Button
@@ -973,7 +1012,7 @@ export default function VatWorkpaperPanel({
               }
               data-testid="button-import-vat-workpaper-paste"
             >
-              Import pasted rows
+              <T k="components.vwImportPastedRows" />
             </Button>
           </div>
         </div>

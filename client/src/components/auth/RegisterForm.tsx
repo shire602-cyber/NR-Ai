@@ -123,9 +123,10 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
     <Card className="w-full max-w-md border-border/60 shadow-xl">
       <CardHeader className="space-y-1.5">
         <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
-          Start your books<span className="text-accent">.</span>
+          {t["components.authStartBooks"]}
+          <span className="text-accent">.</span>
         </CardTitle>
-        <CardDescription>Create your account to start managing your books</CardDescription>
+        <CardDescription>{t["components.authRegisterDescription"]}</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -193,7 +194,10 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    UAE TRN <span className="text-muted-foreground font-normal">(optional)</span>
+                    {t["components.authUaeTrn"]}{" "}
+                    <span className="text-muted-foreground font-normal">
+                      {t["components.authOptional"]}
+                    </span>
                   </FormLabel>
                   <FormControl>
                     <Input

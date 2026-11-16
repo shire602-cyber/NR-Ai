@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // i18n ratchet (R18-02): fails when the number of hard-coded English JSX
-// strings under client/src/pages grows past the committed baseline.
+// strings under client/src/pages and client/src/components grows past the committed baseline.
 //
 //   node scripts/check-i18n-ratchet.mjs            # gate (exit 1 on regression)
 //   node scripts/check-i18n-ratchet.mjs --update   # lower the baseline after real progress
@@ -12,12 +12,16 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { repoRoot, scanPages } from "./i18n-scan.mjs";
+import { repoRoot, scanPages, scanComponents } from "./i18n-scan.mjs";
 
 const baselinePath = join(repoRoot, "scripts", "guard-baselines", "i18n.json");
 const update = process.argv.includes("--update");
 
-const { pages, translated, hardcoded, justified } = scanPages();
+const pageScan = scanPages();
+const componentScan = scanComponents();
+const { pages, translated } = pageScan;
+const hardcoded = pageScan.hardcoded + componentScan.hardcoded;
+const justified = pageScan.justified + componentScan.justified;
 
 let baseline = null;
 try {
@@ -33,9 +37,11 @@ function writeBaseline() {
     JSON.stringify(
       {
         description:
-          "Hard-coded English JSX strings under client/src/pages (scripts/i18n-scan.mjs). Ratchet: may only decrease.",
+          "Hard-coded English JSX strings under client/src/pages and client/src/components (scripts/i18n-scan.mjs). Ratchet: may only decrease.",
         maxHardcoded: hardcoded,
         justified,
+        pagesHardcoded: pageScan.hardcoded,
+        componentsHardcoded: componentScan.hardcoded,
         pagesImportingTranslation: translated,
         pages,
       },

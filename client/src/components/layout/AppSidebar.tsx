@@ -490,6 +490,7 @@ export function AppSidebar() {
               />
             </div>
             <div className="min-w-0">
+              {/* i18n-ignore: brand name */}
               <div className="font-semibold text-[13px] tracking-tight text-sidebar-foreground leading-tight">
                 Muhasib<span className="text-sidebar-primary">.ai</span>
               </div>
