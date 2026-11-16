@@ -45,6 +45,10 @@ export interface PayslipData {
     currency: string;
     exchangeRate: string;
     netForeign: string | null;
+    /** S2 (R04-20): approved expense claims reimbursed with this salary (not taxable pay). */
+    expenseReimbursement: string;
+    /** net + expenseReimbursement: the amount transferred to the employee. */
+    totalPaid: string;
   };
 }
 
@@ -121,6 +125,8 @@ export async function loadPayslip(itemId: string, companyId?: string): Promise<P
         row.net_salary_foreign === null || row.net_salary_foreign === undefined
           ? null
           : fromFils(fils(row.net_salary_foreign)),
+      expenseReimbursement: fromFils(fils(row.expense_reimbursement)),
+      totalPaid: fromFils(fils(row.net_salary) + fils(row.expense_reimbursement)),
     },
   };
 }
@@ -231,6 +237,13 @@ export async function renderPayslipPdf(p: PayslipData): Promise<Buffer> {
       y += 8;
       doc.rect(50, y - 4, width, 26).fill("#EEF2FF");
       row(L("Net pay", "صافي الراتب"), `${cur} ${p.lines.net}`, true);
+      if (Number(p.lines.expenseReimbursement) > 0) {
+        row(
+          L("Expense claim reimbursement", "تعويض مطالبات المصروفات"),
+          `${cur} ${p.lines.expenseReimbursement}`
+        );
+        row(L("Total paid", "إجمالي المدفوع"), `${cur} ${p.lines.totalPaid}`, true);
+      }
       if (p.lines.netForeign && p.lines.currency !== "AED") {
         row(
           `${L("Contract currency", "عملة العقد")} ${p.lines.currency} @ ${p.lines.exchangeRate}`,

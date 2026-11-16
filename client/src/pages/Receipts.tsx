@@ -63,6 +63,8 @@ import {
   Trash2,
   RefreshCw,
   Edit,
+  ListTree,
+  Split,
   Download,
   FileSpreadsheet,
   ZoomIn,
@@ -72,6 +74,7 @@ import {
   Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/ReceiptLinesDialog";
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
 import { formatCurrency } from "@/lib/format";
@@ -363,6 +366,11 @@ export default function Receipts() {
   const [isOcrExporting, setIsOcrExporting] = useState(false);
   const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
+  // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
+  const [linesDialog, setLinesDialog] = useState<{
+    mode: "lines" | "split";
+    receipt: ReceiptForSplit;
+  } | null>(null);
 
   const manualExpenseForm = useForm<ReceiptFormData>({
     resolver: zodResolver(receiptSchema),
@@ -2152,6 +2160,28 @@ export default function Receipts() {
                         Edit
                       </Button>
                       <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 sm:flex-none"
+                        onClick={() => setLinesDialog({ mode: "lines", receipt })}
+                        data-testid={`button-lines-receipt-${receipt.id}`}
+                      >
+                        <ListTree className="w-4 h-4 me-2" />
+                        {receipt.posted ? t["purchases.reviseReceipt"] : t["purchases.splitLines"]}
+                      </Button>
+                      {!receipt.posted && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex-1 sm:flex-none"
+                          onClick={() => setLinesDialog({ mode: "split", receipt })}
+                          data-testid={`button-split-receipt-${receipt.id}`}
+                        >
+                          <Split className="w-4 h-4 me-2" />
+                          {t["purchases.splitReceipt"]}
+                        </Button>
+                      )}
+                      <Button
                         asChild
                         variant="ghost"
                         size="sm"
@@ -2214,6 +2244,18 @@ export default function Receipts() {
           )}
         </CardContent>
       </Card>
+
+      <ReceiptLinesDialog
+        open={!!linesDialog}
+        onOpenChange={(open) => !open && setLinesDialog(null)}
+        mode={linesDialog?.mode ?? "lines"}
+        receipt={linesDialog?.receipt ?? null}
+        accounts={accounts ?? []}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+          toast({ title: t["purchases.receiptSaved"] });
+        }}
+      />
 
       {/* Source Image Preview Dialog — lets users compare OCR output against the original. */}
       <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>

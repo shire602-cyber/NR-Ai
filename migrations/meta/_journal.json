@@ -769,7 +769,28 @@
    "idx": 109,
    "version": "7",
    "when": 1781430250000,
+   "tag": "0110_s1_sales_tax",
+   "breakpoints": false
+  },
+  {
+   "idx": 110,
+   "version": "7",
+   "when": 1781430260000,
+   "tag": "0111_s2_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 111,
+   "version": "7",
+   "when": 1781430270000,
    "tag": "0112_s3_banking_ai",
+   "breakpoints": false
+  },
+  {
+   "idx": 112,
+   "version": "7",
+   "when": 1781430280000,
+   "tag": "0113_s5_platform",
    "breakpoints": false
   }
  ]

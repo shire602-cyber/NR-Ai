@@ -34,6 +34,7 @@ async function sifInput(companyId: string, runId: string): Promise<SifInput> {
   );
   const items = await q<Record<string, unknown>>(
     `SELECT pi.employee_id, pi.net_salary, pi.overtime, pi.unpaid_leave_days, pi.paid_leave_days,
+            pi.expense_reimbursement,
             e.full_name, e.mol_person_id, e.labor_card_number, e.routing_code, e.iban
        FROM payroll_items pi JOIN employees e ON e.id = pi.employee_id
       WHERE pi.payroll_run_id = $1 ORDER BY e.full_name`,
@@ -58,8 +59,9 @@ async function sifInput(companyId: string, runId: string): Promise<SifInput> {
         molPersonId: (it.mol_person_id as string | null) || (labour.length === 14 ? labour : null),
         routingCode: it.routing_code as string | null,
         iban: it.iban as string | null,
-        netFils: fils(it.net_salary),
-        variableFils: fils(it.overtime),
+        // S2 (R04-20): expense claims reimbursed on the run are paid with the salary (variable).
+        netFils: fils(it.net_salary) + fils(it.expense_reimbursement),
+        variableFils: fils(it.overtime) + fils(it.expense_reimbursement),
         leaveDays: num(it.unpaid_leave_days) + num(it.paid_leave_days),
       };
     }),

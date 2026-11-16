@@ -38,6 +38,7 @@ import {
 } from "../ledger";
 import type { Account } from "../../shared/schema";
 import { afterBillPosted, planBillStock, reverseBillStock } from "./inventory/documents";
+import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
 
 const log = createLogger("bill-posting");
 
@@ -461,6 +462,10 @@ export interface BillJournalPlan {
   lineSources?: Array<number | null>;
   /** W4-B inventory hook: the bill lines the plan was built from, in order. */
   lineItems?: Array<{ description: string; amount: string | number }>;
+  /** Input VAT (base fils) debited to 1050. */
+  recoverableVatFils?: number;
+  /** R05-28: true when a vat-recovery rule blocked part of the VAT at the default 100%. */
+  recoveryRulesApplied?: boolean;
 }
 
 /**
@@ -488,13 +493,59 @@ export async function planBillJournal(
   const netBase = nets.map((n) => toBase(n, rate, foreign));
   const vatBase = toBase(vatDoc, rate, foreign);
   const pct = Number(bill.recoverable_vat_percent ?? 100);
-  const recoverableBase =
-    vatBase === 0 ? 0 : pct >= 100 ? vatBase : pct <= 0 ? 0 : mulRate(vatBase, String(pct / 100));
-  const nonRecoverableBase = vatBase - recoverableBase;
-  const shares =
-    nonRecoverableBase > 0
-      ? allocate(nonRecoverableBase, netBase.some((n) => n > 0) ? netBase : netBase.map(() => 1))
-      : netBase.map(() => 0);
+  const lineAccountIds: string[] = [];
+  for (const item of lineItems) {
+    lineAccountIds.push(
+      await resolveLineAccount(
+        accounts,
+        companyId,
+        item,
+        bill.category ?? null,
+        opts.vendorDefaultAccountId ?? null
+      )
+    );
+  }
+  let recoverableBase: number;
+  let shares: number[];
+  let rulesApplied = false;
+  if (pct < 100 || vatBase === 0) {
+    // An explicit bill-level percentage (partial-exemption / apportionment) wins.
+    recoverableBase = vatBase === 0 ? 0 : pct <= 0 ? 0 : mulRate(vatBase, String(pct / 100));
+    const nonRecoverableBase = vatBase - recoverableBase;
+    shares =
+      nonRecoverableBase > 0
+        ? allocate(nonRecoverableBase, netBase.some((n) => n > 0) ? netBase : netBase.map(() => 1))
+        : netBase.map(() => 0);
+  } else {
+    // R05-28: at the default 100%, the vat-recovery category rules (entertainment, personal-use
+    // vehicles, company rules) block input VAT per line; the blocked part joins the line's cost.
+    const rules = await loadRecoveryRules(companyId);
+    const lineVat = lineItems.map((l) => filsOf(l.vat_amount));
+    const weights = lineVat.some((v) => v > 0)
+      ? lineVat
+      : netBase.some((n) => n > 0)
+        ? netBase
+        : netBase.map(() => 1);
+    const vatShares = allocate(vatBase, weights);
+    shares = vatShares.map((share, i) => {
+      if (share === 0) return 0;
+      const account = accounts.find((a) => a.id === lineAccountIds[i]);
+      const rule = resolveRecovery(
+        {
+          category: bill.category ?? null,
+          accountId: lineAccountIds[i],
+          accountCode: account?.code ?? null,
+          accountName: account?.nameEn ?? null,
+        },
+        rules
+      );
+      if (rule.percent >= 100) return 0;
+      rulesApplied = true;
+      const recoverable = rule.percent <= 0 ? 0 : mulRate(share, String(rule.percent / 100));
+      return share - recoverable;
+    });
+    recoverableBase = vatBase - sumFils(shares);
+  }
 
   const lines: PostJournalLineInput[] = [];
   const lineSources: Array<number | null> = [];
@@ -502,13 +553,7 @@ export async function planBillJournal(
     const debitFils = netBase[i] + shares[i];
     if (debitFils === 0) continue;
     lineSources.push(i);
-    const accountId = await resolveLineAccount(
-      accounts,
-      companyId,
-      lineItems[i],
-      bill.category ?? null,
-      opts.vendorDefaultAccountId ?? null
-    );
+    const accountId = lineAccountIds[i];
     lines.push({
       accountId,
       debitFils,
@@ -606,6 +651,8 @@ export async function planBillJournal(
     date: isoDateOf(bill.bill_date),
     lineSources: [...lineSources, null],
     lineItems: lineItems.map((l) => ({ description: l.description, amount: l.amount })),
+    recoverableVatFils: recoverableBase,
+    recoveryRulesApplied: rulesApplied,
   };
 }
 
@@ -642,6 +689,13 @@ export async function postBillJournal(
     { actorId, tx }
   );
   await afterBillPosted(tx, stock.movementIds, result.entry.id);
+  // R05-28: the VAT engine reads the rule-blocked recoverable amount so Box 9/10 ties to 1050.
+  if (!result.replayed) {
+    await txRows(tx, `UPDATE vendor_bills SET recoverable_vat_base = $2 WHERE id = $1`, [
+      bill.id,
+      plan.recoveryRulesApplied ? fromFils(plan.recoverableVatFils ?? 0) : null,
+    ]);
+  }
   log.info({ billId: bill.id, entryId: result.entry.id, replayed: result.replayed }, "Bill posted");
   return result;
 }

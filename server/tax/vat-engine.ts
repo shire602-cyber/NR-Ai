@@ -533,7 +533,8 @@ async function collectBills(
     `SELECT id, vendor_name, vendor_trn, bill_number, bill_date, currency, exchange_rate,
             subtotal, vat_amount, reverse_charge, COALESCE(is_import, false) AS is_import,
             COALESCE(designated_zone, false) AS designated_zone,
-            COALESCE(recoverable_vat_percent, 100) AS recoverable_pct
+            COALESCE(recoverable_vat_percent, 100) AS recoverable_pct,
+            recoverable_vat_base
        FROM vendor_bills
       WHERE company_id = $1
         AND bill_date::date >= $2::date AND bill_date::date <= $3::date
@@ -565,7 +566,20 @@ async function collectBills(
     const pct = Number(b.recoverable_pct);
     const vatDoc = fils(b.vat_amount);
     const vatBase = toBaseFils(vatDoc, rate);
-    const recoverableTotal = recoverableShare(vatBase, pct);
+    // S2 (R05-28): bill posting stores the recoverable input VAT after the vat-recovery category
+    // rules (blocked entertainment / personal-use vehicle VAT); it wins over the bill percentage.
+    const ruleRecoverable =
+      b.recoverable_vat_base === null || b.recoverable_vat_base === undefined
+        ? null
+        : Math.min(vatBase, Math.max(0, fils(b.recoverable_vat_base)));
+    const recoverableTotal = ruleRecoverable ?? recoverableShare(vatBase, pct);
+    /** Recoverable part of `partVat` (a slice of vatBase), consistent with recoverableTotal. */
+    const recoverableOf = (partVat: number) =>
+      ruleRecoverable === null
+        ? recoverableShare(partVat, pct)
+        : vatBase === 0
+          ? 0
+          : Math.round((ruleRecoverable * partVat) / vatBase);
     const base = {
       sourceType: "bill" as const,
       sourceId: b.id,
@@ -625,13 +639,13 @@ async function collectBills(
           "reverse_charge",
           toBaseFils(rcNet, rate),
           rcVatBase,
-          recoverableShare(rcVatBase, pct)
+          recoverableOf(rcVatBase)
         ),
       });
     }
     if (stdNet !== 0 || stdVat !== 0) {
       // Recoverable split mirrors bill posting: % of the whole bill VAT, less the RC share.
-      const stdRecoverable = recoverableTotal - recoverableShare(rcVatBase, pct);
+      const stdRecoverable = recoverableTotal - recoverableOf(rcVatBase);
       push({
         ...base,
         boxes: purchaseDelta("standard", toBaseFils(stdNet, rate), stdVatBase, stdRecoverable),

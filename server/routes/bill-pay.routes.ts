@@ -50,6 +50,7 @@ import {
   createBill,
   createDebitNote,
   createDraftFromParsedInbound,
+  createVendorCreditFromInbound,
   createPrepayment,
   createRecurringBill,
   prepareBillRevision,
@@ -79,12 +80,14 @@ import {
   billUpdateSchema,
   debitNoteCreateSchema,
   inboundBillSchema,
+  inboundVendorCreditSchema,
   prepaymentCreateSchema,
   recurringBillCreateSchema,
   type BillCreateInput,
   type BillPaymentInput,
   type BillReviseInput,
   type BillUpdateInput,
+  type InboundVendorCreditInput,
 } from "../../shared/validators/bills";
 import { zUuid } from "../../shared/validators/primitives";
 import { fromFils, toFils } from "../../shared/money";
@@ -964,6 +967,30 @@ export function registerBillPayRoutes(app: Express) {
       await assertCompanyAccess(req, companyId);
       const result = await createDraftFromParsedInbound(companyId, req.user!.id, req.body);
       res.status(201).json({ ...result.bill, line_items: result.lines, warnings: result.warnings });
+    })
+  );
+
+  // ── Reviewed inbound supplier credit note → vendor debit note (W4-C residual) ─
+  app.post(
+    "/api/companies/:companyId/bills/inbound/:inboundId/vendor-credit",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post", "documents.approve"),
+    strictBody(inboundVendorCreditSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, inboundId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      if (!zUuid.safeParse(inboundId).success) {
+        throw new DomainError("INBOUND_DOCUMENT_NOT_FOUND", 404);
+      }
+      const out = await createVendorCreditFromInbound({
+        companyId,
+        actorId: req.user!.id,
+        inboundId,
+        input: parsedBody<InboundVendorCreditInput>(req),
+        req,
+      });
+      res.status(201).json(out);
     })
   );
 
