@@ -449,6 +449,7 @@ export function buildReportDeliveryNotificationForPlan(input: {
       : status === "blocked" || status === "failed"
         ? `${renderServerCopy("notification.reportDeliveryNothingSent.message")} ${run?.errorMessage ?? ""}`.trim()
         : renderServerCopy("notification.reportDeliveryScheduled.message", {
+            format: plan.format,
             date: scheduledForLabel,
           });
 

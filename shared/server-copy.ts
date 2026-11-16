@@ -114,7 +114,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
     true
   ),
   T("notification.reportDeliveryNothingSent.message", "Nothing was sent.", true),
-  T("notification.reportDeliveryScheduled.message", "Report delivery scheduled for {date}.", true),
+  T("notification.reportDeliveryScheduled.message", "{format} scheduled for {date}.", true),
 ];
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

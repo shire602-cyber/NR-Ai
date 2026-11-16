@@ -245,7 +245,7 @@
   "components.srv.notification.reportDeliverySentOne.message": "Emailed PDF and Excel pack to 1 recipient.",
   "components.srv.notification.reportDeliverySent.message": "Emailed PDF and Excel pack to {count} recipients.",
   "components.srv.notification.reportDeliveryNothingSent.message": "Nothing was sent.",
-  "components.srv.notification.reportDeliveryScheduled.message": "Report delivery scheduled for {date}.",
+  "components.srv.notification.reportDeliveryScheduled.message": "{format} scheduled for {date}.",
   "components.srv.cashForecast.insufficientData": "Insufficient data: there are no open invoices, bills or scheduled items in the forecast window, so no inflows or outflows are projected. Add invoices, bills or scheduled items to build a forecast.",
   "components.srv.cashForecast.negativeBalance": "Projected negative balance of AED {amount} in week {week} ({weekStart}).",
   "components.srv.cashForecast.lowCash": "Cash may drop below AED 10,000 in week {week} ({weekStart}).",
