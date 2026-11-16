@@ -71,6 +71,7 @@ import { strictBody } from "../http/strict-body";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
 import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
 import { getCapability } from "../../shared/capabilities";
+import type { User } from "../../shared/schema";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
@@ -225,7 +226,7 @@ async function createOAuthCustomer(req: Request, profile: OAuthIdentityProfile) 
     passwordHash,
     emailVerified: true,
     avatarUrl: profile.picture,
-  } as any);
+  } as unknown as Parameters<typeof storage.createUser>[0]);
   await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
   return user;
 }
@@ -233,7 +234,7 @@ async function createOAuthCustomer(req: Request, profile: OAuthIdentityProfile) 
 async function resolveOAuthUser(
   req: Request,
   profile: OAuthIdentityProfile
-): Promise<{ user: any; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
+): Promise<{ user: User; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
   const identity = await getAuthIdentity(profile);
   if (identity) {
     const user = await storage.getUser(identity.userId);
@@ -291,12 +292,14 @@ async function seedChartOfAccounts(
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
 
   try {
-    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    const createdAccounts = await storage.createBulkAccounts(
+      defaultAccounts as Parameters<typeof storage.createBulkAccounts>[0]
+    );
     log.info({ companyId, count: createdAccounts.length }, "Seeded chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
-  } catch (error: any) {
-    if (error.message?.includes("PARTIAL_INSERT")) {
-      log.error({ companyId, message: error.message }, "Partial COA insert detected");
+  } catch (error) {
+    if ((error as Error).message?.includes("PARTIAL_INSERT")) {
+      log.error({ companyId, message: (error as Error).message }, "Partial COA insert detected");
       throw new Error(
         "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
@@ -317,7 +320,7 @@ async function provisionCustomerCompany(
     locale: "en",
     companyType: "customer", // Self-signup companies are customer type (not managed by NR)
     ...(extra.trnVatNumber ? { trnVatNumber: extra.trnVatNumber } : {}),
-  } as any);
+  } as Parameters<typeof storage.createCompany>[0]);
 
   await storage.createCompanyUser({ companyId: company.id, userId, role: "owner" });
   await seedChartOfAccounts(company.id);
@@ -336,7 +339,7 @@ async function provisionCustomerCompany(
     maxInvoices: 20,
     maxReceipts: 20,
     aiCreditsRemaining: 10,
-  } as any);
+  } as unknown as Parameters<typeof storage.createSubscription>[0]);
   return company;
 }
 
@@ -499,7 +502,7 @@ export function registerAuthRoutes(app: Express): void {
         message: `Several failed sign-in attempts were made on your account. Sign-in is paused for about ${Math.ceil(retryAfterSeconds / 60)} minute(s). If this was not you, reset your password.`,
         priority: "high",
         actionUrl: "/settings",
-      } as any);
+      } as Parameters<typeof storage.createNotification>[0]);
     } catch (err) {
       log.warn({ err, userId: user.id }, "Failed to create lockout notification");
     }
@@ -1502,7 +1505,7 @@ export function registerAuthRoutes(app: Express): void {
         isAdmin: invitation.role === "staff" || invitation.userType === "admin",
         userType: invitation.userType || "client",
         passwordHash,
-      } as any);
+      } as unknown as Parameters<typeof storage.createUser>[0]);
 
       // If company associated, add user to company and set company type
       if (invitation.companyId) {

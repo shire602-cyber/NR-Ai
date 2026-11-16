@@ -48,7 +48,7 @@ export function registerBackupRoutes(app: Express) {
 
       const backupList = await storage.getBackupsByCompanyId(companyId);
       // Don't send the full data snapshot in the list
-      const sanitizedBackups = backupList.map(({ dataSnapshot, ...backup }) => backup);
+      const sanitizedBackups = backupList.map(({ dataSnapshot: _dataSnapshot, ...backup }) => backup);
       res.json(sanitizedBackups);
     })
   );
@@ -140,7 +140,7 @@ export function registerBackupRoutes(app: Express) {
         });
 
         // Return without the full data snapshot
-        const { dataSnapshot, ...sanitizedBackup } = backup;
+        const { dataSnapshot: _dataSnapshot, ...sanitizedBackup } = backup;
         res.status(201).json(sanitizedBackup);
       } catch (error: any) {
         // Mark as failed
@@ -171,7 +171,7 @@ export function registerBackupRoutes(app: Express) {
       }
 
       // Return without the full data snapshot for security
-      const { dataSnapshot, ...sanitizedBackup } = backup;
+      const { dataSnapshot: _dataSnapshot, ...sanitizedBackup } = backup;
       res.json(sanitizedBackup);
     })
   );

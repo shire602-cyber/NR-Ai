@@ -151,15 +151,16 @@ function MfaChallenge({
 
 /** W5-E: consumes /verify-email?token=… links. */
 function useEmailVerificationLink(): "idle" | "working" | "done" | "failed" {
-  const [state, setState] = useState<"idle" | "working" | "done" | "failed">("idle");
+  const [state, setState] = useState<"idle" | "working" | "done" | "failed">(() => {
+    if (typeof window === "undefined" || window.location.pathname !== "/verify-email") {
+      return "idle";
+    }
+    return new URLSearchParams(window.location.search).get("token") ? "working" : "failed";
+  });
   useEffect(() => {
     if (window.location.pathname !== "/verify-email") return;
     const token = new URLSearchParams(window.location.search).get("token");
-    if (!token) {
-      setState("failed");
-      return;
-    }
-    setState("working");
+    if (!token) return;
     fetch(apiUrl("/api/auth/verify-email"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },

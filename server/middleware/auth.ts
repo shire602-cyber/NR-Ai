@@ -88,6 +88,7 @@ export interface AuthSuccess {
 }
 
 const AUTH_RESULT = Symbol.for("muhasib.authResult");
+type AuthMemo = { [AUTH_RESULT]?: AuthSuccess | AuthFailure | null };
 
 function isFailure(r: AuthSuccess | AuthFailure): r is AuthFailure {
   return "code" in r;
@@ -159,7 +160,7 @@ async function verifyAccessCredential(token: string): Promise<AuthSuccess | Auth
  * verification.
  */
 export async function authenticateRequest(req: Request): Promise<AuthSuccess | AuthFailure | null> {
-  const cached = (req as any)[AUTH_RESULT] as AuthSuccess | AuthFailure | null | undefined;
+  const cached = (req as unknown as AuthMemo)[AUTH_RESULT];
   if (cached !== undefined) return cached;
   const token = getRequestToken(req);
   let result: AuthSuccess | AuthFailure | null = null;
@@ -171,7 +172,7 @@ export async function authenticateRequest(req: Request): Promise<AuthSuccess | A
       result = { status: 401, code: "AUTH_FAILED", message: "Authentication failed" };
     }
   }
-  (req as any)[AUTH_RESULT] = result;
+  (req as unknown as AuthMemo)[AUTH_RESULT] = result;
   return result;
 }
 
@@ -183,7 +184,7 @@ export async function optionalAuthUser(req: Request): Promise<Express.User | nul
 
 /** Forget a memoised authentication result (after issuing new tokens). */
 export function clearAuthenticationCache(req: Request): void {
-  delete (req as any)[AUTH_RESULT];
+  delete (req as unknown as AuthMemo)[AUTH_RESULT];
 }
 
 /**

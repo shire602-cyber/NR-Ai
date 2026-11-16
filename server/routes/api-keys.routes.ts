@@ -29,7 +29,7 @@ export function registerApiKeyRoutes(app: Express) {
       const keys = await storage.getApiKeysByCompanyId(companyId);
 
       // Return masked keys — never expose keyHash
-      const masked = keys.map(({ keyHash, ...key }) => ({
+      const masked = keys.map(({ keyHash: _keyHash, ...key }) => ({
         ...key,
         keyPrefix: `muh_${key.keyPrefix}...`,
       }));
@@ -105,7 +105,6 @@ export function registerApiKeyRoutes(app: Express) {
       const { name, scopes, isActive } = req.body;
 
       // Fetch existing key to verify ownership
-      const keys = await storage.getApiKeysByCompanyId("");
       // We need to find this key across companies the user can access
       // Instead, update and verify via the key's company
       const allCompanies = await storage.getCompaniesByUserId(userId);
