@@ -1,62 +1,62 @@
 {
   "tolerance": 0.1,
-  "updatedAt": "2026-11-16T15:42:13.584Z",
+  "updatedAt": "2026-11-16T17:13:29.170Z",
   "chunks": {
     "AccountLedger.js": {
-      "bytes": 15429,
-      "gzipBytes": 5432
+      "bytes": 15431,
+      "gzipBytes": 5433
     },
     "ActiveCompanyProvider.js": {
       "bytes": 2060,
-      "gzipBytes": 916
+      "gzipBytes": 920
     },
     "ActivityLogs.js": {
       "bytes": 8692,
-      "gzipBytes": 2516
+      "gzipBytes": 2514
     },
     "Admin.js": {
       "bytes": 42496,
-      "gzipBytes": 7709
+      "gzipBytes": 7707
     },
     "AdminDashboard.js": {
       "bytes": 15393,
-      "gzipBytes": 3117
+      "gzipBytes": 3119
     },
     "AdminDocuments.js": {
       "bytes": 14475,
       "gzipBytes": 4032
     },
     "AdvancedAnalytics.js": {
-      "bytes": 34250,
-      "gzipBytes": 9137
+      "bytes": 34252,
+      "gzipBytes": 9140
     },
     "AdvancedReports.js": {
-      "bytes": 18245,
-      "gzipBytes": 4559
+      "bytes": 18247,
+      "gzipBytes": 4564
     },
     "ai.js": {
       "bytes": 1801,
       "gzipBytes": 938
     },
     "AICFO.js": {
-      "bytes": 15791,
-      "gzipBytes": 4333
+      "bytes": 15793,
+      "gzipBytes": 4340
     },
     "AIChat.js": {
       "bytes": 10777,
       "gzipBytes": 3569
     },
     "AIFeatures.js": {
-      "bytes": 26460,
-      "gzipBytes": 5641
+      "bytes": 26462,
+      "gzipBytes": 5644
     },
     "AIHub.js": {
-      "bytes": 3068,
-      "gzipBytes": 1312
+      "bytes": 2995,
+      "gzipBytes": 1283
     },
     "AIInbox.js": {
-      "bytes": 18141,
-      "gzipBytes": 3954
+      "bytes": 18107,
+      "gzipBytes": 3935
     },
     "alert-dialog.js": {
       "bytes": 2232,
@@ -72,23 +72,23 @@
     },
     "Analytics.js": {
       "bytes": 8780,
-      "gzipBytes": 2210
+      "gzipBytes": 2209
     },
     "AnalyticsHub.js": {
-      "bytes": 2445,
-      "gzipBytes": 1100
+      "bytes": 2408,
+      "gzipBytes": 1086
     },
     "AnomalyDetection.js": {
       "bytes": 10619,
       "gzipBytes": 3581
     },
     "App.css": {
-      "bytes": 19230,
-      "gzipBytes": 4318
+      "bytes": 19482,
+      "gzipBytes": 4356
     },
     "App.js": {
-      "bytes": 135525,
-      "gzipBytes": 38191
+      "bytes": 135477,
+      "gzipBytes": 38181
     },
     "arabic-400.css": {
       "bytes": 253,
@@ -112,7 +112,7 @@
     },
     "auth.js": {
       "bytes": 4932,
-      "gzipBytes": 2121
+      "gzipBytes": 2120
     },
     "AuthCallback.js": {
       "bytes": 1599,
@@ -120,23 +120,23 @@
     },
     "AuthLayout.js": {
       "bytes": 2827,
-      "gzipBytes": 954
+      "gzipBytes": 956
     },
     "authSession.js": {
       "bytes": 2486,
       "gzipBytes": 1268
     },
     "AutomationPanel.js": {
-      "bytes": 49216,
-      "gzipBytes": 6388
+      "bytes": 49218,
+      "gzipBytes": 6390
     },
     "AutoReconcile.js": {
-      "bytes": 11764,
-      "gzipBytes": 3229
+      "bytes": 11730,
+      "gzipBytes": 3214
     },
     "BackupRestore.js": {
       "bytes": 20104,
-      "gzipBytes": 6053
+      "gzipBytes": 6054
     },
     "badge.js": {
       "bytes": 4352,
@@ -144,43 +144,43 @@
     },
     "BalanceSheetTab.js": {
       "bytes": 3901,
-      "gzipBytes": 1038
+      "gzipBytes": 1036
     },
     "BalancesTab.js": {
-      "bytes": 31538,
-      "gzipBytes": 3749
+      "bytes": 31540,
+      "gzipBytes": 3751
     },
     "BankAccounts.js": {
-      "bytes": 16373,
-      "gzipBytes": 4408
+      "bytes": 16375,
+      "gzipBytes": 4406
     },
     "BankFeeds.js": {
       "bytes": 5108,
-      "gzipBytes": 1889
+      "gzipBytes": 1890
     },
     "banking.js": {
-      "bytes": 14388,
-      "gzipBytes": 4417
+      "bytes": 14394,
+      "gzipBytes": 4422
     },
     "BankReconciliation.js": {
-      "bytes": 44687,
-      "gzipBytes": 11691
+      "bytes": 44631,
+      "gzipBytes": 11677
     },
     "BarChart.js": {
       "bytes": 318,
       "gzipBytes": 228
     },
     "BillPay.js": {
-      "bytes": 39845,
-      "gzipBytes": 10190
+      "bytes": 39860,
+      "gzipBytes": 10229
     },
     "Budgets.js": {
       "bytes": 28829,
-      "gzipBytes": 7181
+      "gzipBytes": 7178
     },
     "BulkOperations.js": {
-      "bytes": 21848,
-      "gzipBytes": 5478
+      "bytes": 21775,
+      "gzipBytes": 5442
     },
     "button.js": {
       "bytes": 23406,
@@ -195,12 +195,12 @@
       "gzipBytes": 2471
     },
     "CashFlowForecast.js": {
-      "bytes": 18841,
+      "bytes": 18838,
       "gzipBytes": 5379
     },
     "ChartOfAccounts.js": {
       "bytes": 10179,
-      "gzipBytes": 3877
+      "gzipBytes": 3878
     },
     "checkbox.js": {
       "bytes": 942,
@@ -212,19 +212,19 @@
     },
     "ClientImport.js": {
       "bytes": 11445,
-      "gzipBytes": 3204
+      "gzipBytes": 3207
     },
     "ClientPortfolio.js": {
-      "bytes": 131555,
-      "gzipBytes": 28099
+      "bytes": 131482,
+      "gzipBytes": 28055
     },
     "ClientProfile.js": {
-      "bytes": 16646,
-      "gzipBytes": 4447
+      "bytes": 16573,
+      "gzipBytes": 4405
     },
     "CloseTab.js": {
       "bytes": 16545,
-      "gzipBytes": 2822
+      "gzipBytes": 2821
     },
     "commercial.js": {
       "bytes": 162,
@@ -236,19 +236,19 @@
     },
     "company-logo.js": {
       "bytes": 1059,
-      "gzipBytes": 622
+      "gzipBytes": 621
     },
     "CompanyGroups.js": {
       "bytes": 11676,
-      "gzipBytes": 3034
+      "gzipBytes": 3035
     },
     "CompanyProfile.js": {
       "bytes": 12659,
-      "gzipBytes": 3163
+      "gzipBytes": 3162
     },
     "CompanySettings.js": {
       "bytes": 14764,
-      "gzipBytes": 4050
+      "gzipBytes": 4047
     },
     "ComparisonsPanel.js": {
       "bytes": 7476,
@@ -260,7 +260,7 @@
     },
     "ComplianceCalendar.js": {
       "bytes": 8637,
-      "gzipBytes": 2970
+      "gzipBytes": 2972
     },
     "components.js": {
       "bytes": 62656,
@@ -271,8 +271,8 @@
       "gzipBytes": 3163
     },
     "Consolidation.js": {
-      "bytes": 10580,
-      "gzipBytes": 3320
+      "bytes": 10582,
+      "gzipBytes": 3324
     },
     "context.js": {
       "bytes": 298,
@@ -280,63 +280,67 @@
     },
     "CookiePolicy.js": {
       "bytes": 3263,
-      "gzipBytes": 1401
+      "gzipBytes": 1402
     },
     "corporateTax.js": {
       "bytes": 10239,
       "gzipBytes": 3589
     },
     "CorporateTax.js": {
-      "bytes": 35570,
-      "gzipBytes": 7637
+      "bytes": 35450,
+      "gzipBytes": 7657
     },
     "CorporateTaxTab.js": {
       "bytes": 5052,
-      "gzipBytes": 1303
+      "gzipBytes": 1301
     },
     "CostCenters.js": {
       "bytes": 17322,
-      "gzipBytes": 5061
+      "gzipBytes": 5057
     },
     "CreditNotes.js": {
-      "bytes": 15157,
-      "gzipBytes": 4342
+      "bytes": 15184,
+      "gzipBytes": 4369
     },
     "CustomerContacts.js": {
       "bytes": 28030,
-      "gzipBytes": 7753
+      "gzipBytes": 7748
     },
     "CustomerPortal.js": {
       "bytes": 15010,
-      "gzipBytes": 3945
+      "gzipBytes": 3948
     },
     "dashboard.js": {
       "bytes": 12611,
       "gzipBytes": 4077
     },
     "Dashboard.js": {
-      "bytes": 125244,
-      "gzipBytes": 27010
+      "bytes": 125444,
+      "gzipBytes": 27092
     },
     "data-table.js": {
       "bytes": 2016,
-      "gzipBytes": 931
+      "gzipBytes": 932
+    },
+    "date-picker.js": {
+      "bytes": 1351,
+      "gzipBytes": 764
     },
     "DateRangeFilter.js": {
-      "bytes": 3522,
-      "gzipBytes": 1320
+      "bytes": 3519,
+      "gzipBytes": 1319
     },
     "DeliveryPanel.js": {
       "bytes": 40981,
-      "gzipBytes": 6822
+      "gzipBytes": 6824
     },
     "DemoWorkspace.js": {
-      "bytes": 10825,
-      "gzipBytes": 3054
+      "bytes": 10819,
+      "gzipBytes": 3047
     },
     "DeveloperSettings.js": {
       "bytes": 18478,
-      "gzipBytes": 4692
+      "gzipBytes": 4695
     },
     "dialog.js": {
       "bytes": 3429,
@@ -344,7 +348,7 @@
     },
     "DocumentChasing.js": {
       "bytes": 18994,
-      "gzipBytes": 4842
+      "gzipBytes": 4843
     },
     "DocumentVault.js": {
       "bytes": 15701,
@@ -352,10 +356,10 @@
     },
     "DocumentVersions.js": {
       "bytes": 6466,
-      "gzipBytes": 2249
+      "gzipBytes": 2251
     },
     "EInvoiceListCell.js": {
-      "bytes": 18677,
+      "bytes": 18674,
       "gzipBytes": 5297
     },
     "einvoicing.js": {
@@ -363,12 +367,12 @@
       "gzipBytes": 8259
     },
     "EInvoicingSettings.js": {
-      "bytes": 30765,
-      "gzipBytes": 8526
+      "bytes": 30762,
+      "gzipBytes": 8527
     },
     "EmailIntake.js": {
       "bytes": 13825,
-      "gzipBytes": 3895
+      "gzipBytes": 3897
     },
     "empty-state.js": {
       "bytes": 1483,
@@ -379,68 +383,68 @@
       "gzipBytes": 2364
     },
     "EvidenceCenter.js": {
-      "bytes": 28952,
-      "gzipBytes": 6956
+      "bytes": 28954,
+      "gzipBytes": 6961
     },
     "evidenceLinks.js": {
       "bytes": 205,
       "gzipBytes": 182
     },
     "ExchangeRates.js": {
-      "bytes": 29305,
-      "gzipBytes": 8599
+      "bytes": 29307,
+      "gzipBytes": 8602
     },
     "ExpenseClaims.js": {
-      "bytes": 28237,
-      "gzipBytes": 7067
+      "bytes": 28239,
+      "gzipBytes": 7064
     },
     "ExpensesTab.js": {
-      "bytes": 14702,
-      "gzipBytes": 2353
+      "bytes": 14704,
+      "gzipBytes": 2354
     },
     "export.js": {
       "bytes": 45557,
-      "gzipBytes": 10332
+      "gzipBytes": 10333
     },
     "Feedback.js": {
       "bytes": 8876,
-      "gzipBytes": 2738
+      "gzipBytes": 2740
     },
     "FinancialStatements.js": {
-      "bytes": 21815,
-      "gzipBytes": 4121
+      "bytes": 21924,
+      "gzipBytes": 4163
     },
     "firm.js": {
       "bytes": 12454,
       "gzipBytes": 4548
     },
     "FirmAnalytics.js": {
-      "bytes": 6847,
-      "gzipBytes": 2349
+      "bytes": 6774,
+      "gzipBytes": 2306
     },
     "FirmCommandCenter.js": {
       "bytes": 18802,
-      "gzipBytes": 5028
+      "gzipBytes": 5030
     },
     "FirmComms.js": {
       "bytes": 19528,
-      "gzipBytes": 4964
+      "gzipBytes": 4966
     },
     "FirmHealth.js": {
       "bytes": 8959,
-      "gzipBytes": 2247
+      "gzipBytes": 2248
     },
     "FirmRelationship.js": {
       "bytes": 11269,
-      "gzipBytes": 3130
+      "gzipBytes": 3133
     },
     "FixedAssets.js": {
-      "bytes": 28700,
-      "gzipBytes": 7227
+      "bytes": 28702,
+      "gzipBytes": 7228
     },
     "ForgotPassword.js": {
       "bytes": 3958,
-      "gzipBytes": 1642
+      "gzipBytes": 1638
     },
     "form-layout.js": {
       "bytes": 7830,
@@ -448,23 +452,15 @@
     },
     "form.js": {
       "bytes": 2156,
-      "gzipBytes": 967
-    },
-    "format-date.js": {
-      "bytes": 1013,
-      "gzipBytes": 503
+      "gzipBytes": 966
     },
     "format-money.js": {
       "bytes": 939,
       "gzipBytes": 555
     },
-    "format.js": {
-      "bytes": 979,
-      "gzipBytes": 443
-    },
     "forms.js": {
-      "bytes": 34795,
-      "gzipBytes": 9899
+      "bytes": 34801,
+      "gzipBytes": 9906
     },
     "generateCategoricalChart.js": {
       "bytes": 375985,
@@ -472,19 +468,19 @@
     },
     "groupConsolidationQueries.js": {
       "bytes": 951,
-      "gzipBytes": 527
+      "gzipBytes": 528
     },
     "HelpCenter.js": {
       "bytes": 3593,
-      "gzipBytes": 1218
+      "gzipBytes": 1219
     },
     "History.js": {
       "bytes": 6934,
-      "gzipBytes": 2155
+      "gzipBytes": 2157
     },
     "HomePanel.js": {
       "bytes": 10896,
-      "gzipBytes": 2346
+      "gzipBytes": 2345
     },
     "hr.js": {
       "bytes": 21541,
@@ -496,19 +492,19 @@
     },
     "ImportWizard.js": {
       "bytes": 12133,
-      "gzipBytes": 4475
+      "gzipBytes": 4477
     },
     "index.css": {
-      "bytes": 207963,
-      "gzipBytes": 65371
+      "bytes": 208738,
+      "gzipBytes": 65547
     },
     "index.es.js": {
       "bytes": 152435,
       "gzipBytes": 49899
     },
     "index.js": {
-      "bytes": 53527,
-      "gzipBytes": 18108
+      "bytes": 53533,
+      "gzipBytes": 18109
     },
     "input.js": {
       "bytes": 1090,
@@ -519,36 +515,36 @@
       "gzipBytes": 5372
     },
     "Inventory.js": {
-      "bytes": 33557,
-      "gzipBytes": 8464
+      "bytes": 33559,
+      "gzipBytes": 8461
     },
     "InvoicePreview.js": {
-      "bytes": 7135,
-      "gzipBytes": 1842
+      "bytes": 7137,
+      "gzipBytes": 1845
     },
     "invoices.js": {
-      "bytes": 9337,
-      "gzipBytes": 3207
+      "bytes": 9669,
+      "gzipBytes": 3312
     },
     "Invoices.js": {
-      "bytes": 70999,
-      "gzipBytes": 18930
+      "bytes": 72047,
+      "gzipBytes": 19234
     },
     "InvoiceTemplates.js": {
       "bytes": 11877,
-      "gzipBytes": 3329
+      "gzipBytes": 3327
     },
     "journal.js": {
       "bytes": 6840,
       "gzipBytes": 2369
     },
     "Journal.js": {
-      "bytes": 21074,
-      "gzipBytes": 5822
+      "bytes": 21362,
+      "gzipBytes": 5896
     },
     "JournalEntryDetail.js": {
-      "bytes": 12324,
-      "gzipBytes": 3453
+      "bytes": 12326,
+      "gzipBytes": 3456
     },
     "label.js": {
       "bytes": 740,
@@ -556,15 +552,15 @@
     },
     "LeadPipeline.js": {
       "bytes": 12867,
-      "gzipBytes": 3738
+      "gzipBytes": 3739
     },
     "LedgerTab.js": {
-      "bytes": 10386,
-      "gzipBytes": 2264
+      "bytes": 10388,
+      "gzipBytes": 2266
     },
     "LegalLayout.js": {
       "bytes": 2218,
-      "gzipBytes": 903
+      "gzipBytes": 904
     },
     "Line.js": {
       "bytes": 11142,
@@ -580,7 +576,7 @@
     },
     "Login.js": {
       "bytes": 9038,
-      "gzipBytes": 3608
+      "gzipBytes": 3604
     },
     "marketing.js": {
       "bytes": 75540,
@@ -592,11 +588,15 @@
     },
     "MarketingLayout.js": {
       "bytes": 6667,
-      "gzipBytes": 2194
+      "gzipBytes": 2195
+    },
+    "middle-truncate.js": {
+      "bytes": 469,
+      "gzipBytes": 312
     },
     "MigrationGuides.js": {
       "bytes": 3960,
-      "gzipBytes": 1193
+      "gzipBytes": 1194
     },
     "money.js": {
       "bytes": 1430,
@@ -607,28 +607,28 @@
       "gzipBytes": 1950
     },
     "MonthEndClose.js": {
-      "bytes": 22527,
-      "gzipBytes": 5475
+      "bytes": 22524,
+      "gzipBytes": 5478
     },
     "MuhasibLanding.js": {
-      "bytes": 22112,
-      "gzipBytes": 5128
+      "bytes": 22191,
+      "gzipBytes": 5168
     },
     "not-found.js": {
       "bytes": 1362,
-      "gzipBytes": 598
+      "gzipBytes": 597
     },
     "notification-display.js": {
-      "bytes": 865,
-      "gzipBytes": 521
+      "bytes": 1010,
+      "gzipBytes": 602
     },
     "NotificationPreferences.js": {
       "bytes": 10848,
-      "gzipBytes": 2875
+      "gzipBytes": 2873
     },
     "Notifications.js": {
-      "bytes": 8470,
-      "gzipBytes": 2613
+      "bytes": 8472,
+      "gzipBytes": 2615
     },
     "onboarding.js": {
       "bytes": 8483,
@@ -640,7 +640,7 @@
     },
     "page-header.js": {
       "bytes": 1959,
-      "gzipBytes": 904
+      "gzipBytes": 905
     },
     "pageLabels.js": {
       "bytes": 133416,
@@ -655,12 +655,12 @@
       "gzipBytes": 2033
     },
     "PaymentChasing.js": {
-      "bytes": 28801,
-      "gzipBytes": 6829
+      "bytes": 28803,
+      "gzipBytes": 6833
     },
     "Payroll.js": {
-      "bytes": 38846,
-      "gzipBytes": 8921
+      "bytes": 38848,
+      "gzipBytes": 8926
     },
     "PayrollTab.js": {
       "bytes": 7936,
@@ -672,7 +672,7 @@
     },
     "PlanningTab.js": {
       "bytes": 8922,
-      "gzipBytes": 1833
+      "gzipBytes": 1832
     },
     "popover.js": {
       "bytes": 2833,
@@ -683,8 +683,8 @@
       "gzipBytes": 4793
     },
     "PortalDashboard.js": {
-      "bytes": 5792,
-      "gzipBytes": 1590
+      "bytes": 5789,
+      "gzipBytes": 1589
     },
     "PortalDocuments.js": {
       "bytes": 4451,
@@ -692,23 +692,23 @@
     },
     "PortalInvoices.js": {
       "bytes": 3899,
-      "gzipBytes": 1371
+      "gzipBytes": 1372
     },
     "PortalMessages.js": {
       "bytes": 3546,
-      "gzipBytes": 1420
+      "gzipBytes": 1421
     },
     "PortalStatements.js": {
       "bytes": 3699,
-      "gzipBytes": 1174
+      "gzipBytes": 1175
     },
     "PracticeWorkspace.js": {
       "bytes": 15893,
-      "gzipBytes": 3884
+      "gzipBytes": 3885
     },
     "Pricing.js": {
-      "bytes": 21709,
-      "gzipBytes": 6671
+      "bytes": 21831,
+      "gzipBytes": 6722
     },
     "PrivacyPolicy.js": {
       "bytes": 5773,
@@ -716,15 +716,15 @@
     },
     "ProfitLossTab.js": {
       "bytes": 5211,
-      "gzipBytes": 1264
+      "gzipBytes": 1262
     },
     "progress.js": {
-      "bytes": 549,
-      "gzipBytes": 371
+      "bytes": 2594,
+      "gzipBytes": 1129
     },
     "PublicApp.js": {
-      "bytes": 6524,
-      "gzipBytes": 2320
+      "bytes": 6463,
+      "gzipBytes": 2300
     },
     "PublicInvoiceView.js": {
       "bytes": 10141,
@@ -732,11 +732,11 @@
     },
     "PublicProviders.js": {
       "bytes": 330,
-      "gzipBytes": 231
+      "gzipBytes": 232
     },
     "PurchaseOrders.js": {
-      "bytes": 16545,
-      "gzipBytes": 5055
+      "bytes": 16572,
+      "gzipBytes": 5068
     },
     "purchases.js": {
       "bytes": 6774,
@@ -748,39 +748,39 @@
     },
     "queryClient.js": {
       "bytes": 2747,
-      "gzipBytes": 1313
+      "gzipBytes": 1312
     },
     "Quotes.js": {
-      "bytes": 14157,
-      "gzipBytes": 4241
+      "bytes": 14184,
+      "gzipBytes": 4253
     },
     "ReceiptAutopilot.js": {
       "bytes": 9094,
-      "gzipBytes": 2885
+      "gzipBytes": 2886
     },
     "Receipts.js": {
-      "bytes": 64711,
-      "gzipBytes": 17551
+      "bytes": 64677,
+      "gzipBytes": 17531
     },
     "ReconciliationRules.js": {
       "bytes": 15027,
       "gzipBytes": 3764
     },
     "RecurringInvoices.js": {
-      "bytes": 16827,
-      "gzipBytes": 4751
+      "bytes": 16829,
+      "gzipBytes": 4746
     },
     "Referrals.js": {
-      "bytes": 10555,
-      "gzipBytes": 2452
+      "bytes": 10521,
+      "gzipBytes": 2436
     },
     "Register.js": {
       "bytes": 9064,
-      "gzipBytes": 3558
+      "gzipBytes": 3555
     },
     "Reminders.js": {
       "bytes": 15455,
-      "gzipBytes": 3867
+      "gzipBytes": 3868
     },
     "reportCatalog.js": {
       "bytes": 197396,
@@ -788,11 +788,11 @@
     },
     "reportCatalogApi.js": {
       "bytes": 274,
-      "gzipBytes": 199
+      "gzipBytes": 201
     },
     "reportCatalogText.js": {
       "bytes": 373,
-      "gzipBytes": 268
+      "gzipBytes": 267
     },
     "reportCenter.js": {
       "bytes": 63077,
@@ -800,23 +800,23 @@
     },
     "ReportLaunchPicker.js": {
       "bytes": 25453,
-      "gzipBytes": 5894
+      "gzipBytes": 5893
     },
     "ReportPanelFallback.js": {
       "bytes": 206,
       "gzipBytes": 183
     },
     "Reports.js": {
-      "bytes": 209372,
-      "gzipBytes": 51417
+      "bytes": 209323,
+      "gzipBytes": 51412
     },
     "ReportsPanel.js": {
-      "bytes": 8817,
-      "gzipBytes": 2516
+      "bytes": 8759,
+      "gzipBytes": 2506
     },
     "ResetPassword.js": {
       "bytes": 4932,
-      "gzipBytes": 2069
+      "gzipBytes": 2067
     },
     "rolldown-runtime.js": {
       "bytes": 1217,
@@ -824,7 +824,7 @@
     },
     "row-actions.js": {
       "bytes": 1751,
-      "gzipBytes": 878
+      "gzipBytes": 877
     },
     "SalesTab.js": {
       "bytes": 15499,
@@ -852,7 +852,7 @@
     },
     "securityApi.js": {
       "bytes": 1424,
-      "gzipBytes": 828
+      "gzipBytes": 829
     },
     "SecuritySettings.js": {
       "bytes": 13938,
@@ -872,19 +872,19 @@
     },
     "Services.js": {
       "bytes": 29325,
-      "gzipBytes": 7385
+      "gzipBytes": 7388
     },
     "SetupPanel.js": {
       "bytes": 26469,
-      "gzipBytes": 4164
+      "gzipBytes": 4163
     },
     "shared.js": {
-      "bytes": 22560,
+      "bytes": 22562,
       "gzipBytes": 7665
     },
     "sheet.js": {
       "bytes": 2773,
-      "gzipBytes": 1108
+      "gzipBytes": 1107
     },
     "shell.js": {
       "bytes": 9839,
@@ -896,19 +896,19 @@
     },
     "SmartAssistant.js": {
       "bytes": 9463,
-      "gzipBytes": 2896
+      "gzipBytes": 2895
     },
     "StaffManagement.js": {
       "bytes": 7249,
       "gzipBytes": 2425
     },
     "stat-card.js": {
-      "bytes": 2147,
-      "gzipBytes": 942
+      "bytes": 2277,
+      "gzipBytes": 989
     },
     "StatementParts.js": {
-      "bytes": 8558,
-      "gzipBytes": 2517
+      "bytes": 8560,
+      "gzipBytes": 2521
     },
     "statements.js": {
       "bytes": 3406,
@@ -916,11 +916,11 @@
     },
     "status-badge.js": {
       "bytes": 804,
-      "gzipBytes": 375
+      "gzipBytes": 377
     },
     "Subscription.js": {
-      "bytes": 15211,
-      "gzipBytes": 4371
+      "bytes": 15172,
+      "gzipBytes": 4362
     },
     "SuitesPanel.js": {
       "bytes": 15305,
@@ -932,19 +932,19 @@
     },
     "T.js": {
       "bytes": 193,
-      "gzipBytes": 176
+      "gzipBytes": 175
     },
     "TabbedHub.js": {
       "bytes": 1137,
-      "gzipBytes": 633
+      "gzipBytes": 634
     },
     "table.js": {
       "bytes": 2312,
       "gzipBytes": 871
     },
     "tabs.js": {
-      "bytes": 1609,
-      "gzipBytes": 717
+      "bytes": 2554,
+      "gzipBytes": 1203
     },
     "TaskCenter.js": {
       "bytes": 15739,
@@ -952,15 +952,15 @@
     },
     "TaxReturnArchive.js": {
       "bytes": 14752,
-      "gzipBytes": 4282
+      "gzipBytes": 4281
     },
     "TeamManagement.js": {
-      "bytes": 18529,
-      "gzipBytes": 5698
+      "bytes": 18531,
+      "gzipBytes": 5699
     },
     "TermsOfService.js": {
       "bytes": 5869,
-      "gzipBytes": 2252
+      "gzipBytes": 2253
     },
     "textarea.js": {
       "bytes": 757,
@@ -968,7 +968,7 @@
     },
     "theme-toggle.js": {
       "bytes": 7037,
-      "gzipBytes": 2315
+      "gzipBytes": 2316
     },
     "tooltip.js": {
       "bytes": 7811,
@@ -976,19 +976,19 @@
     },
     "TrialBalanceTab.js": {
       "bytes": 5516,
-      "gzipBytes": 1425
+      "gzipBytes": 1424
     },
     "TrustSecurity.js": {
       "bytes": 6574,
-      "gzipBytes": 1577
+      "gzipBytes": 1580
     },
     "TurnstileWidget.js": {
       "bytes": 901,
-      "gzipBytes": 523
+      "gzipBytes": 522
     },
     "UAENewsFeed.js": {
       "bytes": 6996,
-      "gzipBytes": 2528
+      "gzipBytes": 2529
     },
     "UpgradePrompt.js": {
       "bytes": 1293,
@@ -1004,11 +1004,11 @@
     },
     "useCurrentUser.js": {
       "bytes": 232,
-      "gzipBytes": 206
+      "gzipBytes": 201
     },
     "useDefaultCompany.js": {
       "bytes": 241,
-      "gzipBytes": 167
+      "gzipBytes": 168
     },
     "UserInvitations.js": {
       "bytes": 11977,
@@ -1016,15 +1016,15 @@
     },
     "useSubscription.js": {
       "bytes": 2308,
-      "gzipBytes": 799
+      "gzipBytes": 800
     },
     "ValueOps.js": {
-      "bytes": 17449,
-      "gzipBytes": 3878
+      "bytes": 17340,
+      "gzipBytes": 3834
     },
     "vat-classification.js": {
       "bytes": 39035,
-      "gzipBytes": 15911
+      "gzipBytes": 15912
     },
     "vat-workpaper-grid.js": {
       "bytes": 7308,
@@ -1036,15 +1036,15 @@
     },
     "VATAutopilot.js": {
       "bytes": 20031,
-      "gzipBytes": 5427
+      "gzipBytes": 5425
     },
     "VATFiling.js": {
-      "bytes": 75836,
-      "gzipBytes": 17602
+      "bytes": 75830,
+      "gzipBytes": 17584
     },
     "VatTab.js": {
       "bytes": 2955,
-      "gzipBytes": 900
+      "gzipBytes": 899
     },
     "vendor-dates.js": {
       "bytes": 66926,
@@ -1111,7 +1111,7 @@
       "gzipBytes": 7498
     },
     "Vendors.js": {
-      "bytes": 11267,
+      "bytes": 11269,
       "gzipBytes": 3938
     },
     "VirtualList.js": {
@@ -1120,11 +1120,11 @@
     },
     "WpsTab.js": {
       "bytes": 7898,
-      "gzipBytes": 2580
+      "gzipBytes": 2581
     },
     "ZatcaSettings.js": {
       "bytes": 9053,
-      "gzipBytes": 3640
+      "gzipBytes": 3638
     }
   }
 }
