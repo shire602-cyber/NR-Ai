@@ -50,13 +50,15 @@ import {
 } from "../services/invoice-lifecycle";
 import {
   assertPlaceOfSupply,
-  BASE_CURRENCY,
+  loadVatJurisdiction,
   resolveCustomerHeader,
 } from "../services/invoice-posting.service";
+import { documentCurrency, loadBaseCurrency } from "../ledger";
+import { transitionQuote, type QuoteStatus } from "../services/quote-state.service";
 import { fromFils, mulRate, toFils } from "../../shared/money";
 import { resolveDocumentRate } from "./invoices.routes";
 import { emitDomainEvent } from "../platform/domain-events";
-import type { SupplyType } from "../../shared/vat-classification";
+import type { SupplyType, VatJurisdiction } from "../../shared/vat-classification";
 
 const logger = createLogger("quotes-routes");
 
@@ -127,6 +129,7 @@ async function prepareQuote(companyId: string, body: CreateQuoteInput) {
   const { rows, totals } = prepareSalesLines(draftsOf(body.lines), {
     discountType: body.discountType,
     discountValue: body.discountValue,
+    jurisdiction: await loadVatJurisdiction(companyId),
   });
   return { header, rows, totals };
 }
@@ -171,6 +174,7 @@ export function registerQuoteRoutes(app: Express) {
       }
       const body = validated<CreateQuoteInput>(req);
       const q = await prepareQuote(companyId, body);
+      const currency = documentCurrency(body.currency, await loadBaseCurrency(companyId));
       const quote = await db.transaction(async (tx: typeof db) => {
         const number = await allocateInvoiceNumber(companyId, "quote", toDate(body.date), tx);
         const [row] = await tx
@@ -186,7 +190,8 @@ export function registerQuoteRoutes(app: Express) {
             placeOfSupplyEmirate: q.header.placeOfSupplyEmirate,
             date: toDate(body.date),
             expiryDate: body.expiryDate ? toDate(body.expiryDate) : null,
-            currency: body.currency ?? BASE_CURRENCY,
+            // S1 (W5-C follow-up): default to the company's functional currency, not AED.
+            currency,
             subtotal: Number(fromFils(q.totals.subtotalFils)),
             vatAmount: Number(fromFils(q.totals.vatFils)),
             total: Number(fromFils(q.totals.totalFils)),
@@ -263,6 +268,7 @@ export function registerQuoteRoutes(app: Express) {
           })),
       } as CreateQuoteInput;
       const q = await prepareQuote(quote.companyId, merged);
+      const currency = documentCurrency(merged.currency, await loadBaseCurrency(quote.companyId));
       const updated = await db.transaction(async (tx: typeof db) => {
         // companyId is never taken from the body (R03-11 route-matrix finding).
         const [row] = await tx
@@ -276,7 +282,7 @@ export function registerQuoteRoutes(app: Express) {
             placeOfSupplyEmirate: q.header.placeOfSupplyEmirate,
             date: toDate(merged.date),
             expiryDate: merged.expiryDate ? toDate(merged.expiryDate) : null,
-            currency: merged.currency ?? BASE_CURRENCY,
+            currency,
             subtotal: Number(fromFils(q.totals.subtotalFils)),
             vatAmount: Number(fromFils(q.totals.vatFils)),
             total: Number(fromFils(q.totals.totalFils)),
@@ -308,20 +314,13 @@ export function registerQuoteRoutes(app: Express) {
     strictBody(quoteStatusSchema, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const quote = await quoteForUser(userOf(req), req.params.id);
-      const { status } = req.body as { status: string };
-      if (quote.status === "converted") throw new DomainError("QUOTE_ALREADY_CONVERTED", 409);
-      const [row] = await db
-        .update(quotesTable)
-        .set({ status, updatedAt: new Date() })
-        .where(
-          and(
-            eq(quotesTable.id, quote.id),
-            eq(quotesTable.companyId, quote.companyId),
-            sql`${quotesTable.status} <> 'converted'`
-          )
-        )
-        .returning();
-      if (!row) throw new DomainError("QUOTE_ALREADY_CONVERTED", 409);
+      const { status } = req.body as { status: QuoteStatus };
+      // S1: the quote state machine owns status changes (conditional UPDATE, 409 on a bad move).
+      const row = await transitionQuote({
+        companyId: quote.companyId,
+        quoteId: quote.id,
+        to: status,
+      });
       res.json(row);
     })
   );
@@ -356,10 +355,16 @@ export function registerQuoteRoutes(app: Express) {
       const quote = await quoteForUser(userId, req.params.id);
       const body = validated<ConvertQuoteInput>(req);
       const dateIso = body.date ?? new Date().toISOString().slice(0, 10);
-      const currency = quote.currency || BASE_CURRENCY;
+      const currency = documentCurrency(quote.currency, await loadBaseCurrency(quote.companyId));
       // Outside the transaction (may read the pool): rate and terms.
       const rate = await resolveDocumentRate(quote.companyId, currency, dateIso, null);
-      const result = await convertQuoteAtomically(quote, body, dateIso, rate);
+      const result = await convertQuoteAtomically(
+        quote,
+        body,
+        dateIso,
+        rate,
+        await loadVatJurisdiction(quote.companyId)
+      );
       logger.info(
         { quoteId: quote.id, invoiceId: result.invoice.id, full: result.fullyBilled },
         "Quote converted to invoice"
@@ -410,7 +415,8 @@ export async function convertQuoteAtomically(
   quote: Quote,
   body: ConvertQuoteInput,
   dateIso: string,
-  rate: number
+  rate: number,
+  jurisdiction: VatJurisdiction = "AE"
 ): Promise<{ invoice: typeof invoicesTable.$inferSelect; fullyBilled: boolean }> {
   return db.transaction(async (tx: typeof db) => {
     const locked = await tx.execute(
@@ -477,7 +483,12 @@ export async function convertQuoteAtomically(
         productId: line.productId ?? null,
         costCenterId: line.costCenterId ?? null,
       })),
-      wholeQuote ? { discountType: quote.discountType, discountValue: quote.discountValue } : {}
+      {
+        ...(wholeQuote
+          ? { discountType: quote.discountType, discountValue: quote.discountValue }
+          : {}),
+        jurisdiction,
+      }
     );
     await assertPlaceOfSupply(
       quote.companyId,
@@ -553,11 +564,9 @@ export async function convertQuoteAtomically(
         .where(and(eq(quotesTable.id, quote.id), sql`${quotesTable.status} <> 'converted'`))
         .returning({ id: quotesTable.id });
       if (!row) throw new DomainError("QUOTE_ALREADY_CONVERTED", 409);
-    } else {
-      await tx
-        .update(quotesTable)
-        .set({ status: "accepted", updatedAt: new Date() })
-        .where(eq(quotesTable.id, quote.id));
+    } else if (status !== "accepted") {
+      // Part billed: the quote is accepted (state machine; draft/sent -> accepted).
+      await transitionQuote({ companyId: quote.companyId, quoteId: quote.id, to: "accepted", tx });
     }
     return { invoice, fullyBilled };
   });

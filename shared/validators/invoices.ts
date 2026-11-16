@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 import { toFils } from "../money";
-import { normaliseUaeVatRate } from "../vat-classification";
+import { normaliseSupportedVatRate } from "../vat-classification";
 import {
   SUPPLY_TYPES,
   zCurrency,
@@ -52,11 +52,17 @@ export const zLineQuantity = z.union([z.number(), z.string()]).transform((value,
   return Number(s);
 });
 
-/** UAE VAT rate: 0, 5 or 0.05 → decimal 0 | 0.05. */
+/**
+ * VAT rate: 0, 5 / 0.05 (UAE) or 15 / 0.15 (KSA) → decimal. The company's jurisdiction is checked
+ * when the lines are priced (resolveSupplyType: a 15% line on a UAE company is a 400).
+ */
 export const zInvoiceVatRate = z.union([z.number(), z.string()]).transform((value, ctx) => {
-  const r = normaliseUaeVatRate(value);
+  const r = normaliseSupportedVatRate(value);
   if (r === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "VAT rate must be 0% or 5% (UAE)" });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "VAT rate must be 0% or 5% (UAE), or 15% for a KSA company",
+    });
     return z.NEVER;
   }
   return r;
@@ -129,6 +135,60 @@ export const salesLinesSchema = z
   .min(1, "At least one invoice line is required")
   .max(500, "An invoice can carry at most 500 lines");
 
+/** Money in major units with at most 2 decimals, zero or more → integer fils. */
+export const zNonNegativeFils = z.union([z.number(), z.string()]).transform((value, ctx) => {
+  try {
+    const fils = toFils(value);
+    if (fils < 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Amount cannot be negative" });
+      return z.NEVER;
+    }
+    return fils;
+  } catch (err) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: err instanceof Error ? err.message : "Invalid amount",
+    });
+    return z.NEVER;
+  }
+});
+
+/**
+ * Invoice lines add the profit-margin scheme (S1, R07-15; VAT Decree-Law Art. 29, second-hand
+ * goods): `marginScheme: true` makes the line price VAT-inclusive with VAT on the margin over
+ * `marginPurchaseCost` (the line's purchase cost, major units, fils after parsing).
+ */
+export const invoiceLineInputSchema = z
+  .object({
+    ...lineShape,
+    marginScheme: z.boolean().optional(),
+    marginPurchaseCost: zNonNegativeFils.optional().nullable(),
+  })
+  .strict()
+  .superRefine(discountRefine)
+  .superRefine((v, ctx) => {
+    if (v.marginScheme && (v.marginPurchaseCost === undefined || v.marginPurchaseCost === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["marginPurchaseCost"],
+        message: "A profit-margin scheme line needs its purchase cost",
+      });
+    }
+    if (v.marginScheme && v.vatSupplyType && v.vatSupplyType !== "standard_rated") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vatSupplyType"],
+        message: "The profit-margin scheme applies to standard-rated supplies only",
+      });
+    }
+  });
+export type InvoiceLineInput = z.output<typeof invoiceLineInputSchema>;
+
+export const invoiceLinesSchema = z
+  .array(invoiceLineInputSchema)
+  .min(1, "At least one invoice line is required")
+  .max(500, "An invoice can carry at most 500 lines");
+
 export const zPaymentTerms = z
   .string()
   .trim()
@@ -166,7 +226,7 @@ const headerShape = {
   discountValue: zDiscountValue.optional().nullable(),
   notes: zText(4000).optional().nullable(),
   templateId: zUuid.optional().nullable(),
-  lines: salesLinesSchema,
+  lines: invoiceLinesSchema,
 };
 
 export const createInvoiceSchema = z.object(headerShape).strict().superRefine(discountRefine);
@@ -174,7 +234,7 @@ export type CreateInvoiceInput = z.output<typeof createInvoiceSchema>;
 
 /** PUT /api/invoices/:id — same fields, all optional (drafts only, except EDITABLE_AFTER_ISSUE). */
 export const updateInvoiceSchema = z
-  .object({ ...headerShape, date: zInvoiceDate.optional(), lines: salesLinesSchema.optional() })
+  .object({ ...headerShape, date: zInvoiceDate.optional(), lines: invoiceLinesSchema.optional() })
   .strict()
   .superRefine(discountRefine);
 export type UpdateInvoiceInput = z.output<typeof updateInvoiceSchema>;
@@ -195,6 +255,8 @@ export const invoiceStatusSchema = z
 export const creditNoteRequestSchema = z
   .object({
     lines: salesLinesSchema.optional(),
+    /** S1: product lines go back into stock (default) or are written off (false). */
+    restock: z.boolean().optional(),
     reason: zText(500).optional(),
     date: zInvoiceDate.optional(),
   })

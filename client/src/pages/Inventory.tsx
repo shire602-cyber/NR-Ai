@@ -58,6 +58,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import type { Product, InventoryMovement } from "@shared/schema";
+import { isValidGtin, RCM_GOODS_TYPES } from "@shared/vat-classification";
 
 // ─── Schemas ──────────────────────────────────────────────
 
@@ -75,9 +76,27 @@ const productFormSchema = z.object({
   reorderPoint: z
     .preprocess((v) => (v === "" || v === undefined ? null : v), z.coerce.number().int().min(0).nullable())
     .optional(),
+  // S1 (W4-C): e-invoicing identity for domestic reverse-charge goods (PINT AE).
+  gtin: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .refine((v) => !v || isValidGtin(v), "GTIN must be 8, 12, 13 or 14 digits with a valid check digit"),
+  rcmGoodsType: z.string().optional().nullable(),
 });
 
 type ProductFormData = z.infer<typeof productFormSchema>;
+
+/** "none" in the goods-type picker means "not a reverse-charge good"; "" GTIN clears it. */
+function productPayload<T extends Partial<ProductFormData>>(data: T): T {
+  if (data.rcmGoodsType === undefined && data.gtin === undefined) return data;
+  return {
+    ...data,
+    gtin: data.gtin ? data.gtin : null,
+    rcmGoodsType: data.rcmGoodsType && data.rcmGoodsType !== "none" ? data.rcmGoodsType : null,
+  };
+}
 
 const movementFormSchema = z
   .object({
@@ -158,7 +177,7 @@ export default function Inventory() {
 
   const createProductMutation = useMutation({
     mutationFn: (data: ProductFormData) =>
-      apiRequest("POST", `/api/companies/${companyId}/products`, data),
+      apiRequest("POST", `/api/companies/${companyId}/products`, productPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
       toast({ title: "Product Created", description: "The product has been added successfully." });
@@ -172,7 +191,7 @@ export default function Inventory() {
 
   const updateProductMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<ProductFormData> }) =>
-      apiRequest("PATCH", `/api/products/${id}`, data),
+      apiRequest("PATCH", `/api/products/${id}`, productPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
       toast({
@@ -257,6 +276,8 @@ export default function Inventory() {
       vatRate: product.vatRate,
       unit: product.unit,
       lowStockThreshold: product.lowStockThreshold || 10,
+      gtin: product.gtin || "",
+      rcmGoodsType: product.rcmGoodsType || "none",
     });
     setProductDialogOpen(true);
   };
@@ -758,6 +779,55 @@ export default function Inventory() {
                           <SelectItem value="inventory">{c.typeInventory}</SelectItem>
                           <SelectItem value="service">{c.typeService}</SelectItem>
                           <SelectItem value="bundle">{c.typeBundle}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={productForm.control}
+                  name="gtin"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.productGtin" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          inputMode="numeric"
+                          {...field}
+                          value={field.value ?? ""}
+                          data-testid="input-product-gtin"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={productForm.control}
+                  name="rcmGoodsType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.productRcmGoodsType" />
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || "none"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-product-rcm-goods-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">{t["pages.productRcmNone"]}</SelectItem>
+                          {RCM_GOODS_TYPES.map((code) => (
+                            <SelectItem key={code} value={code}>
+                              {code}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

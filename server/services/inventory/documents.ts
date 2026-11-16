@@ -495,9 +495,17 @@ export async function onInvoiceVoided(
 /** credit note issue: restock product lines at the original sale's unit cost. */
 export async function onCreditNoteIssued(
   tx: LedgerTx,
-  args: { original: SalesDocLike; creditNote: SalesDocLike; lines: SalesLineLike[]; userId: string }
+  args: {
+    original: SalesDocLike;
+    creditNote: SalesDocLike;
+    lines: SalesLineLike[];
+    userId: string;
+    /** S1: false = the goods are written off (not returned): no stock in, COGS stays. */
+    restock?: boolean;
+  }
 ): Promise<{ entryId: string | null }> {
   const { original, creditNote } = args;
+  if (args.restock === false) return { entryId: null };
   const existing = await documentMovements(tx, creditNote.companyId, "credit_note", creditNote.id);
   if (existing.length) return { entryId: null };
   const date = isoDate(creditNote.date);

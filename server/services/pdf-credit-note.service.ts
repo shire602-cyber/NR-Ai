@@ -1,6 +1,7 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
+import { loadCompanyLogo } from "./pdf-logo";
 import type { CreditNote, CreditNoteLine, Company, Invoice } from "../../shared/schema";
 
 /**
@@ -13,6 +14,8 @@ export async function generateCreditNotePDF(
   company: Company,
   originalInvoice?: Invoice
 ): Promise<Buffer> {
+  // S1 (R14-13): the uploaded company logo (companies.logo_path), never an inline data: URL.
+  const logo = await loadCompanyLogo(company);
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -40,9 +43,19 @@ export async function generateCreditNotePDF(
       // --- Header: Blue background bar ---
       doc.rect(0, 0, pageWidth, 100).fill("#1E40AF");
 
+      let nameX = margin;
+      if (logo) {
+        try {
+          doc.image(logo, margin, 25, { fit: [60, 50] });
+          nameX = margin + 70;
+        } catch {
+          // An undecodable logo must never break the document.
+        }
+      }
+
       // Company Name
       doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, margin, 30, { width: contentWidth * 0.6 });
+      doc.text(company.name, nameX, 30, { width: contentWidth * 0.6 - (nameX - margin) });
 
       // Credit Note Label
       doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");

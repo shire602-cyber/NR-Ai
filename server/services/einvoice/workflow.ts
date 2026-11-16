@@ -28,7 +28,7 @@ export async function submitAndPersist(args: {
   const { invoice, company, provider } = args;
   const now = args.now ?? new Date();
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-  const ctx = await loadEInvoiceContext(invoice, company);
+  const ctx = await loadEInvoiceContext(invoice, company, lines);
   const existing = await getEInvoiceDocument(company.id, invoice.id);
   const result = await submitEInvoice({
     invoice,

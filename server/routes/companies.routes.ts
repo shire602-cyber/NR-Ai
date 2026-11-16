@@ -9,6 +9,7 @@ import { DomainError } from "../errors";
 import {
   createCompanyBody,
   updateCompanyBody,
+  KSA_VAT_NUMBER,
   LOGO_MAX_BYTES,
   type CreateCompanyBody,
   type UpdateCompanyBody,
@@ -17,6 +18,8 @@ import { recordAudit } from "../services/audit.service";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../services/fileStorage";
 import { z } from "zod";
+import { zUaeTrn } from "../../shared/validators/vat";
+import { vatJurisdictionForCountry } from "../../shared/vat-classification";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
@@ -163,6 +166,41 @@ async function seedChartOfAccounts(
   }
 }
 
+/**
+ * S1 (W4-E follow-up): the body's TRN passed the shared `zUaeTrn` rule (or the KSA VAT-number
+ * shape); it must also match the company's country: a UAE company needs a UAE TRN (starts with
+ * 100), a Saudi company a KSA VAT number. Format only — FTA TRN verification is EXTERNAL.
+ */
+function assertTrnMatchesCountry(trn: unknown, country: string | null | undefined): void {
+  if (typeof trn !== "string" || !trn) return;
+  const ksa = vatJurisdictionForCountry(country) === "SA";
+  const ok = ksa ? KSA_VAT_NUMBER.test(trn) : zUaeTrn.safeParse(trn).success;
+  if (!ok) {
+    throw new DomainError(
+      "TRN_INVALID",
+      400,
+      {
+        fields: {
+          trnVatNumber: [
+            ksa
+              ? "KSA VAT number must be 15 digits starting and ending with 3"
+              : "TRN must start with 100",
+          ],
+        },
+      },
+      ksa
+        ? "A Saudi company needs a 15-digit KSA VAT number starting and ending with 3."
+        : "A UAE TRN is 15 digits and starts with 100."
+    );
+  }
+}
+
+/** Returned with company writes that carry a TRN: we check the format, not the FTA register. */
+const TRN_VERIFICATION = {
+  format: "checked",
+  ftaLookup: "external_not_integrated",
+} as const;
+
 export function registerCompanyRoutes(app: Express) {
   // =====================================
   // Company Routes
@@ -208,6 +246,8 @@ export function registerCompanyRoutes(app: Express) {
           "Only a platform admin can set the company type."
         );
       }
+
+      assertTrnMatchesCountry(validated.trnVatNumber, validated.addressCountry);
 
       // Names are unique per owner (case-insensitive), not across tenants (R14-09).
       if (await storage.ownerHasCompanyNamed(userId, validated.name)) {
@@ -289,6 +329,15 @@ export function registerCompanyRoutes(app: Express) {
       if (value !== undefined && key !== "vatRegistered") updateData[key] = value;
     }
 
+    if ("trnVatNumber" in updateData || "addressCountry" in updateData) {
+      assertTrnMatchesCountry(
+        "trnVatNumber" in updateData ? updateData.trnVatNumber : current.trnVatNumber,
+        "addressCountry" in updateData
+          ? (updateData.addressCountry as string | null)
+          : current.addressCountry
+      );
+    }
+
     // PRIVILEGE ESCALATION GUARD (R17-05). `companyType` decides whether a company is a
     // self-serve customer or an accounting-firm/NRA tenant, which gates entire route families.
     // Only a platform admin may change it; re-sending the current value is a no-op.
@@ -363,7 +412,11 @@ export function registerCompanyRoutes(app: Express) {
         extra: { fields: Object.keys(updateData).filter((k) => k !== "logoUrl") },
       });
       log.info({ id: company.id, route }, "Company updated");
-      res.json(withNrClientVatGroup(company));
+      res.json(
+        company.trnVatNumber
+          ? { ...withNrClientVatGroup(company), trnVerification: TRN_VERIFICATION }
+          : withNrClientVatGroup(company)
+      );
     } catch (err: any) {
       if (handleCompanyWriteError(err, { route, id, userId }, res)) {
         return;

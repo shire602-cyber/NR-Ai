@@ -25,6 +25,9 @@ import { toFils } from "../../shared/money";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
 import { totalsForStoredDocument } from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
+import { loadBaseCurrency } from "../ledger";
+import { has, resolve } from "../platform/service-registry";
+import type { FxToVatFilingCurrency } from "../services/fx";
 import {
   addDelta,
   boxesToAed,
@@ -88,6 +91,8 @@ export interface VatContribution {
   /** Journal entry source when the contribution comes from the GL. */
   ledgerSource?: string;
   memo?: string | null;
+  /** Box deltas in the functional currency when the return was converted into AED. */
+  baseBoxes?: BoxDelta;
 }
 
 export interface VatIssue {
@@ -111,6 +116,17 @@ export interface VatCompanyConfig {
   frequency: VatFrequency;
   startMonth: number;
   exemptSupplyRatio: number;
+  /** Functional currency; the return is always filed in AED (fx.toVatFilingCurrency). */
+  baseCurrency: string;
+}
+
+export interface VatFilingCurrency {
+  baseCurrency: string;
+  filingCurrency: "AED";
+  /** True when the boxes were converted from the functional currency into AED. */
+  converted: boolean;
+  /** Rates used, by document date (AED per base unit). */
+  rates: Array<{ date: string; rate: string }>;
 }
 
 export interface VatComputation {
@@ -142,6 +158,8 @@ export interface VatComputation {
   counts: Record<string, number>;
   reconciliation: VatReconciliation;
   group: null | { groupId: string; name: string; groupTrn: string; memberIds: string[] };
+  /** S1 (W5-C, R14-19): currency of the boxes; reconciliation stays in the functional currency. */
+  currency: VatFilingCurrency;
 }
 
 export interface ComputeVatInput {
@@ -160,7 +178,8 @@ export async function loadVatCompany(companyId: string): Promise<VatCompanyConfi
   const { rows } = await pool.query(
     `SELECT id, name, emirate, trn_vat_number, vat_filing_frequency,
             COALESCE(vat_period_start_month, 1) AS start_month,
-            COALESCE(exempt_supply_ratio, 0) AS exempt_ratio, company_type
+            COALESCE(exempt_supply_ratio, 0) AS exempt_ratio, company_type,
+            COALESCE(NULLIF(base_currency, ''), 'AED') AS base_currency
        FROM companies WHERE id = $1`,
     [companyId]
   );
@@ -185,6 +204,7 @@ export async function loadVatCompany(companyId: string): Promise<VatCompanyConfi
     frequency: frequencyOf(r.vat_filing_frequency),
     startMonth,
     exemptSupplyRatio: Math.min(1, Math.max(0, Number(r.exempt_supply_ratio) || 0)),
+    baseCurrency: String(r.base_currency || VAT_FILING_CURRENCY).toUpperCase(),
   };
 }
 
@@ -196,9 +216,13 @@ const fils = (v: unknown): number =>
 const isoOf = (v: unknown): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? "").slice(0, 10);
 
-function rateText(currency: unknown, rate: unknown): string | null {
-  const cur = String(currency || "AED").toUpperCase();
-  if (cur === "AED") return "1";
+/**
+ * The document's rate into the company's functional (base) currency: "1" for a document in the
+ * base currency (S1: not hard-coded AED, so a USD company's AED invoice uses its stored rate).
+ */
+function rateText(currency: unknown, rate: unknown, base = "AED"): string | null {
+  const cur = String(currency || base).toUpperCase();
+  if (cur === base) return "1";
   const n = Number(rate);
   if (!Number.isFinite(n) || n <= 0) return null;
   return String(rate);
@@ -351,19 +375,25 @@ async function computeSingle(
     });
   }
 
-  const boxesFils = deriveTotals(boxes);
+  // The VAT-to-GL reconciliation compares like with like: functional currency.
   const reconciliation = buildReconciliation({
-    boxes: boxesFils,
+    boxes: deriveTotals(boxes),
     contributions,
     ledgerByCategory: gl.byCategory,
     hasVatAccounts: vatAccounts.length > 0,
   });
+  // S1 (W5-C, R14-19): the return is filed in AED whatever the functional currency.
+  const currency = await convertToFilingCurrency(companyId, company, contributions, issues);
+  const filed = emptyBoxes();
+  for (const c of contributions) addDelta(filed, c.boxes);
+  const boxesFils = deriveTotals(currency.converted ? filed : boxes);
 
   return {
     engineVersion: VAT_ENGINE_VERSION,
     companyId,
     company,
     period: { from, to, dueDate: vatDueDate(to) },
+    currency,
     boxesFils,
     boxes: boxesToAed(boxesFils),
     contributions,
@@ -382,6 +412,73 @@ async function computeSingle(
   };
 }
 
+// ─── Filing currency (S1, W5-C follow-up) ────────────────────────────────
+
+const VAT_FILING_CURRENCY = "AED";
+
+/**
+ * Convert every contribution's box deltas from the functional currency into AED at the document
+ * date through `fx.toVatFilingCurrency` (identity for an AED company). Each delta is converted on
+ * its own (integer fils, the FX service's rounding). A date without a rate is a blocking
+ * NO_EXCHANGE_RATE issue; the contribution keeps its functional-currency figures.
+ */
+async function convertToFilingCurrency(
+  companyId: string,
+  company: VatCompanyConfig,
+  contributions: VatContribution[],
+  issues: VatIssue[]
+): Promise<VatFilingCurrency> {
+  const out: VatFilingCurrency = {
+    baseCurrency: company.baseCurrency,
+    filingCurrency: VAT_FILING_CURRENCY,
+    converted: false,
+    rates: [],
+  };
+  if (company.baseCurrency === VAT_FILING_CURRENCY || contributions.length === 0) return out;
+  let toAed: FxToVatFilingCurrency;
+  if (has("fx.toVatFilingCurrency")) {
+    toAed = resolve<FxToVatFilingCurrency>("fx.toVatFilingCurrency");
+  } else {
+    const fx = await import("../services/fx");
+    fx.registerFxServices();
+    toAed = resolve<FxToVatFilingCurrency>("fx.toVatFilingCurrency");
+  }
+  const rates = new Map<string, string>();
+  const missing = new Set<string>();
+  for (const c of contributions) {
+    if (missing.has(c.date)) continue;
+    const converted: BoxDelta = {};
+    try {
+      for (const [key, value] of Object.entries(c.boxes) as Array<[Vat201Key, number]>) {
+        if (!value) continue;
+        const r = await toAed(companyId, value, c.date);
+        converted[key] = r.fils;
+        rates.set(c.date, r.rate);
+      }
+    } catch (err) {
+      if (err instanceof DomainError && err.code === "NO_EXCHANGE_RATE") {
+        missing.add(c.date);
+        issues.push({
+          code: "NO_EXCHANGE_RATE",
+          message: `No ${company.baseCurrency}→AED rate on or before ${c.date}: the VAT return is filed in AED`,
+          documentType: c.sourceType,
+          documentId: c.sourceId,
+          reference: c.reference,
+        });
+        continue;
+      }
+      throw err;
+    }
+    c.baseBoxes = c.boxes;
+    c.boxes = converted;
+  }
+  out.converted = true;
+  out.rates = [...rates.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, rate]) => ({ date, rate }));
+  return out;
+}
+
 // ─── Sales: invoices, debit notes, credit notes ──────────────────────────
 
 async function collectInvoices(
@@ -394,6 +491,7 @@ async function collectInvoices(
   excluded: VatComputation["excluded"],
   counts: Record<string, number>
 ) {
+  const baseCurrency = await loadBaseCurrency(companyId);
   const docs: Invoice[] = await db
     .select()
     .from(invoices)
@@ -439,7 +537,7 @@ async function collectInvoices(
     else if (type === "debit_note") counts.debitNotes += 1;
     else counts.invoices += 1;
 
-    const rate = rateText(inv.currency, inv.exchangeRate);
+    const rate = rateText(inv.currency, inv.exchangeRate, baseCurrency);
     if (!rate) {
       issues.push({
         code: "NO_EXCHANGE_RATE",
@@ -457,8 +555,13 @@ async function collectInvoices(
     const netByFamily = new Map<Vat201Family, number>();
     totals.lines.forEach((lt, i) => {
       const stored = docLines[i]?.netAmount;
+      // S1 (R07-15): a profit-margin scheme line reports only its VAT-exclusive margin in Box 1.
       const net =
-        stored !== null && stored !== undefined ? Math.abs(fils(stored)) : Math.abs(lt.netFils);
+        lt.marginFils !== null
+          ? Math.abs(lt.marginFils)
+          : stored !== null && stored !== undefined
+            ? Math.abs(fils(stored))
+            : Math.abs(lt.netFils);
       const fam = classifySupply({
         supplyType: docLines[i]?.vatSupplyType,
         vatRate: docLines[i]?.vatRate,
@@ -528,6 +631,7 @@ async function collectBills(
   excluded: VatComputation["excluded"],
   counts: Record<string, number>
 ) {
+  const baseCurrency = await loadBaseCurrency(companyId);
   if (!(await tableExists("vendor_bills"))) return;
   const { rows: bills } = await pool.query(
     `SELECT id, vendor_name, vendor_trn, bill_number, bill_date, currency, exchange_rate,
@@ -561,7 +665,7 @@ async function collectBills(
       continue;
     }
     counts.bills += 1;
-    const rate = rateText(b.currency, b.exchange_rate) ?? "1";
+    const rate = rateText(b.currency, b.exchange_rate, baseCurrency) ?? "1";
     const pct = Number(b.recoverable_pct);
     const vatDoc = fils(b.vat_amount);
     const vatBase = toBaseFils(vatDoc, rate);
@@ -647,6 +751,7 @@ async function collectVendorDebitNotes(
   push: (c: VatContribution) => void,
   counts: Record<string, number>
 ) {
+  const baseCurrency = await loadBaseCurrency(companyId);
   if (!(await tableExists("vendor_debit_notes"))) return;
   const { rows } = await pool.query(
     `SELECT id, vendor_name, debit_note_number, note_date, currency, exchange_rate, subtotal, vat_amount
@@ -656,7 +761,7 @@ async function collectVendorDebitNotes(
     [companyId, from, to]
   );
   for (const n of rows) {
-    const rate = rateText(n.currency, n.exchange_rate) ?? "1";
+    const rate = rateText(n.currency, n.exchange_rate, baseCurrency) ?? "1";
     const vat = toBaseFils(fils(n.vat_amount), rate);
     if (vat === 0) continue;
     counts.vendorDebitNotes += 1;
@@ -686,6 +791,7 @@ async function collectReceipts(
   push: (c: VatContribution) => void,
   counts: Record<string, number>
 ) {
+  const baseCurrency = await loadBaseCurrency(companyId);
   const hasTreatments = await tableExists("receipt_vat_treatments");
   const { rows } = await pool.query(
     `SELECT r.id, r.merchant, r.supplier_trn, COALESCE(r.date, r.created_at) AS d, r.amount,
@@ -700,7 +806,7 @@ async function collectReceipts(
   );
   for (const r of rows) {
     if (r.supplier_trn && eliminateTrns.has(String(r.supplier_trn).trim())) continue;
-    const rate = rateText(r.currency, r.exchange_rate) ?? "1";
+    const rate = rateText(r.currency, r.exchange_rate, baseCurrency) ?? "1";
     const split: Array<{ amount: unknown; vatAmount?: unknown }> =
       Array.isArray(r.lines) && r.lines.length > 0
         ? r.lines

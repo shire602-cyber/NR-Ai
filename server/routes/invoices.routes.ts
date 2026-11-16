@@ -40,6 +40,7 @@ import {
   invoiceStatusSchema,
   updateInvoiceSchema,
   type CreateInvoiceInput,
+  type InvoiceLineInput,
   type SalesLineInput,
   type UpdateInvoiceInput,
 } from "../../shared/validators/invoices";
@@ -64,6 +65,7 @@ import {
   invoiceSettlement,
   isIssuedStatus,
   issueInvoice,
+  loadVatJurisdiction,
   postInvoiceRevenueJournal,
   resolveCustomerHeader,
   voidInvoice,
@@ -89,7 +91,7 @@ import {
 import { assertRetentionExpired } from "../services/retention.service";
 import { getRate } from "../services/fx";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
-import type { SupplyType } from "../../shared/vat-classification";
+import type { SupplyType, VatJurisdiction } from "../../shared/vat-classification";
 
 const log = createLogger("invoices");
 
@@ -124,8 +126,12 @@ const toDate = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const isoOf = (d: Date | string | null | undefined): string | null =>
   d ? (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10) : null;
 
-function lineDraft(l: SalesLineInput) {
+function lineDraft(
+  l: SalesLineInput & Partial<Pick<InvoiceLineInput, "marginScheme" | "marginPurchaseCost">>
+) {
   return {
+    marginScheme: l.marginScheme ?? false,
+    marginPurchaseCost: l.marginScheme ? (l.marginPurchaseCost ?? null) : null,
     description: l.description,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
@@ -152,6 +158,8 @@ function lineRow(invoiceId: string, r: PreparedSalesLine) {
     netAmount: r.netAmount,
     productId: r.productId,
     costCenterId: r.costCenterId,
+    marginScheme: r.marginScheme,
+    marginPurchaseCost: r.marginPurchaseCost,
   };
 }
 
@@ -255,6 +263,7 @@ async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
     discountType: body.discountType,
     discountValue: body.discountValue,
     reverseCharge: body.reverseCharge,
+    jurisdiction: await loadVatJurisdiction(companyId),
   });
   await assertPlaceOfSupply(
     companyId,
@@ -587,6 +596,10 @@ export function registerInvoiceRoutes(app: Express) {
             discountValue: l.discountValue ?? null,
             productId: l.productId ?? null,
             costCenterId: l.costCenterId ?? null,
+            marginScheme: l.marginScheme ?? false,
+            marginPurchaseCost: l.marginScheme
+              ? toFils(l.marginPurchaseCost ?? 0, { rounding: "halfUp" })
+              : null,
           })),
       } as CreateInvoiceInput;
       const doc = await prepareNewDocument(invoice.companyId, merged);
@@ -903,12 +916,15 @@ export function registerInvoiceRoutes(app: Express) {
       if (!original) return res.status(404).json({ message: "Invoice not found" });
       const cnDate = body.date ?? new Date().toISOString().slice(0, 10);
       await assertPeriodNotLocked(companyId, toDate(cnDate));
-      const lines = body.lines ? toCreditLines(body.lines, original) : undefined;
+      const lines = body.lines
+        ? toCreditLines(body.lines, original, await loadVatJurisdiction(companyId))
+        : undefined;
       const result = await createAndIssueCreditNote({
         invoiceId,
         companyId,
         userId,
         lines,
+        restock: body.restock,
         date: cnDate,
         reason: body.reason,
       });
@@ -969,6 +985,7 @@ export function registerInvoiceRoutes(app: Express) {
       await assertPeriodNotLocked(companyId, toDate(dnDate));
       const { rows, totals } = prepareSalesLines(body.lines.map(lineDraft), {
         reverseCharge: original.reverseCharge,
+        jurisdiction: await loadVatJurisdiction(companyId),
       });
       const rate = Number(original.exchangeRate) || 1;
       const dn = await db.transaction(async (tx: typeof db) => {
@@ -1136,10 +1153,12 @@ export function registerInvoiceRoutes(app: Express) {
 /** Validated credit-note lines → posting input (supply types resolved, R07-01). */
 export function toCreditLines(
   lines: SalesLineInput[],
-  original: Pick<Invoice, "reverseCharge">
+  original: Pick<Invoice, "reverseCharge">,
+  jurisdiction?: VatJurisdiction
 ): CreditNoteLineInput[] {
   const { rows } = prepareSalesLines(lines.map(lineDraft), {
     reverseCharge: original.reverseCharge,
+    jurisdiction,
   });
   return rows.map((r) => ({
     description: r.description,

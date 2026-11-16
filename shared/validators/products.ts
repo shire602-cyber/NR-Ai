@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { zText } from "./primitives";
+import { isValidGtin, RCM_GOODS_TYPES } from "../vat-classification";
 
 const money = z.union([z.number(), z.string()]).transform((v, ctx) => {
   const s = typeof v === "number" ? String(v) : v.trim();
@@ -31,6 +32,19 @@ const sku = z
   .union([z.literal(""), zText(64), z.null()])
   .transform((v) => (v === "" || v === null ? null : v));
 
+/** GTIN (GS1, 8/12/13/14 digits, check digit verified); "" or null clears it. */
+const gtin = z.union([z.literal(""), z.string().trim(), z.null()]).transform((v, ctx) => {
+  if (v === "" || v === null) return null;
+  if (!isValidGtin(v)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "GTIN must be 8, 12, 13 or 14 digits with a valid check digit",
+    });
+    return z.NEVER;
+  }
+  return v;
+});
+
 const productFields = {
   name: zText(255, { min: 1 }),
   nameAr: zText(255).optional().nullable(),
@@ -42,6 +56,9 @@ const productFields = {
   unit: zText(32, { min: 1 }).optional(),
   lowStockThreshold: z.number().int().nonnegative().optional().nullable(),
   isActive: z.boolean().optional(),
+  // S1 (W4-C follow-up): e-invoicing identity for domestic reverse-charge goods.
+  gtin: gtin.optional(),
+  rcmGoodsType: z.enum(RCM_GOODS_TYPES).optional().nullable(),
 };
 
 export const createProductBody = z.object({

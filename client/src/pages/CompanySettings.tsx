@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
 import { companyPreferencesSchema, type Company, type CompanyPreferences } from "@shared/schema";
 import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
 import { WpsSettingsCard } from "./payroll/WpsTab";
@@ -147,7 +148,7 @@ export default function CompanySettings() {
       dateFormat: (company.dateFormat as FormValues["dateFormat"]) ?? "DD/MM/YYYY",
       locale: (company.locale as FormValues["locale"]) ?? "en",
     });
-    if (company.logoUrl) setLogoPreview(company.logoUrl);
+    setLogoPreview(companyLogoSrc(company));
   }, [company, form]);
 
   const updateMutation = useMutation({
@@ -172,25 +173,30 @@ export default function CompanySettings() {
 
   const onSubmit = (data: FormValues) => updateMutation.mutate(data);
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // S1 (R14-13): the logo is uploaded to /api/companies/:id/logo (stored file, served
+  // endpoint), never saved as an inline data: URL on the company row.
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    // The server caps an inline logo at 1 MB of data URL (base64 adds a third), i.e. ~750 KB.
-    if (file.size > 700 * 1024) {
-      toast({
-        variant: "destructive",
-        title: "Image too large",
-        description: "Please choose an image under 700 KB.",
-      });
+    if (!file || !companyId) return;
+    const problem = companyLogoFileError(file);
+    if (problem) {
+      toast({ variant: "destructive", title: "Invalid logo", description: problem });
+      e.target.value = "";
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      setLogoPreview(result);
-      form.setValue("logoUrl", result, { shouldDirty: true });
-    };
-    reader.readAsDataURL(file);
+    try {
+      await uploadCompanyLogo(companyId, file);
+      setLogoPreview(URL.createObjectURL(file));
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      toast({ title: "Logo uploaded" });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Logo upload failed",
+        description: error?.message || "Please try again.",
+      });
+    }
   };
 
   if (isLoading) {

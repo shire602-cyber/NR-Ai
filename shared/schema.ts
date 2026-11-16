@@ -2084,6 +2084,8 @@ export const invoices = pgTable(
     sourceQuoteId: uuid("source_quote_id"),
     templateId: uuid("template_id"),
     issuedAt: timestamp("issued_at"),
+    // S1 (migration 0110): credit notes only — return goods to stock (true / null) or write off (false).
+    restock: boolean("restock"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -2139,6 +2141,9 @@ export const invoiceLines = pgTable(
       onDelete: "set null",
     }),
     quoteLineId: uuid("quote_line_id"),
+    // S1 (migration 0110): profit-margin scheme (Art. 29) — VAT and Box 1 on the margin only.
+    marginScheme: boolean("margin_scheme").notNull().default(false),
+    marginPurchaseCost: money("margin_purchase_cost"), // line purchase cost, document currency
   },
   (table) => ({
     invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
@@ -3224,6 +3229,9 @@ export const products = pgTable(
     reorderPoint: integer("reorder_point"),
     reorderQuantity: integer("reorder_quantity"),
     stockValue: money("stock_value").notNull().default(0), // value on hand (AED), == GL
+    // S1 (migration 0110): e-invoicing item identity for domestic reverse charge (PINT AE).
+    gtin: text("gtin"), // GTIN-8/12/13/14, scheme 0160
+    rcmGoodsType: text("rcm_goods_type"), // RCM_GOODS_TYPE_CODES (BTAE-09), null = not RCM goods
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({

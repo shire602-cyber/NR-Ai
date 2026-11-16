@@ -29,14 +29,10 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
+import { resolve } from "../platform/service-registry";
+import { registerQuoteServices, type QuotesRespond } from "../services/quote-state.service";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
-import {
-  invoices,
-  portalQuoteResponses,
-  quotes,
-  users,
-  type CustomerContact,
-} from "../../shared/schema";
+import { invoices, quotes, users, type CustomerContact } from "../../shared/schema";
 import {
   bindPortalUserBody,
   generatePortalAccessBody,
@@ -242,6 +238,7 @@ export async function contactInvoices(
 }
 
 export function registerPortalPublicRoutes(app: Express) {
+  registerQuoteServices();
   // ─── Staff: portal links ──────────────────────────────────────────────────
   app.post(
     "/api/portal/generate-access",
@@ -615,38 +612,18 @@ export function registerPortalPublicRoutes(app: Express) {
       if (!ctx) return;
       const body = parsedBody<PortalQuoteResponseBody>(req);
       if (!UUID_RE.test(req.params.quoteId)) throw new DomainError("QUOTE_NOT_FOUND", 404);
-      const out = await db.transaction(async (tx: typeof db) => {
-        // Only a sent, unexpired quote of THIS contact can be answered, once.
-        const [q] = await tx
-          .update(quotes)
-          .set({ status: body.decision, updatedAt: new Date() })
-          .where(
-            and(
-              eq(quotes.id, req.params.quoteId),
-              eq(quotes.companyId, ctx.companyId),
-              eq(quotes.contactId, ctx.contact.id),
-              eq(quotes.status, "sent")
-            )
-          )
-          .returning();
-        if (!q) return null;
-        if (q.expiryDate && new Date(q.expiryDate).getTime() < Date.now() - 86_400_000) {
-          throw new DomainError("QUOTE_EXPIRED", 409, undefined, "This quote has expired");
-        }
-        await tx.insert(portalQuoteResponses).values({
-          companyId: ctx.companyId,
-          quoteId: q.id,
-          contactId: ctx.contact.id,
-          decision: body.decision,
-          signerName: body.signerName,
-          comment: body.comment ?? null,
-          ip: clientIp(req),
-        });
-        return q;
+      // S1: the quote state machine owns the status change (quotes.respond): only a sent,
+      // unexpired quote of THIS contact can be answered, once, with the signed response row.
+      const respond = resolve<QuotesRespond>("quotes.respond");
+      const out = await respond({
+        companyId: ctx.companyId,
+        quoteId: req.params.quoteId,
+        contactId: ctx.contact.id,
+        decision: body.decision,
+        signerName: body.signerName,
+        comment: body.comment ?? null,
+        ip: clientIp(req),
       });
-      if (!out) {
-        throw new DomainError("QUOTE_NOT_OPEN", 409, undefined, "This quote cannot be answered");
-      }
       res.json({ id: out.id, number: out.number, status: out.status });
     })
   );

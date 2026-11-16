@@ -93,6 +93,8 @@ interface CorporateTaxReturn {
   amendsReturnId?: string | null;
   provisionEntryId?: string | null;
   filingDeadline?: string;
+  /** S1 (R12-12): estimate until reviewed; filing_ready once reviewed; filed after filing. */
+  figureStatus?: "estimate" | "filing_ready" | "filed" | "superseded";
   workpaper: CorporateTaxWorkpaper | null;
   notes: string | null;
   createdAt: string;
@@ -111,6 +113,30 @@ interface CalculationResult {
   taxRate: number;
   taxPayable: number;
   journalEntriesProcessed: number;
+}
+
+/** S1 (R12-12): a computed CT figure is an estimate until the return is reviewed or filed. */
+function FigureBadge({ status }: { status?: string }) {
+  if (status === "filing_ready") {
+    return (
+      <Badge variant="outline" data-testid="badge-ct-filing-ready">
+        <T k="corporateTax.figureFilingReady" />
+      </Badge>
+    );
+  }
+  if (status === "filed") {
+    return (
+      <Badge variant="outline" data-testid="badge-ct-filed">
+        <T k="corporateTax.figureFiled" />
+      </Badge>
+    );
+  }
+  if (status === "superseded") return null;
+  return (
+    <Badge variant="secondary" data-testid="badge-ct-estimate">
+      <T k="corporateTax.figureEstimate" />
+    </Badge>
+  );
 }
 
 const statusBadge = (status: string) => {
@@ -779,12 +805,15 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between border-t pt-2">
                     <span className="text-lg font-bold">
-                      <T k="pages.taxPayable" />
+                      <T k="pages.taxPayable" /> <FigureBadge status="estimate" />
                     </span>
                     <span className="text-lg font-bold text-primary">
                       {formatCurrency(adjustedCalculation.taxPayable, "AED", locale)}
                     </span>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    <T k="corporateTax.figureEstimateHint" />
+                  </p>
                 </div>
               </div>
 
@@ -894,6 +923,9 @@ export default function CorporateTax() {
                         </TableCell>
                         <TableCell className="text-right font-semibold">
                           {formatCurrency(taxReturn.taxPayable, "AED", locale)}
+                          <div>
+                            <FigureBadge status={taxReturn.figureStatus} />
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
@@ -1109,7 +1141,7 @@ export default function CorporateTax() {
                 <span className="text-right">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
 
                 <span className="font-semibold border-t pt-2">
-                  <T k="pages.taxPayable" />
+                  <T k="pages.taxPayable" /> <FigureBadge status={viewReturn.figureStatus} />
                 </span>
                 <span className="text-right font-bold text-primary border-t pt-2">
                   {formatCurrency(viewReturn.taxPayable, "AED", locale)}
