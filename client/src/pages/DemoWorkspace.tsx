@@ -2,7 +2,6 @@ import { Link } from "wouter";
 import {
   ArrowRight,
   Banknote,
-  Building2,
   CheckCircle2,
   Download,
   FileText,
@@ -25,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { T } from "@/components/layout/T";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 const money = (value: number) =>
   `AED ${value.toLocaleString("en-AE", {
@@ -108,51 +108,29 @@ const closeChecklist = [
 
 export default function DemoWorkspace() {
   return (
-    <main className="min-h-screen bg-[#FAFAF6] text-[#131820]">
-      <header className="border-b border-black/10 bg-[#FAFAF6]/95 sticky top-0 z-20">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0D5C3D]">
-              <Building2 className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-semibold">
-              <T k="pageLabels.muhasibAi" />
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link href="/pricing">
-              <Button variant="ghost" size="sm">
-                <T k="pages.pricing" />
-              </Button>
-            </Link>
-            <Link href="/register">
-              <Button size="sm" className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                <T k="pageLabels.startFree" />
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <MarketingLayout
+      titleKey="marketing.seoDemoTitle"
+      descriptionKey="marketing.seoDemoDescription"
+    >
+      <section className="mk-container" style={{ paddingBlock: "2.5rem 4rem" }}>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-3">
-            <Badge className="bg-[#E6F1EC] text-[#0D5C3D] hover:bg-[#E6F1EC]">
+            <Badge className="bg-[color:var(--brand-subtle)] text-[color:var(--brand-subtle-ink)] hover:bg-[color:var(--brand-subtle)]">
               <T k="pageLabels.sampleCompanyWorkspace" />
             </Badge>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="mk-h1" style={{ fontSize: "clamp(2rem, 1.4rem + 2vw, 3rem)" }}>
               <T k="pageLabels.seeTheSaaSProductWithRealAccountingContext" />
             </h1>
-            <p className="max-w-2xl text-sm leading-6 text-black/65 sm:text-base">
+            <p className="max-w-2xl text-sm leading-6 text-[color:var(--ink-2)] sm:text-base">
               Explore a launch-ready UAE SME workflow using sample invoices, receipts, bank imports,
               reconciliation suggestions, VAT 201 figures, and corporate tax workpaper totals.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/register">
-              <Button className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
+              <Button className="bg-[color:var(--brand)] text-[color:var(--on-brand)] hover:bg-[color:var(--brand-strong)]">
                 <T k="pageLabels.createMyWorkspace" />
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <ArrowRight className="ms-2 h-4 w-4 rtl:-scale-x-100" />
               </Button>
             </Link>
             <Link href="/help">
@@ -170,16 +148,16 @@ export default function DemoWorkspace() {
             { label: "VAT payable", value: money(11100), icon: ShieldCheck },
             { label: "CT estimate", value: money(7425), icon: Banknote },
           ].map(({ label, value, icon: Icon }) => (
-            <Card key={label} className="border-black/10 bg-card">
+            <Card key={label} className="border-[color:var(--hairline)] bg-[color:var(--surface)]">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-black/50">
+                  <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--ink-3)]">
                     {label}
                   </p>
                   <p className="mt-1 font-mono text-xl font-semibold">{value}</p>
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#E6F1EC]">
-                  <Icon className="h-5 w-5 text-[#0D5C3D]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[color:var(--brand-subtle)]">
+                  <Icon className="h-5 w-5 text-[color:var(--brand)]" />
                 </div>
               </CardContent>
             </Card>
@@ -187,12 +165,12 @@ export default function DemoWorkspace() {
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="rounded-lg border border-black/10 bg-card">
-            <div className="border-b border-black/10 p-4 sm:p-5">
+          <section className="rounded-lg border border-[color:var(--hairline)] bg-[color:var(--surface)]">
+            <div className="border-b border-[color:var(--hairline)] p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold">{sampleCompany.name}</p>
-                  <p className="text-xs text-black/55">
+                  <p className="text-xs text-[color:var(--ink-3)]">
                     TRN {sampleCompany.trn} · {sampleCompany.period}
                   </p>
                 </div>
@@ -259,13 +237,13 @@ export default function DemoWorkspace() {
                 </div>
                 <div className="grid gap-3 md:hidden">
                   {invoices.map((invoice) => (
-                    <Card key={invoice.number} className="border-black/10">
+                    <Card key={invoice.number} className="border-[color:var(--hairline)]">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="font-mono text-sm font-semibold">{invoice.number}</p>
                             <p className="text-sm">{invoice.customer}</p>
-                            <p className="text-xs text-black/55">{invoice.date}</p>
+                            <p className="text-xs text-[color:var(--ink-3)]">{invoice.date}</p>
                           </div>
                           <Badge variant={invoice.status === "Paid" ? "default" : "secondary"}>
                             {invoice.status}
@@ -273,11 +251,11 @@ export default function DemoWorkspace() {
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                           <div>
-                            <p className="text-xs text-black/50">VAT</p>
+                            <p className="text-xs text-[color:var(--ink-3)]">VAT</p>
                             <p className="font-mono">{money(invoice.vat)}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-black/50">
+                            <p className="text-xs text-[color:var(--ink-3)]">
                               <T k="pages.total2" />
                             </p>
                             <p className="font-mono font-semibold">{money(invoice.total)}</p>
@@ -290,14 +268,14 @@ export default function DemoWorkspace() {
               </TabsContent>
 
               <TabsContent value="banking" className="mt-5 space-y-4">
-                <div className="rounded-lg border border-[#C19E50]/30 bg-[#FFF8E6] p-4">
+                <div className="rounded-lg border border-[color:var(--hairline)] bg-[color:var(--warning-subtle)] p-4">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-[#9A762A]" />
+                    <Sparkles className="h-4 w-4 text-[color:var(--warning)]" />
                     <p className="text-sm font-medium">
                       <T k="pageLabels.cSVStatementImportNoLiveFeedNeeded" />
                     </p>
                   </div>
-                  <p className="mt-1 text-sm text-black/60">
+                  <p className="mt-1 text-sm text-[color:var(--ink-2)]">
                     Sample bank lines are matched against invoices, receipts, and expenses with
                     confidence scores before posting.
                   </p>
@@ -306,18 +284,20 @@ export default function DemoWorkspace() {
                   {bankLines.map((line) => (
                     <div
                       key={`${line.date}-${line.description}`}
-                      className="rounded-md border border-black/10 p-4"
+                      className="rounded-md border border-[color:var(--hairline)] p-4"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="font-medium">{line.description}</p>
-                          <p className="text-xs text-black/55">
+                          <p className="text-xs text-[color:var(--ink-3)]">
                             {line.date} · Suggested match: {line.match}
                           </p>
                         </div>
                         <p
                           className={`font-mono font-semibold ${
-                            line.amount >= 0 ? "text-[#0D5C3D]" : "text-[#B5392B]"
+                            line.amount >= 0
+                              ? "text-[color:var(--brand)]"
+                              : "text-[color:var(--danger)]"
                           }`}
                         >
                           {money(line.amount)}
@@ -339,7 +319,7 @@ export default function DemoWorkspace() {
                   {vatRows.map((row) => (
                     <div
                       key={row.box}
-                      className="grid gap-3 rounded-md border border-black/10 p-4 sm:grid-cols-[72px_minmax(0,1fr)_160px_160px]"
+                      className="grid gap-3 rounded-md border border-[color:var(--hairline)] p-4 sm:grid-cols-[72px_minmax(0,1fr)_160px_160px]"
                     >
                       <Badge variant="outline" className="w-fit">
                         Box {row.box}
@@ -365,9 +345,9 @@ export default function DemoWorkspace() {
                     ["Expenses", money(154500)],
                     ["Taxable above threshold", money(82500)],
                   ].map(([label, value]) => (
-                    <Card key={label} className="border-black/10">
+                    <Card key={label} className="border-[color:var(--hairline)]">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-black/55">{label}</CardTitle>
+                        <CardTitle className="text-sm text-[color:var(--ink-3)]">{label}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <p className="font-mono text-xl font-semibold">{value}</p>
@@ -375,11 +355,11 @@ export default function DemoWorkspace() {
                     </Card>
                   ))}
                 </div>
-                <div className="mt-4 rounded-md border border-black/10 p-4">
+                <div className="mt-4 rounded-md border border-[color:var(--hairline)] p-4">
                   <p className="text-sm font-medium">
                     <T k="pageLabels.corporateTaxSupportSchedule" />
                   </p>
-                  <p className="mt-1 text-sm text-black/60">
+                  <p className="mt-1 text-sm text-[color:var(--ink-2)]">
                     Revenue and expense rows roll into a draft CT estimate and can be exported as an
                     Excel workpaper for accountant review.
                   </p>
@@ -389,26 +369,26 @@ export default function DemoWorkspace() {
           </section>
 
           <aside className="space-y-4">
-            <Card className="border-black/10 bg-card">
+            <Card className="border-[color:var(--hairline)] bg-[color:var(--surface)]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <CheckCircle2 className="h-5 w-5 text-[#0D5C3D]" />
+                  <CheckCircle2 className="h-5 w-5 text-[color:var(--brand)]" />
                   <T k="pageLabels.launchChecklist" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {closeChecklist.map((item) => (
                   <div key={item} className="flex items-start gap-2 text-sm">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0D5C3D]" />
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--brand)]" />
                     <span>{item}</span>
                   </div>
                 ))}
               </CardContent>
             </Card>
 
-            <Card className="border-black/10 bg-[#0E1320] text-white">
+            <Card className="border-[color:var(--hairline)] bg-[color:var(--band)] text-white">
               <CardContent className="space-y-4 p-5">
-                <Receipt className="h-8 w-8 text-[#C19E50]" />
+                <Receipt className="h-8 w-8 text-[#4fcf98]" />
                 <div>
                   <p className="font-semibold">
                     <T k="pageLabels.wantYourOwnBooksInThisShape" />
@@ -419,7 +399,7 @@ export default function DemoWorkspace() {
                   </p>
                 </div>
                 <Link href="/register">
-                  <Button className="w-full bg-card text-[#0E1320] hover:bg-card/90">
+                  <Button className="w-full bg-white text-[#0E1320] hover:bg-white/90">
                     <T k="pageLabels.startSetup" />
                   </Button>
                 </Link>
@@ -428,6 +408,6 @@ export default function DemoWorkspace() {
           </aside>
         </div>
       </section>
-    </main>
+    </MarketingLayout>
   );
 }

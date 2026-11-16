@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 import { Link } from "wouter";
 import {
   ArrowRight,
@@ -85,49 +86,28 @@ const trustPosture = [
 
 export default function TrustSecurity() {
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-background/95 backdrop-blur">
-        <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <Link href="/" className="text-lg font-bold">
-            Muhasib.ai{/* i18n-ignore: brand or sample data */}
-          </Link>
-          <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <Link href="/pricing" className="hover:text-foreground">
-              <T k="pages.pricing" />
-            </Link>
-            <Link href="/help" className="hover:text-foreground">
-              Help
-            </Link>
-            <Link href="/migration-guides" className="hover:text-foreground">
-              <T k="pageLabels.migrate" />
-            </Link>
-          </nav>
-          <Link href="/register">
-            <Button size="sm">
-              <T k="pageLabels.startFree" />
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <main>
-        <section className="border-b bg-muted/30">
-          <div className="container mx-auto max-w-6xl px-4 py-16 lg:py-20">
-            <Badge variant="outline" className="mb-5">
+    <MarketingLayout
+      titleKey="marketing.seoTrustTitle"
+      descriptionKey="marketing.seoTrustDescription"
+    >
+      <>
+        <section className="mk-pagehead">
+          <div className="mk-container">
+            <p className="mk-eyebrow">
               <T k="pageLabels.trustAndSecurity" />
-            </Badge>
+            </p>
             <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
               <div>
-                <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
+                <h1 className="mk-h1">
                   <T k="pageLabels.builtForCautiousUaeFinanceTeams" />
                 </h1>
-                <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
+                <p className="mk-lead">
                   Muhasib.ai protects accounting workflows with access controls, secure sessions,
                   auditable records, and a clear roadmap toward third-party assurance. We do not
                   claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete.
                 </p>
               </div>
-              <Card>
+              <Card className="mk-surface-card">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <ShieldCheck className="h-5 w-5 text-success" />
@@ -157,7 +137,7 @@ export default function TrustSecurity() {
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-container mk-inner-section">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-2xl font-semibold">
@@ -186,7 +166,7 @@ export default function TrustSecurity() {
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-container mk-inner-section">
           <div className="grid gap-4 md:grid-cols-2">
             {controls.map((item) => {
               const Icon = item.icon;
@@ -207,8 +187,8 @@ export default function TrustSecurity() {
           </div>
         </section>
 
-        <section className="border-y bg-muted/30">
-          <div className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-section--sunken">
+          <div className="mk-container mk-inner-section">
             <div>
               <h2 className="text-2xl font-semibold">
                 <T k="pageLabels.operationalTrustPosture" />
@@ -239,7 +219,7 @@ export default function TrustSecurity() {
           </div>
         </section>
 
-        <section className="border-y bg-muted/30">
+        <section className="mk-section--sunken">
           <div className="container mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-2">
             <div>
               <h2 className="text-2xl font-semibold">
@@ -270,7 +250,7 @@ export default function TrustSecurity() {
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-container mk-inner-section">
           <h2 className="text-2xl font-semibold">
             <T k="pageLabels.assuranceRoadmap" />
           </h2>
@@ -289,7 +269,7 @@ export default function TrustSecurity() {
             <Link href="/help">
               <Button>
                 <T k="pageLabels.visitHelpCenter" />
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <ArrowRight className="ms-2 h-4 w-4 rtl:-scale-x-100" />
               </Button>
             </Link>
             <Link href="/migration-guides">
@@ -304,7 +284,7 @@ export default function TrustSecurity() {
             </Link>
           </div>
         </section>
-      </main>
-    </div>
+      </>
+    </MarketingLayout>
   );
 }

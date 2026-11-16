@@ -196,18 +196,7 @@ export default function Register() {
   };
 
   return (
-    <AuthLayout
-      headline={
-        <>
-          The ledger,{" "}
-          <span className="italic" style={{ color: "#C19E50" }}>
-            handled
-          </span>
-          .
-        </>
-      }
-      subline="Snap a receipt, forward an invoice, or import a bank line; Muhasib turns daily accounting into VAT-ready records from day one."
-    >
+    <AuthLayout variant="register">
       {teamInvite ? (
         <TeamInviteAccept token={teamInvite} />
       ) : (

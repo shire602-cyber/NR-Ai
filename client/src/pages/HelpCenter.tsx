@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { T } from "@/components/layout/T";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 const guides = [
   {
@@ -53,53 +53,32 @@ const slaItems = [
 
 export default function HelpCenter() {
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-background/95 backdrop-blur">
-        <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <Link href="/" className="text-lg font-bold">
-            <T k="pageLabels.muhasibAi" />
-          </Link>
-          <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <Link href="/pricing" className="hover:text-foreground">
-              <T k="pages.pricing" />
-            </Link>
-            <Link href="/trust" className="hover:text-foreground">
-              <T k="pageLabels.trust" />
-            </Link>
-            <Link href="/migration-guides" className="hover:text-foreground">
-              <T k="pageLabels.migrate" />
-            </Link>
-          </nav>
-          <a href="mailto:support@muhasib.ai?subject=Muhasib.ai%20support">
-            <Button size="sm" variant="outline">
-              <T k="pageLabels.contactSupport" />
-            </Button>
-          </a>
-        </div>
-      </header>
-
-      <main>
-        <section className="border-b bg-muted/30">
-          <div className="container mx-auto max-w-6xl px-4 py-16">
-            <Badge variant="outline" className="mb-5">
+    <MarketingLayout
+      titleKey="marketing.seoHelpTitle"
+      descriptionKey="marketing.seoHelpDescription"
+    >
+      <>
+        <section className="mk-pagehead">
+          <div className="mk-container">
+            <p className="mk-eyebrow">
               <T k="pageLabels.helpCenter" />
-            </Badge>
-            <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
+            </p>
+            <h1 className="mk-h1">
               <T k="pageLabels.launchSupportForUAEAccountingTeamsMovingFast" />
             </h1>
-            <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
+            <p className="mk-lead">
               Practical setup guides for invoices, VAT workflows, bank reconciliation, imports, and
               month-end routines. During launch, paid plans are activated with guided onboarding.
             </p>
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-container mk-inner-section">
           <div className="grid gap-4 md:grid-cols-2">
             {guides.map((guide) => {
               const Icon = guide.icon;
               return (
-                <Card key={guide.title}>
+                <Card key={guide.title} className="mk-surface-card">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-3 text-lg">
                       <Icon className="h-5 w-5 text-primary" />
@@ -115,8 +94,8 @@ export default function HelpCenter() {
           </div>
         </section>
 
-        <section className="border-y bg-muted/30">
-          <div className="container mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="mk-section--sunken">
+          <div className="mk-container mk-inner-section grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
             <div>
               <h2 className="flex items-center gap-2 text-2xl font-semibold">
                 <LifeBuoy className="h-6 w-6 text-primary" />
@@ -138,8 +117,8 @@ export default function HelpCenter() {
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
-          <div className="rounded-lg border p-6">
+        <section className="mk-container mk-inner-section">
+          <div className="mk-card p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-xl font-semibold">
@@ -153,21 +132,21 @@ export default function HelpCenter() {
               <div className="flex flex-wrap gap-3">
                 <a href="mailto:support@muhasib.ai?subject=Migration%20review">
                   <Button>
-                    <Mail className="mr-2 h-4 w-4" />
+                    <Mail className="me-2 h-4 w-4" />
                     <T k="pageLabels.requestReview" />
                   </Button>
                 </a>
                 <Link href="/migration-guides">
                   <Button variant="outline">
                     <T k="pageLabels.migrationGuides" />
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <ArrowRight className="ms-2 h-4 w-4 rtl:-scale-x-100" />
                   </Button>
                 </Link>
               </div>
             </div>
           </div>
         </section>
-      </main>
-    </div>
+      </>
+    </MarketingLayout>
   );
 }

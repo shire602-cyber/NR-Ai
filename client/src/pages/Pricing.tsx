@@ -1,49 +1,9 @@
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Link } from "wouter";
-import {
-  Check,
-  Minus,
-  Zap,
-  Crown,
-  Rocket,
-  Building2,
-  ArrowRight,
-  Shield,
-  Globe,
-  Sparkles,
-  Star,
-  Phone,
-  Lock,
-  Calculator,
-} from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, Check, Minus, Plus, Mail, Zap, Crown, Rocket, Building2 } from "lucide-react";
+import { Fragment, useState } from "react";
 import { useI18n } from "@/lib/i18n";
-import { motion, AnimatePresence } from "framer-motion";
-import { ScrollReveal, StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 // ── Pricing Data ───────────────────────────────────────────────────────
 
@@ -82,8 +42,6 @@ const tiers: PricingTier[] = [
     yearlyPrice: 39,
     companies: "1",
     users: "3",
-    badge: "recommended",
-    badgeVariant: "secondary",
     ctaVariant: "default",
     highlight: false,
     gradient: "from-blue-500/10 to-blue-600/5",
@@ -321,23 +279,19 @@ const featureMatrix: FeatureCategory[] = [
 // ── Component ──────────────────────────────────────────────────────────
 
 export default function Pricing() {
-  const { locale, setLocale } = useI18n();
+  const { locale } = useI18n();
   const [isYearly, setIsYearly] = useState(false);
-  const isRTL = locale === "ar";
-
-  const toggleLanguage = () => {
-    setLocale(locale === "en" ? "ar" : "en");
-  };
 
   // ── Translations ────────────────────────────────────────────────────
 
   const t = {
     header: {
-      title: locale === "en" ? "Simple, Transparent Pricing" : "أسعار بسيطة وشفافة",
+      title: locale === "en" ? "Simple pricing that grows with you" : "أسعار بسيطة تنمو معك",
+      billingLabel: locale === "en" ? "Billing period" : "فترة الفوترة",
       subtitle:
         locale === "en"
-          ? "Start free. Scale as you grow. No hidden fees."
-          : "ابدأ مجاناً. توسّع مع نموك. بدون رسوم خفية.",
+          ? "Start on the free plan and move up when you need more companies, users or payroll."
+          : "ابدأ بالخطة المجانية وانتقل إلى خطة أعلى عندما تحتاج إلى شركات أو مستخدمين أو رواتب أكثر.",
       monthly: locale === "en" ? "Monthly" : "شهري",
       yearly: locale === "en" ? "Yearly" : "سنوي",
       save20: locale === "en" ? "Save 20%" : "وفّر 20%",
@@ -370,7 +324,7 @@ export default function Pricing() {
     },
     badges: {
       recommended: locale === "en" ? "Recommended" : "موصى به",
-      mostPopular: locale === "en" ? "Most Popular" : "الأكثر شعبية",
+      mostPopular: locale === "en" ? "Best for growing teams" : "الأنسب للفرق المتنامية",
     },
     limits: {
       companies: locale === "en" ? "company" : "شركة",
@@ -576,13 +530,6 @@ export default function Pricing() {
               : "نقبل جميع بطاقات الائتمان والخصم الرئيسية عبر Stripe، بما في ذلك فيزا، ماستركارد، وأمريكان إكسبريس. تتم معالجة جميع المدفوعات بشكل آمن.",
         },
         {
-          q: locale === "en" ? "Do you offer refunds?" : "هل تقدمون استرداد أموال؟",
-          a:
-            locale === "en"
-              ? "Absolutely. We offer a 30-day money-back guarantee on all paid plans. If you're not satisfied, contact us within 30 days for a full refund, no questions asked."
-              : "بالتأكيد. نقدم ضمان استرداد الأموال لمدة 30 يوماً على جميع الخطط المدفوعة. إذا لم تكن راضياً، تواصل معنا خلال 30 يوماً لاسترداد كامل المبلغ.",
-        },
-        {
           q: locale === "en" ? "Is my data secure?" : "هل بياناتي آمنة؟",
           a:
             locale === "en"
@@ -592,17 +539,17 @@ export default function Pricing() {
       ],
     },
     footerCta: {
-      title: locale === "en" ? "Ready to automate your accounting?" : "مستعد لأتمتة محاسبتك؟",
+      title: locale === "en" ? "Start on the free plan today." : "ابدأ بالخطة المجانية اليوم.",
       subtitle:
         locale === "en"
-          ? "Start with guided onboarding, VAT-ready workflows, and support options matched to your plan."
-          : "ابدأ بإعداد موجه وسير عمل جاهز لضريبة القيمة المضافة وخيارات دعم مناسبة لخطتك.",
+          ? "Set up your company in minutes, or talk to us about migration and the plan that fits."
+          : "أعدّ شركتك في دقائق، أو تحدث إلينا عن نقل بياناتك والخطة المناسبة لك.",
       startFree: locale === "en" ? "Start Free" : "ابدأ مجاناً",
-      bookDemo: locale === "en" ? "Book a Demo" : "احجز عرض توضيحي",
+      bookDemo: locale === "en" ? "Talk to us" : "تحدث إلينا",
       guarantee:
         locale === "en"
-          ? "14-day free trial  |  No credit card required  |  30-day money-back guarantee"
-          : "تجربة مجانية 14 يوم  |  لا حاجة لبطاقة ائتمان  |  ضمان استرداد 30 يوم",
+          ? "Free plan available · 14-day trial on your first paid plan · Prices in AED"
+          : "خطة مجانية متاحة · تجربة 14 يوماً لأول خطة مدفوعة · الأسعار بالدرهم",
     },
     nav: {
       home: locale === "en" ? "Home" : "الرئيسية",
@@ -623,338 +570,190 @@ export default function Pricing() {
     return isYearly ? tier.yearlyPrice : tier.monthlyPrice;
   };
 
-  const renderCheckOrDash = (included: boolean) => {
-    if (included) {
-      return (
-        <div className="flex justify-center">
-          <div className="h-6 w-6 rounded-full bg-success-subtle flex items-center justify-center">
-            <Check className="h-3.5 w-3.5 text-success " />
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="flex justify-center">
-        <Minus className="h-4 w-4 text-muted-foreground/40" />
-      </div>
+  const renderCheckOrDash = (included: boolean) =>
+    included ? (
+      <span className="mk-ptable__yes">
+        <Check aria-hidden="true" />
+        <span className="sr-only">{locale === "en" ? "Included" : "مشمول"}</span>
+      </span>
+    ) : (
+      <span className="mk-ptable__no">
+        <Minus aria-hidden="true" />
+        <span className="sr-only">{locale === "en" ? "Not included" : "غير مشمول"}</span>
+      </span>
     );
-  };
 
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <div
-      className={`min-h-screen bg-background ${isRTL ? "rtl" : "ltr"}`}
-      dir={isRTL ? "rtl" : "ltr"}
+    <MarketingLayout
+      titleKey="marketing.seoPricingTitle"
+      descriptionKey="marketing.seoPricingDescription"
     >
-      {/* ── Mini Nav ─────────────────────────────────────────────────── */}
-      <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-xl">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
-          <Link href="/">
-            <div className="flex items-center gap-2 cursor-pointer">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                <Calculator className="h-4 w-4 text-white" />
-              </div>
-              <span className="font-bold text-lg">
-                {/* i18n-ignore: brand or sample data */}Muhasib.ai
-              </span>
-            </div>
-          </Link>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={toggleLanguage}>
-              <Globe className="h-4 w-4 me-1" />
-              {t.nav.languageToggle}
-            </Button>
-            <Link href="/login">
-              <Button variant="ghost" size="sm">
-                {t.nav.login}
-              </Button>
-            </Link>
-            <Link href="/register">
-              <Button
-                size="sm"
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700"
-              >
-                {t.footerCta.startFree}
-              </Button>
-            </Link>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <header className="mk-pagehead" style={{ borderBlockEnd: 0, textAlign: "center" }}>
+        <div className="mk-container">
+          <p className="mk-eyebrow">{locale === "en" ? "Pricing in AED" : "الأسعار بالدرهم"}</p>
+          <h1 className="mk-h1" style={{ marginInline: "auto", maxInlineSize: "18ch" }}>
+            {t.header.title}
+          </h1>
+          <p className="mk-lead" style={{ marginInline: "auto" }}>
+            {t.header.subtitle}
+          </p>
+
+          {/* Monthly / Yearly toggle */}
+          <div className="mk-billing" role="group" aria-label={t.header.billingLabel}>
+            <span data-active={!isYearly}>{t.header.monthly}</span>
+            <Switch
+              checked={isYearly}
+              onCheckedChange={setIsYearly}
+              aria-label={t.header.yearly}
+              data-testid="switch-billing-period"
+            />
+            <span data-active={isYearly}>{t.header.yearly}</span>
+            <span className="mk-badge" data-tone="success" data-visible={isYearly}>
+              {t.header.save20}
+            </span>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* ── Header Section ───────────────────────────────────────────── */}
-      <section className="py-16 md:py-24 px-4">
-        <div className="container mx-auto text-center max-w-3xl">
-          <ScrollReveal>
-            <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
-              <Sparkles className="h-3.5 w-3.5 me-1.5" />
-              {locale === "en"
-                ? "Launch pricing for UAE SMEs"
-                : "أسعار الإطلاق للشركات الصغيرة والمتوسطة في الإمارات"}
-            </Badge>
-          </ScrollReveal>
-          <ScrollReveal delay={0.1}>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-4">
-              {t.header.title}
-            </h1>
-          </ScrollReveal>
-          <ScrollReveal delay={0.2}>
-            <p className="text-lg md:text-xl text-muted-foreground mb-10">{t.header.subtitle}</p>
-          </ScrollReveal>
-
-          {/* Monthly / Yearly Toggle */}
-          <ScrollReveal delay={0.3}>
-            <div className="flex items-center justify-center gap-3">
-              <span
-                className={`text-sm font-medium transition-colors ${!isYearly ? "text-foreground" : "text-muted-foreground"}`}
+      {/* ── Plan cards ─────────────────────────────────────────────────── */}
+      <section className="mk-container" style={{ paddingBlockEnd: "var(--section)" }}>
+        <div className="mk-tiers">
+          {tiers.map((tier) => {
+            const tierKey = tier.id as keyof typeof t.tiers;
+            const tierT = t.tiers[tierKey];
+            const tierFeatures = t.tierFeatures[tierKey];
+            const price = getPrice(tier);
+            return (
+              <article
+                key={tier.id}
+                className="mk-card mk-tier"
+                data-featured={tier.highlight ? "true" : undefined}
+                data-testid={`card-plan-${tier.id}`}
               >
-                {t.header.monthly}
-              </span>
-              <Switch
-                checked={isYearly}
-                onCheckedChange={setIsYearly}
-                className="data-[state=checked]:bg-success"
-              />
-              <span
-                className={`text-sm font-medium transition-colors ${isYearly ? "text-foreground" : "text-muted-foreground"}`}
-              >
-                {t.header.yearly}
-              </span>
-              <AnimatePresence>
-                {isYearly && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8, x: -10 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, x: -10 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                <div className="mk-tier__top">
+                  <h2 className="mk-tier__name">{tierT.name}</h2>
+                  {tier.badge && (
+                    <span className="mk-plan__tag">
+                      {t.badges[tier.badge as keyof typeof t.badges]}
+                    </span>
+                  )}
+                </div>
+                <p className="mk-small">{tierT.description}</p>
+                <p className="mk-tier__price">
+                  <strong className="mk-num">{formatPrice(price)}</strong>
+                  {price > 0 && <span>{t.header.perMonth}</span>}
+                </p>
+                <p className="mk-small mk-tier__billed">
+                  {price > 0 && isYearly
+                    ? locale === "en"
+                      ? `Billed AED ${price * 12} a year`
+                      : `يُفوتر ${price * 12} درهم سنوياً`
+                    : " "}
+                </p>
+                {tier.id === "enterprise" ? (
+                  <a
+                    href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20Enterprise"
+                    className="mk-btn mk-btn--secondary"
+                    data-testid={`button-plan-${tier.id}`}
                   >
-                    <Badge className="bg-success-subtle text-success border-success/30 ">
-                      {t.header.save20}
-                    </Badge>
-                  </motion.div>
+                    {tierT.cta}
+                    <ArrowRight className="mk-flip" aria-hidden="true" />
+                  </a>
+                ) : (
+                  <Link
+                    href="/register"
+                    className={`mk-btn ${tier.highlight ? "mk-btn--primary" : "mk-btn--secondary"}`}
+                    data-testid={`button-plan-${tier.id}`}
+                  >
+                    {tierT.cta}
+                    <ArrowRight className="mk-flip" aria-hidden="true" />
+                  </Link>
                 )}
-              </AnimatePresence>
-            </div>
-          </ScrollReveal>
+                {"header" in tierFeatures && (
+                  <p className="mk-tier__inherit">{(tierFeatures as { header: string }).header}</p>
+                )}
+                <ul className="mk-checklist mk-tier__features">
+                  {tierFeatures.features.map((feature) => (
+                    <li key={feature}>
+                      <Check aria-hidden="true" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            );
+          })}
         </div>
+        <p className="mk-small" style={{ textAlign: "center", marginBlockStart: "2rem" }}>
+          {t.footerCta.guarantee}
+        </p>
       </section>
 
-      {/* ── Pricing Cards ────────────────────────────────────────────── */}
-      <section className="pb-20 px-4">
-        <div className="container mx-auto">
-          <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
-            {tiers.map((tier) => {
-              const tierKey = tier.id as keyof typeof t.tiers;
-              const tierT = t.tiers[tierKey];
-              const tierFeatures = t.tierFeatures[tierKey];
-              const price = getPrice(tier);
-              const TierIcon = tier.icon;
-
-              return (
-                <StaggerItem key={tier.id}>
-                  <motion.div whileHover={hoverLift} className="h-full">
-                    <Card
-                      className={`relative h-full flex flex-col overflow-hidden transition-all duration-300 ${
-                        tier.highlight
-                          ? "border-success shadow-lg shadow-emerald-500/10 ring-1 ring-success/20 scale-[1.02] lg:scale-105"
-                          : "hover:border-foreground/20"
-                      }`}
+      {/* ── Feature comparison ─────────────────────────────────────────── */}
+      <section className="mk-section mk-section--sunken" aria-labelledby="mk-compare-title">
+        <div className="mk-container">
+          <div className="mk-heading mk-heading--center">
+            <h2 id="mk-compare-title" className="mk-h2">
+              {t.comparison.title}
+            </h2>
+            <p className="mk-lead">{t.comparison.subtitle}</p>
+          </div>
+          <div
+            className="mk-card mk-ptable-wrap"
+            tabIndex={0}
+            role="region"
+            aria-labelledby="mk-compare-title"
+          >
+            <table className="mk-ptable">
+              <caption className="sr-only">{t.comparison.title}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{locale === "en" ? "Feature" : "الميزة"}</th>
+                  {tiers.map((tier) => (
+                    <th
+                      key={tier.id}
+                      scope="col"
+                      data-featured={tier.highlight ? "true" : undefined}
                     >
-                      {/* Gradient top accent */}
-                      <div
-                        className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${
-                          tier.id === "free"
-                            ? "from-slate-400 to-slate-500"
-                            : tier.id === "starter"
-                              ? "from-blue-400 to-blue-600"
-                              : tier.id === "professional"
-                                ? "from-emerald-400 to-teal-600"
-                                : "from-purple-400 to-purple-600"
-                        }`}
-                      />
-
-                      <CardHeader className="pb-4">
-                        {/* Badge */}
-                        {tier.badge && (
-                          <div className="mb-3">
-                            <Badge
-                              variant={tier.badgeVariant}
-                              className={
-                                tier.badge === "mostPopular"
-                                  ? "bg-success text-white border-success hover:bg-success"
-                                  : ""
-                              }
-                            >
-                              {tier.badge === "mostPopular" && <Star className="h-3 w-3 me-1" />}
-                              {t.badges[tier.badge as keyof typeof t.badges]}
-                            </Badge>
-                          </div>
-                        )}
-
-                        {/* Icon + Name */}
-                        <div className="flex items-center gap-3 mb-2">
-                          <div
-                            className={`h-10 w-10 rounded-xl bg-gradient-to-br ${tier.gradient} flex items-center justify-center`}
-                          >
-                            <TierIcon className={`h-5 w-5 ${tier.iconColor}`} />
-                          </div>
-                          <CardTitle className="text-xl">{tierT.name}</CardTitle>
-                        </div>
-                        <CardDescription className="text-sm">{tierT.description}</CardDescription>
-
-                        {/* Price */}
-                        <div className="mt-4 flex items-baseline gap-1">
-                          <AnimatePresence mode="wait">
-                            <motion.span
-                              key={`${tier.id}-${isYearly}`}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -10 }}
-                              transition={{ duration: 0.2 }}
-                              className="text-4xl font-bold tracking-tight"
-                            >
-                              {formatPrice(price)}
-                            </motion.span>
-                          </AnimatePresence>
-                          {price > 0 && (
-                            <span className="text-muted-foreground text-sm">
-                              {t.header.perMonth}
-                            </span>
-                          )}
-                        </div>
-                        {price > 0 && isYearly && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {locale === "en"
-                              ? `Billed AED ${price * 12}/year`
-                              : `يُفوتر ${price * 12} درهم/سنة`}
-                          </p>
-                        )}
-                      </CardHeader>
-
-                      <CardContent className="flex-1 pb-4">
-                        {/* Upsell from Starter */}
-                        {"header" in tierFeatures && (
-                          <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
-                            {(tierFeatures as { header: string }).header}
-                          </p>
-                        )}
-
-                        <ul className="space-y-2.5">
-                          {tierFeatures.features.map((feature, idx) => (
-                            <li key={idx} className="flex items-start gap-2 text-sm">
-                              <Check
-                                className={`h-4 w-4 mt-0.5 shrink-0 ${
-                                  tier.highlight ? "text-success " : "text-muted-foreground"
-                                }`}
-                              />
-                              <span>{feature}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-
-                      <CardFooter className="pt-2 pb-6">
-                        <Link
-                          href={tier.id === "enterprise" ? "#contact" : "/register"}
-                          className="w-full"
-                        >
-                          <Button
-                            variant={tier.ctaVariant}
-                            className={`w-full ${
-                              tier.highlight
-                                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-500/25"
-                                : tier.id === "starter"
-                                  ? "bg-info text-white hover:bg-info"
-                                  : ""
-                            }`}
-                            size="lg"
-                          >
-                            {tierT.cta}
-                            <ArrowRight className="h-4 w-4 ms-2" />
-                          </Button>
-                        </Link>
-                      </CardFooter>
-                    </Card>
-                  </motion.div>
-                </StaggerItem>
-              );
-            })}
-          </StaggerContainer>
-        </div>
-      </section>
-
-      {/* ── Feature Comparison Table ─────────────────────────────────── */}
-      <section className="py-20 px-4 bg-muted/30">
-        <div className="container mx-auto max-w-6xl">
-          <ScrollReveal>
-            <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-3">{t.comparison.title}</h2>
-              <p className="text-muted-foreground text-lg">{t.comparison.subtitle}</p>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal delay={0.15}>
-            <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="w-[280px] font-semibold text-foreground">
-                        {locale === "en" ? "Feature" : "الميزة"}
-                      </TableHead>
-                      {tiers.map((tier) => (
-                        <TableHead key={tier.id} className="text-center min-w-[120px]">
-                          <div className="flex flex-col items-center gap-1">
-                            <span
-                              className={`font-semibold text-foreground ${tier.highlight ? "text-success " : ""}`}
-                            >
-                              {t.tiers[tier.id as keyof typeof t.tiers].name}
-                            </span>
-                            <span className="text-xs text-muted-foreground font-normal">
-                              {getPrice(tier) === 0
-                                ? t.header.free
-                                : `AED ${getPrice(tier)}${t.header.perMonth}`}
-                            </span>
-                          </div>
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {featureMatrix.map((category) => (
-                      <>
-                        {/* Category header row */}
-                        <TableRow key={category.categoryKey} className="bg-muted/20">
-                          <TableCell
-                            colSpan={5}
-                            className="font-semibold text-sm text-foreground py-3"
-                          >
-                            {
-                              t.featureCategories[
-                                category.categoryKey as keyof typeof t.featureCategories
-                              ]
-                            }
-                          </TableCell>
-                        </TableRow>
-                        {/* Feature rows */}
-                        {category.features.map((feature) => (
-                          <TableRow key={feature.key}>
-                            <TableCell className="text-sm">
-                              {t.featureNames[feature.key as keyof typeof t.featureNames]}
-                            </TableCell>
-                            <TableCell>{renderCheckOrDash(feature.free)}</TableCell>
-                            <TableCell>{renderCheckOrDash(feature.starter)}</TableCell>
-                            <TableCell>{renderCheckOrDash(feature.professional)}</TableCell>
-                            <TableCell>{renderCheckOrDash(feature.enterprise)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </>
+                      <span>{t.tiers[tier.id as keyof typeof t.tiers].name}</span>
+                      <small className="mk-num">
+                        {getPrice(tier) === 0
+                          ? t.header.free
+                          : `AED ${getPrice(tier)}${t.header.perMonth}`}
+                      </small>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {featureMatrix.map((category) => (
+                  <Fragment key={category.categoryKey}>
+                    <tr className="mk-ptable__group">
+                      <td colSpan={5}>
+                        {
+                          t.featureCategories[
+                            category.categoryKey as keyof typeof t.featureCategories
+                          ]
+                        }
+                      </td>
+                    </tr>
+                    {category.features.map((feature) => (
+                      <tr key={feature.key}>
+                        <td>{t.featureNames[feature.key as keyof typeof t.featureNames]}</td>
+                        <td>{renderCheckOrDash(feature.free)}</td>
+                        <td>{renderCheckOrDash(feature.starter)}</td>
+                        <td>{renderCheckOrDash(feature.professional)}</td>
+                        <td>{renderCheckOrDash(feature.enterprise)}</td>
+                      </tr>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
-          </ScrollReveal>
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -964,101 +763,53 @@ export default function Pricing() {
           Do not re-add a comparison unless every cell is backed by a dated screenshot
           from the competitor's own public documentation, with the verification date shown. */}
 
-      {/* ── FAQ Section ──────────────────────────────────────────────── */}
-      <section className="py-20 px-4 bg-muted/30">
-        <div className="container mx-auto max-w-3xl">
-          <ScrollReveal>
-            <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-3">{t.faq.title}</h2>
-              <p className="text-muted-foreground text-lg">{t.faq.subtitle}</p>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal delay={0.15}>
-            <Card className="p-2 md:p-6">
-              <Accordion type="single" collapsible className="w-full">
-                {t.faq.questions.map((item, idx) => (
-                  <AccordionItem key={idx} value={`faq-${idx}`}>
-                    <AccordionTrigger className="text-left text-base hover:no-underline">
-                      {item.q}
-                    </AccordionTrigger>
-                    <AccordionContent className="text-muted-foreground leading-relaxed">
-                      {item.a}
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </Card>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* ── Footer CTA ───────────────────────────────────────────────── */}
-      <section className="py-20 px-4">
-        <div className="container mx-auto max-w-3xl">
-          <ScrollReveal>
-            <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-0">
-              {/* Decorative background elements */}
-              <div className="absolute inset-0 opacity-10">
-                <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-card" />
-                <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-card" />
-              </div>
-
-              <CardContent className="relative py-12 md:py-16 text-center">
-                <h2 className="text-3xl md:text-4xl font-bold mb-4">{t.footerCta.title}</h2>
-                <p className="text-success-foreground text-lg mb-8 max-w-xl mx-auto">
-                  {t.footerCta.subtitle}
-                </p>
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
-                  <Link href="/register">
-                    <Button
-                      size="lg"
-                      className="bg-card text-success hover:bg-success-subtle shadow-xl min-w-[180px]"
-                    >
-                      {t.footerCta.startFree}
-                      <ArrowRight className="h-4 w-4 ms-2" />
-                    </Button>
-                  </Link>
-                  <a href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request">
-                    <Button
-                      size="lg"
-                      variant="outline"
-                      className="border-white/30 text-white hover:bg-card/10 min-w-[180px]"
-                    >
-                      <Phone className="h-4 w-4 me-2" />
-                      {t.footerCta.bookDemo}
-                    </Button>
-                  </a>
+      {/* ── FAQ ─────────────────────────────────────────────────────────── */}
+      <section className="mk-section" aria-labelledby="mk-pfaq-title">
+        <div className="mk-container mk-container--narrow">
+          <div className="mk-heading mk-heading--center">
+            <h2 id="mk-pfaq-title" className="mk-h2">
+              {t.faq.title}
+            </h2>
+            <p className="mk-lead">{t.faq.subtitle}</p>
+          </div>
+          <div className="mk-faq">
+            {t.faq.questions.map((item) => (
+              <details key={item.q}>
+                <summary>
+                  <span>{item.q}</span>
+                  <Plus aria-hidden="true" />
+                </summary>
+                <div className="mk-faq__answer">
+                  <p>{item.a}</p>
                 </div>
-                <p className="text-success-foreground text-sm flex items-center justify-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  {t.footerCta.guarantee}
-                </p>
-              </CardContent>
-            </Card>
-          </ScrollReveal>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* ── Footer ───────────────────────────────────────────────────── */}
-      <footer className="border-t py-8 px-4">
-        <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <Calculator className="h-3 w-3 text-white" />
+      {/* ── Closing CTA ─────────────────────────────────────────────────── */}
+      <section className="mk-section" style={{ paddingBlockStart: 0 }} id="contact">
+        <div className="mk-container">
+          <div className="mk-cta">
+            <h2 className="mk-h2">{t.footerCta.title}</h2>
+            <p className="mk-lead">{t.footerCta.subtitle}</p>
+            <div className="mk-hero__ctas">
+              <Link href="/register" className="mk-btn mk-btn--primary mk-btn--lg">
+                {t.footerCta.startFree}
+                <ArrowRight className="mk-flip" aria-hidden="true" />
+              </Link>
+              <a
+                href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request"
+                className="mk-btn mk-btn--secondary mk-btn--lg"
+              >
+                <Mail aria-hidden="true" />
+                {t.footerCta.bookDemo}
+              </a>
             </div>
-            <span>
-              {/* i18n-ignore: brand or sample data */}Muhasib.ai by NR Accounting Services
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Lock className="h-3.5 w-3.5" />
-            <span>{locale === "en" ? "TLS-secured access" : "وصول مؤمن عبر TLS"}</span>
-            <span className="text-muted-foreground/40">|</span>
-            <span>{locale === "en" ? "UAE-hosted" : "مستضاف في الإمارات"}</span>
           </div>
         </div>
-      </footer>
-    </div>
+      </section>
+    </MarketingLayout>
   );
 }

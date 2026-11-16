@@ -51,6 +51,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
+          // D1: transform helpers (private fields, typeof, ...) are shared by many
+          // vendors. Left alone they land in the first manual chunk that uses them
+          // (the PDF vendors), which made every page download ~290 KB of PDF code.
+          if (/@oxc-project[+/]runtime|@babel\/runtime|vite\/preload-helper/.test(id))
+            return "vendor-helpers";
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("jspdf") || id.includes("qrcode")) return "vendor-pdf";
           if (id.includes("pdfjs-dist/build/pdf.worker")) return "vendor-pdf-worker";

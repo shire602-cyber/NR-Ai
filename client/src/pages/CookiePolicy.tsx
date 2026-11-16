@@ -1,14 +1,9 @@
 import { T } from "@/components/layout/T";
-import { useEffect } from "react";
 import { LegalLayout } from "@/components/LegalLayout";
 
 export default function CookiePolicy() {
-  useEffect(() => {
-    document.title = "Cookie Policy | Muhasib.ai";
-  }, []);
-
   return (
-    <LegalLayout title="Cookie Policy" effectiveDate="26 April 2026">
+    <LegalLayout slug="cookies" effectiveDate="2026-04-26">
       <p>
         This Cookie Policy explains how Muhasib.ai uses cookies and similar technologies on our
         website and platform. It should be read alongside our{" "}
