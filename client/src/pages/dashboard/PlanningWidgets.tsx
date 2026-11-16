@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest } from "@/lib/queryClient";
 import { CHART_COLORS } from "./chart-colors";
+import { dashboardPeriodLabel } from "./period";
 import type {
   BudgetVsActualRow,
   DashboardOverdueDocument,
@@ -86,7 +87,8 @@ export function PeriodComparison({ stats, loading, locale }: WidgetProps) {
     <Card data-testid="dashboard-period-comparison">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">
-          {L(locale, "Period comparison", "مقارنة الفترات")} · {stats.period.label}
+          {L(locale, "Period comparison", "مقارنة الفترات")} ·{" "}
+          {dashboardPeriodLabel(stats.period, locale)}
         </CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -185,7 +187,7 @@ export function DrillThroughTiles({ stats, loading, locale }: WidgetProps) {
         href={stats.links.journal}
         label={L(locale, "Net profit", "صافي الربح")}
         value={formatCurrency(stats.netProfit, "AED", locale)}
-        hint={stats.period.label}
+        hint={dashboardPeriodLabel(stats.period, locale)}
         testId="tile-net-profit"
       />
     </section>

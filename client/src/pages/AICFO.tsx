@@ -20,7 +20,7 @@ import {
   Legend,
 } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest } from "@/lib/queryClient";
@@ -85,7 +85,7 @@ interface KPI {
 }
 
 export default function AICFO() {
-  const { t: _t } = useTranslation();
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -215,28 +215,28 @@ export default function AICFO() {
 
   const kpis: KPI[] = [
     {
-      label: "Profit Margin",
+      label: t["ai.kpiProfitMargin"],
       value: profitMarginPct ?? 0,
       format: "percent",
       icon: TrendingUp,
       color: "text-success ",
     },
     {
-      label: "Expense Ratio",
+      label: t["ai.kpiExpenseRatio"],
       value: expenseRatioPct ?? 0,
       format: "percent",
       icon: BarChart3,
       color: "text-info ",
     },
     {
-      label: "Total Revenue",
+      label: t["ai.kpiTotalRevenue"],
       value: profitLoss?.totalRevenue ?? 0,
       format: "currency",
       icon: ArrowUp,
       color: "text-chart-5 ",
     },
     {
-      label: "Net Profit",
+      label: t["ai.kpiNetProfit"],
       value: profitLoss?.netProfit ?? 0,
       format: "currency",
       icon: DollarSign,
@@ -259,9 +259,7 @@ export default function AICFO() {
               <h1 className="text-3xl font-bold">
                 <T k="pageLabels.aICFOAndFinancialAdvisor" />
               </h1>
-              <p className="text-muted-foreground mt-1">
-                Ask questions about your financial data and get AI-generated guidance.
-              </p>
+              <p className="text-muted-foreground mt-1">{t["ai.cfoSubtitle"]}</p>
             </div>
           </div>
         </div>
@@ -290,7 +288,7 @@ export default function AICFO() {
           </TabsTrigger>
           <TabsTrigger value="chat" className="gap-2">
             <Brain className="w-4 h-4" />
-            <span className="hidden sm:inline">Chat</span>
+            <span className="hidden sm:inline">{t["ai.tabChat"]}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -408,8 +406,12 @@ export default function AICFO() {
                     <p className="text-xs text-muted-foreground mt-2">
                       <T k="pages.thisMonth" /> ·{" "}
                       {profitLoss.totalRevenue
-                        ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin`
-                        : "No revenue yet"}
+                        ? formatMessage(t["ai.cfoMarginValue"], {
+                            value: ((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(
+                              1
+                            ),
+                          })
+                        : t["ai.cfoNoRevenueYet"]}
                     </p>
                   </>
                 ) : (
@@ -438,10 +440,7 @@ export default function AICFO() {
                     <div className="text-3xl font-bold font-mono text-warning ">
                       {formatCurrency(stats.outstanding || 0, "AED")}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      You have outstanding amounts that need follow-up. Send reminders to improve
-                      cash flow.
-                    </p>
+                    <p className="text-sm text-muted-foreground">{t["ai.cfoOutstandingHint"]}</p>
                     <Button variant="outline" size="sm" className="w-fit">
                       <T k="pageLabels.viewOutstandingInvoices" />
                     </Button>

@@ -931,9 +931,13 @@ type TranslationCatalog = Record<string, string>;
 // are NOT in the main bundle. main.tsx awaits loadLocale(<active locale>) before the first
 // render, so `t[...]` / `<T k>` stay synchronous; Arabic chunks are fetched only when the
 // active locale is "ar" (or the user switches to it).
+// R18-02: Arabic report-catalog labels (client/src/locales/ar-catalog/) ride along with the
+// Arabic namespaces; English falls back to client/src/lib/reportCatalog.ts (see reportCatalogText.ts).
 const namespaceLoaders = {
   en: import.meta.glob("../locales/en/*.json", { import: "default" }),
-  ar: import.meta.glob("../locales/ar/*.json", { import: "default" }),
+  ar: import.meta.glob(["../locales/ar/*.json", "../locales/ar-catalog/*.json"], {
+    import: "default",
+  }),
 } as Record<Locale, Record<string, () => Promise<TranslationCatalog>>>;
 
 // Order: extended (fills gaps) < base (existing behaviour wins) < namespaces (merged in on load).

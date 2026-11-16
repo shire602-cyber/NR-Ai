@@ -50,5 +50,9 @@
   "journal.coaNoParent": "No parent (top level)",
   "journal.coaSaveParent": "Save",
   "journal.coaParentSaved": "Parent account updated",
-  "journal.coaParentFailed": "Could not change the parent account"
+  "journal.coaParentFailed": "Could not change the parent account",
+  "journal.pageEyebrow": "Accounting",
+  "journal.pageDescription": "Double-entry journal with automatic balance validation",
+  "journal.emptyTitle": "No journal entries yet",
+  "journal.emptyDescription": "Record your first manual journal entry — every transaction needs at least one debit and one credit."
 }

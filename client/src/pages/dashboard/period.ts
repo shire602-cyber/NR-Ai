@@ -15,6 +15,32 @@ export interface DashboardPeriodChoice {
 
 export const DASHBOARD_PRESETS: DashboardPreset[] = ["month", "quarter", "ytd", "custom"];
 
+/** Localized preset labels (shared by the selector and the server-resolved period chip). */
+export const DASHBOARD_PRESET_LABELS: Record<DashboardPreset, { en: string; ar: string }> = {
+  month: { en: "This month", ar: "هذا الشهر" },
+  quarter: { en: "This quarter", ar: "هذا الربع" },
+  ytd: { en: "Year to date", ar: "منذ بداية السنة" },
+  custom: { en: "Custom", ar: "فترة مخصصة" },
+};
+
+/**
+ * Display label for the period the server resolved. The server's `label` is English, so
+ * presets are relabelled here and a custom range is rendered as "from – to" (R18-02).
+ */
+export function dashboardPeriodLabel(
+  period: { preset?: string; from?: string; to?: string; label?: string } | undefined,
+  locale: string
+): string {
+  if (!period) return "";
+  const preset = period.preset as DashboardPreset | undefined;
+  const lang = locale === "ar" ? "ar" : "en";
+  if (preset && preset !== "custom" && DASHBOARD_PRESET_LABELS[preset]) {
+    return DASHBOARD_PRESET_LABELS[preset][lang];
+  }
+  if (period.from && period.to) return `${period.from} – ${period.to}`;
+  return period.label ?? "";
+}
+
 const STORAGE_KEY = "muhasib.dashboard.period";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 

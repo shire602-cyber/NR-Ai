@@ -1,3 +1,7 @@
+// i18n-ignore-file: English source of truth for report catalog labels. Arabic display strings are keyed
+// overlays in client/src/locales/ar-catalog/reportCatalog.json, resolved with useCatalogText()
+// (client/src/lib/reportCatalogText.ts); tests/unit/report-catalog-arabic.test.ts enforces coverage
+// of every field the launcher and dashboard render.
 export const reportTabs = [
   "pl",
   "bs",

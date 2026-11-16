@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useI18n } from "@/lib/i18n";
+import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
@@ -28,23 +28,24 @@ import {
   Star,
 } from "lucide-react";
 
+// R18-02: plan names, descriptions and features are translation keys (pages namespace).
 const PLANS = [
   {
     id: "free",
-    name: "Free",
+    name: "pages.subscriptionFree",
     monthlyPrice: 0,
     yearlyPrice: 0,
     icon: Layers,
-    description: "Get started with basic accounting",
+    description: "pages.subscriptionGetStartedWithBasicAccounting",
     color: "from-gray-500 to-gray-600",
     features: [
-      "1 user",
-      "20 invoices/month",
-      "10 receipts/month",
-      "10 AI credits/month",
-      "Basic dashboard",
-      "VAT reports",
-      "Email support",
+      "pages.subscription1User",
+      "pages.subscription20InvoicesMonth",
+      "pages.subscription10ReceiptsMonth",
+      "pages.subscription10AiCreditsMonth",
+      "pages.subscriptionBasicDashboard",
+      "pages.subscriptionVatReports",
+      "pages.subscriptionEmailSupport",
     ],
     limits: {
       invoices: 20,
@@ -55,25 +56,25 @@ const PLANS = [
   },
   {
     id: "starter",
-    name: "Starter",
+    name: "pages.subscriptionStarter",
     monthlyPrice: 49,
     yearlyPrice: 39,
     icon: Zap,
-    description: "For freelancers and small teams",
+    description: "pages.subscriptionForFreelancersAndSmallTeams",
     color: "from-blue-500 to-cyan-600",
     features: [
-      "3 users",
-      "200 invoices/month",
-      "100 receipts/month",
-      "50 AI credits/month",
-      "OCR receipt scanning",
-      "Bank imports & reconciliation",
-      "E-invoicing XML workflow",
-      "Quotes & estimates",
-      "Credit notes",
-      "Recurring invoices",
-      "Multi-currency",
-      "Priority email support",
+      "pages.subscription3Users",
+      "pages.subscription200InvoicesMonth",
+      "pages.subscription100ReceiptsMonth",
+      "pages.subscription50AiCreditsMonth",
+      "pages.subscriptionOcrReceiptScanning",
+      "pages.subscriptionBankImportsReconciliation",
+      "pages.subscriptionEInvoicingXmlWorkflow",
+      "pages.subscriptionQuotesEstimates",
+      "pages.subscriptionCreditNotes",
+      "pages.subscriptionRecurringInvoices",
+      "pages.subscriptionMultiCurrency",
+      "pages.subscriptionPriorityEmailSupport",
     ],
     limits: {
       invoices: 200,
@@ -84,26 +85,26 @@ const PLANS = [
   },
   {
     id: "professional",
-    name: "Professional",
+    name: "pages.subscriptionProfessional",
     monthlyPrice: 129,
     yearlyPrice: 99,
     icon: Crown,
-    description: "For growing businesses",
+    description: "pages.subscriptionForGrowingBusinesses",
     popular: true,
     color: "from-primary to-violet-600",
     features: [
-      "10 users",
-      "Unlimited invoices",
-      "Unlimited receipts",
-      "500 AI credits/month",
-      "Everything in Starter",
-      "AI CFO financial advisor",
-      "Purchase orders",
-      "Advanced reports",
-      "Bulk operations",
-      "Payroll integration",
-      "Inventory management",
-      "Phone & chat support",
+      "pages.subscription10Users",
+      "pages.subscriptionUnlimitedInvoices",
+      "pages.subscriptionUnlimitedReceipts",
+      "pages.subscription500AiCreditsMonth",
+      "pages.subscriptionEverythingInStarter",
+      "pages.subscriptionAiCfoFinancialAdvisor",
+      "pages.subscriptionPurchaseOrders",
+      "pages.subscriptionAdvancedReports",
+      "pages.subscriptionBulkOperations",
+      "pages.subscriptionPayrollIntegration",
+      "pages.subscriptionInventoryManagement",
+      "pages.subscriptionPhoneChatSupport",
     ],
     limits: {
       invoices: -1,
@@ -114,23 +115,23 @@ const PLANS = [
   },
   {
     id: "enterprise",
-    name: "Enterprise",
+    name: "pages.subscriptionEnterprise",
     monthlyPrice: 299,
     yearlyPrice: 249,
     icon: Gem,
-    description: "For large organizations",
+    description: "pages.subscriptionForLargeOrganizations",
     color: "from-amber-500 to-orange-600",
     features: [
-      "Unlimited users",
-      "Unlimited everything",
-      "Unlimited AI credits",
-      "Everything in Professional",
-      "API access",
-      "White-label options",
-      "Dedicated accountant",
-      "Custom integrations",
-      "Enterprise support terms",
-      "Multi-company support",
+      "pages.subscriptionUnlimitedUsers",
+      "pages.subscriptionUnlimitedEverything",
+      "pages.subscriptionUnlimitedAiCredits",
+      "pages.subscriptionEverythingInProfessional",
+      "pages.subscriptionApiAccess",
+      "pages.subscriptionWhiteLabelOptions",
+      "pages.subscriptionDedicatedAccountant",
+      "pages.subscriptionCustomIntegrations",
+      "pages.subscriptionEnterpriseSupportTerms",
+      "pages.subscriptionMultiCompanySupport",
     ],
     limits: {
       invoices: -1,
@@ -140,6 +141,15 @@ const PLANS = [
     },
   },
 ];
+
+/** Whole-number price in AED for the active locale ("AED 49" / "‏49 د.إ.‏"). */
+function formatCurrency0(amount: number, locale: string): string {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-AE" : "en-AE", {
+    style: "currency",
+    currency: "AED",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
 
 function UsageMeter({
   label,
@@ -156,6 +166,7 @@ function UsageMeter({
   const percentage = isUnlimited ? 0 : Math.min((used / limit) * 100, 100);
   const isNearLimit = !isUnlimited && percentage >= 80;
   const isAtLimit = !isUnlimited && percentage >= 100;
+  const { t } = useTranslation();
 
   return (
     <div className="space-y-2">
@@ -167,7 +178,9 @@ function UsageMeter({
         <span
           className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
         >
-          {isUnlimited ? `${used} used` : `${used} / ${limit}`}
+          {isUnlimited
+            ? formatMessage(t["pages.subscriptionUsedCount"], { used })
+            : `${used} / ${limit}`}
         </span>
       </div>
       {!isUnlimited && (
@@ -187,6 +200,7 @@ function UsageMeter({
 }
 
 export default function Subscription() {
+  const { t, locale } = useTranslation();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const { subscription, usage, tierName, isLoading } = useSubscription();
   const { companyId } = useDefaultCompany();
@@ -231,9 +245,9 @@ export default function Subscription() {
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
       <PageHeader
-        eyebrow="Settings"
-        title="Subscription & Billing"
-        description="Manage your plan, usage, and billing details"
+        eyebrow={t["pages.companyProfileEyebrow"]}
+        title={t["pages.subscriptionPageTitle"]}
+        description={t["pages.subscriptionPageDescription"]}
       />
 
       {/* Current Plan & Usage */}
@@ -250,10 +264,10 @@ export default function Subscription() {
                 className={tierName !== "free" ? "" : ""}
               >
                 <Star className="w-3 h-3 mr-1" />
-                {currentPlan.name}
+                {t[currentPlan.name]}
               </Badge>
             </div>
-            <CardDescription>{currentPlan.description}</CardDescription>
+            <CardDescription>{t[currentPlan.description]}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {subscription?.status && (
@@ -262,7 +276,7 @@ export default function Subscription() {
                   <T k="banking.common.status" />
                 </span>
                 <Badge variant={subscription.status === "active" ? "default" : "destructive"}>
-                  {subscription.status}
+                  {t[`pages.subscriptionStatus_${subscription.status}`] ?? subscription.status}
                 </Badge>
               </div>
             )}
@@ -271,7 +285,10 @@ export default function Subscription() {
                 <span className="text-muted-foreground">
                   <T k="pageLabels.billingCycle" />
                 </span>
-                <span className="font-medium capitalize">{subscription.billingCycle}</span>
+                <span className="font-medium capitalize">
+                  {t[`pages.subscriptionCycle_${subscription.billingCycle}`] ??
+                    subscription.billingCycle}
+                </span>
               </div>
             )}
             {subscription?.currentPeriodEnd && (
@@ -280,7 +297,9 @@ export default function Subscription() {
                   <T k="pageLabels.currentPeriodEnds" />
                 </span>
                 <span className="font-medium">
-                  {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+                  {new Date(subscription.currentPeriodEnd).toLocaleDateString(
+                    locale === "ar" ? "ar-AE" : "en-AE"
+                  )}
                 </span>
               </div>
             )}
@@ -296,7 +315,7 @@ export default function Subscription() {
                 ) : (
                   <ExternalLink className="w-4 h-4 mr-2" />
                 )}
-                Manage Billing
+                {t["pages.subscriptionManageBilling"]}
               </Button>
             )}
           </CardContent>
@@ -314,32 +333,32 @@ export default function Subscription() {
           </CardHeader>
           <CardContent className="space-y-5">
             <UsageMeter
-              label="Invoices"
+              label={t["pages.subscriptionUsageInvoices"]}
               used={usage?.invoices?.used ?? 0}
               limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
               icon={FileText}
             />
             <UsageMeter
-              label="Receipts"
+              label={t["pages.subscriptionUsageReceipts"]}
               used={usage?.receipts?.used ?? 0}
               limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
               icon={Receipt}
             />
             <UsageMeter
-              label="AI Credits"
+              label={t["pages.subscriptionUsageAiCredits"]}
               used={usage?.aiCredits?.used ?? 0}
               limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
               icon={Brain}
             />
             <UsageMeter
-              label="Team Members"
+              label={t["pages.subscriptionUsageTeamMembers"]}
               used={usage?.users?.used ?? 0}
               limit={usage?.users?.limit ?? currentPlan.limits.users}
               icon={Users}
             />
             {usage?.storage && usage.storage.used != null && (
               <UsageMeter
-                label="Storage"
+                label={t["pages.subscriptionUsageStorage"]}
                 used={usage.storage.used}
                 limit={usage.storage.limit}
                 icon={HardDrive}
@@ -359,7 +378,7 @@ export default function Subscription() {
           <T k="firm.cycleMonthly" />
         </span>
         <Switch
-          aria-label="Yearly billing"
+          aria-label={t["pages.subscriptionYearlyBilling"]}
           checked={billingCycle === "yearly"}
           onCheckedChange={(checked) => setBillingCycle(checked ? "yearly" : "monthly")}
         />
@@ -370,7 +389,7 @@ export default function Subscription() {
         </span>
         {billingCycle === "yearly" && (
           <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
-            Save up to 23%
+            {t["pages.subscriptionSaveUpTo"]}
           </Badge>
         )}
       </div>
@@ -407,22 +426,31 @@ export default function Subscription() {
                     <PlanIcon className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
+                    <CardTitle className="text-lg">{t[plan.name]}</CardTitle>
                   </div>
                 </div>
-                <CardDescription>{plan.description}</CardDescription>
+                <CardDescription>{t[plan.description]}</CardDescription>
 
                 <div className="pt-3">
                   <div className="flex items-baseline gap-1">
                     <span className="text-3xl font-bold">
-                      {price === 0 ? "Free" : `AED ${price}`}
+                      {price === 0 ? t["pages.subscriptionFree"] : formatCurrency0(price, locale)}
                     </span>
-                    {price > 0 && <span className="text-muted-foreground text-sm">/mo</span>}
+                    {price > 0 && (
+                      <span className="text-muted-foreground text-sm">
+                        {t["pages.subscriptionPerMonth"]}
+                      </span>
+                    )}
                   </div>
                   {billingCycle === "yearly" && plan.monthlyPrice > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      AED {plan.yearlyPrice * 12}/year (save AED{" "}
-                      {(plan.monthlyPrice - plan.yearlyPrice) * 12}/yr)
+                      {formatMessage(t["pages.subscriptionYearlyNote"], {
+                        total: formatCurrency0(plan.yearlyPrice * 12, locale),
+                        saving: formatCurrency0(
+                          (plan.monthlyPrice - plan.yearlyPrice) * 12,
+                          locale
+                        ),
+                      })}
                     </p>
                   )}
                 </div>
@@ -433,7 +461,7 @@ export default function Subscription() {
                   {plan.features.map((feature, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm">
                       <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
-                      <span>{feature}</span>
+                      <span>{t[feature]}</span>
                     </li>
                   ))}
                 </ul>
@@ -456,11 +484,11 @@ export default function Subscription() {
                         <CreditCard className="w-4 h-4 mr-2" />
                       )}
                       {plan.monthlyPrice === 0
-                        ? "Downgrade"
+                        ? t["pages.subscriptionDowngrade"]
                         : PLANS.findIndex((p) => p.id === tierName) >
                             PLANS.findIndex((p) => p.id === plan.id)
-                          ? "Downgrade"
-                          : "Upgrade"}
+                          ? t["pages.subscriptionDowngrade"]
+                          : t["pages.subscriptionUpgrade"]}
                     </Button>
                   )}
                 </div>
@@ -490,37 +518,83 @@ export default function Subscription() {
                   </th>
                   {PLANS.map((plan) => (
                     <th key={plan.id} className="text-center py-3 px-4 font-medium">
-                      {plan.name}
+                      {t[plan.name]}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {[
-                  { label: "Invoices/month", values: ["20", "200", "Unlimited", "Unlimited"] },
-                  { label: "Receipts/month", values: ["10", "100", "Unlimited", "Unlimited"] },
-                  { label: "AI Credits/month", values: ["5", "50", "500", "Unlimited"] },
-                  { label: "Team members", values: ["1", "3", "10", "Unlimited"] },
-                  { label: "OCR receipt scanning", values: [false, true, true, true] },
-                  { label: "Bank reconciliation", values: [false, true, true, true] },
-                  { label: "E-invoicing", values: [false, true, true, true] },
-                  { label: "Quotes & estimates", values: [false, true, true, true] },
-                  { label: "Credit notes", values: [false, true, true, true] },
-                  { label: "Recurring invoices", values: [false, true, true, true] },
-                  { label: "Multi-currency", values: [false, true, true, true] },
-                  { label: "Purchase orders", values: [false, false, true, true] },
-                  { label: "Advanced reports", values: [false, false, true, true] },
-                  { label: "Bulk operations", values: [false, false, true, true] },
-                  { label: "AI CFO advisor", values: [false, false, true, true] },
-                  { label: "Payroll integration", values: [false, false, true, true] },
-                  { label: "Inventory management", values: [false, false, true, true] },
-                  { label: "API access", values: [false, false, false, true] },
-                  { label: "White-label", values: [false, false, false, true] },
-                  { label: "Dedicated accountant", values: [false, false, false, true] },
-                  { label: "Enterprise support terms", values: [false, false, false, true] },
+                  {
+                    label: "pages.subscriptionInvoicesMonth",
+                    values: [
+                      "20",
+                      "200",
+                      "pages.subscriptionUnlimited",
+                      "pages.subscriptionUnlimited",
+                    ],
+                  },
+                  {
+                    label: "pages.subscriptionReceiptsMonth",
+                    values: [
+                      "10",
+                      "100",
+                      "pages.subscriptionUnlimited",
+                      "pages.subscriptionUnlimited",
+                    ],
+                  },
+                  {
+                    label: "pages.subscriptionAiCreditsMonth",
+                    values: ["5", "50", "500", "pages.subscriptionUnlimited"],
+                  },
+                  {
+                    label: "pages.subscriptionTeamMembers",
+                    values: ["1", "3", "10", "pages.subscriptionUnlimited"],
+                  },
+                  {
+                    label: "pages.subscriptionOcrReceiptScanning",
+                    values: [false, true, true, true],
+                  },
+                  {
+                    label: "pages.subscriptionBankReconciliation",
+                    values: [false, true, true, true],
+                  },
+                  { label: "pages.subscriptionEInvoicing", values: [false, true, true, true] },
+                  { label: "pages.subscriptionQuotesEstimates", values: [false, true, true, true] },
+                  { label: "pages.subscriptionCreditNotes", values: [false, true, true, true] },
+                  {
+                    label: "pages.subscriptionRecurringInvoices",
+                    values: [false, true, true, true],
+                  },
+                  { label: "pages.subscriptionMultiCurrency", values: [false, true, true, true] },
+                  { label: "pages.subscriptionPurchaseOrders", values: [false, false, true, true] },
+                  {
+                    label: "pages.subscriptionAdvancedReports",
+                    values: [false, false, true, true],
+                  },
+                  { label: "pages.subscriptionBulkOperations", values: [false, false, true, true] },
+                  { label: "pages.subscriptionAiCfoAdvisor", values: [false, false, true, true] },
+                  {
+                    label: "pages.subscriptionPayrollIntegration",
+                    values: [false, false, true, true],
+                  },
+                  {
+                    label: "pages.subscriptionInventoryManagement",
+                    values: [false, false, true, true],
+                  },
+                  { label: "pages.subscriptionApiAccess", values: [false, false, false, true] },
+                  { label: "pages.subscriptionWhiteLabel", values: [false, false, false, true] },
+                  {
+                    label: "pages.subscriptionDedicatedAccountant",
+                    values: [false, false, false, true],
+                  },
+                  {
+                    label: "pages.subscriptionEnterpriseSupportTerms",
+                    values: [false, false, false, true],
+                  },
                 ].map((row) => (
                   <tr key={row.label} className="border-b last:border-0">
-                    <td className="py-3 pr-4 text-muted-foreground">{row.label}</td>
+                    <td className="py-3 pr-4 text-muted-foreground">{t[row.label]}</td>
                     {row.values.map((value, i) => (
                       <td key={i} className="text-center py-3 px-4">
                         {typeof value === "boolean" ? (
@@ -530,7 +604,7 @@ export default function Subscription() {
                             <span className="text-muted-foreground">-</span>
                           )
                         ) : (
-                          <span className="font-medium">{value}</span>
+                          <span className="font-medium">{t[value] ?? value}</span>
                         )}
                       </td>
                     ))}

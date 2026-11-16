@@ -5,5 +5,13 @@
   "ai.tabCfo": "AI CFO",
   "ai.tabChat": "Chat",
   "ai.tabFeatures": "AI features",
-  "ai.tabInbox": "AI inbox"
+  "ai.tabInbox": "AI inbox",
+  "ai.kpiProfitMargin": "Profit Margin",
+  "ai.kpiExpenseRatio": "Expense Ratio",
+  "ai.kpiTotalRevenue": "Total Revenue",
+  "ai.kpiNetProfit": "Net Profit",
+  "ai.cfoSubtitle": "Ask questions about your financial data and get AI-generated guidance.",
+  "ai.cfoMarginValue": "{value}% margin",
+  "ai.cfoNoRevenueYet": "No revenue yet",
+  "ai.cfoOutstandingHint": "You have outstanding amounts that need follow-up. Send reminders to improve cash flow."
 }

@@ -1,3 +1,4 @@
+// i18n-ignore-file: bilingual FTA VAT 201 export; the English box labels ship next to descriptionAr by design.
 import type { ExportData } from "./export";
 
 export interface Vat201ExportReturn {

@@ -1,3 +1,4 @@
+// i18n-ignore-file: workbook/CSV cell content generated for download (sheet headers and row labels), not UI copy.
 import { apiRequest } from "./queryClient";
 import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";

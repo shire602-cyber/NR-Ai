@@ -9,6 +9,7 @@ import {
   addDays,
   differenceInCalendarDays,
 } from "date-fns";
+import { dateFnsOptions } from "@/lib/date-locale";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -191,7 +192,8 @@ const DEFAULT_VAT_DATA = {
 type VatWorksheetData = typeof DEFAULT_VAT_DATA;
 
 export default function VATFiling() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
+  const dfOpts = dateFnsOptions(locale);
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -897,8 +899,8 @@ export default function VATFiling() {
             </div>
             <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
-                {format(currentFiling.periodStart, "d MMM")} –{" "}
-                {format(currentFiling.periodEnd, "d MMM yyyy")}
+                {format(currentFiling.periodStart, "d MMM", dfOpts)} –{" "}
+                {format(currentFiling.periodEnd, "d MMM yyyy", dfOpts)}
               </h2>
               {currentFiling.hasReturn && getStatusBadge(currentFiling.status)}
             </div>
@@ -996,7 +998,7 @@ export default function VATFiling() {
               {locale === "ar" ? "آخر موعد للتقديم" : "Filing deadline"}
             </p>
             <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
-              {format(currentFiling.dueDate, "d MMMM yyyy")}
+              {format(currentFiling.dueDate, "d MMMM yyyy", dfOpts)}
             </p>
             {(() => {
               const d = currentFiling.daysUntilDue;
@@ -1129,11 +1131,13 @@ export default function VATFiling() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium">
-                                {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                                {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
+                                {format(parseISO(vatReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
+                                {format(parseISO(vatReturn.periodEnd), "MMM yyyy", dfOpts)}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Due {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
+                                {formatMessage(t["pages.vatDueOn"], {
+                                  date: format(parseISO(vatReturn.dueDate), "dd MMM yyyy", dfOpts),
+                                })}
                               </p>
                             </div>
                             {getStatusBadge(vatReturn.status)}
@@ -1236,11 +1240,11 @@ export default function VATFiling() {
                         {vatReturns.map((vatReturn) => (
                           <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
                             <TableCell className="font-medium">
-                              {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                              {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
+                              {format(parseISO(vatReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
+                              {format(parseISO(vatReturn.periodEnd), "MMM yyyy", dfOpts)}
                             </TableCell>
                             <TableCell>
-                              {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
+                              {format(parseISO(vatReturn.dueDate), "dd MMM yyyy", dfOpts)}
                             </TableCell>
                             <TableCell className="text-right font-mono">
                               {formatCurrency(
@@ -1412,8 +1416,8 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy")}
+                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
+                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy", dfOpts)}
                 </span>
               )}
             </DialogDescription>
@@ -1475,8 +1479,8 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy")}
+                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
+                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy", dfOpts)}
                 </span>
               )}
             </DialogDescription>

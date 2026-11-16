@@ -52,7 +52,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -433,7 +433,9 @@ export default function Inventory() {
                     <T k="pages.products" />
                   </CardTitle>
                   <CardDescription>
-                    {productsList.length} product{productsList.length !== 1 ? "s" : ""} in inventory
+                    {formatMessage(t["pages.inventoryProductCount"], {
+                      count: productsList.length,
+                    })}
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
@@ -457,9 +459,7 @@ export default function Inventory() {
                 </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery
-                    ? "No products match your search."
-                    : "No products yet. Add your first product to get started."}
+                  {searchQuery ? t["pages.inventoryNoMatch"] : t["pages.inventoryEmpty"]}
                 </div>
               ) : (
                 <div className="overflow-x-auto">

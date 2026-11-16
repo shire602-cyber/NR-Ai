@@ -214,7 +214,7 @@ export async function draftWithWhatsAppBridge(
 ): Promise<WhatsAppBridgeDraftResult> {
   const normalized = formatPhoneForWhatsApp(payload.phone);
   if (!normalized) {
-    return { ok: false, mode: "fallback", message: "Invalid WhatsApp phone number" };
+    return { ok: false, mode: "fallback", message: "invalid_phone" };
   }
 
   const job = {

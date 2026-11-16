@@ -118,5 +118,8 @@
   "banking.rules.suggestionsHint": "مستفيدون رمّزتهم إلى الحساب نفسه أكثر من مرة.",
   "banking.rules.useSuggestion": "إنشاء قاعدة",
   "banking.rules.ranTitle": "تم تطبيق القواعد",
-  "banking.rules.ranResult": "تم ترحيل {posted}، و{review} بانتظار المراجعة، وفشل {errors}، من أصل {total} حركة مفتوحة."
+  "banking.rules.ranResult": "تم ترحيل {posted}، و{review} بانتظار المراجعة، وفشل {errors}، من أصل {total} حركة مفتوحة.",
+  "banking.emptyTransactionsTitle": "لا توجد معاملات بنكية",
+  "banking.emptyTransactionsDescription": "استورد كشف حساب بنكي (CSV أو PDF) لبدء مطابقة المعاملات مع قيود اليومية.",
+  "banking.importStatementAction": "استيراد كشف حساب بنكي"
 }

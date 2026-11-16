@@ -962,13 +962,10 @@ export default function BankReconciliation() {
           ) : filteredTransactions.length === 0 ? (
             <EmptyState
               icon={Building2}
-              title="No bank transactions"
-              description={
-                t.noTransactionsFound ||
-                "Import a bank statement (CSV or PDF) to start matching transactions to journal entries."
-              }
+              title={t["banking.emptyTransactionsTitle"]}
+              description={t["banking.emptyTransactionsDescription"]}
               action={{
-                label: "Import bank statement",
+                label: t["banking.importStatementAction"],
                 icon: Upload,
                 variant: "outline",
                 onClick: () => setImportDialogOpen(true),

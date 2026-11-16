@@ -51,5 +51,12 @@
   "corporateTax.statusUpdateFailed": "Could not update the return",
   "corporateTax.statusUpdated": "Return updated",
   "corporateTax.tradeLicenceExpiry": "Trade licence expiry",
-  "corporateTax.voidReturn": "Void this draft"
+  "corporateTax.voidReturn": "Void this draft",
+  "corporateTax.pageSubtitle": "UAE Corporate Tax — 9% on taxable income above AED 375,000",
+  "corporateTax.workpaperTitle": "Pre-submission Profit / Loss Workpaper",
+  "corporateTax.workpaperDescription": "Enter revenue and expense lines exactly like the Excel schedule used before filing. These rows support the draft return and do not mark anything as submitted.",
+  "corporateTax.workpaperProfitLoss": "PROFIT / LOSS (Revenue - Expense)",
+  "corporateTax.workpaperDisclaimer": "This is a corporate tax support schedule. It creates a draft return only; it does not submit to the FTA and it does not post accounting entries.",
+  "corporateTax.calculatorDescription": "Calculate corporate tax from your journal entries for a given period",
+  "corporateTax.workpaperYear": "Year {year}"
 }

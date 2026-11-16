@@ -1,9 +1,11 @@
 import { FileText, ChevronRight } from "lucide-react";
 import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 export function ReportWorkspaceToggle({ m }: { m: DashboardModel }) {
   const { showReportWorkspace, toggleReportWorkspace, preferredReportQuickAccess } = m;
+  const { t } = useTranslation();
   return (
     <>
       {/* ── Preferred report workspace (collapsed by default) ───────────── */}
@@ -19,8 +21,10 @@ export function ReportWorkspaceToggle({ m }: { m: DashboardModel }) {
             <FileText className="h-4 w-4 text-accent" strokeWidth={1.75} />
             <T k="pageLabels.reportsWorkspace" />
             <span className="font-normal text-muted-foreground">
-              · {preferredReportQuickAccess.readyReports}/
-              {preferredReportQuickAccess.reports.length} ready
+              {formatMessage(t["dashboard.reportsReadyCount"], {
+                ready: preferredReportQuickAccess.readyReports,
+                total: preferredReportQuickAccess.reports.length,
+              })}
             </span>
           </span>
           <ChevronRight

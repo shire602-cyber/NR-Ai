@@ -595,7 +595,9 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/80 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
         >
           <Languages className="w-4 h-4 opacity-70" />
-          <span className="text-[13px]">{locale === "en" ? "العربية" : "English"}</span>
+          <span className="text-[13px]" lang={locale === "en" ? "ar" : "en"}>
+            {locale === "en" ? "العربية" : "English"}
+          </span>
           <span className="ms-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/70 font-medium">
             {locale === "en" ? "AR" : "EN"}
           </span>

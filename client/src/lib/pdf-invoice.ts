@@ -1,3 +1,4 @@
+// i18n-ignore-file: invoice PDF document content and metadata (the PDF template sets its own language), not UI copy.
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import { formatCurrency, formatDate } from "./format";

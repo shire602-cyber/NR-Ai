@@ -36,6 +36,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { LAUNCH_ROUTES } from "./launch-routes.mjs";
 
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "");
 const RTL_MODE = process.argv.includes("--rtl");
@@ -43,28 +44,7 @@ const ALLOW_REMOTE = process.env.A11Y_ALLOW_REMOTE === "true";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
 
-const CUSTOMER_ROUTES = [
-  "/dashboard",
-  "/invoices",
-  "/receipts",
-  "/bank-reconciliation",
-  "/vat-filing",
-  "/corporate-tax",
-  "/reports",
-  "/analytics",
-  "/payment-chasing",
-  "/contacts",
-  "/integrations-hub",
-  "/document-vault",
-  "/subscription",
-  "/chart-of-accounts",
-  "/journal",
-  "/ai",
-  "/quotes",
-  "/payroll",
-  "/inventory",
-  "/company-profile",
-];
+const CUSTOMER_ROUTES = LAUNCH_ROUTES;
 
 const ROUTES = process.env.A11Y_ROUTES
   ? process.env.A11Y_ROUTES.split(",").map((route) => route.trim())

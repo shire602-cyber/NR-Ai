@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
 import {
   Send,
@@ -233,7 +233,7 @@ function bucketColor(b: AgingBucket): string {
 
 export default function PaymentChasing() {
   const { companyId } = useDefaultCompany();
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -432,9 +432,9 @@ export default function PaymentChasing() {
   return (
     <div className="container mx-auto py-6 space-y-6" data-testid="payment-chasing-page">
       <PageHeader
-        eyebrow="Sales"
-        title="Payment Chasing Autopilot"
-        description="Automated reminders for overdue invoices with smart escalation"
+        eyebrow={t["pages.chasingEyebrow"]}
+        title={t["pages.chasingTitle"]}
+        description={t["pages.chasingDescription"]}
         actions={
           <Button
             onClick={() => {
@@ -448,7 +448,9 @@ export default function PaymentChasing() {
             data-testid="button-chase-all"
           >
             <Send className="mr-2 h-4 w-4" />
-            {bulkSend.isPending ? `Sending ${queue.length}…` : `Chase all (${queue.length})`}
+            {bulkSend.isPending
+              ? formatMessage(t["pages.chasingSending"], { count: queue.length })
+              : formatMessage(t["pages.chasingChaseAll"], { count: queue.length })}
           </Button>
         }
       />
@@ -458,12 +460,16 @@ export default function PaymentChasing() {
         {(["1-7", "8-30", "31-60", "60+"] as AgingBucket[]).map((b) => (
           <Card key={b} className={bucketColor(b)} data-testid={`bucket-${b}`}>
             <CardHeader className="pb-2">
-              <CardDescription>{b} days overdue</CardDescription>
+              <CardDescription>
+                {formatMessage(t["pages.chasingBucketDays"], { bucket: b })}
+              </CardDescription>
               <CardTitle className="text-3xl">
                 {overdueQuery.isLoading ? <Skeleton className="h-9 w-12" /> : (buckets[b] ?? 0)}
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">invoices</CardContent>
+            <CardContent className="text-xs text-muted-foreground">
+              {t["pages.chasingInvoicesUnit"]}
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -472,8 +478,10 @@ export default function PaymentChasing() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Could not load overdue invoices:{" "}
-            {overdueQuery.error instanceof Error ? overdueQuery.error.message : "Unknown error"}
+            {t["pages.chasingLoadError"]}{" "}
+            {overdueQuery.error instanceof Error
+              ? overdueQuery.error.message
+              : t["pages.chasingUnknownError"]}
           </AlertDescription>
         </Alert>
       )}
@@ -485,8 +493,8 @@ export default function PaymentChasing() {
           </CardTitle>
           <CardDescription>
             {overdueQuery.isLoading
-              ? "Loading…"
-              : `${overdue.length} overdue invoice${overdue.length === 1 ? "" : "s"}`}
+              ? t["pages.chasingLoading"]
+              : formatMessage(t["pages.chasingOverdueCount"], { count: overdue.length })}
           </CardDescription>
         </CardHeader>
         <CardContent className="text-3xl font-semibold" data-testid="total-outstanding">
@@ -497,7 +505,7 @@ export default function PaymentChasing() {
               {formatCurrency(totalOutstanding, totalOutstandingCurrency)}
               {totalOutstandingCurrency === "Mixed" && (
                 <p className="text-xs font-normal text-muted-foreground mt-1">
-                  Sum across multiple currencies — open the table for per-invoice amounts.
+                  {t["pages.chasingMixedCurrencies"]}
                 </p>
               )}
             </>
@@ -540,7 +548,7 @@ export default function PaymentChasing() {
               <CardTitle>
                 <T k="pageLabels.overdueInvoices" />
               </CardTitle>
-              <CardDescription>Sorted by days overdue (oldest first)</CardDescription>
+              <CardDescription>{t["pages.chasingSortedHint"]}</CardDescription>
             </CardHeader>
             <CardContent>
               {overdueQuery.isLoading && <Skeleton className="h-32" />}

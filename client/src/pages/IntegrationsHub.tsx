@@ -26,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -83,29 +83,35 @@ interface IntegrationConfig {
 
 // W5-B (R19-03, R19-09, R19-14): only integrations with real adapters are listed here.
 // Accounting and POS connectors are shown separately with their honest status.
+// R18-02: description/features are translation keys (pages namespace); names are brands.
 const PLATFORMS = [
   {
     id: "stripe_payouts",
     name: "Stripe",
-    description: "Import charges, fees, refunds and payouts as bank lines for reconciliation",
+    description: "pages.integrationStripeDescription",
     icon: SiStripe,
     color: "text-[#635BFF]",
     bgColor: "bg-[#635BFF]/10",
-    features: ["Balance transactions", "Fee lines", "Payout matching", "Idempotent import"],
+    features: [
+      "pages.integrationStripeFeatureBalance",
+      "pages.integrationStripeFeatureFees",
+      "pages.integrationStripeFeaturePayouts",
+      "pages.integrationStripeFeatureIdempotent",
+    ],
     status: "available",
   },
   {
     id: "shopify",
     name: "Shopify",
-    description: "Import store orders as draft invoices and refunds as draft credit notes",
+    description: "pages.integrationShopifyDescription",
     icon: SiShopify,
     color: "text-[#95BF47]",
     bgColor: "bg-[#95BF47]/10",
     features: [
-      "Orders to draft invoices",
-      "Refunds to credit notes",
-      "VAT per line",
-      "No duplicates",
+      "pages.integrationShopifyFeatureOrders",
+      "pages.integrationShopifyFeatureRefunds",
+      "pages.integrationShopifyFeatureVat",
+      "pages.integrationShopifyFeatureNoDuplicates",
     ],
     status: "available",
   },
@@ -133,7 +139,7 @@ const HUB_COPY = {
 };
 
 export default function IntegrationsHub() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -436,7 +442,7 @@ export default function IntegrationsHub() {
                           )}
                         </CardTitle>
                         <CardDescription className="mt-1 text-muted-foreground">
-                          {platform.description}
+                          {t[platform.description]}
                         </CardDescription>
                       </div>
                     </div>
@@ -444,11 +450,13 @@ export default function IntegrationsHub() {
 
                   <CardContent>
                     <div className="space-y-3">
-                      <p className="text-xs font-medium text-muted-foreground">Features:</p>
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {t["pages.integrationFeaturesLabel"]}
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {platform.features.map((feature, idx) => (
                           <Badge key={idx} variant="outline" className="text-xs">
-                            {feature}
+                            {t[feature]}
                           </Badge>
                         ))}
                       </div>
@@ -456,11 +464,13 @@ export default function IntegrationsHub() {
                       {integration && isConnected && (
                         <div className="pt-3 border-t mt-3">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Last synced:</span>
+                            <span className="text-muted-foreground">
+                              {t["pages.integrationLastSynced"]}
+                            </span>
                             <span className="font-medium">
                               {integration.lastSyncAt
                                 ? formatDate(integration.lastSyncAt)
-                                : "Never"}
+                                : t["pages.integrationNever"]}
                             </span>
                           </div>
                           {integration.syncStatus === "failed" && integration.syncError && (
@@ -509,7 +519,7 @@ export default function IntegrationsHub() {
                             data-testid={`button-connect-${platform.id}`}
                           >
                             <Plug className="w-4 h-4" />
-                            Connect {platform.name}
+                            {formatMessage(t["pages.integrationConnect"], { name: platform.name })}
                           </Button>
                         )}
                       </>
@@ -640,9 +650,7 @@ export default function IntegrationsHub() {
                       <p className="font-medium">
                         <T k="pageLabels.noImportedTransactionsYet" />
                       </p>
-                      <p className="text-sm">
-                        Connect Stripe or Shopify and run a sync to populate this list.
-                      </p>
+                      <p className="text-sm">{t["pages.integrationEmptyTransactions"]}</p>
                     </div>
                   )}
                   {!transactionsLoading &&
@@ -875,7 +883,9 @@ export default function IntegrationsHub() {
               {selectedPlatform && (
                 <>
                   <selectedPlatform.icon className={`w-6 h-6 ${selectedPlatform.color}`} />
-                  Connect {selectedPlatform.name}
+                  {formatMessage(t["pages.integrationConnect"], {
+                    name: selectedPlatform.name,
+                  })}
                 </>
               )}
             </DialogTitle>
