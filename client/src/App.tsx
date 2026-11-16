@@ -73,6 +73,7 @@ const Receipts = lazyWithReload(() => import("@/pages/Receipts"));
 const ReceiptAutopilot = lazyWithReload(() => import("@/pages/ReceiptAutopilot"));
 const CompanyProfile = lazyWithReload(() => import("@/pages/CompanyProfile"));
 const CompanySettings = lazyWithReload(() => import("@/pages/CompanySettings"));
+const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings"));
 const EInvoicingSettings = lazyWithReload(() => import("@/pages/EInvoicingSettings"));
 const ZatcaSettings = lazyWithReload(() => import("@/pages/ZatcaSettings"));
 
@@ -555,6 +556,7 @@ function Router() {
     pathname === "/auth/callback" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||
+    pathname === "/verify-email" ||
     pathname === "/services" ||
     pathname === "/pricing" ||
     pathname === "/trust" ||
@@ -583,6 +585,7 @@ function Router() {
               <Route path="/auth/callback" component={AuthCallback} />
               <Route path="/forgot-password" component={ForgotPassword} />
               <Route path="/reset-password" component={ResetPassword} />
+              <Route path="/verify-email" component={Login} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
               <Route path="/portal/:token" component={CustomerPortal} />
@@ -610,6 +613,7 @@ function Router() {
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/company-profile" component={CompanyProfile} />
             <Route path="/settings/company" component={CompanySettings} />
+            <Route path="/settings/security" component={SecuritySettings} />
             <Route path="/settings/einvoicing" component={EInvoicingSettings} />
             <Route path="/settings/zatca" component={ZatcaSettings} />
             {/* Consolidated routes (R18-09, R20-08, R15-09): legacy URLs redirect */}

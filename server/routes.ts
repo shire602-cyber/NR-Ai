@@ -19,6 +19,8 @@ import { registerImportRoutes } from "./routes/import.routes";
 
 // ─── Route modules ──────────────────────────────────────────
 import { registerAuthRoutes } from "./routes/auth.routes";
+import { registerAuditRoutes } from "./routes/audit.routes";
+import { securityPolicyMiddleware } from "./services/security/policy";
 import { registerCompanyRoutes } from "./routes/companies.routes";
 import { registerAccountRoutes } from "./routes/accounts.routes";
 import { registerInvoiceRoutes } from "./routes/invoices.routes";
@@ -120,6 +122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // and the company the request acts on, then checks the caller's
   // company_users role. See server/middleware/companyRolePolicy.ts.
   app.use("/api", companyRolePolicy);
+  app.use("/api", securityPolicyMiddleware); // W5-E: MFA policy, step-up, email verification
 
   // ─── Plan gates and usage meter (W5-B, R19-04, R19-05) ──
   // METHOD + path tables in server/middleware/featureGate.ts: feature flags
@@ -128,6 +131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);
+  registerAuditRoutes(app); // W5-E: audit trail, chain verify/export, MFA policy
   registerCompanyRoutes(app);
   registerAccountRoutes(app);
   registerInvoiceRoutes(app);

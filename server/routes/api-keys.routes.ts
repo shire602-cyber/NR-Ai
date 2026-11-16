@@ -22,6 +22,7 @@ import { strictBody } from "../http/strict-body";
 import { zText } from "../../shared/validators/primitives";
 import { API_SCOPES, expandScopes, generateApiKey } from "../middleware/api-key-auth";
 import { storage } from "../storage";
+import { recordAudit } from "../services/audit.service";
 
 const zScopes = z
   .array(z.enum(API_SCOPES))
@@ -149,6 +150,15 @@ export function registerApiKeyRoutes(app: Express) {
         description: `Created API key "${body.name}" (${body.scopes})`,
       });
       // The full key is returned ONLY on creation — it can never be retrieved again.
+      await recordAudit({
+        userId,
+        companyId,
+        action: "api_key.create",
+        entityType: "api_key",
+        entityId: rows[0].id,
+        after: { name: rows[0].name, scopes: rows[0].scopes, keyPrefix: rows[0].key_prefix },
+        req,
+      });
       res.status(201).json({ ...present(rows[0]), key: key.raw });
     })
   );
@@ -206,6 +216,14 @@ export function registerApiKeyRoutes(app: Express) {
         entityType: "api_key",
         entityId: rows[0].id,
         description: `Revoked API key "${rows[0].name}"`,
+      });
+      await recordAudit({
+        userId: req.user!.id,
+        companyId: rows[0].company_id,
+        action: "api_key.revoke",
+        entityType: "api_key",
+        entityId: rows[0].id,
+        req,
       });
       res.json({ message: "API key revoked successfully" });
     })

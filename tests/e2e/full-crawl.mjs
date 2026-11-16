@@ -165,6 +165,8 @@ async function main() {
     await fail("register", { detail: `status ${reg.status()}` });
     throw new Error(`register failed: ${reg.status()}`);
   }
+  // W5-E: registration returns no session; sign in (sets the auth cookies).
+  await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
 
   await page.goto(`${BASE}/dashboard`);
   await page.waitForTimeout(3000);
@@ -1128,6 +1130,10 @@ async function main() {
       await mCtx.close();
       return;
     }
+    // W5-E: registration returns no session; sign in (sets the auth cookies).
+    await mPage.request.post(`${BASE}/api/auth/login`, {
+      data: { email: mEmail, password: "Password123!" },
+    });
     // Complete onboarding via express so the dashboard doesn't redirect.
     await mPage.goto(`${BASE}/dashboard`);
     await mPage.waitForTimeout(2500);

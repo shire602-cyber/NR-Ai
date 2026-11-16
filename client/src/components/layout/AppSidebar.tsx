@@ -162,6 +162,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "companySettings", url: "/settings/company" },
       { titleKey: "companyProfile", url: "/company-profile" },
       { titleKey: "teamManagement", url: "/team" },
+      { titleKey: "security.pageTitle", url: "/settings/security", testId: "security-settings" },
       { titleKey: "integrations", url: "/integrations-hub" },
       {
         titleKey: "einvoicing.navEInvoicing",

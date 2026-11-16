@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { ArrowLeft, Briefcase, CheckCircle2, Mail } from "lucide-react";
 
 const forgotSchema = z.object({
@@ -37,6 +38,7 @@ export default function ForgotPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const form = useForm<ForgotFormData>({
     resolver: zodResolver(forgotSchema),
@@ -49,7 +51,7 @@ export default function ForgotPassword() {
       const res = await fetch(apiUrl("/api/auth/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(captchaToken ? { ...data, captchaToken } : data),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -160,6 +162,7 @@ export default function ForgotPassword() {
                     </FormItem>
                   )}
                 />
+                <TurnstileWidget onToken={setCaptchaToken} />
                 <Button
                   type="submit"
                   className="w-full"

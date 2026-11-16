@@ -12,6 +12,9 @@
 //   - ledger integrity: issue posts a balanced entry; TB balances
 
 import { throttledFetch } from "./_http.mjs";
+import { withRegisterLogin } from "./register-compat.mjs";
+
+const api = withRegisterLogin(apiRaw, { status: "status", body: "json" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const fails = [];
@@ -19,7 +22,7 @@ function ok(name, cond, detail) {
   if (cond) { pass++; console.log("PASS  " + name); }
   else { fail++; fails.push(name + "  :: " + JSON.stringify(detail)); console.log("FAIL  " + name + "  " + JSON.stringify(detail)); }
 }
-async function api(method, path, { body, token } = {}) {
+async function apiRaw(method, path, { body, token } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
   const res = await throttledFetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -7,6 +7,10 @@ import { apiUrl } from "@/lib/api";
 import { establishAuthenticatedSession } from "@/lib/authSession";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface SsoStatus {
   providers: Array<{ id: string; label: string; configured: boolean }>;
@@ -74,9 +78,111 @@ function safeNextPath(): string {
   }
 }
 
+/** W5-E: second sign-in step (TOTP or recovery code). */
+function MfaChallenge({
+  mfaToken,
+  onDone,
+  onBack,
+}: {
+  mfaToken: string | null;
+  onDone(user: unknown, body: Record<string, unknown>): Promise<void>;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(apiUrl("/api/auth/mfa/verify-login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ...(mfaToken ? { mfaToken } : {}), code: code.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.message || t["security.error"]);
+      await onDone(body.user, body);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card className="w-full max-w-md border-border/60 shadow-xl" data-testid="mfa-challenge">
+      <CardHeader>
+        <CardTitle>{t["security.loginMfaTitle"]}</CardTitle>
+        <CardDescription>{t["security.loginMfaHelp"]}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="space-y-4">
+          <Label htmlFor="mfa-code">{t["security.mfaCode"]}</Label>
+          <Input
+            id="mfa-code"
+            autoComplete="one-time-code"
+            inputMode="text"
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            data-testid="input-mfa-code"
+          />
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" disabled={busy || code.trim().length < 6}>
+              {t["security.verify"]}
+            </Button>
+            <Button type="button" variant="ghost" onClick={onBack}>
+              {t["security.loginMfaBack"]}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** W5-E: consumes /verify-email?token=… links. */
+function useEmailVerificationLink(): "idle" | "working" | "done" | "failed" {
+  const [state, setState] = useState<"idle" | "working" | "done" | "failed">(() => {
+    if (typeof window === "undefined" || window.location.pathname !== "/verify-email") {
+      return "idle";
+    }
+    return new URLSearchParams(window.location.search).get("token") ? "working" : "failed";
+  });
+  useEffect(() => {
+    if (window.location.pathname !== "/verify-email") return;
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (!token) return;
+    fetch(apiUrl("/api/auth/verify-email"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ token }),
+    })
+      .then((r) => setState(r.ok ? "done" : "failed"))
+      .catch(() => setState("failed"));
+  }, []);
+  return state;
+}
+
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
+  const verification = useEmailVerificationLink();
+  const [mfa, setMfa] = useState<{ token: string | null } | null>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mfa") === "1"
+      ? { token: null }
+      : null
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -101,11 +207,15 @@ export default function Login() {
       .catch(() => {});
   }, [setLocation, toast]);
 
-  const handleSuccess = async (user: any) => {
+  const handleSuccess = async (user: any, result?: Record<string, unknown>) => {
+    if (result?.mfaRequired) {
+      setMfa({ token: typeof result.mfaToken === "string" ? result.mfaToken : null });
+      return;
+    }
     const currentUser = await establishAuthenticatedSession(user);
     const fallback =
       currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
-    const next = safeNextPath();
+    const next = result?.mfaEnrollmentRequired ? "/settings/security" : safeNextPath();
     setLocation(next === "/dashboard" ? fallback : next);
   };
 
@@ -123,7 +233,28 @@ export default function Login() {
       subline="Sign back in to a real-time portrait of your revenue, expenses, and filings — every number where you left it."
     >
       <div className="w-full max-w-md">
-        <LoginForm onSuccess={handleSuccess} />
+        {verification !== "idle" && (
+          <p
+            className="mb-4 rounded-md border p-3 text-sm"
+            role="status"
+            data-testid="text-verify-email"
+          >
+            {verification === "working"
+              ? t["security.verifyEmailWorking"]
+              : verification === "done"
+                ? t["security.verifyEmailDone"]
+                : t["security.verifyEmailFailed"]}
+          </p>
+        )}
+        {mfa ? (
+          <MfaChallenge
+            mfaToken={mfa.token}
+            onDone={(user, body) => handleSuccess(user, { ...body, mfaRequired: false })}
+            onBack={() => setMfa(null)}
+          />
+        ) : (
+          <LoginForm onSuccess={handleSuccess} />
+        )}
         <SsoStatusNote />
       </div>
     </AuthLayout>

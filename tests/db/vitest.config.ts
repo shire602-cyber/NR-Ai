@@ -1,7 +1,13 @@
 import { defineConfig } from "vitest/config";
+import fs from "fs";
 import path from "path";
 
 const root = path.resolve(__dirname, "../..");
+const dbCoverageThresholds = (
+  JSON.parse(
+    fs.readFileSync(path.resolve(root, "tests/helpers/coverage-ratchet.json"), "utf8")
+  ) as { db?: Record<string, number> }
+).db;
 
 // `npm run test:db` — real-Postgres suites. Each test file gets its own
 // database cloned from a template migrated once per run (global-setup.ts).
@@ -21,6 +27,15 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 300_000,
     teardownTimeout: 60_000,
+    // R20-14: `npm run test:db -- --coverage` measures the real-Postgres suites over the
+    // same source set as the unit run (thresholds: tests/helpers/coverage-ratchet.json "db").
+    coverage: {
+      provider: "v8",
+      include: ["server/**/*.ts", "shared/**/*.ts"],
+      exclude: ["**/*.test.ts", "**/*.spec.ts", "server/vite.ts"],
+      reportsDirectory: "coverage/db",
+      thresholds: dbCoverageThresholds,
+    },
   },
   resolve: {
     alias: {

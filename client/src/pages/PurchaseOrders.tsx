@@ -148,7 +148,7 @@ export default function PurchaseOrders() {
   const { t, locale } = useTranslation();
   const pc = PO_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { company: _company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);

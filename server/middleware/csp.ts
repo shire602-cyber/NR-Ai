@@ -31,11 +31,16 @@ const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
 
 export function buildCspDirectives() {
   const prod = isProduction();
+  // W5-E: the Turnstile widget (script + iframe) is allowed only when CAPTCHA is configured.
+  const turnstile = process.env.TURNSTILE_SECRET_KEY ? ["https://challenges.cloudflare.com"] : [];
 
   return {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: prod
+        ? ["'self'", nonceFn, ...turnstile]
+        : ["'self'", "'unsafe-inline'", "'unsafe-eval'", ...turnstile],
+      ...(turnstile.length ? { frameSrc: ["'self'", ...turnstile] } : {}),
       // D4 — the ENFORCED policy keeps `'unsafe-inline'` for styles. The client
       // uses 219 React `style={{ … }}` props across 22 files (inline style
       // ATTRIBUTES), and Radix/framer-motion inject `<style>` ELEMENTS at

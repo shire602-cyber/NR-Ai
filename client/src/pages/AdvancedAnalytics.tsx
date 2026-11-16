@@ -13,14 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
 import {
-  LineChart,
   Line,
   AreaChart,
   Area,
-  BarChart,
   Bar,
   XAxis,
   YAxis,
@@ -37,7 +33,6 @@ import { formatCurrency } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   TrendingUp,
-  TrendingDown,
   BarChart3,
   Brain,
   Wallet,
@@ -101,7 +96,7 @@ interface AIInsight {
 }
 
 export default function AdvancedAnalytics() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -199,7 +194,7 @@ export default function AdvancedAnalytics() {
     }),
     { inflow: 0, outflow: 0, balance: 0, confidence: 0 }
   );
-  const averageForecastConfidence = hasForecastRows
+  const _averageForecastConfidence = hasForecastRows
     ? Math.round((forecastSummary.confidence / forecastRows.length) * 100)
     : 0;
 

@@ -44,6 +44,36 @@ and tests; file references point at the enforcing implementation._
   `requireNraAccess()` in `server/middleware/rbac.ts`). Persona-matrix and
   URL-guessing tests prove customers cannot reach firm/admin surfaces
   (`tests/unit/nra-access.test.ts`, E2E boundary probes).
+- Two-factor authentication (W5-E): optional TOTP (RFC 6238) with ten
+  single-use recovery codes stored as SHA-256 digests; the TOTP secret is
+  encrypted with the secret vault and never returned by user reads. Sign-in
+  with MFA issues a 5-minute `mfa_pending` token that every API route refuses;
+  social sign-in is subject to the same second step. Codes are single-use
+  (the accepted time step only moves forward). Disabling needs the password
+  and a code (`server/services/mfa.service.ts`, `server/routes/auth.routes.ts`).
+- Company MFA policy: owners/admins can require MFA for owners and admins or
+  for everyone; covered members without MFA get `403 MFA_ENROLLMENT_REQUIRED`
+  on that company. Step-up: team role changes, backup restore, API-key
+  creation, period unlock and the policy itself need a code verified within
+  `MFA_STEP_UP_WINDOW_MINUTES` (default 10) when the actor has MFA
+  (`server/services/security/policy.ts`, `requireRecentMfa()`).
+- Email verification: registration always answers the same way (no session,
+  "check your email") so it reveals nothing about existing accounts; new
+  addresses get a 48-hour verification link through the email outbox. After
+  `EMAIL_VERIFICATION_GRACE_DAYS` (default 7) unverified accounts cannot
+  issue documents or invite people. Enforcement is active only while an
+  email provider is configured and `EMAIL_VERIFICATION_ENFORCE` is not
+  `false`, so a deployment that cannot send mail never locks anyone out.
+- Abuse controls: Cloudflare Turnstile CAPTCHA on registration and
+  forgot-password when `TURNSTILE_SECRET_KEY`/`TURNSTILE_SITE_KEY` are set
+  (otherwise reported as `requires_external`, not claimed). Breached-password
+  check via a k-anonymity range API (`BREACHED_PASSWORD_CHECK=range`; only a
+  5-character SHA-1 prefix leaves the server) with the bundled 10,000
+  common-password list as fallback. A WAF / bot-management layer is an
+  infrastructure control (see `docs/security/waf-and-bot-protection.md`) and
+  is not part of the application.
+- Sessions UI: Security settings (`/settings/security`) lists devices, signs
+  out one or all of them, and shows the account's sign-in history.
 - Plan enforcement: server-side feature/tier/usage gates
   (`server/middleware/featureGate.ts`), proven by
   `tests/unit/billing-enforcement.test.ts`. Fail-open until
@@ -91,12 +121,29 @@ auto-posts and suggestion acceptance, OAuth logins, and firm operations.
 Logs are queryable per company via the activity-log endpoints
 (`/api/activity-logs`) — this is the access-review export.
 
+Tamper evidence (W5-E): `audit_logs` is append-only (a trigger refuses
+UPDATE/DELETE) and hash-chained per company — each row carries `seq`,
+`prev_hash` and `hash = SHA-256(canonical row | prev_hash)`, assigned in the
+inserting transaction under a per-company advisory lock, so concurrent
+writers form one unbroken chain. `GET /api/companies/:id/audit-log/verify`
+recomputes the chain and returns the first broken link; `/audit-log/export`
+gives CSV/JSON with hashes and before/after values. Security events
+(sign-in success/failure, lockout, MFA changes, password change/reset,
+token-reuse detection, role and invitation changes, API-key lifecycle,
+backup restore, policy changes) are recorded on the same log, and a sign-in
+from a new device family and network raises a suspicious-login notification
+and email. Limits: see `docs/security/audit-log.md` (a database superuser
+could rewrite the whole chain; anchoring the head externally is future work).
+
 ## Backup & restore
 
 Checksum-verified backups with a real, transactional restore path
 (re-inserts missing rows in FK order, `onConflictDoNothing`) —
 `server/routes/backups.routes.ts`, exercised end-to-end by the E2E backup
-flow including the retention-guard interaction.
+flow including the retention-guard interaction. Snapshots are encrypted at
+rest with the secret vault (AES-256-GCM); only owners/admins
+(`backups.manage`) can list, download or restore, restore needs MFA step-up
+for MFA users, and each restore is written to the audit chain.
 
 ## Data retention & deletion
 
@@ -123,7 +170,13 @@ flow including the retention-guard interaction.
 ## Known limitations (honest list)
 
 - No SOC 2 / ISO 27001 certification — this document is readiness evidence,
-  not a certificate.
+  not a certificate. No independent penetration test has been performed yet;
+  the scope is prepared in `docs/security/pentest-scope.md`.
+- The UAE PDPL / data-residency statement is a draft for counsel review
+  (`docs/security/pdpl-data-residency.md`), with the data map in
+  `docs/security/data-map.md`.
+- CAPTCHA needs a Cloudflare Turnstile site; WAF/bot management needs an
+  edge provider. Neither is active until configured.
 - E-invoice XML validates locally against PINT AE shape; live ASP/FTA
   submission awaits provider credentials and is marked "not connected".
 - Bank feeds run on the provider abstraction with manual import as the

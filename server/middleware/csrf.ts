@@ -16,6 +16,9 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/refresh-token$/,
   /^\/api\/auth\/forgot-password$/,
   /^\/api\/auth\/reset-password$/,
+  // W5-E: pre-session steps authenticated by their own single-use token.
+  /^\/api\/auth\/mfa\/verify-login$/,
+  /^\/api\/auth\/verify-email$/,
   /^\/api\/portal\//,
   // Provider webhooks are authenticated by their own HMAC signature, not a CSRF
   // token (the caller is an external service, not the browser).

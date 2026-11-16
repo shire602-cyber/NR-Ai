@@ -15,16 +15,11 @@ import {
   Plus,
   Trash2,
   Edit2,
-  ToggleLeft,
-  ToggleRight,
   RefreshCw,
   Search,
   Download,
   BarChart3,
-  TrendingUp,
   CheckCircle,
-  XCircle,
-  Clock,
   FileText,
   Building2,
   CreditCard,
@@ -81,7 +76,7 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
-  const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
+  const [_editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
@@ -180,7 +175,7 @@ export default function Admin() {
   });
 
   // Mutations
-  const updateSettingMutation = useMutation({
+  const _updateSettingMutation = useMutation({
     mutationFn: async (setting: { key: string; value: string }) => {
       return apiRequest("PUT", "/api/admin/settings", setting);
     },
@@ -311,7 +306,7 @@ export default function Admin() {
   );
 
   // Group settings by category
-  const settingsByCategory = settings.reduce(
+  const _settingsByCategory = settings.reduce(
     (acc, setting) => {
       if (!acc[setting.category]) {
         acc[setting.category] = [];

@@ -199,7 +199,7 @@ export function registerReminderRoutes(app: Express) {
       // VAT Return deadlines (based on filing frequency)
       if (company?.trnVatNumber) {
         const filingFrequency = company.vatFilingFrequency || "Quarterly";
-        let nextDeadline = new Date();
+        const nextDeadline = new Date();
 
         if (filingFrequency === "Monthly") {
           nextDeadline.setMonth(nextDeadline.getMonth() + 1);

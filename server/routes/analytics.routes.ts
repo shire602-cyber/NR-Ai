@@ -95,7 +95,7 @@ export function registerAnalyticsRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
-      const { companyId, period } = req.query;
+      const { companyId, period: _period } = req.query;
 
       if (!companyId) {
         return res.status(400).json({ message: "Company ID required" });

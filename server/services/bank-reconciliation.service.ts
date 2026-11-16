@@ -47,8 +47,6 @@ import {
   bankImportBatches,
   bankTransactionMatches,
   bankTransactions,
-  invoicePayments,
-  invoices,
   journalEntries,
   journalLines,
   reconciliationRules,

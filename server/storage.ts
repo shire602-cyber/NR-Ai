@@ -827,6 +827,8 @@ export interface IStorage {
   // Audit Logs
   getAuditLogs(limit?: number): Promise<AuditLog[]>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getCompanyAuditLogs(companyId: string, filter?: AuditLogFilter): Promise<AuditLog[]>;
+  getUserSecurityEvents(userId: string, filter?: AuditLogFilter): Promise<AuditLog[]>;
 
   // VAT Returns
   getVatReturnsByCompanyId(companyId: string): Promise<VatReturn[]>;
@@ -1164,6 +1166,33 @@ function describeAuditLog(row: AuditLog): string {
     default:
       return `${sentenceCase(row.action)} on ${entityLabel}${row.resourceId ? ` ${row.resourceId}` : ""}`;
   }
+}
+
+/** W5-E: filter for audit-log reads. */
+export interface AuditLogFilter {
+  actions?: string[];
+  /** e.g. "auth." or "mfa." */
+  actionPrefix?: string;
+  userId?: string;
+  resourceType?: string;
+  from?: Date;
+  to?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+function auditFilterConditions(filter: AuditLogFilter) {
+  const conds = [];
+  if (filter.actions?.length) conds.push(inArray(auditLogs.action, filter.actions));
+  if (filter.actionPrefix) {
+    const escaped = filter.actionPrefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+    conds.push(sql`${auditLogs.action} LIKE ${`${escaped}%`}`);
+  }
+  if (filter.userId) conds.push(eq(auditLogs.userId, filter.userId));
+  if (filter.resourceType) conds.push(eq(auditLogs.resourceType, filter.resourceType));
+  if (filter.from) conds.push(gte(auditLogs.createdAt, filter.from));
+  if (filter.to) conds.push(lte(auditLogs.createdAt, filter.to));
+  return conds;
 }
 
 function auditLogToActivityLog(row: AuditLog, companyId: string | null): ActivityLog {
@@ -4296,7 +4325,35 @@ export class DatabaseStorage implements IStorage {
 
   async createAuditLog(insertLog: InsertAuditLog): Promise<AuditLog> {
     const [log] = await db.insert(auditLogs).values(insertLog).returning();
+    // W5-E: a row written while another transaction held the chain lock is stored
+    // unsealed; append it now if the lock is free (never waits, see migration 0109).
+    if (log && log.seq === null && log.chainKey) {
+      await db
+        .execute(sql`SELECT audit_seal_pending(${log.chainKey})`)
+        .catch(() => undefined);
+    }
     return log;
+  }
+
+  // W5-E: filtered audit reads (company chain / one user's account events).
+  async getCompanyAuditLogs(companyId: string, filter: AuditLogFilter = {}): Promise<AuditLog[]> {
+    return await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.companyId, companyId), ...auditFilterConditions(filter)))
+      .orderBy(desc(auditLogs.seq))
+      .limit(Math.min(filter.limit ?? 100, 500))
+      .offset(filter.offset ?? 0);
+  }
+
+  async getUserSecurityEvents(userId: string, filter: AuditLogFilter = {}): Promise<AuditLog[]> {
+    return await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.userId, userId), ...auditFilterConditions(filter)))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(Math.min(filter.limit ?? 100, 500))
+      .offset(filter.offset ?? 0);
   }
 
   // Admin Stats
@@ -4756,7 +4813,12 @@ export class DatabaseStorage implements IStorage {
       db
         .select()
         .from(auditLogs)
-        .where(sql`${auditLogs.details} LIKE ${auditCompanyPattern}`)
+        .where(
+          or(
+            eq(auditLogs.companyId, companyId),
+            sql`${auditLogs.details} LIKE ${auditCompanyPattern}`
+          )
+        )
         .orderBy(desc(auditLogs.createdAt))
         .limit(limit),
     ]);

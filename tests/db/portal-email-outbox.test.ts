@@ -70,7 +70,8 @@ describe("W4-D email outbox", () => {
     });
     expect(r.status, r.text).toBe(200);
     expect(r.body).toMatchObject({ sent: true, status: "sent" });
-    const sent = resendSend.mock.calls[0][0];
+    // W5-E: registration also sends a verification email; pick the invoice email.
+    const sent = resendSend.mock.calls.map((c) => c[0]).find((m) => m.to === "client@mail.example");
     expect(sent.to).toBe("client@mail.example");
     expect(sent.attachments[0].filename).toMatch(/\.pdf$/);
     expect(Buffer.isBuffer(sent.attachments[0].content)).toBe(true);

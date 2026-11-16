@@ -1,5 +1,4 @@
 import type { Request, Response } from "express";
-import { Router } from "express";
 import type { Express } from "express";
 import OpenAI from "openai";
 import { z } from "zod";
@@ -690,7 +689,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
 
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const entries = await storage.getJournalEntriesByCompanyId(companyId);
+        const _entries = await storage.getJournalEntriesByCompanyId(companyId);
 
         // Prepare transaction data for analysis
         const transactionData = {
@@ -929,7 +928,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
         const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+        const _journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
 
         if (bankTransactions.length === 0) {
           return res.json({ matches: [], message: "No unreconciled transactions" });
@@ -1220,7 +1219,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
 
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const entries = await storage.getJournalEntriesByCompanyId(companyId);
+        const _entries = await storage.getJournalEntriesByCompanyId(companyId);
 
         // Calculate historical patterns
         const now = new Date();
@@ -2403,7 +2402,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const { companyId, context, fieldType, currentValue } = req.body;
+        const { companyId, context, fieldType, currentValue: _currentValue } = req.body;
         const userId = (req as any).user.id;
 
         if (!companyId || !context || !fieldType) {

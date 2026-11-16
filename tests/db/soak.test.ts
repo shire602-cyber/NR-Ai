@@ -134,8 +134,17 @@ describe.skipIf(!enabled)("soak: real server survives mixed and malformed traffi
       body: JSON.stringify({ name: "Soak", email, password: "SoakPassw0rd!" }),
     });
     expect(reg.status, JSON.stringify(reg.body)).toBe(200);
-    const token = reg.body.token as string;
-    const cid = reg.body.company.id as string;
+    // W5-E: registration returns no session; sign in, then list companies.
+    const login = await call("POST", "/api/auth/login", {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "SoakPassw0rd!" }),
+    });
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    const token = login.body.token as string;
+    const companies = await call("GET", "/api/companies", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const cid = (companies.body as Array<{ id: string }>)[0].id;
     const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     const today = new Date().toISOString().slice(0, 10);
     const huge = "x".repeat(2 * 1024 * 1024);

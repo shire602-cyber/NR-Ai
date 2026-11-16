@@ -29,6 +29,7 @@ import { isNraFirmRole } from "../../shared/access";
 import { zText } from "../../shared/validators/primitives";
 import { storage } from "../storage";
 import { pq } from "../services/connectors/pq";
+import { recordAudit } from "../services/audit.service";
 import {
   BACKUP_EXCLUDED_TABLES,
   buildBackupManifest,
@@ -328,6 +329,16 @@ export function registerBackupRoutes(app: Express) {
           totals: result.totals,
           preRestoreBackupId: result.preRestoreBackupId,
         }),
+      });
+      await recordAudit({
+        userId: req.user!.id,
+        companyId: backup.companyId,
+        action: "backup.restore",
+        entityType: "backup",
+        entityId: backup.id,
+        before: { preRestoreBackupId: result.preRestoreBackupId },
+        after: { mode: body.mode, totals: result.totals },
+        req,
       });
       res.json({
         success: true,

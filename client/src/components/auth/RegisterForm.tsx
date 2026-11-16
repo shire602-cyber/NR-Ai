@@ -46,9 +46,11 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 
 interface RegisterFormProps {
   onSuccess: (user: any) => void | Promise<void>;
+  /** W5-E: Turnstile token when the server requires CAPTCHA. */
+  captchaToken?: string | null;
 }
 
-export function RegisterForm({ onSuccess }: RegisterFormProps) {
+export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -71,6 +73,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const payload = {
         ...data,
         trn: data.trn?.trim() ? data.trn.trim() : undefined,
+        ...(captchaToken ? { captchaToken } : {}),
       };
       const response = await fetch(apiUrl("/api/auth/register"), {
         method: "POST",
@@ -83,13 +86,27 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         const error = await response.json();
         throw new Error(error?.message || "Registration failed");
       }
+      await response.json().catch(() => null);
 
-      const result = await response.json();
+      // W5-E (R17-14): registration never returns a session, so a new and an existing
+      // address look the same. Sign in with the password just chosen; if that fails the
+      // address already had an account and the generic "check your email" note stands.
+      const login = await fetch(apiUrl("/api/auth/login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: data.email, password: data.password }),
+      });
+      if (!login.ok) {
+        await onSuccess(null); // the page shows the generic "check your inbox" note
+        return;
+      }
+      const result = await login.json();
       await onSuccess(result.user);
 
       toast({
         title: "Account created!",
-        description: "Welcome to AI Bookkeeping. Let's get started!",
+        description: t["security.registerCheckEmail"],
       });
     } catch (error: any) {
       toast({

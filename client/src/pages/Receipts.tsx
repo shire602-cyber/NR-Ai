@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -60,7 +59,6 @@ import {
   XCircle,
   Loader2,
   Camera,
-  Image as ImageIcon,
   X,
   Trash2,
   RefreshCw,
@@ -341,7 +339,7 @@ export default function Receipts() {
   // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
   const tr = (en: string, ar: string) => (locale === "ar" ? ar : en);
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -403,7 +401,7 @@ export default function Receipts() {
   });
 
   // Save single receipt mutation
-  const saveReceiptMutation = useMutation({
+  const _saveReceiptMutation = useMutation({
     mutationFn: async (data: any) => {
       return apiRequest("POST", `/api/companies/${companyId}/receipts`, data);
     },
@@ -532,7 +530,7 @@ export default function Receipts() {
     },
   });
 
-  const checkSimilarMutation = useMutation({
+  const _checkSimilarMutation = useMutation({
     mutationFn: (data: any) =>
       apiRequest("POST", `/api/companies/${companyId}/receipts/check-similar`, data),
   });

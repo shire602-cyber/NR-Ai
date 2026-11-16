@@ -1,10 +1,6 @@
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
-import type {
-  FixedAsset,
-  DepreciationSchedule,
-  InsertDepreciationSchedule,
-} from "../../shared/schema";
+import type { DepreciationSchedule } from "../../shared/schema";
 
 const log = createLogger("depreciation");
 

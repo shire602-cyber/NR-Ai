@@ -1,4 +1,4 @@
-import { Router, type Express, type Request, type Response } from "express";
+import { type Express, type Request, type Response } from "express";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -26,7 +26,7 @@ import { postReceipt, reviseReceipt } from "../services/receipt-posting.service"
 import { resolve } from "../platform/service-registry";
 import type { FxGetRate } from "../services/fx";
 import { zSupplyType } from "../../shared/validators/primitives";
-import { insertInvoiceSchema, type Receipt } from "../../shared/schema";
+import { type Receipt } from "../../shared/schema";
 import {
   saveReceiptFile,
   deleteReceiptImage,

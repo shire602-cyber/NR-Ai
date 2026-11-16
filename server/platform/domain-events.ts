@@ -36,6 +36,7 @@ export const DOMAIN_EVENT_TYPES = [
   "task.due",
   "receipt.posted",
   "budget.variance_alert",
+  "security.suspicious_login",
 ] as const;
 Object.freeze(DOMAIN_EVENT_TYPES);
 
@@ -77,6 +78,8 @@ export interface DomainEventExtras {
     period?: string;
     variancePct?: number;
   };
+  /** W5-E: entityId is the user; companyId is their first company (or the user id). */
+  "security.suspicious_login": { device?: string; network?: string };
 }
 
 export type DomainEventPayload<T extends DomainEventType> = DomainEventBase & DomainEventExtras[T];

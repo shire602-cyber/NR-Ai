@@ -22,6 +22,10 @@ const CREDENTIAL_AUTH_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/change-password",
+  // W5-E: MFA codes and verification tokens are brute-forceable too.
+  "/mfa/verify-login",
+  "/mfa/step-up",
+  "/verify-email",
 ];
 
 export function isCredentialAuthPath(path: string): boolean {

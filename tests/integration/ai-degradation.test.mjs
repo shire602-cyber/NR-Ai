@@ -11,13 +11,16 @@
 // 200 and the "must not 500" assertion still holds.
 
 import { fail as abort, throttledFetch } from "./_http.mjs";
+import { withRegisterLogin } from "./register-compat.mjs";
+
+const api = withRegisterLogin(apiRaw, { status: "s", body: "j" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0; const fails = [];
 const ok = (name, cond, detail) => {
   if (cond) { pass++; console.log("PASS  " + name); }
   else { fail++; fails.push(name + " :: " + JSON.stringify(detail)); console.log("FAIL  " + name + "  " + JSON.stringify(detail)); }
 };
-async function api(m, p, o = {}) {
+async function apiRaw(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
   const r = await throttledFetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });

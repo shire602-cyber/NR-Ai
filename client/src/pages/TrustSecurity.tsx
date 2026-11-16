@@ -24,25 +24,30 @@ const controls = [
   {
     icon: KeyRound,
     title: "Secure sessions",
-    text: "Session handling uses httpOnly cookies, token revocation, CSRF protection for cookie requests, and startup secret validation.",
+    text: "Session handling uses httpOnly cookies, token revocation, CSRF protection for cookie requests, and startup secret validation. Users can review and sign out individual devices.",
+  },
+  {
+    icon: UserCheck,
+    title: "Two-factor authentication",
+    text: "Optional TOTP two-factor sign-in with single-use recovery codes. Company owners can require it for owners and admins or for every member, and sensitive actions ask for a fresh code.",
   },
   {
     icon: Database,
     title: "Data protection controls",
-    text: "Sensitive operational settings are separated from the public app surface, with encrypted transport expected in production.",
+    text: "Sensitive operational settings are separated from the public app surface, stored secrets and in-app backups are encrypted with AES-256-GCM, and encrypted transport is expected in production.",
   },
   {
     icon: FileCheck,
     title: "Auditability",
-    text: "Accounting actions are designed around traceable records, period locks, retention rules, and exportable supporting schedules.",
+    text: "Security events, postings and chart-of-accounts changes are written to an append-only audit log whose entries are linked by SHA-256 hashes; owners can verify the chain and export it with before/after values.",
   },
 ];
 
 const roadmap = [
   "Publish formal uptime and incident-response history after launch traffic is measurable.",
-  "Complete external penetration testing after the launch environment is frozen.",
-  "Prepare SOC 2 / ISO 27001 readiness evidence once operational controls have live history.",
-  "Expand data-processing and residency documentation for enterprise customers.",
+  "Complete an independent external penetration test after the launch environment is frozen (not yet performed).",
+  "Prepare SOC 2 / ISO 27001 readiness evidence once operational controls have live history (no audit has been performed and no certification is held).",
+  "Finalise the data-processing and UAE PDPL data-residency statement with counsel (a draft data map exists).",
 ];
 
 const launchEvidence = [
