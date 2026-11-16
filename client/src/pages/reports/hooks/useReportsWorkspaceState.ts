@@ -57,7 +57,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 
 export function useReportsWorkspaceState() {
   const { t, locale } = useTranslation();
@@ -420,8 +420,10 @@ export function useReportsWorkspaceState() {
     personaFilters.find((filter) => filter.id === personaFilter)?.label ?? "All";
   const personaScopeDescription =
     personaFilter === "all"
-      ? "Showing all role signals."
-      : `Focused for ${personaFilterLabel.toLowerCase()} workflows.`;
+      ? translateNow("reportCenter.scopeAll")
+      : formatMessage(translateNow("reportCenter.scopeFocused"), {
+          persona: personaFilterLabel.toLowerCase(),
+        });
   const normalizedReportWorkflowSearch = reportWorkflowSearch.trim().toLowerCase();
   const matchesReportWorkflowSearch = useCallback(
     (values: Array<string | number | null | undefined>) => {
@@ -492,7 +494,7 @@ export function useReportsWorkspaceState() {
     pinnedReportDeliveryAutomationCommands[reportDeliveryLauncherPersona];
   const saveReportDeliveryAutomationPreference = useMutation({
     mutationFn: ({ persona, command }: SaveReportDeliveryAutomationPreferenceInput) => {
-      if (!selectedCompanyId) throw new Error("Select a company before saving automation.");
+      if (!selectedCompanyId) throw new Error(translateNow("reportCenter.toastPinNeedsCompany"));
       return apiRequest(
         "PATCH",
         `/api/companies/${selectedCompanyId}/report-delivery/preferences/${persona}`,
@@ -501,8 +503,8 @@ export function useReportsWorkspaceState() {
     },
     onError: (error: any) => {
       toast({
-        title: "Could not save automation command",
-        description: error?.message || "Failed to save the pinned automation command",
+        title: translateNow("reportCenter.toastPinFail"),
+        description: error?.message || translateNow("reportCenter.toastPinFailBody"),
         variant: "destructive",
       });
     },
@@ -524,8 +526,11 @@ export function useReportsWorkspaceState() {
         });
       }
       toast({
-        title: "Automation command pinned",
-        description: `${reportDeliveryAutomationCommandLabels[parsedCommand]} is pinned for ${personaFilterLabel.toLowerCase()} workflows.`,
+        title: translateNow("reportCenter.toastPinCommand"),
+        description: formatMessage(translateNow("reportCenter.toastPinCommandBody"), {
+          label: reportDeliveryAutomationCommandLabels[parsedCommand],
+          persona: personaFilterLabel.toLowerCase(),
+        }),
       });
     },
     [

@@ -1,7 +1,8 @@
 // Reports > suites workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { ArrowRight, BarChart3, FileText, Send, Sparkles } from "lucide-react";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { useReportsPageContext } from "../context";
 
 export default function SuitesPanel() {
   const { t } = useTranslation();
+  const ct = useCatalogText();
   const {
     isReportDeliveryHandoffAcknowledged,
     personaScopeDescription,
@@ -41,7 +43,7 @@ export default function SuitesPanel() {
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportSuiteSummaries.length} suites
+            {formatMessage(t["reportCenter.nSuites"], { n: visibleReportSuiteSummaries.length })}
           </Badge>
         </div>
 
@@ -60,12 +62,12 @@ export default function SuitesPanel() {
                 suite.deliverySubscriptionId;
             const isSuiteDeliveryPaused = suiteDeliverySubscription?.enabled === false;
             const suiteQueueLabel = isQueueingThisSuiteDelivery
-              ? "Queueing"
+              ? t["components.launchQueueing"]
               : suiteRequiresHandoffAcknowledgement
                 ? t["components.launchAcknowledgeHandoff"]
                 : isSuiteDeliveryPaused
-                  ? "Paused"
-                  : "Queue delivery";
+                  ? ct.cx("Paused")
+                  : ct.cx("Queue delivery");
 
             return (
               <Card
@@ -105,7 +107,7 @@ export default function SuitesPanel() {
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Pack</div>
+                      <div className="text-muted-foreground">{t["reportCenter.labelPack"]}</div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.packTemplate.cadence}
                       </div>
@@ -155,10 +157,10 @@ export default function SuitesPanel() {
                         </div>
                         <div className="mt-1 text-muted-foreground">
                           {suiteDeliverySubscription
-                            ? `${suiteDeliverySubscription.channel} · ${
+                            ? `${suiteDeliverySubscription.channel} · ${ct.cx(
                                 suiteDeliverySubscription.nextRunLabel ||
-                                "Next run calculated on queue"
-                              }`
+                                  "Next run calculated on queue"
+                              )}`
                             : suite.deliverySubscription.channel}
                         </div>
                       </div>
@@ -169,7 +171,7 @@ export default function SuitesPanel() {
                       >
                         {suiteRequiresHandoffAcknowledgement
                           ? t["reportCenter.handoffReview"]
-                          : (suiteDeliverySubscription?.status ?? "Catalog")}
+                          : (suiteDeliverySubscription?.status ?? ct.cx("Catalog"))}
                       </Badge>
                     </div>
                   </div>
@@ -195,7 +197,7 @@ export default function SuitesPanel() {
                     <Button asChild size="sm" variant="outline" className="justify-start">
                       <Link href={suite.packHref}>
                         <FileText className="h-3.5 w-3.5" />
-                        Pack
+                        {t["reportCenter.labelPack"]}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
@@ -248,12 +250,13 @@ export default function SuitesPanel() {
               <T k="reportCenter.managementPackBriefs" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Advisory-ready KPI, narrative, dimensional, and delivery context for each role.{" "}
-              {personaScopeDescription}
+              {formatMessage(t["reportCenter.spBriefsIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportManagementBriefSummaries.length} briefs
+            {formatMessage(t["reportCenter.nBriefs"], {
+              n: visibleReportManagementBriefSummaries.length,
+            })}
           </Badge>
         </div>
 
@@ -291,7 +294,7 @@ export default function SuitesPanel() {
 
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">KPIs</div>
+                      <div className="text-muted-foreground">{t["reportCenter.labelKpis"]}</div>
                       <div className="mt-1 tabular-nums text-base font-semibold">
                         {brief.kpiMetricIds.length}
                       </div>
@@ -327,7 +330,11 @@ export default function SuitesPanel() {
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="font-medium text-foreground">{widget.label}</div>
-                            <Badge variant="outline">{widget.display}</Badge>
+                            <Badge variant="outline">
+                              {t[
+                                `reportCenter.display${widget.display.charAt(0).toUpperCase()}${widget.display.slice(1)}`
+                              ] ?? widget.display}
+                            </Badge>
                           </div>
                           <div className="mt-1 text-muted-foreground">{widget.question}</div>
                         </div>
@@ -350,9 +357,15 @@ export default function SuitesPanel() {
                           {section.prompt}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="outline">{section.sourceReportIds.length} reports</Badge>
                           <Badge variant="outline">
-                            {section.comparisonMetricIds.length} metrics
+                            {formatMessage(t["reportCenter.nReportsShort"], {
+                              n: section.sourceReportIds.length,
+                            })}
+                          </Badge>
+                          <Badge variant="outline">
+                            {formatMessage(t["reportCenter.nMetrics"], {
+                              n: section.comparisonMetricIds.length,
+                            })}
                           </Badge>
                         </div>
                       </div>
@@ -425,7 +438,9 @@ export default function SuitesPanel() {
               <T k="reportCenter.packsIntro" />
             </p>
           </div>
-          <Badge variant="outline">{visibleReportPackTemplates.length} templates</Badge>
+          <Badge variant="outline">
+            {formatMessage(t["reportCenter.nTemplates"], { n: visibleReportPackTemplates.length })}
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
@@ -447,7 +462,9 @@ export default function SuitesPanel() {
                     <TemplateIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
                   </div>
                   <Badge variant="outline" className="w-fit capitalize">
-                    {template.persona}
+                    {t[
+                      `reportCenter.persona${template.persona.charAt(0).toUpperCase()}${template.persona.slice(1)}`
+                    ] ?? template.persona}
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -472,15 +489,21 @@ export default function SuitesPanel() {
 
                   <div className="space-y-2 text-xs text-muted-foreground">
                     <div>
-                      <span className="font-medium text-foreground">Comparisons:</span>{" "}
+                      <span className="font-medium text-foreground">
+                        {t["reportCenter.labelComparisons"]}
+                      </span>{" "}
                       {template.comparisonFocus}
                     </div>
                     <div>
-                      <span className="font-medium text-foreground">Automation:</span>{" "}
+                      <span className="font-medium text-foreground">
+                        {t["reportCenter.labelAutomation"]}
+                      </span>{" "}
                       {template.automationTrigger}
                     </div>
                     <div>
-                      <span className="font-medium text-foreground">Delivery:</span>{" "}
+                      <span className="font-medium text-foreground">
+                        {t["reportCenter.labelDelivery"]}
+                      </span>{" "}
                       {template.delivery}
                     </div>
                   </div>

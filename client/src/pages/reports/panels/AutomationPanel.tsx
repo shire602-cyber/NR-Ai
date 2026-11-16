@@ -1,6 +1,6 @@
 // Reports > automation workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,9 @@ export default function AutomationPanel() {
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
             {reportAutomationOperationsNeedingReview > 0
-              ? `${reportAutomationOperationsNeedingReview} need review`
+              ? formatMessage(t["reportCenter.needReview"], {
+                  n: reportAutomationOperationsNeedingReview,
+                })
               : t["automationPanel.readyByRole"]}
           </Badge>
         </div>
@@ -72,7 +74,10 @@ export default function AutomationPanel() {
                     {item.workspace.navLabel}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {item.readyReportCount}/{item.reportCount} reports ready
+                    {formatMessage(t["reportCenter.readyReportsOfTotal"], {
+                      ready: item.readyReportCount,
+                      total: item.reportCount,
+                    })}
                   </div>
                 </div>
                 <Badge variant={item.statusVariant} dot>
@@ -111,8 +116,11 @@ export default function AutomationPanel() {
                 className="mt-3 text-xs text-muted-foreground"
                 data-testid={`report-workflow-readiness-gap-${item.workspace.persona}`}
               >
-                {item.reportGapCount} report gaps · {item.automationRuleGapCount} rule gaps ·{" "}
-                {item.deliveryGapCount} delivery gaps
+                {formatMessage(t["reportCenter.aoGaps"], {
+                  reports: item.reportGapCount,
+                  rules: item.automationRuleGapCount,
+                  deliveries: item.deliveryGapCount,
+                })}
               </div>
 
               <div
@@ -199,12 +207,13 @@ export default function AutomationPanel() {
               <T k="reportCenter.reportAutomationOperations" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              One operating view for report readiness, auto-send rules, delivery recovery, and next
-              actions across owner, freelancer, and accountant workspaces. {personaScopeDescription}
+              {formatMessage(t["reportCenter.aoIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
-            {reportAutomationOperationsNeedingReview} need action
+            {formatMessage(t["reportCenter.needAction"], {
+              n: reportAutomationOperationsNeedingReview,
+            })}
           </Badge>
         </div>
 
@@ -263,7 +272,9 @@ export default function AutomationPanel() {
                           {item.readyReportCount}/{item.reportCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {item.recommendationCount} recommended actions
+                          {formatMessage(t["reportCenter.nRecommendedActions"], {
+                            n: item.recommendationCount,
+                          })}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
@@ -274,7 +285,9 @@ export default function AutomationPanel() {
                           {item.readyRuleCount}/{item.automationRuleCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {item.openWorkItemCount} open work items
+                          {formatMessage(t["reportCenter.nOpenWorkItems"], {
+                            n: item.openWorkItemCount,
+                          })}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
@@ -285,7 +298,7 @@ export default function AutomationPanel() {
                           {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {item.failedRunCount} failed runs
+                          {formatMessage(t["reportCenter.nFailedRuns"], { n: item.failedRunCount })}
                         </div>
                       </div>
                     </div>
@@ -370,15 +383,16 @@ export default function AutomationPanel() {
               <T k="reportCenter.automationImpact" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Estimated monthly work removed by ready report rules, scheduled packs, and linked
-              automation starters. {personaScopeDescription}
+              {formatMessage(t["reportCenter.aoImpactIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge
             variant={reportAutomationImpactTotals.reviewItemCount > 0 ? "warning" : "success"}
             dot
           >
-            {reportAutomationImpactTotals.estimatedMonthlyHoursSaved} hrs saved/mo
+            {formatMessage(t["reportCenter.hrsSavedPerMonth"], {
+              n: reportAutomationImpactTotals.estimatedMonthlyHoursSaved,
+            })}
           </Badge>
         </div>
 
@@ -431,7 +445,9 @@ export default function AutomationPanel() {
                         <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.estimate.estimatedMonthlyHoursSaved}
                         </div>
-                        <div className="mt-1 text-muted-foreground">estimated / month</div>
+                        <div className="mt-1 text-muted-foreground">
+                          {t["reportCenter.estimatedPerMonth"]}
+                        </div>
                       </div>
                       <div className="rounded-md border p-3">
                         <div className="text-muted-foreground">
@@ -452,7 +468,9 @@ export default function AutomationPanel() {
                           {item.estimate.coverageScore}%
                         </div>
                         <div className="mt-1 text-muted-foreground">
-                          {item.triggerRules.length} trigger rules
+                          {formatMessage(t["reportCenter.nTriggerRules"], {
+                            n: item.triggerRules.length,
+                          })}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
@@ -463,7 +481,9 @@ export default function AutomationPanel() {
                           <Money amount={item.estimate.amountAtRisk} currency={"AED"} />
                         </div>
                         <div className="mt-1 text-muted-foreground">
-                          {item.estimate.reviewItemCount} review items
+                          {formatMessage(t["reportCenter.nReviewItems"], {
+                            n: item.estimate.reviewItemCount,
+                          })}
                         </div>
                       </div>
                     </div>
@@ -502,7 +522,9 @@ export default function AutomationPanel() {
                           </div>
                           <div className="mt-1 text-muted-foreground">{signal.currentProxy}</div>
                           <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
-                            Missing counter: {signal.missingCounter}
+                            {formatMessage(t["reportCenter.missingCounter"], {
+                              value: signal.missingCounter,
+                            })}
                           </div>
                           <div className="mt-1 text-muted-foreground">{signal.guardrail}</div>
                         </div>
@@ -549,12 +571,15 @@ export default function AutomationPanel() {
               <T k="reportCenter.decisionShortcuts" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Business questions that route owners, freelancers, and accountants to the right
-              reports, comparisons, and automation starter. {personaScopeDescription}
+              {formatMessage(t["reportCenter.aoShortcutsIntro"], {
+                scope: personaScopeDescription,
+              })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportDecisionShortcuts.length} questions
+            {formatMessage(t["reportCenter.nQuestions"], {
+              n: visibleReportDecisionShortcuts.length,
+            })}
           </Badge>
         </div>
 
@@ -582,7 +607,9 @@ export default function AutomationPanel() {
                       </div>
                     </div>
                     <Badge variant="outline" className="capitalize">
-                      {shortcut.persona}
+                      {t[
+                        `reportCenter.persona${shortcut.persona.charAt(0).toUpperCase()}${shortcut.persona.slice(1)}`
+                      ] ?? shortcut.persona}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -622,13 +649,17 @@ export default function AutomationPanel() {
                   <div className="space-y-2 text-xs text-muted-foreground">
                     {shortcut.comparisonPreset ? (
                       <div>
-                        <span className="font-medium text-foreground">Comparison:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelComparison"]}
+                        </span>{" "}
                         {shortcut.comparisonPreset.title}
                       </div>
                     ) : null}
                     {shortcut.automationStarter ? (
                       <div>
-                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelAutomation"]}
+                        </span>{" "}
                         {shortcut.automationStarter.title}
                       </div>
                     ) : null}
@@ -670,12 +701,13 @@ export default function AutomationPanel() {
               <T k="reportCenter.automationStarters" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Persona-specific setup paths for turning report packs, comparisons, and open queues
-              into automated workflows. {personaScopeDescription}
+              {formatMessage(t["reportCenter.aoStartersIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportAutomationStarters.length} starters
+            {formatMessage(t["reportCenter.nStarters"], {
+              n: visibleReportAutomationStarters.length,
+            })}
           </Badge>
         </div>
 
@@ -698,7 +730,11 @@ export default function AutomationPanel() {
                 }
                 dot
               >
-                {latestReportDeliverySchedulerScan?.status ?? "pending"}
+                {latestReportDeliverySchedulerScan?.status
+                  ? (t[
+                      `reportCenter.scanStatus${latestReportDeliverySchedulerScan.status.charAt(0).toUpperCase()}${latestReportDeliverySchedulerScan.status.slice(1)}`
+                    ] ?? latestReportDeliverySchedulerScan.status)
+                  : t["reportCenter.scanPending"]}
               </Badge>
             </div>
             <div className="mt-1 font-medium text-foreground">
@@ -823,8 +859,8 @@ export default function AutomationPanel() {
                       </div>
                       <Badge variant={starter.openWorkItemCount > 0 ? "warning" : "success"} dot>
                         {starter.openWorkItemCount > 0
-                          ? `${starter.openWorkItemCount} open`
-                          : "Ready"}
+                          ? formatMessage(t["reportCenter.nOpen"], { n: starter.openWorkItemCount })
+                          : t["reportCenter.ready"]}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -865,7 +901,9 @@ export default function AutomationPanel() {
                     </div>
 
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">Trigger:</span>{" "}
+                      <span className="font-medium text-foreground">
+                        {t["reportCenter.labelTrigger"]}
+                      </span>{" "}
                       {starter.trigger}
                     </div>
 

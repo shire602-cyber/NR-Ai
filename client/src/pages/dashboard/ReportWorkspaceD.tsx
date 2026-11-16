@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { formatMessage } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { reportSectionHref } from "@/lib/reportCatalog";
 import { ArrowRight } from "lucide-react";
@@ -7,6 +8,7 @@ import { T } from "@/components/layout/T";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
+  const { t } = m;
   const {
     preferredReportWorkspace,
     preferredReportDecisionShortcuts,
@@ -23,8 +25,9 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
               <T k="reportCenter.triggerRules" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Thresholds that turn {preferredReportWorkspace.navLabel} report movement into
-              automated follow-up.
+              {formatMessage(t["dashboard.trThresholds"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "trigger-rules")}>
@@ -60,14 +63,16 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
                   dot
                 >
                   {rule.severity === "critical"
-                    ? "Critical"
+                    ? t["reportCenter.severityCritical"]
                     : rule.severity === "review"
-                      ? "Review"
-                      : "Monitor"}
+                      ? t["reportCenter.severityReview"]
+                      : t["reportCenter.severityMonitor"]}
                 </Badge>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
-                <Badge variant="outline">{rule.reports.length} reports</Badge>
+                <Badge variant="outline">
+                  {formatMessage(t["dashboard.nReports"], { n: rule.reports.length })}
+                </Badge>
                 <Badge variant="outline">{rule.cadence}</Badge>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -98,8 +103,9 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
               <T k="reportCenter.deliverySubscriptions" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Scheduled packs for {preferredReportWorkspace.navLabel} with recipients, channels, and
-              delivery guardrails.
+              {formatMessage(t["dashboard.dsScheduledPacks"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}>
@@ -175,8 +181,9 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
               <T k="pageLabels.businessQuestions" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Start with practical questions for {preferredReportWorkspace.navLabel}, then open the
-              matching report bundle.
+              {formatMessage(t["dashboard.dsQuestions"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "decision-shortcuts")}>
@@ -199,7 +206,9 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
                 {shortcut.answer}
               </p>
               <div className="mt-3 flex flex-wrap gap-1">
-                <Badge variant="outline">{shortcut.reports.length} reports</Badge>
+                <Badge variant="outline">
+                  {formatMessage(t["dashboard.nReports"], { n: shortcut.reports.length })}
+                </Badge>
                 {shortcut.primaryReport ? (
                   <Badge variant="outline">{shortcut.primaryReport.name}</Badge>
                 ) : null}
@@ -241,8 +250,9 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
               <T k="reportCenter.comparisonPresets" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Current-vs-prior review paths for {preferredReportWorkspace.navLabel}, with the report
-              bundle and automation trigger already matched.
+              {formatMessage(t["dashboard.dsComparisonPaths"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "recommendations")}>
@@ -267,8 +277,12 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
                     {preset.question}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <Badge variant="outline">{preset.metricIds.length} metrics</Badge>
-                    <Badge variant="outline">{preset.reports.length} reports</Badge>
+                    <Badge variant="outline">
+                      {formatMessage(t["dashboard.nMetrics"], { n: preset.metricIds.length })}
+                    </Badge>
+                    <Badge variant="outline">
+                      {formatMessage(t["dashboard.nReports"], { n: preset.reports.length })}
+                    </Badge>
                     <Badge variant="outline">{preset.baseline}</Badge>
                   </div>
                 </div>
@@ -280,7 +294,9 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
                 </Link>
               </div>
               <div className="mt-3 rounded-md bg-muted/30 p-2 text-xs leading-relaxed text-muted-foreground">
-                <span className="font-semibold text-foreground">Automation:</span>{" "}
+                <span className="font-semibold text-foreground">
+                  {t["reportCenter.labelAutomation"]}
+                </span>{" "}
                 {preset.automationTrigger}
               </div>
             </div>

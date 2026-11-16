@@ -34,14 +34,20 @@ import {
   triggerSeverityMeta,
 } from "../../shared";
 import { useReportsPageContext } from "../../context";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { localizeDeliverySubscriptionTitle } from "@/lib/notification-display";
 
 export function DeliverySubscriptionsSection() {
   const { t } = useTranslation();
   const { t: tr } = useTranslation();
+  const ct = useCatalogText();
   const subscriptionTitle = (title: string) =>
-    localizeDeliverySubscriptionTitle(title, tr as Record<string, string>);
+    ct.cx(localizeDeliverySubscriptionTitle(title, tr as Record<string, string>));
+  const runStatusLabel = (status: string) =>
+    t[`reportCenter.run${status.charAt(0).toUpperCase()}${status.slice(1)}`] ?? status;
+  const subscriptionStatusLabel = (status: string) =>
+    t[`reportCenter.subStatus${status.charAt(0).toUpperCase()}${status.slice(1)}`] ?? status;
   const {
     activeReportWorkspaceTab,
     automationLoading,
@@ -85,8 +91,7 @@ export function DeliverySubscriptionsSection() {
               <T k="reportCenter.deliverySubscriptions" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Scheduled report packs that define cadence, recipients, channel, and guardrails before
-              auto-send. {personaScopeDescription}
+              {formatMessage(t["reportCenter.dsIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -99,7 +104,9 @@ export function DeliverySubscriptionsSection() {
             }
             dot
           >
-            {visibleReportDeliverySubscriptions.length} subscriptions
+            {formatMessage(t["reportCenter.nSubscriptions"], {
+              n: visibleReportDeliverySubscriptions.length,
+            })}
           </Badge>
         </div>
 
@@ -138,8 +145,9 @@ export function DeliverySubscriptionsSection() {
                 <T k="reportCenter.automationRecovery" />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Failed delivery recovery and review queue for the current{" "}
-                {personaFilterLabel.toLowerCase()} reporting view.
+                {formatMessage(t["reportCenter.dsRecoveryIntro"], {
+                  persona: personaFilterLabel.toLowerCase(),
+                })}
               </p>
             </div>
             <Badge variant={reportDeliveryRecoverySummary.nextAction.badgeVariant} dot>
@@ -234,8 +242,9 @@ export function DeliverySubscriptionsSection() {
                 <T k="reportCenter.automationCommandStrip" />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                One-click recovery, guardrail review, delivery queueing, and comparison paths for{" "}
-                {personaFilterLabel.toLowerCase()} workflows.
+                {formatMessage(t["reportCenter.dsCommandIntro"], {
+                  persona: personaFilterLabel.toLowerCase(),
+                })}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -245,7 +254,12 @@ export function DeliverySubscriptionsSection() {
                 data-testid="report-delivery-command-pinned"
               >
                 {pinnedReportDeliveryAutomationCommand
-                  ? `Pinned: ${reportDeliveryAutomationCommandLabels[pinnedReportDeliveryAutomationCommand]}`
+                  ? formatMessage(t["reportCenter.dsPinned"], {
+                      label:
+                        reportDeliveryAutomationCommandLabels[
+                          pinnedReportDeliveryAutomationCommand
+                        ],
+                    })
                   : t["deliverySubscriptionsSection.noPinnedCommand"]}
               </Badge>
               <Badge variant="info" dot>
@@ -272,6 +286,7 @@ export function DeliverySubscriptionsSection() {
                   variant={pinnedReportDeliveryAutomationCommand === "retry" ? "default" : "ghost"}
                   aria-pressed={pinnedReportDeliveryAutomationCommand === "retry"}
                   onClick={() => pinReportDeliveryAutomationCommand("retry")}
+                  aria-label={t["reportCenter.pinCommandAria"]}
                   data-testid="report-delivery-command-pin-retry"
                 >
                   <Pin className="h-3.5 w-3.5" />
@@ -318,6 +333,7 @@ export function DeliverySubscriptionsSection() {
                   variant={pinnedReportDeliveryAutomationCommand === "review" ? "default" : "ghost"}
                   aria-pressed={pinnedReportDeliveryAutomationCommand === "review"}
                   onClick={() => pinReportDeliveryAutomationCommand("review")}
+                  aria-label={t["reportCenter.pinCommandAria"]}
                   data-testid="report-delivery-command-pin-review"
                 >
                   <Pin className="h-3.5 w-3.5" />
@@ -366,6 +382,7 @@ export function DeliverySubscriptionsSection() {
                   variant={pinnedReportDeliveryAutomationCommand === "queue" ? "default" : "ghost"}
                   aria-pressed={pinnedReportDeliveryAutomationCommand === "queue"}
                   onClick={() => pinReportDeliveryAutomationCommand("queue")}
+                  aria-label={t["reportCenter.pinCommandAria"]}
                   data-testid="report-delivery-command-pin-queue"
                 >
                   <Pin className="h-3.5 w-3.5" />
@@ -417,6 +434,7 @@ export function DeliverySubscriptionsSection() {
                   }
                   aria-pressed={pinnedReportDeliveryAutomationCommand === "comparison"}
                   onClick={() => pinReportDeliveryAutomationCommand("comparison")}
+                  aria-label={t["reportCenter.pinCommandAria"]}
                   data-testid="report-delivery-command-pin-comparison"
                 >
                   <Pin className="h-3.5 w-3.5" />
@@ -461,8 +479,9 @@ export function DeliverySubscriptionsSection() {
                 <T k="reportCenter.deliveryRunTimeline" />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Filter queued, sent, and failed report-pack automations within the current{" "}
-                {personaFilterLabel.toLowerCase()} view.
+                {formatMessage(t["reportCenter.dsTimelineIntro"], {
+                  persona: personaFilterLabel.toLowerCase(),
+                })}
               </p>
             </div>
             <div
@@ -502,7 +521,7 @@ export function DeliverySubscriptionsSection() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={deliveryRunStatusVariant(run.status)} dot>
-                        {run.status}
+                        {runStatusLabel(run.status)}
                       </Badge>
                       <span className="font-medium text-foreground">
                         {formatDeliveryRunTimestamp(run.createdAt)}
@@ -514,8 +533,12 @@ export function DeliverySubscriptionsSection() {
                     {subscriptionTitle(run.subscriptionTitle)}
                   </div>
                   <div className="mt-1 text-muted-foreground">
-                    Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
-                    {run.readyReportCount}/{run.reportCount} reports - {run.channel}
+                    {formatMessage(t["reportCenter.dsRunLine"], {
+                      when: formatDeliveryRunTimestamp(run.scheduledFor),
+                      ready: run.readyReportCount,
+                      total: run.reportCount,
+                      channel: run.channel,
+                    })}
                   </div>
                   {run.errorMessage ? (
                     <div className="mt-1 text-destructive">{run.errorMessage}</div>
@@ -549,8 +572,16 @@ export function DeliverySubscriptionsSection() {
               data-testid="report-delivery-run-timeline-empty"
             >
               {reportDeliveryRunStatusFilter === "all"
-                ? `No delivery runs match this ${personaFilterLabel.toLowerCase()} view yet.`
-                : `No ${reportDeliveryRunStatusFilter} delivery runs match this ${personaFilterLabel.toLowerCase()} view yet.`}
+                ? formatMessage(t["reportCenter.dsNoRuns"], {
+                    persona: personaFilterLabel.toLowerCase(),
+                  })
+                : formatMessage(t["reportCenter.dsNoRunsStatus"], {
+                    status:
+                      reportDeliveryRunStatusFilters
+                        .find((filter) => filter.id === reportDeliveryRunStatusFilter)
+                        ?.label.toLowerCase() ?? reportDeliveryRunStatusFilter,
+                    persona: personaFilterLabel.toLowerCase(),
+                  })}
             </div>
           )}
         </div>
@@ -595,7 +626,7 @@ export function DeliverySubscriptionsSection() {
                         </div>
                       </div>
                       <Badge variant={subscription.statusVariant} dot>
-                        {subscription.status}
+                        {subscriptionStatusLabel(subscription.status)}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -642,8 +673,8 @@ export function DeliverySubscriptionsSection() {
                         </div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.enabled
-                            ? subscription.nextRunLabel || "Calculated on queue"
-                            : "Paused"}
+                            ? ct.cx(subscription.nextRunLabel || "Calculated on queue")
+                            : ct.cx("Paused")}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
@@ -651,7 +682,9 @@ export function DeliverySubscriptionsSection() {
                           <T k="reportCenter.settings" />
                         </div>
                         <div className="mt-1 font-medium capitalize text-foreground">
-                          {subscription.settingsSource}
+                          {t[
+                            `reportCenter.settingsSource${subscription.settingsSource.charAt(0).toUpperCase()}${subscription.settingsSource.slice(1)}`
+                          ] ?? subscription.settingsSource}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
@@ -807,15 +840,21 @@ export function DeliverySubscriptionsSection() {
                     ) : (
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         <div>
-                          <span className="font-medium text-foreground">Format:</span>{" "}
+                          <span className="font-medium text-foreground">
+                            {t["reportCenter.labelFormat"]}
+                          </span>{" "}
                           {subscription.format}
                         </div>
                         <div className="mt-1">
-                          <span className="font-medium text-foreground">Recipients:</span>{" "}
+                          <span className="font-medium text-foreground">
+                            {t["reportCenter.labelRecipients"]}
+                          </span>{" "}
                           {subscription.recipients}
                         </div>
                         <div className="mt-1">
-                          <span className="font-medium text-foreground">Guardrail:</span>{" "}
+                          <span className="font-medium text-foreground">
+                            {t["reportCenter.labelGuardrail"]}
+                          </span>{" "}
                           {subscription.deliveryGuardrail}
                         </div>
                       </div>
@@ -836,9 +875,9 @@ export function DeliverySubscriptionsSection() {
                         </div>
                         <Badge
                           variant={
-                            subscription.preview.readinessLabel === "Ready for queue"
+                            subscription.preview.readinessLabel === ct.cx("Ready for queue")
                               ? "success"
-                              : subscription.preview.readinessLabel === "Paused"
+                              : subscription.preview.readinessLabel === ct.cx("Paused")
                                 ? "neutral"
                                 : "warning"
                           }
@@ -877,11 +916,15 @@ export function DeliverySubscriptionsSection() {
                             className="flex items-start justify-between gap-2 rounded-md bg-secondary/40 p-2"
                           >
                             <div>
-                              <div className="font-medium text-foreground">{check.label}</div>
-                              <div className="mt-0.5 text-muted-foreground">{check.detail}</div>
+                              <div className="font-medium text-foreground">
+                                {ct.cx(check.label)}
+                              </div>
+                              <div className="mt-0.5 text-muted-foreground">
+                                {ct.cx(check.detail)}
+                              </div>
                             </div>
                             <Badge variant={deliveryPreviewCheckVariant(check.status)}>
-                              {check.status}
+                              {subscriptionStatusLabel(check.status)}
                             </Badge>
                           </div>
                         ))}
@@ -897,13 +940,15 @@ export function DeliverySubscriptionsSection() {
                               className="flex items-start justify-between gap-2 rounded-md bg-muted/30 p-2"
                             >
                               <div>
-                                <div className="font-medium text-foreground">{row.label}</div>
+                                <div className="font-medium text-foreground">
+                                  {ct.cx(row.label)}
+                                </div>
                                 <div className="mt-0.5 text-muted-foreground">
-                                  {row.value} - {row.detail}
+                                  {ct.cx(row.value)} - {ct.cx(row.detail)}
                                 </div>
                               </div>
                               <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                                <Link href={row.href}>Open</Link>
+                                <Link href={row.href}>{t["pages.open"]}</Link>
                               </Button>
                             </div>
                           ))}
@@ -939,20 +984,24 @@ export function DeliverySubscriptionsSection() {
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-1">
                                   <Badge variant={deliveryRunStatusVariant(run.status)} dot>
-                                    {run.status}
+                                    {runStatusLabel(run.status)}
                                   </Badge>
                                   <span className="font-medium text-foreground">
                                     {formatDeliveryRunTimestamp(run.createdAt)}
                                   </span>
                                 </div>
                                 <div className="mt-1 text-muted-foreground">
-                                  Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
-                                  {run.readyReportCount}/{run.reportCount} reports - {run.channel}
+                                  {formatMessage(t["reportCenter.dsRunLine"], {
+                                    when: formatDeliveryRunTimestamp(run.scheduledFor),
+                                    ready: run.readyReportCount,
+                                    total: run.reportCount,
+                                    channel: run.channel,
+                                  })}
                                 </div>
                                 {run.status === "failed" || run.status === "blocked" ? (
                                   <div className="mt-1 text-destructive">
                                     {run.errorMessage ??
-                                      "Retry after fixing delivery settings or guardrails."}
+                                      ct.cx("Retry after fixing delivery settings or guardrails.")}
                                   </div>
                                 ) : null}
                                 <DeliveryRunFiles
@@ -976,7 +1025,7 @@ export function DeliverySubscriptionsSection() {
                                         : "warning"
                                   }
                                 >
-                                  {run.readinessStatus}
+                                  {subscriptionStatusLabel(run.readinessStatus)}
                                 </Badge>
                                 {run.status === "failed" || run.status === "blocked" ? (
                                   <Button

@@ -1,6 +1,6 @@
 // Reports > comparisons workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,10 +18,12 @@ import {
 } from "@/components/ui/table";
 import { comparisonBadgeVariant, formatComparisonPercent, formatComparisonValue } from "../shared";
 import { reportComparisonMetricBasis } from "@/lib/reportCatalog";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { useReportsPageContext } from "../context";
 
 export default function ComparisonsPanel() {
   const { t } = useTranslation();
+  const ct = useCatalogText();
   const {
     comparisonCurrentLabel,
     comparisonLoading,
@@ -48,8 +50,11 @@ export default function ComparisonsPanel() {
               <T k="reportCenter.periodComparison" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              {comparisonCurrentLabel} compared with {comparisonPreviousLabel}.{" "}
-              {personaScopeDescription}
+              {formatMessage(t["reportCenter.cpCompared"], {
+                current: ct.cx(comparisonCurrentLabel),
+                previous: ct.cx(comparisonPreviousLabel),
+                scope: personaScopeDescription,
+              })}
             </p>
           </div>
           <Badge
@@ -81,7 +86,9 @@ export default function ComparisonsPanel() {
                       <CardDescription>{preset.baseline}</CardDescription>
                     </div>
                     <Badge variant={preset.warningCount > 0 ? "warning" : "success"} dot>
-                      {preset.warningCount > 0 ? `${preset.warningCount} review` : "Clear"}
+                      {preset.warningCount > 0
+                        ? formatMessage(t["reportCenter.nReview"], { n: preset.warningCount })
+                        : t["reportCenter.clear"]}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -153,7 +160,7 @@ export default function ComparisonsPanel() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">
-                        {row.currentLabel ?? "Current"}
+                        {row.currentLabel ?? t["reportCenter.current"]}
                       </div>
                       <div className="tabular-nums text-lg font-semibold">
                         {formatComparisonValue(row, row.current, locale)}
@@ -161,7 +168,7 @@ export default function ComparisonsPanel() {
                     </div>
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">
-                        {row.previousLabel ?? "Previous"}
+                        {row.previousLabel ?? t["reportCenter.previous"]}
                       </div>
                       <div className="tabular-nums text-lg font-semibold">
                         {formatComparisonValue(row, row.previous, locale)}
@@ -183,7 +190,7 @@ export default function ComparisonsPanel() {
                       variant="outline"
                       onClick={() => setActiveTab(row.tab)}
                     >
-                      Open
+                      {t["pages.open"]}
                     </Button>
                   </div>
                 </CardContent>
@@ -202,7 +209,11 @@ export default function ComparisonsPanel() {
               <T k="reportCenter.comparisonSnapshots" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              {comparisonCurrentLabel} vs {comparisonPreviousLabel}. {personaScopeDescription}
+              {formatMessage(t["reportCenter.cpVs"], {
+                current: ct.cx(comparisonCurrentLabel),
+                previous: ct.cx(comparisonPreviousLabel),
+                scope: personaScopeDescription,
+              })}
             </p>
           </div>
           <Badge variant={personaFilter === "all" ? "outline" : "info"}>
@@ -249,7 +260,7 @@ export default function ComparisonsPanel() {
                       <TableHead>
                         <T k="pages.roles" />
                       </TableHead>
-                      <TableHead data-numeric>Open</TableHead>
+                      <TableHead data-numeric>{t["pages.open"]}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -284,7 +295,9 @@ export default function ComparisonsPanel() {
                           <div className="flex flex-wrap gap-1">
                             {row.personas.map((persona) => (
                               <Badge key={persona} variant="outline" className="capitalize">
-                                {persona}
+                                {t[
+                                  `reportCenter.persona${persona.charAt(0).toUpperCase()}${persona.slice(1)}`
+                                ] ?? persona}
                               </Badge>
                             ))}
                           </div>
@@ -296,7 +309,7 @@ export default function ComparisonsPanel() {
                             variant="outline"
                             onClick={() => setActiveTab(row.tab)}
                           >
-                            Open
+                            {t["pages.open"]}
                           </Button>
                         </TableCell>
                       </TableRow>

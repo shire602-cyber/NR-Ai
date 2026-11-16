@@ -419,7 +419,7 @@ describe("report discoverability", () => {
       "context?.reportHref ?? reportPersonaHref(report, preferredReportPersona)"
     );
     expect(commandSource).toContain(
-      "description: `${report.category} · ${report.comparison} · ${report.automation}`"
+      'description: `${ct("category", report.category, "label", report.category)} · ${ct("report", report.id, "comparison", report.comparison)} · ${ct("report", report.id, "automation", report.automation)}`'
     );
     expect(commandSource).toContain("report.decisionQuestion");
     expect(commandSource).toContain("commandReportAutomationContextById");
@@ -438,18 +438,18 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("commandReportSuites.find");
     expect(commandSource).toContain("const actionKeywords = [");
     expect(commandSource).toContain("id: `report-action-${report.id}`");
-    expect(commandSource).toContain("label: `Automate ${report.name}`");
+    expect(commandSource).toContain('label: px("shell.cmdAutomateReport", { name: reportName })');
     expect(commandSource).toContain("reportWorkflowContextHref({");
     expect(commandSource).toContain("search: report.name");
     expect(commandSource).toContain("href: context.workflowHref");
     expect(commandSource).toContain("id: `report-schedule-${report.id}`");
-    expect(commandSource).toContain("label: `Schedule ${report.name}`");
+    expect(commandSource).toContain('label: px("shell.cmdScheduleReport", { name: reportName })');
     expect(commandSource).toContain("href: context.delivery.href");
     expect(commandSource).toContain("id: `report-compare-${report.id}`");
-    expect(commandSource).toContain("label: `Compare ${report.name}`");
+    expect(commandSource).toContain('label: px("shell.cmdCompareReport", { name: reportName })');
     expect(commandSource).toContain("href: context.comparison.href");
     expect(commandSource).toContain("id: `report-suite-action-${report.id}`");
-    expect(commandSource).toContain("label: `Open ${report.name} suite`");
+    expect(commandSource).toContain('label: px("shell.cmdOpenSuiteReport", { name: reportName })');
     expect(commandSource).toContain("href: context.suite.href");
     expect(commandSource).toContain("context.starter?.commandKeywords");
     expect(commandSource).toContain("context.delivery?.commandKeywords");
@@ -488,24 +488,22 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("report-delivery/subscriptions/${subscription.id}/queue");
     expect(commandSource).toContain("acknowledgeHandoffGaps ? { acknowledgeHandoffGaps: true }");
     expect(commandSource).toContain("Acknowledge handoff for");
-    expect(commandSource).toContain(
-      "`Send ${subscription.channel} pack to ${subscription.recipients}`"
-    );
-    expect(commandSource).toContain("Select the queue command again");
+    expect(commandSource).toContain('px("shell.cmdSendPack", {');
+    expect(commandSource).toContain("shell.cmdHandoffAcknowledgedBody");
     expect(commandSource).toContain("acknowledge handoff gaps before queueing");
     expect(commandSource).toContain("retryReportDeliveryFromPalette");
     expect(commandSource).toContain("id: `report-retry-delivery-${run.id}`");
     expect(commandSource).toContain("/report-delivery/runs/${runId}/retry");
     expect(commandSource).toContain(
-      'description: run.errorMessage ?? "Recover failed automated report delivery"'
+      'description: run.errorMessage ?? px("shell.cmdRecoverDelivery")'
     );
     expect(commandSource).toContain(
       'queryKey: ["/api/companies", selectedCompanyId, "report-delivery"]'
     );
     expect(commandSource).toContain("queue now send schedule automated report pack from anywhere");
-    expect(commandSource).toContain("Could not queue report pack");
+    expect(commandSource).toContain("shell.cmdQueueFailed");
     expect(commandSource).toContain("retry failed delivery recover report pack automation");
-    expect(commandSource).toContain("Could not retry report delivery");
+    expect(commandSource).toContain("shell.cmdRetryFailed");
 
     for (const report of liveReportCatalog) {
       expect(reportHref(report)).toBeTruthy();
@@ -544,14 +542,18 @@ describe("report discoverability", () => {
     expect(commandSource).toContain(
       "href: syncedHref(workspace) ?? reportWorkspaceHref(workspace)"
     );
-    expect(commandSource).toContain("description: workspace.focus");
+    expect(commandSource).toContain(
+      'description: ct("workspace", workspace.persona, "focus", workspace.focus)'
+    );
     expect(commandSource).toContain("id: `report-role-setup-${workspace.persona}`");
     expect(commandSource).toContain('reportSectionHref(workspace, "role-setup")');
     expect(sidebarSource).toContain('key: "reports"');
     expect(sidebarSource).toContain('url: "/reports"');
     expect(sidebarSource).toContain("items: []");
     expect(sidebarSource).not.toContain("/reports?tab=");
-    expect(mobileNavSource).toContain("Role setup - ${workspace.title}");
+    expect(mobileNavSource).toContain(
+      'px("shell.mobileRoleSetup", { workspace: wsTitle(workspace) })'
+    );
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("getPreferredReportWorkflowSearch");
     expect(dashboardSource).toContain("clearPreferredReportWorkflowSearch");
@@ -933,53 +935,73 @@ describe("report discoverability", () => {
     expect(mobileNavSource).toContain("report.personas.includes(workspace.persona)");
     expect(mobileNavSource).toContain("reportPersonaHref(report, workspace.persona)");
     expect(mobileNavSource).toContain("key: `report-catalog-${workspace.persona}-${report.id}`");
-    expect(mobileNavSource).toContain("label: `${report.name} - ${workspace.title}`");
     expect(mobileNavSource).toContain(
-      "description: `${report.category} - ${report.comparison} - ${report.automation}`"
+      'label: `${ct("report", report.id, "name", report.name)} - ${wsTitle(workspace)}`'
+    );
+    expect(mobileNavSource).toContain(
+      'description: `${ct("category", report.category, "label", report.category)} - ${ct("report", report.id, "comparison", report.comparison)} - ${ct("report", report.id, "automation", report.automation)}`'
     );
     expect(mobileNavSource).toContain("key={link.key ?? link.href}");
     expect(mobileNavSource).toContain("reportSuiteProfiles.map");
     expect(mobileNavSource).toContain("reportSuiteHref(suite)");
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "report-suites")');
     expect(mobileNavSource).toContain("reportQuickAccessProfiles");
-    expect(mobileNavSource).toContain("Quick access reports - ${workspace.title}");
+    expect(mobileNavSource).toContain(
+      'px("shell.mobileQuickAccess", { workspace: wsTitle(workspace) })'
+    );
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "quick-access")');
     expect(mobileNavSource).toContain("reportSavedViewProfiles.map");
     expect(mobileNavSource).toContain("reportSavedViewHref(view)");
-    expect(mobileNavSource).toContain("Saved report views - ${workspace.title}");
+    expect(mobileNavSource).toContain(
+      'px("shell.mobileSavedViews", { workspace: wsTitle(workspace) })'
+    );
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "saved-views")');
     expect(mobileNavSource).toContain("workspace.automationNavLabel");
-    expect(mobileNavSource).toContain("description: workspace.focus");
-    expect(mobileNavSource).toContain("description: workspace.automationOutcome");
-    expect(mobileNavSource).toContain("description: workspace.packSchedule.automation");
+    expect(mobileNavSource).toContain(
+      'description: ct("workspace", workspace.persona, "focus", workspace.focus)'
+    );
+    expect(mobileNavSource).toContain('"automationOutcome"');
+    expect(mobileNavSource).toContain('"packSchedule.automation"');
     expect(mobileNavSource).toContain("reportAutomationImpactProfiles");
-    expect(mobileNavSource).toContain("Automation impact - ${workspace.title}");
+    expect(mobileNavSource).toContain(
+      'px("shell.mobileAutomationImpact", { workspace: wsTitle(workspace) })'
+    );
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-impact")');
     expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-operations")');
-    expect(mobileNavSource).toContain("Report operations - ${workspace.title}");
+    expect(mobileNavSource).toContain(
+      'px("shell.mobileReportOperations", { workspace: wsTitle(workspace) })'
+    );
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(mobileNavSource).toContain("reportDecisionShortcuts.map");
     expect(mobileNavSource).toContain("reportDecisionShortcutHref(shortcut)");
-    expect(mobileNavSource).toContain("description: shortcut.answer");
+    expect(mobileNavSource).toContain(
+      'description: ct("shortcut", shortcut.id, "answer", shortcut.answer)'
+    );
     expect(mobileNavSource).toContain("reportAutomationTriggerRules.map");
     expect(mobileNavSource).toContain("reportAutomationTriggerRuleHref(rule)");
-    expect(mobileNavSource).toContain("description: `${rule.condition} - ${rule.actionLabel}`");
+    expect(mobileNavSource).toContain(
+      'description: `${ct("rule", rule.id, "condition", rule.condition)} - ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`'
+    );
     expect(mobileNavSource).toContain("reportDeliverySubscriptions.map");
     expect(mobileNavSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(mobileNavSource).toContain(
-      "description: `${subscription.cadence} - ${subscription.channel}`"
+      'description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} - ${ct("delivery", subscription.id, "channel", subscription.channel)}`'
     );
     expect(mobileNavSource).toContain("reportAutomationStarters.map");
     expect(mobileNavSource).toContain("reportAutomationStarterHref(starter)");
-    expect(mobileNavSource).toContain("description: `${starter.audience} - ${starter.outcome}`");
+    expect(mobileNavSource).toContain(
+      'description: `${ct("starter", starter.id, "audience", starter.audience)} - ${ct("starter", starter.id, "outcome", starter.outcome)}`'
+    );
     expect(mobileNavSource).toContain("reportPackTemplates.map");
     expect(mobileNavSource).toContain("reportPackTemplateHref(template)");
-    expect(mobileNavSource).toContain("description: `${template.cadence} - ${template.delivery}`");
+    expect(mobileNavSource).toContain(
+      'description: `${ct("pack", template.id, "cadence", template.cadence)} - ${ct("pack", template.id, "delivery", template.delivery)}`'
+    );
     expect(mobileNavSource).toContain("reportComparisonPresets.map");
     expect(mobileNavSource).toContain("reportComparisonPresetHref(preset)");
     expect(mobileNavSource).toContain(
-      "description: `${preset.baseline} - ${preset.automationTrigger}`"
+      'description: `${ct("preset", preset.id, "baseline", preset.baseline)} - ${ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}`'
     );
     expect(mobileNavSource).toContain("mobile-nav-more-description");
     expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
@@ -1310,14 +1332,18 @@ describe("report discoverability", () => {
     expect(commandSource).toContain(
       "href: syncedHref(shortcut) ?? reportDecisionShortcutHref(shortcut)"
     );
-    expect(commandSource).toContain("description: shortcut.answer");
+    expect(commandSource).toContain(
+      'description: ct("shortcut", shortcut.id, "answer", shortcut.answer)'
+    );
     expect(commandSource).toContain("decision question report shortcut");
     expect(commandSource).toContain("commandTriggerRules.map");
     expect(commandSource).toContain("id: `report-trigger-rule-${rule.id}`");
     expect(commandSource).toContain(
       "href: syncedHref(rule) ?? reportAutomationTriggerRuleHref(rule)"
     );
-    expect(commandSource).toContain("description: `${rule.condition} · ${rule.actionLabel}`");
+    expect(commandSource).toContain(
+      'description: `${ct("rule", rule.id, "condition", rule.condition)} · ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`'
+    );
     expect(commandSource).toContain("trigger rule threshold report automation alert");
     expect(commandSource).toContain("commandDeliverySubscriptions.map");
     expect(commandSource).toContain("id: `report-delivery-subscription-${subscription.id}`");
@@ -1325,7 +1351,7 @@ describe("report discoverability", () => {
       "href: syncedHref(subscription) ?? reportDeliverySubscriptionHref(subscription)"
     );
     expect(commandSource).toContain(
-      "description: `${subscription.cadence} · ${subscription.channel} · ${subscription.recipients}`"
+      'description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} · ${ct("delivery", subscription.id, "channel", subscription.channel)} · ${ct("delivery", subscription.id, "recipients", subscription.recipients)}`'
     );
     expect(commandSource).toContain("delivery subscription scheduled send report pack recipients");
     expect(commandSource).toContain("commandAutomationStarters.map");
@@ -1333,7 +1359,9 @@ describe("report discoverability", () => {
     expect(commandSource).toContain(
       "href: syncedHref(starter) ?? reportAutomationStarterHref(starter)"
     );
-    expect(commandSource).toContain("description: `${starter.audience} · ${starter.outcome}`");
+    expect(commandSource).toContain(
+      'description: `${ct("starter", starter.id, "audience", starter.audience)} · ${ct("starter", starter.id, "outcome", starter.outcome)}`'
+    );
     expect(commandSource).toContain("automation starter autopilot report pack");
     expect(commandSource).toContain("commandPackTemplates.map");
     expect(commandSource).toContain("id: `report-pack-template-${template.id}`");
@@ -1341,7 +1369,7 @@ describe("report discoverability", () => {
       "href: syncedHref(template) ?? reportPackTemplateHref(template)"
     );
     expect(commandSource).toContain(
-      "description: `${template.audience} · ${template.cadence} · ${template.delivery}`"
+      'description: `${ct("pack", template.id, "audience", template.audience)} · ${ct("pack", template.id, "cadence", template.cadence)} · ${ct("pack", template.id, "delivery", template.delivery)}`'
     );
     expect(commandSource).toContain("ready made report pack template");
     expect(commandSource).toContain("commandComparisonPresets.map");
@@ -1349,7 +1377,9 @@ describe("report discoverability", () => {
     expect(commandSource).toContain(
       "href: syncedHref(preset) ?? reportComparisonPresetHref(preset)"
     );
-    expect(commandSource).toContain("description: `${preset.question} · ${preset.baseline}`");
+    expect(commandSource).toContain(
+      'description: `${ct("preset", preset.id, "question", preset.question)} · ${ct("preset", preset.id, "baseline", preset.baseline)}`'
+    );
     expect(commandSource).toContain("comparison preset report pack");
     expect(commandSource).toContain("commandReportSuites.map");
     expect(commandSource).toContain("commandReportSuites.flatMap");
@@ -2349,7 +2379,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
     expect(commandSource).toContain("commandReportWorkspaces.flatMap");
     expect(commandSource).toContain("id: `report-automation-${playbook.id}`");
-    expect(commandSource).toContain("label: `${playbook.title} - ${workspace.title}`");
+    expect(commandSource).toContain(
+      'label: `${ct("playbook", playbook.id, "title", playbook.title)} - ${ct("workspace", workspace.persona, "title", workspace.title)}`'
+    );
     expect(commandSource).toContain(
       "href: playbook.href ?? reportAutomationPlaybookHref(playbook, workspace.persona)"
     );

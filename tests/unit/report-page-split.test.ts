@@ -98,7 +98,6 @@ describe("Reports module size (R20-09)", () => {
     const returned = page.slice(page.lastIndexOf("return {"));
     for (const key of [
       "comparisonRanges",
-      "visibleComparisonRows",
       "queueReportDeliverySubscriptionWithHandoffGuard",
       "handleExportWorkspacePack",
       "serverGroupConsolidation",
@@ -106,6 +105,10 @@ describe("Reports module size (R20-09)", () => {
     ]) {
       expect(returned).toContain(`${key},`);
     }
+    // F14: catalog-derived display models (visibleComparisonRows, visible*Suites, ...) are
+    // translated on the render side and spread over the composed result.
+    expect(returned).toContain("...localizedCatalogModels,");
+    expect(page).toContain("visibleComparisonRows: localizedComparisonRows,");
   });
 });
 

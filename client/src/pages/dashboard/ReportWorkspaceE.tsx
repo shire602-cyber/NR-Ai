@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { formatMessage } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./workspaceHelpers";
 
 export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
+  const { t } = m;
   const {
     locale,
     setReportWorkflowPreferenceRevision,
@@ -45,7 +47,9 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
                 {preferredReportWorkspace.focus}
               </p>
               <div className="mt-3 rounded-md border border-border/70 p-3 text-xs leading-relaxed text-muted-foreground">
-                <span className="font-semibold text-foreground">Automation outcome:</span>{" "}
+                <span className="font-semibold text-foreground">
+                  {t["dashboard.aoutcomeLabel"]}
+                </span>{" "}
                 {preferredReportWorkspace.automationOutcome}
               </div>
               <div
@@ -59,12 +63,16 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <Badge variant="info" data-testid="dashboard-report-role-context">
-                        Role: {preferredReportWorkspace.navLabel}
+                        {formatMessage(t["dashboard.wsRole"], {
+                          name: preferredReportWorkspace.navLabel,
+                        })}
                       </Badge>
                       {preferredReportWorkflowSearch ? (
                         <Badge variant="outline" data-testid="dashboard-report-search-context">
                           <span className="max-w-[12rem] truncate">
-                            Search: {preferredReportWorkflowSearch}
+                            {formatMessage(t["dashboard.wsSearch"], {
+                              value: preferredReportWorkflowSearch,
+                            })}
                           </span>
                         </Badge>
                       ) : (
@@ -74,7 +82,9 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
                       )}
                       {preferredReportWorkflowGapLabel ? (
                         <Badge variant="outline" data-testid="dashboard-report-gap-context">
-                          Gap: {preferredReportWorkflowGapLabel}
+                          {formatMessage(t["dashboard.wsGap"], {
+                            value: preferredReportWorkflowGapLabel,
+                          })}
                         </Badge>
                       ) : (
                         <Badge variant="outline">
@@ -112,7 +122,9 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
               <Badge variant="info" dot>
-                {preferredWorkspaceReports.length} ready reports
+                {formatMessage(t["dashboard.nReadyReports"], {
+                  n: preferredWorkspaceReports.length,
+                })}
               </Badge>
             </div>
           </div>
@@ -170,7 +182,11 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
                       {formatCurrency(row.current, "AED", locale)}
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2 text-caption text-muted-foreground">
-                      <span>Prior {formatCurrency(row.previous, "AED", locale)}</span>
+                      <span>
+                        {formatMessage(t["dashboard.priorAmount"], {
+                          amount: formatCurrency(row.previous, "AED", locale),
+                        })}
+                      </span>
                       <span className="inline-flex items-center gap-1 text-accent">
                         <T k="firm.statusOpen" />
                         <ArrowUpRight className="w-3 h-3" />
@@ -221,11 +237,11 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
               {preferredReportPackReadiness.readinessPercent}%
             </div>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-              {preferredReportPackReadiness.readyReports} of{" "}
-              {preferredReportPackReadiness.totalReports} workspace reports are ready/API backed.{" "}
-              {preferredReportPackReadiness.plannedReports} planned report
-              {preferredReportPackReadiness.plannedReports === 1 ? "" : "s"} need review before
-              fully automated sending.
+              {formatMessage(t["dashboard.packReadinessText"], {
+                ready: preferredReportPackReadiness.readyReports,
+                total: preferredReportPackReadiness.totalReports,
+                planned: preferredReportPackReadiness.plannedReports,
+              })}
             </p>
           </div>
 
@@ -251,8 +267,10 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
                 <T k="reportCenter.automations" />
               </div>
               <div className="mt-1 text-xs leading-relaxed text-foreground">
-                {preferredReportPackReadiness.automationLanes} lanes ·{" "}
-                {preferredReportWorkspace.packSchedule.automation}
+                {formatMessage(t["dashboard.nLanes"], {
+                  n: preferredReportPackReadiness.automationLanes,
+                })}{" "}
+                · {preferredReportWorkspace.packSchedule.automation}
               </div>
             </div>
           </div>

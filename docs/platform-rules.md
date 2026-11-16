@@ -22,6 +22,14 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   Report catalog labels stay English in `reportCatalog.ts`; Arabic lives in the keyed overlay
   `client/src/locales/ar-catalog/reportCatalog.json` (`useCatalogText()` in
   `client/src/lib/reportCatalogText.ts`, coverage in `tests/unit/report-catalog-arabic.test.ts`).
+  Every user-visible catalog field is listed in `client/src/lib/reportCatalogFields.ts` (key
+  `reportCatalog.<kind>.<id>.<field path>`); comparison metrics are `reportCatalog.metric.<id>.*`;
+  strings the report hooks generate at runtime live in `reportCatalogGenerated.ts` (exact UI text
+  `reportCatalog.ui.*`, templated sentences `reportCatalog.pat.*`). Surfaces translate with
+  `ct(kind, id, field, fallback)`, `ct.cx(english)` or `ct.deep(model)` (render side only: exports
+  and API payloads stay English; raw enum values such as statuses are never translated by value).
+  `node tests/e2e/report-catalog-arabic-probe.mjs` (BASE_URL) checks Reports Advanced tools,
+  onboarding automations, Dashboard, command palette and mobile nav for English lines.
   `npm run e2e:arabic-runtime` (`tests/e2e/arabic-runtime-crawl.mjs`, BASE_URL) counts rendered
   English text nodes on the 20 launch routes in Arabic mode (target 0); the i18n ratchet also scans
   `client/src/lib` + `client/src/hooks` string properties (baseline 0, `i18n-ignore-file:` for non-UI

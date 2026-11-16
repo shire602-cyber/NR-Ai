@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import { ReportWorkspaceTab, personaFilters, reportWorkspaceTabs } from "../shared";
 import { SiGooglesheets } from "react-icons/si";
+import { formatMessage } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
@@ -85,7 +86,7 @@ export default function ReportsHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" disabled={isExporting} data-testid="button-export">
                   <Download className="w-4 h-4 me-2" />
-                  {isExporting ? "Exporting..." : t.export}
+                  {isExporting ? t["reportCenter.exportingEllipsis"] : t.export}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -97,7 +98,7 @@ export default function ReportsHeader() {
                   onClick={handleExportGoogleSheets}
                   data-testid="menu-export-sheets"
                 >
-                  <SiGooglesheets className="w-4 h-4 me-2" />
+                  <SiGooglesheets className="w-4 h-4 me-2" aria-hidden />
                   <T k="reportCenter.exportToGoogleSheets" />
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -257,12 +258,14 @@ export default function ReportsHeader() {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Badge variant="info" data-testid="reports-workflow-context-role">
-                      Role: {personaFilterLabel}
+                      {formatMessage(t["reportCenter.contextRole"], { value: personaFilterLabel })}
                     </Badge>
                     {reportWorkflowContextSearchLabel ? (
                       <Badge variant="outline" data-testid="reports-workflow-context-search">
                         <span className="max-w-[14rem] truncate">
-                          Search: {reportWorkflowContextSearchLabel}
+                          {formatMessage(t["reportCenter.contextSearch"], {
+                            value: reportWorkflowContextSearchLabel,
+                          })}
                         </span>
                       </Badge>
                     ) : (
@@ -273,7 +276,9 @@ export default function ReportsHeader() {
                     {activeReportWorkflowGapFilterLabel ? (
                       <Badge variant="outline" data-testid="reports-workflow-context-gap">
                         <span className="max-w-[14rem] truncate">
-                          Gap: {activeReportWorkflowGapFilterLabel}
+                          {formatMessage(t["reportCenter.contextGap"], {
+                            value: activeReportWorkflowGapFilterLabel,
+                          })}
                         </span>
                       </Badge>
                     ) : (

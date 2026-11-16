@@ -15,6 +15,8 @@ import {
   reportPersonas,
   reportTabs,
 } from "@/lib/reportCatalog";
+import { formatMessage, translateNow, useI18n } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
 import type {
@@ -279,7 +281,7 @@ export function averageAvailablePercent(values: Array<number | null | undefined>
 }
 
 export function formatComparisonPercent(value: number | null): string {
-  if (value === null) return "New";
+  if (value === null) return translateNow("reportCenter.comparisonNew");
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
@@ -289,7 +291,9 @@ export function formatComparisonValue(
   locale: string
 ): string {
   if (row.currency === "%") return `${value.toFixed(1)}%`;
-  if (row.currency === "days") return `${value.toFixed(1)} days`;
+  if (row.currency === "days") {
+    return formatMessage(translateNow("reportCenter.nDaysValue"), { n: value.toFixed(1) });
+  }
   if (row.currency === "count") {
     return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
   }
@@ -332,9 +336,12 @@ export function normalizeDeliverySetting(value: string): string | null {
 }
 
 export function formatDeliveryRunTimestamp(value: string | null | undefined): string {
-  if (!value) return "No runs yet";
+  if (!value) return translateNow("reportCenter.noRunsYet");
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
+  if (useI18n.getState().locale === "ar") {
+    return `${formatDate(date, "ar").replace(/\s*\d{4}$/, "")} ${format(date, "HH:mm")}`;
+  }
   return format(date, "MMM d, HH:mm");
 }
 

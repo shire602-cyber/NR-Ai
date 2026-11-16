@@ -23,8 +23,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, type ThemePreference } from "@/lib/theme";
-import { useState, useCallback } from "react";
-import { useTranslation } from "@/lib/i18n";
+import { useState, useCallback, useMemo } from "react";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText, type CatalogText } from "@/lib/reportCatalogText";
 import {
   readyReportCatalog,
   reportAutomationTriggerRuleHref,
@@ -102,138 +103,166 @@ function mobileReportsForWorkspace(workspace: (typeof reportPersonaWorkspaces)[n
     .slice(0, MOBILE_REPORTS_PER_PERSONA);
 }
 
-const mobileSavedViewLinks = Array.from(
-  reportSavedViewProfiles.map((view) => ({
-    label: view.title,
-    href: reportSavedViewHref(view),
-    description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+function buildReportMoreLinks(
+  ct: CatalogText,
+  px: (key: string, values?: Record<string, string | number>) => string
+): MoreLink[] {
+  const mobileSavedViewLinks = Array.from(
+    reportSavedViewProfiles.map((view) => ({
+      label: ct("savedView", view.id, "title", view.title),
+      href: reportSavedViewHref(view),
+      description: `${ct("savedView", view.id, "dateRangePreset", view.dateRangePreset)} - ${ct("savedView", view.id, "comparisonPeriod", view.comparisonPeriod)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobileReportSuiteLinks = Array.from(
-  reportSuiteProfiles.map((suite) => ({
-    label: suite.title,
-    href: reportSuiteHref(suite),
-    description: `${suite.workflow} - ${suite.primaryAction}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobileReportSuiteLinks = Array.from(
+    reportSuiteProfiles.map((suite) => ({
+      label: ct("suite", suite.id, "title", suite.title),
+      href: reportSuiteHref(suite),
+      description: `${ct("suite", suite.id, "workflow", suite.workflow)} - ${ct("suite", suite.id, "primaryAction", suite.primaryAction)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobileDecisionShortcutLinks = Array.from(
-  reportDecisionShortcuts.map((shortcut) => ({
-    label: shortcut.question,
-    href: reportDecisionShortcutHref(shortcut),
-    description: shortcut.answer,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobileDecisionShortcutLinks = Array.from(
+    reportDecisionShortcuts.map((shortcut) => ({
+      label: ct("shortcut", shortcut.id, "question", shortcut.question),
+      href: reportDecisionShortcutHref(shortcut),
+      description: ct("shortcut", shortcut.id, "answer", shortcut.answer),
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobileAutomationTriggerLinks = Array.from(
-  reportAutomationTriggerRules.map((rule) => ({
-    label: rule.title,
-    href: reportAutomationTriggerRuleHref(rule),
-    description: `${rule.condition} - ${rule.actionLabel}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobileAutomationTriggerLinks = Array.from(
+    reportAutomationTriggerRules.map((rule) => ({
+      label: ct("rule", rule.id, "title", rule.title),
+      href: reportAutomationTriggerRuleHref(rule),
+      description: `${ct("rule", rule.id, "condition", rule.condition)} - ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobileDeliverySubscriptionLinks = Array.from(
-  reportDeliverySubscriptions.map((subscription) => ({
-    label: subscription.title,
-    href: reportDeliverySubscriptionHref(subscription),
-    description: `${subscription.cadence} - ${subscription.channel}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobileDeliverySubscriptionLinks = Array.from(
+    reportDeliverySubscriptions.map((subscription) => ({
+      label: ct("delivery", subscription.id, "title", subscription.title),
+      href: reportDeliverySubscriptionHref(subscription),
+      description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} - ${ct("delivery", subscription.id, "channel", subscription.channel)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobileAutomationStarterLinks = Array.from(
-  reportAutomationStarters.map((starter) => ({
-    label: starter.title,
-    href: reportAutomationStarterHref(starter),
-    description: `${starter.audience} - ${starter.outcome}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobileAutomationStarterLinks = Array.from(
+    reportAutomationStarters.map((starter) => ({
+      label: ct("starter", starter.id, "title", starter.title),
+      href: reportAutomationStarterHref(starter),
+      description: `${ct("starter", starter.id, "audience", starter.audience)} - ${ct("starter", starter.id, "outcome", starter.outcome)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobilePackTemplateLinks = Array.from(
-  reportPackTemplates.map((template) => ({
-    label: template.title,
-    href: reportPackTemplateHref(template),
-    description: `${template.cadence} - ${template.delivery}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobilePackTemplateLinks = Array.from(
+    reportPackTemplates.map((template) => ({
+      label: ct("pack", template.id, "title", template.title),
+      href: reportPackTemplateHref(template),
+      description: `${ct("pack", template.id, "cadence", template.cadence)} - ${ct("pack", template.id, "delivery", template.delivery)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const mobileComparisonPresetLinks = Array.from(
-  reportComparisonPresets.map((preset) => ({
-    label: preset.title,
-    href: reportComparisonPresetHref(preset),
-    description: `${preset.baseline} - ${preset.automationTrigger}`,
-  }))
-).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+  const mobileComparisonPresetLinks = Array.from(
+    reportComparisonPresets.map((preset) => ({
+      label: ct("preset", preset.id, "title", preset.title),
+      href: reportComparisonPresetHref(preset),
+      description: `${ct("preset", preset.id, "baseline", preset.baseline)} - ${ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}`,
+    }))
+  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+  const wsTitle = (workspace: (typeof reportPersonaWorkspaces)[number]) =>
+    ct("workspace", workspace.persona, "title", workspace.title);
+  const wsNav = (workspace: (typeof reportPersonaWorkspaces)[number]) =>
+    ct("workspace", workspace.persona, "navLabel", workspace.navLabel);
+
+  return [
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: wsNav(workspace),
+      href: reportWorkspaceHref(workspace),
+      description: ct("workspace", workspace.persona, "focus", workspace.focus),
+    })),
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: px("shell.mobileRoleSetup", { workspace: wsTitle(workspace) }),
+      href: reportSectionHref(workspace, "role-setup"),
+      description: px("shell.mobileRoleSetupDesc", { name: wsNav(workspace).toLowerCase() }),
+    })),
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: px("shell.mobileReportSuites", { workspace: wsTitle(workspace) }),
+      href: reportSectionHref(workspace, "report-suites"),
+      description: px("shell.mobileReportSuitesDesc", {
+        focus: ct("workspace", workspace.persona, "focus", workspace.focus).toLowerCase(),
+      }),
+    })),
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: px("shell.mobileQuickAccess", { workspace: wsTitle(workspace) }),
+      href: reportSectionHref(workspace, "quick-access"),
+      description: ct.cx(
+        reportQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)
+          ?.outcome ?? px("shell.mobileQuickAccessDesc", { name: wsNav(workspace).toLowerCase() })
+      ),
+    })),
+    ...reportPersonaWorkspaces.flatMap((workspace) =>
+      mobileReportsForWorkspace(workspace).flatMap((report) => {
+        const href = reportPersonaHref(report, workspace.persona);
+        return href
+          ? [
+              {
+                key: `report-catalog-${workspace.persona}-${report.id}`,
+                label: `${ct("report", report.id, "name", report.name)} - ${wsTitle(workspace)}`,
+                href,
+                description: `${ct("category", report.category, "label", report.category)} - ${ct("report", report.id, "comparison", report.comparison)} - ${ct("report", report.id, "automation", report.automation)}`,
+              },
+            ]
+          : [];
+      })
+    ),
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: px("shell.mobileSavedViews", { workspace: wsTitle(workspace) }),
+      href: reportSectionHref(workspace, "saved-views"),
+      description: px("shell.mobileSavedViewsDesc", { name: wsNav(workspace).toLowerCase() }),
+    })),
+    ...mobileSavedViewLinks,
+    ...mobileReportSuiteLinks,
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: px("shell.mobileReportOperations", { workspace: wsTitle(workspace) }),
+      href: reportSectionHref(workspace, "automation-operations"),
+      description: ct(
+        "workspace",
+        workspace.persona,
+        "automationOutcome",
+        workspace.automationOutcome
+      ),
+    })),
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: ct("workspace", workspace.persona, "automationNavLabel", workspace.automationNavLabel),
+      href: reportSectionHref(workspace, "automation-command-center"),
+      description: ct(
+        "workspace",
+        workspace.persona,
+        "packSchedule.automation",
+        workspace.packSchedule.automation
+      ),
+    })),
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      label: px("shell.mobileAutomationImpact", { workspace: wsTitle(workspace) }),
+      href: reportSectionHref(workspace, "automation-impact"),
+      description: ct.cx(
+        reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
+          ?.outcome ??
+          px("shell.mobileAutomationImpactDesc", { name: wsNav(workspace).toLowerCase() })
+      ),
+    })),
+    ...mobileDecisionShortcutLinks,
+    ...mobileAutomationTriggerLinks,
+    ...mobileDeliverySubscriptionLinks,
+    ...mobileAutomationStarterLinks,
+    ...mobilePackTemplateLinks,
+    ...mobileComparisonPresetLinks,
+  ];
+}
 
 const moreLinks: MoreLink[] = [
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: workspace.navLabel,
-    href: reportWorkspaceHref(workspace),
-    description: workspace.focus,
-  })),
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Role setup - ${workspace.title}`,
-    href: reportSectionHref(workspace, "role-setup"),
-    description: `Start ${workspace.navLabel.toLowerCase()} with reports and automations`,
-  })),
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Report suites - ${workspace.title}`,
-    href: reportSectionHref(workspace, "report-suites"),
-    description: `Role-based report suites for ${workspace.focus.toLowerCase()}`,
-  })),
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Quick access reports - ${workspace.title}`,
-    href: reportSectionHref(workspace, "quick-access"),
-    description:
-      reportQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)?.outcome ??
-      `Daily reports for ${workspace.navLabel.toLowerCase()}`,
-  })),
-  ...reportPersonaWorkspaces.flatMap((workspace) =>
-    mobileReportsForWorkspace(workspace).flatMap((report) => {
-      const href = reportPersonaHref(report, workspace.persona);
-      return href
-        ? [
-            {
-              key: `report-catalog-${workspace.persona}-${report.id}`,
-              label: `${report.name} - ${workspace.title}`,
-              href,
-              description: `${report.category} - ${report.comparison} - ${report.automation}`,
-            },
-          ]
-        : [];
-    })
-  ),
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Saved report views - ${workspace.title}`,
-    href: reportSectionHref(workspace, "saved-views"),
-    description: `Saved comparison, basis, and export presets for ${workspace.navLabel.toLowerCase()}`,
-  })),
-  ...mobileSavedViewLinks,
-  ...mobileReportSuiteLinks,
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Report operations - ${workspace.title}`,
-    href: reportSectionHref(workspace, "automation-operations"),
-    description: workspace.automationOutcome,
-  })),
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: workspace.automationNavLabel,
-    href: reportSectionHref(workspace, "automation-command-center"),
-    description: workspace.packSchedule.automation,
-  })),
-  ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Automation impact - ${workspace.title}`,
-    href: reportSectionHref(workspace, "automation-impact"),
-    description:
-      reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
-        ?.outcome ?? `Automation impact for ${workspace.navLabel.toLowerCase()}`,
-  })),
-  ...mobileDecisionShortcutLinks,
-  ...mobileAutomationTriggerLinks,
-  ...mobileDeliverySubscriptionLinks,
-  ...mobileAutomationStarterLinks,
-  ...mobilePackTemplateLinks,
-  ...mobileComparisonPresetLinks,
   {
     label: "Accounts",
     labelKey: "shell.moreAccounts",
@@ -269,7 +298,6 @@ const moreLinks: MoreLink[] = [
 // Translated app destinations lead the sheet; the catalog-driven report
 // shortcuts follow in a collapsible section so the sheet stays scannable.
 const workspaceMoreLinks = moreLinks.filter((link) => link.labelKey);
-const reportMoreLinks = moreLinks.filter((link) => !link.labelKey);
 
 /**
  * Mobile Bottom Navigation Bar
@@ -282,6 +310,14 @@ export function MobileNav() {
   const [location, setLocation] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const { t } = useTranslation();
+  const ct = useCatalogText();
+  const reportMoreLinks = useMemo(
+    () =>
+      buildReportMoreLinks(ct, (key, values = {}) =>
+        formatMessage((t as Record<string, string>)[key] ?? key, values)
+      ),
+    [ct, t]
+  );
   const { preference, setPreference } = useTheme();
   const text = (item: { label: string; labelKey?: string }) =>
     item.labelKey ? t[item.labelKey] || item.label : item.label;

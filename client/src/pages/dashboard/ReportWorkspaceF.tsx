@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { formatMessage } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Link } from "wouter";
@@ -6,6 +7,7 @@ import { T } from "@/components/layout/T";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
+  const { t } = m;
   const {
     preferredReportWorkspace,
     preferredReportPackTemplates,
@@ -23,11 +25,16 @@ export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
               <T k="reportCenter.automationStarters" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Launch setup checklists for the workflows that fit {preferredReportWorkspace.navLabel}
-              .
+              {formatMessage(t["dashboard.wsLaunchChecklists"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
-          <Badge variant="outline">{preferredReportAutomationStarters.length} starters</Badge>
+          <Badge variant="outline">
+            {formatMessage(t["dashboard.nStarters"], {
+              n: preferredReportAutomationStarters.length,
+            })}
+          </Badge>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -48,10 +55,17 @@ export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1">
                     <Badge variant="outline">
-                      {starter.readyReports}/{starter.reports.length} reports
+                      {formatMessage(t["dashboard.readyOfReports"], {
+                        ready: starter.readyReports,
+                        total: starter.reports.length,
+                      })}
                     </Badge>
-                    <Badge variant="outline">{starter.playbooks.length} playbooks</Badge>
-                    <Badge variant="outline">{starter.setupSteps.length} steps</Badge>
+                    <Badge variant="outline">
+                      {formatMessage(t["dashboard.nPlaybooks"], { n: starter.playbooks.length })}
+                    </Badge>
+                    <Badge variant="outline">
+                      {formatMessage(t["dashboard.nSteps"], { n: starter.setupSteps.length })}
+                    </Badge>
                   </div>
                 </div>
                 <Link href={starter.href}>
@@ -84,10 +98,14 @@ export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
               <T k="pageLabels.readyMadeReportPacks" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Start from recurring packs tailored to {preferredReportWorkspace.navLabel}.
+              {formatMessage(t["dashboard.wsPackTemplatesIntro"], {
+                name: preferredReportWorkspace.navLabel,
+              })}
             </p>
           </div>
-          <Badge variant="outline">{preferredReportPackTemplates.length} templates</Badge>
+          <Badge variant="outline">
+            {formatMessage(t["dashboard.nTemplates"], { n: preferredReportPackTemplates.length })}
+          </Badge>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -106,7 +124,10 @@ export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
                   <div className="mt-2 flex flex-wrap gap-1">
                     <Badge variant="outline">{template.cadence}</Badge>
                     <Badge variant="outline">
-                      {template.readyReports}/{template.reports.length} reports
+                      {formatMessage(t["dashboard.readyOfReports"], {
+                        ready: template.readyReports,
+                        total: template.reports.length,
+                      })}
                     </Badge>
                   </div>
                 </div>

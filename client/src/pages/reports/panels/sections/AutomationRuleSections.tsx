@@ -2,7 +2,7 @@
 // Split out of AutomationPanel.tsx (R20-09); state comes from useReportsPage via context.
 import { useTranslation } from "@/lib/i18n";
 import { ArrowRight } from "lucide-react";
-import { translateNow } from "@/lib/i18n";
+import { formatMessage, translateNow } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +11,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { reportWorkspaceHref } from "@/lib/reportCatalog";
 import { triggerSeverityMeta } from "../../shared";
 import { useReportsPageContext } from "../../context";
 
 export function AutomationRuleSections() {
   const { t } = useTranslation();
+  const ct = useCatalogText();
   const {
     automationLoading,
     automationQueueCount,
@@ -46,12 +48,13 @@ export function AutomationRuleSections() {
               <T k="reportCenter.triggerRules" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Report-driven thresholds that route cash, tax, close, and advisory signals into
-              automation. {personaScopeDescription}
+              {formatMessage(t["reportCenter.trIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportAutomationTriggerRules.length} rules
+            {formatMessage(t["reportCenter.nRules"], {
+              n: visibleReportAutomationTriggerRules.length,
+            })}
           </Badge>
         </div>
 
@@ -89,7 +92,9 @@ export function AutomationRuleSections() {
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <p>{rule.condition}</p>
                       <div className="rounded-md border p-3 text-xs">
-                        <span className="font-medium text-foreground">Threshold:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelThreshold"]}
+                        </span>{" "}
                         {rule.threshold}
                       </div>
                     </div>
@@ -125,13 +130,17 @@ export function AutomationRuleSections() {
                     <div className="space-y-2 text-xs text-muted-foreground">
                       {rule.decisionShortcut ? (
                         <div>
-                          <span className="font-medium text-foreground">Question:</span>{" "}
+                          <span className="font-medium text-foreground">
+                            {t["reportCenter.labelQuestion"]}
+                          </span>{" "}
                           {rule.decisionShortcut.question}
                         </div>
                       ) : null}
                       {rule.automationStarter ? (
                         <div>
-                          <span className="font-medium text-foreground">Automation:</span>{" "}
+                          <span className="font-medium text-foreground">
+                            {t["reportCenter.labelAutomation"]}
+                          </span>{" "}
                           {rule.automationStarter.title}
                         </div>
                       ) : null}
@@ -169,11 +178,11 @@ export function AutomationRuleSections() {
               <T k="reportCenter.automationQueues" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Live report signals routed to the next workflow. {personaScopeDescription}
+              {formatMessage(t["reportCenter.aqIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant={automationQueueCount > 0 ? "warning" : "success"} dot>
-            {automationQueueCount} open
+            {formatMessage(t["reportCenter.nOpen"], { n: automationQueueCount })}
           </Badge>
         </div>
 
@@ -198,7 +207,7 @@ export function AutomationRuleSections() {
                         </div>
                       </div>
                       <Badge variant={hasAction ? "warning" : "success"} dot>
-                        {hasAction ? "Review" : "Clear"}
+                        {hasAction ? t["pages.review"] : t["reportCenter.clear"]}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -223,7 +232,9 @@ export function AutomationRuleSections() {
                     <div className="flex flex-wrap gap-1">
                       {item.personas.map((persona) => (
                         <Badge key={persona} variant="outline" className="capitalize">
-                          {persona}
+                          {t[
+                            `reportCenter.persona${persona.charAt(0).toUpperCase()}${persona.slice(1)}`
+                          ] ?? persona}
                         </Badge>
                       ))}
                     </div>
@@ -259,12 +270,11 @@ export function AutomationRuleSections() {
               <T k="reportCenter.automationCoverage" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role coverage across live reports, comparison lenses, workflow links, and pack
-              cadence. {personaScopeDescription}
+              {formatMessage(t["reportCenter.acIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleAutomationCoverage.length} role views
+            {formatMessage(t["reportCenter.nRoleViews"], { n: visibleAutomationCoverage.length })}
           </Badge>
         </div>
 
@@ -341,7 +351,9 @@ export function AutomationRuleSections() {
                           <T k="reportCenter.openWork" />
                         </span>
                         <span className="tabular-nums">
-                          {item.openWorkItemCount} items -{" "}
+                          {formatMessage(t["reportCenter.nItemsAmount"], {
+                            n: item.openWorkItemCount,
+                          })}{" "}
                           <Money amount={item.amountAtRisk} currency={"AED"} />
                         </span>
                       </div>
@@ -362,11 +374,15 @@ export function AutomationRuleSections() {
 
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Pack cadence:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelPackCadence"]}
+                        </span>{" "}
                         {workspace.packSchedule.cadence}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Pack automation:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelPackAutomation"]}
+                        </span>{" "}
                         {workspace.packSchedule.automation}
                       </div>
                     </div>
@@ -380,7 +396,9 @@ export function AutomationRuleSections() {
                       >
                         <T k="reportCenter.openWorkspace" />
                       </Button>
-                      <Badge variant="outline">{item.playbookCount} playbooks</Badge>
+                      <Badge variant="outline">
+                        {formatMessage(t["reportCenter.nPlaybooks"], { n: item.playbookCount })}
+                      </Badge>
                     </div>
                   </CardContent>
                 </Card>
@@ -399,8 +417,7 @@ export function AutomationRuleSections() {
               <T k="reportCenter.automationCommandCenter" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Auto-send readiness across report rules, blocker queues, and pack delivery.{" "}
-              {personaScopeDescription}
+              {formatMessage(t["reportCenter.accIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -413,7 +430,9 @@ export function AutomationRuleSections() {
             }
             dot
           >
-            {reportAutomationCommandCenter.autoSendCoveragePercent}% auto-send coverage
+            {formatMessage(t["reportCenter.autoSendCoverage"], {
+              n: reportAutomationCommandCenter.autoSendCoveragePercent,
+            })}
           </Badge>
         </div>
 
@@ -441,8 +460,10 @@ export function AutomationRuleSections() {
                   }
                   dot
                 >
-                  {reportAutomationCommandCenter.readyRuleCount}/
-                  {reportAutomationCommandCenter.ruleCount} rules ready
+                  {formatMessage(t["reportCenter.nRulesReady"], {
+                    ready: reportAutomationCommandCenter.readyRuleCount,
+                    total: reportAutomationCommandCenter.ruleCount,
+                  })}
                 </Badge>
               </div>
             </CardHeader>
@@ -496,7 +517,7 @@ export function AutomationRuleSections() {
                   },
                 ].map((metric) => (
                   <div key={metric.label} className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">{metric.label}</div>
+                    <div className="text-xs text-muted-foreground">{ct.cx(metric.label)}</div>
                     <div
                       className={`truncate tabular-nums text-lg font-semibold ${
                         metric.className ?? ""
@@ -528,12 +549,18 @@ export function AutomationRuleSections() {
                             </Badge>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {rule.workspace.title} - {rule.openWorkItemCount} open work items -{" "}
+                            {formatMessage(t["reportCenter.ruleOpenWork"], {
+                              workspace: rule.workspace.title,
+                              n: rule.openWorkItemCount,
+                            })}{" "}
                             <Money amount={rule.amountAtRisk} currency={"AED"} />
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {rule.liveReportCount}/{rule.reportCount} reports live with{" "}
-                            {rule.comparisonMetricCount} linked comparisons.
+                            {formatMessage(t["reportCenter.ruleLiveReports"], {
+                              live: rule.liveReportCount,
+                              total: rule.reportCount,
+                              n: rule.comparisonMetricCount,
+                            })}
                           </div>
                         </div>
                         <Button asChild size="sm" variant="outline">
@@ -561,8 +588,10 @@ export function AutomationRuleSections() {
                       <div className="min-w-0">
                         <div className="font-medium">{item.workspace.title}</div>
                         <div className="text-xs text-muted-foreground">
-                          {item.reviewCount} checks need review - health{" "}
-                          {item.automationHealth.score}/100
+                          {formatMessage(t["reportCenter.checksHealth"], {
+                            n: item.reviewCount,
+                            score: item.automationHealth.score,
+                          })}
                         </div>
                       </div>
                       <Badge variant={item.reviewCount > 0 ? "warning" : "success"} dot>
@@ -586,12 +615,11 @@ export function AutomationRuleSections() {
               <T k="reportCenter.reportAutomationRules" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-specific pack rules that connect triggers, reports, recipients, and next
-              workflows. {personaScopeDescription}
+              {formatMessage(t["reportCenter.arrIntro"], { scope: personaScopeDescription })}
             </p>
           </div>
           <Badge variant={reportAutomationRuleReviewCount > 0 ? "warning" : "success"} dot>
-            {reportAutomationRuleReviewCount} need review
+            {formatMessage(t["reportCenter.needReview"], { n: reportAutomationRuleReviewCount })}
           </Badge>
         </div>
 
@@ -661,15 +689,21 @@ export function AutomationRuleSections() {
 
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Trigger:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelTrigger"]}
+                        </span>{" "}
                         {rule.playbook.trigger}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Cadence:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelCadence"]}
+                        </span>{" "}
                         {workspace.packSchedule.cadence}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Recipients:</span>{" "}
+                        <span className="font-medium text-foreground">
+                          {t["reportCenter.labelRecipients"]}
+                        </span>{" "}
                         {workspace.packSchedule.recipients}
                       </div>
                     </div>
@@ -705,7 +739,7 @@ export function AutomationRuleSections() {
                               <div className="text-xs text-muted-foreground">{signal.signal}</div>
                             </div>
                             <Badge variant={signal.count > 0 ? "warning" : "success"} dot>
-                              {signal.count > 0 ? signal.count : "Clear"}
+                              {signal.count > 0 ? signal.count : t["reportCenter.clear"]}
                             </Badge>
                           </div>
                         ))
@@ -740,13 +774,27 @@ export function AutomationRuleSections() {
                                     {step.outcome}
                                   </div>
                                 </div>
-                                <Badge variant="outline">{step.phase}</Badge>
+                                <Badge variant="outline">
+                                  {t[
+                                    `reportCenter.phase${step.phase.charAt(0).toUpperCase()}${step.phase.slice(1)}`
+                                  ] ?? step.phase}
+                                </Badge>
                               </div>
                               <div className="flex flex-wrap gap-1">
-                                <Badge variant="outline">{step.reportIds.length} reports</Badge>
-                                <Badge variant="outline">{step.triggerRuleIds.length} rules</Badge>
                                 <Badge variant="outline">
-                                  {step.deliverySubscriptionIds.length} deliveries
+                                  {formatMessage(t["reportCenter.nReportsShort"], {
+                                    n: step.reportIds.length,
+                                  })}
+                                </Badge>
+                                <Badge variant="outline">
+                                  {formatMessage(t["reportCenter.nRules"], {
+                                    n: step.triggerRuleIds.length,
+                                  })}
+                                </Badge>
+                                <Badge variant="outline">
+                                  {formatMessage(t["reportCenter.nDeliveries"], {
+                                    n: step.deliverySubscriptionIds.length,
+                                  })}
                                 </Badge>
                               </div>
                               <Button asChild size="sm" variant="outline">

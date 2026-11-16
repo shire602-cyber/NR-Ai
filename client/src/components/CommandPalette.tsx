@@ -265,8 +265,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const queryClient = useQueryClient();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { toast } = useToast();
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const ct = useCatalogText();
+  const px = (key: string, values: Record<string, string | number> = {}) =>
+    formatMessage((t as Record<string, string>)[key] ?? key, values);
   const [queueingDeliverySubscriptionId, setQueueingDeliverySubscriptionId] = useState<
     string | null
   >(null);
@@ -496,16 +498,19 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     if (!gap || !workspace) return null;
 
     const detail = failedRun
-      ? (failedRun.errorMessage ?? "A failed delivery run needs recovery before queueing again.")
+      ? (failedRun.errorMessage ?? px("shell.cmdGapFailedRun"))
       : checklistGap
         ? checklistGap.detail
         : reportGapCount > 0
-          ? `${plan?.readyReportCount ?? 0}/${plan?.reportCount ?? 0} reports are ready for this pack.`
-          : (plan?.preview?.readinessLabel ?? "Review delivery setup before queueing.");
+          ? px("shell.cmdGapReportsReady", {
+              ready: plan?.readyReportCount ?? 0,
+              total: plan?.reportCount ?? 0,
+            })
+          : (plan?.preview?.readinessLabel ?? px("shell.cmdGapReviewSetup"));
 
     return {
       gap,
-      label: reportWorkflowGapFilterLabels[gap],
+      label: ct.cx(reportWorkflowGapFilterLabels[gap]),
       detail,
       href: reportWorkflowContextHref({
         persona: subscription.persona,
@@ -523,8 +528,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }) => {
     if (!selectedCompanyId) {
       toast({
-        title: "Select a company first",
-        description: "Choose a company before queuing an automated report pack.",
+        title: px("shell.cmdSelectCompanyFirst"),
+        description: px("shell.cmdSelectCompanyQueue"),
         variant: "destructive",
       });
       return;
@@ -537,8 +542,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         [subscription.id]: true,
       }));
       toast({
-        title: "Handoff gaps acknowledged",
-        description: `${subscription.title} has ${handoff.label.toLowerCase()}: ${handoff.detail} Select the queue command again to send with those gaps acknowledged.`,
+        title: px("shell.cmdHandoffAcknowledged"),
+        description: px("shell.cmdHandoffAcknowledgedBody", {
+          title: ct.cx(subscription.title),
+          label: handoff.label.toLowerCase(),
+          detail: handoff.detail,
+        }),
       });
       return;
     }
@@ -561,15 +570,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       });
 
       toast({
-        title: "Report pack queued",
+        title: px("shell.cmdPackQueued"),
         description: nextRunLabel
-          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
-          : `${subscriptionTitle} queued from the command palette.`,
+          ? px("shell.cmdPackQueuedFor", { title: ct.cx(subscriptionTitle), when: nextRunLabel })
+          : px("shell.cmdPackQueuedPalette", { title: ct.cx(subscriptionTitle) }),
       });
     } catch (error: any) {
       toast({
-        title: "Could not queue report pack",
-        description: error?.message || "Failed to queue the report pack.",
+        title: px("shell.cmdQueueFailed"),
+        description: error?.message || px("shell.cmdQueueFailedBody"),
         variant: "destructive",
       });
     } finally {
@@ -580,8 +589,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const retryReportDeliveryFromPalette = async (runId: string, fallbackTitle: string) => {
     if (!selectedCompanyId) {
       toast({
-        title: "Select a company first",
-        description: "Choose a company before retrying an automated report delivery.",
+        title: px("shell.cmdSelectCompanyFirst"),
+        description: px("shell.cmdSelectCompanyRetry"),
         variant: "destructive",
       });
       return;
@@ -600,13 +609,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       });
 
       toast({
-        title: "Report delivery retry queued",
-        description: `${subscriptionTitle} was requeued from the command palette.`,
+        title: px("shell.cmdRetryQueued"),
+        description: px("shell.cmdRetryQueuedBody", { title: ct.cx(subscriptionTitle) }),
       });
     } catch (error: any) {
       toast({
-        title: "Could not retry report delivery",
-        description: error?.message || "Failed to retry the report delivery.",
+        title: px("shell.cmdRetryFailed"),
+        description: error?.message || px("shell.cmdRetryFailedBody"),
         variant: "destructive",
       });
     } finally {
@@ -658,11 +667,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     ...commandReportWorkspaces.map(
       (workspace): PaletteItem => ({
         id: `report-workspace-${workspace.persona}`,
-        label: workspace.title,
+        label: ct("workspace", workspace.persona, "title", workspace.title),
         group: "Reports",
         icon: reportWorkspaceIcons[workspace.icon],
         href: syncedHref(workspace) ?? reportWorkspaceHref(workspace),
-        description: workspace.focus,
+        description: ct("workspace", workspace.persona, "focus", workspace.focus),
         keywords: workspace.commandKeywords,
       })
     ),
@@ -670,11 +679,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       workspace.automations.map(
         (playbook): PaletteItem => ({
           id: `report-automation-${playbook.id}`,
-          label: `${playbook.title} - ${workspace.title}`,
+          label: `${ct("playbook", playbook.id, "title", playbook.title)} - ${ct("workspace", workspace.persona, "title", workspace.title)}`,
           group: "Reports",
           icon: reportWorkspaceIcons[workspace.icon],
           href: playbook.href ?? reportAutomationPlaybookHref(playbook, workspace.persona),
-          description: `${playbook.trigger} · ${playbook.cta}`,
+          description: `${ct("playbook", playbook.id, "trigger", playbook.trigger)} · ${ct("playbook", playbook.id, "cta", playbook.cta)}`,
           keywords: [
             workspace.commandKeywords,
             playbook.trigger,
@@ -689,11 +698,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === starter.persona);
       return {
         id: `report-automation-starter-${starter.id}`,
-        label: starter.title,
+        label: ct("starter", starter.id, "title", starter.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         href: syncedHref(starter) ?? reportAutomationStarterHref(starter),
-        description: `${starter.audience} · ${starter.outcome}`,
+        description: `${ct("starter", starter.id, "audience", starter.audience)} · ${ct("starter", starter.id, "outcome", starter.outcome)}`,
         keywords: [
           starter.commandKeywords,
           starter.audience,
@@ -708,11 +717,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === shortcut.persona);
       return {
         id: `report-decision-shortcut-${shortcut.id}`,
-        label: shortcut.question,
+        label: ct("shortcut", shortcut.id, "question", shortcut.question),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
         href: syncedHref(shortcut) ?? reportDecisionShortcutHref(shortcut),
-        description: shortcut.answer,
+        description: ct("shortcut", shortcut.id, "answer", shortcut.answer),
         keywords: [
           shortcut.commandKeywords,
           shortcut.answer,
@@ -727,11 +736,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === rule.persona);
       return {
         id: `report-trigger-rule-${rule.id}`,
-        label: rule.title,
+        label: ct("rule", rule.id, "title", rule.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         href: syncedHref(rule) ?? reportAutomationTriggerRuleHref(rule),
-        description: `${rule.condition} · ${rule.actionLabel}`,
+        description: `${ct("rule", rule.id, "condition", rule.condition)} · ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`,
         keywords: [
           rule.commandKeywords,
           rule.condition,
@@ -748,11 +757,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       );
       return {
         id: `report-delivery-subscription-${subscription.id}`,
-        label: subscription.title,
+        label: ct("delivery", subscription.id, "title", subscription.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
         href: syncedHref(subscription) ?? reportDeliverySubscriptionHref(subscription),
-        description: `${subscription.cadence} · ${subscription.channel} · ${subscription.recipients}`,
+        description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} · ${ct("delivery", subscription.id, "channel", subscription.channel)} · ${ct("delivery", subscription.id, "recipients", subscription.recipients)}`,
         keywords: [
           subscription.commandKeywords,
           subscription.audience,
@@ -777,18 +786,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         id: `report-queue-delivery-${subscription.id}`,
         label: `${
           isQueueing
-            ? "Queueing"
+            ? px("shell.cmdQueueing")
             : requiresHandoffAcknowledgement
               ? t["components.paletteAcknowledgeHandoffFor"]
               : t["components.paletteQueue"]
-        } ${subscription.title}`,
+        } ${ct("delivery", subscription.id, "title", subscription.title)}`,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         action: () => queueReportDeliveryFromPalette(subscription),
         description:
           requiresHandoffAcknowledgement && handoff
             ? `${handoff.label}: ${handoff.detail}`
-            : `Send ${subscription.channel} pack to ${subscription.recipients}`,
+            : px("shell.cmdSendPack", {
+                channel: ct("delivery", subscription.id, "channel", subscription.channel),
+                recipients: ct("delivery", subscription.id, "recipients", subscription.recipients),
+              }),
         keywords: [
           subscription.commandKeywords,
           subscription.audience,
@@ -813,15 +825,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = subscription
         ? commandReportWorkspaces.find((item) => item.persona === subscription.persona)
         : null;
-      const fallbackTitle = subscription?.title ?? "Report delivery";
+      const fallbackTitle = subscription
+        ? ct("delivery", subscription.id, "title", subscription.title)
+        : px("shell.cmdReportDeliveryFallback");
       const isRetrying = retryingDeliveryRunId === run.id;
       return {
         id: `report-retry-delivery-${run.id}`,
-        label: `${isRetrying ? "Retrying" : "Retry"} ${fallbackTitle}`,
+        label: `${isRetrying ? px("shell.cmdRetrying") : px("shell.cmdRetry")} ${fallbackTitle}`,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         action: () => retryReportDeliveryFromPalette(run.id, fallbackTitle),
-        description: run.errorMessage ?? "Recover failed automated report delivery",
+        description: run.errorMessage ?? px("shell.cmdRecoverDelivery"),
         keywords: [
           subscription?.commandKeywords,
           subscription?.audience,
@@ -838,11 +852,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === template.persona);
       return {
         id: `report-pack-template-${template.id}`,
-        label: template.title,
+        label: ct("pack", template.id, "title", template.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
         href: syncedHref(template) ?? reportPackTemplateHref(template),
-        description: `${template.audience} · ${template.cadence} · ${template.delivery}`,
+        description: `${ct("pack", template.id, "audience", template.audience)} · ${ct("pack", template.id, "cadence", template.cadence)} · ${ct("pack", template.id, "delivery", template.delivery)}`,
         keywords: [
           template.commandKeywords,
           template.audience,
@@ -857,11 +871,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === preset.persona);
       return {
         id: `report-comparison-preset-${preset.id}`,
-        label: preset.title,
+        label: ct("preset", preset.id, "title", preset.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
         href: syncedHref(preset) ?? reportComparisonPresetHref(preset),
-        description: `${preset.question} · ${preset.baseline}`,
+        description: `${ct("preset", preset.id, "question", preset.question)} · ${ct("preset", preset.id, "baseline", preset.baseline)}`,
         keywords: [
           preset.commandKeywords,
           preset.question,
@@ -875,11 +889,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === suite.persona);
       return {
         id: `report-suite-${suite.id}`,
-        label: suite.title,
+        label: ct("suite", suite.id, "title", suite.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
         href: syncedHref(suite) ?? reportSuiteHref(suite),
-        description: `${suite.workflow} · ${suite.reportIds.length} reports · ${suite.primaryAction}`,
+        description: px("shell.cmdSuiteDesc", {
+          workflow: ct("suite", suite.id, "workflow", suite.workflow),
+          n: suite.reportIds.length,
+          action: ct("suite", suite.id, "primaryAction", suite.primaryAction),
+        }),
         keywords: [
           suite.commandKeywords,
           suite.outcome,
@@ -914,14 +932,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               : requiresHandoffAcknowledgement
                 ? t["components.paletteAcknowledgeHandoffFor"]
                 : t["components.paletteQueueDeliveryFor"]
-          } ${suite.title}`,
+          } ${ct("suite", suite.id, "title", suite.title)}`,
           group: "Reports",
           icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
           action: () => queueReportDeliveryFromPalette({ ...subscription, title: suite.title }),
           description:
             requiresHandoffAcknowledgement && handoff
               ? `${handoff.label}: ${handoff.detail}`
-              : `Send the linked ${subscription.channel} pack for ${suite.workflow}`,
+              : px("shell.cmdSendLinkedPack", {
+                  channel: ct("delivery", subscription.id, "channel", subscription.channel),
+                  workflow: ct("suite", suite.id, "workflow", suite.workflow),
+                }),
           keywords: [
             suite.commandKeywords,
             suite.workflow,
@@ -944,11 +965,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const workspace = commandReportWorkspaces.find((item) => item.persona === view.persona);
       return {
         id: `report-saved-view-${view.id}`,
-        label: view.title,
+        label: ct("savedView", view.id, "title", view.title),
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
         href: syncedHref(view) ?? reportSavedViewHref(view),
-        description: `${view.dateRangePreset} · ${view.comparisonPeriod} · ${view.currency} · ${view.dimension}`,
+        description: `${ct("savedView", view.id, "dateRangePreset", view.dateRangePreset)} · ${ct("savedView", view.id, "comparisonPeriod", view.comparisonPeriod)} · ${view.currency} · ${ct("savedView", view.id, "dimension", view.dimension)}`,
         keywords: [
           view.commandKeywords,
           view.description,
@@ -966,7 +987,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: reportWorkspaceIcons[workspace.icon],
         href: reportSectionHref(workspace, "role-setup"),
-        description: `Start ${workspace.navLabel.toLowerCase()} with reports, comparisons, automations, and scheduled packs.`,
+        description: px("shell.cmdRoleSetupDesc", {
+          name: ct("workspace", workspace.persona, "navLabel", workspace.navLabel).toLowerCase(),
+        }),
         keywords: `${workspace.commandKeywords} role setup onboarding first run solo entrepreneur freelancer accountant reports automation scheduled packs`,
       },
       {
@@ -983,9 +1006,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: reportWorkspaceIcons[workspace.icon],
         href: reportSectionHref(workspace, "quick-access"),
-        description: commandQuickAccessProfiles.find(
-          (profile) => profile.persona === workspace.persona
-        )?.outcome,
+        description: ct.cx(
+          commandQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)
+            ?.outcome ?? ""
+        ),
         keywords: `${workspace.commandKeywords} ${
           commandQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)
             ?.commandKeywords ?? ""
@@ -1013,9 +1037,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: reportWorkspaceIcons[workspace.icon],
         href: reportSectionHref(workspace, "automation-impact"),
-        description: commandAutomationImpactProfiles.find(
-          (profile) => profile.persona === workspace.persona
-        )?.outcome,
+        description: ct(
+          "impact",
+          workspace.persona,
+          "outcome",
+          commandAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
+            ?.outcome ?? ""
+        ),
         keywords: `${workspace.commandKeywords} ${
           commandAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
             ?.commandKeywords ?? ""
@@ -1099,11 +1127,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
       return {
         id: `report-${report.id}`,
-        label: report.name,
+        label: ct("report", report.id, "name", report.name),
         group: "Reports",
         icon: reportCommandIcons[report.commandIcon],
         href: context?.reportHref ?? reportPersonaHref(report, preferredReportPersona),
-        description: `${report.category} · ${report.comparison} · ${report.automation}`,
+        description: `${ct("category", report.category, "label", report.category)} · ${ct("report", report.id, "comparison", report.comparison)} · ${ct("report", report.id, "automation", report.automation)}`,
         keywords: `${report.commandKeywords} ${report.decisionQuestion}`,
       };
     }),
@@ -1114,11 +1142,18 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       }
 
       const contextLabels = [
-        context.starter ? `Autopilot: ${context.starter.title}` : null,
-        context.delivery ? `Delivery: ${context.delivery.title}` : null,
-        context.comparison ? `Compare: ${context.comparison.title}` : null,
-        context.suite ? `Suite: ${context.suite.title}` : null,
+        context.starter
+          ? px("shell.cmdCtxAutopilot", { title: ct.cx(context.starter.title ?? "") })
+          : null,
+        context.delivery
+          ? px("shell.cmdCtxDelivery", { title: ct.cx(context.delivery.title ?? "") })
+          : null,
+        context.comparison
+          ? px("shell.cmdCtxCompare", { title: ct.cx(context.comparison.title ?? "") })
+          : null,
+        context.suite ? px("shell.cmdCtxSuite", { title: ct.cx(context.suite.title ?? "") }) : null,
       ].filter(Boolean);
+      const reportName = ct("report", report.id, "name", report.name);
 
       const actionKeywords = [
         report.commandKeywords,
@@ -1143,7 +1178,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return [
         {
           id: `report-action-${report.id}`,
-          label: `Automate ${report.name}`,
+          label: px("shell.cmdAutomateReport", { name: reportName }),
           group: "Reports",
           icon: reportCommandIcons[report.commandIcon],
           href: context.workflowHref,
@@ -1154,11 +1189,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           ? [
               {
                 id: `report-schedule-${report.id}`,
-                label: `Schedule ${report.name}`,
+                label: px("shell.cmdScheduleReport", { name: reportName }),
                 group: "Reports" as const,
                 icon: reportCommandIcons[report.commandIcon],
                 href: context.delivery.href,
-                description: context.delivery.title,
+                description: ct.cx(context.delivery.title ?? ""),
                 keywords: `${actionKeywords} report delivery schedule subscription send from anywhere command palette`,
               },
             ]
@@ -1167,11 +1202,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           ? [
               {
                 id: `report-compare-${report.id}`,
-                label: `Compare ${report.name}`,
+                label: px("shell.cmdCompareReport", { name: reportName }),
                 group: "Reports" as const,
                 icon: reportCommandIcons[report.commandIcon],
                 href: context.comparison.href,
-                description: context.comparison.title,
+                description: ct.cx(context.comparison.title ?? ""),
                 keywords: `${actionKeywords} report comparison preset current vs prior from anywhere command palette`,
               },
             ]
@@ -1180,11 +1215,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           ? [
               {
                 id: `report-suite-action-${report.id}`,
-                label: `Open ${report.name} suite`,
+                label: px("shell.cmdOpenSuiteReport", { name: reportName }),
                 group: "Reports" as const,
                 icon: reportCommandIcons[report.commandIcon],
                 href: context.suite.href,
-                description: context.suite.title,
+                description: ct.cx(context.suite.title ?? ""),
                 keywords: `${actionKeywords} report suite pack workflow delivery comparison from anywhere command palette`,
               },
             ]
@@ -1318,7 +1353,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return {
         ...item,
         label: workspaceTitleByPersona.get(persona) ?? item.label,
-        description: locale === "en" ? item.description : undefined,
       };
     }
     for (const [prefix, sectionKey] of PALETTE_SECTION_KEYS) {
@@ -1329,7 +1363,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           label: formatMessage(tt[sectionKey], {
             workspace: workspaceTitleByPersona.get(persona) ?? persona,
           }),
-          description: locale === "en" ? item.description : undefined,
         };
       }
     }
@@ -1339,21 +1372,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         return {
           ...item,
           label: ct(kind, id, field, item.label),
-          description: locale === "en" ? item.description : undefined,
         };
       }
     }
     if (item.id.startsWith("report-")) {
       const reportId = item.id.slice("report-".length);
       if (readyReportIds.has(reportId)) {
-        const report = commandReadyReports.find((r) => r.id === reportId);
         return {
           ...item,
           label: ct("report", reportId, "name", item.label),
-          description:
-            locale === "en" || !report
-              ? item.description
-              : ct("category", report.category, "label", report.category),
         };
       }
     }
@@ -1487,7 +1514,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           {formatMessage(echoTemplate, { query: `\u2068${trimmedSearch}\u2069` })}
         </p>
       ) : null}
-      <CommandList>
+      <CommandList label={t["shell.cmdListLabel"]}>
         <CommandEmpty>{t["components.commandNoResults"]}</CommandEmpty>
         {!trimmedSearch ? (
           <>
