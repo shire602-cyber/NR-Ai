@@ -11,8 +11,12 @@
  *     emitter's call stack or transaction. Emit AFTER the DB commit.
  *   - Handler errors (sync throw or rejected promise) are logged and swallowed;
  *     they are never thrown to the emitter and never stop other handlers.
- *   - Delivery is best-effort and in-memory: not durable across restarts.
- *     Anything that must not be lost needs an outbox table (later wave).
+ *   - emitDomainEvent delivery is best-effort and in-memory: not durable across restarts.
+ *   - F8: events that must not be lost are written with emitDomainEventInTx
+ *     (server/platform/event-outbox.ts) inside the document transaction and delivered from the
+ *     durable outbox to the same onDomainEvent handlers, at most once per (event id, handler)
+ *     and with retry/backoff. Durable handlers get `payload.eventId`; name a handler with
+ *     onDomainEvent(type, fn, { name }) so its delivery record survives a restart.
  */
 import { createLogger } from "../config/logger";
 
@@ -50,6 +54,8 @@ export interface DomainEventBase {
   occurredAt: string;
   /** Acting user, when there is one (scheduler jobs have none). */
   actorUserId?: string | null;
+  /** F8: the durable outbox row id (only for events emitted with emitDomainEventInTx). */
+  eventId?: string;
 }
 
 /**
@@ -96,7 +102,9 @@ export type DomainEventInput<T extends DomainEventType> = Omit<
 type Handler<T extends DomainEventType> = (event: DomainEvent<T>) => void | Promise<void>;
 type AnyHandler = (event: DomainEvent) => void | Promise<void>;
 
-const handlers = new Map<DomainEventType | "*", Set<AnyHandler>>();
+/** Handlers per type, each with its delivery key (durable outbox dedup). */
+const handlers = new Map<DomainEventType | "*", Map<AnyHandler, string>>();
+const ordinals = new Map<string, number>();
 const KNOWN = new Set<string>(DOMAIN_EVENT_TYPES);
 let pending = 0;
 const idleWaiters: Array<() => void> = [];
@@ -106,17 +114,88 @@ function settleOne(): void {
   if (pending === 0) for (const resolve of idleWaiters.splice(0)) resolve();
 }
 
+export interface DomainEventHandlerOptions {
+  /**
+   * Stable handler name (F8). The durable outbox records each (event id, handler name) it
+   * delivered, so a retried or duplicate dispatch never runs the handler twice. Unnamed
+   * handlers get a key from their registration order.
+   */
+  name?: string;
+}
+
 /** Subscribe to one event type or "*" (all). Returns an unsubscribe function. */
-export function onDomainEvent<T extends DomainEventType>(type: T, handler: Handler<T>): () => void;
-export function onDomainEvent(type: "*", handler: AnyHandler): () => void;
-export function onDomainEvent(type: DomainEventType | "*", handler: AnyHandler): () => void {
+export function onDomainEvent<T extends DomainEventType>(
+  type: T,
+  handler: Handler<T>,
+  opts?: DomainEventHandlerOptions
+): () => void;
+export function onDomainEvent(
+  type: "*",
+  handler: AnyHandler,
+  opts?: DomainEventHandlerOptions
+): () => void;
+export function onDomainEvent(
+  type: DomainEventType | "*",
+  handler: AnyHandler,
+  opts: DomainEventHandlerOptions = {}
+): () => void {
   if (type !== "*" && !KNOWN.has(type)) throw new Error(`Unknown domain event type "${type}"`);
   let set = handlers.get(type);
-  if (!set) handlers.set(type, (set = new Set()));
-  set.add(handler);
+  if (!set) handlers.set(type, (set = new Map()));
+  let key = opts.name;
+  if (!key) {
+    const n = (ordinals.get(type) ?? 0) + 1;
+    ordinals.set(type, n);
+    key = `anon#${n}`;
+  }
+  set.set(handler, `${type}:${key}`);
   return () => {
     set?.delete(handler);
   };
+}
+
+/** Handlers (with delivery keys) that receive an event of `type`: its own plus "*". */
+export function domainEventHandlersFor(
+  type: DomainEventType
+): Array<{ key: string; handler: AnyHandler }> {
+  const out: Array<{ key: string; handler: AnyHandler }> = [];
+  for (const scope of [type, "*"] as const) {
+    for (const [handler, key] of handlers.get(scope) ?? []) out.push({ key, handler });
+  }
+  return out;
+}
+
+/** Build the frozen event object handlers receive (shared with the durable outbox). */
+export function buildDomainEvent<T extends DomainEventType>(
+  type: T,
+  input: DomainEventInput<T>
+): DomainEvent {
+  if (!KNOWN.has(type)) throw new Error(`Unknown domain event type "${type}"`);
+  if (!input || !input.companyId || !input.entityId) {
+    throw new Error(`Domain event "${type}" requires companyId and entityId`);
+  }
+  const occurredAt =
+    input.occurredAt instanceof Date
+      ? input.occurredAt.toISOString()
+      : (input.occurredAt ?? new Date().toISOString());
+  return {
+    type,
+    payload: Object.freeze({ ...input, occurredAt }),
+  } as unknown as DomainEvent;
+}
+
+/**
+ * Run `work` on a later tick and count it as in flight for drainDomainEvents (the durable
+ * outbox's after-commit dispatch uses it, so tests and shutdown wait for it like an emit).
+ */
+export function trackDomainEventWork(work: () => Promise<unknown>): void {
+  pending += 1;
+  setImmediate(() => {
+    Promise.resolve()
+      .then(work)
+      .catch((err: unknown) => log.error({ err }, "Domain event dispatch failed"))
+      .finally(settleOne);
+  });
 }
 
 /**
@@ -127,20 +206,8 @@ export function emitDomainEvent<T extends DomainEventType>(
   type: T,
   input: DomainEventInput<T>
 ): void {
-  if (!KNOWN.has(type)) throw new Error(`Unknown domain event type "${type}"`);
-  if (!input || !input.companyId || !input.entityId) {
-    throw new Error(`Domain event "${type}" requires companyId and entityId`);
-  }
-  const occurredAt =
-    input.occurredAt instanceof Date
-      ? input.occurredAt.toISOString()
-      : (input.occurredAt ?? new Date().toISOString());
-  const event = {
-    type,
-    payload: Object.freeze({ ...input, occurredAt }),
-  } as unknown as DomainEvent;
-
-  const targets = [...(handlers.get(type) ?? []), ...(handlers.get("*") ?? [])];
+  const event = buildDomainEvent(type, input);
+  const targets = domainEventHandlersFor(type).map((t) => t.handler);
   for (const handler of targets) {
     pending += 1;
     setImmediate(() => {
@@ -161,13 +228,19 @@ export function emitDomainEvent<T extends DomainEventType>(
   }
 }
 
-/** Resolves once every handler scheduled so far has settled. For tests and shutdown. */
-export function drainDomainEvents(): Promise<void> {
-  if (pending === 0) return Promise.resolve();
+/**
+ * Resolves once every handler scheduled so far has settled. For tests and shutdown.
+ * Yields one tick first so after-commit callbacks already queued by withLedgerTx (which
+ * start durable outbox dispatches, F8) are counted.
+ */
+export async function drainDomainEvents(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  if (pending === 0) return;
   return new Promise((resolve) => idleWaiters.push(resolve));
 }
 
 /** Remove all handlers. Tests only. */
 export function resetDomainEventHandlers(): void {
   handlers.clear();
+  ordinals.clear();
 }

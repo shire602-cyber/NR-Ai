@@ -11,7 +11,7 @@
  * and the daily reorder scan (domain event task.due per product at or below its reorder point).
  */
 import { pool } from "../../db";
-import { emitDomainEvent } from "../../platform/domain-events";
+import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { listJobs, registerJob } from "../../platform/job-registry";
 import { has, provide } from "../../platform/service-registry";
 import {
@@ -36,7 +36,11 @@ export async function runReorderScan(): Promise<number> {
   );
   const today = new Date().toISOString().slice(0, 10);
   for (const r of rows) {
-    emitDomainEvent("task.due", { companyId: r.company_id, entityId: r.id, dueDate: today });
+    await emitDomainEventInTx(null, "task.due", {
+      companyId: r.company_id,
+      entityId: r.id,
+      dueDate: today,
+    });
   }
   return rows.length;
 }

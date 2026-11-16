@@ -16,6 +16,7 @@
  * external control.
  */
 import { createHash } from "node:crypto";
+import { pool } from "../db";
 import { sql } from "./security/sql";
 
 export const GENESIS_HASH = "0".repeat(64);
@@ -89,6 +90,37 @@ export async function sealAuditChain(chainKey: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/**
+ * Seal a chain, WAITING (at most `timeoutMs`) for its lock (F8). Use after a committed
+ * autocommit insert and before verification/export: a non-waiting seal loses the race to a
+ * concurrent sealer whose snapshot predates our commit, which leaves the row unsealed until
+ * the minute job. Holding the chain lock and then calling audit_seal_pending (whose try-lock
+ * re-enters the lock this session already holds) seals with a snapshot that includes every
+ * row committed before the lock was granted. Must not be called from a connection that is
+ * inside an open transaction; on lock timeout it returns -1 and the minute job seals later.
+ */
+export async function sealAuditChainWaiting(chainKey: string, timeoutMs = 1500): Promise<number> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT set_config('lock_timeout', $1, true)`, [
+      `${Math.max(1, Math.floor(timeoutMs))}ms`,
+    ]);
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended('audit_logs_chain:' || $1, 0))`,
+      [chainKey]
+    );
+    const { rows } = await client.query(`SELECT audit_seal_pending($1) AS n`, [chainKey]);
+    await client.query("COMMIT");
+    return Number(rows[0]?.n ?? 0);
+  } catch {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return -1;
+  } finally {
+    client.release();
+  }
+}
+
 /** Seal every chain that has pending rows (minute job "audit.sealChains"). */
 export async function sealAllAuditChains(): Promise<{ chains: number; sealed: number }> {
   const { rows } = await sql<{ chain_key: string }>(
@@ -137,7 +169,7 @@ export async function verifyAuditChain(
   opts: { batchSize?: number } = {}
 ): Promise<ChainVerification> {
   const chainKey = chainKeyFor(companyId);
-  await sealAuditChain(chainKey).catch(() => -1);
+  await sealAuditChainWaiting(chainKey, 5000);
   const batch = opts.batchSize ?? 1000;
   let expectedSeq = 1;
   let prev = GENESIS_HASH;
@@ -229,7 +261,7 @@ export async function exportAuditChain(
   range: { from?: Date | null; to?: Date | null; limit?: number } = {}
 ): Promise<AuditExportRow[]> {
   const params: unknown[] = [chainKeyFor(companyId)];
-  await sealAuditChain(chainKeyFor(companyId)).catch(() => -1);
+  await sealAuditChainWaiting(chainKeyFor(companyId), 5000);
   const where: string[] = ["chain_key = $1", "audit_logs.seq IS NOT NULL"];
   if (range.from) {
     params.push(range.from);

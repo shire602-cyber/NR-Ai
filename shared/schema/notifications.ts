@@ -6,6 +6,7 @@ import {
   customType,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -310,3 +311,61 @@ export const emailDeliveryEvents = pgTable(
   })
 );
 export type EmailDeliveryEvent = typeof emailDeliveryEvents.$inferSelect;
+
+// F8 (migration 0115): durable domain-event outbox. Rows are written inside the document
+// transaction by server/platform/event-outbox.ts and delivered by job "events.outboxDispatch".
+export const DOMAIN_EVENT_OUTBOX_STATUSES = [
+  "pending",
+  "dispatching",
+  "dispatched",
+  "dead",
+] as const;
+export type DomainEventOutboxStatus = (typeof DOMAIN_EVENT_OUTBOX_STATUSES)[number];
+
+export const domainEventOutbox = pgTable(
+  "domain_event_outbox",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    eventType: text("event_type").notNull(),
+    companyId: uuid("company_id"),
+    entityId: text("entity_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(8),
+    nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+    lockedUntil: timestamp("locked_until"),
+    lastError: text("last_error"),
+    dispatchedAt: timestamp("dispatched_at"),
+    deadAt: timestamp("dead_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    dueIdx: index("idx_domain_event_outbox_due").on(table.status, table.nextAttemptAt),
+    companyIdx: index("idx_domain_event_outbox_company").on(table.companyId, table.createdAt),
+  })
+);
+export type DomainEventOutboxRow = typeof domainEventOutbox.$inferSelect;
+
+export const domainEventDeliveries = pgTable(
+  "domain_event_deliveries",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => domainEventOutbox.id, { onDelete: "cascade" }),
+    handler: text("handler").notNull(),
+    deliveredAt: timestamp("delivered_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    eventHandlerUnique: uniqueIndex("uq_domain_event_deliveries_event_handler").on(
+      table.eventId,
+      table.handler
+    ),
+  })
+);

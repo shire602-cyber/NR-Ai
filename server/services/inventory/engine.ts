@@ -6,7 +6,7 @@
  */
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
-import { emitDomainEvent } from "../../platform/domain-events";
+import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { postJournal, type LedgerTx, type PostJournalLineInput } from "../../ledger";
 import {
   adjustValue,
@@ -48,7 +48,7 @@ export interface MoveContext {
   serialNumber?: string | null;
   idempotencyKey?: string | null;
   meta?: Record<string, unknown> | null;
-  /** Hooks for after-commit side effects (reorder alerts). */
+  /** Set by callers that want reorder alerts (F8: written durably in the movement tx). */
   afterCommit?: (cb: () => void | Promise<void>) => void;
 }
 
@@ -131,7 +131,8 @@ async function finish(
     ctx.afterCommit
   ) {
     const payload = { companyId: ctx.companyId, entityId: p.id, dueDate: ctx.date };
-    ctx.afterCommit(() => emitDomainEvent("task.due", payload));
+    // F8: durable reorder alert, written in the stock-movement transaction.
+    await emitDomainEventInTx(tx, "task.due", payload);
   }
   return {
     movementId,

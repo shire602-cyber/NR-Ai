@@ -17,7 +17,7 @@
  */
 import type { Request } from "express";
 import { DomainError } from "../../errors";
-import { emitDomainEvent } from "../../platform/domain-events";
+import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { recordAudit } from "../audit.service";
 import { postJournal, withLedgerTx, type PostJournalLineInput } from "../../ledger";
 import { fromFils, toFils } from "../../../shared/money";
@@ -212,7 +212,7 @@ export async function postSettlement(
       "Deductions exceed the settlement amount"
     );
   }
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const emp = await q1<{ status: string }>(
       `SELECT status FROM employees WHERE id = $1 AND company_id = $2 FOR UPDATE`,
       [p.employee.id, companyId],
@@ -311,14 +311,13 @@ export async function postSettlement(
     if (!body.paymentAccountId && p.result.netFils > 0) {
       // Decree-Law 33/2021 Art. 53 reading: dues are paid within 14 days of the end of service.
       const dueDate = isoDay(addDays(utcDate(body.terminationDate), 14));
-      afterCommit(() =>
-        emitDomainEvent("task.due", {
-          companyId,
-          entityId: settlementRow!.id,
-          actorUserId: actorId,
-          dueDate,
-        })
-      );
+      // F8: durable event, written in the settlement transaction.
+      await emitDomainEventInTx(tx, "task.due", {
+        companyId,
+        entityId: settlementRow!.id,
+        actorUserId: actorId,
+        dueDate,
+      });
     }
     return { id: settlementRow!.id, journalEntryId, ...describeSettlement(p) };
   });

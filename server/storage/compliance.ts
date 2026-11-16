@@ -44,6 +44,7 @@ import { scopedGet, scopedUpdate } from "../tenancy";
 import type { AuditLogFilter } from "./types";
 import { auditFilterConditions, auditLogToActivityLog, normalizeEmail } from "./helpers";
 import { EngagementStorage } from "./engagement";
+import { sealAuditChainWaiting } from "../services/audit-chain.service";
 
 export class ComplianceStorage extends EngagementStorage {
   // Audit Logs
@@ -54,9 +55,10 @@ export class ComplianceStorage extends EngagementStorage {
   async createAuditLog(insertLog: InsertAuditLog): Promise<AuditLog> {
     const [log] = await db.insert(auditLogs).values(insertLog).returning();
     // W5-E: a row written while another transaction held the chain lock is stored
-    // unsealed; append it now if the lock is free (never waits, see migration 0109).
+    // unsealed. F8: append it now, waiting briefly for the chain lock; a non-waiting seal
+    // could lose to a sealer whose snapshot predates this commit and leave the row pending.
     if (log && log.seq === null && log.chainKey) {
-      await db.execute(sql`SELECT audit_seal_pending(${log.chainKey})`).catch(() => undefined);
+      await sealAuditChainWaiting(log.chainKey);
     }
     return log;
   }
