@@ -127,14 +127,14 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId, period } = parsedBody<z.infer<typeof generateForecastBody>>(req);
       await assertReportAccess(req, companyId);
       const periodMonths = period === "3months" ? 3 : period === "6months" ? 6 : 12;
-      const { forecasts, insufficientData, insights } = await regenerateStoredForecast(companyId, {
+      const { forecasts, insufficientData, insights, insightMessages } = await regenerateStoredForecast(companyId, {
         months: periodMonths,
       });
       if (insufficientData) {
         throw new DomainError(
           "INSUFFICIENT_DATA",
           400,
-          { insights },
+          { insights, insightMessages },
           "Add invoices, vendor bills or scheduled cash items before generating a cash-flow forecast."
         );
       }

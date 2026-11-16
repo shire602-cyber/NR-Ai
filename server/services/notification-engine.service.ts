@@ -25,6 +25,7 @@ import { onDomainEvent, type DomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
+import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
 
 const log = createLogger("notification-engine");
 
@@ -303,8 +304,10 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "invoice.issued",
-        title: `Invoice ${number} issued`,
-        message: `Invoice ${number} was issued${p.totalFils ? ` for ${fmtAmount(p.totalFils as number)}` : ""}.`,
+        ...notificationCopy("notification.invoiceIssued.title", "notification.invoiceIssued.message", {
+          number,
+          amount: p.totalFils ? fmtAmount(p.totalFils as number) : "",
+        }),
         relatedEntityType: "invoice",
         actionUrl: `/invoices/${p.entityId}`,
       };
@@ -314,8 +317,9 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "invoice.paid",
-        title: `Invoice ${number} paid`,
-        message: `Invoice ${number} is fully paid.`,
+        ...notificationCopy("notification.invoicePaid.title", "notification.invoicePaid.message", {
+          number,
+        }),
         relatedEntityType: "invoice",
         actionUrl: `/invoices/${p.entityId}`,
       };
@@ -325,8 +329,11 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "payment.received",
-        title: `Payment received${number ? ` for ${number}` : ""}`,
-        message: `A payment of ${fmtAmount(p.amountFils as number)} was recorded${number ? ` against invoice ${number}` : ""}.`,
+        ...notificationCopy(
+          "notification.paymentReceived.title",
+          "notification.paymentReceived.message",
+          { number, amount: fmtAmount(p.amountFils as number) }
+        ),
         relatedEntityType: "invoice",
         actionUrl: p.invoiceId ? `/invoices/${p.invoiceId}` : "/invoices",
       };
@@ -338,8 +345,13 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: event.type,
-        title: paid ? `Bill paid ${label}` : `Bill approved ${label}`,
-        message: paid ? `Bill ${label} was paid.` : `Bill ${label} was approved for payment.`,
+        ...(paid
+          ? notificationCopy("notification.billPaid.title", "notification.billPaid.message", {
+              label,
+            })
+          : notificationCopy("notification.billApproved.title", "notification.billApproved.message", {
+              label,
+            })),
         relatedEntityType: "bill",
         actionUrl: "/bill-pay",
       };
@@ -348,8 +360,11 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "payroll.approved",
-        title: "Payroll approved",
-        message: `Payroll for ${p.periodMonth ?? ""}/${p.periodYear ?? ""} was approved.`,
+        ...notificationCopy(
+          "notification.payrollApproved.title",
+          "notification.payrollApproved.message",
+          { month: String(p.periodMonth ?? ""), year: String(p.periodYear ?? "") }
+        ),
         relatedEntityType: "payroll_run",
         actionUrl: "/payroll",
       };
@@ -357,8 +372,11 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "bank.sync_failed",
-        title: "Bank feed sync failed",
-        message: `The bank feed${p.provider ? ` (${p.provider})` : ""} could not sync${p.reason ? `: ${p.reason}` : ""}. Reconnect it under Banking.`,
+        ...notificationCopy(
+          "notification.bankSyncFailed.title",
+          "notification.bankSyncFailed.message",
+          { provider: p.provider as string | undefined, reason: p.reason as string | undefined }
+        ),
         priority: "high",
         relatedEntityType: "bank_connection",
         actionUrl: "/banking",
@@ -369,8 +387,11 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "compliance.deadline_due",
-        title: `Deadline due${p.dueDate ? ` ${p.dueDate}` : ""}`,
-        message: `${p.obligation ?? "A compliance obligation"} is due${p.dueDate ? ` on ${p.dueDate}` : ""}.`,
+        title: renderServerCopy("notification.deadlineDue.title", { dueDate: p.dueDate as string }),
+        message: renderServerCopy(
+          p.obligation ? "notification.deadlineDue.message" : "notification.deadlineDueGeneric.message",
+          { obligation: p.obligation as string | undefined, dueDate: p.dueDate as string }
+        ),
         priority: "high",
         actionUrl: "/compliance",
         eventKey: `${p.entityId}:${p.obligation ?? ""}:${p.dueDate ?? ""}`,
@@ -379,8 +400,9 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "task.due",
-        title: `Task due${p.dueDate ? ` ${p.dueDate}` : ""}`,
-        message: `A task is due${p.dueDate ? ` on ${p.dueDate}` : ""}.`,
+        ...notificationCopy("notification.taskDue.title", "notification.taskDue.message", {
+          dueDate: p.dueDate as string,
+        }),
         actionUrl: "/compliance",
         eventKey: `${p.entityId}:${p.dueDate ?? ""}`,
       };
@@ -467,8 +489,11 @@ export async function scanOverdueInvoices(now: Date = new Date()): Promise<numbe
       companyId: r.company_id,
       type: "invoice.overdue",
       entityId: r.id,
-      title: `Invoice ${r.number} is overdue`,
-      message: `Invoice ${r.number} for ${r.customer_name} was due on ${r.due}.`,
+      ...notificationCopy(
+        "notification.invoiceOverdue.title",
+        "notification.invoiceOverdue.message",
+        { number: r.number, customer: r.customer_name, dueDate: r.due }
+      ),
       priority: "high",
       relatedEntityType: "invoice",
       actionUrl: `/invoices/${r.id}`,
@@ -492,8 +517,10 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
       companyId: r.company_id,
       type: "compliance.deadline_due",
       entityId: r.id,
-      title: `VAT return due ${r.due}`,
-      message: `The VAT return for the period ending ${r.period_end} is due on ${r.due}.`,
+      ...notificationCopy("notification.vatReturnDue.title", "notification.vatReturnDue.message", {
+        dueDate: r.due,
+        periodEnd: r.period_end,
+      }),
       priority: "high",
       relatedEntityType: "vat_return",
       actionUrl: "/vat-filing",

@@ -10,6 +10,7 @@ import type { Request } from "express";
 import { createLogger } from "../../config/logger";
 import { storage } from "../../storage";
 import { clientIp } from "../../middleware/rateLimit";
+import { notificationCopy } from "../../../shared/server-copy";
 import { emitDomainEvent } from "../../platform/domain-events";
 import { hasEmailProvider, sendEmail } from "../email.service";
 
@@ -192,8 +193,10 @@ async function raiseSuspiciousLogin(
       userId: user.id,
       companyId: null,
       type: "system",
-      title: "New sign-in to your account",
-      message: `A sign-in from a new device (${fp.device}) and network (${fp.network}) was recorded. If this was not you, change your password and sign out every session.`,
+      ...notificationCopy("notification.newSignIn.title", "notification.newSignIn.message", {
+        device: fp.device,
+        network: fp.network,
+      }),
       priority: "high",
       actionUrl: "/settings/security",
     } as Parameters<typeof storage.createNotification>[0]);

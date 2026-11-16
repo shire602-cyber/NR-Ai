@@ -104,7 +104,7 @@ export const handlePostAiForecastCashflow = async (req: Request, res: Response) 
     throw new DomainError(
       "INSUFFICIENT_DATA",
       400,
-      { insights: result.insights },
+      { insights: result.insights, insightMessages: result.insightMessages },
       "Add invoices, vendor bills or scheduled cash items before generating a cash-flow forecast."
     );
   }
@@ -112,6 +112,7 @@ export const handlePostAiForecastCashflow = async (req: Request, res: Response) 
     basis: STORED_FORECAST_BASIS,
     forecasts: result.forecasts,
     insights: result.insights,
+    insightMessages: result.insightMessages,
   });
 };
 

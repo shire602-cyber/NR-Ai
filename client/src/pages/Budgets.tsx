@@ -674,6 +674,71 @@ export default function Budgets() {
 
   // ─── Render ─────────────────────────────────────────────
 
+  /** Row actions shared by the table and the phone cards. */
+  const budgetActions = (budget: BudgetPlan) => (
+    <RowActions
+      menu={
+        <>
+          {budget.status !== "draft" && (
+            <DropdownMenuItem
+              onSelect={() => newVersionMutation.mutate(budget.id)}
+              data-testid={`button-new-version-${budget.id}`}
+            >
+              <Plus aria-hidden />
+              {tr(locale, "New version", "نسخة جديدة")}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onSelect={() =>
+              copyBudgetMutation.mutate({
+                id: budget.id,
+                fiscalYear: budget.fiscal_year + 1,
+              })
+            }
+          >
+            <Copy aria-hidden />
+            {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => downloadBudgetExport(budget, "xlsx")}>
+            <FileSpreadsheet aria-hidden />
+            {tr(locale, "Export Excel", "تصدير Excel")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => downloadBudgetExport(budget, "csv")}>
+            <Download aria-hidden />
+            {tr(locale, "Export CSV", "تصدير CSV")}
+          </DropdownMenuItem>
+          {budget.status === "draft" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setBudgetToDelete(budget.id)}
+              >
+                <Trash2 aria-hidden />
+                {tr(locale, "Delete", "حذف")}
+              </DropdownMenuItem>
+            </>
+          )}
+        </>
+      }
+    >
+      {budget.status === "draft" && (
+        <>
+          <RowActionButton
+            icon={CheckCircle}
+            label={tr(locale, "Approve", "اعتماد")}
+            onClick={() => approveBudgetMutation.mutate(budget.id)}
+          />
+          <RowActionButton
+            icon={Edit}
+            label={tr(locale, "Edit", "تعديل")}
+            onClick={() => handleOpenEditBudget(budget)}
+          />
+        </>
+      )}
+    </RowActions>
+  );
+
   return (
     <div className="space-y-6">
       {selectedBudget && (
@@ -749,121 +814,101 @@ export default function Budgets() {
                   <T k="pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte" />
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{tr(locale, "Name", "الاسم")}</TableHead>
-                        <TableHead>{tr(locale, "Year", "السنة")}</TableHead>
-                        <TableHead>
-                          <T k="pages.period" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="pages.status" />
-                        </TableHead>
-                        <TableHead data-numeric>
-                          <T k="pages.totalBudget" />
-                        </TableHead>
-                        <TableHead data-numeric>{t.actions || "Actions"}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {budgetPlans.map((budget) => (
-                        <TableRow
-                          key={budget.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => handleSelectBudget(budget)}
-                        >
-                          <TableCell className="font-medium">{budget.name}</TableCell>
-                          <TableCell>{budget.fiscal_year}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {budget.start_date
-                              ? format(new Date(budget.start_date), "MMM yyyy")
-                              : "-"}
-                            {" - "}
-                            {budget.end_date ? format(new Date(budget.end_date), "MMM yyyy") : "-"}
-                          </TableCell>
-                          <TableCell>{getStatusBadge(budget.status)}</TableCell>
-                          <TableCell data-numeric>
+                <>
+                  {/* Below 768px: stacked row-cards (line 1 name + total, line 2 year/period + status, actions). */}
+                  <ul className="divide-hairline md:hidden" data-testid="mobile-budget-list">
+                    {budgetPlans.map((budget) => (
+                      <li
+                        key={budget.id}
+                        className="flex cursor-pointer items-start gap-2 py-3 first:pt-0 last:pb-0"
+                        onClick={() => handleSelectBudget(budget)}
+                      >
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <p dir="auto" className="min-w-0 truncate text-sm font-medium">
+                              {budget.name}
+                            </p>
                             <Money
                               amount={parseFloat(budget.total_budget || "0")}
                               currency={"AED"}
+                              className="shrink-0 text-sm font-semibold"
                             />
-                          </TableCell>
-                          <TableCell data-numeric>
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <RowActions
-                                menu={
-                                  <>
-                                    {budget.status !== "draft" && (
-                                      <DropdownMenuItem
-                                        onSelect={() => newVersionMutation.mutate(budget.id)}
-                                        data-testid={`button-new-version-${budget.id}`}
-                                      >
-                                        <Plus aria-hidden />
-                                        {tr(locale, "New version", "نسخة جديدة")}
-                                      </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem
-                                      onSelect={() =>
-                                        copyBudgetMutation.mutate({
-                                          id: budget.id,
-                                          fiscalYear: budget.fiscal_year + 1,
-                                        })
-                                      }
-                                    >
-                                      <Copy aria-hidden />
-                                      {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={() => downloadBudgetExport(budget, "xlsx")}
-                                    >
-                                      <FileSpreadsheet aria-hidden />
-                                      {tr(locale, "Export Excel", "تصدير Excel")}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={() => downloadBudgetExport(budget, "csv")}
-                                    >
-                                      <Download aria-hidden />
-                                      {tr(locale, "Export CSV", "تصدير CSV")}
-                                    </DropdownMenuItem>
-                                    {budget.status === "draft" && (
-                                      <>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          className="text-destructive focus:text-destructive"
-                                          onSelect={() => setBudgetToDelete(budget.id)}
-                                        >
-                                          <Trash2 aria-hidden />
-                                          {tr(locale, "Delete", "حذف")}
-                                        </DropdownMenuItem>
-                                      </>
-                                    )}
-                                  </>
-                                }
-                              >
-                                {budget.status === "draft" && (
-                                  <>
-                                    <RowActionButton
-                                      icon={CheckCircle}
-                                      label={tr(locale, "Approve", "اعتماد")}
-                                      onClick={() => approveBudgetMutation.mutate(budget.id)}
-                                    />
-                                    <RowActionButton
-                                      icon={Edit}
-                                      label={tr(locale, "Edit", "تعديل")}
-                                      onClick={() => handleOpenEditBudget(budget)}
-                                    />
-                                  </>
-                                )}
-                              </RowActions>
-                            </div>
-                          </TableCell>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="min-w-0 truncate text-caption text-muted-foreground">
+                              {budget.fiscal_year}
+                              {" · "}
+                              {budget.start_date
+                                ? format(new Date(budget.start_date), "MMM yyyy")
+                                : "-"}
+                              {" - "}
+                              {budget.end_date
+                                ? format(new Date(budget.end_date), "MMM yyyy")
+                                : "-"}
+                            </p>
+                            {getStatusBadge(budget.status)}
+                          </div>
+                        </div>
+                        <div className="-me-2 -mt-1" onClick={(e) => e.stopPropagation()}>
+                          {budgetActions(budget)}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="hidden overflow-x-auto md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr(locale, "Name", "الاسم")}</TableHead>
+                          <TableHead>{tr(locale, "Year", "السنة")}</TableHead>
+                          <TableHead>
+                            <T k="pages.period" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.status" />
+                          </TableHead>
+                          <TableHead data-numeric>
+                            <T k="pages.totalBudget" />
+                          </TableHead>
+                          <TableHead data-numeric>{t.actions || "Actions"}</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {budgetPlans.map((budget) => (
+                          <TableRow
+                            key={budget.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => handleSelectBudget(budget)}
+                          >
+                            <TableCell className="font-medium">{budget.name}</TableCell>
+                            <TableCell>{budget.fiscal_year}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {budget.start_date
+                                ? format(new Date(budget.start_date), "MMM yyyy")
+                                : "-"}
+                              {" - "}
+                              {budget.end_date
+                                ? format(new Date(budget.end_date), "MMM yyyy")
+                                : "-"}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(budget.status)}</TableCell>
+                            <TableCell data-numeric>
+                              <Money
+                                amount={parseFloat(budget.total_budget || "0")}
+                                currency={"AED"}
+                              />
+                            </TableCell>
+                            <TableCell data-numeric>
+                              <div onClick={(e) => e.stopPropagation()}>
+                                {budgetActions(budget)}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

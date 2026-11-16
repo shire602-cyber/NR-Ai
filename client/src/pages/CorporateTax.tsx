@@ -56,6 +56,8 @@ import {
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
+const ctTr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
+
 type CorporateTaxWorkpaperRowType = "revenue" | "expense";
 
 interface CorporateTaxWorkpaperRow {
@@ -538,7 +540,92 @@ export default function CorporateTax() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-md border">
+          {/* Below 768px: each worksheet line is a stacked card (description, amount, note, remove). */}
+          <div className="space-y-3 md:hidden" data-testid="mobile-workpaper-list">
+            {workpaperRows.map((row) => (
+              <div key={row.id} className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={row.label}
+                    onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
+                    className="font-medium"
+                    aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
+                  />
+                  {workpaperRows.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() => removeWorkpaperRow(row.id)}
+                      aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                    >
+                      <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-caption text-muted-foreground">
+                    {row.type === "expense" ? <T k="pages.expense" /> : <T k="pages.revenue" />}
+                  </span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    value={moneyInputValue(row.amount)}
+                    onChange={(e) =>
+                      updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
+                    }
+                    aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                    className="text-end"
+                    placeholder="0.00"
+                  />
+                </div>
+                <Input
+                  value={row.notes ?? ""}
+                  onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
+                  placeholder={ctTr(
+                    locale,
+                    "Evidence or adjustment note",
+                    "ملاحظة الدليل أو التسوية"
+                  )}
+                  aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                />
+              </div>
+            ))}
+            <div className="space-y-1 rounded-md bg-muted/40 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-bold">
+                  <T k="pages.totals" />
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">
+                  <T k="pages.expense" />
+                </span>
+                <Money amount={workpaperTotals.totalExpenses} currency={"AED"} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">
+                  <T k="pages.revenue" />
+                </span>
+                <Money amount={workpaperTotals.totalRevenue} currency={"AED"} />
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-border-strong pt-1 font-semibold">
+                <span>{t["corporateTax.workpaperProfitLoss"]}</span>
+                <span
+                  className={workpaperTotals.profitOrLoss < 0 ? "text-negative" : "text-foreground"}
+                >
+                  {workpaperTotals.profitOrLoss < 0
+                    ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), "AED", locale)})`
+                    : formatCurrency(workpaperTotals.profitOrLoss, "AED", locale)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-md border md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -567,7 +654,7 @@ export default function CorporateTax() {
                         value={row.label}
                         onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
                         className="font-medium"
-                        aria-label={`Workpaper line description: ${row.label}`}
+                        aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
                       />
                     </TableCell>
                     <TableCell>
@@ -581,7 +668,7 @@ export default function CorporateTax() {
                           onChange={(e) =>
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
-                          aria-label={`${row.label} amount`}
+                          aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
                           className="text-end"
                           placeholder="0.00"
                         />
@@ -600,7 +687,7 @@ export default function CorporateTax() {
                           onChange={(e) =>
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
-                          aria-label={`${row.label} amount`}
+                          aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
                           className="text-end"
                           placeholder="0.00"
                         />
@@ -612,8 +699,12 @@ export default function CorporateTax() {
                       <Input
                         value={row.notes ?? ""}
                         onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
-                        placeholder="Evidence or adjustment note"
-                        aria-label={`${row.label} note`}
+                        placeholder={ctTr(
+                          locale,
+                          "Evidence or adjustment note",
+                          "ملاحظة الدليل أو التسوية"
+                        )}
+                        aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
                       />
                     </TableCell>
                     <TableCell data-numeric>
@@ -623,7 +714,7 @@ export default function CorporateTax() {
                           variant="ghost"
                           size="icon"
                           onClick={() => removeWorkpaperRow(row.id)}
-                          aria-label={`Remove ${row.label}`}
+                          aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
                         >
                           <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
                         </Button>

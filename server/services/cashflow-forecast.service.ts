@@ -14,6 +14,7 @@
  */
 import { pool } from "../db";
 import { DomainError } from "../errors";
+import { cashForecastCopy, type CopyDescriptor } from "../../shared/server-copy";
 import {
   accountTotals,
   addDays,
@@ -101,8 +102,11 @@ export interface CashFlowForecastResult {
   projections: WeeklyProjection[];
   items: ForecastItem[];
   insights: string[];
+  /** Same sentences as `insights` as stable message keys + params (client localises). */
+  insightMessages: CopyDescriptor[];
   insufficientData: boolean;
   assumptions: string[];
+  assumptionMessages: CopyDescriptor[];
   summary: {
     receivablesOpen: number;
     receivablesOverdue: number;
@@ -377,13 +381,14 @@ export async function generateCashFlowForecast(
         : 0;
   const overdueRecoveryDays = scenario === "optimistic" ? 3 : scenario === "conservative" ? 30 : 7;
 
-  const assumptions: string[] = [
-    "Opening balance is the ledger balance of cash and bank accounts as of today.",
-    `Open invoices are collected on their due date; overdue invoices are assumed collected ${overdueRecoveryDays} days from today.`,
-    "Open vendor bills are paid on their due date; overdue bills are assumed paid today.",
-    "No historical weekly averages are extrapolated: only documents and scheduled items are projected.",
+  const assumptionCopy = [
+    cashForecastCopy("cashForecast.assumeOpeningBalance"),
+    cashForecastCopy("cashForecast.assumeInvoices", { days: overdueRecoveryDays }),
+    cashForecastCopy("cashForecast.assumeBills"),
+    cashForecastCopy("cashForecast.assumeNoExtrapolation"),
   ];
-  if (delay > 0) assumptions.push(`All receipts are delayed by ${delay} day(s).`);
+  if (delay > 0) assumptionCopy.push(cashForecastCopy("cashForecast.assumeDelay", { days: delay }));
+  const assumptions = assumptionCopy.map((c) => c.text);
 
   const [accts, ar, ap, scheduled, recurring, payroll, taxes] = await Promise.all([
     resolveCashAccounts(companyId, today, opts.accountIds ?? []),
@@ -485,35 +490,46 @@ export async function generateCashFlowForecast(
     });
   }
 
-  const insights: string[] = [];
+  const insightCopy: Array<{ text: string; message: CopyDescriptor }> = [];
   const insufficientData = inHorizon.length === 0;
   const fmt = (n: number) =>
     n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (insufficientData) {
-    insights.push(
-      "Insufficient data: there are no open invoices, bills or scheduled items in the forecast window, so no inflows or outflows are projected. Add invoices, bills or scheduled items to build a forecast."
-    );
+    insightCopy.push(cashForecastCopy("cashForecast.insufficientData"));
   }
   const negative = projections.find((p) => p.projectedBalance < 0);
   if (negative) {
-    insights.push(
-      `Projected negative balance of AED ${fmt(Math.abs(negative.projectedBalance))} in week ${negative.week} (${negative.weekStart}).`
+    insightCopy.push(
+      cashForecastCopy("cashForecast.negativeBalance", {
+        amount: fmt(Math.abs(negative.projectedBalance)),
+        week: negative.week,
+        weekStart: negative.weekStart,
+      })
     );
   } else {
     const low = projections.find((p) => p.projectedBalance < 10000);
     if (low && !insufficientData) {
-      insights.push(`Cash may drop below AED 10,000 in week ${low.week} (${low.weekStart}).`);
+      insightCopy.push(
+        cashForecastCopy("cashForecast.lowCash", { week: low.week, weekStart: low.weekStart })
+      );
     }
   }
   if (receivablesOverdue > 0) {
     const overdueCount = ar.documents.filter((d) => d.dueDate < today && d.open > 0).length;
-    insights.push(
-      `AED ${fmt(aed(receivablesOverdue))} is overdue across ${overdueCount} invoice(s); the forecast assumes it is collected ${overdueRecoveryDays} day(s) from today.`
+    insightCopy.push(
+      cashForecastCopy("cashForecast.overdueReceivables", {
+        amount: fmt(aed(receivablesOverdue)),
+        count: overdueCount,
+        days: overdueRecoveryDays,
+      })
     );
   }
   if (ap.totals.total > 0) {
-    insights.push(`AED ${fmt(ap.totals.total)} of approved vendor bills is open.`);
+    insightCopy.push(
+      cashForecastCopy("cashForecast.openPayables", { amount: fmt(ap.totals.total) })
+    );
   }
+  const insights = insightCopy.map((c) => c.text);
 
   return {
     asOf: today,
@@ -529,8 +545,10 @@ export async function generateCashFlowForecast(
     projections,
     items: inHorizon,
     insights,
+    insightMessages: insightCopy.map((c) => c.message),
     insufficientData,
     assumptions,
+    assumptionMessages: assumptionCopy.map((c) => c.message),
     summary: {
       receivablesOpen: ar.totals.total,
       receivablesOverdue: aed(receivablesOverdue),
@@ -627,6 +645,7 @@ export interface StoredForecastResult {
   forecasts: CashFlowForecast[];
   insufficientData: boolean;
   insights: string[];
+  insightMessages: CopyDescriptor[];
 }
 
 /**
@@ -645,7 +664,12 @@ export async function regenerateStoredForecast(
   });
   await storage.deleteCashFlowForecastsByCompanyId(companyId);
   if (forecast.insufficientData) {
-    return { forecasts: [], insufficientData: true, insights: forecast.insights };
+    return {
+      forecasts: [],
+      insufficientData: true,
+      insights: forecast.insights,
+      insightMessages: forecast.insightMessages,
+    };
   }
   const byMonth = new Map<string, { inflowFils: number; outflowFils: number; balance: number }>();
   for (const p of forecast.projections) {
@@ -672,7 +696,12 @@ export async function regenerateStoredForecast(
       })
     );
   }
-  return { forecasts, insufficientData: false, insights: forecast.insights };
+  return {
+    forecasts,
+    insufficientData: false,
+    insights: forecast.insights,
+    insightMessages: forecast.insightMessages,
+  };
 }
 
 /**

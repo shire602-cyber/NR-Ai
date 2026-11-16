@@ -4,6 +4,7 @@
  *
  *   BASE_URL=http://127.0.0.1:5000 node tests/e2e/a11y-crawl.mjs          # axe + keyboard crawl
  *   BASE_URL=http://127.0.0.1:5000 node tests/e2e/a11y-crawl.mjs --rtl    # Arabic/RTL layout assertions
+ *   ... node tests/e2e/a11y-crawl.mjs --multi-company  # user with two companies (shell switcher)
  *
  * Default mode: registers a fresh synthetic customer, completes express
  * onboarding, then for every customer route runs axe-core (WCAG 2 A/AA) and a
@@ -23,6 +24,9 @@
  *                            (registers a synthetic customer there)
  *   A11Y_EMAIL/A11Y_PASSWORD sign in as an existing user instead of registering
  *   A11Y_ROUTES=/a,/b        override the route list
+ *   A11Y_MULTI_COMPANY=true  same as --multi-company: the crawl user gets a second company, so the
+ *                            shell company switcher (hidden for one-company users) is rendered
+ *                            and audited (axe label-content-name-mismatch regression, D4)
  *   A11Y_VERBOSE=true        include node HTML + fix summaries in failures
  *   CHROMIUM_PATH            existing Chromium binary (else Playwright's own)
  *   AXE_CORE_PATH            path to axe.min.js when neither
@@ -40,6 +44,8 @@ import { LAUNCH_ROUTES } from "./launch-routes.mjs";
 
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "");
 const RTL_MODE = process.argv.includes("--rtl");
+const MULTI_COMPANY =
+  process.argv.includes("--multi-company") || process.env.A11Y_MULTI_COMPANY === "true";
 const ALLOW_REMOTE = process.env.A11Y_ALLOW_REMOTE === "true";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
@@ -58,13 +64,20 @@ if (!isLocal && !ALLOW_REMOTE) {
   process.exit(2);
 }
 
+// WCAG 2.5.3 "label in name" is an experimental axe rule (off by default); the shell company
+// switcher regressed it for multi-company users (D4), so the crawl always turns it on.
+const EXTRA_AXE_RULES = { "label-content-name-mismatch": { enabled: true } };
+
 async function loadAxe() {
   const require = createRequire(import.meta.url);
   try {
     const { AxeBuilder } = await import("@axe-core/playwright");
     return {
       run: async (page) =>
-        new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze(),
+        new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+          .options({ rules: EXTRA_AXE_RULES })
+          .analyze(),
     };
   } catch {
     /* fall through to bare axe-core */
@@ -88,6 +101,7 @@ async function loadAxe() {
         // eslint-disable-next-line no-undef
         axe.run(document, {
           runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+          rules: EXTRA_AXE_RULES,
         })
       );
     },
@@ -108,7 +122,13 @@ async function main() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   const failures = [];
-  const report = { base: BASE, mode: RTL_MODE ? "rtl" : "a11y", routes: {}, tourOpenings: 0 };
+  const report = {
+    base: BASE,
+    mode: RTL_MODE ? "rtl" : "a11y",
+    multiCompany: MULTI_COMPANY,
+    routes: {},
+    tourOpenings: 0,
+  };
 
   // Session hint so the app boots as a signed-in user without anonymous probes.
   await context.addInitScript(
@@ -160,6 +180,36 @@ async function main() {
     await page.waitForTimeout(3500);
   }
 
+  // Multi-company variant: once the first company is onboarded, a second one makes the shell
+  // company switcher render (it is hidden for one-company users).
+  if (MULTI_COMPANY) {
+    const csrf = await (await page.request.get(`${BASE}/api/csrf-token`)).json();
+    const created = await page.request.post(`${BASE}/api/companies`, {
+      data: { name: "A11y Second Trading LLC" },
+      headers: { "X-CSRF-Token": csrf.csrfToken },
+    });
+    if (created.status() >= 300) {
+      throw new Error(
+        `second company failed: ${created.status()} ${(await created.text()).slice(0, 200)}`
+      );
+    }
+    // The new company may become the active one: onboard it too so protected routes render.
+    await page.goto(`${BASE}/dashboard`);
+    await page.waitForTimeout(2200);
+    if (await page.locator('[data-testid="onboarding-express"]').count()) {
+      await page.locator('[data-testid="onboarding-express"]').click();
+      await page.waitForTimeout(3500);
+    }
+    // Eleven unread notifications make the bell badge show "9+" (its accessible name must
+    // contain that visible text; D4).
+    for (let i = 0; i < 11; i += 1) {
+      await page.request.post(`${BASE}/api/notifications`, {
+        data: { type: "system", title: `A11y seed ${i}`, message: "Synthetic notification" },
+        headers: { "X-CSRF-Token": csrf.csrfToken },
+      });
+    }
+  }
+
   let tourSeen = false;
   const countTour = async () => {
     const open = await page
@@ -188,6 +238,17 @@ async function main() {
     await closeTour();
     const entry = { finalPath: cleanPath(page.url()) };
     report.routes[route] = entry;
+    if (MULTI_COMPANY && !RTL_MODE) {
+      const switcher = await page
+        .locator(
+          '[data-testid="button-company-switcher"], [data-testid="button-company-switcher-compact"]'
+        )
+        .count();
+      entry.companySwitcher = switcher;
+      if (switcher === 0 && entry.finalPath !== "/login") {
+        failures.push({ route, rule: "company-switcher-missing-for-multi-company-user" });
+      }
+    }
 
     if (RTL_MODE) {
       const layout = await page.evaluate(() => {
@@ -290,11 +351,14 @@ async function main() {
 
   await browser.close();
   report.failures = failures;
-  const out = path.join(ARTIFACT_DIR, RTL_MODE ? "a11y-rtl-last-run.json" : "a11y-last-run.json");
+  const out = path.join(
+    ARTIFACT_DIR,
+    `${RTL_MODE ? "a11y-rtl" : "a11y"}${MULTI_COMPANY ? "-multi" : ""}-last-run.json`
+  );
   await writeFile(out, JSON.stringify(report, null, 2));
 
   console.log(
-    `\n=== ${RTL_MODE ? "RTL layout" : "Accessibility"} crawl: ${ROUTES.length} routes · ${failures.length} failure(s) · tour shown ${report.tourOpenings}x ===`
+    `\n=== ${RTL_MODE ? "RTL layout" : "Accessibility"}${MULTI_COMPANY ? " (multi-company)" : ""} crawl: ${ROUTES.length} routes · ${failures.length} failure(s) · tour shown ${report.tourOpenings}x ===`
   );
   for (const failure of failures) console.log(JSON.stringify(failure));
   console.log(`Report: ${out}`);

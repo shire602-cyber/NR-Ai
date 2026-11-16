@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import type { Company } from "@shared/schema";
-import { Briefcase, Building2, Check, ChevronsUpDown } from "lucide-react";
+import { Briefcase, Check, ChevronsUpDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -117,15 +117,17 @@ export function CompanySwitcher({
       variant="outline"
       size="sm"
       className="h-10 w-full justify-between gap-2 px-2 text-small font-medium"
+      aria-label={`${t["components.switcherSwitchCompany"]}: ${active.name}`}
       data-testid="button-company-switcher"
     >
       <span className="flex min-w-0 items-center gap-2">
+        {/* Initial is drawn by CSS: text inside the button must match its accessible name
+            (axe label-content-name-mismatch), and a stray letter in the DOM would not. */}
         <span
           aria-hidden
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-caption font-semibold text-secondary-foreground"
-        >
-          {active.name.trim().charAt(0).toUpperCase() || <Building2 className="!size-3.5" />}
-        </span>
+          data-initial={active.name.trim().charAt(0).toUpperCase()}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-caption font-semibold text-secondary-foreground before:content-[attr(data-initial)]"
+        />
         <span className="truncate" dir="auto">
           {active.name}
         </span>

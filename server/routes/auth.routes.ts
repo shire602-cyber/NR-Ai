@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { storage } from "../storage";
 import { getEnv, isProduction } from "../config/env";
+import { notificationCopy } from "../../shared/server-copy";
 import {
   authMiddleware,
   clearAuthenticationCache,
@@ -487,8 +488,11 @@ export function registerAuthRoutes(app: Express): void {
         userId: user.id,
         companyId: null,
         type: "system",
-        title: "Sign-in temporarily locked",
-        message: `Several failed sign-in attempts were made on your account. Sign-in is paused for about ${Math.ceil(retryAfterSeconds / 60)} minute(s). If this was not you, reset your password.`,
+        ...notificationCopy(
+          "notification.signInLocked.title",
+          "notification.signInLocked.message",
+          { minutes: Math.ceil(retryAfterSeconds / 60) }
+        ),
         priority: "high",
         actionUrl: "/settings",
       } as Parameters<typeof storage.createNotification>[0]);

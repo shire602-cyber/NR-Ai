@@ -18,10 +18,17 @@ import {
 import { cn } from "@/lib/utils";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { useTranslation } from "@/lib/i18n";
+import { describeCashForecastText, renderDescriptor } from "@shared/server-copy";
 
 export default function PlanningTab() {
   const { hasFocusedReportSelection, planningLoading, planningReport, reportSectionClass } =
     useReportsPageContext();
+  const { t } = useTranslation();
+  const localizeInsight = (text: string) => {
+    const d = describeCashForecastText(text);
+    return d ? renderDescriptor(d.key, d.params, text, t as Record<string, string>) : text;
+  };
   return (
     <>
       <div
@@ -314,7 +321,7 @@ export default function PlanningTab() {
             <div className="mt-4 space-y-2">
               {planningReport.insights.slice(0, 3).map((insight) => (
                 <div key={insight} className="rounded-md border p-3 text-sm">
-                  {insight}
+                  {localizeInsight(insight)}
                 </div>
               ))}
             </div>

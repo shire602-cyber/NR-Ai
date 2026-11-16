@@ -18,6 +18,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { sendEmail, renderTemplate } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
+import { notificationCopy } from "../../shared/server-copy";
 import { recordAudit } from "../services/audit.service";
 
 const logger = createLogger("firm-comms-routes");
@@ -304,8 +305,11 @@ export function registerFirmCommsRoutes(app: Express): void {
         userId,
         companyId: validated.companyId,
         type: "communication",
-        title: "Email sent to client",
-        message: `Email "${validated.subject}" sent to ${validated.recipientEmail}`,
+        ...notificationCopy(
+          "notification.emailSentToClient.title",
+          "notification.emailSentToClient.message",
+          { subject: validated.subject, recipient: validated.recipientEmail }
+        ),
         priority: "normal",
         relatedEntityType: "communication",
         relatedEntityId: comm.id,
@@ -376,8 +380,11 @@ export function registerFirmCommsRoutes(app: Express): void {
         userId,
         companyId: validated.companyId,
         type: "communication",
-        title: "WhatsApp message logged",
-        message: `WhatsApp draft logged for ${validated.recipientPhone}; no provider delivery occurred.`,
+        ...notificationCopy(
+          "notification.whatsappLogged.title",
+          "notification.whatsappLogged.message",
+          { phone: validated.recipientPhone }
+        ),
         priority: "normal",
         relatedEntityType: "communication",
         relatedEntityId: comm.id,
