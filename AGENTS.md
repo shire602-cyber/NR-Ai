@@ -9,10 +9,36 @@ Scope: this file applies to the whole repository.
   automation playbooks, roadmap prerequisites/priorities, automation-health scoring/history, persona
   preference storage, role setup checklists, report-suite/quick-access/saved-view/automation-impact profiles, and
   command-palette report shortcuts; avoid duplicating report labels or deep links elsewhere.
-- Keep each report quick-access profile covering every live report for that persona; Dashboard and
-  Reports render the first six as primary tiles plus overflow links for the rest. Onboarding
+  Every catalog report carries `dataBasis` (`ledger` | `documents` | `snapshot_proxy`) and every
+  comparison metric resolves one through `reportComparisonMetricBasis`; the catalog API exposes
+  `dataBasis`/`indicator`, `ledgerReportCount`/`indicatorReportCount` and preset `metricBases`, and
+  the Report Center badges every non-ledger report or metric as "Indicator" (`DataBasisBadge`).
+- The Reports page is a thin shell (`client/src/pages/Reports.tsx`, < 500 lines) over
+  `client/src/pages/reports/`: `useReportsPage` (state), `context.ts`, `shared.tsx` (module
+  helpers/types), lazily loaded workspace panels in `panels/` (only the active workspace panel is
+  mounted) and focused-report tabs in `tabs/`. UI copy is in the `reportCenter` i18n namespace
+  (`client/src/locales/{en,ar}/reportCenter.json`). The default Report Center leads with
+  statements and tax (`StatementsQuickPanel`: server PDF/Excel, accountant pack, FTA Audit File);
+  persona/automation/delivery tooling sits behind "Advanced tools" (the workspace tabs). The
+  always-hidden discovery sections (quick access, saved views, workflow finder, catalog readiness,
+  recommendations, report library/pins) were removed in W5-A because nothing rendered them.
+- Server-rendered report outputs live in `server/services/report-render/` (W5-A): `statements.ts`
+  builds a render model from `server/reporting` (P&L, balance sheet, trial balance, cash flow,
+  general ledger, aged receivables/payables as of a date, statement of changes in equity, executive
+  summary, VAT 201 summary), `pdf.ts` (PDFKit + `pdf-fonts`, Arabic-first for ar-locale
+  companies) and `xlsx.ts` (exceljs, numeric cells, formula-injection guard) lay it out, and
+  `pack.ts` builds delivery packs (ledger reports rendered; document/snapshot indicator reports
+  listed on a Coverage sheet with an open-in-app link) and the accountant share-pack zip. Routes:
+  `/api/companies/:companyId/reports/statements/:kind?format=pdf|xlsx|json`,
+  `/reports/changes-in-equity`, `/reports/executive-summary`, `/reports/share-pack`, and
+  `/reports/faf` (FTA Audit File, `server/services/faf-export.service.ts`, layout in
+  `docs/faf-export.md`; generated for upload/inspection, never transmitted). The changes-in-equity
+  closing column ties to the balance sheet by construction; verify with
+  `tests/db/report-statements-render.test.ts` and `tests/db/faf-export.test.ts`.
+- Keep each report quick-access profile covering every live report for that persona; Dashboard
+  renders the first six as primary tiles plus overflow links for the rest. Onboarding
   completion should derive direct quick-access report buttons from the selected profile and open
-  them with `reportPersonaHref`. Dashboard and Reports quick-access report cards should expose
+  them with `reportPersonaHref`. Dashboard quick-access report cards should expose
   report-open plus API-context workflow automation, comparison, and delivery links.
 - `Cost Center P&L` is a live connected report backed by `/cost-centers` and
   `/api/companies/:companyId/cost-centers/profitability`; keep its report-pack coverage mapped
@@ -25,11 +51,12 @@ Scope: this file applies to the whole repository.
   persona/report item keys because multiple reports can share the same tab URL.
 - Keep report-level favorites/pins persona-scoped through `getFavoriteReportIds`,
   `setFavoriteReportIds`, and `toggleFavoriteReportId`; sanitize stored IDs against
-  `readyReportCatalog` rather than trusting localStorage values.
+  `readyReportCatalog` rather than trusting localStorage values. (Since W5-A no Reports UI renders
+  pins — the report library was an always-hidden section — so a new consumer must render them.)
 - Keep decision shortcuts as persona-scoped business-question entry points with stable IDs,
   question-copy ending in `?`, valid report coverage, a same-persona comparison preset, and a
-  same-persona automation starter; Dashboard, Onboarding, Mobile Nav, Command Palette, Reports
-  workflow finder, workbook exports, and the catalog API consume them directly.
+  same-persona automation starter; Dashboard, Onboarding, Mobile Nav, Command Palette, workbook
+  exports, and the catalog API consume them directly.
 - Keep the five-header product-depth coverage model (`reportProductDepthAreas`) catalog-driven:
   report discovery, role workflows, report automation, advisory/management, and accounting/data
   depth subgoals should link to valid reports and matching persona workflow artifacts, and
@@ -71,9 +98,8 @@ Scope: this file applies to the whole repository.
   local report-open fallbacks on Dashboard/Reports surfaces should use `reportPersonaHref` with the
   active workspace/persona rather than generic report tab links;
   this includes quick-access report cards, saved-view automation links, decision-shortcut
-  report/automation actions, command-palette report-open plus per-report automation/comparison/delivery/suite
-  actions, and Reports workflow-finder/report-library report, automation, comparison, and delivery
-  actions.
+  report/automation actions, and command-palette report-open plus per-report
+  automation/comparison/delivery/suite actions.
 - Keep Reports workspace pack exports mapped to every live report through `buildWorkspaceReportPack`
   `addSheets(...)` coverage; shared export helpers belong in `client/src/lib/export.ts`.
 - Revenue by Customer and Sales by Product/Service comparisons use percentage-share metrics
@@ -214,7 +240,11 @@ Scope: this file applies to the whole repository.
 - Consolidated revenue/expenses/profit/margin (`consolidated-revenue`,
   `consolidated-expenses`, `consolidated-net-profit`, and `consolidated-margin`) use the
   accessible-company consolidated statements roll-up and include only loaded entities with no
-  eliminations applied. Consolidated margin is net profit divided by revenue for that roll-up.
+  eliminations applied. The Reports roll-up card is labelled "Combined view (unconsolidated, no
+  eliminations)"; real group consolidation is shown from
+  `GET /api/company-groups/:groupId/consolidated-statements` when a company group exists
+  (`client/src/pages/reports/GroupConsolidation.tsx`), else it links to `/company-groups`.
+  Consolidated margin is net profit divided by revenue for that roll-up.
   Treat them as management-pack comparison signals, not statutory consolidation, until eliminations,
   ownership rules, and FX translation adjustments are modeled.
 - Consolidation review items (`consolidation-review-items`) uses the current consolidated
@@ -466,6 +496,20 @@ Scope: this file applies to the whole repository.
 - Report delivery queue flows can return a `handoffReview` 409 after failed or blocked runs; clients
   should surface the handoff gap and only resend with `acknowledgeHandoffGaps: true` after explicit
   user acknowledgement.
+- Report delivery really delivers (W5-A, R12-01): queue/retry/scheduler create a run, then
+  `executeReportDeliveryRun` (`server/services/report-render/delivery.ts`) renders the PDF + XLSX
+  pack, stores it on `company_report_delivery_artifacts`, and sends one outbox email per recipient
+  with both attachments. Run status is truthful: `queued` -> `rendering` -> `sent`, or `failed`
+  (reason; `retry_scheduled_at` from the outbox backoff), or `blocked` (`no_email_provider` |
+  `no_recipients`); a
+  failed run whose outbox messages later send is reconciled to `sent` on read, and a manual retry
+  cancels the old run's pending outbox rows. Recipients are the emails in the recipients setting,
+  else company members whose role matches the persona. The in-app notification only reports the
+  outcome. Channel labels come from `resolveReportDeliveryChannel`: email with PDF and Excel, plus a
+  Google Sheets copy only while the `google_sheets` capability is live; a Sheets channel setting is
+  422 `GOOGLE_SHEETS_NOT_CONFIGURED` otherwise. Delivery log files:
+  `/api/companies/:companyId/report-delivery/runs/:runId/artifacts[/:artifactId]`; channels:
+  `/report-delivery/channels`. Verify with `tests/db/report-delivery-outbox.test.ts`.
 - `server/` contains the Express API, middleware, routes, services, and startup code.
 - `shared/` contains the Drizzle schema and shared validators. The alias `@shared` points here.
 - `migrations/` contains Drizzle migrations. Treat `migrations/meta/` as Drizzle-managed output.

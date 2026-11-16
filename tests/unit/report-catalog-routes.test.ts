@@ -122,8 +122,8 @@ describe("report catalog discovery route", () => {
     const discovery = buildReportCatalogDiscovery();
 
     expect(discovery.summary.liveReportCount).toBe(33);
-    expect(discovery.summary.apiReportCount).toBe(0);
-    expect(discovery.summary.readyReportCount).toBe(33);
+    expect(discovery.summary.apiReportCount).toBe(1);
+    expect(discovery.summary.readyReportCount).toBe(34);
     expect(discovery.summary.reportCount).toBe(reportCatalog.length);
     expect(discovery.summary.deliverySubscriptionCount).toBe(6);
     expect(discovery.summary.automationStarterCount).toBe(6);
@@ -147,7 +147,8 @@ describe("report catalog discovery route", () => {
     expect(discovery.personaSummaries[0]).toMatchObject({
       persona: "owner",
       automationPlaybookCount: 3,
-      apiReportCount: 0,
+      // R12-09: Bank Reconciliation Report is API-ready (owner + accountant).
+      apiReportCount: 1,
       readyReportCount: discovery.personaSummaries[0].reportCount,
       plannedReportCount: 0,
     });
@@ -165,7 +166,7 @@ describe("report catalog discovery route", () => {
     const freelancerSummary = discovery.personaSummaries.find(
       (summary) => summary.persona === "freelancer"
     );
-    expect(accountantSummary?.apiReportCount).toBe(0);
+    expect(accountantSummary?.apiReportCount).toBe(1);
     expect(freelancerSummary?.apiReportCount).toBe(0);
     expect(discovery.personaSummaries[0].comparisonPresetCount).toBeGreaterThanOrEqual(3);
     expect(discovery.personaSummaries[0].reportSuiteCount).toBe(2);

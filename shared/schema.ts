@@ -1007,8 +1007,23 @@ export const companyReportDeliveryRuns = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
     subscriptionId: text("subscription_id").notNull(),
-    status: text("status").notNull().default("queued"), // queued | sent | failed | cancelled
+    // queued | rendering | sent | failed | blocked | cancelled (W5-A: truthful lifecycle)
+    status: text("status").notNull().default("queued"),
     readinessStatus: text("readiness_status").notNull(), // ready | setup | paused
+    /** no_email_provider | no_recipients | handoff_review (status = blocked). */
+    blockedReason: text("blocked_reason"),
+    outboxMessageIds: jsonb("outbox_message_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    recipientAddresses: jsonb("recipient_addresses")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    artifactCount: integer("artifact_count").notNull().default(0),
+    renderedAt: timestamp("rendered_at"),
+    sentAt: timestamp("sent_at"),
+    retryScheduledAt: timestamp("retry_scheduled_at"),
     notificationId: uuid("notification_id"),
     retriedFromRunId: uuid("retried_from_run_id"),
     errorMessage: text("error_message"),
@@ -1098,6 +1113,41 @@ export type InsertCompanyReportDeliverySchedulerScan = z.infer<
 >;
 export type CompanyReportDeliverySchedulerScan =
   typeof companyReportDeliverySchedulerScans.$inferSelect;
+
+/** bytea column carried as a Buffer (W5-A report artefacts). */
+const w5aBytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+/** Rendered PDF / XLSX / ZIP files of a report delivery run (W5-A, R12-01). */
+export const companyReportDeliveryArtifacts = pgTable(
+  "company_report_delivery_artifacts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => companyReportDeliveryRuns.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // pdf | xlsx | zip
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    sha256: text("sha256").notNull(),
+    content: w5aBytea("content").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    runIdx: index("idx_company_report_delivery_artifacts_run").on(table.companyId, table.runId),
+  })
+);
+
+export type CompanyReportDeliveryArtifact = typeof companyReportDeliveryArtifacts.$inferSelect;
 
 // ===========================
 // Firm Staff Assignments

@@ -13,6 +13,7 @@ import {
   type ReportPersona,
   type ReportWorkflowGapFilter,
 } from "../../client/src/lib/reportCatalog";
+import { isCapabilityLive } from "../../shared/capabilities";
 import type {
   CompanyReportDeliveryRun,
   CompanyReportDeliverySubscription,
@@ -158,13 +159,36 @@ function formatNextRunLabel(nextRunAt: Date): string {
   return nextRunAt.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
+export const EMAIL_DELIVERY_CHANNEL = "Email with PDF and Excel attachments";
+export const EMAIL_AND_SHEETS_DELIVERY_CHANNEL =
+  "Email with PDF and Excel attachments, plus a Google Sheets copy";
+
+/** True when text names Google Sheets as a delivery channel. */
+export function mentionsGoogleSheets(value: string | null | undefined): boolean {
+  return /google\s*sheets|\bsheets?\b/i.test(value ?? "");
+}
+
+/**
+ * The channel label is derived from what the server can really do (R12-01): every
+ * delivery emails a server-rendered PDF + XLSX; a Google Sheets copy is mentioned only
+ * when the google_sheets capability is live and the subscription (or override) asks for it.
+ */
+export function resolveReportDeliveryChannel(
+  subscription: Pick<ReportDeliverySubscription, "googleSheetsCopy">,
+  override?: string | null,
+  sheetsLive: boolean = isCapabilityLive("google_sheets")
+): string {
+  const wantsSheets = override ? mentionsGoogleSheets(override) : !!subscription.googleSheetsCopy;
+  return wantsSheets && sheetsLive ? EMAIL_AND_SHEETS_DELIVERY_CHANNEL : EMAIL_DELIVERY_CHANNEL;
+}
+
 export function buildReportDeliveryPlan(
   subscription: ReportDeliverySubscription,
   now = new Date(),
   setting?: ReportDeliverySetting | null
 ): ReportDeliveryPlan {
   const cadence = setting?.cadenceOverride || subscription.cadence;
-  const channel = setting?.channelOverride || subscription.channel;
+  const channel = resolveReportDeliveryChannel(subscription, setting?.channelOverride);
   const format = setting?.formatOverride || subscription.format;
   const recipients = setting?.recipientsOverride || subscription.recipients;
   const deliveryGuardrail = setting?.deliveryGuardrailOverride || subscription.deliveryGuardrail;
@@ -196,7 +220,7 @@ export function buildReportDeliveryPlan(
       ? "Setup needed before queue"
       : "Ready for queue";
   const preview: ReportDeliveryPreview = {
-    summary: `${format} to ${recipients} through ${channel}.`,
+    summary: `${format} (PDF and Excel, rendered from posted ledger entries) to ${recipients}. ${channel}.`,
     readinessLabel,
     checklist: [
       {
@@ -346,11 +370,15 @@ export function buildReportDeliveryHandoffReview(input: {
   > | null;
 }): ReportDeliveryHandoffReview | null {
   const { plan, latestRun } = input;
-  if (latestRun?.status === "failed") {
+  if (latestRun?.status === "failed" || latestRun?.status === "blocked") {
     return {
       gap: "delivery-gaps",
       message: "Report delivery has unresolved handoff gaps",
-      detail: latestRun.errorMessage ?? "Recover the latest failed delivery before queueing again.",
+      detail:
+        latestRun.errorMessage ??
+        (latestRun.status === "blocked"
+          ? "The latest delivery was blocked and nothing was sent."
+          : "Recover the latest failed delivery before queueing again."),
       latestRunId: latestRun.id,
     };
   }
@@ -382,22 +410,44 @@ export function buildReportDeliveryNotificationForPlan(input: {
   companyId: string;
   plan: ReportDeliveryPlan;
   scheduledFor?: Date;
+  /** Outcome of the executed run; the notification never claims more than happened. */
+  run?: Pick<
+    CompanyReportDeliveryRun,
+    "status" | "errorMessage" | "blockedReason" | "recipientAddresses"
+  > | null;
 }): InsertNotification {
-  const { plan } = input;
+  const { plan, run } = input;
 
   const scheduledFor = input.scheduledFor ?? new Date(plan.nextRunAt);
   const scheduledForLabel = formatNextRunLabel(scheduledFor);
   const suiteLabel = plan.reportSuites.length
     ? ` Suite: ${plan.reportSuites.map((suite) => suite.title).join(", ")}.`
     : "";
+  const status = run?.status ?? "queued";
+  const recipientCount = run?.recipientAddresses?.length ?? 0;
+  const title =
+    status === "sent"
+      ? `Report delivery sent: ${plan.title}`
+      : status === "blocked"
+        ? `Report delivery blocked: ${plan.title}`
+        : status === "failed"
+          ? `Report delivery failed: ${plan.title}`
+          : `Report delivery queued: ${plan.title}`;
+  const outcome =
+    status === "sent"
+      ? `Emailed PDF and Excel pack to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`
+      : status === "blocked" || status === "failed"
+        ? `Nothing was sent. ${run?.errorMessage ?? ""}`.trim()
+        : `${plan.format} scheduled for ${scheduledForLabel}.`;
 
   return {
     userId: input.userId,
     companyId: input.companyId,
     type: "system",
-    title: `Report delivery queued: ${plan.title}`,
-    message: `${plan.format} scheduled for ${scheduledForLabel}. ${plan.channel}.${suiteLabel} Guardrail: ${plan.deliveryGuardrail}`,
-    priority: plan.status === "ready" ? "normal" : "high",
+    title,
+    message: `${outcome} ${plan.channel}.${suiteLabel} Guardrail: ${plan.deliveryGuardrail}`,
+    priority:
+      status === "sent" || (status === "queued" && plan.status === "ready") ? "normal" : "high",
     relatedEntityType: "report_delivery_subscription",
     actionUrl: plan.href,
     isRead: false,
@@ -410,7 +460,7 @@ export function buildReportDeliveryRunInput(input: {
   companyId: string;
   queuedBy: string;
   plan: ReportDeliveryPlan;
-  status?: "queued" | "failed" | "sent" | "cancelled";
+  status?: "queued" | "rendering" | "failed" | "sent" | "blocked" | "cancelled";
   errorMessage?: string | null;
   notificationId?: string | null;
   retriedFromRunId?: string | null;

@@ -34,6 +34,18 @@ import { computeVat201, loadVatCompany, type VatComputation } from "../tax/vat-e
 import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
 import { periodContaining } from "../tax/vat-periods";
 import { EMIRATES } from "../../shared/validators/primitives";
+import { requirePermission } from "../middleware/companyRolePolicy";
+import { fiscalYearStart, loadCompany } from "../reporting";
+import {
+  STATEMENT_KINDS,
+  computeChangesInEquity,
+  computeExecutiveSummary,
+  isStatementKind,
+  loadRenderCompany,
+  renderStatement,
+} from "../services/report-render/statements";
+import { buildSharePackZip, buildStatementFile } from "../services/report-render/pack";
+import { buildFaf, renderFafText } from "../services/faf-export.service";
 
 function vatBox1Total(c: VatComputation, suffix: "Amount" | "Vat"): number {
   const fils = EMIRATES.reduce(
@@ -881,6 +893,129 @@ export function registerReportRoutes(app: Express) {
       const target = `/api/companies/${companyId}/reports/vat-summary?${qs.toString()}`;
       deprecate(res, target);
       res.redirect(307, target);
+    })
+  );
+
+  registerReportOutputRoutes(app);
+}
+
+// ─── W5-A: server-rendered statement outputs, equity, executive summary, FAF ──
+// (R11-12, R12-09, R12-08a). New endpoints only; the handlers above are unchanged.
+
+async function outputRange(req: Request, companyId: string): Promise<{ from: string; to: string }> {
+  const range = readRange(req.query as Record<string, unknown>);
+  if (range.from) return { from: range.from, to: range.to };
+  const settings = await loadCompany(companyId);
+  return { from: fiscalYearStart(range.to, settings.fiscalYearStartMonth), to: range.to };
+}
+
+function sendFile(res: Response, file: { filename: string; contentType: string; content: Buffer }) {
+  res.setHeader("Content-Type", file.contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.send(file.content);
+}
+
+function readOutputFormat(value: unknown): "pdf" | "xlsx" | "json" {
+  if (value === undefined || value === "" || value === "pdf") return "pdf";
+  if (value === "xlsx" || value === "json") return value;
+  throw new DomainError(
+    "INVALID_EXPORT_FORMAT",
+    400,
+    undefined,
+    "format must be pdf, xlsx or json"
+  );
+}
+
+function registerReportOutputRoutes(app: Express) {
+  // One statement as a branded PDF (default) or XLSX: profit-loss, balance-sheet,
+  // trial-balance, cash-flow, general-ledger, ar-aging, ap-aging, changes-in-equity,
+  // executive-summary, vat-summary.
+  app.get(
+    "/api/companies/:companyId/reports/statements/:kind",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, kind } = req.params;
+      if (!isStatementKind(kind)) {
+        throw new DomainError(
+          "UNKNOWN_STATEMENT",
+          404,
+          { kind, allowed: STATEMENT_KINDS },
+          "Unknown statement"
+        );
+      }
+      const format = readOutputFormat(req.query.format);
+      const period = await outputRange(req, companyId);
+      if (format === "json") {
+        const company = await loadRenderCompany(companyId);
+        return res.json(await renderStatement(kind, company, period));
+      }
+      sendFile(res, await buildStatementFile({ companyId, kind, period, format }));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/reports/changes-in-equity",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      res.json(await computeChangesInEquity(companyId, await outputRange(req, companyId)));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/reports/executive-summary",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      res.json(await computeExecutiveSummary(companyId, await outputRange(req, companyId)));
+    })
+  );
+
+  // Accountant share pack: every statement as PDF + XLSX for the period, zipped.
+  app.get(
+    "/api/companies/:companyId/reports/share-pack",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const zip = await buildSharePackZip({ companyId, period: await outputRange(req, companyId) });
+      sendFile(res, zip);
+    })
+  );
+
+  // FTA Audit File. Generated for upload/inspection — not transmitted to FTA.
+  app.get(
+    "/api/companies/:companyId/reports/faf",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const range = readRange(req.query as Record<string, unknown>, { requireFrom: true });
+      const faf = await buildFaf({ companyId, from: range.from!, to: range.to });
+      res.setHeader("X-FAF-Notice", "Generated for upload/inspection - not transmitted to FTA");
+      if (req.query.format === "json") return res.json(faf);
+      if (
+        req.query.format !== undefined &&
+        req.query.format !== "txt" &&
+        req.query.format !== "csv"
+      ) {
+        throw new DomainError(
+          "INVALID_EXPORT_FORMAT",
+          400,
+          undefined,
+          "format must be txt or json"
+        );
+      }
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="FAF-${(faf.company.trn || "no-trn").replace(/[^0-9A-Za-z]/g, "")}-${range.from}-${range.to}.csv"`
+      );
+      res.send(renderFafText(faf));
     })
   );
 }
