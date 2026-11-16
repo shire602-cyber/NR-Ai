@@ -48,6 +48,7 @@ import { isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
 import type { InvoiceSummary } from "./types";
 import { DEFAULT_LIST_LIMIT } from "./helpers";
 import { LedgerStorage } from "./ledger";
+import { receivableSettlementPartsSql } from "../reporting/settlement";
 
 export class SalesStorage extends LedgerStorage {
   // Invoices
@@ -567,15 +568,14 @@ export class SalesStorage extends LedgerStorage {
       }
 
       // Sum existing settlements INSIDE the lock so we see the canonical figure:
-      // payments, issued credit notes and applied customer credits (W3-A).
+      // the one settlement rule (server/reporting/settlement.ts, D5c) — payments,
+      // issued credit notes and applied customer credits.
+      const parts = receivableSettlementPartsSql("si");
       const sumResult = await tx.execute(sql`
-        SELECT
-          (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = ${input.invoiceId}) AS paid,
-          (SELECT COALESCE(SUM(-total), 0) FROM invoices
-             WHERE original_invoice_id = ${input.invoiceId} AND invoice_type = 'credit_note'
-               AND status NOT IN ('void', 'cancelled', 'draft')) AS credited,
-          (SELECT COALESCE(SUM(amount), 0) FROM customer_credit_allocations
-             WHERE invoice_id = ${input.invoiceId} AND kind = 'apply') AS applied
+        SELECT ${sql.raw(parts.paid)} AS paid,
+               ${sql.raw(parts.credited)} AS credited,
+               ${sql.raw(parts.applied)} AS applied
+          FROM (SELECT ${input.invoiceId}::uuid AS id) si
       `);
       const sumRows = rowsFromResult<{
         paid: number | string;

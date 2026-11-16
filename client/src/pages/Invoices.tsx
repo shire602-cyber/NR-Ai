@@ -104,6 +104,8 @@ import {
 } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
 import type { Invoice, InvoicePayment } from "@shared/schema";
+import type { InvoiceListItem } from "@shared/invoice-balance";
+import { computeInvoiceTiles } from "@/lib/invoice-tiles";
 import { cn } from "@/lib/utils";
 import { downloadInvoicePDF } from "@/lib/pdf-invoice";
 import {
@@ -2917,7 +2919,7 @@ function VirtualizedInvoiceRows({
 /**
  * Invoice status tiles (D3a, benchmark "invoice list is scannable"): count and value per
  * status bucket from the full invoice list (`?all=true`, same query key as the Dashboard),
- * in AED (`baseCurrencyAmount`). A tile applies the same server-side status filter as the
+ * in AED. Open/Overdue show the remaining balance owed (`openBalanceBase`, server-computed), Draft/Paid document totals (`baseCurrencyAmount`). A tile applies the same server-side status filter as the
  * dashboard drill-through links; pressing the active tile clears it.
  */
 function InvoiceStatusTiles({
@@ -2930,26 +2932,22 @@ function InvoiceStatusTiles({
   onSelect: (status: InvoiceStatusFilter | null) => void;
 }) {
   const { t } = useTranslation();
-  const { data: all = [] } = useQuery<Invoice[]>({
+  const { data: all = [] } = useQuery<InvoiceListItem[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
     enabled: !!companyId,
   });
   const buckets = useMemo(() => {
-    const today = startOfDay(new Date());
-    const sum = (rows: Invoice[]) =>
-      rows.reduce((s, inv) => s + Number(inv.baseCurrencyAmount ?? inv.total ?? 0), 0);
-    const live = all.filter((inv) => Number(inv.total) >= 0);
-    const draft = live.filter((inv) => inv.status === "draft");
-    const open = live.filter((inv) => inv.status === "sent" || inv.status === "partial");
-    const overdue = open.filter((inv) => inv.dueDate && new Date(inv.dueDate) < today);
-    const paid = live.filter((inv) => inv.status === "paid");
-    return [
-      { key: "draft" as const, label: t["invoices.statusFilter.draft"], rows: draft },
-      { key: "open" as const, label: t["invoices.statusFilter.open"], rows: open },
-      { key: "overdue" as const, label: t["invoices.statusFilter.overdue"], rows: overdue },
-      { key: "paid" as const, label: t["invoices.statusFilter.paid"], rows: paid },
-    ].map((b) => ({ ...b, count: b.rows.length, value: sum(b.rows) }));
+    const labels: Record<string, string> = {
+      draft: t["invoices.statusFilter.draft"],
+      open: t["invoices.statusFilter.open"],
+      overdue: t["invoices.statusFilter.overdue"],
+      paid: t["invoices.statusFilter.paid"],
+    };
+    return computeInvoiceTiles(all, startOfDay(new Date())).map((b) => ({
+      ...b,
+      label: labels[b.key],
+    }));
   }, [all, t]);
 
   return (

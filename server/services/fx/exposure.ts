@@ -3,9 +3,12 @@
  * foreign-currency documents at the as-of rate.
  *
  * - Receivables: invoices (not drafts, voids, cancellations or credit notes) that have a posted
- *   `invoice` journal entry; outstanding = total - payments dated on/before as-of.
+ *   `invoice` journal entry; outstanding = total - settlements dated on/before as-of (payments,
+ *   issued credit notes and applied customer credits: the one rule in
+ *   server/reporting/settlement.ts, D5c).
  * - Payables: vendor bills with a posted `bill` journal entry; outstanding = A/P amount
- *   (subtotal for reverse-charge bills, else total) - bill payments dated on/before as-of.
+ *   (subtotal for reverse-charge bills, else total) - bill payments (incl. debit-note and
+ *   prepayment applications) dated on/before as-of.
  * - Bank: active foreign-currency bank accounts with a GL link; the foreign balance and book
  *   value come from posted journal lines tagged with that currency on the linked GL account.
  *
@@ -20,6 +23,7 @@ import { mulRate, RATE_DECIMALS, sumFils, toFils, filsToNumber } from "../../../
 import { DomainError } from "../../errors";
 import { addDaysIso, getCompanyBaseCurrency, getRate, isoToDate, type RateResult } from "./rates";
 import type { ExchangeRateType } from "../../../shared/schema";
+import { payableSettledSql, receivableSettledSql } from "../../reporting/settlement";
 
 export type ExposureKind = "receivable" | "payable" | "bank";
 
@@ -94,12 +98,14 @@ export async function computeFxExposure(
   const base = await getCompanyBaseCurrency(companyId);
   const rateType: ExchangeRateType = opts.rateType ?? "closing";
   const end = isoToDate(addDaysIso(asOfIso, 1));
+  // The one settlement rule (D5c): payments, credit notes and applied credits up to asOf.
+  // asOfIso is validated above as YYYY-MM-DD, so it is safe as a literal.
+  const asOfSql = { asOf: `'${asOfIso}'::date` };
 
   const invoiceRows = rowsOf(
     await db.execute(sql`
       SELECT i.id, i.number, i.customer_name, i.currency, i.total, i.exchange_rate,
-             COALESCE((SELECT SUM(p.amount) FROM invoice_payments p
-                        WHERE p.invoice_id = i.id AND p.date < ${end}), 0) AS paid
+             ${sql.raw(receivableSettledSql("i", asOfSql))} AS paid
         FROM invoices i
        WHERE i.company_id = ${companyId}
          AND UPPER(i.currency) <> ${base}
@@ -116,8 +122,7 @@ export async function computeFxExposure(
     await db.execute(sql`
       SELECT b.id, b.bill_number, b.vendor_name, b.currency, b.total_amount, b.subtotal,
              b.reverse_charge, b.exchange_rate,
-             COALESCE((SELECT SUM(bp.amount) FROM bill_payments bp
-                        WHERE bp.bill_id = b.id AND bp.payment_date < ${end}), 0) AS paid
+             ${sql.raw(payableSettledSql("b", asOfSql))} AS paid
         FROM vendor_bills b
        WHERE b.company_id = ${companyId}
          AND UPPER(COALESCE(b.currency, ${base})) <> ${base}

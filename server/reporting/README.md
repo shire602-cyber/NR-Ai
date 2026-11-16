@@ -31,7 +31,8 @@ should sum `journal_lines` for a financial statement.
 | `cashFlow({ companyId, from?, to, method })` | `indirect` (default: net income + balance changes) or `direct` (dominant counterpart). Opening / closing cash and a `cashProof` against cash/bank accounts. |
 | `cashFlowBuckets({ companyId, from, to, granularity })` | Legacy bucketed inflow/outflow per activity. |
 | `generalLedger({ companyId, from?, to, accountIds?, includeClosing? })` | All or selected accounts; BS accounts open cumulative, P&L accounts open fiscal-year-to-date. |
-| `agedReceivables({ companyId, asOf })` / `agedPayables(...)` | Reconstructed as of a date from documents, payments (and issued credit notes) dated ≤ asOf, rounded per document, with a reconciliation line to GL 1040 / 2010. |
+| `agedReceivables({ companyId, asOf })` / `agedPayables(...)` | Reconstructed as of a date from documents less settlements dated ≤ asOf under the one settlement rule (`settlement.ts`), rounded per document. `unappliedCredits` (unapplied debit notes / credit notes with no original) and `netTotal` = total − unapplied; the reconciliation line ties `netTotal` to GL 1040 / 2010. |
+| `receivableOpenSql(alias, { asOf? })`, `payableOpenSql(...)`, `receivableSettlementPartsSql`, `unapplied*CreditsFilsSql` (`settlement.ts`) | The one "what is still owed" rule (D5c) as SQL fragments; every open-balance reader builds on them. |
 | `cashAccounts(companyId, asOf?)` | Cash / bank accounts with balances. |
 | `accountTotals`, `ledgerLines`, `loadAccounts`, `loadCompany` | Low-level, closing-excluded ledger reads for other modules (corporate tax, close). |
 | `readRange`, `readAsOf`, `parseReportDate` | Unified params: `from/to`, `startDate/endDate`, `periodStart/periodEnd`; bad dates → 400 `INVALID_REPORT_DATE`. |

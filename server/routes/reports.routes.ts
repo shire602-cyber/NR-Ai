@@ -30,6 +30,12 @@ import {
   type Granularity,
 } from "../reporting";
 import { assertReportAccess, deprecate, readFormat, sendTabular } from "../reporting/http";
+import {
+  payableOpenSql,
+  payableStatusSql,
+  receivableOpenSql,
+  receivableStatusSql,
+} from "../reporting/settlement";
 import { computeVat201, loadVatCompany, type VatComputation } from "../tax/vat-engine";
 import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
 import { periodContaining } from "../tax/vat-periods";
@@ -231,8 +237,7 @@ export function registerReportRoutes(app: Express) {
     })
   );
 
-  // Current customer/vendor balance summaries. These are current open balances,
-  // not historical as-of balances: vendor bills store only current amount_paid.
+  // Current customer/vendor balance summaries (current open balances, not as-of).
   app.get(
     "/api/companies/:id/reports/balance-summaries",
     authMiddleware,
@@ -244,58 +249,56 @@ export function registerReportRoutes(app: Express) {
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
       const [customerResult, vendorResult] = await Promise.all([
+        // Open balances use the one settlement rule (server/reporting/settlement.ts, D5c), the
+        // same as aged receivables / payables: payments, credit notes, applied customer
+        // credits; bill payments and debit-note / prepayment applications on approved bills.
         pool.query(
-          `WITH payments AS (
-            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
-            FROM invoice_payments
-            WHERE company_id = $1
-            GROUP BY invoice_id
+          `WITH docs AS (
+            SELECT i.customer_name, i.currency, i.total, i.due_date,
+                   ${receivableOpenSql("i")} AS open, COALESCE(NULLIF(i.exchange_rate, 0), 1) AS fx
+              FROM invoices i
+             WHERE i.company_id = $1 AND ${receivableStatusSql("i")}
+               AND COALESCE(i.invoice_type, 'invoice') <> 'credit_note'
           )
           SELECT
-            i.customer_name,
-            i.currency,
+            customer_name,
+            currency,
             COUNT(*)::int AS invoice_count,
-            COALESCE(SUM(i.total), 0)::float AS total_invoiced,
-            COALESCE(SUM(COALESCE(p.paid_amount, 0)), 0)::float AS paid_amount,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)), 0)::float AS open_balance,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance_aed,
-            MAX(CASE
-              WHEN i.due_date < NOW()
-                AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
-              THEN DATE_PART('day', NOW() - i.due_date)
-              ELSE 0
-            END)::int AS max_days_overdue
-          FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
-          WHERE i.company_id = $1
-            AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
-            AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
-          GROUP BY i.customer_name, i.currency
+            COALESCE(SUM(total), 0)::float AS total_invoiced,
+            COALESCE(SUM(total - open), 0)::float AS paid_amount,
+            COALESCE(SUM(open), 0)::float AS open_balance,
+            COALESCE(SUM(open * fx), 0)::float AS open_balance_aed,
+            COALESCE(SUM(open) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance,
+            COALESCE(SUM(open * fx) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance_aed,
+            MAX(CASE WHEN due_date < NOW() THEN DATE_PART('day', NOW() - due_date) ELSE 0 END)::int
+              AS max_days_overdue
+          FROM docs
+          WHERE open > 0
+          GROUP BY customer_name, currency
           ORDER BY open_balance DESC`,
           [companyId]
         ),
         pool.query(
-          `SELECT
+          `WITH docs AS (
+            SELECT b.vendor_name, b.currency, COALESCE(b.total_amount, 0) AS total, b.due_date,
+                   ${payableOpenSql("b")} AS open, COALESCE(NULLIF(b.exchange_rate, 0), 1) AS fx
+              FROM vendor_bills b
+             WHERE b.company_id = $1 AND ${payableStatusSql("b")}
+          )
+          SELECT
             vendor_name,
             currency,
             COUNT(*)::int AS bill_count,
-            COALESCE(SUM(total_amount), 0)::float AS total_billed,
-            COALESCE(SUM(amount_paid), 0)::float AS paid_amount,
-            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0)), 0)::float AS open_balance,
-            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0) * COALESCE(NULLIF(exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
-            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0)) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance,
-            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0) * COALESCE(NULLIF(exchange_rate, 0), 1)) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance_aed,
-            MAX(CASE
-              WHEN due_date < NOW() AND GREATEST(total_amount - amount_paid, 0) > 0
-              THEN DATE_PART('day', NOW() - due_date)
-              ELSE 0
-            END)::int AS max_days_overdue
-          FROM vendor_bills
-          WHERE company_id = $1
-            AND status NOT IN ('paid')
-            AND GREATEST(total_amount - amount_paid, 0) > 0
+            COALESCE(SUM(total), 0)::float AS total_billed,
+            COALESCE(SUM(total - open), 0)::float AS paid_amount,
+            COALESCE(SUM(open), 0)::float AS open_balance,
+            COALESCE(SUM(open * fx), 0)::float AS open_balance_aed,
+            COALESCE(SUM(open) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance,
+            COALESCE(SUM(open * fx) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance_aed,
+            MAX(CASE WHEN due_date < NOW() THEN DATE_PART('day', NOW() - due_date) ELSE 0 END)::int
+              AS max_days_overdue
+          FROM docs
+          WHERE open > 0
           GROUP BY vendor_name, currency
           ORDER BY open_balance DESC`,
           [companyId]

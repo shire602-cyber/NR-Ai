@@ -7,6 +7,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
+import { receivableOpenSql } from "../reporting/settlement";
 import {
   createReminderSettingBody,
   updateReminderSettingBody,
@@ -234,13 +235,7 @@ export function registerReminderRoutes(app: Express) {
       const { rows: open } = await pool.query(
         `SELECT i.id, i.number, i.customer_name, coalesce(i.currency, 'AED') AS currency,
                 coalesce(i.due_date, i.date) AS due,
-                GREATEST(i.total
-                  - coalesce((SELECT SUM(p.amount) FROM invoice_payments p WHERE p.invoice_id = i.id), 0)
-                  - coalesce((SELECT SUM(-cn.total) FROM invoices cn WHERE cn.original_invoice_id = i.id
-                               AND cn.invoice_type = 'credit_note'
-                               AND cn.status NOT IN ('void', 'cancelled', 'draft')), 0)
-                  - coalesce((SELECT SUM(a.amount) FROM customer_credit_allocations a
-                               WHERE a.invoice_id = i.id AND a.kind = 'apply'), 0), 0)::text AS remaining
+                ${receivableOpenSql("i")}::text AS remaining
            FROM invoices i
           WHERE i.company_id = $1 AND i.status IN ('sent', 'posted', 'partial')
             AND i.invoice_type <> 'credit_note'`,

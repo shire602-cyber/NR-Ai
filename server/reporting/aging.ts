@@ -1,11 +1,23 @@
 /**
  * Aged receivables / payables reconstructed AS OF a date (R11-07, R11-15):
- * documents dated on or before asOf, less payments (and issued credit notes)
- * dated on or before asOf, converted at the document's booking rate and
- * rounded to fils per document. A reconciliation line ties the aging total to
- * the GL control account (1040 A/R, 2010 A/P) at the same date.
+ * documents dated on or before asOf, less settlements dated on or before asOf
+ * (the one settlement rule in ./settlement.ts, D5c), converted at the
+ * document's booking rate and rounded to fils per document. Credit that
+ * reduced the control account without settling a document (unapplied vendor
+ * debit notes, credit notes with no original invoice) is `unappliedCredits`.
+ * A reconciliation line ties the net aging total (documents less unapplied
+ * credits) to the GL control account (1040 A/R, 2010 A/P) at the same date.
  */
 import { pool } from "../db";
+import {
+  localDateSql,
+  payableOpenBaseFilsSql,
+  payableStatusSql,
+  receivableOpenBaseFilsSql,
+  receivableStatusSql,
+  unappliedPayableCreditsFilsSql,
+  unappliedReceivableCreditsFilsSql,
+} from "./settlement";
 import {
   accountTotals,
   aed,
@@ -51,6 +63,13 @@ export interface AgingReport {
   rows: AgingRow[];
   documents: AgingDocument[];
   totals: Omit<AgingRow, "id" | "name" | "type" | "currency">;
+  /**
+   * Credit that reduced the control account without settling a document (positive, base
+   * currency): unapplied vendor debit notes (A/P), credit notes with no original invoice (A/R).
+   */
+  unappliedCredits: number;
+  /** What is owed net of unapplied credits: totals.total − unappliedCredits (= the GL balance). */
+  netTotal: number;
   reconciliation: {
     controlAccountCode: string | null;
     controlAccountName: string | null;
@@ -109,7 +128,8 @@ function build(
     open_fils: string;
   }>,
   control: { code: string | null; name: string | null; fils: Fils },
-  reportCurrency: string
+  reportCurrency: string,
+  unappliedFils: Fils
 ): AgingReport {
   const byName = new Map<string, Record<AgingBucket, Fils>>();
   const documents: AgingDocument[] = [];
@@ -151,6 +171,7 @@ function build(
     }))
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const totalFils = sumB(tot);
+  const netFils = totalFils - unappliedFils;
   return {
     reportCurrency,
     asOf,
@@ -165,59 +186,64 @@ function build(
       over90: aed(tot.over90),
       total: aed(totalFils),
     },
+    unappliedCredits: aed(unappliedFils),
+    netTotal: aed(netFils),
     reconciliation: {
       controlAccountCode: control.code,
       controlAccountName: control.name,
       glBalance: aed(control.fils),
-      agingTotal: aed(totalFils),
-      difference: aed(control.fils - totalFils),
-      isReconciled: control.fils === totalFils,
+      agingTotal: aed(netFils),
+      difference: aed(control.fils - netFils),
+      isReconciled: control.fils === netFils,
     },
   };
 }
 
-const LOCAL = (col: string) => `((${col} + interval '4 hours')::date)`;
+const LOCAL = localDateSql;
+const AS_OF = { asOf: "$2::date" };
+
+async function unappliedFils(
+  expr: string,
+  companyId: string,
+  asOf: IsoDate,
+  q: Queryable
+): Promise<Fils> {
+  const { rows } = await q.query(`SELECT (${expr})::text AS fils`, [companyId, asOf]);
+  return Number((rows[0] as { fils?: string } | undefined)?.fils ?? 0);
+}
 
 export async function agedReceivables(
   args: { companyId: string; asOf: IsoDate },
   q: Queryable = pool
 ): Promise<AgingReport> {
   const { companyId, asOf } = args;
-  const [{ rows }, control] = await Promise.all([
+  const [{ rows }, control, unapplied] = await Promise.all([
     q.query(
-      `WITH paid AS (
-         SELECT invoice_id, SUM(amount) AS amt FROM invoice_payments
-          WHERE company_id = $1 AND ${LOCAL("date")} <= $2::date GROUP BY invoice_id
-       ), credited AS (
-         SELECT invoice_id, SUM(total) AS amt FROM credit_notes
-          WHERE company_id = $1 AND status = 'issued' AND invoice_id IS NOT NULL
-            AND ${LOCAL("date")} <= $2::date GROUP BY invoice_id
-       )
-       SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
+      `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
               ${LOCAL("i.date")}::text AS date,
               COALESCE(${LOCAL("i.due_date")}, ${LOCAL("i.date")} + 30)::text AS due,
               COALESCE(i.currency, co.base_currency) AS currency,
               ($2::date - COALESCE(${LOCAL("i.due_date")}, ${LOCAL("i.date")} + 30)) AS days,
-              ROUND(GREATEST(i.total - COALESCE(p.amt, 0) - COALESCE(c.amt, 0), 0)
-                    * COALESCE(NULLIF(i.exchange_rate, 0), 1) * 100)::bigint AS open_fils
+              ${receivableOpenBaseFilsSql("i", AS_OF)} AS open_fils
          FROM invoices i
          JOIN companies co ON co.id = i.company_id
-         LEFT JOIN paid p ON p.invoice_id = i.id
-         LEFT JOIN credited c ON c.invoice_id = i.id
         WHERE i.company_id = $1
-          AND i.status NOT IN ('draft', 'void', 'cancelled')
+          AND ${receivableStatusSql("i")}
+          AND COALESCE(i.invoice_type, 'invoice') <> 'credit_note'
           AND ${LOCAL("i.date")} <= $2::date
         ORDER BY i.date, i.number`,
       [companyId, asOf]
     ),
     controlBalance(companyId, asOf, "receivable", q),
+    unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
   ]);
   return build(
     "receivable",
     asOf,
     rows as AgingDocRows,
     control,
-    await reportCurrencyOf(companyId, q)
+    await reportCurrencyOf(companyId, q),
+    unapplied
   );
 }
 
@@ -226,36 +252,31 @@ export async function agedPayables(
   q: Queryable = pool
 ): Promise<AgingReport> {
   const { companyId, asOf } = args;
-  const [{ rows }, control] = await Promise.all([
+  const [{ rows }, control, unapplied] = await Promise.all([
     q.query(
-      `WITH paid AS (
-         SELECT bp.bill_id, SUM(bp.amount) AS amt FROM bill_payments bp
-           JOIN vendor_bills vb ON vb.id = bp.bill_id
-          WHERE vb.company_id = $1 AND ${LOCAL("bp.payment_date")} <= $2::date GROUP BY bp.bill_id
-       )
-       SELECT b.id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
+      `SELECT b.id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
               ${LOCAL("b.bill_date")}::text AS date,
               COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
               COALESCE(b.currency, co.base_currency) AS currency,
               ($2::date - COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})) AS days,
-              ROUND(GREATEST(COALESCE(b.total_amount, 0) - COALESCE(p.amt, 0), 0)
-                    * COALESCE(NULLIF(b.exchange_rate, 0), 1) * 100)::bigint AS open_fils
+              ${payableOpenBaseFilsSql("b", AS_OF)} AS open_fils
          FROM vendor_bills b
          JOIN companies co ON co.id = b.company_id
-         LEFT JOIN paid p ON p.bill_id = b.id
         WHERE b.company_id = $1
-          AND COALESCE(b.status, 'pending') NOT IN ('draft', 'pending', 'void', 'cancelled', 'rejected')
+          AND ${payableStatusSql("b")}
           AND ${LOCAL("b.bill_date")} <= $2::date
         ORDER BY b.bill_date, b.bill_number`,
       [companyId, asOf]
     ),
     controlBalance(companyId, asOf, "payable", q),
+    unappliedFils(unappliedPayableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
   ]);
   return build(
     "payable",
     asOf,
     rows as AgingDocRows,
     control,
-    await reportCurrencyOf(companyId, q)
+    await reportCurrencyOf(companyId, q),
+    unapplied
   );
 }
