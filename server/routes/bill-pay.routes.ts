@@ -801,7 +801,7 @@ export function registerBillPayRoutes(app: Express) {
     })
   );
 
-  // ── Summary (AED; approved-only payables; pending shown separately) ────
+  // ── Summary (AED; remaining balances; approved-only payables; pending shown separately) ────
   app.get(
     "/api/companies/:companyId/bills/summary",
     authMiddleware,
@@ -810,23 +810,33 @@ export function registerBillPayRoutes(app: Express) {
       const { companyId } = req.params;
       await assertCompanyAccess(req, companyId);
       const today = todayIso();
-      const fx = `COALESCE(NULLIF(exchange_rate, 0), 1)`;
+      const fx = `COALESCE(NULLIF(b.exchange_rate, 0), 1)`;
+      // Payables are remaining balances (total less bill_payments, the same source as
+      // agedPayables / the dashboard outstandingPayables), approved-and-later bills only.
+      const rem = `GREATEST(COALESCE(b.total_amount, 0) - COALESCE(p.amt, 0), 0)`;
       const r = await pool.query(
-        `SELECT
-          COUNT(*) FILTER (WHERE status IN ('draft','pending'))::int AS pending_count,
-          COALESCE(SUM(ROUND(total_amount * ${fx} * 100)) FILTER (WHERE status IN ('draft','pending')), 0)::bigint AS pending_total,
-          COUNT(*) FILTER (WHERE status IN ('approved','overdue'))::int AS approved_count,
-          COALESCE(SUM(ROUND(total_amount * ${fx} * 100)) FILTER (WHERE status IN ('approved','overdue')), 0)::bigint AS approved_total,
-          COUNT(*) FILTER (WHERE status = 'partial')::int AS partial_count,
-          COALESCE(SUM(ROUND(total_amount * ${fx} * 100)) FILTER (WHERE status = 'partial'), 0)::bigint AS partial_total,
-          COALESCE(SUM(ROUND(amount_paid * ${fx} * 100)) FILTER (WHERE status = 'partial'), 0)::bigint AS partial_paid,
-          COUNT(*) FILTER (WHERE status = 'paid')::int AS paid_count,
-          COALESCE(SUM(ROUND(total_amount * ${fx} * 100)) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_total,
-          COUNT(*) FILTER (WHERE status IN ('approved','partial','overdue') AND due_date::date < $2::date AND total_amount > amount_paid)::int AS overdue_count,
-          COALESCE(SUM(ROUND((total_amount - amount_paid) * ${fx} * 100)) FILTER (WHERE status IN ('approved','partial','overdue') AND due_date::date < $2::date), 0)::bigint AS overdue_total,
-          COUNT(*) FILTER (WHERE status IN ('approved','partial','overdue') AND total_amount > amount_paid)::int AS open_count,
-          COALESCE(SUM(ROUND((total_amount - amount_paid) * ${fx} * 100)) FILTER (WHERE status IN ('approved','partial','overdue')), 0)::bigint AS open_total
-        FROM vendor_bills WHERE company_id = $1`,
+        `WITH paid AS (
+          SELECT bp.bill_id, SUM(bp.amount) AS amt FROM bill_payments bp
+            JOIN vendor_bills vb ON vb.id = bp.bill_id
+           WHERE vb.company_id = $1 GROUP BY bp.bill_id
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE b.status IN ('draft','pending'))::int AS pending_count,
+          COALESCE(SUM(ROUND(b.total_amount * ${fx} * 100)) FILTER (WHERE b.status IN ('draft','pending')), 0)::bigint AS pending_total,
+          COUNT(*) FILTER (WHERE b.status IN ('approved','overdue'))::int AS approved_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','overdue')), 0)::bigint AS approved_total,
+          COUNT(*) FILTER (WHERE b.status = 'partial')::int AS partial_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_total,
+          COALESCE(SUM(ROUND(COALESCE(p.amt, 0) * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_paid,
+          COUNT(*) FILTER (WHERE b.status = 'paid')::int AS paid_count,
+          COALESCE(SUM(ROUND(b.total_amount * ${fx} * 100)) FILTER (WHERE b.status = 'paid'), 0)::bigint AS paid_total,
+          COUNT(*) FILTER (WHERE b.status IN ('approved','partial','overdue') AND b.due_date::date < $2::date AND ${rem} > 0)::int AS overdue_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','partial','overdue') AND b.due_date::date < $2::date), 0)::bigint AS overdue_total,
+          COUNT(*) FILTER (WHERE b.status IN ('approved','partial','overdue') AND ${rem} > 0)::int AS open_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','partial','overdue')), 0)::bigint AS open_total
+        FROM vendor_bills b
+        LEFT JOIN paid p ON p.bill_id = b.id
+        WHERE b.company_id = $1`,
         [companyId, today]
       );
       const s = r.rows[0];

@@ -19,6 +19,8 @@ import { type Express, type Request, type Response } from "express";
 import { z } from "zod";
 import { and, eq, sql as sqlTag } from "drizzle-orm";
 import { storage } from "../storage";
+import { getInvoiceBalances } from "../services/invoice-balances";
+import type { InvoiceBalanceFields } from "../../shared/invoice-balance";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
@@ -275,6 +277,9 @@ async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
   return { header, rows, totals, currency, rate };
 }
 
+const NO_BALANCE: InvoiceBalanceFields = { amountPaid: 0, openBalance: 0, openBalanceBase: 0 };
+const balanceOf = (m: Map<string, InvoiceBalanceFields>, id: string) => m.get(id) ?? NO_BALANCE;
+
 export function registerInvoiceRoutes(app: Express) {
   registerInvoicePaymentService();
 
@@ -295,7 +300,8 @@ export function registerInvoiceRoutes(app: Express) {
           limit: 100_000,
           offset: 0,
         });
-        return res.json(invoices);
+        const balances = await getInvoiceBalances(companyId);
+        return res.json(invoices.map((inv) => ({ ...inv, ...balanceOf(balances, inv.id) })));
       }
       const limit = q.limit ?? 50;
       const page = await storage.getInvoicesPage(companyId, {
@@ -304,7 +310,15 @@ export function registerInvoiceRoutes(app: Express) {
         status: q.status,
         type: q.type,
       });
-      res.json({ items: page.items, nextCursor: page.nextCursor, limit });
+      const balances = await getInvoiceBalances(
+        companyId,
+        page.items.map((i) => i.id)
+      );
+      res.json({
+        items: page.items.map((inv) => ({ ...inv, ...balanceOf(balances, inv.id) })),
+        nextCursor: page.nextCursor,
+        limit,
+      });
     })
   );
 
