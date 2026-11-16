@@ -1,3 +1,6 @@
+// Source inspection is intentional: the subject is the Playwright launch crawl (tests/e2e/*.mjs),
+// which needs a running app and Chromium. Its safety rails (no role promotion, remote-mutation
+// refusal, cleanup) can only be asserted from the script text in a unit run.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";

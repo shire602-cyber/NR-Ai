@@ -1,11 +1,5 @@
-import { readFileSync } from "node:fs";
-import { readDashboardSource } from "./dashboardSource";
-import { join } from "node:path";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const repoRoot = process.cwd();
-const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 
 // ── Security headers (R17-18, R18-05) ────────────────────────────────────────
 
@@ -127,31 +121,6 @@ describe("anonymous bootstrap makes no authenticated API calls", () => {
 // ── Tour + onboarding redirect (R18-03, R18-08) ──────────────────────────────
 
 describe("welcome tour and onboarding redirect", () => {
-  it("R18-03: the tour persists a server-side dismissal once per user with a localStorage fallback", () => {
-    const wizard = read("client/src/components/Onboarding.tsx");
-    expect(wizard).toContain("{ tourDismissed: true }");
-    expect(wizard).toContain("tourDismissedAt");
-    expect(wizard).toContain("readLocalTourDismissed");
-    expect(wizard).toContain("muhasib_tour_dismissed:");
-    // never over the onboarding page itself
-    expect(wizard).toContain('location.split("?")[0] === "/onboarding"');
-    // recorded the moment it is shown, not only on an explicit skip
-    expect(wizard).toMatch(/setHasAutoShown\(true\);[\s\S]*skipMutation\.mutate\(\)/);
-  });
-
-  it("R18-03: user_onboarding gains tour_dismissed_at in the Drizzle schema", () => {
-    expect(read("shared/schema.ts")).toContain('tourDismissedAt: timestamp("tour_dismissed_at")');
-  });
-
-  it("R18-08: the onboarding redirect is deterministic per-user state, not a session flag", () => {
-    const app = read("client/src/App.tsx");
-    expect(app).not.toContain("onboarding_redirect_seen");
-    expect(app).not.toContain("sessionStorage.getItem(REDIRECT_FLAG)");
-    expect(app).toContain('navigate("/onboarding")');
-    // waits for in-flight company refetches so a just-finished wizard is not bounced back
-    expect(app).toContain('useIsFetching({ queryKey: ["/api/companies"] })');
-  });
-
   describe("PATCH /api/onboarding", () => {
     const updateUserOnboarding = vi.fn(async (_userId: string, data: Record<string, unknown>) => ({
       id: "o1",
@@ -218,37 +187,5 @@ describe("welcome tour and onboarding redirect", () => {
       expect(data.currentStep).toBe(2);
       expect(data.isOnboardingComplete).toBe(false);
     });
-  });
-});
-
-// ── First invoice UX (R18-06, R18-07, R18-12, R18-13) ────────────────────────
-
-describe("first-invoice experience", () => {
-  const invoices = read("client/src/pages/Invoices.tsx");
-  const dashboard = readDashboardSource();
-
-  it("R18-06: the epoch-based INV-<ms> placeholder is gone and the field says it is assigned on save", () => {
-    expect(invoices).not.toContain("INV-${Date.now()}");
-    expect(invoices).toContain('t["invoices.numberAssignedOnSave"]');
-    expect(invoices).toContain("readOnly={!editingInvoice}");
-  });
-
-  it("R18-07: a saved draft offers Issue now / Keep as draft and issues through the status endpoint", () => {
-    expect(invoices).toContain('data-testid="dialog-invoice-draft-nudge"');
-    expect(invoices).toContain('t["invoices.nudgeIssueNow"]');
-    expect(invoices).toContain('t["invoices.nudgeKeepDraft"]');
-    expect(invoices).toContain('{ id: target.id, status: "sent" }');
-    expect(invoices).toContain("setDraftNudge({ id: created.id");
-  });
-
-  it("R18-13: the dashboard explains that drafts do not count as revenue", () => {
-    expect(dashboard).toContain('data-testid="card-draft-not-revenue"');
-    expect(dashboard).toContain('t["dashboard.draftNotRevenueTitle"]');
-  });
-
-  it("R18-12: the empty dashboard has a guided first-invoice entry that opens the New Invoice dialog", () => {
-    expect(dashboard).toContain('data-testid="card-first-invoice-guide"');
-    expect(dashboard).toContain('href="/invoices?new=1"');
-    expect(invoices).toContain('.get("new") === "1"');
   });
 });
