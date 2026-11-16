@@ -238,20 +238,26 @@ Scope: this file applies to the whole repository.
   the `fx.getRate` / `fx.convert` services (`server/services/fx/README.md`) and a `companyId`;
   the legacy `getLatestRate` helper reads system rows only.
 - Consolidated revenue/expenses/profit/margin (`consolidated-revenue`,
-  `consolidated-expenses`, `consolidated-net-profit`, and `consolidated-margin`) use the
-  accessible-company consolidated statements roll-up and include only loaded entities with no
-  eliminations applied. The Reports roll-up card is labelled "Combined view (unconsolidated, no
-  eliminations)"; real group consolidation is shown from
-  `GET /api/company-groups/:groupId/consolidated-statements` when a company group exists
-  (`client/src/pages/reports/GroupConsolidation.tsx`), else it links to `/company-groups`.
-  Consolidated margin is net profit divided by revenue for that roll-up.
-  Treat them as management-pack comparison signals, not statutory consolidation, until eliminations,
-  ownership rules, and FX translation adjustments are modeled.
+  `consolidated-expenses`, `consolidated-net-profit`, and `consolidated-margin`) read the server
+  management consolidation from `GET /api/company-groups/:groupId/consolidated-statements`
+  (`server/services/consolidation`) for the comparison current and previous ranges when the caller
+  has a company group: member statements come from `server/reporting` with closing entries
+  excluded, FX translation uses closing/average/historical rates with CTA in equity, NCI is split
+  out, and intercompany eliminations (rule maps plus manual group-level elimination journals) are
+  applied; unmatched differences are reported as warnings. The Reports close card is then titled
+  "Management consolidation" and the per-entity rows below it are labelled as before
+  eliminations (`client/src/pages/reports/GroupConsolidation.tsx`, `useReportsPage.tsx`).
+  Only when no group exists, or the endpoint fails, do these metrics fall back to the client
+  accessible-company roll-up (loaded entities only, no eliminations) labelled "Roll-up" and
+  "Combined view (unconsolidated, no eliminations)", with a link to `/company-groups`.
+  Consolidated margin is net profit divided by revenue for the same source. Treat all of these as
+  management consolidation, not statutory IFRS 10 consolidation; corporate tax stays per entity.
 - Consolidation review items (`consolidation-review-items`) uses the current consolidated
   statements review count, including failed entities, unbalanced entities, multi-currency entities,
-  and single-entity roll-up prompts, against a clear baseline of zero. Treat it as a current pack
-  readiness queue, not a historical consolidation trend, until consolidation review snapshots are
-  persisted.
+  and single-entity roll-up prompts, plus server consolidation warnings when a group is
+  consolidated, against a clear baseline of zero. Treat it as a current pack readiness queue, not a
+  historical consolidation trend, until consolidation review snapshots are persisted (consolidation
+  runs record audited snapshots but are not yet read back as history).
 - Manual ledger share (`manual-ledger-share`) is value-weighted posted journal activity from entries
   with empty source or `manual` source divided by total posted journal activity in the comparison
   range; keep it aligned with `ledger-automation-share`, `manual-ledger-activity`, and

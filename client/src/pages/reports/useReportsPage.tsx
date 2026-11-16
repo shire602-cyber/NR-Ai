@@ -242,6 +242,11 @@ import {
 } from "@/lib/reportCatalog";
 import type { ReportLaunchDeliveryPreview } from "@/components/reports/ReportLaunchPicker";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  serverConsolidationCurrency,
+  useFirstCompanyGroup,
+  useServerConsolidatedStatements,
+} from "./groupConsolidationQueries";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { prepareVat201ForExport } from "@/lib/vat201-export";
@@ -1869,6 +1874,42 @@ export function useReportsPage() {
         accessibleReportCompanies.length > 0 &&
         (shouldLoadWorkflowData || shouldLoadReportData("consolidated-statements")),
     });
+
+  // W5-C/W5-A: when a company group exists, consolidated-* metrics come from the server's
+  // management consolidation (eliminations, NCI, FX translation) instead of the client roll-up.
+  const shouldLoadGroupConsolidation =
+    shouldLoadWorkflowData || shouldLoadReportData("consolidated-statements");
+  const { group: consolidationGroup } = useFirstCompanyGroup(shouldLoadGroupConsolidation);
+  const serverConsolidationCurrent = useServerConsolidatedStatements(
+    consolidationGroup?.id,
+    format(comparisonRanges.current.from, "yyyy-MM-dd"),
+    format(comparisonRanges.current.to, "yyyy-MM-dd"),
+    shouldLoadGroupConsolidation
+  );
+  const serverConsolidationPrevious = useServerConsolidatedStatements(
+    consolidationGroup?.id,
+    format(comparisonRanges.previous.from, "yyyy-MM-dd"),
+    format(comparisonRanges.previous.to, "yyyy-MM-dd"),
+    shouldLoadGroupConsolidation
+  );
+  const serverGroupConsolidation = useMemo(() => {
+    const current = serverConsolidationCurrent.data?.consolidated?.profitAndLoss;
+    const previous = serverConsolidationPrevious.data?.consolidated?.profitAndLoss;
+    if (!consolidationGroup || !current || !previous) return null;
+    const income = (pl: typeof current) => pl.revenue ?? pl.totalIncome ?? 0;
+    return {
+      groupId: consolidationGroup.id,
+      groupName: consolidationGroup.name,
+      currency: serverConsolidationCurrency(serverConsolidationCurrent.data),
+      currentRevenue: income(current),
+      previousRevenue: income(previous),
+      currentExpenses: current.totalExpenses ?? 0,
+      previousExpenses: previous.totalExpenses ?? 0,
+      currentNetProfit: current.netProfit ?? 0,
+      previousNetProfit: previous.netProfit ?? 0,
+      warningCount: (serverConsolidationCurrent.data?.warnings ?? []).length,
+    };
+  }, [consolidationGroup, serverConsolidationCurrent.data, serverConsolidationPrevious.data]);
 
   const { data: trialBalance, isLoading: trialBalanceLoading } = useQuery<TrialBalanceReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "trial-balance", trialBalanceParams],
@@ -3785,13 +3826,37 @@ export function useReportsPage() {
       comparisonPreviousProfitLoss?.totalRevenue ?? 0,
       comparisonPreviousProfitLoss?.totalExpenses ?? 0
     );
+    const consolidatedMetricSource = serverGroupConsolidation
+      ? {
+          label: "Consolidated",
+          currency: serverGroupConsolidation.currency,
+          currentRevenue: serverGroupConsolidation.currentRevenue,
+          previousRevenue: serverGroupConsolidation.previousRevenue,
+          currentExpenses: serverGroupConsolidation.currentExpenses,
+          previousExpenses: serverGroupConsolidation.previousExpenses,
+          currentNetProfit: serverGroupConsolidation.currentNetProfit,
+          previousNetProfit: serverGroupConsolidation.previousNetProfit,
+          reviewCount:
+            consolidatedStatementsReport.reviewCount + serverGroupConsolidation.warningCount,
+        }
+      : {
+          label: "Roll-up",
+          currency: "AED",
+          currentRevenue: consolidatedStatementsReport.currentComparisonRevenue,
+          previousRevenue: consolidatedStatementsReport.previousRevenue,
+          currentExpenses: consolidatedStatementsReport.currentComparisonExpenses,
+          previousExpenses: consolidatedStatementsReport.previousExpenses,
+          currentNetProfit: consolidatedStatementsReport.currentComparisonNetProfit,
+          previousNetProfit: consolidatedStatementsReport.previousNetProfit,
+          reviewCount: consolidatedStatementsReport.reviewCount,
+        };
     const currentConsolidatedMargin = ratioPercent(
-      consolidatedStatementsReport.currentComparisonNetProfit,
-      consolidatedStatementsReport.currentComparisonRevenue
+      consolidatedMetricSource.currentNetProfit,
+      consolidatedMetricSource.currentRevenue
     );
     const previousConsolidatedMargin = ratioPercent(
-      consolidatedStatementsReport.previousNetProfit,
-      consolidatedStatementsReport.previousRevenue
+      consolidatedMetricSource.previousNetProfit,
+      consolidatedMetricSource.previousRevenue
     );
     const currentBreakEvenGap = Math.max(
       0,
@@ -5440,10 +5505,10 @@ export function useReportsPage() {
       }),
       makeComparisonMetric({
         id: "consolidated-revenue",
-        label: "Roll-up revenue",
-        current: consolidatedStatementsReport.currentComparisonRevenue,
-        previous: consolidatedStatementsReport.previousRevenue,
-        currency: "AED",
+        label: `${consolidatedMetricSource.label} revenue`,
+        current: consolidatedMetricSource.currentRevenue,
+        previous: consolidatedMetricSource.previousRevenue,
+        currency: consolidatedMetricSource.currency,
         signal: "Group revenue",
         favorable: "increase",
         personas: ["accountant"],
@@ -5451,10 +5516,10 @@ export function useReportsPage() {
       }),
       makeComparisonMetric({
         id: "consolidated-expenses",
-        label: "Roll-up expenses",
-        current: consolidatedStatementsReport.currentComparisonExpenses,
-        previous: consolidatedStatementsReport.previousExpenses,
-        currency: "AED",
+        label: `${consolidatedMetricSource.label} expenses`,
+        current: consolidatedMetricSource.currentExpenses,
+        previous: consolidatedMetricSource.previousExpenses,
+        currency: consolidatedMetricSource.currency,
         signal: "Group expenses",
         favorable: "decrease",
         personas: ["accountant"],
@@ -5462,10 +5527,10 @@ export function useReportsPage() {
       }),
       makeComparisonMetric({
         id: "consolidated-net-profit",
-        label: "Roll-up net profit",
-        current: consolidatedStatementsReport.currentComparisonNetProfit,
-        previous: consolidatedStatementsReport.previousNetProfit,
-        currency: "AED",
+        label: `${consolidatedMetricSource.label} net profit`,
+        current: consolidatedMetricSource.currentNetProfit,
+        previous: consolidatedMetricSource.previousNetProfit,
+        currency: consolidatedMetricSource.currency,
         signal: "Multi-entity roll-up",
         favorable: "increase",
         personas: ["accountant"],
@@ -5473,7 +5538,7 @@ export function useReportsPage() {
       }),
       makeComparisonMetric({
         id: "consolidated-margin",
-        label: "Roll-up margin",
+        label: `${consolidatedMetricSource.label} margin`,
         current: currentConsolidatedMargin,
         previous: previousConsolidatedMargin,
         currency: "%",
@@ -5485,7 +5550,7 @@ export function useReportsPage() {
       makeComparisonMetric({
         id: "consolidation-review-items",
         label: "Consolidation review items",
-        current: consolidatedStatementsReport.reviewCount,
+        current: consolidatedMetricSource.reviewCount,
         previous: 0,
         currentLabel: "Review items",
         previousLabel: "Clear baseline",
@@ -5632,6 +5697,7 @@ export function useReportsPage() {
     consolidatedStatementsReport.previousNetProfit,
     consolidatedStatementsReport.previousRevenue,
     consolidatedStatementsReport.reviewCount,
+    serverGroupConsolidation,
     activityLogs,
     bankTransactions,
     cashFlowForecast?.currentBalance,
@@ -9267,6 +9333,7 @@ export function useReportsPage() {
     comparisonRanges,
     consolidatedStatementsLoading,
     consolidatedStatementsReport,
+    serverGroupConsolidation,
     corporateTaxBridgeRows,
     corporateTaxEstimate,
     corporateTaxLoading,

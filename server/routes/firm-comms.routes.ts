@@ -16,12 +16,7 @@ import { authMiddleware } from "../middleware/auth";
 import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
-import {
-  sendEmail,
-  renderTemplate,
-  hasSmtpConfig,
-  sendGenericEmail,
-} from "../services/email.service";
+import { sendEmail, renderTemplate } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
 import { recordAudit } from "../services/audit.service";
 

@@ -28,6 +28,7 @@ export default function CloseTab() {
     auditTrailReport,
     consolidatedStatementsLoading,
     consolidatedStatementsReport,
+    serverGroupConsolidation,
     dateRange,
     locale,
     monthEndChecklist,
@@ -373,11 +374,19 @@ export default function CloseTab() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle>
-                <T k="reportCenter.managementRollUp" />
+                {serverGroupConsolidation ? (
+                  <T k="reportCenter.managementConsolidation" />
+                ) : (
+                  <T k="reportCenter.managementRollUp" />
+                )}
               </CardTitle>
               <CardDescription>
                 {consolidatedStatementsReport.periodLabel}.{" "}
-                <T k="reportCenter.combinedViewUnconsolidated" />
+                {serverGroupConsolidation ? (
+                  <T k="reportCenter.perEntityBeforeEliminations" />
+                ) : (
+                  <T k="reportCenter.combinedViewUnconsolidated" />
+                )}
               </CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">

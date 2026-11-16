@@ -1,10 +1,36 @@
 {
   "description": "Coverage ratchet for `npm run test:coverage` (read by vitest.config.ts) and `npm run test:db -- --coverage` (key \"db\", read by tests/db/vitest.config.ts). Values only go up. Plan (council PLAN.md, R20-15): statements/lines 25 after wave 3, 40 after wave 4, 50 at the end; branches/functions follow proportionally. Raise in the same PR that adds the tests.",
   "baseline": "2026-06-13 clean audit",
-  "plan": { "afterWave3": 25, "afterWave4": 40, "final": 50 },
+  "plan": {
+    "afterWave3": 25,
+    "afterWave4": 40,
+    "final": 50
+  },
   "measured": {
-    "unit_2026-11-15": { "statements": 29.86, "branches": 25.49, "functions": 31.37, "lines": 30.27 },
-    "db_2026-11-16": { "statements": 56.15, "branches": 44.76, "functions": 59.35, "lines": 58.1 }
+    "unit_2026-11-15": {
+      "statements": 29.86,
+      "branches": 25.49,
+      "functions": 31.37,
+      "lines": 30.27
+    },
+    "db_2026-11-16": {
+      "statements": 56.15,
+      "branches": 44.76,
+      "functions": 59.35,
+      "lines": 58.1
+    },
+    "unit_2026-11-16_w5_integrated": {
+      "statements": 29.66,
+      "branches": 25.47,
+      "functions": 30.61,
+      "lines": 30.07
+    },
+    "db_2026-11-16_w5_integrated": {
+      "statements": 60.77,
+      "branches": 48.62,
+      "functions": 63.82,
+      "lines": 62.86
+    }
   },
   "thresholds": {
     "statements": 25,
@@ -13,9 +39,9 @@
     "lines": 30
   },
   "db": {
-    "statements": 55,
-    "branches": 40,
-    "functions": 55,
-    "lines": 55
+    "statements": 58,
+    "branches": 46,
+    "functions": 60,
+    "lines": 60
   }
 }

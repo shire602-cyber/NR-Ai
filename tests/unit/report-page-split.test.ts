@@ -101,6 +101,8 @@ describe("catalog restraint (R12-14, R18-10)", () => {
       "reportCenter.advancedTools",
       "reportCenter.statementsAndTax",
       "reportCenter.combinedViewUnconsolidated",
+      "reportCenter.managementConsolidation",
+      "reportCenter.perEntityBeforeEliminations",
       "reportCenter.indicator",
       "reportCenter.ftaAuditFileHint",
     ]) {
@@ -182,5 +184,20 @@ describe("budget sign convention (W3-E carry-over)", () => {
     expect(isOverBudgetLine(line("expense", 100, 80))).toBe(false);
     // Income below budget has a negative (unfavourable) variance but is not "over budget".
     expect(isOverBudgetLine(line("income", 100, 50))).toBe(false);
+  });
+});
+
+describe("group consolidation on Reports (W5-C x W5-A integration)", () => {
+  it("[R12-12] consolidated-* metrics read the server consolidation API when a group exists", () => {
+    const page = read("client/src/pages/reports/useReportsPage.tsx");
+    const panel = read("client/src/pages/reports/groupConsolidationQueries.ts");
+    const close = read("client/src/pages/reports/tabs/CloseTab.tsx");
+    expect(panel).toContain("/api/company-groups/${groupId}/consolidated-statements");
+    expect(page).toContain("useServerConsolidatedStatements(");
+    expect(page).toMatch(/serverGroupConsolidation\s*\?\s*\{\s*label: "Consolidated"/);
+    // The unconsolidated label is only the no-group fallback.
+    expect(close).toMatch(
+      /serverGroupConsolidation \? \(\s*<T k="reportCenter.perEntityBeforeEliminations" \/>\s*\) : \(\s*<T k="reportCenter.combinedViewUnconsolidated" \/>/
+    );
   });
 });

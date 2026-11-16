@@ -266,10 +266,11 @@ export function registerAIGLRoutes(app: Express) {
 
       // Upsert into admin_settings
       await pool.query(
-        `INSERT INTO admin_settings (key, value)
-         VALUES ($1, $2)
-         ON CONFLICT (key) DO UPDATE SET value = $2`,
-        [`ai_gl_confidence_threshold_${companyId}`, String(confidenceThreshold)]
+        `INSERT INTO admin_settings (key, value, category, description, updated_by, updated_at)
+         VALUES ($1, $2, 'features', 'AI GL auto-post confidence threshold', $3, now())
+         ON CONFLICT (key) DO UPDATE
+           SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+        [`ai_gl_confidence_threshold_${companyId}`, String(confidenceThreshold), userId]
       );
 
       log.info({ companyId, confidenceThreshold }, "AI GL confidence threshold updated");

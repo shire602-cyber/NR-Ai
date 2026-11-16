@@ -4656,10 +4656,10 @@ describe("report discoverability", () => {
     );
     expect(reportsSource).toContain("fixedAssetRegisterReport.reviewValueAed");
     expect(reportsSource).toMatch(
-      /id: "consolidated-revenue"[\s\S]*?currency: "AED"[\s\S]*?signal: "Group revenue"[\s\S]*?personas: \["accountant"\]/
+      /id: "consolidated-revenue"[\s\S]*?currency: consolidatedMetricSource\.currency[\s\S]*?signal: "Group revenue"[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "consolidated-expenses"[\s\S]*?currency: "AED"[\s\S]*?signal: "Group expenses"[\s\S]*?personas: \["accountant"\]/
+      /id: "consolidated-expenses"[\s\S]*?currency: consolidatedMetricSource\.currency[\s\S]*?signal: "Group expenses"[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toMatch(
       /id: "consolidated-margin"[\s\S]*?currency: "%"[\s\S]*?signal: "Group profitability"[\s\S]*?personas: \["accountant"\]/

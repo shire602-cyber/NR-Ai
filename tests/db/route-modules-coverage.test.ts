@@ -57,10 +57,8 @@ describe("ai-gl.routes [R20-14]", () => {
 });
 
 describe("ai-gl.routes settings defect [R20-14]", () => {
-  // FOLLOW-UP: PUT /api/companies/:id/ai-gl/settings upserts admin_settings without the
-  // NOT NULL `category` column, so every valid save answers 400 REQUIRED_FIELD_MISSING.
-  // Fix in server/routes/ai-gl.routes.ts (not owned by W5-E): include a category.
-  it.fails("[R20-14] ai-gl: a valid confidence threshold is saved", async () => {
+  // Fixed in the W5 integration: the upsert now writes the NOT NULL `category` column.
+  it("[R20-14] ai-gl: a valid confidence threshold is saved", async () => {
     const { customer } = await actors();
     const ok = await customer.as.put(`/api/companies/${customer.company.id}/ai-gl/settings`, {
       confidenceThreshold: 0.85,

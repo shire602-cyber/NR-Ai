@@ -22,7 +22,9 @@ describe("W5-E encrypted backups", () => {
     expect(dl.status).toBe(200);
     expect(JSON.parse(dl.text).companyId).toBe(t.company.id);
 
+    // W5-B restore contract: an explicit mode (merge | replace) plus confirmRestore.
     const restore = await t.as.post(`/api/backups/${created.body.id}/restore`, {
+      mode: "merge",
       confirmRestore: true,
     });
     expect(restore.status, restore.text).toBe(200);
@@ -31,7 +33,8 @@ describe("W5-E encrypted backups", () => {
       [t.company.id]
     );
     expect(audit).toHaveLength(1);
-    expect(JSON.parse(audit[0].details).after).toHaveProperty("totalRestored");
+    expect(JSON.parse(audit[0].details).after).toMatchObject({ mode: "merge" });
+    expect(JSON.parse(audit[0].details).after).toHaveProperty("totals");
 
     // Viewers cannot download or restore another member's backups.
     const viewer = await h.createSecondTenant({ name: "BackupViewer" });

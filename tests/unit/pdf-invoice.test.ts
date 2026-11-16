@@ -65,7 +65,8 @@ function lines(): InvoiceLine[] {
   ] as unknown as InvoiceLine[];
 }
 
-describe("pdf invoice content", () => {
+// Arabic font embedding takes ~4 s per PDF under v8 coverage on a 4-core runner.
+describe("pdf invoice content", { timeout: 30_000 }, () => {
   it("R03-09 Arabic customer, labels and line descriptions round-trip", async () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company());
     const text = await pdfToText(pdf);

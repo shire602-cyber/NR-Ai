@@ -26,7 +26,8 @@ const line = {
 
 const flat = (s: string) => s.replace(/\s+/g, " ");
 
-describe("pdf credit note / quote / purchase order (R03-09, R14-21)", () => {
+// Arabic font embedding takes ~4 s per PDF under v8 coverage on a 4-core runner.
+describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout: 30_000 }, () => {
   it("R03-09 credit note renders Arabic customer, reason and line text", async () => {
     const pdf = await generateCreditNotePDF(
       {

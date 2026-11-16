@@ -6,9 +6,7 @@ import {
   Users,
   DollarSign,
   BarChart2,
-  Heart,
   AlertTriangle,
-  XCircle,
 } from "lucide-react";
 import {
   BarChart,
@@ -21,7 +19,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

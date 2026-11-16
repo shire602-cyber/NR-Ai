@@ -507,5 +507,7 @@
   "reportCenter.balanceSheetShort": "Balance sheet",
   "reportCenter.cashFlowShort": "Cash flow",
   "reportCenter.trialBalanceShort": "Trial balance",
-  "reportCenter.vatSummaryShort": "VAT return summary"
+  "reportCenter.vatSummaryShort": "VAT return summary",
+  "reportCenter.managementConsolidation": "Management consolidation",
+  "reportCenter.perEntityBeforeEliminations": "Per-entity statements below are before eliminations; the group figures above apply eliminations, NCI and currency translation. Corporate tax stays per entity."
 }

@@ -507,5 +507,7 @@
   "reportCenter.balanceSheetShort": "الميزانية العمومية",
   "reportCenter.cashFlowShort": "التدفق النقدي",
   "reportCenter.trialBalanceShort": "ميزان المراجعة",
-  "reportCenter.vatSummaryShort": "ملخص إقرار ضريبة القيمة المضافة"
+  "reportCenter.vatSummaryShort": "ملخص إقرار ضريبة القيمة المضافة",
+  "reportCenter.managementConsolidation": "التوحيد الإداري",
+  "reportCenter.perEntityBeforeEliminations": "القوائم أدناه لكل كيان قبل الاستبعادات؛ أرقام المجموعة أعلاه تطبق الاستبعادات والحقوق غير المسيطرة وتحويل العملات. تبقى ضريبة الشركات لكل كيان على حدة."
 }

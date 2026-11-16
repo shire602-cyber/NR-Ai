@@ -24,14 +24,7 @@ import {
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, gte, lte, inArray, count, sum, max, not, desc } from "drizzle-orm";
-import {
-  companies,
-  invoices,
-  invoiceLines,
-  receipts,
-  bankTransactions,
-  vatReturns,
-} from "../../shared/schema";
+import { companies, invoices, receipts, bankTransactions, vatReturns } from "../../shared/schema";
 import { storage } from "../storage";
 import { UAE_VAT_RATE, DEFAULT_CURRENCY } from "../constants";
 import { createLogger } from "../config/logger";

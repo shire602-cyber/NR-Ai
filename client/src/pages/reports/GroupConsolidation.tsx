@@ -1,72 +1,31 @@
 /**
  * Group consolidation on the Reports page (W5-A, R20-09 brief §6).
  *
- * The management roll-up below is a client-side sum of each accessible company's own
- * statements; it is never labelled as a consolidation. When a company group exists, this
- * panel shows the server's consolidated statements (eliminations and FX translation applied)
- * from GET /api/company-groups/:groupId/consolidated-statements. With no group, or when the
- * endpoint is unavailable, it says so and links to /company-groups.
+ * When a company group exists, this panel shows the server's management consolidation
+ * (eliminations, NCI and FX translation applied) from
+ * GET /api/company-groups/:groupId/consolidated-statements, and the consolidated-* comparison
+ * metrics read the same endpoint (useReportsPage). Only with no group, or when the endpoint
+ * fails, does the page fall back to the client-side per-entity roll-up, labelled
+ * "combined view (unconsolidated)", with a link to /company-groups.
  */
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { T } from "@/components/layout/T";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n";
-
-interface CompanyGroupSummary {
-  id: string;
-  name: string;
-}
-
-interface ConsolidatedPayload {
-  entities?: unknown[];
-  eliminations?: unknown[];
-  translation?: Record<string, unknown>;
-  consolidated?: {
-    profitAndLoss?: { totalIncome?: number; revenue?: number; netProfit?: number };
-    balanceSheet?: { totalAssets?: number; totalEquity?: number; isBalanced?: boolean };
-  };
-  generatedAt?: string;
-}
-
-function asGroups(body: unknown): CompanyGroupSummary[] {
-  const list = Array.isArray(body)
-    ? body
-    : Array.isArray((body as { groups?: unknown[] } | null)?.groups)
-      ? (body as { groups: unknown[] }).groups
-      : [];
-  return list
-    .map((g) => g as Partial<CompanyGroupSummary>)
-    .filter((g): g is CompanyGroupSummary => typeof g.id === "string")
-    .map((g) => ({ id: g.id, name: g.name ?? g.id }));
-}
+import {
+  serverConsolidationCurrency,
+  useFirstCompanyGroup,
+  useServerConsolidatedStatements,
+} from "./groupConsolidationQueries";
 
 export function GroupConsolidationPanel({ from, to }: { from?: string; to?: string }) {
   const { locale } = useTranslation();
-  const groups = useQuery({
-    queryKey: ["/api/company-groups"],
-    queryFn: async () => asGroups(await apiRequest("GET", "/api/company-groups")),
-    retry: false,
-    staleTime: 5 * 60_000,
-  });
-  const group = groups.data?.[0] ?? null;
-  const range = new URLSearchParams();
-  if (from) range.set("from", from);
-  if (to) range.set("to", to);
-  const consolidated = useQuery<ConsolidatedPayload>({
-    queryKey: ["/api/company-groups", group?.id, "consolidated-statements", from, to],
-    queryFn: () =>
-      apiRequest(
-        "GET",
-        `/api/company-groups/${group!.id}/consolidated-statements?${range.toString()}`
-      ),
-    enabled: Boolean(group),
-    retry: false,
-  });
+  const groups = useFirstCompanyGroup();
+  const group = groups.group;
+  const consolidated = useServerConsolidatedStatements(group?.id, from, to);
 
   if (groups.isLoading || (group && consolidated.isLoading)) {
     return <Skeleton className="h-20" />;
@@ -96,6 +55,7 @@ export function GroupConsolidationPanel({ from, to }: { from?: string; to?: stri
   }
 
   const c = consolidated.data;
+  const currency = serverConsolidationCurrency(c);
   const pl = c.consolidated?.profitAndLoss ?? {};
   const bs = c.consolidated?.balanceSheet ?? {};
   return (
@@ -117,7 +77,7 @@ export function GroupConsolidationPanel({ from, to }: { from?: string; to?: stri
             <T k="reportCenter.revenue" />
           </div>
           <div className="font-mono text-lg font-semibold">
-            {formatCurrency(pl.revenue ?? pl.totalIncome ?? 0, "AED", locale)}
+            {formatCurrency(pl.revenue ?? pl.totalIncome ?? 0, currency, locale)}
           </div>
         </div>
         <div>
@@ -125,7 +85,7 @@ export function GroupConsolidationPanel({ from, to }: { from?: string; to?: stri
             <T k="reportCenter.netProfit" />
           </div>
           <div className="font-mono text-lg font-semibold">
-            {formatCurrency(pl.netProfit ?? 0, "AED", locale)}
+            {formatCurrency(pl.netProfit ?? 0, currency, locale)}
           </div>
         </div>
         <div>
@@ -133,7 +93,7 @@ export function GroupConsolidationPanel({ from, to }: { from?: string; to?: stri
             <T k="reportCenter.assets" />
           </div>
           <div className="font-mono text-lg font-semibold">
-            {formatCurrency(bs.totalAssets ?? 0, "AED", locale)}
+            {formatCurrency(bs.totalAssets ?? 0, currency, locale)}
           </div>
         </div>
       </div>
