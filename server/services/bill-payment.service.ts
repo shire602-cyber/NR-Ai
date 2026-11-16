@@ -53,7 +53,7 @@ import {
   type BillState,
 } from "./bill-posting.service";
 import { resolveVendor } from "./vendor.service";
-import { inboundBillSchema } from "../../shared/validators/bills";
+import { debitNoteCreateSchema, inboundBillSchema } from "../../shared/validators/bills";
 import { parseStrict } from "../http/strict-body";
 import type {
   ApplyCreditInput,
@@ -61,6 +61,7 @@ import type {
   BillUpdateInput,
   DebitNoteCreateInput,
   InboundBillInput,
+  InboundVendorCreditInput,
   PrepaymentCreateInput,
   RecurringBillCreateInput,
 } from "../../shared/validators/bills";
@@ -334,6 +335,7 @@ async function prepareBill(
       accountId: string | null;
       productId: string | null;
       poLineId: string | null;
+      costCenterId: string | null;
     }
     let src: SrcLine[] | undefined = input.line_items?.map((l) => ({
       description: l.description,
@@ -344,6 +346,7 @@ async function prepareBill(
       accountId: l.account_id ?? null,
       productId: l.product_id ?? null,
       poLineId: null as string | null,
+      costCenterId: l.cost_center_id ?? null,
     }));
     if (!src && existing) {
       const r = await pool.query(
@@ -362,8 +365,14 @@ async function prepareBill(
         accountId: l.account_id ?? null,
         productId: l.product_id ?? null,
         poLineId: l.purchase_order_line_id ?? null,
+        costCenterId: l.cost_center_id ?? null,
       }));
     }
+    if (src)
+      await assertCostCenters(
+        companyId,
+        src.map((l) => l.costCenterId)
+      );
     const totals = computeBillTotals({
       lines: src ?? [],
       reverseCharge,
@@ -398,6 +407,7 @@ async function prepareBill(
         account_id: l.accountId,
         product_id: l.productId,
         purchase_order_line_id: l.poLineId,
+        cost_center_id: l.costCenterId,
         reverse_charge: totals.lines[i].reverseCharge,
       }));
     }
@@ -424,8 +434,8 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
     await txRows(
       tx,
       `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, vat_amount,
-          account_id, reverse_charge, vat_supply_type, product_id, purchase_order_line_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          account_id, reverse_charge, vat_supply_type, product_id, purchase_order_line_id, cost_center_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         billId,
         l.description,
@@ -439,7 +449,28 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
         l.vat_supply_type,
         l.product_id ?? null,
         l.purchase_order_line_id ?? null,
+        l.cost_center_id ?? null,
       ]
+    );
+  }
+}
+
+/** R10-11: every bill line cost centre must exist in the company (404 otherwise). */
+async function assertCostCenters(companyId: string, ids: Array<string | null>): Promise<void> {
+  const wanted = [...new Set(ids.filter((v): v is string => !!v))];
+  if (wanted.length === 0) return;
+  const { rows } = await pool.query(
+    `SELECT id FROM cost_centers WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+    [companyId, wanted]
+  );
+  const found = new Set(rows.map((r: { id: string }) => r.id));
+  const missing = wanted.filter((id) => !found.has(id));
+  if (missing.length) {
+    throw new DomainError(
+      "COST_CENTER_NOT_FOUND",
+      404,
+      { costCenterId: missing[0] },
+      "Cost centre not found"
     );
   }
 }
@@ -869,7 +900,10 @@ export async function voidBillPayment(args: {
   /** Run inside the caller's ledger transaction (bank unmatch / compensation). */
   tx?: LedgerTx;
 }): Promise<{ billStatus: BillState; amountPaid: number }> {
-  const result = await withLedgerTx(async (tx) => {
+  // INT-W3: the audit row is written after the (outermost) transaction commits, so a caller's
+  // rollback (bank unmatch / compensation inside its own withLedgerTx) leaves no audit of a void
+  // that never happened.
+  return withLedgerTx(async (tx, { afterCommit }) => {
     const bill = await lockBill(tx, args.billId, args.companyId);
     const rows = await txRows<Record<string, string | null>>(
       tx,
@@ -933,18 +967,20 @@ export async function voidBillPayment(args: {
       );
     }
     const settled = await settleStatus(tx, bill);
-    return { billStatus: settled.status, amountPaid: Number(fromFils(settled.paidFils)) };
+    const result = { billStatus: settled.status, amountPaid: Number(fromFils(settled.paidFils)) };
+    afterCommit(() =>
+      recordAudit({
+        userId: args.actorId,
+        companyId: args.companyId,
+        action: "bill.payment.void",
+        entityType: "vendor_bill",
+        entityId: args.billId,
+        after: { paymentId: args.paymentId, ...result, reason: args.reason ?? null },
+        req: args.req,
+      })
+    );
+    return result;
   }, args.tx);
-  await recordAudit({
-    userId: args.actorId,
-    companyId: args.companyId,
-    action: "bill.payment.void",
-    entityType: "vendor_bill",
-    entityId: args.billId,
-    after: { paymentId: args.paymentId, ...result, reason: args.reason ?? null },
-    req: args.req,
-  });
-  return result;
 }
 
 // ─── Vendor prepayments / advances ─────────────────────────────────────────
@@ -1148,6 +1184,8 @@ export async function createDebitNote(args: {
   actorId: string;
   input: DebitNoteCreateInput;
   req?: Request;
+  /** Run inside the caller's ledger transaction (inbound credit note conversion). */
+  tx?: LedgerTx;
 }) {
   const { companyId, input } = args;
   let vendorName = input.vendor_name ?? null;
@@ -1254,7 +1292,133 @@ export async function createDebitNote(args: {
       { actorId: args.actorId, tx }
     );
     return { debitNote: note, journalEntryId: entry.id };
+  }, args.tx);
+}
+
+/**
+ * "bills.createVendorCreditFromInbound" (W4-C residual): a reviewed supplier credit note received
+ * as an e-invoice becomes a vendor debit note (Dr A/P / Cr expense / Cr Input VAT). The inbound
+ * row is claimed (received -> credit_created) in the same transaction as the debit note, so a
+ * second review cannot book it twice. Amounts come from the archived, PINT AE-validated XML.
+ */
+export async function createVendorCreditFromInbound(args: {
+  companyId: string;
+  actorId: string;
+  inboundId: string;
+  input: InboundVendorCreditInput;
+  req?: Request;
+}) {
+  const { companyId, inboundId } = args;
+  const row = (
+    await pool.query(
+      `SELECT id, status, archive_id, debit_note_id, document_type, document_number
+         FROM einvoice_inbound_documents WHERE id = $1 AND company_id = $2`,
+      [inboundId, companyId]
+    )
+  ).rows[0] as
+    | {
+        id: string;
+        status: string;
+        archive_id: string | null;
+        debit_note_id: string | null;
+        document_number: string;
+      }
+    | undefined;
+  if (!row) throw new DomainError("INBOUND_DOCUMENT_NOT_FOUND", 404);
+  if (row.debit_note_id || row.status === "credit_created") {
+    throw new DomainError(
+      "INBOUND_ALREADY_CONVERTED",
+      409,
+      { debitNoteId: row.debit_note_id },
+      "This supplier credit note has already been recorded as a vendor credit"
+    );
+  }
+  if (row.status !== "received" || !row.archive_id) {
+    throw new DomainError(
+      "INBOUND_NOT_REVIEWABLE",
+      409,
+      { status: row.status },
+      "Only a received, validated supplier document can be converted"
+    );
+  }
+  const archived = (
+    await pool.query(`SELECT xml FROM einvoice_archive WHERE id = $1 AND company_id = $2`, [
+      row.archive_id,
+      companyId,
+    ])
+  ).rows[0] as { xml: string } | undefined;
+  if (!archived) throw new DomainError("INBOUND_ARCHIVE_MISSING", 409);
+  const { parseInboundUbl } = await import("./einvoice/inbound");
+  const parsed = parseInboundUbl(archived.xml);
+  if (parsed.root !== "CreditNote") {
+    throw new DomainError(
+      "INBOUND_NOT_CREDIT_NOTE",
+      409,
+      undefined,
+      "Only a supplier credit note becomes a vendor credit; invoices become draft bills"
+    );
+  }
+  const lines = parsed.lines
+    .map((l, i) => ({ l, i }))
+    .filter(({ l }) => Math.abs(l.netFils) > 0)
+    .map(({ l, i }) => ({
+      description: l.description.slice(0, 500),
+      // A UBL credit note carries positive amounts; the sign is the document type. The schema
+      // takes major units (zMoneyFils converts to fils).
+      amount: fromFils(Math.abs(l.netFils)),
+      vat_rate: l.category === "S" ? 5 : 0,
+      account_id: args.input.account_ids?.[i] ?? args.input.account_id ?? null,
+    }));
+  if (lines.length === 0) throw new DomainError("INBOUND_NO_CREDIT_LINES", 422);
+  const input = parseStrict(debitNoteCreateSchema, {
+    vendor_name: parsed.supplierName.slice(0, 255),
+    debit_note_number: parsed.documentNumber.slice(0, 64),
+    bill_id: args.input.bill_id ?? null,
+    note_date: parsed.issueDate,
+    currency: parsed.currency,
+    exchange_rate: parsed.exchangeRate ?? null,
+    reason: args.input.reason ?? `Supplier credit note ${parsed.documentNumber}`.slice(0, 500),
+    lines,
   });
+  await assertPeriodNotLocked(companyId, input.note_date);
+  const out = await withLedgerTx(async (tx, { afterCommit }) => {
+    const claimed = await txRows<{ id: string }>(
+      tx,
+      `UPDATE einvoice_inbound_documents SET status = 'credit_created', error = NULL
+        WHERE id = $1 AND company_id = $2 AND status = 'received' AND debit_note_id IS NULL
+        RETURNING id`,
+      [inboundId, companyId]
+    );
+    if (!claimed.length) throw new DomainError("INBOUND_ALREADY_CONVERTED", 409);
+    const created = await createDebitNote({
+      companyId,
+      actorId: args.actorId,
+      input,
+      req: args.req,
+      tx,
+    });
+    await txRows(tx, `UPDATE einvoice_inbound_documents SET debit_note_id = $2 WHERE id = $1`, [
+      inboundId,
+      created.debitNote.id,
+    ]);
+    afterCommit(() =>
+      recordAudit({
+        userId: args.actorId,
+        companyId,
+        action: "bill.inbound.vendor_credit",
+        entityType: "vendor_debit_note",
+        entityId: created.debitNote.id,
+        after: {
+          inboundId,
+          documentNumber: parsed.documentNumber,
+          total: created.debitNote.total_amount,
+        },
+        req: args.req,
+      })
+    );
+    return created;
+  });
+  return { ...out, inboundId };
 }
 
 /** Apply an open debit note to an approved bill (no cash; FX difference posted when rates differ). */
@@ -1617,6 +1781,8 @@ export function registerBillServices(): void {
   if (!has("bills.reversePayment")) provide("bills.reversePayment", reverseBillPayment);
   if (!has("bills.createDraftFromInbound"))
     provide("bills.createDraftFromInbound", createDraftFromInbound);
+  if (!has("bills.createVendorCreditFromInbound"))
+    provide("bills.createVendorCreditFromInbound", createVendorCreditFromInbound);
   if (!listJobs().some((j) => j.name === "bills.recurring")) {
     registerJob({
       name: "bills.recurring",

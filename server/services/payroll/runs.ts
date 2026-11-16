@@ -58,6 +58,13 @@ import {
 import { pensionCountry, type PayrollLegalParams } from "./legal-params";
 import { leaveDaysInRange, unpaidLeaveDaysBetween } from "./leave";
 import { dayOf, fils, num, q, q1, type Row } from "./sql";
+import {
+  attachClaimsToRun,
+  markRunClaimsPaid,
+  reimbursementPayableAccount,
+  reopenRunClaims,
+  runReimbursementFils,
+} from "./claims";
 
 const log = createLogger("payroll-runs");
 
@@ -451,6 +458,8 @@ export async function calculateRun(
     }
 
     await recomputeRunTotals(runId, tx);
+    // S2 (R04-20): approved expense claims queued for payroll are reimbursed on this run.
+    await attachClaimsToRun(tx, companyId, runId);
     const updated = await q1<PayrollRunRow>(
       `UPDATE payroll_runs SET status = 'calculated', calculated_by = $2, calculated_at = NOW(),
               sif_file_content = NULL, sif_file_name = NULL, wps_status = 'not_submitted'
@@ -871,8 +880,30 @@ export async function payRun(
     const netFils = sumFils(items.map((i) => fils(i.net_salary)));
     const accounts = await payrollAccounts(companyId, tx);
     const label = periodLabel(run);
+    // S2 (R04-20): expense claims reimbursed on this run clear 2045 in the payment journal.
+    const reimbursementFils = await runReimbursementFils(tx, runId);
     let paymentEntryId: string | null = null;
-    if (netFils > 0) {
+    if (netFils + reimbursementFils > 0) {
+      const lines: PostJournalLineInput[] = [];
+      if (netFils > 0) {
+        lines.push({
+          accountId: requireAccount(accounts, "salariesPayable"),
+          debitFils: netFils,
+          description: `Net salaries paid - payroll ${label}`,
+        });
+      }
+      if (reimbursementFils > 0) {
+        lines.push({
+          accountId: await reimbursementPayableAccount(tx, companyId),
+          debitFils: reimbursementFils,
+          description: `Expense claim reimbursements - payroll ${label}`,
+        });
+      }
+      lines.push({
+        accountId: body.paymentAccountId,
+        creditFils: netFils + reimbursementFils,
+        description: `Salary payment - payroll ${label}`,
+      });
       const posted = await postJournal(
         {
           companyId,
@@ -881,23 +912,23 @@ export async function payRun(
           source: "payroll_payment",
           sourceId: runId,
           status: "posted",
-          lines: [
-            {
-              accountId: requireAccount(accounts, "salariesPayable"),
-              debitFils: netFils,
-              description: `Net salaries paid - payroll ${label}`,
-            },
-            {
-              accountId: body.paymentAccountId,
-              creditFils: netFils,
-              description: `Salary payment - payroll ${label}`,
-            },
-          ],
+          lines,
         },
         { actorId, tx, req, audit: true }
       );
       paymentEntryId = posted.entry.id;
     }
+    const reimbursedClaims =
+      reimbursementFils > 0
+        ? await markRunClaimsPaid(tx, {
+            companyId,
+            runId,
+            actorId,
+            paymentDate: body.paymentDate,
+            paymentAccountId: body.paymentAccountId,
+            label,
+          })
+        : [];
     const updated = await q1<PayrollRunRow>(
       `UPDATE payroll_runs SET status = 'paid', paid_by = $2, paid_at = NOW(), payment_date = $3::date,
               payment_account_id = $4, payment_journal_entry_id = $5
@@ -925,6 +956,8 @@ export async function payRun(
           status: "paid",
           paymentJournalEntryId: paymentEntryId,
           netPaid: fromFils(netFils),
+          expenseReimbursements: fromFils(reimbursementFils),
+          reimbursedClaims,
         },
         req,
       })
@@ -977,6 +1010,8 @@ export async function unpayRun(
       [runId],
       tx
     );
+    // The reversed payment journal restored 2045: the reimbursed claims are owed again.
+    await reopenRunClaims(tx, companyId, runId);
     afterCommit(() =>
       recordAudit({
         userId: actorId,

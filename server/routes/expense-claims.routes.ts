@@ -54,6 +54,7 @@ import {
   expenseCategoryPolicySchema,
   expenseClaimCreateSchema,
   expenseClaimMarkPaidSchema,
+  expenseClaimPayrollSchema,
   expenseClaimRejectSchema,
   expenseClaimReviewSchema,
   expenseClaimSettingsSchema,
@@ -61,8 +62,10 @@ import {
   type ExpenseClaimCreateInput,
   type ExpenseClaimItemInput,
   type ExpenseClaimMarkPaidInput,
+  type ExpenseClaimPayrollInput,
   type ExpenseClaimUpdateInput,
 } from "../../shared/validators/expense-claims";
+import { assertClaimNotOnPayroll, setClaimPayrollReimbursement } from "../services/payroll/claims";
 import { zUuid } from "../../shared/validators/primitives";
 import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 
@@ -773,6 +776,8 @@ export function registerExpenseClaimRoutes(app: Express) {
               AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL AND jl.account_id = $3`,
           [claim.company_id, claim.id, payable.id]
         );
+        // S2 (R04-20): a claim on a live payroll run is paid by the salary payment.
+        await assertClaimNotOnPayroll(tx, claim.company_id, claim.id);
         const amountFils = Number(owed[0]?.fils ?? 0);
         if (amountFils <= 0) {
           throw new DomainError(
@@ -887,6 +892,41 @@ export function registerExpenseClaimRoutes(app: Express) {
       const fresh = (await pool.query(`SELECT * FROM expense_claims WHERE id = $1`, [claim.id]))
         .rows[0];
       res.json({ ...fresh, journal_entry_id: out.entryId });
+    })
+  );
+
+  // ── Reimburse through payroll (S2, R04-20) ──────────────────────────────
+  // Approved claims queued here are added to the employee's next payroll run (payslip line) and
+  // 2045 is cleared by that run's salary payment journal.
+  app.post(
+    "/api/expense-claims/:id/payroll-reimbursement",
+    authMiddleware,
+    requireCustomer,
+    strictBody(expenseClaimPayrollSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const claim = await loadClaim(req);
+      const actor = actorFromRequest(req);
+      await assertCompanyPermission(actor, claim.company_id, ["documents.approve"]);
+      const body = parsedBody<ExpenseClaimPayrollInput>(req);
+      const row = await withLedgerTx((tx) =>
+        setClaimPayrollReimbursement(tx, {
+          companyId: claim.company_id,
+          claimId: claim.id,
+          submittedBy: claim.submitted_by,
+          enabled: body.enabled,
+          employeeId: body.employee_id ?? null,
+        })
+      );
+      await recordAudit({
+        userId: actor.id,
+        companyId: claim.company_id,
+        action: body.enabled ? "expense_claim.payroll_queue" : "expense_claim.payroll_unqueue",
+        entityType: "expense_claim",
+        entityId: claim.id,
+        after: { employeeId: row.employee_id ?? null, enabled: body.enabled },
+        req,
+      });
+      res.json(row);
     })
   );
 

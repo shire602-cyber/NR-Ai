@@ -121,9 +121,25 @@ export async function reverseDocumentStock(
       firstReversal ??= id;
       continue;
     }
+    // S2 (W4-B residual): a PO line billed before receipt. The bill stocked the units and left
+    // them "billed ahead"; a goods receipt since then consumed that and booked nothing. Voiding
+    // the bill must therefore not take received goods out of stock: those units stay on hand,
+    // re-booked as goods received not invoiced (Dr Inventory / Cr GRNI) at the bill's cost.
+    // Units still billed ahead (not yet received) leave stock with the bill.
+    let receivedSinceBill = 0;
     if (meta.billedAheadQty && meta.poLineId) {
+      const ahead = Number(meta.billedAheadQty);
+      const g = (
+        await q<{ billed_ahead_qty: number }>(
+          tx,
+          sql`SELECT billed_ahead_qty FROM inventory_grni
+               WHERE purchase_order_line_id = ${String(meta.poLineId)} FOR UPDATE`
+        )
+      )[0];
+      const stillAhead = Math.min(ahead, Math.max(0, Number(g?.billed_ahead_qty ?? 0)));
+      receivedSinceBill = ahead - stillAhead;
       await tx.execute(
-        sql`UPDATE inventory_grni SET billed_ahead_qty = GREATEST(0, billed_ahead_qty - ${Number(meta.billedAheadQty)})
+        sql`UPDATE inventory_grni SET billed_ahead_qty = billed_ahead_qty - ${stillAhead}
              WHERE purchase_order_line_id = ${String(meta.poLineId)}`
       );
     }
@@ -140,6 +156,37 @@ export async function reverseDocumentStock(
     firstReversal ??= r.movementId;
     const mirrored = -filsOfNumeric(m.total_cost);
     lines.push(...trueUpLines(r, mirrored, null, `Reversal ${args.label}`));
+    if (receivedSinceBill > 0) {
+      const movedQty = Math.abs(Number(m.quantity));
+      const valueFils = prorate(filsOfNumeric(m.total_cost), receivedSinceBill, movedQty || 1);
+      const restored = await stockIn(tx, m.product_id, receivedSinceBill, Math.max(0, valueFils), {
+        ...ctx,
+        // Not the bill's own movement: a later reversal of the bill must not take it back.
+        sourceType: "po_grni_restore",
+        sourceId: String(meta.poLineId),
+        sourceLineId: m.source_line_id,
+        reference: `Goods received, ${args.label} voided`,
+        idempotencyKey: `grni_restore:${m.id}`,
+        meta: { poLineId: meta.poLineId, restoredFromMovementId: m.id },
+      });
+      await tx.execute(
+        sql`UPDATE inventory_grni SET received_qty = received_qty + ${receivedSinceBill},
+                   received_value = received_value + ${fromFils(Math.max(0, valueFils))}
+             WHERE purchase_order_line_id = ${String(meta.poLineId)}`
+      );
+      const grni = await ensureAccountByCode(tx, args.companyId, INVENTORY_CODES.GRNI);
+      lines.push({
+        accountId: restored.accounts.inventory,
+        fils: Math.max(0, valueFils),
+        description: `${args.label} voided - received goods kept in stock`,
+      });
+      lines.push({
+        accountId: grni,
+        fils: -Math.max(0, valueFils),
+        description: `${args.label} voided - goods received not invoiced`,
+      });
+      lines.push(...trueUpLines(restored, Math.max(0, valueFils), null, args.label));
+    }
   }
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,

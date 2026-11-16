@@ -35,7 +35,11 @@ import {
   type WarehouseBody,
   type WriteDownBody,
 } from "../../shared/validators/inventory";
+import { recordAudit } from "../services/audit.service";
+import { zDate, zMoneyFils, zUuid } from "../../shared/validators/primitives";
 import {
+  applyOpeningBackfill,
+  openingBackfillProposal,
   createStocktake,
   inventoryAgeing,
   inventoryMovementReport,
@@ -52,6 +56,27 @@ import { assertAccount, assertWarehouse, defaultWarehouse, q } from "../services
 
 const log = createLogger("inventory");
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** S2: reviewed opening-stock valuation rows (unitCost in fils overrides the cost price). */
+const openingBackfillBody = z
+  .object({
+    date: zDate,
+    items: z
+      .array(
+        z
+          .object({
+            productId: zUuid,
+            unitCost: zMoneyFils
+              .refine((f) => f > 0, "Unit cost must be greater than zero")
+              .optional()
+              .nullable(),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(500),
+  })
+  .strict();
 
 async function assertAccess(req: Request, companyId: string): Promise<void> {
   const ok = await storage.hasCompanyAccess(req.user!.id, companyId);
@@ -335,6 +360,65 @@ export function registerInventoryRoutes(app: Express) {
         })
       );
       res.status(201).json({ ...r, value: fromFils(r.valueFils) });
+    })
+  );
+
+  // ── Opening-stock valuation backfill (S2, W4-B residual) ────────────────
+  // Products holding stock with no value get a reviewable proposal (GET); the reviewer posts the
+  // rows they accept (POST): Dr Inventory / Cr 3040 Opening Balance Equity through the ledger.
+  app.get(
+    "/api/companies/:companyId/inventory/opening-backfill",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertAccess(req, companyId);
+      const rows = await withLedgerTx((tx) => openingBackfillProposal(tx, companyId));
+      res.json({
+        items: rows.map((r) => ({
+          ...r,
+          unitCost: r.unitCostFils === null ? null : fromFils(r.unitCostFils),
+          proposedValue: fromFils(r.proposedValueFils),
+        })),
+        totalValue: fromFils(rows.reduce((s, r) => s + r.proposedValueFils, 0)),
+      });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/inventory/opening-backfill",
+    authMiddleware,
+    requireCustomer,
+    strictBody(openingBackfillBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertAccess(req, companyId);
+      await assertCompanyPermission(actorFromRequest(req), companyId, ["ledger.post"]);
+      const body = parsedBody<z.output<typeof openingBackfillBody>>(req);
+      await assertPeriodNotLocked(companyId, body.date);
+      const posted = await withLedgerTx((tx) =>
+        applyOpeningBackfill(tx, {
+          companyId,
+          date: body.date,
+          actorId: req.user!.id,
+          items: body.items.map((i) => ({
+            productId: i.productId,
+            unitCostFils: i.unitCost ?? null,
+          })),
+        })
+      );
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "inventory.opening_backfill",
+        entityType: "company",
+        entityId: companyId,
+        after: { date: body.date, products: posted.length, items: posted },
+        req,
+      });
+      res.status(201).json({
+        items: posted.map((p) => ({ ...p, value: fromFils(p.valueFils) })),
+      });
     })
   );
 

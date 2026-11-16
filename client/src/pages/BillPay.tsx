@@ -55,6 +55,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
+import { useSearch } from "wouter";
+import { InboundCreditNotesCard } from "@/components/bills/InboundCreditNotesCard";
+import {
+  billPayTabFromSearch,
+  billStatusFilterFromSearch,
+  filterBills,
+  type BillPayTab,
+} from "@/lib/bill-filters";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -227,6 +235,7 @@ interface BillLineItem {
   vat_rate: string;
   amount: string;
   account_id: string | null;
+  cost_center_id?: string | null;
   vat_supply_type?: string;
   created_at: string;
 }
@@ -274,6 +283,7 @@ const billLineSchema = z.object({
   vat_rate: z.coerce.number().default(5),
   vat_supply_type: z.string().default("standard_rated"),
   account_id: z.string().optional(),
+  cost_center_id: z.string().optional(),
 });
 
 const billFormSchema = z.object({
@@ -366,27 +376,11 @@ function getStatusBadge(status: string, c: Copy) {
 // Main Component
 // ===========================
 
-const billPayTabs = ["bills", "payments", "summary"] as const;
-type BillPayTab = (typeof billPayTabs)[number];
-
-function initialBillPayTab(): BillPayTab {
-  const tab = new URLSearchParams(window.location.search).get("tab");
-  return billPayTabs.includes(tab as BillPayTab) ? (tab as BillPayTab) : "bills";
-}
-
 // R13-21: dashboard drill-through opens /bill-pay?tab=bills&status=open|overdue|<status>.
-const billStatusFilters = ["all", "open", "pending", "approved", "partial", "paid", "overdue"];
-const PAYABLE_STATUSES = ["approved", "overdue", "partial"];
+// The filter follows the URL on every navigation (client/src/lib/bill-filters.ts).
 
-function initialBillStatusFilter(): string {
-  const status = new URLSearchParams(window.location.search).get("status");
-  return status && billStatusFilters.includes(status) ? status : "all";
-}
-
-function isPastDue(bill: { due_date: string | null }): boolean {
-  if (!bill.due_date) return false;
-  return bill.due_date.slice(0, 10) < new Date().toISOString().slice(0, 10);
-}
+/** Select sentinel for "no cost centre" (Radix Select items cannot have an empty value). */
+const NO_COST_CENTER = "__none__";
 
 export default function BillPay() {
   const { t, locale } = useTranslation();
@@ -394,13 +388,23 @@ export default function BillPay() {
   const { toast } = useToast();
   const { company: _company, companyId } = useDefaultCompany();
 
-  const [activeTab, setActiveTab] = useState<BillPayTab>(initialBillPayTab);
+  const search = useSearch();
+  const [activeTab, setActiveTab] = useState<BillPayTab>(() => billPayTabFromSearch(search));
   const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
   const [payingBill, setPayingBill] = useState<VendorBill | null>(null);
-  const [statusFilter, setStatusFilter] = useState(initialBillStatusFilter);
+  const [statusFilter, setStatusFilter] = useState<string>(() =>
+    billStatusFilterFromSearch(search)
+  );
   const [vendorSearch, setVendorSearch] = useState("");
+  // A later drill-through (?status= / ?tab=) while the page is open re-applies the filter.
+  const [appliedSearch, setAppliedSearch] = useState(search);
+  if (appliedSearch !== search) {
+    setAppliedSearch(search);
+    setStatusFilter(billStatusFilterFromSearch(search));
+    setActiveTab(billPayTabFromSearch(search));
+  }
 
   // ===========================
   // Queries
@@ -415,6 +419,13 @@ export default function BillPay() {
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
+  });
+
+  // R10-11: bill lines carry an optional cost centre (hidden when the company has none).
+  const { data: costCenters = [] } = useQuery<Array<{ id: string; code: string; name: string }>>({
+    queryKey: [`/api/companies/${companyId}/cost-centers`],
+    enabled: !!companyId,
+    retry: false,
   });
 
   const { data: summary } = useQuery<BillSummary>({
@@ -466,27 +477,10 @@ export default function BillPay() {
   // Filtered bills
   // ===========================
 
-  const filteredBills = useMemo(() => {
-    let filtered = [...bills];
-    if (statusFilter === "open") {
-      filtered = filtered.filter((b) => PAYABLE_STATUSES.includes(b.status));
-    } else if (statusFilter === "overdue") {
-      filtered = filtered.filter(
-        (b) => b.status === "overdue" || (PAYABLE_STATUSES.includes(b.status) && isPastDue(b))
-      );
-    } else if (statusFilter !== "all") {
-      filtered = filtered.filter((b) => b.status === statusFilter);
-    }
-    if (vendorSearch.trim()) {
-      const search = vendorSearch.toLowerCase();
-      filtered = filtered.filter(
-        (b) =>
-          b.vendor_name.toLowerCase().includes(search) ||
-          (b.bill_number && b.bill_number.toLowerCase().includes(search))
-      );
-    }
-    return filtered;
-  }, [bills, statusFilter, vendorSearch]);
+  const filteredBills = useMemo(
+    () => filterBills(bills, statusFilter, vendorSearch),
+    [bills, statusFilter, vendorSearch]
+  );
 
   // ===========================
   // Bill Form
@@ -517,6 +511,7 @@ export default function BillPay() {
           vat_rate: 5,
           vat_supply_type: "standard_rated",
           account_id: "",
+          cost_center_id: "",
         },
       ],
     },
@@ -583,6 +578,7 @@ export default function BillPay() {
       vat_supply_type: l.vat_supply_type,
       vat_rate: ["zero_rated", "exempt", "out_of_scope"].includes(l.vat_supply_type) ? 0 : 5,
       account_id: l.account_id || null,
+      cost_center_id: l.cost_center_id || null,
     })),
   });
 
@@ -740,6 +736,7 @@ export default function BillPay() {
           vat_rate: 5,
           vat_supply_type: "standard_rated",
           account_id: "",
+          cost_center_id: "",
         },
       ],
     });
@@ -779,6 +776,7 @@ export default function BillPay() {
                 vat_supply_type:
                   l.vat_supply_type ?? (Number(l.vat_rate) === 0 ? "zero_rated" : "standard_rated"),
                 account_id: l.account_id || "",
+                cost_center_id: l.cost_center_id || "",
               }))
             : [
                 {
@@ -788,6 +786,7 @@ export default function BillPay() {
                   vat_rate: 5,
                   vat_supply_type: "standard_rated",
                   account_id: "",
+                  cost_center_id: "",
                 },
               ],
       });
@@ -861,6 +860,7 @@ export default function BillPay() {
 
   // Expense account options
   const expenseAccounts = accounts.filter((a: any) => a.type === "expense" || a.type === "asset");
+  const costCenterList = Array.isArray(costCenters) ? costCenters : [];
 
   // ===========================
   // Render
@@ -915,6 +915,7 @@ export default function BillPay() {
         {/* BILLS TAB                          */}
         {/* ================================== */}
         <TabsContent value="bills" className="space-y-6 mt-0">
+          <InboundCreditNotesCard companyId={companyId} />
           {/* Filters */}
           <Card>
             <CardContent className="pt-6">
@@ -1307,6 +1308,7 @@ export default function BillPay() {
                                   vat_rate: 5,
                                   vat_supply_type: "standard_rated",
                                   account_id: "",
+                                  cost_center_id: "",
                                 })
                               }
                             >
@@ -1393,7 +1395,48 @@ export default function BillPay() {
                                   )}
                                 />
                               </div>
-                              <div className="col-span-3">
+                              {costCenterList.length > 0 && (
+                                <div className="col-span-1">
+                                  <FormField
+                                    control={billForm.control}
+                                    name={`line_items.${index}.cost_center_id`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <Select
+                                          value={field.value || NO_COST_CENTER}
+                                          onValueChange={(v) =>
+                                            field.onChange(v === NO_COST_CENTER ? "" : v)
+                                          }
+                                        >
+                                          <FormControl>
+                                            <SelectTrigger
+                                              aria-label={t["purchases.costCenter"]}
+                                              data-testid={`bill-line-cost-center-${index}`}
+                                            >
+                                              <SelectValue
+                                                placeholder={t["purchases.costCenter"]}
+                                              />
+                                            </SelectTrigger>
+                                          </FormControl>
+                                          <SelectContent>
+                                            <SelectItem value={NO_COST_CENTER}>
+                                              {t["purchases.noCostCenter"]}
+                                            </SelectItem>
+                                            {costCenterList.map((cc) => (
+                                              <SelectItem key={cc.id} value={cc.id}>
+                                                {cc.code} · {cc.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+                              )}
+                              <div
+                                className={costCenterList.length > 0 ? "col-span-2" : "col-span-3"}
+                              >
                                 <FormField
                                   control={billForm.control}
                                   name={`line_items.${index}.account_id`}

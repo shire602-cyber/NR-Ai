@@ -760,8 +760,10 @@ export const einvoiceInboundDocuments = pgTable(
     uuid: text("uuid"),
     sha256: text("sha256").notNull(),
     validation: jsonb("validation"),
-    status: text("status").notNull().default("received"), // received | bill_created | invalid | failed
+    // received | bill_created | credit_created (S2: vendor debit note) | invalid | failed
+    status: text("status").notNull().default("received"),
     billId: uuid("bill_id"),
+    debitNoteId: uuid("debit_note_id"),
     archiveId: uuid("archive_id"),
     error: text("error"),
     receivedAt: timestamp("received_at").defaultNow().notNull(),

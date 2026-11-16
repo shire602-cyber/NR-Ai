@@ -349,11 +349,12 @@ export async function processInboundEInvoice(args: {
     };
   }
   if (parsed.root === "CreditNote") {
-    // A supplier credit note is a vendor credit, not a bill. It is stored and
-    // archived for review (FOLLOW-UP: bills.createVendorCreditFromInbound).
+    // A supplier credit note is a vendor credit, not a bill. It is stored and archived for
+    // review; the reviewer converts it with POST /api/companies/:companyId/bills/inbound/:id/
+    // vendor-credit (service "bills.createVendorCreditFromInbound" -> vendor debit note).
     await updateInboundDocument(company.id, claimed.id, {
       archiveId: archive.id,
-      error: "Supplier credit note received; record the vendor credit from the inbound list",
+      error: "Supplier credit note received; review it and record the vendor credit",
     });
     return { status: 202, body: { id: claimed.id, status: "received", billId: null, validation } };
   }

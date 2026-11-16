@@ -51,6 +51,8 @@ export const billLineSchema = z
     vat_supply_type: zSupplyType.optional(),
     account_id: zUuid.optional().nullable(),
     product_id: zUuid.optional().nullable(),
+    /** R10-11: cost centre of the line (posted on its journal line; must be the company's). */
+    cost_center_id: zUuid.optional().nullable(),
   })
   .strict();
 export type BillLineInput = z.output<typeof billLineSchema>;
@@ -170,6 +172,21 @@ export const debitNoteCreateSchema = z.object({
   lines: z.array(debitNoteLineSchema).min(1).max(200),
 });
 export type DebitNoteCreateInput = z.output<typeof debitNoteCreateSchema>;
+
+/**
+ * Review of an inbound supplier credit note (W4-C residual): the reviewer may link the original
+ * bill and choose the expense account(s) credited; amounts come from the archived e-invoice.
+ */
+export const inboundVendorCreditSchema = z
+  .object({
+    bill_id: zUuid.optional().nullable(),
+    account_id: zUuid.optional().nullable(),
+    /** Per credit-note line (same order as the document); overrides account_id. */
+    account_ids: z.array(zUuid.nullable()).max(200).optional(),
+    reason: zText(500, { min: 1 }).optional(),
+  })
+  .strict();
+export type InboundVendorCreditInput = z.output<typeof inboundVendorCreditSchema>;
 
 export const applyCreditSchema = z.object({
   bill_id: zUuid,

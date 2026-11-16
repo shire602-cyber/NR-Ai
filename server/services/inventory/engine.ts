@@ -230,6 +230,49 @@ export async function revalueStock(
 }
 
 /**
+ * S2 (W4-B residual): value stock that is already on hand but carries no value (products created
+ * before W4-B with a quantity and no cost). The quantity does not move; uncosted units get a cost
+ * layer dated `ctx.date` and the value is spread by the costing method. Movement type "opening".
+ */
+export async function seedStockValue(
+  tx: LedgerTx,
+  productId: string,
+  valueFils: number,
+  ctx: MoveContext
+): Promise<MoveResult> {
+  const p = await lockProduct(tx, ctx.companyId, productId);
+  assertStockedProduct(p);
+  const policy = await policyFor(tx, ctx.companyId);
+  const before = await loadState(tx, p);
+  if (!(before.qty > 0) || before.valueFils !== 0) {
+    throw new DomainError(
+      "OPENING_VALUE_NOT_APPLICABLE",
+      409,
+      { productId, qty: before.qty, valueFils: before.valueFils },
+      "Only stock on hand with no value can be valued by the opening backfill"
+    );
+  }
+  if (!Number.isSafeInteger(valueFils) || valueFils <= 0) {
+    throw new DomainError("INVALID_AMOUNT", 422, { valueFils });
+  }
+  const layeredQty = before.layers.reduce((s, l) => s + Math.max(0, l.qty), 0);
+  const seeded: StockState =
+    layeredQty < before.qty
+      ? {
+          ...before,
+          layers: [
+            ...before.layers.map((l) => ({ ...l })),
+            { date: ctx.date, qty: before.qty - layeredQty, valueFils: 0, lot: null, isNew: true },
+          ],
+        }
+      : before;
+  const after = adjustValue(seeded, valueFils, optsFor(p, policy));
+  return finish(tx, p, ctx, before, after, "opening", 0, {
+    unitCostFils: Math.round(valueFils / before.qty),
+  });
+}
+
+/**
  * Reverse one live movement (void / revise / unmatch). Inbound movements are taken back at their
  * own value, outbound ones are put back at the cost they left at. Returns the stock delta; the
  * caller compares it with what the mirrored journal booked and posts the difference.

@@ -18,6 +18,7 @@ import {
   FileText,
   Eye,
   CreditCard,
+  Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,9 @@ interface ExpenseClaim {
   review_notes?: string | null;
   paid_at?: string | null;
   payment_reference?: string | null;
+  /** S2 (R04-20): reimbursed on the employee's next payroll run. */
+  reimburse_via_payroll?: boolean;
+  payroll_run_id?: string | null;
   created_at: string;
   items?: ExpenseClaimItem[];
 }
@@ -441,6 +445,25 @@ export default function ExpenseClaims() {
     },
   });
 
+  // S2 (R04-20): queue an approved claim for the employee's next payroll run (or take it off).
+  const payrollMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      apiRequest("POST", `/api/expense-claims/${id}/payroll-reimbursement`, { enabled }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
+      toast({
+        title: vars.enabled ? t["purchases.claimQueuedForPayroll"] : t["purchases.claimUnqueued"],
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t["purchases.claimPayrollFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // ─── Handlers ─────────────────────────────────────────
 
   const handleOpenCreateDialog = () => {
@@ -761,7 +784,7 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {claim.status === "approved" && (
+                      {claim.status === "approved" && !claim.payroll_run_id && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -771,6 +794,33 @@ export default function ExpenseClaims() {
                         >
                           <CreditCard className="w-4 h-4" />
                         </Button>
+                      )}
+                      {claim.status === "approved" && !claim.payroll_run_id && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={payrollMutation.isPending}
+                          onClick={() =>
+                            payrollMutation.mutate({
+                              id: claim.id,
+                              enabled: !claim.reimburse_via_payroll,
+                            })
+                          }
+                          title={
+                            claim.reimburse_via_payroll
+                              ? t["purchases.removeFromPayroll"]
+                              : t["purchases.reimburseViaPayroll"]
+                          }
+                          aria-pressed={!!claim.reimburse_via_payroll}
+                          data-testid={`claim-payroll-${claim.id}`}
+                        >
+                          <Wallet className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {claim.status === "approved" && claim.payroll_run_id && (
+                        <span className="text-xs text-muted-foreground">
+                          {t["purchases.onPayrollRun"]}
+                        </span>
                       )}
                     </div>
                   </TableCell>

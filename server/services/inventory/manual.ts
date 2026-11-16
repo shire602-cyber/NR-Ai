@@ -13,12 +13,13 @@
  */
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
-import { fromFils, mulRate } from "../../../shared/money";
+import { fromFils, mulRate, toFils } from "../../../shared/money";
 import type { LedgerTx } from "../../ledger";
 import {
   currentUnitCost,
   postInventoryJournal,
   revalueStock,
+  seedStockValue,
   stockIn,
   stockOut,
   trueUpLines,
@@ -203,6 +204,128 @@ export async function recordOpeningStock(
   });
   if (entryId) await linkMovementsToEntry(tx, [r.movementId], entryId);
   return { movementId: r.movementId, newStock: r.newQty, journalEntryId: entryId, valueFils };
+}
+
+// ─── Opening-stock valuation backfill (S2, W4-B residual) ───────────────────
+
+export interface OpeningBackfillRow {
+  productId: string;
+  name: string;
+  sku: string | null;
+  quantity: number;
+  /** Proposed unit cost (fils): the product cost price; null when missing. */
+  unitCostFils: number | null;
+  proposedValueFils: number;
+  needsCost: boolean;
+}
+
+/**
+ * Products that already hold stock but no value (created before W4-B, or imported with a
+ * quantity only): a reviewable proposal valued at each product's cost price. Nothing is posted.
+ */
+export async function openingBackfillProposal(
+  tx: LedgerTx,
+  companyId: string
+): Promise<OpeningBackfillRow[]> {
+  const rows = await q<{
+    id: string;
+    name: string;
+    sku: string | null;
+    current_stock: number;
+    cost_price: string | null;
+  }>(
+    tx,
+    sql`SELECT id, name, sku, current_stock, cost_price::text AS cost_price
+          FROM products
+         WHERE company_id = ${companyId} AND product_type = 'inventory'
+           AND track_inventory IS NOT FALSE AND is_active IS NOT FALSE
+           AND current_stock > 0 AND COALESCE(stock_value, 0) = 0
+         ORDER BY name, id`
+  );
+  return rows.map((r) => {
+    const unit =
+      r.cost_price === null ? 0 : Math.max(0, toFils(r.cost_price, { rounding: "halfUp" }));
+    const qty = Number(r.current_stock);
+    return {
+      productId: r.id,
+      name: r.name,
+      sku: r.sku,
+      quantity: qty,
+      unitCostFils: unit > 0 ? unit : null,
+      proposedValueFils: unit > 0 ? mulRate(unit, qty) : 0,
+      needsCost: !(unit > 0),
+    };
+  });
+}
+
+/**
+ * Post the reviewed backfill: per product Dr Inventory / Cr 3040 Opening Balance Equity at the
+ * approved unit cost (the reviewer may override the proposal). Idempotent per product: a product
+ * that already has value is refused with 409.
+ */
+export async function applyOpeningBackfill(
+  tx: LedgerTx,
+  args: {
+    companyId: string;
+    date: string;
+    actorId: string;
+    items: Array<{ productId: string; unitCostFils?: number | null }>;
+  }
+): Promise<Array<{ productId: string; valueFils: number; journalEntryId: string | null }>> {
+  const proposal = new Map(
+    (await openingBackfillProposal(tx, args.companyId)).map((r) => [r.productId, r])
+  );
+  const equity = await ensureAccountByCode(tx, args.companyId, INVENTORY_CODES.OPENING_EQUITY);
+  const out: Array<{ productId: string; valueFils: number; journalEntryId: string | null }> = [];
+  for (const item of args.items) {
+    const row = proposal.get(item.productId);
+    if (!row) {
+      throw new DomainError(
+        "OPENING_VALUE_NOT_APPLICABLE",
+        409,
+        { productId: item.productId },
+        "The product has no unvalued stock (already valued, no stock, or not a stock item)"
+      );
+    }
+    const unit = item.unitCostFils ?? row.unitCostFils;
+    if (!unit || unit <= 0) {
+      throw new DomainError(
+        "OPENING_COST_REQUIRED",
+        422,
+        { productId: item.productId },
+        "Enter a unit cost for this product (it has no cost price)"
+      );
+    }
+    const valueFils = mulRate(unit, row.quantity);
+    const r = await seedStockValue(tx, item.productId, valueFils, {
+      companyId: args.companyId,
+      actorId: args.actorId,
+      date: args.date,
+      sourceType: "opening",
+      reference: "Opening stock valuation backfill",
+      idempotencyKey: `opening_backfill:${item.productId}`,
+    });
+    const entryId = await postInventoryJournal(tx, {
+      companyId: args.companyId,
+      date: args.date,
+      memo: `Opening stock valuation - ${r.product.sku ?? r.product.name}`,
+      source: "inventory",
+      sourceId: r.movementId,
+      idempotencyKey: `inventory:opening_backfill:${item.productId}`,
+      lines: [
+        {
+          accountId: r.accounts.inventory,
+          fils: r.stockDeltaFils,
+          description: "Opening stock valuation backfill",
+        },
+        { accountId: equity, fils: -r.stockDeltaFils, description: "Opening stock valuation" },
+      ],
+      actorId: args.actorId,
+    });
+    if (entryId) await linkMovementsToEntry(tx, [r.movementId], entryId);
+    out.push({ productId: item.productId, valueFils: r.stockDeltaFils, journalEntryId: entryId });
+  }
+  return out;
 }
 
 /** Write a product's stock value down (inventory obsolescence / NRV). */

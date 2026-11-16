@@ -102,6 +102,16 @@ export const expenseClaimMarkPaidSchema = z.object({
 });
 export type ExpenseClaimMarkPaidInput = z.output<typeof expenseClaimMarkPaidSchema>;
 
+/** S2 (R04-20): reimburse an approved claim on the employee's next payroll run. */
+export const expenseClaimPayrollSchema = z
+  .object({
+    enabled: z.boolean(),
+    /** Employee paid through payroll; default: the employee whose email matches the submitter. */
+    employee_id: zUuid.optional().nullable(),
+  })
+  .strict();
+export type ExpenseClaimPayrollInput = z.output<typeof expenseClaimPayrollSchema>;
+
 export const expenseClaimSettingsSchema = z.object({
   mileage_rate: z
     .union([z.number(), z.string()])
