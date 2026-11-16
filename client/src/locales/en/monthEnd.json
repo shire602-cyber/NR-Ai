@@ -37,5 +37,14 @@
   "monthEnd.itemsCompleteFor": "{done}/{total} items complete for {period}",
   "monthEnd.remainingCount": "{count} remaining",
   "monthEnd.runValidation": "Run Validation",
-  "monthEnd.runValidationHint": "Click \"Run Validation\" to get an AI-powered readiness assessment."
+  "monthEnd.runValidationHint": "Click \"Run Validation\" to get an AI-powered readiness assessment.",
+  "monthEnd.validationError": "Validation error",
+  "monthEnd.errorTitle": "Error",
+  "monthEnd.eyebrowAccounting": "Accounting",
+  "monthEnd.fix": "Fix",
+  "monthEnd.statusOpen": "Open",
+  "monthEnd.debitAed": "Debit (AED)",
+  "monthEnd.creditAed": "Credit (AED)",
+  "monthEnd.summaryReady": "Ready to close. All {total} checks passed. You can proceed with previewing the close and locking the period.",
+  "monthEnd.summaryNotReady": "Not ready to close: {done}/{total} checks passed. Outstanding issues:"
 }

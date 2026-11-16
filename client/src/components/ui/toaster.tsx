@@ -9,6 +9,7 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 const VARIANT_ICON = {
   default: Info,
@@ -28,6 +29,7 @@ type ToastVariant = keyof typeof VARIANT_ICON;
 
 export function Toaster() {
   const { toasts } = useToast();
+  const { t } = useTranslation();
 
   return (
     <ToastProvider>
@@ -53,7 +55,7 @@ export function Toaster() {
           </Toast>
         );
       })}
-      <ToastViewport />
+      <ToastViewport label={`${t["components.notificationsTitle"]} ({hotkey})`} />
     </ToastProvider>
   );
 }

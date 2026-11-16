@@ -1191,7 +1191,13 @@ describe("report discoverability", () => {
     expect(vatRoutesSource).toContain("generateVatReturnFromWorkpaper");
     expect(vatAutopilotSource).toContain("due-dates?companyId=");
     expect(vatAutopilotSource).toContain("d.companyId === companyId");
-    expect(vatAutopilotSource).toContain("VAT 201 due dates for the active company file");
+    // The sentence now lives in the catalog (F12); the page reads it through a key.
+    expect(vatAutopilotSource).toContain("compliance.autopilotDeadlinesHint");
+    expect(
+      JSON.parse(readFileSync("client/src/locales/en/compliance.json", "utf8"))[
+        "compliance.autopilotDeadlinesHint"
+      ]
+    ).toBe("VAT 201 due dates for the active company file.");
     expect(vatAutopilotSource).not.toContain(
       "VAT 201 due dates across companies you have access to"
     );

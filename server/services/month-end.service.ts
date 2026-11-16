@@ -2,6 +2,7 @@ import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { postJournal } from "../ledger";
+import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
 import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
 import {
@@ -34,6 +35,15 @@ export interface ChecklistItem {
   description: string;
   status: "complete" | "incomplete";
   details?: string;
+  /**
+   * Stable keys + params for the English `title` / `description` / `details` above
+   * (`shared/server-copy.ts`), so the client renders them from its catalogs.
+   */
+  copy?: {
+    title: CopyDescriptor | null;
+    description: CopyDescriptor | null;
+    details: CopyDescriptor | null;
+  };
   /** Judgment steps a preparer may sign off when the system check cannot prove them. */
   requiresSignOff?: boolean;
   /** Where the user fixes the step (client route) and, for FX, the API to run. */
@@ -79,6 +89,8 @@ export interface CloseSummary {
   netIncome: number;
   retainedEarningsAccount: { id: string; code: string; name: string } | null;
   message: string;
+  /** Keys + params for `memo` and `message` (see `shared/server-copy.ts`). */
+  copy?: { memo: CopyDescriptor | null; message: CopyDescriptor | null };
 }
 
 export interface MonthEndCloseRecord {
@@ -452,6 +464,13 @@ export async function getCloseChecklist(
   if (bank) bank.actionHref = "/bank-reconciliation";
   const dep = checklist.find((c) => c.id === 6);
   if (dep) dep.actionHref = "/fixed-assets";
+  for (const item of checklist) {
+    item.copy = {
+      title: describeMonthEndText(item.title),
+      description: describeMonthEndText(item.description),
+      details: describeMonthEndText(item.details),
+    };
+  }
 
   return checklist;
 }
@@ -566,6 +585,10 @@ export async function computeCloseSummary(
     message:
       "Monthly close posts no journal entry: statements roll earnings into retained earnings by " +
       "computation. Use the year-end close to record (and, if enabled, post) the fiscal-year close.",
+    copy: {
+      memo: { key: "monthEnd.closeMemo", params: { start: periodStart, end: periodEnd } },
+      message: { key: "monthEnd.closeMessage", params: {} },
+    },
   };
 }
 

@@ -34,6 +34,9 @@ function renderedCatalogFields(): Array<[string, string]> {
   for (const w of reportPersonaWorkspaces) {
     out.push([catalogTextKey("workspace", w.persona, "navLabel"), w.navLabel]);
     out.push([catalogTextKey("workspace", w.persona, "automationOutcome"), w.automationOutcome]);
+    // F12: the customer onboarding completion step renders these two as well.
+    out.push([catalogTextKey("workspace", w.persona, "focus"), w.focus]);
+    out.push([catalogTextKey("workspace", w.persona, "automationNavLabel"), w.automationNavLabel]);
   }
   for (const r of readyReportCatalog) {
     out.push([catalogTextKey("report", r.id, "name"), r.name]);

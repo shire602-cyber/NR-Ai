@@ -1,9 +1,10 @@
 import { PageHeader } from "@/components/ui/page-header";
-import { dateFnsOptions } from "@/lib/date-locale";
+import { formatDate } from "@/lib/format-date";
+import { localizeServerText } from "@shared/server-copy";
 import { useMemo, useState } from "react";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO, differenceInDays, isBefore } from "date-fns";
+import { parseISO, differenceInDays, isBefore } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -310,7 +311,9 @@ export default function TaskCenter() {
           const query = searchQuery.toLowerCase();
           return (
             task.title.toLowerCase().includes(query) ||
-            task.description?.toLowerCase().includes(query)
+            (task.generated ? localizeServerText(task.description, t) : task.description)
+              ?.toLowerCase()
+              .includes(query)
           );
         }
         return true;
@@ -419,7 +422,11 @@ export default function TaskCenter() {
             </div>
             <div className="flex gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
+                <SelectTrigger
+                  className="w-[140px]"
+                  aria-label={t["pages.status"]}
+                  data-testid="select-status-filter"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -432,7 +439,11 @@ export default function TaskCenter() {
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px]" data-testid="select-category-filter">
+                <SelectTrigger
+                  className="w-[160px]"
+                  aria-label={t["pages.category"]}
+                  data-testid="select-category-filter"
+                >
                   <SelectValue placeholder={locale === "ar" ? "الفئة" : "Category"} />
                 </SelectTrigger>
                 <SelectContent>
@@ -473,6 +484,7 @@ export default function TaskCenter() {
                     data-testid={`task-${task.id}`}
                   >
                     <Checkbox
+                      aria-label={locale === "ar" && task.titleAr ? task.titleAr : task.title}
                       checked={task.status === "completed"}
                       disabled={task.statusDerived === true}
                       title={task.statusDerived ? t["compliance.statusFollowsReturn"] : undefined}
@@ -513,7 +525,9 @@ export default function TaskCenter() {
                       </div>
                       {task.description && (
                         <p className="text-sm text-muted-foreground truncate mt-1">
-                          {task.description}
+                          {task.generated
+                            ? localizeServerText(task.description, t)
+                            : task.description}
                         </p>
                       )}
                     </div>
@@ -522,7 +536,7 @@ export default function TaskCenter() {
                       <div className="text-end">
                         <div className="flex items-center gap-1 text-sm">
                           <Calendar className="w-3 h-3" />
-                          {format(parseISO(task.dueDate), "MMM d, yyyy", dateFnsOptions(locale))}
+                          {formatDate(task.dueDate.slice(0, 10), locale)}
                         </div>
                         {task.status !== "completed" && (
                           <Badge
@@ -635,7 +649,10 @@ export default function TaskCenter() {
                   value={newTask.category}
                   onValueChange={(val) => setNewTask({ ...newTask, category: val })}
                 >
-                  <SelectTrigger data-testid="select-task-category">
+                  <SelectTrigger
+                    aria-label={t["pages.category"]}
+                    data-testid="select-task-category"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -653,7 +670,10 @@ export default function TaskCenter() {
                   value={newTask.priority}
                   onValueChange={(val) => setNewTask({ ...newTask, priority: val })}
                 >
-                  <SelectTrigger data-testid="select-task-priority">
+                  <SelectTrigger
+                    aria-label={t["pages.priority"]}
+                    data-testid="select-task-priority"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

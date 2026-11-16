@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 import { localizeMessage, zodErrorMap } from "@/lib/validation-messages";
 import {
   getPreferredReportPersona,
@@ -234,8 +235,8 @@ function CustomerOnboarding() {
     },
     onError: (err: any) => {
       toast({
-        title: "Failed to create company",
-        description: err?.message ?? "Please try again",
+        title: t["onboarding.failedCreateCompany"],
+        description: err?.message ?? t["onboarding.tryAgain"],
         variant: "destructive",
       });
     },
@@ -249,7 +250,7 @@ function CustomerOnboarding() {
     },
     onError: (err: Error) => {
       toast({
-        title: "Failed to create bank account",
+        title: t["onboarding.failedCreateBank"],
         description: err.message,
         variant: "destructive",
       });
@@ -264,7 +265,7 @@ function CustomerOnboarding() {
     },
     onError: (err: Error) => {
       toast({
-        title: "Failed to complete onboarding",
+        title: t["onboarding.failedComplete"],
         description: err.message,
         variant: "destructive",
       });
@@ -338,8 +339,7 @@ function CustomerOnboarding() {
       // network failures surface the inline retry banner instead.
       const apiErr = err as ApiError;
       const status = apiErr?.status;
-      const message =
-        apiErr?.message || "We could not save your company details. Please try again.";
+      const message = apiErr?.message || t["onboarding.saveCompanyFailedBody"];
 
       if (status && status >= 400 && status < 500) {
         // Heuristic: route the message back to the most likely field.
@@ -354,14 +354,14 @@ function CustomerOnboarding() {
           setCompanySaveError(message);
         }
         toast({
-          title: "Please check your details",
+          title: t["onboarding.checkDetails"],
           description: message,
           variant: "destructive",
         });
       } else {
         setCompanySaveError(message);
         toast({
-          title: "Could not save company details",
+          title: t["onboarding.couldNotSaveCompany"],
           description: message,
           variant: "destructive",
         });
@@ -387,13 +387,17 @@ function CustomerOnboarding() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       localStorage.removeItem(STORAGE_KEY(target.id));
       toast({
-        title: "Your books are ready",
-        description: "UAE chart of accounts seeded — create your first invoice whenever you like.",
+        title: t["onboarding.booksReady"],
+        description: t["onboarding.booksReadyBody"],
       });
       setLocation("/dashboard");
     } catch (err) {
-      const message = (err as ApiError)?.message ?? "Please try again.";
-      toast({ title: "Express setup failed", description: message, variant: "destructive" });
+      const message = (err as ApiError)?.message ?? t["onboarding.tryAgainDot"];
+      toast({
+        title: t["onboarding.expressFailed"],
+        description: message,
+        variant: "destructive",
+      });
     } finally {
       setExpressSaving(false);
     }
@@ -480,7 +484,11 @@ function CustomerOnboarding() {
             </span>
             <span className="text-sm text-muted-foreground">{t[STEP_LABEL_KEYS[currentStep]]}</span>
           </div>
-          <Progress value={progressPercent} className="h-1.5" />
+          <Progress
+            value={progressPercent}
+            className="h-1.5"
+            aria-label={t["onboarding.progress"]}
+          />
           <div className="flex justify-between mt-2">
             {STEPS.map((s) => (
               <div
@@ -620,7 +628,7 @@ function WelcomeStep({
         <h1 className="font-display text-[34px] md:text-[40px] leading-[1.05] tracking-tight">
           {companyName
             ? formatMessage(tr["onboarding.helloCompany"], { name: companyName })
-            : (tr.booksReadyTitle ?? "Books ready in 90 seconds.")}
+            : tr["onboarding.booksReadyTitle"]}
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           <T k="onboarding.expressIntro" />
@@ -639,16 +647,19 @@ function WelcomeStep({
                 setName(e.target.value);
                 setError(null);
               }}
-              placeholder="e.g. Pearl Trading LLC"
+              placeholder={t["onboarding.expressPlaceholder"]}
               disabled={expressSaving}
               data-testid="express-company-name"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>{tr.emirateLabel ?? "Emirate"}</Label>
+              <Label>{tr["onboarding.emirateFallback"]}</Label>
               <Select value={emirate} onValueChange={setEmirate} disabled={expressSaving}>
-                <SelectTrigger data-testid="express-emirate">
+                <SelectTrigger
+                  aria-label={tr["onboarding.emirateFallback"]}
+                  data-testid="express-emirate"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -661,7 +672,7 @@ function WelcomeStep({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="express-trn">{tr.trnOptionalLabel ?? "TRN (optional)"}</Label>
+              <Label htmlFor="express-trn">{tr["screens.trnOptional"]}</Label>
               <Input
                 id="express-trn"
                 value={trn}
@@ -669,7 +680,7 @@ function WelcomeStep({
                   setTrn(e.target.value);
                   setError(null);
                 }}
-                placeholder="15 digits"
+                placeholder={t["onboarding.trnDigitsPlaceholder"]}
                 inputMode="numeric"
                 maxLength={15}
                 disabled={expressSaving}
@@ -841,7 +852,10 @@ function CompanyStep({
               <T k="pages.emirate" />
             </Label>
             <Select value={form.emirate} onValueChange={(v) => onChange({ emirate: v })}>
-              <SelectTrigger data-testid="onboarding-emirate">
+              <SelectTrigger
+                aria-label={t["onboarding.emirateFallback"]}
+                data-testid="onboarding-emirate"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -859,7 +873,9 @@ function CompanyStep({
           <div className="space-y-1.5">
             <Label>
               <T k="onboarding.trnLabel" />
-              <span className="text-muted-foreground ml-1 text-xs">(optional, 15 digits)</span>
+              <span className="text-muted-foreground ms-1 text-xs">
+                {t["onboarding.optionalTrn"]}
+              </span>
             </Label>
             <Input
               value={form.trnVatNumber}
@@ -879,7 +895,7 @@ function CompanyStep({
           <div className="space-y-1.5">
             <Label>
               <T k="pageLabels.tradeLicenseNumber" />
-              <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
+              <span className="text-muted-foreground ms-1 text-xs">{t["onboarding.optional"]}</span>
             </Label>
             <Input
               value={form.registrationNumber}
@@ -960,12 +976,12 @@ function AccountsStep({
 }) {
   const { t } = useTranslation();
   const categories = [
-    { label: "Assets", description: "Cash, receivables, inventory, fixed assets" },
-    { label: "Liabilities", description: "Payables, VAT payable, loans" },
-    { label: "Equity", description: "Owner's capital and retained earnings" },
-    { label: "Revenue", description: "Sales, service income" },
-    { label: "Expenses", description: "COGS, operating expenses, payroll" },
-    { label: "VAT Accounts", description: "Input VAT 5%, Output VAT 5%, VAT control" },
+    { label: t["onboarding.cat.assets"], description: t["onboarding.cat.assetsDesc"] },
+    { label: t["onboarding.cat.liabilities"], description: t["onboarding.cat.liabilitiesDesc"] },
+    { label: t["onboarding.cat.equity"], description: t["onboarding.cat.equityDesc"] },
+    { label: t["onboarding.cat.revenue"], description: t["onboarding.cat.revenueDesc"] },
+    { label: t["onboarding.cat.expenses"], description: t["onboarding.cat.expensesDesc"] },
+    { label: t["onboarding.cat.vat"], description: t["onboarding.cat.vatDesc"] },
   ];
 
   return (
@@ -981,11 +997,11 @@ function AccountsStep({
           <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
           <div>
             <p className="text-sm font-medium text-success-subtle-foreground ">
-              {accountCount > 0 ? `${accountCount} accounts configured` : "UAE preset applied"}
+              {accountCount > 0
+                ? formatMessage(t["onboarding.accountsConfigured"], { count: accountCount })
+                : t["onboarding.presetApplied"]}
             </p>
-            <p className="text-xs text-success ">
-              All standard categories with VAT input/output accounts are included.
-            </p>
+            <p className="text-xs text-success ">{t["onboarding.standardCategories"]}</p>
           </div>
         </CardContent>
       </Card>
@@ -1006,11 +1022,16 @@ function AccountsStep({
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        You can customise accounts anytime from{" "}
-        <Link href="/chart-of-accounts" className="underline text-primary">
-          <T k="onboarding.step.accounts.title" />
-        </Link>
-        .
+        {t["onboarding.customiseAnytime"].split("{link}").flatMap((part, i) =>
+          i === 0
+            ? [part]
+            : [
+                <Link key="link" href="/chart-of-accounts" className="underline text-primary">
+                  <T k="onboarding.step.accounts.title" />
+                </Link>,
+                part,
+              ]
+        )}
       </p>
 
       {companyId && <GuidedSetupExtras companyId={companyId} />}
@@ -1191,15 +1212,18 @@ function BankStep({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Bank</Label>
+            <Label>{t["onboarding.bankLabel"]}</Label>
             <Select value={form.bankName} onValueChange={(v) => onChange({ bankName: v })}>
-              <SelectTrigger data-testid="onboarding-bank-select">
+              <SelectTrigger
+                aria-label={t["onboarding.bankLabel"]}
+                data-testid="onboarding-bank-select"
+              >
                 <SelectValue placeholder={t["onboarding.selectBank"]} />
               </SelectTrigger>
               <SelectContent>
                 {UAE_BANKS.map((b) => (
                   <SelectItem key={b} value={b}>
-                    {b}
+                    {t[`onboarding.bank.${b}`] ?? b}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1211,7 +1235,7 @@ function BankStep({
           <div className="space-y-1.5">
             <Label>
               <T k="pages.accountNumber" />
-              <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
+              <span className="text-muted-foreground ms-1 text-xs">{t["onboarding.optional"]}</span>
             </Label>
             <Input
               value={form.accountNumber}
@@ -1222,8 +1246,8 @@ function BankStep({
           </div>
           <div className="space-y-1.5">
             <Label>
-              IBAN
-              <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
+              {t["onboarding.ibanLabel"]}
+              <span className="text-muted-foreground ms-1 text-xs">{t["onboarding.optional"]}</span>
             </Label>
             <Input
               value={form.iban}
@@ -1237,8 +1261,8 @@ function BankStep({
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} className="gap-1">
-          <ArrowLeft className="w-4 h-4" />
-          Back
+          <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+          {t["components.back"]}
         </Button>
         <Button
           variant="outline"
@@ -1254,8 +1278,8 @@ function BankStep({
           className="flex-1 gap-2"
           data-testid="onboarding-save-bank"
         >
-          {saving ? "Saving…" : t["onboarding.saveContinue"]}
-          <ArrowRight className="w-4 h-4" />
+          {saving ? t["forms.saving"] : t["onboarding.saveContinue"]}
+          <ArrowRight className="w-4 h-4 rtl:rotate-180" />
         </Button>
       </div>
     </div>
@@ -1279,15 +1303,15 @@ function FirstDocStep({
   const options = [
     {
       icon: FileText,
-      title: "Create an Invoice",
-      description: "Issue a VAT-ready tax invoice to your first customer.",
+      title: t["onboarding.docInvoiceTitle"],
+      description: t["onboarding.docInvoiceDesc"],
       action: "/invoices",
       testId: "onboarding-goto-invoice",
     },
     {
       icon: Receipt,
-      title: "Upload a Receipt",
-      description: "Let AI extract and categorise an expense from a photo or PDF.",
+      title: t["onboarding.docReceiptTitle"],
+      description: t["onboarding.docReceiptDesc"],
       action: "/receipts",
       testId: "onboarding-goto-receipt",
     },
@@ -1329,8 +1353,8 @@ function FirstDocStep({
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} className="gap-1">
-          <ArrowLeft className="w-4 h-4" />
-          Back
+          <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+          {t["components.back"]}
         </Button>
         <Button
           variant="ghost"
@@ -1339,7 +1363,7 @@ function FirstDocStep({
           className="flex-1 text-muted-foreground"
           data-testid="onboarding-skip-doc"
         >
-          {completing ? "Finishing…" : "I'll do this later"}
+          {completing ? t["onboarding.firm.finishing"] : t["onboarding.doLater"]}
         </Button>
       </div>
     </div>
@@ -1350,6 +1374,8 @@ function FirstDocStep({
 
 function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const { t } = useTranslation();
+  const ct = useCatalogText();
+  const [showMore, setShowMore] = useState(false);
   const [, setLocation] = useLocation();
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(
     () => getPreferredReportPersona() ?? "owner"
@@ -1393,11 +1419,11 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   );
 
   const features = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-    { icon: FileText, label: "Invoices", href: "/invoices" },
-    { icon: Receipt, label: "Receipts", href: "/receipts" },
+    { icon: LayoutDashboard, label: t["onboarding.featureDashboard"], href: "/dashboard" },
+    { icon: FileText, label: t["onboarding.featureInvoices"], href: "/invoices" },
+    { icon: Receipt, label: t["onboarding.featureReceipts"], href: "/receipts" },
     { icon: BookOpen, label: t["onboarding.step.accounts.title"], href: "/chart-of-accounts" },
-    { icon: Users, label: "Contacts", href: "/contacts" },
+    { icon: Users, label: t["onboarding.featureContacts"], href: "/contacts" },
   ];
 
   return (
@@ -1418,7 +1444,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
           <T k="pageLabels.youReAllSet" />
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Muhasib.ai is configured for your business. Here's what you can explore next:
+          {t["onboarding.completeIntro"]}
         </p>
       </div>
 
@@ -1428,7 +1454,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
           <T k="pageLabels.reportingWorkspace" />
         </div>
         <div
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-start"
           data-testid="onboarding-report-workspaces"
         >
           {reportPersonaWorkspaces.map((workspace) => {
@@ -1449,350 +1475,410 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                     : "border-border hover:border-primary hover:bg-primary/5"
                 }`}
               >
-                <p className="text-sm font-semibold">{workspace.navLabel}</p>
+                <p className="text-sm font-semibold">
+                  {ct("workspace", workspace.persona, "navLabel", workspace.navLabel)}
+                </p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {workspace.focus}
+                  {ct("workspace", workspace.persona, "focus", workspace.focus)}
                 </p>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  {workspace.automationOutcome}
+                  {ct(
+                    "workspace",
+                    workspace.persona,
+                    "automationOutcome",
+                    workspace.automationOutcome
+                  )}
                 </p>
                 <p className="mt-3 text-[11px] font-medium text-primary">
-                  {workspace.automations.length} automation lanes
+                  {formatMessage(t["onboarding.automationLanes"], {
+                    n: workspace.automations.length,
+                  })}
                 </p>
               </button>
             );
           })}
         </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
-          data-testid="onboarding-report-quick-access-impact"
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-expanded={showMore}
+          onClick={() => setShowMore((open) => !open)}
+          className="mx-auto gap-1"
+          data-testid="onboarding-report-more-toggle"
         >
-          {selectedQuickAccessProfile ? (
-            <button
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportSectionHref(selectedWorkspace, "quick-access"));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-quick-access-${selectedWorkspace.persona}`}
+          {showMore ? t["onboarding.hideReportTools"] : t["onboarding.showReportTools"]}
+        </Button>
+        {showMore ? (
+          <div className="space-y-3" data-testid="onboarding-report-more">
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
+              data-testid="onboarding-report-quick-access-impact"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{selectedQuickAccessProfile.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {selectedQuickAccessProfile.outcome}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {selectedQuickAccessProfile.reportIds.length} ready reports
-              </p>
-            </button>
-          ) : null}
-          {selectedAutomationImpactProfile ? (
-            <button
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportSectionHref(selectedWorkspace, "automation-impact"));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-automation-impact-${selectedWorkspace.persona}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{selectedAutomationImpactProfile.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {selectedAutomationImpactProfile.outcome}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {selectedAutomationImpactProfile.timeSavedLabel} ·{" "}
-                {selectedAutomationImpactProfile.manualWorkLabel}
-              </p>
-            </button>
-          ) : null}
-        </div>
-        {selectedQuickAccessReports.length > 0 ? (
-          <div
-            className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2 lg:grid-cols-3"
-            data-testid={`onboarding-report-quick-access-reports-${selectedWorkspace.persona}`}
-          >
-            {selectedQuickAccessReports.slice(0, 6).map((report) => (
-              <button
-                key={report.id}
-                type="button"
-                onClick={() => {
-                  setPreferredReportPersona(selectedWorkspace.persona);
-                  setLocation(
-                    reportPersonaHref(report, selectedWorkspace.persona) ??
-                      reportWorkspaceHref(selectedWorkspace)
-                  );
-                }}
-                className="rounded-md border border-border p-3 transition-all hover:border-primary hover:bg-primary/5"
-                data-testid={`onboarding-report-quick-access-report-${selectedWorkspace.persona}-${report.id}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{report.name}</p>
-                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                      {report.decisionQuestion}
-                    </p>
+              {selectedQuickAccessProfile ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportSectionHref(selectedWorkspace, "quick-access"));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-quick-access-${selectedWorkspace.persona}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{selectedQuickAccessProfile.title}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {selectedQuickAccessProfile.outcome}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
-                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                </div>
-                <p className="mt-3 text-[11px] font-medium text-primary">{report.comparison}</p>
-              </button>
-            ))}
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.readyReports"], {
+                      n: selectedQuickAccessProfile.reportIds.length,
+                    })}
+                  </p>
+                </button>
+              ) : null}
+              {selectedAutomationImpactProfile ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportSectionHref(selectedWorkspace, "automation-impact"));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-automation-impact-${selectedWorkspace.persona}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {selectedAutomationImpactProfile.title}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {selectedAutomationImpactProfile.outcome}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {selectedAutomationImpactProfile.timeSavedLabel} ·{" "}
+                    {selectedAutomationImpactProfile.manualWorkLabel}
+                  </p>
+                </button>
+              ) : null}
+            </div>
+            {selectedQuickAccessReports.length > 0 ? (
+              <div
+                className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2 lg:grid-cols-3"
+                data-testid={`onboarding-report-quick-access-reports-${selectedWorkspace.persona}`}
+              >
+                {selectedQuickAccessReports.slice(0, 6).map((report) => (
+                  <button
+                    key={report.id}
+                    type="button"
+                    onClick={() => {
+                      setPreferredReportPersona(selectedWorkspace.persona);
+                      setLocation(
+                        reportPersonaHref(report, selectedWorkspace.persona) ??
+                          reportWorkspaceHref(selectedWorkspace)
+                      );
+                    }}
+                    className="rounded-md border border-border p-3 transition-all hover:border-primary hover:bg-primary/5"
+                    data-testid={`onboarding-report-quick-access-report-${selectedWorkspace.persona}-${report.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">
+                          {ct("report", report.id, "name", report.name)}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {ct("report", report.id, "decisionQuestion", report.decisionQuestion)}
+                        </p>
+                      </div>
+                      <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    </div>
+                    <p className="mt-3 text-[11px] font-medium text-primary">{report.comparison}</p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
+              data-testid="onboarding-report-suites"
+            >
+              {selectedReportSuites.map((suite) => (
+                <button
+                  key={suite.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportSuiteHref(suite));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-suite-${suite.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {ct("suite", suite.id, "title", suite.title)}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {ct("suite", suite.id, "workflow", suite.workflow)}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.reportsAction"], {
+                      n: suite.reportIds.length,
+                      lead: suite.primaryAction,
+                    })}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-3"
+              data-testid="onboarding-report-decision-shortcuts"
+            >
+              {selectedDecisionShortcuts.map((shortcut) => (
+                <button
+                  key={shortcut.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportDecisionShortcutHref(shortcut));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-decision-shortcut-${shortcut.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {ct("shortcut", shortcut.id, "question", shortcut.question)}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {ct("shortcut", shortcut.id, "answer", shortcut.answer)}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.linkedReports"], { n: shortcut.reportIds.length })}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
+              data-testid="onboarding-report-comparison-presets"
+            >
+              {selectedComparisonPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportComparisonPresetHref(preset));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-comparison-preset-${preset.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {ct("preset", preset.id, "title", preset.title)}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {ct("preset", preset.id, "question", preset.question)}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.baselineMetrics"], {
+                      lead: ct("preset", preset.id, "baseline", preset.baseline),
+                      n: preset.metricIds.length,
+                    })}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    {ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-3"
+              data-testid="onboarding-report-saved-views"
+            >
+              {selectedSavedViews.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportSavedViewHref(view));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-saved-view-${view.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{view.title}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {view.description}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {view.dateRangePreset} · {view.comparisonPeriod}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-3"
+              data-testid="onboarding-report-trigger-rules"
+            >
+              {selectedTriggerRules.map((rule) => (
+                <button
+                  key={rule.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportAutomationTriggerRuleHref(rule));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-trigger-rule-${rule.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{rule.title}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {rule.threshold}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.cadenceReports"], {
+                      lead: rule.cadence,
+                      n: rule.reportIds.length,
+                    })}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
+              data-testid="onboarding-report-delivery-subscriptions"
+            >
+              {selectedDeliverySubscriptions.map((subscription) => (
+                <button
+                  key={subscription.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportDeliverySubscriptionHref(subscription));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-delivery-subscription-${subscription.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {ct("delivery", subscription.id, "title", subscription.title)}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {subscription.cadence}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.cadenceReports"], {
+                      lead: subscription.channel,
+                      n: subscription.reportIds.length,
+                    })}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
+              data-testid="onboarding-report-automation-starters"
+            >
+              {selectedAutomationStarters.map((starter) => (
+                <button
+                  key={starter.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportAutomationStarterHref(starter));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-automation-starter-${starter.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {ct("starter", starter.id, "title", starter.title)}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {ct("starter", starter.id, "outcome", starter.outcome)}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.setupSteps"], {
+                      lead: starter.setupTime,
+                      n: starter.setupSteps.length,
+                    })}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div
+              className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
+              data-testid="onboarding-report-pack-templates"
+            >
+              {selectedReportPackTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => {
+                    setPreferredReportPersona(selectedWorkspace.persona);
+                    setLocation(reportPackTemplateHref(template));
+                  }}
+                  className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+                  data-testid={`onboarding-report-pack-template-${template.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {ct("pack", template.id, "title", template.title)}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {ct("pack", template.id, "outcome", template.outcome)}
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-medium text-primary">
+                    {formatMessage(t["onboarding.cadenceReports"], {
+                      lead: ct("pack", template.id, "cadence", template.cadence),
+                      n: template.reportIds.length,
+                    })}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
-          data-testid="onboarding-report-suites"
-        >
-          {selectedReportSuites.map((suite) => (
-            <button
-              key={suite.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportSuiteHref(suite));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-suite-${suite.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{suite.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {suite.workflow}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {suite.reportIds.length} reports · {suite.primaryAction}
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
-          data-testid="onboarding-report-decision-shortcuts"
-        >
-          {selectedDecisionShortcuts.map((shortcut) => (
-            <button
-              key={shortcut.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportDecisionShortcutHref(shortcut));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-decision-shortcut-${shortcut.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{shortcut.question}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {shortcut.answer}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {shortcut.reportIds.length} linked reports
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
-          data-testid="onboarding-report-comparison-presets"
-        >
-          {selectedComparisonPresets.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportComparisonPresetHref(preset));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-comparison-preset-${preset.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{preset.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {preset.question}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {preset.baseline} · {preset.metricIds.length} metrics
-              </p>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                {preset.automationTrigger}
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
-          data-testid="onboarding-report-saved-views"
-        >
-          {selectedSavedViews.map((view) => (
-            <button
-              key={view.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportSavedViewHref(view));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-saved-view-${view.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{view.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {view.description}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {view.dateRangePreset} · {view.comparisonPeriod}
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
-          data-testid="onboarding-report-trigger-rules"
-        >
-          {selectedTriggerRules.map((rule) => (
-            <button
-              key={rule.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportAutomationTriggerRuleHref(rule));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-trigger-rule-${rule.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{rule.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {rule.threshold}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {rule.cadence} · {rule.reportIds.length} reports
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
-          data-testid="onboarding-report-delivery-subscriptions"
-        >
-          {selectedDeliverySubscriptions.map((subscription) => (
-            <button
-              key={subscription.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportDeliverySubscriptionHref(subscription));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-delivery-subscription-${subscription.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{subscription.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {subscription.cadence}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {subscription.channel} · {subscription.reportIds.length} reports
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
-          data-testid="onboarding-report-automation-starters"
-        >
-          {selectedAutomationStarters.map((starter) => (
-            <button
-              key={starter.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportAutomationStarterHref(starter));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-automation-starter-${starter.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{starter.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {starter.outcome}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {starter.setupTime} · {starter.setupSteps.length} setup steps
-              </p>
-            </button>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
-          data-testid="onboarding-report-pack-templates"
-        >
-          {selectedReportPackTemplates.map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => {
-                setPreferredReportPersona(selectedWorkspace.persona);
-                setLocation(reportPackTemplateHref(template));
-              }}
-              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
-              data-testid={`onboarding-report-pack-template-${template.id}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{template.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {template.outcome}
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-[11px] font-medium text-primary">
-                {template.cadence} · {template.reportIds.length} reports
-              </p>
-            </button>
-          ))}
-        </div>
         <div className="flex flex-col justify-center gap-2 sm:flex-row">
           <Button
             size="lg"
@@ -1816,7 +1902,14 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             className="gap-2 px-8"
             data-testid="onboarding-open-report-workspace"
           >
-            Open {selectedWorkspace.navLabel}
+            {formatMessage(t["onboarding.openWorkspace"], {
+              name: ct(
+                "workspace",
+                selectedWorkspace.persona,
+                "navLabel",
+                selectedWorkspace.navLabel
+              ),
+            })}
             <ArrowRight className="w-4 h-4" />
           </Button>
           <Button
@@ -1829,7 +1922,14 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             className="gap-2 px-8"
             data-testid="onboarding-open-automation-center"
           >
-            Open {selectedWorkspace.automationNavLabel}
+            {formatMessage(t["onboarding.openWorkspace"], {
+              name: ct(
+                "workspace",
+                selectedWorkspace.persona,
+                "automationNavLabel",
+                selectedWorkspace.automationNavLabel
+              ),
+            })}
             <ArrowRight className="w-4 h-4" />
           </Button>
         </div>
@@ -2040,7 +2140,11 @@ export function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_ad
             </span>
             <span className="text-sm text-muted-foreground">{tr[FIRM_STEP_LABEL_KEYS[step]]}</span>
           </div>
-          <Progress value={progressPercent} className="h-1.5" />
+          <Progress
+            value={progressPercent}
+            className="h-1.5"
+            aria-label={t["onboarding.progress"]}
+          />
         </div>
       )}
 
