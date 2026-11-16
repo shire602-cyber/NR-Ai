@@ -266,7 +266,7 @@ describe("report discoverability", () => {
     expect(liveReportCatalog.some((report) => report.id === "cost-center-profitability")).toBe(
       true
     );
-    expect(readyReportCatalog).toHaveLength(33);
+    expect(readyReportCatalog).toHaveLength(34);
     expect(readyReportCatalog.some((report) => report.id === "cost-center-profitability")).toBe(
       true
     );

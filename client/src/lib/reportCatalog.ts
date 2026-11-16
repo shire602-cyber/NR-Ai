@@ -2048,6 +2048,22 @@ export const reportCatalog: ReportCatalogItem[] = [
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports management rollup multi company consolidated statements",
   },
+  {
+    // R12-09: surfaced from the bank reconciliation service's existing sign-off/export
+    // endpoints (BankAccounts page). API-ready, not a workbook-pack report.
+    id: "bank-reconciliation-report",
+    name: "Bank Reconciliation Report",
+    category: "Accountant Tools",
+    status: "api",
+    dataBasis: "ledger",
+    personas: ["owner", "accountant"],
+    comparison: "Statement vs ledger",
+    automation: "Reconciliation sign-off",
+    decisionQuestion: "Does each bank account agree to the ledger at the statement date?",
+    href: "/bank-accounts",
+    commandIcon: "wallet",
+    commandKeywords: "reports bank reconciliation statement ledger sign off export",
+  },
 ];
 
 export const reportPackTemplates: ReportPackTemplate[] = [
@@ -2617,6 +2633,7 @@ export const reportComparisonPresets: ReportComparisonPreset[] = [
     baseline: "Current period vs prior period with budget and cash context.",
     primaryTab: "pl",
     reportIds: [
+      "bank-reconciliation-report",
       "profit-loss",
       "period-comparison",
       "cash-flow",
@@ -3102,6 +3119,7 @@ export const reportComparisonPresets: ReportComparisonPreset[] = [
     baseline: "Close period activity vs the previous close period.",
     primaryTab: "close",
     reportIds: [
+      "bank-reconciliation-report",
       "trial-balance",
       "general-ledger",
       "account-transactions",
@@ -3396,6 +3414,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     setupTime: "10-minute setup",
     trigger: "Run after invoices, payments, bank activity, and sales lines refresh.",
     reportIds: [
+      "bank-reconciliation-report",
       "balance-sheet",
       "cash-flow",
       "period-comparison",
@@ -3527,6 +3546,7 @@ export const reportAutomationStarters: ReportAutomationStarter[] = [
     setupTime: "20-minute setup",
     trigger: "Run when the close period starts or journals are posted after review.",
     reportIds: [
+      "bank-reconciliation-report",
       "trial-balance",
       "general-ledger",
       "account-transactions",
@@ -3621,6 +3641,7 @@ export const reportAutomationImpactProfiles: ReportAutomationImpactProfile[] = [
     itemsPerReadyRule: 7,
     itemsPerReadyDelivery: 5,
     reportIds: [
+      "bank-reconciliation-report",
       "profit-loss",
       "balance-sheet",
       "vat-summary",
@@ -3810,6 +3831,7 @@ export const reportAutomationImpactProfiles: ReportAutomationImpactProfile[] = [
     itemsPerReadyRule: 9,
     itemsPerReadyDelivery: 7,
     reportIds: [
+      "bank-reconciliation-report",
       "profit-loss",
       "balance-sheet",
       "vat-summary",
@@ -4129,6 +4151,7 @@ export const reportAutomationTriggerRules: ReportAutomationTriggerRule[] = [
     severity: "critical",
     cadence: "Daily until clear, then weekly in the owner command pack.",
     reportIds: [
+      "bank-reconciliation-report",
       "profit-loss",
       "balance-sheet",
       "cash-flow",
@@ -4284,6 +4307,7 @@ export const reportAutomationTriggerRules: ReportAutomationTriggerRule[] = [
     severity: "critical",
     cadence: "Daily during close.",
     reportIds: [
+      "bank-reconciliation-report",
       "balance-sheet",
       "cash-flow",
       "trial-balance",

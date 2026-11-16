@@ -1115,6 +1115,7 @@ export const reportViewerCategoryByReportId: Record<string, string> = {
   "vat-return": "Accountant & Taxes",
   "corporate-tax-estimate": "Accountant & Taxes",
   "trial-balance": "Accountant & Taxes",
+  "bank-reconciliation-report": "Accountant & Taxes",
   "general-ledger": "Accountant & Taxes",
   "account-transactions": "Accountant & Taxes",
   "month-end-close-status": "Accountant & Taxes",
