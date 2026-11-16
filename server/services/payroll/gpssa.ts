@@ -9,6 +9,7 @@
  */
 import { DomainError } from "../../errors";
 import { emitDomainEvent } from "../../platform/domain-events";
+import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { createLogger } from "../../config/logger";
 import { fromFils } from "../../../shared/money";
 import { pensionContribution, utcDate, addDays, isoDay } from "./calc";
@@ -178,7 +179,7 @@ export async function scanExpiryAlerts(companyId: string | null, withinDays = 30
       obligation: `employee.${e.document}_expiry`,
       dueDate: e.expiryDate,
     });
-    emitDomainEvent("task.due", {
+    await emitDomainEventInTx(null, "task.due", {
       companyId: e.companyId,
       entityId: e.employeeId,
       dueDate: e.expiryDate,

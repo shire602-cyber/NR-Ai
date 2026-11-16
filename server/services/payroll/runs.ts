@@ -25,7 +25,7 @@
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { assertDifferentActor } from "../../middleware/companyRolePolicy";
-import { emitDomainEvent } from "../../platform/domain-events";
+import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { createLogger } from "../../config/logger";
 import { recordAudit } from "../audit.service";
 import { convert } from "../fx/rates";
@@ -756,7 +756,7 @@ export async function approveRun(
   req?: Request
 ): Promise<PayrollRunRow> {
   const settings = await loadPayrollSettings(companyId);
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const run = await lockRun(tx, runId, companyId);
     if (run.status === "approved" || run.status === "paid") {
       throw new DomainError(
@@ -840,15 +840,14 @@ export async function approveRun(
       req,
       tx,
     });
-    afterCommit(() =>
-      emitDomainEvent("payroll.approved", {
-        companyId,
-        entityId: runId,
-        actorUserId: actorId,
-        periodMonth: run.period_month,
-        periodYear: run.period_year,
-      })
-    );
+    // F8: durable event, written in the approval transaction.
+    await emitDomainEventInTx(tx, "payroll.approved", {
+      companyId,
+      entityId: runId,
+      actorUserId: actorId,
+      periodMonth: run.period_month,
+      periodYear: run.period_year,
+    });
     log.info({ runId, journalEntryId: posted.entry.id }, "Payroll run approved");
     return updated;
   });
@@ -863,7 +862,7 @@ export async function payRun(
   body: { paymentAccountId: string; paymentDate: string },
   req?: Request
 ): Promise<PayrollRunRow> {
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const run = await lockRun(tx, runId, companyId);
     if (run.status === "paid") {
       throw new DomainError("PAYROLL_ALREADY_PAID", 409, undefined, "Payroll run is already paid");
@@ -959,15 +958,14 @@ export async function payRun(
       req,
       tx,
     });
-    afterCommit(() =>
-      emitDomainEvent("payroll.paid", {
-        companyId,
-        entityId: runId,
-        actorUserId: actorId,
-        periodMonth: run.period_month,
-        periodYear: run.period_year,
-      })
-    );
+    // F8: durable event, written in the payment transaction.
+    await emitDomainEventInTx(tx, "payroll.paid", {
+      companyId,
+      entityId: runId,
+      actorUserId: actorId,
+      periodMonth: run.period_month,
+      periodYear: run.period_year,
+    });
     return updated;
   });
 }

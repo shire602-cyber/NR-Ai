@@ -411,7 +411,7 @@ export function registerNotificationEngine(): void {
       "compliance.deadline_due",
       "task.due",
     ] as const) {
-      unsubscribers.push(onDomainEvent(type, handle as never));
+      unsubscribers.push(onDomainEvent(type, handle as never, { name: "notifications.engine" }));
     }
   }
   const have = new Set(listJobs().map((j) => j.name));

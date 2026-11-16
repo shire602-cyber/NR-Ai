@@ -18,7 +18,7 @@ import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { assertRetentionExpired } from "../services/retention.service";
 import { recordAudit } from "../services/audit.service";
-import { emitDomainEvent } from "../platform/domain-events";
+import { emitDomainEventInTx } from "../platform/event-outbox";
 import {
   assertTransition,
   loadBaseCurrency,
@@ -309,7 +309,7 @@ export function registerBillPayRoutes(app: Express) {
         rateTextOf(bill, billBase),
         isForeign(bill, billBase)
       );
-      const outcome = await withLedgerTx(async (tx, { afterCommit }) => {
+      const outcome = await withLedgerTx(async (tx) => {
         const locked = (
           await txRows<BillRow>(tx, `SELECT * FROM vendor_bills WHERE id = $1 FOR UPDATE`, [
             bill.id,
@@ -338,14 +338,13 @@ export function registerBillPayRoutes(app: Express) {
           { machine: billMachine, where: eq(vendorBillsTable.companyId, bill.company_id) }
         );
         if (!row) throw new DomainError("BILL_STATE_CHANGED", 409);
-        afterCommit(() =>
-          emitDomainEvent("bill.approved", {
-            companyId: bill.company_id,
-            entityId: bill.id,
-            actorUserId: actor.id,
-            totalFils: amountFils,
-          })
-        );
+        // F8: durable event, written in the approval transaction.
+        await emitDomainEventInTx(tx, "bill.approved", {
+          companyId: bill.company_id,
+          entityId: bill.id,
+          actorUserId: actor.id,
+          totalFils: amountFils,
+        });
         return { gate, entryId: posted.entry.id };
       });
       await recordAudit({

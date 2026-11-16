@@ -25,6 +25,7 @@ import {
   type EmailLanguage,
 } from "./email.service";
 import { registerOutboxJob, type OutgoingAttachment } from "../outbox";
+import { registerEventOutboxJob } from "../platform/event-outbox";
 import { registerObjectDeletionJob } from "./object-deletion-queue";
 import { registerNotificationEngine } from "./notification-engine.service";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
@@ -574,6 +575,8 @@ function registerBuiltInJobs() {
   for (const job of builtIns) if (!already.has(job.name)) registerJob(job);
   // W4-D: outbox delivery worker + notification scans (idempotent registration).
   registerOutboxJob();
+  // F8: durable domain-event dispatcher.
+  registerEventOutboxJob();
   registerNotificationEngine();
   // S8: report-artifact objects queued for deletion when their rows go away.
   registerObjectDeletionJob();

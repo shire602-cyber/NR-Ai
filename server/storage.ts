@@ -306,6 +306,7 @@ import {
 } from "./ledger";
 import { previewEntryNumber } from "./ledger/numbering";
 import { scopedDelete, scopedGet, scopedUpdate } from "./tenancy";
+import { sealAuditChainWaiting } from "./services/audit-chain.service";
 
 /** R01-05: canonical form of an email address (trimmed, lower-cased). */
 export function normalizeEmail(email: string): string {
@@ -4366,11 +4367,10 @@ export class DatabaseStorage implements IStorage {
   async createAuditLog(insertLog: InsertAuditLog): Promise<AuditLog> {
     const [log] = await db.insert(auditLogs).values(insertLog).returning();
     // W5-E: a row written while another transaction held the chain lock is stored
-    // unsealed; append it now if the lock is free (never waits, see migration 0109).
+    // unsealed. F8: append it now, waiting briefly for the chain lock; a non-waiting seal
+    // could lose to a sealer whose snapshot predates this commit and leave the row pending.
     if (log && log.seq === null && log.chainKey) {
-      await db
-        .execute(sql`SELECT audit_seal_pending(${log.chainKey})`)
-        .catch(() => undefined);
+      await sealAuditChainWaiting(log.chainKey);
     }
     return log;
   }

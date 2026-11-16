@@ -26,7 +26,7 @@ import {
   withLedgerTx,
   type LedgerTx,
 } from "../ledger";
-import { emitDomainEvent } from "../platform/domain-events";
+import { emitDomainEventInTx } from "../platform/event-outbox";
 import { has, provide, resolve } from "../platform/service-registry";
 import { registerJob, listJobs } from "../platform/job-registry";
 import type { FxGetRate } from "./fx";
@@ -744,7 +744,7 @@ export async function recordBillPayment(
   const currency = documentCurrency(billPre.currency, companyBase);
 
   let paidEvent = false;
-  const result = await withLedgerTx(async (tx, { afterCommit }) => {
+  const result = await withLedgerTx(async (tx) => {
     const bill = await lockBill(tx, args.billId, companyId);
     if (!PAYABLE_BILL_STATES.includes(String(bill.status) as BillState)) {
       throw new DomainError("BILL_NOT_PAYABLE", 409, { status: bill.status });
@@ -847,16 +847,15 @@ export async function recordBillPayment(
     );
     const settled = await settleStatus(tx, bill);
     paidEvent = settled.status === "paid";
-    afterCommit(() => {
-      if (paidEvent) {
-        emitDomainEvent("bill.paid", {
-          companyId,
-          entityId: bill.id,
-          actorUserId: args.actorId,
-          amountFils: args.amountFils,
-        });
-      }
-    });
+    // F8: durable event, written in this transaction (rolls back with the payment).
+    if (paidEvent) {
+      await emitDomainEventInTx(tx, "bill.paid", {
+        companyId,
+        entityId: bill.id,
+        actorUserId: args.actorId,
+        amountFils: args.amountFils,
+      });
+    }
     return {
       payment,
       billStatus: settled.status,
