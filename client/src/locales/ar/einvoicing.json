@@ -192,5 +192,12 @@
   "einvoicing.headerDetails": "التفاصيل",
   "einvoicing.headerFix": "إصلاح",
   "einvoicing.headerIssueOne": "يلزم توفير «{field}» قبل إرسال هذه الفاتورة الإلكترونية.",
-  "einvoicing.headerIssueMany": "يلزم توفير «{field}» و{count} عناصر أخرى قبل إرسال هذه الفاتورة الإلكترونية."
+  "einvoicing.headerIssueMany": "يلزم توفير «{field}» و{count} عناصر أخرى قبل إرسال هذه الفاتورة الإلكترونية.",
+  "einvoicing.ftaChip_not_required": "الهيئة: غير مطلوب",
+  "einvoicing.ftaChip_not_sent": "الهيئة: لم يُرسل",
+  "einvoicing.ftaChip_pending": "الهيئة: قيد الانتظار",
+  "einvoicing.ftaChip_reported": "الهيئة: تم الإبلاغ",
+  "einvoicing.ftaChip_report_failed": "الهيئة: تعذّر الإبلاغ",
+  "einvoicing.headerRejected": "مرفوضة",
+  "einvoicing.headerDeliveryFailed": "تعذّر التسليم"
 }

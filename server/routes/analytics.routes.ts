@@ -129,9 +129,10 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId, period } = parsedBody<z.infer<typeof generateForecastBody>>(req);
       await assertReportAccess(req, companyId);
       const periodMonths = period === "3months" ? 3 : period === "6months" ? 6 : 12;
-      const { forecasts, insufficientData, insights, insightMessages } = await regenerateStoredForecast(companyId, {
-        months: periodMonths,
-      });
+      const { forecasts, insufficientData, insights, insightMessages } =
+        await regenerateStoredForecast(companyId, {
+          months: periodMonths,
+        });
       if (insufficientData) {
         throw new DomainError(
           "INSUFFICIENT_DATA",
@@ -171,6 +172,7 @@ export function registerAnalyticsRoutes(app: Express) {
       const report = await computeBudgetVariance(plan);
       const accounts = await storage.getAccountsByCompanyId(companyId);
       const nameById = new Map(accounts.map((a) => [a.id, a.nameEn]));
+      const nameArById = new Map(accounts.map((a) => [a.id, a.nameAr ?? null]));
       const rows = report.varianceLines
         .filter((l) => l.accountId)
         .map((l) => {
@@ -184,6 +186,7 @@ export function registerAnalyticsRoutes(app: Express) {
             lineId: l.id,
             accountId: l.accountId,
             accountName: nameById.get(l.accountId as string) ?? l.category,
+            accountNameAr: nameArById.get(l.accountId as string) ?? null,
             accountType: l.accountType,
             category: l.category,
             budgeted,

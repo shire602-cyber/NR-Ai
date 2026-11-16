@@ -1211,7 +1211,7 @@ export default function VATFiling() {
                                 {locale === "ar" ? "الصافي" : "Net"}
                               </p>
                               <p
-                                className={`tabular-nums font-semibold ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
+                                className={`tabular-nums font-semibold ${(vatReturn.box14PayableTax || 0) === 0 ? "text-foreground" : (vatReturn.box14PayableTax || 0) > 0 ? "text-destructive" : "text-success"}`}
                               >
                                 <Money amount={Math.abs(vatReturn.box14PayableTax || 0)} />
                               </p>
@@ -1297,7 +1297,7 @@ export default function VATFiling() {
                             </TableCell>
                             <TableCell
                               data-numeric
-                              className={` font-medium ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
+                              className={` font-medium ${(vatReturn.box14PayableTax || 0) === 0 ? "text-foreground" : (vatReturn.box14PayableTax || 0) > 0 ? "text-destructive" : "text-success"}`}
                             >
                               {(vatReturn.box14PayableTax || 0) >= 0 ? "" : "("}
                               <Money amount={Math.abs(vatReturn.box14PayableTax || 0)} />

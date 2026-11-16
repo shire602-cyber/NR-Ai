@@ -390,8 +390,10 @@ function PortalHome({ token }: { token: string | null }) {
       <header className="bg-card border-b shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{info.companyName}</h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-bold text-foreground" dir="auto">
+                {info.companyName}
+              </h1>
               <p className="text-muted-foreground mt-1">
                 <T k="portal.customerPortal" />
               </p>

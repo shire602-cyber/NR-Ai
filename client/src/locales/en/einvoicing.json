@@ -192,5 +192,12 @@
   "einvoicing.headerDetails": "Details",
   "einvoicing.headerFix": "Fix",
   "einvoicing.headerIssueOne": "{field} is needed before this e-invoice can be sent.",
-  "einvoicing.headerIssueMany": "{field} and {count} more items are needed before this e-invoice can be sent."
+  "einvoicing.headerIssueMany": "{field} and {count} more items are needed before this e-invoice can be sent.",
+  "einvoicing.ftaChip_not_required": "FTA: not required",
+  "einvoicing.ftaChip_not_sent": "FTA: not sent",
+  "einvoicing.ftaChip_pending": "FTA: pending",
+  "einvoicing.ftaChip_reported": "FTA: reported",
+  "einvoicing.ftaChip_report_failed": "FTA: report failed",
+  "einvoicing.headerRejected": "Rejected",
+  "einvoicing.headerDeliveryFailed": "Delivery failed"
 }

@@ -26,5 +26,9 @@
   "statements.exportFailed": "Export failed",
   "statements.pageTitle": "Financial statements",
   "statements.pageDesc": "Generate profit & loss, balance sheet, and cash flow statements",
-  "statements.colCode": "Code"
+  "statements.colCode": "Code",
+  "statements.operatingExpenses": "Operating expenses",
+  "statements.tabShortPl": "P&L",
+  "statements.tabShortBs": "Balance",
+  "statements.tabShortCf": "Cash flow"
 }

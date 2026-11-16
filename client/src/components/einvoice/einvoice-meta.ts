@@ -200,3 +200,22 @@ export function fieldLabelKey(field: string): string | null {
   if (field.startsWith("document.")) return "einvoicing.field_document";
   return null;
 }
+
+/** One-line rejection reason for the header strip: the first provider reason (with its field or
+ * rule), else the localised error code, else the stored message. `code`/`field` are returned so the
+ * caller can render them as LTR isolates. */
+export function rejectionSummary(rejection: EInvoiceStatusView["rejection"]): {
+  message: string | null;
+  field: string | null;
+  rule: string | null;
+  errorCode: string | null;
+} | null {
+  if (!rejection) return null;
+  const first = rejection.reasons.find((r) => r.message || r.field || r.code);
+  return {
+    message: first?.message ?? rejection.message ?? null,
+    field: first?.field ?? null,
+    rule: first?.code ?? null,
+    errorCode: rejection.code,
+  };
+}
