@@ -71,6 +71,113 @@ export function uaeTinFromTrn(trn: string | null | undefined): string | null {
   const digits = String(trn ?? "").replace(/\s+/g, "");
   return /^[0-9]{15}$/.test(digits) ? digits.slice(0, 10) : null;
 }
+/** PINT AE emirate codes (IBT-039/054), keyed by our stored emirate value. */
+const EMIRATE_CODES: Record<string, string> = {
+  abu_dhabi: "AUH",
+  dubai: "DXB",
+  sharjah: "SHJ",
+  ajman: "AJM",
+  umm_al_quwain: "UAQ",
+  ras_al_khaimah: "RAK",
+  fujairah: "FUJ",
+};
+
+/**
+ * Emirate code from a stored emirate value ("dubai"), a code ("DXB") or, as a
+ * last resort, a city name that is itself an emirate ("Abu Dhabi").
+ */
+export function uaeEmirateCode(...candidates: Array<string | null | undefined>): string | null {
+  const codes = new Set(Object.values(EMIRATE_CODES));
+  for (const raw of candidates) {
+    const v = String(raw ?? "").trim();
+    if (!v) continue;
+    if (codes.has(v.toUpperCase())) return v.toUpperCase();
+    const key = v.toLowerCase().replace(/[\s-]+/g, "_");
+    if (EMIRATE_CODES[key]) return EMIRATE_CODES[key];
+  }
+  return null;
+}
+
+/** ISO 3166-1 alpha-2 from the free-text country we store ("UAE", "AE", ...). */
+function countryCode(raw: string | null | undefined): string {
+  const v = String(raw ?? "").trim().toUpperCase();
+  if (!v || v === "UAE" || v === "AE" || v === "UNITED ARAB EMIRATES") return "AE";
+  return /^[A-Z]{2}$/.test(v) ? v : "AE";
+}
+
+/** Buyer details for the e-invoice, usually from the invoice's linked contact. */
+export interface EInvoiceBuyer {
+  name: string;
+  trn?: string;
+  address?: string | null;
+  city?: string | null;
+  emirate?: string | null;
+  country?: string | null;
+  tradeLicenseNumber?: string | null;
+  tradeLicenseAuthority?: string | null;
+}
+
+/** Build the buyer block from the invoice and (optionally) its linked contact. */
+export function eInvoiceBuyerFor(
+  invoice: Pick<Invoice, "customerName" | "customerTrn"> & { customerAddress?: string | null },
+  contact?: {
+    trnNumber?: string | null;
+    address?: string | null;
+    city?: string | null;
+    emirate?: string | null;
+    country?: string | null;
+    tradeLicenseNumber?: string | null;
+    tradeLicenseAuthority?: string | null;
+  } | null
+): EInvoiceBuyer | undefined {
+  if (!invoice.customerName) return undefined;
+  return {
+    name: invoice.customerName,
+    trn: invoice.customerTrn || contact?.trnNumber || undefined,
+    address: contact?.address || invoice.customerAddress || null,
+    city: contact?.city ?? null,
+    emirate: contact?.emirate ?? null,
+    country: contact?.country ?? null,
+    tradeLicenseNumber: contact?.tradeLicenseNumber ?? null,
+    tradeLicenseAuthority: contact?.tradeLicenseAuthority ?? null,
+  };
+}
+
+/** UBL PostalAddress: street (IBT-035/050), city (IBT-037/052), emirate (IBT-039/054). */
+function postalAddressXml(a: { street?: string | null; city?: string | null; emirate?: string | null; country: string }): string {
+  const parts = [
+    a.street ? `
+        <cbc:StreetName>${escapeXml(a.street)}</cbc:StreetName>` : "",
+    a.city ? `
+        <cbc:CityName>${escapeXml(a.city)}</cbc:CityName>` : "",
+    a.emirate && a.country === "AE" ? `
+        <cbc:CountrySubentity>${escapeXml(a.emirate)}</cbc:CountrySubentity>` : "",
+  ].join("");
+  return `
+      <cac:PostalAddress>${parts}
+        <cac:Country>
+          <cbc:IdentificationCode>${escapeXml(a.country)}</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>`;
+}
+
+/**
+ * UBL PartyLegalEntity: registration name plus, when known, the trade licence
+ * (IBT-030/047) typed "TL" (BTAE-15/16) with its issuing authority (BTAE-11/12).
+ */
+function legalEntityXml(name: string, licence?: string | null, authority?: string | null): string {
+  const companyId = licence
+    ? `
+        <cbc:CompanyID schemeAgencyID="TL"${
+          authority ? ` schemeAgencyName="${escapeXml(authority)}"` : ""
+        }>${escapeXml(licence)}</cbc:CompanyID>`
+    : "";
+  return `
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXml(name)}</cbc:RegistrationName>${companyId}
+      </cac:PartyLegalEntity>`;
+}
+
 // UBL document type codes (UNCL1001): 380 = commercial invoice, 381 = credit note.
 const INVOICE_TYPE_CODE_INVOICE = "380";
 const INVOICE_TYPE_CODE_CREDIT_NOTE = "381";
@@ -79,7 +186,7 @@ export function generateEInvoiceXML(
   invoice: Invoice,
   lines: InvoiceLine[],
   company: Company,
-  customer?: { name: string; trn?: string }
+  customer?: EInvoiceBuyer
 ): { xml: string; uuid: string; hash: string } {
   const uuid = crypto.randomUUID();
   const issueDate = formatDate(invoice.date);
@@ -141,6 +248,12 @@ export function generateEInvoiceXML(
       </cac:Item>
       <cac:Price>
         <cbc:PriceAmount currencyID="${escapeXml(currency)}">${line.unitPrice.toFixed(2)}</cbc:PriceAmount>
+        <cbc:BaseQuantity unitCode="EA">1</cbc:BaseQuantity>
+        <cac:AllowanceCharge>
+          <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
+          <cbc:Amount currencyID="${escapeXml(currency)}">0.00</cbc:Amount>
+          <cbc:BaseAmount currencyID="${escapeXml(currency)}">${line.unitPrice.toFixed(2)}</cbc:BaseAmount>
+        </cac:AllowanceCharge>
       </cac:Price>
     </cac:InvoiceLine>`;
     })
@@ -184,6 +297,19 @@ export function generateEInvoiceXML(
 
   const customerName = customer?.name || invoice.customerName || "Cash Customer";
   const customerTrn = customer?.trn || invoice.customerTrn || "";
+  const sellerAddressXml = postalAddressXml({
+    street: (company as any).addressStreet || company.businessAddress || "",
+    city: (company as any).addressCity || null,
+    emirate: uaeEmirateCode((company as any).emirate, (company as any).addressCity),
+    country: countryCode((company as any).addressCountry),
+  });
+  const buyerCountry = countryCode(customer?.country);
+  const buyerAddressXml = postalAddressXml({
+    street: customer?.address || null,
+    city: customer?.city || null,
+    emirate: uaeEmirateCode(customer?.emirate, customer?.city),
+    country: buyerCountry,
+  });
   const sellerTin = uaeTinFromTrn(company.trnVatNumber);
   const buyerTin = uaeTinFromTrn(customerTrn);
   const endpointXml = (tin: string | null) =>
@@ -211,21 +337,18 @@ export function generateEInvoiceXML(
       <cac:PartyName>
         <cbc:Name>${escapeXml(company.name)}</cbc:Name>
       </cac:PartyName>
-      <cac:PostalAddress>
-        <cbc:StreetName>${escapeXml(company.businessAddress || "")}</cbc:StreetName>
-        <cac:Country>
-          <cbc:IdentificationCode>AE</cbc:IdentificationCode>
-        </cac:Country>
-      </cac:PostalAddress>
+${sellerAddressXml.slice(1)}
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(company.trnVatNumber || "")}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
-      <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${escapeXml(company.name)}</cbc:RegistrationName>
-      </cac:PartyLegalEntity>${
+${legalEntityXml(
+        company.name,
+        (company as any).registrationNumber,
+        (company as any).tradeLicenseAuthority
+      ).slice(1)}${
         company.contactEmail
           ? `
       <cac:Contact>
@@ -246,7 +369,7 @@ export function generateEInvoiceXML(
     <cac:Party>${endpointXml(buyerTin)}
       <cac:PartyName>
         <cbc:Name>${escapeXml(customerName)}</cbc:Name>
-      </cac:PartyName>${
+      </cac:PartyName>${buyerAddressXml}${
         customerTrn
           ? `
       <cac:PartyTaxScheme>
@@ -257,9 +380,7 @@ export function generateEInvoiceXML(
       </cac:PartyTaxScheme>`
           : ""
       }
-      <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${escapeXml(customerName)}</cbc:RegistrationName>
-      </cac:PartyLegalEntity>
+${legalEntityXml(customerName, customer?.tradeLicenseNumber, customer?.tradeLicenseAuthority).slice(1)}
     </cac:Party>
   </cac:AccountingCustomerParty>
 
@@ -298,9 +419,52 @@ const TRN_RE = /^[0-9]{15}$/;
 export function validateForEInvoicing(
   invoice: Invoice,
   lines: InvoiceLine[],
-  company: Company
+  company: Company,
+  buyer?: EInvoiceBuyer
 ): EInvoiceIssue[] {
   const issues: EInvoiceIssue[] = [];
+  const co = company as any;
+
+  // Seller address and trade licence (IBR-143-AE, IBR-150-AE, IBR-101-AE).
+  if (!(co.addressStreet || company.businessAddress)) {
+    issues.push({ field: "company.addressStreet", message: "Supplier street address is required for e-invoicing" });
+  }
+  if (!co.addressCity) {
+    issues.push({ field: "company.addressCity", message: "Supplier city is required for e-invoicing" });
+  }
+  if (countryCode(co.addressCountry) === "AE" && !uaeEmirateCode(co.emirate, co.addressCity)) {
+    issues.push({ field: "company.emirate", message: "Supplier emirate is required for e-invoicing" });
+  }
+  if (!co.registrationNumber) {
+    issues.push({
+      field: "company.registrationNumber",
+      message: "Supplier trade licence number is required for e-invoicing",
+    });
+  } else if (!co.tradeLicenseAuthority) {
+    issues.push({
+      field: "company.tradeLicenseAuthority",
+      message: "Supplier trade licence issuing authority is required for e-invoicing",
+    });
+  }
+
+  // Buyer address (IBR-144-AE) and licence authority (IBR-101-AE), when we know the buyer.
+  if (buyer) {
+    if (!buyer.address) {
+      issues.push({ field: "contact.address", message: "Buyer street address is required for e-invoicing" });
+    }
+    if (!buyer.city) {
+      issues.push({ field: "contact.city", message: "Buyer city is required for e-invoicing" });
+    }
+    if (countryCode(buyer.country) === "AE" && !uaeEmirateCode(buyer.emirate, buyer.city)) {
+      issues.push({ field: "contact.emirate", message: "Buyer emirate is required for e-invoicing" });
+    }
+    if (buyer.tradeLicenseNumber && !buyer.tradeLicenseAuthority) {
+      issues.push({
+        field: "contact.tradeLicenseAuthority",
+        message: "Buyer trade licence issuing authority is required when a licence number is set",
+      });
+    }
+  }
 
   if (!company.trnVatNumber) {
     issues.push({

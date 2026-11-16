@@ -7,7 +7,11 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertInvoiceSchema, type Invoice } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
-import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
+import {
+  eInvoiceBuyerFor,
+  generateEInvoiceXML,
+  validateForEInvoicing,
+} from "../services/einvoice.service";
 import { getEInvoiceProvider } from "../services/einvoice-provider";
 import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { submitEInvoice, refreshEInvoiceStatus } from "../services/einvoice-submit.service";
@@ -937,7 +941,15 @@ export function registerInvoiceRoutes(app: Express) {
       if (!company) {
         return res.status(404).json({ message: "Company not found" });
       }
-      const issues = validateForEInvoicing(invoice, lines, company);
+      const contact = (invoice as any).contactId
+        ? await storage.getCustomerContact((invoice as any).contactId)
+        : undefined;
+      const issues = validateForEInvoicing(
+        invoice,
+        lines,
+        company,
+        eInvoiceBuyerFor(invoice, contact)
+      );
       res.json({ valid: issues.length === 0, issues });
     })
   );
@@ -961,8 +973,13 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
+      const contact = (invoice as any).contactId
+        ? await storage.getCustomerContact((invoice as any).contactId)
+        : undefined;
+      const customer = eInvoiceBuyerFor(invoice, contact);
+
       // A payload an ASP/FTA would reject must never be generated and stored.
-      const issues = validateForEInvoicing(invoice, lines, company);
+      const issues = validateForEInvoicing(invoice, lines, company, customer);
       if (issues.length > 0) {
         return res.status(422).json({
           message: "Invoice is not e-invoicing ready",
@@ -970,10 +987,6 @@ export function registerInvoiceRoutes(app: Express) {
           issues,
         });
       }
-
-      const customer = invoice.customerName
-        ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
-        : undefined;
 
       const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer);
 
@@ -1043,7 +1056,10 @@ export function registerInvoiceRoutes(app: Express) {
           code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
         });
       }
-      const result = await submitEInvoice({ invoice, lines, company, provider });
+      const contact = (invoice as any).contactId
+        ? await storage.getCustomerContact((invoice as any).contactId)
+        : undefined;
+      const result = await submitEInvoice({ invoice, lines, company, provider, contact });
       if (!result.ok) {
         return res
           .status(result.status)

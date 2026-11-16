@@ -228,6 +228,8 @@ describe("Complyance adapter", () => {
     expect(url).toBe("https://prod.gets.complyance.io/api/v3/unify");
     expect(init.headers.Authorization).toBe("Bearer key");
     expect(init.headers["Content-Type"]).toMatch(/^application\/xml/);
+    // Complyance's WAF rejects requests without a User-Agent (403).
+    expect(init.headers["User-Agent"]).toMatch(/^Muhasib-EInvoicing\//);
     expect(init.body).toContain("<source>client-a:v1</source>");
     expect(init.body).toContain("<environment>sandbox</environment>");
   });

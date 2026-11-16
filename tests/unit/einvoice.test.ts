@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  eInvoiceBuyerFor,
   generateEInvoiceXML,
+  uaeEmirateCode,
   uaeTinFromTrn,
   validateForEInvoicing,
   vatCategoryFor,
@@ -11,6 +13,11 @@ const company = {
   name: "Pearl Trading LLC",
   trnVatNumber: "100123456700003",
   businessAddress: "Dubai",
+  addressStreet: "Sheikh Zayed Road",
+  addressCity: "Dubai",
+  emirate: "dubai",
+  registrationNumber: "CN-1234567",
+  tradeLicenseAuthority: "Dubai Economy and Tourism",
 } as any;
 
 function makeInvoice(overrides: Record<string, unknown> = {}) {
@@ -134,6 +141,64 @@ describe("PINT AE profile + document type", () => {
     expect(xml).toContain("<cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode>");
     expect(xml).toContain("<cac:BillingReference>");
     expect(xml).toContain("inv-original-1");
+  });
+});
+
+describe("PINT AE party and price details", () => {
+  const buyer = eInvoiceBuyerFor(makeInvoice(), {
+    address: "Corniche Road",
+    city: "Abu Dhabi",
+    country: "UAE",
+    tradeLicenseNumber: "CN-7654321",
+    tradeLicenseAuthority: "ADDED",
+  });
+
+  it("emits seller and buyer street, city and emirate code", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice(), lines, company, buyer);
+    expect(xml).toContain("<cbc:CityName>Dubai</cbc:CityName>");
+    expect(xml).toContain("<cbc:CountrySubentity>DXB</cbc:CountrySubentity>");
+    expect(xml).toContain("<cbc:StreetName>Corniche Road</cbc:StreetName>");
+    expect(xml).toContain("<cbc:CountrySubentity>AUH</cbc:CountrySubentity>");
+  });
+
+  it("emits trade licences typed TL with their issuing authority", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice(), lines, company, buyer);
+    expect(xml).toContain(
+      '<cbc:CompanyID schemeAgencyID="TL" schemeAgencyName="Dubai Economy and Tourism">CN-1234567</cbc:CompanyID>'
+    );
+    expect(xml).toContain('<cbc:CompanyID schemeAgencyID="TL" schemeAgencyName="ADDED">CN-7654321</cbc:CompanyID>');
+  });
+
+  it("emits gross price and base quantity on each line (IBR-126-AE)", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice(), lines, company, buyer);
+    expect(xml).toContain('<cbc:BaseQuantity unitCode="EA">1</cbc:BaseQuantity>');
+    expect(xml).toContain('<cbc:BaseAmount currencyID="AED">500.00</cbc:BaseAmount>');
+  });
+
+  it("maps emirate values, codes and emirate-named cities", () => {
+    expect(uaeEmirateCode("ras_al_khaimah")).toBe("RAK");
+    expect(uaeEmirateCode("shj")).toBe("SHJ");
+    expect(uaeEmirateCode(null, "Umm Al Quwain")).toBe("UAQ");
+    expect(uaeEmirateCode(null, "Al Ain")).toBeNull();
+  });
+
+  it("flags missing seller and buyer address, emirate and licence authority", () => {
+    const fields = validateForEInvoicing(
+      makeInvoice(),
+      lines,
+      { ...company, addressCity: null, emirate: null, tradeLicenseAuthority: null },
+      eInvoiceBuyerFor(makeInvoice(), { city: "Al Ain", tradeLicenseNumber: "X" })
+    ).map((i) => i.field);
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        "company.addressCity",
+        "company.emirate",
+        "company.tradeLicenseAuthority",
+        "contact.address",
+        "contact.emirate",
+        "contact.tradeLicenseAuthority",
+      ])
+    );
   });
 });
 

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
@@ -64,6 +65,18 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+
+// PINT AE emirate values; stored as on companies.emirate and mapped to codes
+// (DXB, AUH, ...) when the e-invoice is generated.
+const CONTACT_EMIRATES = [
+  { value: "abu_dhabi", label: "Abu Dhabi" },
+  { value: "dubai", label: "Dubai" },
+  { value: "sharjah", label: "Sharjah" },
+  { value: "ajman", label: "Ajman" },
+  { value: "umm_al_quwain", label: "Umm Al Quwain" },
+  { value: "ras_al_khaimah", label: "Ras Al Khaimah" },
+  { value: "fujairah", label: "Fujairah" },
+];
 
 interface ImportResult {
   message: string;
@@ -134,6 +147,9 @@ function ContactForm({
     trnNumber: contact?.trnNumber || "",
     address: contact?.address || "",
     city: contact?.city || "",
+    emirate: contact?.emirate || "",
+    tradeLicenseNumber: contact?.tradeLicenseNumber || "",
+    tradeLicenseAuthority: contact?.tradeLicenseAuthority || "",
     country: contact?.country || "UAE",
   });
 
@@ -212,6 +228,51 @@ function ContactForm({
           />
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Emirate</Label>
+          <Select
+            value={formData.emirate || undefined}
+            onValueChange={(value) => setFormData({ ...formData, emirate: value })}
+          >
+            <SelectTrigger data-testid="select-contact-emirate">
+              <SelectValue placeholder="Select emirate" />
+            </SelectTrigger>
+            <SelectContent>
+              {CONTACT_EMIRATES.map((e) => (
+                <SelectItem key={e.value} value={e.value}>
+                  {e.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Trade Licence Number</Label>
+          <Input
+            value={formData.tradeLicenseNumber}
+            onChange={(e) => setFormData({ ...formData, tradeLicenseNumber: e.target.value })}
+            placeholder="CN-1234567"
+            data-testid="input-contact-trade-license"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Licence Issuing Authority</Label>
+          <Input
+            value={formData.tradeLicenseAuthority}
+            onChange={(e) => setFormData({ ...formData, tradeLicenseAuthority: e.target.value })}
+            placeholder="Dubai Economy and Tourism"
+            data-testid="input-contact-trade-license-authority"
+          />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        UAE e-invoices need the buyer&apos;s address, city and emirate; a trade licence needs its
+        issuing authority.
+      </p>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
           Cancel

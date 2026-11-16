@@ -311,6 +311,10 @@ export const companies = pgTable("companies", {
   // guessed value silently misfiles a non-Dubai company's whole turnover.
   // Onboarding asks for this; VAT 201 generation refuses until it is set.
   emirate: text("emirate"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
+  // Issuing authority of the trade licence in `registrationNumber`, e.g.
+  // "Dubai Economy and Tourism" or a free-zone authority. PINT AE (IBR-101-AE)
+  // requires it whenever a trade licence is sent on an e-invoice.
+  tradeLicenseAuthority: text("trade_license_authority"),
 
   // WPS / Payroll — MOHRE establishment ID and employer bank fields used to
   // build the SCR (Salary Control Record) line of the SIF file. Distinct from
@@ -1855,6 +1859,11 @@ export const customerContacts = pgTable(
     trnNumber: text("trn_number"),
     address: text("address"),
     city: text("city"),
+    // PINT AE buyer address: emirate (abu_dhabi | dubai | ...) and trade licence
+    // with its issuing authority (IBR-144-AE / IBR-149-AE).
+    emirate: text("emirate"),
+    tradeLicenseNumber: text("trade_license_number"),
+    tradeLicenseAuthority: text("trade_license_authority"),
     country: text("country").default("UAE"),
     contactPerson: text("contact_person"),
     paymentTerms: integer("payment_terms").default(30),

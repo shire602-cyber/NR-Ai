@@ -41,6 +41,7 @@ import { createLogger } from "../config/logger";
 const log = createLogger("einvoice-complyance");
 
 const DEFAULT_BASE_URL = "https://prod.gets.complyance.io";
+export const COMPLYANCE_USER_AGENT = "Muhasib-EInvoicing/1.0";
 
 /**
  * Complyance document `state` -> our status. delivery_failed is NOT terminal
@@ -184,6 +185,8 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         headers: {
           Authorization: `Bearer ${this.cfg.apiKey}`,
           Accept: "application/json",
+          // Complyance's WAF answers 403 to requests without a User-Agent.
+          "User-Agent": COMPLYANCE_USER_AGENT,
           ...(xmlBody !== undefined ? { "Content-Type": "application/xml; charset=utf-8" } : {}),
         },
         body: xmlBody,

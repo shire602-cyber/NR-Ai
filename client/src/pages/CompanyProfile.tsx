@@ -48,6 +48,10 @@ const companyProfileSchema = z.object({
     .string()
     .transform((val) => val || undefined)
     .optional(),
+  tradeLicenseAuthority: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
   businessAddress: z.string().min(1, "Business address is required"),
   contactPhone: z
     .string()
@@ -107,6 +111,7 @@ export default function CompanyProfile() {
       legalStructure: "",
       industry: "",
       registrationNumber: "",
+      tradeLicenseAuthority: "",
       businessAddress: "",
       contactPhone: "",
       contactEmail: "",
@@ -130,6 +135,7 @@ export default function CompanyProfile() {
         legalStructure: company.legalStructure || "",
         industry: company.industry || "",
         registrationNumber: company.registrationNumber || "",
+        tradeLicenseAuthority: company.tradeLicenseAuthority || "",
         businessAddress: company.businessAddress || "",
         contactPhone: company.contactPhone || "",
         contactEmail: company.contactEmail || "",
@@ -318,6 +324,24 @@ export default function CompanyProfile() {
                           placeholder="1234567890"
                           className="font-mono"
                           data-testid="input-registration-number"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="tradeLicenseAuthority"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Licence Issuing Authority</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Dubai Economy and Tourism"
+                          data-testid="input-trade-license-authority"
                         />
                       </FormControl>
                       <FormMessage />

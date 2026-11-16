@@ -4,8 +4,13 @@
 // the lifecycle state machine, and the provider seam). Persistence and HTTP
 // shaping live in the route; this stays storage-agnostic for testability.
 
-import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
-import { validateForEInvoicing, generateEInvoiceXML, type EInvoiceIssue } from "./einvoice.service";
+import type { Invoice, InvoiceLine, Company, CustomerContact } from "../../shared/schema";
+import {
+  validateForEInvoicing,
+  generateEInvoiceXML,
+  eInvoiceBuyerFor,
+  type EInvoiceIssue,
+} from "./einvoice.service";
 import { assertEInvoiceTransition, type EInvoiceStatus } from "./einvoice-status";
 import type { EInvoiceProvider } from "./einvoice-provider";
 
@@ -27,16 +32,15 @@ type SubmitErr = { ok: false; status: number; code: string; message: string; iss
 export function buildEInvoiceDocument(
   invoice: Invoice,
   lines: InvoiceLine[],
-  company: Company
+  company: Company,
+  contact?: CustomerContact | null
 ): { ok: true; xml: string; uuid: string; hash: string } | { ok: false; issues: EInvoiceIssue[] } {
-  const issues = validateForEInvoicing(invoice, lines, company);
+  const customer = eInvoiceBuyerFor(invoice, contact);
+  const issues = validateForEInvoicing(invoice, lines, company, customer);
   if (issues.length > 0) return { ok: false, issues };
   if (invoice.einvoiceXml && invoice.einvoiceUuid && invoice.einvoiceHash) {
     return { ok: true, xml: invoice.einvoiceXml, uuid: invoice.einvoiceUuid, hash: invoice.einvoiceHash };
   }
-  const customer = invoice.customerName
-    ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
-    : undefined;
   const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer);
   return { ok: true, xml, uuid, hash };
 }
@@ -46,14 +50,15 @@ export async function submitEInvoice(args: {
   lines: InvoiceLine[];
   company: Company;
   provider: EInvoiceProvider;
+  contact?: CustomerContact | null;
 }): Promise<SubmitOk | SubmitErr> {
-  const { invoice, lines, company, provider } = args;
+  const { invoice, lines, company, provider, contact } = args;
   const current = (invoice.einvoiceStatus as string) || "not_generated";
   if (current === "accepted") {
     return { ok: false, status: 409, code: "EINVOICE_ALREADY_ACCEPTED", message: "This e-invoice has already been cleared." };
   }
 
-  const built = buildEInvoiceDocument(invoice, lines, company);
+  const built = buildEInvoiceDocument(invoice, lines, company, contact);
   if (!built.ok) {
     return { ok: false, status: 422, code: "EINVOICE_VALIDATION_FAILED", message: "Invoice is not e-invoicing ready", issues: built.issues };
   }

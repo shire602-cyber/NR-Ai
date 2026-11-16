@@ -6,10 +6,20 @@ import {
 } from "../../server/services/einvoice-submit.service";
 import { MockEInvoiceProvider } from "../../server/services/einvoice-provider";
 
-const company = { name: "Pearl Trading LLC", trnVatNumber: "100123456700003", businessAddress: "Dubai" } as any;
+const company = {
+  name: "Pearl Trading LLC",
+  trnVatNumber: "100123456700003",
+  businessAddress: "Dubai",
+  addressStreet: "Sheikh Zayed Road",
+  addressCity: "Dubai",
+  emirate: "dubai",
+  registrationNumber: "CN-1234567",
+  tradeLicenseAuthority: "Dubai Economy and Tourism",
+} as any;
 const lines = [
   { description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 0.05, vatSupplyType: "standard_rated" },
 ] as any[];
+const contact = { address: "Corniche Road", city: "Abu Dhabi", country: "UAE" } as any;
 const baseInvoice = (o: Record<string, unknown> = {}) =>
   ({
     id: "inv-1",
@@ -26,9 +36,14 @@ const baseInvoice = (o: Record<string, unknown> = {}) =>
 
 describe("buildEInvoiceDocument", () => {
   it("generates a document for a valid invoice", () => {
-    const r = buildEInvoiceDocument(baseInvoice(), lines, company);
+    const r = buildEInvoiceDocument(baseInvoice(), lines, company, contact);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.xml).toContain("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>");
+  });
+  it("requires the buyer address when no contact supplies it (IBR-144-AE)", () => {
+    const r = buildEInvoiceDocument(baseInvoice(), lines, company);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.issues.map((i) => i.field)).toContain("contact.city");
   });
   it("returns issues for an invalid invoice (missing supplier TRN)", () => {
     const r = buildEInvoiceDocument(baseInvoice(), lines, { ...company, trnVatNumber: null });
@@ -43,6 +58,7 @@ describe("submitEInvoice (with mock ASP)", () => {
       invoice: baseInvoice(),
       lines,
       company,
+      contact,
       provider: new MockEInvoiceProvider(),
     });
     expect(r.ok).toBe(true);

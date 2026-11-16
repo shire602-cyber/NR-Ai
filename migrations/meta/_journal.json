@@ -617,6 +617,13 @@
    "when": 1781430030000,
    "tag": "0088_emirate_no_default",
    "breakpoints": false
+  },
+  {
+   "idx": 88,
+   "version": "7",
+   "when": 1781430040000,
+   "tag": "0089_einvoice_party_details",
+   "breakpoints": false
   }
  ]
 }
