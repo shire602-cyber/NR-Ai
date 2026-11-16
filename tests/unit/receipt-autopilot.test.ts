@@ -55,18 +55,36 @@ vi.mock("../../server/storage", () => ({
       state.auditLogs.push(row);
       return row;
     }),
-    generateEntryNumber: vi.fn(async () => "JE-TEST-001"),
-    createJournalEntry: vi.fn(async (entry: any, lines: any[]) => {
+    // The autopilot posts through the same atomic receipt claim as a manual post (kernel
+    // postJournal, source "receipt"); never storage.createJournalEntry.
+    createJournalEntry: vi.fn(async () => {
+      throw new Error("Test mock: autopilot must not call storage.createJournalEntry");
+    }),
+    postReceiptAtomic: vi.fn(async (args: any) => {
       // Mirror the production assertion so tests fail loudly on an unbalanced
       // entry rather than silently swallowing the bug.
+      const lines = args.lines as any[];
       const totalDebit = lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0);
       const totalCredit = lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0);
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
         throw new Error(`Test mock: unbalanced entry ${totalDebit} vs ${totalCredit}`);
       }
-      const row = { id: `je-${state.journalEntries.length + 1}`, ...entry, lines };
+      const r = state.receipts.find((x) => x.id === args.receiptId);
+      if (!r) throw new Error("Test mock: receipt not found");
+      if (r.posted) throw new Error("Test mock: RECEIPT_POSTED");
+      const row = {
+        id: `je-${state.journalEntries.length + 1}`,
+        companyId: args.companyId,
+        date: args.entryDate,
+        memo: args.memo,
+        status: "posted",
+        source: "receipt",
+        sourceId: args.receiptId,
+        lines,
+      };
       state.journalEntries.push(row);
-      return row;
+      Object.assign(r, { posted: true, journalEntryId: row.id });
+      return { receipt: r, entry: row };
     }),
   },
 }));
@@ -324,6 +342,32 @@ describe("runAutopilot pipeline", () => {
     const receipt = state.receipts[0];
     expect(receipt.posted).toBe(true);
     expect(receipt.autoPosted).toBe(true);
+  });
+
+  it("[S3-02] auto-post goes through the kernel receipt claim (source receipt), not storage.createJournalEntry", async () => {
+    vi.mocked(storageMock.createJournalEntry).mockClear();
+    vi.mocked(storageMock.postReceiptAtomic).mockClear();
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: "rule-1",
+        merchantPattern: "DEWA April 2026",
+        descriptionPattern: null,
+        accountId: "a-utilities",
+        category: "Utilities",
+        confidence: 0.95,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot("co-1", "user-1", ocr);
+    expect(result.autoPosted).toBe(true);
+    expect(storageMock.createJournalEntry).not.toHaveBeenCalled();
+    expect(storageMock.postReceiptAtomic).toHaveBeenCalledTimes(1);
+    const je = state.journalEntries[0];
+    expect(je.source).toBe("receipt");
+    expect(je.sourceId).toBe(result.receiptId);
   });
 
   it("does NOT auto-post when rule has fewer than 5 accepts", async () => {

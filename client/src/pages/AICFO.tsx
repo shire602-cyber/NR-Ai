@@ -49,9 +49,12 @@ interface Message {
 }
 
 interface DashboardStats {
+  /** Revenue / expenses are scoped to this period (dashboard default: this month). */
+  period?: { preset: string; from: string; to: string; label: string };
   revenue: number;
   expenses: number;
   outstanding: number;
+  /** All-time document counts (not period scoped). */
   totalInvoices: number;
   totalEntries: number;
 }
@@ -95,10 +98,20 @@ export default function AICFO() {
     enabled: !!companyId,
   });
 
-  const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
-    queryKey: ["/api/companies", companyId, "reports", "pl"],
-    enabled: !!companyId,
+  // The P&L is requested for the SAME period as the dashboard figures (this month by default),
+  // so revenue, expenses, net profit and the ratios on this page never mix periods.
+  const periodFrom = stats?.period?.from;
+  const periodTo = stats?.period?.to;
+  const { data: profitLoss, isLoading: plQueryLoading } = useQuery<ProfitLossReport>({
+    queryKey: [
+      "/api/companies",
+      companyId,
+      "reports",
+      `pl?from=${periodFrom ?? ""}&to=${periodTo ?? ""}`,
+    ],
+    enabled: !!companyId && !!periodFrom && !!periodTo,
   });
+  const plLoading = statsLoading || plQueryLoading;
 
   const { data: monthlyTrends, isLoading: trendsLoading } = useQuery<MonthlyTrend[]>({
     queryKey: ["/api/companies", companyId, "dashboard/monthly-trends"],
@@ -300,6 +313,9 @@ export default function AICFO() {
                           : formatCurrency(kpi.value, "AED")}
                       </div>
                     )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      <T k="pages.thisMonth" />
+                    </p>
                   </CardContent>
                 </Card>
               );
@@ -324,7 +340,8 @@ export default function AICFO() {
                       {formatCurrency(stats.revenue || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats.totalInvoices || 0} invoices • Last 30 days
+                      <T k="pages.thisMonth" /> · {stats.totalInvoices || 0}{" "}
+                      <T k="pages.aiInvoicesOnFileAllTime" />
                     </p>
                   </>
                 ) : (
@@ -351,7 +368,8 @@ export default function AICFO() {
                       {formatCurrency(stats.expenses || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats.totalEntries || 0} entries • Last 30 days
+                      <T k="pages.thisMonth" /> · {stats.totalEntries || 0}{" "}
+                      <T k="pages.aiPostedEntriesAllTime" />
                     </p>
                   </>
                 ) : (
@@ -382,6 +400,7 @@ export default function AICFO() {
                       {formatCurrency(profitLoss.netProfit || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
+                      <T k="pages.thisMonth" /> ·{" "}
                       {profitLoss.totalRevenue
                         ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin`
                         : "No revenue yet"}

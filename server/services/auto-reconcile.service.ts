@@ -2,6 +2,7 @@ import type { Request } from "express";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { has } from "../platform/service-registry";
+import { PAYABLE_BILL_STATES } from "./bill-posting.service";
 import type { BankTransaction, JournalEntry, Invoice, Receipt } from "../../shared/schema";
 import {
   applyMatch,
@@ -271,8 +272,10 @@ async function loadCandidatePool(companyId: string): Promise<CandidatePool> {
       `SELECT id, COALESCE(bill_number, '') AS bill_number, vendor_name, bill_date,
               (COALESCE(total_amount, 0) - COALESCE(amount_paid, 0))::text AS remaining
          FROM vendor_bills
-        WHERE company_id = $1 AND COALESCE(status, '') NOT IN ('paid', 'void', 'cancelled', 'draft')`,
-      [companyId]
+        WHERE company_id = $1 AND status = ANY($2::text[])`,
+      // Only bills a payment can be recorded against (approved / overdue / partial): a bill
+      // still pending approval is not a payable yet, and applying it would 409 BILL_NOT_PAYABLE.
+      [companyId, [...PAYABLE_BILL_STATES]]
     );
     bills = (
       rows as Array<{

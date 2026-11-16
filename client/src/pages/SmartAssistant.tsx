@@ -11,6 +11,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest } from "@/lib/queryClient";
+import { T } from "@/components/layout/T";
 import {
   MessageCircle,
   Send,
@@ -239,6 +240,9 @@ export default function SmartAssistant() {
               <p className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.revenue || 0, "AED")}
               </p>
+              <p className="text-xs text-muted-foreground" data-testid="smart-stat-period-revenue">
+                <T k="pages.thisMonth" />
+              </p>
             </CardContent>
           </Card>
           <Card className="bg-danger-subtle border-destructive/30 ">
@@ -249,6 +253,9 @@ export default function SmartAssistant() {
               </div>
               <p className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.expenses || 0, "AED")}
+              </p>
+              <p className="text-xs text-muted-foreground" data-testid="smart-stat-period-expenses">
+                <T k="pages.thisMonth" />
               </p>
             </CardContent>
           </Card>
@@ -261,6 +268,9 @@ export default function SmartAssistant() {
               <p className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.outstanding || 0, "AED")}
               </p>
+              <p className="text-xs text-muted-foreground">
+                <T k="pages.aiOpenAsOfToday" />
+              </p>
             </CardContent>
           </Card>
           <Card className="bg-info-subtle border-info/30 ">
@@ -270,6 +280,9 @@ export default function SmartAssistant() {
                 <span className="text-xs font-medium">{t.invoices}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">{stats.totalInvoices}</p>
+              <p className="text-xs text-muted-foreground">
+                <T k="pages.aiAllTime" />
+              </p>
             </CardContent>
           </Card>
         </div>

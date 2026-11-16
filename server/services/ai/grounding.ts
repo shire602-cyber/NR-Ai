@@ -1,11 +1,14 @@
-// Server-computed grounding for AI answers (R05-09, R05-25, R05-26).
+// Server-computed grounding for AI answers (R05-09, R05-25, R05-26, S3).
 //
-// CFO advice and the NL gateway never use client-supplied figures. Figures here come from
-// set-based aggregate queries over POSTED journal lines (plus a few document counts),
-// rounded with the same helpers as financial-statements.ts. Each figure gets a stable id
-// (F1, F2, ...) so answers can cite it and the response can carry a citations block.
+// CFO advice and the NL gateway never use client-supplied figures. Ledger figures come from the
+// reporting kernel (server/reporting): the same profit-and-loss, balance sheet and aged
+// receivables every statement uses (posted entries only, closing entries excluded, fiscal year
+// from the company settings, integer-fils sums). Only document counts (receipts) are read
+// directly. Each figure gets a stable id (F1, F2, ...) so answers can cite it and the response can
+// carry a citations block.
 
-import { round2, sumMoney } from "../financial-statements";
+import { round2 } from "../financial-statements";
+import type { AgingReport, BalanceSheet, IsoDate, ProfitAndLoss } from "../../reporting";
 
 export interface GroundedFigure {
   id: string;
@@ -27,148 +30,97 @@ export interface GroundingResult {
 }
 
 export interface GroundingDeps {
+  /** Document reads that are not ledger figures (company name, receipt counts). */
   query(sql: string, params: unknown[]): Promise<{ rows: Array<Record<string, any>> }>;
+  profitAndLoss(args: { companyId: string; from: IsoDate; to: IsoDate }): Promise<ProfitAndLoss>;
+  balanceSheet(args: { companyId: string; asOf: IsoDate }): Promise<BalanceSheet>;
+  agedReceivables(args: { companyId: string; asOf: IsoDate }): Promise<AgingReport>;
 }
 
 async function defaultDeps(): Promise<GroundingDeps> {
   const { pool } = await import("../../db");
-  return { query: (sql, params) => (pool as any).query(sql, params) };
+  const reporting = await import("../../reporting");
+  return {
+    query: (sql, params) => (pool as any).query(sql, params),
+    profitAndLoss: (args) => reporting.profitAndLoss(args),
+    balanceSheet: (args) => reporting.balanceSheet(args),
+    agedReceivables: (args) => reporting.agedReceivables(args),
+  };
 }
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+/** UAE calendar date of an instant. */
+function uaeDate(d: Date): IsoDate {
+  return new Date(d.getTime() + 4 * 3600_000).toISOString().slice(0, 10);
 }
-
-const SQL_PNL = `
-  SELECT a.type AS type,
-         COALESCE(SUM(l.debit),0)::float8 AS debit,
-         COALESCE(SUM(l.credit),0)::float8 AS credit,
-         COUNT(DISTINCT e.id)::int AS entries
-    FROM journal_lines l
-    JOIN journal_entries e ON e.id = l.entry_id
-    JOIN accounts a ON a.id = l.account_id
-   WHERE e.company_id = $1 AND e.status = 'posted'
-     AND e.date >= $2 AND e.date < $3
-     AND a.type IN ('income','expense')
-   GROUP BY a.type`;
-
-const SQL_BALANCES = `
-  SELECT a.type AS type,
-         COALESCE(SUM(l.debit),0)::float8 AS debit,
-         COALESCE(SUM(l.credit),0)::float8 AS credit
-    FROM journal_lines l
-    JOIN journal_entries e ON e.id = l.entry_id
-    JOIN accounts a ON a.id = l.account_id
-   WHERE e.company_id = $1 AND e.status = 'posted' AND e.date < $2
-     AND a.type IN ('asset','liability','equity')
-   GROUP BY a.type`;
-
-// Receivables: non-draft, non-void invoices still open (sent or partially paid).
-// Gross invoice totals; part-payments are not netted, and the label says so.
-const SQL_OPEN_INVOICES = `
-  SELECT COUNT(*)::int AS n, COALESCE(SUM(base_currency_amount),0)::float8 AS total
-    FROM invoices
-   WHERE company_id = $1 AND status IN ('sent','partial')`;
 
 const SQL_RECEIPTS = `
   SELECT COUNT(*)::int AS n,
          COUNT(*) FILTER (WHERE posted)::int AS posted,
          COALESCE(SUM(base_currency_amount) FILTER (WHERE NOT posted),0)::float8 AS unposted_value
     FROM receipts
-   WHERE company_id = $1 AND date >= $2 AND date < $3`;
+   WHERE company_id = $1 AND date >= $2::date AND date < ($3::date + 1)`;
 
 export async function buildGroundedContext(
   companyId: string,
   opts: { asOf?: Date; deps?: GroundingDeps } = {}
 ): Promise<GroundingResult> {
   const deps = opts.deps ?? (await defaultDeps());
-  const asOf = opts.asOf ?? new Date();
-  const start = new Date(Date.UTC(asOf.getUTCFullYear(), 0, 1));
-  const endExclusive = new Date(
-    Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate() + 1)
-  );
-  const period = { start: isoDate(start), end: isoDate(asOf) };
+  const asOf = uaeDate(opts.asOf ?? new Date());
 
-  const [company, pnl, balances, invoices, receipts] = await Promise.all([
+  // The balance sheet carries the company's fiscal-year start for this as-of date.
+  const [company, bs, ar] = await Promise.all([
     deps.query(`SELECT name FROM companies WHERE id = $1`, [companyId]),
-    deps.query(SQL_PNL, [companyId, start, endExclusive]),
-    deps.query(SQL_BALANCES, [companyId, endExclusive]),
-    deps.query(SQL_OPEN_INVOICES, [companyId]),
-    deps.query(SQL_RECEIPTS, [companyId, start, endExclusive]),
+    deps.balanceSheet({ companyId, asOf }),
+    deps.agedReceivables({ companyId, asOf }),
+  ]);
+  const start = bs.fiscalYearStart;
+  const period = { start, end: asOf };
+  const [pl, receipts] = await Promise.all([
+    deps.profitAndLoss({ companyId, from: start, to: asOf }),
+    deps.query(SQL_RECEIPTS, [companyId, start, asOf]),
   ]);
 
   const figures: GroundedFigure[] = [];
   const missing: string[] = [];
-  const add = (label: string, value: number, unit: GroundedFigure["unit"], source: string) => {
-    figures.push({ id: `F${figures.length + 1}`, label, value: round2(value), unit, source });
+  const add = (label: string, value: number, unit: GroundedFigure["unit"], from: string) => {
+    figures.push({ id: `F${figures.length + 1}`, label, value: round2(value), unit, source: from });
   };
 
-  const byType = (rows: Array<Record<string, any>>, type: string) =>
-    rows.find((r) => r.type === type);
-  const income = byType(pnl.rows, "income");
-  const expense = byType(pnl.rows, "expense");
-  const postedSource = `Posted journal entries ${period.start} to ${period.end}`;
-
-  if (!income && !expense) {
+  const plLines = Object.values(pl.sections).reduce((n, sec) => n + sec.lines.length, 0);
+  const plFrom = `Profit and loss (posted ledger) ${period.start} to ${period.end}`;
+  if (plLines === 0) {
     missing.push(`No posted journal entries in ${period.start} to ${period.end}`);
   } else {
-    const revenue = sumMoney([Number(income?.credit ?? 0), -Number(income?.debit ?? 0)]);
-    const expenses = sumMoney([Number(expense?.debit ?? 0), -Number(expense?.credit ?? 0)]);
-    add("Revenue (year to date)", revenue, "AED", postedSource);
-    add("Expenses (year to date)", expenses, "AED", postedSource);
-    add("Net profit (year to date)", revenue - expenses, "AED", postedSource);
+    add("Revenue (fiscal year to date)", pl.totalIncome, "AED", plFrom);
+    add("Expenses (fiscal year to date)", pl.totalExpenses, "AED", plFrom);
+    add("Net profit (fiscal year to date)", pl.netProfit, "AED", plFrom);
   }
 
-  const bsSource = `Posted journal entries up to ${period.end}`;
-  const assets = byType(balances.rows, "asset");
-  const liabilities = byType(balances.rows, "liability");
-  if (assets || liabilities) {
-    if (assets) {
-      add("Total assets", Number(assets.debit) - Number(assets.credit), "AED", bsSource);
-    }
-    if (liabilities) {
-      add(
-        "Total liabilities",
-        Number(liabilities.credit) - Number(liabilities.debit),
-        "AED",
-        bsSource
-      );
-    }
+  const bsFrom = `Balance sheet (posted ledger) as of ${period.end}`;
+  const bsLines =
+    bs.assets.current.lines.length +
+    bs.assets.nonCurrent.lines.length +
+    bs.liabilities.current.lines.length +
+    bs.liabilities.nonCurrent.lines.length;
+  if (bsLines > 0) {
+    add("Total assets", bs.totalAssets, "AED", bsFrom);
+    add("Total liabilities", bs.totalLiabilities, "AED", bsFrom);
   } else {
     missing.push("No posted balance-sheet activity");
   }
 
-  const inv = invoices.rows[0];
-  if (inv && Number(inv.n) > 0) {
-    add(
-      "Open invoices (sent or part-paid, gross AED)",
-      Number(inv.total),
-      "AED",
-      "Invoices with status sent/partial"
-    );
-    add("Open invoices count", Number(inv.n), "count", "Invoices with status sent/partial");
+  if (ar.documents.length > 0) {
+    const arFrom = `Aged receivables as of ${period.end} (net of payments and credit notes)`;
+    add("Open receivables (AED)", ar.totals.total, "AED", arFrom);
+    add("Open invoices count", ar.documents.length, "count", arFrom);
   }
 
   const rc = receipts.rows[0];
   if (rc && Number(rc.n) > 0) {
-    add(
-      "Receipts captured (year to date)",
-      Number(rc.n),
-      "count",
-      `Receipts ${period.start} to ${period.end}`
-    );
-    add(
-      "Receipts posted (year to date)",
-      Number(rc.posted),
-      "count",
-      `Receipts ${period.start} to ${period.end}`
-    );
-    add(
-      "Unposted receipt value (AED)",
-      Number(rc.unposted_value),
-      "AED",
-      `Receipts ${period.start} to ${period.end}`
-    );
+    const rcFrom = `Receipts ${period.start} to ${period.end}`;
+    add("Receipts captured (fiscal year to date)", Number(rc.n), "count", rcFrom);
+    add("Receipts posted (fiscal year to date)", Number(rc.posted), "count", rcFrom);
+    add("Unposted receipt value (AED)", Number(rc.unposted_value), "AED", rcFrom);
   }
 
   const hasLedgerFigures = figures.some((f) => /^(Revenue|Expenses|Net profit)/.test(f.label));

@@ -28,7 +28,11 @@ import {
   uaeToday,
 } from "../reporting";
 import { assertReportAccess } from "../reporting/http";
-import { generateCashFlowForecast } from "../services/cashflow-forecast.service";
+import {
+  generateCashFlowForecast,
+  readStoredForecast,
+  regenerateStoredForecast,
+} from "../services/cashflow-forecast.service";
 import { getMonthlyTrends } from "../services/dashboard-stats.service";
 import {
   computeBudgetVariance,
@@ -107,9 +111,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied to this company" });
       }
 
-      // Get forecasts from storage
-      const forecasts = await storage.getCashFlowForecasts(companyId as string);
-      res.json(forecasts);
+      // Stored snapshot; rows from the pre-0112 fabricated model are regenerated on read.
+      res.json(await readStoredForecast(companyId as string));
     })
   );
 
@@ -124,40 +127,15 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId, period } = parsedBody<z.infer<typeof generateForecastBody>>(req);
       await assertReportAccess(req, companyId);
       const periodMonths = period === "3months" ? 3 : period === "6months" ? 6 : 12;
-      const forecast = await generateCashFlowForecast(companyId, {
-        days: Math.min(periodMonths * 30, 365),
+      const { forecasts, insufficientData, insights } = await regenerateStoredForecast(companyId, {
+        months: periodMonths,
       });
-      if (forecast.insufficientData) {
+      if (insufficientData) {
         throw new DomainError(
           "INSUFFICIENT_DATA",
           400,
-          { insights: forecast.insights },
+          { insights },
           "Add invoices, vendor bills or scheduled cash items before generating a cash-flow forecast."
-        );
-      }
-      await storage.deleteCashFlowForecastsByCompanyId(companyId);
-      const byMonth = new Map<string, { inflow: number; outflow: number; balance: number }>();
-      for (const p of forecast.projections) {
-        const key = p.weekStart.slice(0, 7);
-        const cur = byMonth.get(key) ?? { inflow: 0, outflow: 0, balance: 0 };
-        cur.inflow += p.expectedInflows;
-        cur.outflow += p.expectedOutflows;
-        cur.balance = p.projectedBalance;
-        byMonth.set(key, cur);
-      }
-      const forecasts = [];
-      for (const [key, v] of byMonth) {
-        forecasts.push(
-          await storage.createCashFlowForecast({
-            companyId,
-            forecastDate: new Date(`${key}-01T00:00:00.000Z`),
-            forecastType: "monthly",
-            predictedInflow: Math.round(v.inflow * 100) / 100,
-            predictedOutflow: Math.round(v.outflow * 100) / 100,
-            predictedBalance: v.balance,
-            confidenceLevel: null,
-            factors: JSON.stringify({ basis: "documents_and_scheduled_items" }),
-          })
         );
       }
       res.json({ message: "Forecasts generated", count: forecasts.length, forecasts });

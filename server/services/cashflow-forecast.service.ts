@@ -37,6 +37,7 @@ import {
 } from "../reporting";
 import { computeCtLiability } from "../../shared/ct-workpaper";
 import { UAE_CT_EXEMPTION_THRESHOLD } from "../constants";
+import type { CashFlowForecast } from "../../shared/schema";
 
 const db: Queryable = pool as unknown as Queryable;
 
@@ -615,4 +616,73 @@ export async function getCashFlowHistory(
       netCashFlow: aed(inflow - outflow),
     };
   });
+}
+
+// ─── Stored monthly forecast snapshots (cash_flow_forecasts, S3) ──────────────
+
+/** `basis` of rows written by the document-driven generator below. */
+export const STORED_FORECAST_BASIS = "documents_and_scheduled_items";
+
+export interface StoredForecastResult {
+  forecasts: CashFlowForecast[];
+  insufficientData: boolean;
+  insights: string[];
+}
+
+/**
+ * Replace the company's stored monthly forecast with a snapshot of the document-driven forecast.
+ * With no open documents or scheduled items nothing is stored (insufficientData) — never
+ * extrapolated or model-predicted figures.
+ */
+export async function regenerateStoredForecast(
+  companyId: string,
+  opts: { months?: number } = {}
+): Promise<StoredForecastResult> {
+  const { storage } = await import("../storage");
+  const months = Math.min(Math.max(Math.trunc(opts.months ?? 3), 1), 12);
+  const forecast = await generateCashFlowForecast(companyId, {
+    days: Math.min(months * 30, 365),
+  });
+  await storage.deleteCashFlowForecastsByCompanyId(companyId);
+  if (forecast.insufficientData) {
+    return { forecasts: [], insufficientData: true, insights: forecast.insights };
+  }
+  const byMonth = new Map<string, { inflowFils: number; outflowFils: number; balance: number }>();
+  for (const p of forecast.projections) {
+    const key = p.weekStart.slice(0, 7);
+    const cur = byMonth.get(key) ?? { inflowFils: 0, outflowFils: 0, balance: 0 };
+    cur.inflowFils += fils(p.expectedInflows);
+    cur.outflowFils += fils(p.expectedOutflows);
+    cur.balance = p.projectedBalance;
+    byMonth.set(key, cur);
+  }
+  const forecasts: CashFlowForecast[] = [];
+  for (const [key, v] of byMonth) {
+    forecasts.push(
+      await storage.createCashFlowForecast({
+        companyId,
+        forecastDate: new Date(`${key}-01T00:00:00.000Z`),
+        forecastType: "monthly",
+        predictedInflow: v.inflowFils / 100,
+        predictedOutflow: v.outflowFils / 100,
+        predictedBalance: v.balance,
+        confidenceLevel: null,
+        factors: JSON.stringify({ basis: STORED_FORECAST_BASIS }),
+        basis: STORED_FORECAST_BASIS,
+      })
+    );
+  }
+  return { forecasts, insufficientData: false, insights: forecast.insights };
+}
+
+/**
+ * Stored monthly forecast for display. Rows from the pre-0112 model (basis `legacy_model`, or
+ * anything not written by the document-driven generator) are discarded and regenerated on read,
+ * so fabricated figures are never served again.
+ */
+export async function readStoredForecast(companyId: string): Promise<CashFlowForecast[]> {
+  const { storage } = await import("../storage");
+  const rows = await storage.getCashFlowForecastsByCompanyId(companyId);
+  if (rows.every((r) => r.basis === STORED_FORECAST_BASIS)) return rows;
+  return (await regenerateStoredForecast(companyId)).forecasts;
 }
