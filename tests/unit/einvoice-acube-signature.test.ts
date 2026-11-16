@@ -242,6 +242,11 @@ describe("E1 two-track status model", () => {
     expect(reportingRequired({ customerTrn: "100765432100003" })).toBe(true);
     expect(reportingRequired({ customerTrn: null })).toBe(false); // B2C
     expect(reportingRequired({ customerTrn: "100765432100003", companyScope: "none" })).toBe(false);
+    // The mandate not applying yet means nothing is required and no deadline exists.
+    expect(reportingRequired({ customerTrn: "100765432100003", mandateApplies: false })).toBe(
+      false
+    );
+    expect(reportingRequired({ customerTrn: "100765432100003", mandateApplies: true })).toBe(true);
     expect(reportWindowDays({})).toBe(14);
     expect(reportWindowDays({ EINVOICE_REPORT_WINDOW_DAYS: "7" })).toBe(7);
     expect(reportByDate("2026-11-25T10:00:00Z", 14)).toBe("2026-12-09");

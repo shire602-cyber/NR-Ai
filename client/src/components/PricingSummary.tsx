@@ -44,8 +44,8 @@ export function PricingSummary() {
       yearlyPrice: 0,
       highlights:
         locale === "en"
-          ? ["1 company, 1 user", "50 invoices/mo", "Basic AI categorization", "VAT filing"]
-          : ["شركة واحدة، مستخدم واحد", "50 فاتورة/شهر", "تصنيف ذكي أساسي", "ضريبة القيمة المضافة"],
+          ? ["1 company, 1 user", "20 invoices/mo", "Basic AI categorization", "VAT filing"]
+          : ["شركة واحدة، مستخدم واحد", "20 فاتورة/شهر", "تصنيف ذكي أساسي", "ضريبة القيمة المضافة"],
       cta: tr["marketing.pricingSummaryGetStartedFree"],
       variant: "outline" as const,
       highlight: false,

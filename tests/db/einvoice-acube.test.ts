@@ -23,7 +23,10 @@ const PUBLIC_BASE = "https://app.muhasib.example";
 const WEBHOOK = "/api/webhooks/einvoice/acube/sandbox";
 const today = () => new Date().toISOString().slice(0, 10);
 
+// Opted in to e-invoicing with a go-live date already reached, so FTA reporting applies.
 const SELLER_COLUMNS = {
+  einvoice_scope: "b2b",
+  einvoice_go_live_date: "2026-01-01",
   trn_vat_number: TRN,
   legal_name: "Pearl Trading L.L.C.",
   address_street: "Office 1204, Al Saqr Tower",
@@ -315,6 +318,70 @@ const statusOf = async (t: Tenant, id: string) =>
   (await t.as.get(`/api/invoices/${id}/einvoice/status`)).body;
 
 // ─── Tests ──────────────────────────────────────────────────────────────
+
+describe("F16: no FTA report-by deadline before the mandate applies", () => {
+  const OLD_DATE = "2026-01-01";
+
+  async function setScope(
+    t: Tenant,
+    cols: { scope: string | null; band: string | null; go: string | null }
+  ) {
+    await h.sql(
+      `UPDATE companies SET einvoice_scope = $2, einvoice_turnover_band = $3, einvoice_go_live_date = $4 WHERE id = $1`,
+      [t.company.id, cols.scope, cols.band, cols.go]
+    );
+  }
+
+  async function oldInvoice(t: Tenant) {
+    const inv = await issuedInvoice(t);
+    // Back-date past the reporting window so a wrongly-applied deadline would read overdue.
+    await h.sql(`UPDATE invoices SET date = $2 WHERE id = $1`, [inv.id, `${OLD_DATE}T00:00:00Z`]);
+    return inv;
+  }
+
+  it("pre-mandate: nothing required, no report-by, never overdue", async () => {
+    process.env.EINVOICE_PROVIDER = "http";
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_go_live_date: null },
+    });
+    await setScope(t, { scope: "b2b", band: "large", go: null }); // go-live 2027-01-01
+    const inv = await oldInvoice(t);
+    await t.as.post(`/api/invoices/${inv.id}/generate-einvoice`, {});
+    const s = await statusOf(t, inv.id);
+    expect(s.tracks.reporting).toMatchObject({
+      required: false,
+      reportBy: null,
+      overdue: false,
+      status: "not_required",
+    });
+  });
+
+  it("opted-in company (explicit go-live reached) gets a report-by and overdue flag", async () => {
+    process.env.EINVOICE_PROVIDER = "http";
+    const t = await h.createTenant({ companyColumns: SELLER_COLUMNS });
+    const inv = await oldInvoice(t);
+    await t.as.post(`/api/invoices/${inv.id}/generate-einvoice`, {});
+    const s = await statusOf(t, inv.id);
+    expect(s.tracks.reporting).toMatchObject({ required: true, status: "pending", overdue: true });
+    expect(s.tracks.reporting.reportBy).toBe("2026-01-15");
+  });
+
+  it("post-go-live band company gets a deadline; a draft never reads overdue", async () => {
+    process.env.EINVOICE_PROVIDER = "http";
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_go_live_date: null },
+    });
+    await setScope(t, { scope: "b2b", band: "large", go: "2026-06-01" });
+    const inv = await oldInvoice(t);
+    await t.as.post(`/api/invoices/${inv.id}/generate-einvoice`, {});
+    const s = await statusOf(t, inv.id);
+    expect(s.tracks.reporting).toMatchObject({ required: true, overdue: true });
+
+    await h.sql(`UPDATE invoices SET status = 'draft' WHERE id = $1`, [inv.id]);
+    const d = await statusOf(t, inv.id);
+    expect(d.tracks.reporting).toMatchObject({ reportBy: null, overdue: false });
+  });
+});
 
 describe("E1 without a provider: generated and validated, honestly not sent", () => {
   it("keeps 503 for transmission and shows the checklist blocked on 'no provider'", async () => {

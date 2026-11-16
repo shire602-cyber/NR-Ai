@@ -23,6 +23,7 @@ import {
   type DeliveryStatus,
   type ReportingStatus,
 } from "./tracks";
+import { einvoiceMandateApplies } from "./scope";
 import { invoiceReportingRequired, providerRequiresLegalEntity } from "./workflow";
 
 export type ChecklistState =
@@ -64,18 +65,24 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
   const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
   const ctx = await loadEInvoiceContext(invoice, company, lines);
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
-  const required = invoiceReportingRequired(invoice, company);
+  const required = invoiceReportingRequired(invoice, company, now);
   const legacy = invoice.einvoiceStatus ?? "not_generated";
 
   const delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
     ? doc.deliveryStatus
     : deliveryFromLegacy(legacy);
-  const reporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
+  const storedReporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
     ? doc.reportingStatus
     : reportingFromLegacy(legacy, required);
-  const reportBy = required
-    ? ((doc?.reportBy as string | null | undefined) ?? reportByDate(invoice.date))
-    : null;
+  // A "pending" report that is not (yet) required is not a pending obligation.
+  const reporting: ReportingStatus =
+    !required && storedReporting === "pending" ? "not_required" : storedReporting;
+  const isDraft = String(invoice.status ?? "").toLowerCase() === "draft";
+  // No deadline unless the mandate applies to this company; a draft has no deadline either.
+  const reportBy =
+    required && !isDraft
+      ? ((doc?.reportBy as string | null | undefined) ?? reportByDate(invoice.date))
+      : null;
   const today = now.toISOString().slice(0, 10);
 
   // Transmission: who would send this, and is anything stopping it?
@@ -180,7 +187,8 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         at: iso(doc?.reportingStatusAt),
         required,
         reportBy,
-        overdue: !!reportBy && reporting === "pending" && reportBy < today,
+        overdue: !isDraft && !!reportBy && reporting === "pending" && reportBy < today,
+        mandateApplies: einvoiceMandateApplies(company, now),
       },
     },
     transmission: {

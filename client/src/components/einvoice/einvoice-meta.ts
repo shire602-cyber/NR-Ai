@@ -55,6 +55,7 @@ export interface EInvoiceStatusView {
       status: ReportingStatus;
       at: string | null;
       required: boolean;
+      mandateApplies?: boolean;
       reportBy: string | null;
       overdue: boolean;
     };

@@ -140,7 +140,7 @@
   "marketing.planStarter": "Starter",
   "marketing.planProfessional": "Professional",
   "marketing.planEnterprise": "Enterprise",
-  "marketing.planFreeSummary": "1 company, 1 user, 50 invoices a month",
+  "marketing.planFreeSummary": "1 company, 1 user, 20 invoices a month",
   "marketing.planStarterSummary": "1 company, 3 users, bill pay and inventory",
   "marketing.planProfessionalSummary": "3 companies, 10 users, payroll and WPS",
   "marketing.planEnterpriseSummary": "Unlimited companies and users, API access",

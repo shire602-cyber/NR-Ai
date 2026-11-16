@@ -36,6 +36,7 @@ import {
   type DeliveryStatus,
   type ReportingStatus,
 } from "./tracks";
+import { einvoiceMandateApplies } from "./scope";
 import { assertLegalEntityCanSend, companyTin, getLegalEntity } from "./legal-entities";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
 
@@ -55,10 +56,15 @@ export function providerRequiresLegalEntity(provider: EInvoiceProvider): boolean
 }
 
 /** Whether this invoice must be reported to the FTA (B2B/B2G with a buyer TRN). */
-export function invoiceReportingRequired(invoice: Invoice, company: Company): boolean {
+export function invoiceReportingRequired(
+  invoice: Invoice,
+  company: Company,
+  now: Date = new Date()
+): boolean {
   return reportingRequired({
     customerTrn: invoice.customerTrn,
     companyScope: (company as CompanyExtras).einvoiceScope ?? null,
+    mandateApplies: einvoiceMandateApplies(company as CompanyExtras, now),
   });
 }
 
@@ -148,7 +154,7 @@ export async function submitAndPersist(args: {
       now,
     });
     const required = invoiceReportingRequired(invoice, company);
-    const reportBy = reportByDate(invoice.date);
+    const reportBy = required ? reportByDate(invoice.date) : null;
     if (!result.ok) {
       if (result.validation) {
         await upsertEInvoiceDocument(company.id, invoice.id, {

@@ -54,6 +54,7 @@ import {
   upsertLegalEntity,
 } from "../services/einvoice/legal-entities";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
+import { reportWindowDays } from "../services/einvoice/tracks";
 
 const log = createLogger("einvoice-acube-routes");
 
@@ -166,7 +167,12 @@ export function acubeConnectionView(
       : null,
     canSend: configured && status === "active",
     steps,
-    goLive: { ...scope, timeline: EINVOICE_TIMELINE },
+    goLive: {
+      ...scope,
+      timeline: EINVOICE_TIMELINE,
+      // Assumption (docs/einvoicing-acube.md), configurable with EINVOICE_REPORT_WINDOW_DAYS.
+      reportWindowDays: reportWindowDays(),
+    },
     webhook: {
       url: base ? `${base}${webhookPath(environment)}` : null,
       tokenConfigured: !!process.env.ACUBE_WEBHOOK_TOKEN,

@@ -337,7 +337,7 @@ export default function Pricing() {
           locale === "en"
             ? [
                 "1 company, 1 user",
-                "50 invoices/month",
+                "20 invoices/month",
                 "20 receipts/month",
                 "Basic AI categorization",
                 "VAT filing",
@@ -345,7 +345,7 @@ export default function Pricing() {
               ]
             : [
                 "شركة واحدة، مستخدم واحد",
-                "50 فاتورة/شهر",
+                "20 فاتورة/شهر",
                 "20 إيصال/شهر",
                 "تصنيف ذكي أساسي",
                 "تقديم ضريبة القيمة المضافة",

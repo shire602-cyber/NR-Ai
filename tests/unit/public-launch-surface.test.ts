@@ -287,4 +287,32 @@ describe("Public SaaS launch surface", () => {
       expect(demoSource).toContain(expectedDemoSignal);
     }
   });
+
+  it("advertises the free-plan invoice limit the gate and the Free migration row enforce", () => {
+    const gate = readRepoFile("server/middleware/featureGate.ts");
+    const limits = gate.slice(gate.indexOf("const TIER_LIMITS"));
+    const freeBlock = limits.match(/free:\s*\{([^}]*)\}/)?.[1] ?? "";
+    const enforced = Number(freeBlock.match(/maxInvoicesPerMonth:\s*(\d+)/)?.[1]);
+    expect(Number.isInteger(enforced) && enforced > 0).toBe(true);
+
+    // The 0113 Free row (trigger + backfill) carries the same figure in its VALUES list.
+    const migration = readRepoFile("migrations/0113_s5_platform.sql");
+    expect(migration).toMatch(
+      new RegExp(`'active', now\\(\\), now\\(\\) \\+ interval '100 years', 1, ${enforced}, `)
+    );
+
+    const advertised = [
+      { file: "client/src/locales/en/marketing.json", pattern: /(\d+) invoices a month/ },
+      { file: "client/src/locales/ar/marketing.json", pattern: /(\d+) فاتورة شهرياً/ },
+      { file: "client/src/pages/Pricing.tsx", pattern: /"(\d+) invoices\/month"/ },
+      { file: "client/src/pages/Pricing.tsx", pattern: /"(\d+) فاتورة\/شهر"/ },
+      { file: "client/src/components/PricingSummary.tsx", pattern: /"(\d+) invoices\/mo"/ },
+      { file: "client/src/components/PricingSummary.tsx", pattern: /"(\d+) فاتورة\/شهر"/ },
+    ];
+    for (const { file, pattern } of advertised) {
+      const m = readRepoFile(file).match(pattern);
+      expect(m, `${file} should state the free invoice limit`).not.toBeNull();
+      expect(Number(m?.[1]), file).toBe(enforced);
+    }
+  });
 });

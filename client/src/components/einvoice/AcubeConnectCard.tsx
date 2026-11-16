@@ -60,6 +60,7 @@ export interface AcubeConnectionView {
     appointAspBy: string | null;
     band: string | null;
     timeline: Record<string, { appointAspBy: string; goLive: string }>;
+    reportWindowDays?: number;
   };
 }
 
@@ -506,6 +507,13 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
               </table>
             </div>
             <p className="text-caption text-muted-foreground">{t["einvoicing.timelineSource"]}</p>
+            {v.goLive.reportWindowDays ? (
+              <p className="text-caption text-muted-foreground" data-testid="acube-report-window">
+                {formatMessage(t["einvoicing.reportWindowAssumption"], {
+                  days: v.goLive.reportWindowDays,
+                })}
+              </p>
+            ) : null}
           </section>
         )}
 

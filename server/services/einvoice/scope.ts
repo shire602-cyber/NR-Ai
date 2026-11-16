@@ -2,7 +2,8 @@
  * UAE e-invoicing scope switch (R07-13): who must e-invoice and from when.
  *
  * Phased timeline as published by the UAE Ministry of Finance (Ministerial
- * Decision 244/2025). Revenue threshold for "large" is AED 50 million. A
+ * Decisions 243 and 244 of 2025; NOT independently verified, so the UI presents them as guidance
+ * to confirm per entity). Revenue threshold for "large" is AED 50 million. A
  * company may store an explicit go-live date (e.g. a voluntary early
  * adoption, or a revised FTA date) which overrides the band.
  */
@@ -86,4 +87,14 @@ export function einvoicingScope(company: ScopeInput, today: Date = new Date()): 
 
 export function bandForRevenue(annualRevenueAed: number): TurnoverBand {
   return annualRevenueAed >= LARGE_BUSINESS_REVENUE_AED ? "large" : "standard";
+}
+
+/**
+ * Does FTA reporting apply to this company today? True only when an e-invoicing scope is chosen
+ * (not "none") AND its go-live date has been reached. The go-live date is the band's date from the
+ * published MoF timeline, or the company's explicit go-live override (a voluntary early opt-in).
+ * Before that, nothing is "required" and no report-by deadline exists.
+ */
+export function einvoiceMandateApplies(company: ScopeInput, today: Date = new Date()): boolean {
+  return einvoicingScope(company, today).mandatory;
 }

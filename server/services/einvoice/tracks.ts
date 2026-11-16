@@ -155,7 +155,14 @@ export function acubeStatusErrorCode(raw: unknown): string | null {
 export function reportingRequired(args: {
   customerTrn?: string | null;
   companyScope?: string | null;
+  /**
+   * Does the e-invoicing mandate actually apply to this company yet (go-live reached for its
+   * scope/band, or an explicit opt-in go-live date that has been reached)? Defaults to true for
+   * callers that only test the buyer/scope rules; invoice-level callers must pass it.
+   */
+  mandateApplies?: boolean;
 }): boolean {
+  if (args.mandateApplies === false) return false;
   if (args.companyScope === "none") return false;
   return !!args.customerTrn && /^\d{15}$/.test(args.customerTrn.trim());
 }
