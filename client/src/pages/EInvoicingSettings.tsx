@@ -300,7 +300,7 @@ async function downloadArchive(companyId: string, row: ArchiveRow) {
 }
 
 export default function EInvoicingSettings() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const s: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();

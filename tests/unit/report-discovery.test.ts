@@ -2668,7 +2668,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Open shared view");
     expect(reportsSource).toContain("context?.comparisonPresets[0]");
     expect(reportsSource).toContain("context?.deliverySubscriptions[0]");
-    expect(reportsSource).toContain('t["homePanel.searchReportsPacksComparisonsAutomations"]');
+    expect(reportsSource).toContain("Search reports, packs, comparisons, automations");
     expect(reportsSource).toContain("visibleWorkspaceSummaries");
     expect(reportsSource).toContain("setupStepCount");
     expect(reportsSource).toContain("Role setup paths");
@@ -2731,7 +2731,7 @@ describe("report discoverability", () => {
     );
     expect(reportsSource).toContain("report-workflow-readiness-action-${item.workspace.persona}");
     expect(reportsSource).toContain("Automation readiness");
-    expect(reportsSource).toContain('t["automationPanel.roleSpecificCoverageGapsBefore"]');
+    expect(reportsSource).toContain("Role-specific coverage gaps before report packs");
     expect(reportsSource).toContain("report-automation-operations-${workspace.persona}");
     expect(reportsSource).toContain("report-automation-operations-title");
     expect(reportsSource).toContain("report-automation-impact-title");
