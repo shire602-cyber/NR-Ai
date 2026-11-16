@@ -187,9 +187,13 @@ export function renderCopyTemplate(
 let byKeyCache: Map<string, CopyTemplate> | null = null;
 const templateByKey = (key: string): CopyTemplate | undefined => {
   byKeyCache ??= new Map<string, CopyTemplate>(
-    [...NOTIFICATION_TITLE_TEMPLATES, ...NOTIFICATION_MESSAGE_TEMPLATES, ...FIRM_TEMPLATES].map(
-      (t) => [t.key, t]
-    )
+    [
+      ...NOTIFICATION_TITLE_TEMPLATES,
+      ...NOTIFICATION_MESSAGE_TEMPLATES,
+      ...FIRM_TEMPLATES,
+      ...MONTH_END_TEMPLATES,
+      ...LEGAL_SOURCE_TEMPLATES,
+    ].map((t) => [t.key, t])
   );
   return byKeyCache.get(key);
 };
@@ -505,6 +509,127 @@ export function localizeFirmText(
   return renderDescriptor(d.key, params, text, catalog);
 }
 
+// ─── Month-end close checklist (server: month-end.service) ──────────────────
+
+/** Checklist step titles, descriptions, detail lines and the computed-close memo. */
+export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
+  T("monthEnd.bank.title", "Bank Reconciliation Complete"),
+  T("monthEnd.bank.description", "All bank transactions for the period are reconciled"),
+  T("monthEnd.bank.none", "No bank transactions in this period"),
+  T("monthEnd.bank.progress", "{done}/{total} reconciled ({left} remaining)"),
+  T("monthEnd.invoices.title", "All Invoices Posted"),
+  T("monthEnd.invoices.description", "No draft invoices remain for the period"),
+  T("monthEnd.invoices.none", "No invoices in this period"),
+  T("monthEnd.invoices.progress", "{done}/{total} posted ({left} drafts remaining)"),
+  T("monthEnd.receipts.title", "All Receipts Categorized"),
+  T("monthEnd.receipts.description", "Every receipt has an assigned expense account"),
+  T("monthEnd.receipts.none", "No receipts in this period"),
+  T("monthEnd.receipts.progress", "{done}/{total} categorized ({left} remaining)"),
+  T("monthEnd.anomaly.title", "Anomaly Scan Clean"),
+  T("monthEnd.anomaly.description", "No critical anomalies detected in transactions"),
+  T("monthEnd.anomaly.clean", "Scan clean ({n} non-critical items)"),
+  T("monthEnd.anomaly.critical", "{n} critical anomalies require attention"),
+  T("monthEnd.anomaly.failed", "Unable to run anomaly scan"),
+  T("monthEnd.aiInbox.title", "AI Inbox Clear"),
+  T("monthEnd.aiInbox.descriptionQueue", "All AI-suggested entries reviewed and processed"),
+  T("monthEnd.aiInbox.descriptionClassifications", "All AI-suggested classifications reviewed"),
+  T("monthEnd.aiInbox.clear", "All AI suggestions processed"),
+  T("monthEnd.aiInbox.pendingItems", "{n} items pending review"),
+  T("monthEnd.aiInbox.pendingClassifications", "{n} classifications pending review"),
+  T("monthEnd.depreciation.title", "Depreciation Entries Posted"),
+  T(
+    "monthEnd.depreciation.description",
+    "Monthly depreciation has been recorded for all active fixed assets"
+  ),
+  T("monthEnd.depreciation.none", "No active fixed assets"),
+  T("monthEnd.depreciation.progress", "{done}/{total} assets depreciated for this period"),
+  T("monthEnd.depreciation.notConfigured", "Fixed assets module not configured"),
+  T("monthEnd.vat.title", "VAT Return Prepared"),
+  T("monthEnd.vat.description", "VAT 201 return has been prepared or filed for the period"),
+  T("monthEnd.vat.prepared", "{n} VAT return(s) prepared"),
+  T("monthEnd.vat.missing", "No VAT return prepared for this period"),
+  T("monthEnd.accruals.title", "Accruals Recorded"),
+  T(
+    "monthEnd.accruals.description",
+    "Expenses incurred but not yet billed are accrued (auto-reversing journals)"
+  ),
+  T("monthEnd.accruals.noActivity", "No expense activity in this period"),
+  T("monthEnd.accruals.postedOne", "1 accrual entry posted"),
+  T("monthEnd.accruals.posted", "{n} accrual entries posted"),
+  T(
+    "monthEnd.accruals.missing",
+    "No accrual entries found. Post accruals or sign this step off as not required."
+  ),
+  T("monthEnd.prepayments.title", "Prepayments Amortised"),
+  T(
+    "monthEnd.prepayments.description",
+    "The period's share of prepaid expenses has been released to the P&L"
+  ),
+  T("monthEnd.prepayments.none", "No prepaid balance"),
+  T("monthEnd.prepayments.released", "AED {released} released; AED {balance} remaining"),
+  T("monthEnd.prepayments.unreleased", "AED {balance} prepaid with no release this period"),
+  T("monthEnd.fx.title", "FX Revaluation Run"),
+  T("monthEnd.fx.description", "Foreign-currency balances revalued at the period-end rate"),
+  T("monthEnd.fx.none", "No foreign-currency balances"),
+  T("monthEnd.fx.postedOne", "1 revaluation entry posted"),
+  T("monthEnd.fx.posted", "{n} revaluation entries posted"),
+  T("monthEnd.fx.missing", "{n} account(s) hold foreign-currency balances; run the revaluation"),
+  T("monthEnd.closeMemo", "Computed close for {start} to {end}"),
+  T(
+    "monthEnd.closeMessage",
+    "Monthly close posts no journal entry: statements roll earnings into retained earnings by computation. Use the year-end close to record (and, if enabled, post) the fiscal-year close."
+  ),
+];
+
+/** English month-end sentence for a key (server side: what the API writes). */
+export function monthEndCopy(
+  key: string,
+  params: Record<string, string | number> = {}
+): { text: string; copy: CopyDescriptor } {
+  const t = templateByKey(key);
+  if (!t) throw new Error(`Unknown month-end copy key: ${key}`);
+  const p: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) p[k] = String(v);
+  return { text: renderCopyTemplate(t.en, p), copy: { key, params: p } };
+}
+
+export function describeMonthEndText(text: string | null | undefined): CopyDescriptor | null {
+  return parseServerCopy(text, MONTH_END_TEMPLATES);
+}
+
+// ─── Compliance calendar legal citations (server: compliance-obligations.service) ──
+
+/**
+ * Whole-citation templates: the law/article reference stays in the sentence (the Arabic
+ * catalog spells the official law names), the surrounding words are localised.
+ */
+export const LEGAL_SOURCE_TEMPLATES: readonly CopyTemplate[] = [
+  T("legal.vatReturn", "FDL 8/2017 Art. 64; Executive Regulation Art. 59 (28 days)"),
+  T("legal.ctReturn", "FDL 47/2022 Art. 53(1) (9 months after the tax period)"),
+  T("legal.ctRegistration", "FDL 47/2022 Art. 51; FTA Decision 3/2024"),
+  T("legal.tradeLicence", "Licensing authority of the emirate / free zone"),
+  T("legal.ubo", "Cabinet Decision 58/2020 (UBO register; update within 15 days of change)"),
+  T("legal.excise", "FDL 7/2017 (Excise Tax); Cabinet Decision 52/2019 as amended (15 days)"),
+  T("legal.einvoicing", "Ministerial Decisions 243/2025 and 244/2025 (confirm with your adviser)"),
+  T("legal.wps", "FDL 33/2021 Art. 22; MoHRE Ministerial Resolution 43/2022 (WPS)"),
+];
+
+export function describeLegalSource(text: string | null | undefined): CopyDescriptor | null {
+  return parseServerCopy(text, LEGAL_SOURCE_TEMPLATES);
+}
+
+/** Localise a compliance citation or month-end sentence; unknown text is shown as stored. */
+export function localizeServerText(
+  text: string | null | undefined,
+  catalog: Record<string, string | undefined>,
+  copy?: CopyDescriptor | null
+): string {
+  if (!text) return text ?? "";
+  const d = copy ?? describeMonthEndText(text) ?? describeLegalSource(text);
+  if (!d) return text;
+  return renderDescriptor(d.key, d.params, text, catalog);
+}
+
 /** Every server copy template (for catalog coverage tests). */
 export const ALL_SERVER_COPY_TEMPLATES: readonly CopyTemplate[] = [
   ...NOTIFICATION_TITLE_TEMPLATES,
@@ -512,6 +637,8 @@ export const ALL_SERVER_COPY_TEMPLATES: readonly CopyTemplate[] = [
   ...CASH_FORECAST_TEMPLATES,
   ...CASH_FORECAST_ITEM_TEMPLATES,
   ...FIRM_TEMPLATES,
+  ...MONTH_END_TEMPLATES,
+  ...LEGAL_SOURCE_TEMPLATES,
 ];
 
 type CopyParams = Record<string, string | number | null | undefined>;

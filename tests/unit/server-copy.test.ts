@@ -15,7 +15,10 @@ import {
   describeCashForecastItemText,
   describeCashForecastText,
   describeFirmText,
+  describeLegalSource,
+  describeMonthEndText,
   localizeFirmText,
+  localizeServerText,
   describeNotificationCopy,
   notificationCopy,
   renderCopyTemplate,
@@ -73,7 +76,9 @@ describe("server copy templates", () => {
         const d =
           describeCashForecastText(text) ??
           describeCashForecastItemText(text) ??
-          describeFirmText(text);
+          describeFirmText(text) ??
+          describeMonthEndText(text) ??
+          describeLegalSource(text);
         expect(d?.key, t.key).toBe(t.key);
         expect(d?.params, t.key).toEqual(p);
       }
@@ -278,5 +283,74 @@ describe("F10 firm revenue-opportunity copy", () => {
     // Client names pass through untouched.
     if ("client" in params) expect(ar).toContain(String(params.client));
     if ("n" in params) expect(ar).toContain(String(params.n));
+  });
+});
+
+describe("F12 month-end and legal-citation copy", () => {
+  const arCat = ar as Record<string, string>;
+
+  it("maps every month-end sentence the service writes to a key (legacy English rows too)", () => {
+    const sentences: Array<[string, string, Record<string, string>]> = [
+      ["Bank Reconciliation Complete", "monthEnd.bank.title", {}],
+      ["No bank transactions in this period", "monthEnd.bank.none", {}],
+      [
+        "3/5 reconciled (2 remaining)",
+        "monthEnd.bank.progress",
+        { done: "3", total: "5", left: "2" },
+      ],
+      ["Scan clean (1 non-critical items)", "monthEnd.anomaly.clean", { n: "1" }],
+      ["1 accrual entry posted", "monthEnd.accruals.postedOne", {}],
+      ["4 accrual entries posted", "monthEnd.accruals.posted", { n: "4" }],
+      [
+        "AED 10.50 released; AED 99.00 remaining",
+        "monthEnd.prepayments.released",
+        { released: "10.50", balance: "99.00" },
+      ],
+      [
+        "2 account(s) hold foreign-currency balances; run the revaluation",
+        "monthEnd.fx.missing",
+        { n: "2" },
+      ],
+      [
+        "Computed close for 2026-10-01 to 2026-10-31",
+        "monthEnd.closeMemo",
+        { start: "2026-10-01", end: "2026-10-31" },
+      ],
+    ];
+    for (const [text, key, params] of sentences) {
+      expect(describeMonthEndText(text), text).toEqual({ key, params });
+    }
+    expect(describeMonthEndText("Something the service never wrote")).toBeNull();
+  });
+
+  it("renders month-end sentences in Arabic with their parameters", () => {
+    const text = "3/5 reconciled (2 remaining)";
+    const arabic = localizeServerText(text, arCat);
+    expect(arabic).toBe("3/5 مطابَقة (المتبقي 2)");
+    expect(localizeServerText("Anomaly Scan Clean", arCat)).toBe("فحص الشذوذ سليم");
+    // Unknown text (user data) is shown as stored.
+    expect(localizeServerText("Free text", arCat)).toBe("Free text");
+  });
+
+  it("localises every legal citation but keeps the law and article numbers", () => {
+    const citations = [
+      "FDL 8/2017 Art. 64; Executive Regulation Art. 59 (28 days)",
+      "FDL 47/2022 Art. 53(1) (9 months after the tax period)",
+      "FDL 47/2022 Art. 51; FTA Decision 3/2024",
+      "Licensing authority of the emirate / free zone",
+      "Cabinet Decision 58/2020 (UBO register; update within 15 days of change)",
+      "FDL 7/2017 (Excise Tax); Cabinet Decision 52/2019 as amended (15 days)",
+      "Ministerial Decisions 243/2025 and 244/2025 (confirm with your adviser)",
+      "FDL 33/2021 Art. 22; MoHRE Ministerial Resolution 43/2022 (WPS)",
+    ];
+    for (const c of citations) {
+      expect(describeLegalSource(c), c).not.toBeNull();
+      const arabic = localizeServerText(c, arCat);
+      expect(arabic, c).toMatch(/[؀-ۿ]/);
+      // Every number in the English citation survives in the Arabic one.
+      for (const n of c.match(/\d+/g) ?? []) expect(arabic, `${c} -> ${n}`).toContain(n);
+      expect(arabic, c).not.toMatch(/\b(FDL|Art\.|Decision|Ministerial)\b/);
+    }
+    expect(localizeServerText("Custom adviser note", arCat)).toBe("Custom adviser note");
   });
 });

@@ -25,6 +25,7 @@
  * modules (dashboard, notifications).
  */
 import { pool } from "../db";
+import { describeLegalSource, type CopyDescriptor } from "@shared/server-copy";
 import { createLogger } from "../config/logger";
 import { emitDomainEvent } from "../platform/domain-events";
 import { has, provide } from "../platform/service-registry";
@@ -533,6 +534,8 @@ export interface CalendarRow {
   daysUntilDue: number;
   relatedEntityId: string | null;
   legalSource: string | null;
+  /** Key + params for a known citation (`shared/server-copy.ts`); null for free text. */
+  legalSourceCopy: CopyDescriptor | null;
   reminderDays: string;
   remindersSent: string;
   completedAt: string | null;
@@ -592,6 +595,7 @@ function toRow(r: CalendarDbRow, today: IsoDate, includeFirmLinks: boolean): Cal
     daysUntilDue: daysBetween(today, r.due),
     relatedEntityId: r.related_entity_id,
     legalSource: r.legal_source,
+    legalSourceCopy: describeLegalSource(r.legal_source),
     reminderDays: r.reminder_days,
     remindersSent: r.reminders_sent,
     completedAt: r.completed_at ? new Date(r.completed_at).toISOString() : null,

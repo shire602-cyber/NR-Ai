@@ -201,5 +201,11 @@
   "reportCatalog.delivery.freelancer-client-chase-delivery.title": "تسليم متابعة عملاء العمل الحر",
   "reportCatalog.delivery.freelancer-monthly-close-delivery.title": "تسليم الإقفال الشهري للعمل الحر",
   "reportCatalog.delivery.accountant-close-workpaper-delivery.title": "تسليم أوراق عمل الإقفال للمحاسب",
-  "reportCatalog.delivery.accountant-advisory-pack-delivery.title": "تسليم حزمة الاستشارات للمحاسب"
+  "reportCatalog.delivery.accountant-advisory-pack-delivery.title": "تسليم حزمة الاستشارات للمحاسب",
+  "reportCatalog.workspace.owner.focus": "السيولة والأرباح والذمم المدينة والضرائب والرواتب لقرارات المالك وأصحاب الأعمال الفردية.",
+  "reportCatalog.workspace.owner.automationNavLabel": "أتمتة المالك / صاحب العمل الفردي",
+  "reportCatalog.workspace.freelancer.focus": "دخل العملاء والفواتير غير المدفوعة والمصروفات والجاهزية الضريبية الشهرية.",
+  "reportCatalog.workspace.freelancer.automationNavLabel": "أتمتة المستقل",
+  "reportCatalog.workspace.accountant.focus": "أوراق عمل الإقفال ودفاتر الأستاذ وسجلات التدقيق والضرائب والتجميع.",
+  "reportCatalog.workspace.accountant.automationNavLabel": "أتمتة المحاسب"
 }

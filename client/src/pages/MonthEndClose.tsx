@@ -1,6 +1,7 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatDate as formatDisplayDate } from "@/lib/format-date";
+import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/format-date";
+import { localizeServerText, type CopyDescriptor } from "@shared/server-copy";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,6 +64,12 @@ interface ChecklistItem {
   description: string;
   status: "complete" | "incomplete";
   details?: string;
+  /** Stable keys + params for title/description/details (shared/server-copy.ts). */
+  copy?: {
+    title: CopyDescriptor | null;
+    description: CopyDescriptor | null;
+    details: CopyDescriptor | null;
+  };
   requiresSignOff?: boolean;
   actionHref?: string;
   actionEndpoint?: string;
@@ -110,6 +117,7 @@ interface ClosingEntry {
   netIncome?: number;
   date: string;
   memo: string;
+  copy?: { memo: CopyDescriptor | null; message: CopyDescriptor | null };
   lines: Array<{
     accountId: string;
     accountCode: string;
@@ -290,7 +298,11 @@ export default function MonthEndClose() {
       );
     },
     onError: (error: Error) => {
-      toast({ title: "Validation Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: t["monthEnd.validationError"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -317,7 +329,11 @@ export default function MonthEndClose() {
       refetchChecklist();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: t["monthEnd.errorTitle"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -342,7 +358,11 @@ export default function MonthEndClose() {
       invalidateClose();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: t["monthEnd.errorTitle"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -393,33 +413,43 @@ export default function MonthEndClose() {
 
   // ---- Helpers ----
 
-  const months = [
-    { value: "1", label: "January" },
-    { value: "2", label: "February" },
-    { value: "3", label: "March" },
-    { value: "4", label: "April" },
-    { value: "5", label: "May" },
-    { value: "6", label: "June" },
-    { value: "7", label: "July" },
-    { value: "8", label: "August" },
-    { value: "9", label: "September" },
-    { value: "10", label: "October" },
-    { value: "11", label: "November" },
-    { value: "12", label: "December" },
-  ];
+  const monthFormatter = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB", {
+    month: "long",
+  });
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    value: String(i + 1),
+    label: monthFormatter.format(new Date(2026, i, 1)),
+  }));
 
   const years = Array.from({ length: 5 }, (_, i) => String(now.getFullYear() - i));
 
+  function validationSummary(data: ValidationResponse): string {
+    const list = data.checklist ?? [];
+    const total = list.length;
+    const open = list.filter((item) => item.status === "incomplete");
+    if (data.ready || open.length === 0) {
+      return formatMessage(t["monthEnd.summaryReady"], { total });
+    }
+    const issues = open.map((item) => {
+      const title = localizeServerText(item.title, t, item.copy?.title);
+      const detail = item.details ? localizeServerText(item.details, t, item.copy?.details) : "";
+      return `- ${title}${detail ? ` (${detail})` : ""}`;
+    });
+    return [
+      formatMessage(t["monthEnd.summaryNotReady"], { done: total - open.length, total }),
+      ...issues,
+    ].join("\n");
+  }
+
   function formatPeriodLabel(p: string): string {
     const [y, m] = p.split("-").map(Number);
-    const monthName = months.find((mo) => Number(mo.value) === m)?.label || "";
-    return `${monthName} ${y}`;
+    return formatMonthYear(new Date(y, m - 1, 1), locale);
   }
 
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return "-";
     try {
-      return new Date(dateStr).toLocaleDateString("en-AE", {
+      return new Date(dateStr).toLocaleDateString(locale === "ar" ? "ar-AE-u-nu-latn" : "en-AE", {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -475,7 +505,7 @@ export default function MonthEndClose() {
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["monthEnd.eyebrowAccounting"]}
         title={<T k="pageLabels.monthEndClose" />}
         description={<T k="pageLabels.reviewValidateAndLockYourMonthly" />}
         actions={
@@ -502,7 +532,7 @@ export default function MonthEndClose() {
           <div className="flex items-center gap-4 flex-wrap">
             <span className="text-sm font-medium">{t["monthEnd.periodLabel"]}</span>
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[160px]" aria-label={t["hr.month"]}>
                 <SelectValue placeholder={t["hr.month"]} />
               </SelectTrigger>
               <SelectContent>
@@ -514,7 +544,7 @@ export default function MonthEndClose() {
               </SelectContent>
             </Select>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[120px]" aria-label={t["hr.year"]}>
                 <SelectValue placeholder={t["hr.year"]} />
               </SelectTrigger>
               <SelectContent>
@@ -586,9 +616,13 @@ export default function MonthEndClose() {
                       <XCircle className="h-5 w-5 text-destructive shrink-0" />
                     )}
                     <div>
-                      <p className="text-sm font-medium">{item.title}</p>
+                      <p className="text-sm font-medium">
+                        {localizeServerText(item.title, t, item.copy?.title)}
+                      </p>
                       <p className="text-xs text-muted-foreground">
-                        {item.details || item.description}
+                        {item.details
+                          ? localizeServerText(item.details, t, item.copy?.details)
+                          : localizeServerText(item.description, t, item.copy?.description)}
                       </p>
                       {item.signOff && (
                         <p className="text-xs text-success" data-testid={`signoff-${item.key}`}>
@@ -626,7 +660,8 @@ export default function MonthEndClose() {
                           size="sm"
                           className="text-destructive hover:text-destructive"
                         >
-                          Fix <ArrowRight className="h-3 w-3 ms-1" />
+                          <T k="monthEnd.fix" />{" "}
+                          <ArrowRight className="h-3 w-3 ms-1 rtl:rotate-180" />
                         </Button>
                       </a>
                     )}
@@ -688,7 +723,7 @@ export default function MonthEndClose() {
                       : t["monthEnd.notReady"]}
                   </p>
                   <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-sans">
-                    {validationMutation.data.summary}
+                    {validationSummary(validationMutation.data)}
                   </pre>
                 </div>
               </div>
@@ -845,7 +880,13 @@ export default function MonthEndClose() {
                 <T k="monthEnd.computedCloseTitle" />
               </CardTitle>
             </div>
-            <CardDescription>{closingEntriesMutation.data.memo}</CardDescription>
+            <CardDescription>
+              {localizeServerText(
+                closingEntriesMutation.data.memo,
+                t,
+                closingEntriesMutation.data.copy?.memo
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -854,8 +895,12 @@ export default function MonthEndClose() {
                   <TableHead>
                     <T k="pages.account" />
                   </TableHead>
-                  <TableHead data-numeric>Debit (AED)</TableHead>
-                  <TableHead data-numeric>Credit (AED)</TableHead>
+                  <TableHead data-numeric>
+                    <T k="monthEnd.debitAed" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="monthEnd.creditAed" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -946,7 +991,7 @@ export default function MonthEndClose() {
                       {(() => {
                         try {
                           const d = new Date(record.periodEnd);
-                          return d.toLocaleDateString("en-AE", { year: "numeric", month: "long" });
+                          return formatMonthYear(d, locale);
                         } catch {
                           return record.periodEnd;
                         }
@@ -961,7 +1006,7 @@ export default function MonthEndClose() {
                       ) : (
                         <Badge variant="secondary" className="flex items-center gap-1 w-fit">
                           <Unlock className="h-3 w-3" />
-                          Open
+                          <T k="monthEnd.statusOpen" />
                         </Badge>
                       )}
                     </TableCell>
