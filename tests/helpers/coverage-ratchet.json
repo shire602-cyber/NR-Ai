@@ -42,6 +42,18 @@
       "branches": 50.13,
       "functions": 65.12,
       "lines": 64.39
+    },
+    "unit_2026-11-16_s7_integrated": {
+      "statements": 31.47,
+      "branches": 27.12,
+      "functions": 32.09,
+      "lines": 31.89
+    },
+    "db_2026-11-16_s7_integrated": {
+      "statements": 62.3,
+      "branches": 50.13,
+      "functions": 65.13,
+      "lines": 64.41
     }
   },
   "thresholds": {
