@@ -82,4 +82,3 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   one company; on multi-company databases they are flagged `legacy_unscoped` and ignored by
   lookups (re-enter them per company), and inverted manual rows are rewritten to (foreign, AED)
   with `legacy_inverted = true` (`scripts/qa/find-inverted-rates.mjs` lists them).
-

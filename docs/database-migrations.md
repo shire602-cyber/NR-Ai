@@ -28,4 +28,3 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   Drizzle column must be created by some migration. Storage methods for a new table go in the
   matching `server/storage/<domain>.ts` class, with the signature added to
   `server/storage/types.ts` (`IStorage`).
-

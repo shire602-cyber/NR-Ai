@@ -64,7 +64,7 @@ Detail for each rule: [docs/platform-rules.md](docs/platform-rules.md).
   `server/reporting/` (closing entries excluded via `NOT_CLOSING_SQL`). Never load all journal
   lines into Node. VAT 201 comes only from `computeVat201` (`server/tax/vat-engine.ts`).
 - Settlement and bank seams: `invoices.recordPayment/reversePayment`, `bills.recordPayment/
-  reversePayment` (service registry) and `bank-reconciliation.service.ts` (`applyMatch`,
+reversePayment` (service registry) and `bank-reconciliation.service.ts` (`applyMatch`,
   `unmatchTransaction`). Do not write `invoice_payments`/`bill_payments` or reconciliation state
   elsewhere. Inventory/COGS changes go through `inventory.on*` registry calls.
 - Tenancy: load tenant-owned rows with `server/tenancy` (`scopedGet`/`scopedUpdate`/`scopedDelete`/
