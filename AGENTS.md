@@ -14,9 +14,14 @@ Scope: this file applies to the whole repository.
   `dataBasis`/`indicator`, `ledgerReportCount`/`indicatorReportCount` and preset `metricBases`, and
   the Report Center badges every non-ledger report or metric as "Indicator" (`DataBasisBadge`).
 - The Reports page is a thin shell (`client/src/pages/Reports.tsx`, < 500 lines) over
-  `client/src/pages/reports/`: `useReportsPage` (state), `context.ts`, `shared.tsx` (module
-  helpers/types), lazily loaded workspace panels in `panels/` (only the active workspace panel is
-  mounted) and focused-report tabs in `tabs/`. UI copy is in the `reportCenter` i18n namespace
+  `client/src/pages/reports/`: `useReportsPage` (state; composes the ordered stage hooks in
+  `hooks/`, comparison rows come from the pure `comparisons/buildComparisonRows`), `context.ts`,
+  `shared.ts` (barrel over `model/` helpers/types), lazily loaded workspace panels in `panels/`
+  (only the active workspace panel is mounted; large sections in `panels/sections/`) and
+  focused-report tabs in `tabs/`. No module there exceeds 1,500 lines
+  (`tests/unit/report-page-split.test.ts`). `server/routes/ai.routes.ts` and `firm.routes.ts` keep
+  every registration (path, middleware order) and import handlers from `server/routes/ai/` and
+  `server/routes/firm/` (`tests/unit/route-module-split.test.ts` pins the route tables). UI copy is in the `reportCenter` i18n namespace
   (`client/src/locales/{en,ar}/reportCenter.json`). The default Report Center leads with
   statements and tax (`StatementsQuickPanel`: server PDF/Excel, accountant pack, FTA Audit File);
   persona/automation/delivery tooling sits behind "Advanced tools" (the workspace tabs). The
