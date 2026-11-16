@@ -375,12 +375,12 @@ export function buildReportDeliveryHandoffReview(input: {
   if (latestRun?.status === "failed" || latestRun?.status === "blocked") {
     return {
       gap: "delivery-gaps",
-      message: "Report delivery has unresolved handoff gaps",
+      message: renderServerCopy("reportDelivery.handoff.title"),
       detail:
         latestRun.errorMessage ??
         (latestRun.status === "blocked"
-          ? "The latest delivery was blocked and nothing was sent."
-          : "Recover the latest failed delivery before queueing again."),
+          ? renderServerCopy("reportDelivery.handoff.blocked")
+          : renderServerCopy("reportDelivery.handoff.recover")),
       latestRunId: latestRun.id,
     };
   }
@@ -389,8 +389,11 @@ export function buildReportDeliveryHandoffReview(input: {
   if (reportGapCount > 0 || plan.status === "setup") {
     return {
       gap: "report-gaps",
-      message: "Report delivery has unresolved handoff gaps",
-      detail: `${plan.readyReportCount}/${plan.reportCount} reports are ready for this delivery.`,
+      message: renderServerCopy("reportDelivery.handoff.title"),
+      detail: renderServerCopy("reportDelivery.handoff.reportsReady", {
+        ready: plan.readyReportCount,
+        total: plan.reportCount,
+      }),
       latestRunId: latestRun?.id ?? null,
     };
   }
@@ -398,8 +401,10 @@ export function buildReportDeliveryHandoffReview(input: {
   if (latestRun && latestRun.readinessStatus !== "ready") {
     return {
       gap: "delivery-gaps",
-      message: "Report delivery has unresolved handoff gaps",
-      detail: `Latest delivery readiness is ${latestRun.readinessStatus}.`,
+      message: renderServerCopy("reportDelivery.handoff.title"),
+      detail: renderServerCopy("reportDelivery.handoff.readiness", {
+        status: latestRun.readinessStatus,
+      }),
       latestRunId: latestRun.id,
     };
   }
@@ -427,13 +432,14 @@ export function buildReportDeliveryNotificationForPlan(input: {
     : "";
   const status = run?.status ?? "queued";
   const recipientCount = run?.recipientAddresses?.length ?? 0;
-  const titleKey = (
-    {
-      sent: "notification.reportDeliverySent.title",
-      blocked: "notification.reportDeliveryBlocked.title",
-      failed: "notification.reportDeliveryFailed.title",
-    } as Record<string, string>
-  )[status] ?? "notification.reportDeliveryQueued.title";
+  const titleKey =
+    (
+      {
+        sent: "notification.reportDeliverySent.title",
+        blocked: "notification.reportDeliveryBlocked.title",
+        failed: "notification.reportDeliveryFailed.title",
+      } as Record<string, string>
+    )[status] ?? "notification.reportDeliveryQueued.title";
   const title = renderServerCopy(titleKey, { title: plan.title });
   // D2b (CTO 11): a missing email provider is reported in user terms with a link to set it up;
   // provider and environment details are logged server-side only.

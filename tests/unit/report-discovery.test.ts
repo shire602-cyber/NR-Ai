@@ -3508,7 +3508,7 @@ describe("report discoverability", () => {
     expect(reportDeliveryServiceSource).toContain("ReportDeliveryPreview");
     expect(reportDeliveryServiceSource).toContain("ReportDeliveryHandoffReview");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryHandoffReview");
-    expect(reportDeliveryServiceSource).toContain("Report delivery has unresolved handoff gaps");
+    expect(reportDeliveryServiceSource).toContain("reportDelivery.handoff.title");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryRunInput");
     expect(reportDeliveryServiceSource).toContain("reportSuites: plan.reportSuites");
     expect(reportDeliveryServiceSource).toContain("suiteTitles");

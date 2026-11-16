@@ -721,5 +721,19 @@
   "components.srv.evidence.close.detail.noFx": "لا توجد أرصدة بعملات أجنبية",
   "components.srv.evidence.close.detail.fxOne": "تم ترحيل {count} قيد إعادة تقييم",
   "components.srv.evidence.close.detail.fxMany": "تم ترحيل {count} قيود إعادة تقييم",
-  "components.srv.evidence.close.detail.fxRun": "{count} حساب/حسابات تحتفظ بأرصدة بعملات أجنبية؛ شغّل إعادة التقييم"
+  "components.srv.evidence.close.detail.fxRun": "{count} حساب/حسابات تحتفظ بأرصدة بعملات أجنبية؛ شغّل إعادة التقييم",
+  "components.srv.reportDelivery.run.emailNotSetUp": "لم يُعدّ البريد الإلكتروني بعد، لذلك لم يُرسل شيء. أُنشئت الحزمة ويمكن تنزيلها.",
+  "components.srv.reportDelivery.run.noRecipients": "لا يوجد عنوان بريد إلكتروني للمستلم: أضف عناوين في إعداد المستلمين للاشتراك أو امنح أحد أعضاء الفريق الدور المناسب.",
+  "components.srv.reportDelivery.run.failed": "فشل إرسال التقرير: {reason}",
+  "components.srv.reportDelivery.run.recipientsFailed": "تعذّر تحديد المستلمين: {reason}",
+  "components.srv.reportDelivery.run.renderFailed": "تعذّر إنشاء حزمة التقارير: {reason}",
+  "components.srv.reportDelivery.run.sheetsCopy": "نسخة Google Sheets: {url}",
+  "components.srv.reportDelivery.run.sheetsFailed": "فشلت نسخة Google Sheets: {reason}",
+  "components.srv.reportDelivery.run.providerRejected": "لم يقبل مزوّد البريد الإلكتروني الرسالة",
+  "components.srv.reportDelivery.run.recipientFailed": "فشل الإرسال إلى {recipient}: {reason}",
+  "components.srv.reportDelivery.handoff.title": "إرسال التقرير فيه ثغرات تسليم غير محلولة",
+  "components.srv.reportDelivery.handoff.blocked": "حُظر آخر إرسال ولم يُرسل شيء.",
+  "components.srv.reportDelivery.handoff.recover": "عالج آخر إرسال فاشل قبل وضعه في الطابور مجدداً.",
+  "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} تقارير جاهزة لهذا الإرسال.",
+  "components.srv.reportDelivery.handoff.readiness": "حالة جاهزية آخر إرسال: {status}."
 }

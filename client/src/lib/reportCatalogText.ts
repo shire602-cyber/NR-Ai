@@ -18,6 +18,7 @@ import { useMemo } from "react";
 import { formatMessage, t as translations, useI18n, useTranslation, type Locale } from "./i18n";
 import { formatDate, formatDateRange, formatMonthYear } from "./format-date";
 import { catalogTextEntries } from "./reportCatalogFields";
+import { localizeReportDeliveryText } from "@shared/server-copy";
 import { REPORT_PATTERNS, REPORT_UI_TEXT } from "./reportCatalogGenerated";
 
 export type CatalogTextKind =
@@ -182,6 +183,9 @@ function translateEnglish(
     });
     return formatMessage(template, values);
   }
+  // Server-written delivery run errors / handoff sentences (shared/server-copy templates).
+  const delivery = localizeReportDeliveryText(english, table);
+  if (delivery !== english) return delivery;
   if (english.includes(" · ")) {
     const parts = english.split(" · ");
     const translated = parts.map((part) => translateEnglish(table, part, locale, depth + 1));

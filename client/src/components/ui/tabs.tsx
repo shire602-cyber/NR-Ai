@@ -77,19 +77,37 @@ const TabsList = React.forwardRef<
 });
 TabsList.displayName = TabsPrimitive.List.displayName;
 
+/**
+ * Radix always stamps `aria-controls` with the panel id, but a tab whose panel is not mounted (an
+ * inactive `TabsContent`, or tabs that only switch a URL-driven view) then points at nothing, which
+ * axe reports as `aria-valid-attr-value`. Drop the attribute while the referenced panel does not
+ * exist; mounted panels keep it. Backwards compatible: nothing changes when the panel exists.
+ */
 const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "inline-flex h-7 shrink-0 snap-start items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-[13px] font-medium ring-offset-background transition-[color,background-color,box-shadow] duration-fast ease-standard hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-neutral-800 [&_svg]:size-3.5",
-      className
-    )}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  const node = React.useRef<HTMLButtonElement | null>(null);
+  React.useEffect(() => {
+    const el = node.current;
+    const controls = el?.getAttribute("aria-controls");
+    if (el && controls && !document.getElementById(controls)) el.removeAttribute("aria-controls");
+  });
+  return (
+    <TabsPrimitive.Trigger
+      ref={(el) => {
+        node.current = el;
+        if (typeof ref === "function") ref(el);
+        else if (ref) (ref as React.MutableRefObject<typeof el>).current = el;
+      }}
+      className={cn(
+        "inline-flex h-7 shrink-0 snap-start items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-[13px] font-medium ring-offset-background transition-[color,background-color,box-shadow] duration-fast ease-standard hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-neutral-800 [&_svg]:size-3.5",
+        className
+      )}
+      {...props}
+    />
+  );
+});
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 
 const TabsContent = React.forwardRef<

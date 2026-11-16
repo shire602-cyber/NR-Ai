@@ -11,6 +11,8 @@
  * when any parameter inside it is missing or empty.
  */
 
+import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
+
 export interface CopyDescriptor {
   key: string;
   params: Record<string, string>;
@@ -128,6 +130,31 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.reportDeliveryScheduled.message", "{format} scheduled for {date}.", true),
 ];
 
+/**
+ * Report-delivery run errors and handoff-review sentences (stored on `errorMessage` / returned in
+ * `handoffReview`). The English stays in the row; the client localises it with
+ * `localizeReportDeliveryText`. Raw provider / exception text inside `{reason}` stays as is.
+ */
+export const REPORT_DELIVERY_TEMPLATES: readonly CopyTemplate[] = [
+  T("reportDelivery.run.emailNotSetUp", EMAIL_NOT_SET_UP_RUN_ERROR),
+  T(
+    "reportDelivery.run.noRecipients",
+    "No recipient email address: add addresses to the subscription's recipients setting or give a team member the matching role."
+  ),
+  T("reportDelivery.run.failed", "Report delivery failed: {reason}"),
+  T("reportDelivery.run.recipientsFailed", "Could not resolve recipients: {reason}"),
+  T("reportDelivery.run.renderFailed", "Report pack could not be rendered: {reason}"),
+  T("reportDelivery.run.sheetsCopy", "Google Sheets copy: {url}"),
+  T("reportDelivery.run.sheetsFailed", "Google Sheets copy failed: {reason}"),
+  T("reportDelivery.run.providerRejected", "Email provider did not accept the message"),
+  T("reportDelivery.run.recipientFailed", "Delivery to {recipient} failed: {reason}"),
+  T("reportDelivery.handoff.title", "Report delivery has unresolved handoff gaps"),
+  T("reportDelivery.handoff.blocked", "The latest delivery was blocked and nothing was sent."),
+  T("reportDelivery.handoff.recover", "Recover the latest failed delivery before queueing again."),
+  T("reportDelivery.handoff.reportsReady", "{ready}/{total} reports are ready for this delivery."),
+  T("reportDelivery.handoff.readiness", "Latest delivery readiness is {status}."),
+];
+
 /** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
 export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   // Legacy wording stored before the format was part of the sentence: same key, neutral format.
@@ -194,6 +221,7 @@ const templateByKey = (key: string): CopyTemplate | undefined => {
       ...MONTH_END_TEMPLATES,
       ...LEGAL_SOURCE_TEMPLATES,
       ...EVIDENCE_TEMPLATES,
+      ...REPORT_DELIVERY_TEMPLATES,
     ].map((t) => [t.key, t])
   );
   return byKeyCache.get(key);
@@ -1104,4 +1132,34 @@ export function withNotificationCopy<T extends { title: string; message: string 
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
   return { ...n, copy: describeNotificationCopy(n) };
+}
+
+/** Key + params for a stored report-delivery run error or handoff sentence, or null. */
+export function describeReportDeliveryText(text: string | null | undefined): CopyDescriptor | null {
+  return parseServerCopy(text, REPORT_DELIVERY_TEMPLATES);
+}
+
+/**
+ * Localise a delivery run error / handoff sentence. Several per-recipient errors are stored joined
+ * by "; ": each part is localised on its own. Unknown text is returned as stored.
+ */
+export function localizeReportDeliveryText(
+  text: string | null | undefined,
+  catalog: Record<string, string | undefined>
+): string {
+  if (!text) return text ?? "";
+  const parts = text.split("; ");
+  const described = parts.map((part) => describeReportDeliveryText(part));
+  // Joined per-recipient errors: only split when every part is a known sentence, otherwise the
+  // semicolon belongs to a raw reason inside one sentence.
+  if (parts.length > 1 && described.every((d) => d !== null)) {
+    return parts
+      .map((part, i) => {
+        const d = described[i]!;
+        return renderDescriptor(d.key, d.params, part, catalog);
+      })
+      .join("; ");
+  }
+  const whole = describeReportDeliveryText(text);
+  return whole ? renderDescriptor(whole.key, whole.params, text, catalog) : text;
 }

@@ -50,7 +50,18 @@ const ALLOW_REMOTE = process.env.A11Y_ALLOW_REMOTE === "true";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
 
-const CUSTOMER_ROUTES = LAUNCH_ROUTES;
+// The Reports "Advanced tools" workspace tabs are separate URLs that render different panels
+// (F14), so each one is crawled in addition to the 20 launch routes.
+const ADVANCED_REPORT_ROUTES = [
+  "home",
+  "suites",
+  "comparisons",
+  "automation",
+  "delivery",
+  "setup",
+].map((workspace) => `/reports?workspace=${workspace}`);
+
+const CUSTOMER_ROUTES = [...LAUNCH_ROUTES, ...ADVANCED_REPORT_ROUTES];
 
 const ROUTES = process.env.A11Y_ROUTES
   ? process.env.A11Y_ROUTES.split(",").map((route) => route.trim())

@@ -721,5 +721,19 @@
   "components.srv.evidence.close.detail.noFx": "No foreign-currency balances",
   "components.srv.evidence.close.detail.fxOne": "{count} revaluation entry posted",
   "components.srv.evidence.close.detail.fxMany": "{count} revaluation entries posted",
-  "components.srv.evidence.close.detail.fxRun": "{count} account(s) hold foreign-currency balances; run the revaluation"
+  "components.srv.evidence.close.detail.fxRun": "{count} account(s) hold foreign-currency balances; run the revaluation",
+  "components.srv.reportDelivery.run.emailNotSetUp": "Email isn't set up yet, so nothing was sent. The pack was rendered and can be downloaded.",
+  "components.srv.reportDelivery.run.noRecipients": "No recipient email address: add addresses to the subscription's recipients setting or give a team member the matching role.",
+  "components.srv.reportDelivery.run.failed": "Report delivery failed: {reason}",
+  "components.srv.reportDelivery.run.recipientsFailed": "Could not resolve recipients: {reason}",
+  "components.srv.reportDelivery.run.renderFailed": "Report pack could not be rendered: {reason}",
+  "components.srv.reportDelivery.run.sheetsCopy": "Google Sheets copy: {url}",
+  "components.srv.reportDelivery.run.sheetsFailed": "Google Sheets copy failed: {reason}",
+  "components.srv.reportDelivery.run.providerRejected": "Email provider did not accept the message",
+  "components.srv.reportDelivery.run.recipientFailed": "Delivery to {recipient} failed: {reason}",
+  "components.srv.reportDelivery.handoff.title": "Report delivery has unresolved handoff gaps",
+  "components.srv.reportDelivery.handoff.blocked": "The latest delivery was blocked and nothing was sent.",
+  "components.srv.reportDelivery.handoff.recover": "Recover the latest failed delivery before queueing again.",
+  "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} reports are ready for this delivery.",
+  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}."
 }

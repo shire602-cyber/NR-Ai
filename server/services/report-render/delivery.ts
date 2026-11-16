@@ -26,6 +26,7 @@ import {
 import { activeProviderName, deliverOutboxMessage, enqueueEmail } from "../../outbox";
 import { isCapabilityLive } from "../../../shared/capabilities";
 import { EMAIL_NOT_SET_UP_RUN_ERROR } from "../../../shared/notification-copy";
+import { renderServerCopy } from "../../../shared/server-copy";
 import { createLogger } from "../../config/logger";
 import { DomainError } from "../../errors";
 import { getObject, hasDurableObjectStore, putObject } from "../fileStorage";
@@ -205,7 +206,9 @@ export async function executeReportDeliveryRun(input: {
     log.error({ err, companyId: input.companyId, runId: input.runId }, "Report delivery failed");
     return updateRun(input.companyId, input.runId, {
       status: "failed",
-      errorMessage: `Report delivery failed: ${(err as Error).message}`.slice(0, 1000),
+      errorMessage: renderServerCopy("reportDelivery.run.failed", {
+        reason: (err as Error).message,
+      }).slice(0, 1000),
     });
   }
 }
@@ -238,7 +241,9 @@ async function executeRun(input: {
   } catch (err) {
     return updateRun(companyId, runId, {
       status: "failed",
-      errorMessage: `Could not resolve recipients: ${(err as Error).message}`.slice(0, 1000),
+      errorMessage: renderServerCopy("reportDelivery.run.recipientsFailed", {
+        reason: (err as Error).message,
+      }).slice(0, 1000),
     });
   }
 
@@ -256,7 +261,9 @@ async function executeRun(input: {
     log.error({ err, companyId, runId }, "Report pack render failed");
     return updateRun(companyId, runId, {
       status: "failed",
-      errorMessage: `Report pack could not be rendered: ${(err as Error).message}`.slice(0, 1000),
+      errorMessage: renderServerCopy("reportDelivery.run.renderFailed", {
+        reason: (err as Error).message,
+      }).slice(0, 1000),
     });
   }
 
@@ -272,8 +279,7 @@ async function executeRun(input: {
       ...base,
       status: "blocked",
       blockedReason: "no_recipients",
-      errorMessage:
-        "No recipient email address: add addresses to the subscription's recipients setting or give a team member the matching role.",
+      errorMessage: renderServerCopy("reportDelivery.run.noRecipients"),
     });
   }
 
@@ -305,9 +311,11 @@ async function executeRun(input: {
           }))
         )
       );
-      sheetsNote = `Google Sheets copy: ${copy.url}`;
+      sheetsNote = renderServerCopy("reportDelivery.run.sheetsCopy", { url: copy.url });
     } catch (err) {
-      sheetsNote = `Google Sheets copy failed: ${(err as Error).message}`;
+      sheetsNote = renderServerCopy("reportDelivery.run.sheetsFailed", {
+        reason: (err as Error).message,
+      });
     }
   }
 
@@ -344,10 +352,21 @@ async function executeRun(input: {
       outboxIds.push(queued.id);
       const attempt = (await deliverOutboxMessage(queued.id)) ?? queued;
       statuses.push(attempt.status);
-      if (attempt.error) errors.push(`${to}: ${attempt.error}`);
+      if (attempt.error)
+        errors.push(
+          renderServerCopy("reportDelivery.run.recipientFailed", {
+            recipient: to,
+            reason: attempt.error,
+          })
+        );
     } catch (err) {
       statuses.push("failed");
-      errors.push(`${to}: ${(err as Error).message}`);
+      errors.push(
+        renderServerCopy("reportDelivery.run.recipientFailed", {
+          recipient: to,
+          reason: (err as Error).message,
+        })
+      );
     }
   }
 
@@ -376,7 +395,9 @@ async function executeRun(input: {
     ...base,
     outboxMessageIds: outboxIds,
     status: "failed",
-    errorMessage: (errors.join("; ") || "Email provider did not accept the message").slice(0, 1000),
+    errorMessage: (
+      errors.join("; ") || renderServerCopy("reportDelivery.run.providerRejected")
+    ).slice(0, 1000),
     retryScheduledAt: retryAt,
   });
 }
