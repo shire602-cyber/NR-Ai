@@ -1,3 +1,4 @@
+import { formatAedText } from "@/lib/format";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
@@ -212,12 +213,7 @@ const reviewKindConfig: Record<ReviewItemKind, { label: string; icon: typeof Shi
 };
 
 function formatAed(value: number): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+  return formatAedText(value || 0);
 }
 
 function formatDate(value: string | null | undefined): string {

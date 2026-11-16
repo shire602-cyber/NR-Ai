@@ -195,6 +195,7 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
               <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
               <XAxis
                 dataKey="name"
+                reversed={locale === "ar"}
                 tickFormatter={(key: string) => formatMonthKey(key, locale)}
                 fontSize={11}
                 tickLine={false}
@@ -202,6 +203,7 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
                 stroke="hsl(var(--muted-foreground))"
               />
               <YAxis
+                orientation={locale === "ar" ? "right" : "left"}
                 fontSize={11}
                 width={44}
                 tickLine={false}

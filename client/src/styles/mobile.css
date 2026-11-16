@@ -743,3 +743,20 @@
     margin-inline-start: 0;
   }
 }
+
+/* R2-22: a date (or other short fact) in a row-card's second line is never truncated. Mark
+   the cell data-keep; the document number before it takes the leftover width and elides its
+   middle (<MiddleTruncate>). Doubled attribute selector outranks the last-meta rule above. */
+@media (max-width: 767px) {
+  table.row-cards td[data-cell="meta"][data-keep][data-keep] {
+    flex: none;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+  }
+  table.row-cards td[data-cell="meta"]:has(~ td[data-cell="meta"][data-keep]) {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+  }
+}

@@ -609,6 +609,7 @@ export interface CashFlowLine {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr?: string | null;
   amount: number;
 }
 
@@ -742,6 +743,7 @@ export async function cashFlow(
           accountId: id,
           accountCode: "",
           accountName: "Net income",
+          accountNameAr: "صافي الدخل",
           amount: aed(f),
         });
         continue;
@@ -751,6 +753,7 @@ export async function cashFlow(
         accountId: id,
         accountCode: a?.code ?? "",
         accountName: a?.nameEn ?? "Unclassified",
+        accountNameAr: a?.nameAr ?? null,
         amount: aed(f),
       });
     }

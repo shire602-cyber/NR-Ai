@@ -539,7 +539,7 @@ export default function Journal() {
                                 <SelectContent>
                                   {accounts?.map((acc: any) => (
                                     <SelectItem key={acc.id} value={acc.id}>
-                                      <span className="me-2 tabular-nums text-muted-foreground">
+                                      <span className="me-2 inline-block tabular-nums text-muted-foreground">
                                         {acc.code}
                                       </span>
                                       {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
@@ -755,20 +755,20 @@ export default function Journal() {
             return (
               <Card key={entry.id} className={cn("mb-3", isVoid && "opacity-60")}>
                 <CardContent className="p-4 sm:p-5">
-                  <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                  <div className="mb-3 flex flex-col gap-x-4 gap-y-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <div className="mb-0.5 flex items-center gap-2 text-caption text-muted-foreground">
+                      <div className="mb-0.5 flex items-center gap-x-2 text-caption text-muted-foreground">
                         {entry.entryNumber && (
                           <Link
                             href={`/journal/${entry.id}`}
                             dir="ltr"
-                            className="font-medium tabular-nums text-foreground [unicode-bidi:isolate] hover:underline"
+                            className="min-h-0 whitespace-nowrap font-medium tabular-nums text-foreground [unicode-bidi:isolate] hover:underline"
                           >
                             {entry.entryNumber}
                           </Link>
                         )}
                         <span aria-hidden>·</span>
-                        <span>{formatDate(entry.date, locale)}</span>
+                        <span className="whitespace-nowrap">{formatDate(entry.date, locale)}</span>
                       </div>
                       {entry.memo && (
                         <div dir="auto" className="truncate text-sm font-medium text-foreground">
@@ -887,10 +887,11 @@ export default function Journal() {
                             <Button
                               variant="outline"
                               size="sm"
+                              aria-label={t["journal.reverse"]}
                               data-testid={`button-reverse-journal-${entry.id}`}
                             >
                               <RotateCcw className="w-4 h-4" />
-                              {t["journal.reverse"]}
+                              <span className="hidden sm:inline">{t["journal.reverse"]}</span>
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -1029,19 +1030,23 @@ function JournalLinesTable({
   const balanced = Math.round(debit * 100) === Math.round(credit * 100);
   return (
     <div className="-mx-4 -mb-4 mt-3 overflow-hidden rounded-b-xl border-t border-border sm:-mx-5 sm:-mb-5">
-      <Table density="compact" className="mobile-fit">
+      <Table density="compact" className="mobile-fit table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-full">{t["screens.account"]}</TableHead>
-            <TableHead data-numeric="">{t["screens.debit"]}</TableHead>
-            <TableHead data-numeric="">{t["screens.credit"]}</TableHead>
+            <TableHead>{t["screens.account"]}</TableHead>
+            <TableHead data-numeric="" className="w-[5.75rem] sm:w-32">
+              {t["screens.debit"]}
+            </TableHead>
+            <TableHead data-numeric="" className="w-[5.75rem] sm:w-32">
+              {t["screens.credit"]}
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {lines.map((line, idx) => (
             <TableRow key={idx}>
-              <TableCell data-truncate="">
-                <span className="me-2 tabular-nums text-muted-foreground">
+              <TableCell data-truncate="" className="max-w-none">
+                <span className="me-2 inline-block tabular-nums text-muted-foreground">
                   {line.account?.code}
                 </span>
                 <span dir="auto">

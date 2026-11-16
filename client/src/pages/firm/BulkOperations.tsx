@@ -1,3 +1,4 @@
+import { formatAedText } from "@/lib/format";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef, useCallback } from "react";
@@ -94,12 +95,7 @@ interface PeriodCloseStatus {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatAed(n: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
+  return formatAedText(n);
 }
 
 function fileToBase64(file: File): Promise<string> {

@@ -64,8 +64,8 @@
   "invoices.statusFilter.void": "ملغاة",
   "invoices.supply.exempt": "معفى",
   "invoices.supply.out_of_scope": "خارج النطاق",
-  "invoices.supply.standard_rated": "أساسي 5%",
-  "invoices.supply.zero_rated": "نسبة الصفر 0%",
+  "invoices.supply.standard_rated": "أساسي ⁦5%⁩",
+  "invoices.supply.zero_rated": "نسبة الصفر ⁦0%⁩",
   "invoices.supplyType": "نوع التوريد الضريبي",
   "invoices.templateBankDetails": "التفاصيل البنكية المطبوعة على الفاتورة",
   "invoices.templateTerms": "الشروط المطبوعة على الفاتورة",
@@ -81,5 +81,9 @@
   "invoices.deleteTitle": "حذف الفاتورة {number}؟",
   "invoices.deleteBody": "سيؤدي هذا إلى حذف الفاتورة نهائيًا. لا يمكن التراجع عن ذلك.",
   "invoices.einvoiceShort": "إلكترونية",
-  "invoices.exporting": "جارٍ التصدير…"
+  "invoices.exporting": "جارٍ التصدير…",
+  "invoices.colDue": "الاستحقاق",
+  "invoices.colBalance": "الرصيد",
+  "invoices.overdueDays": "متأخر {days} يومًا",
+  "invoices.overdueDay": "متأخر يوم واحد"
 }

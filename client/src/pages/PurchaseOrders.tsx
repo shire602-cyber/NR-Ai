@@ -1,3 +1,4 @@
+import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import {
   FormActions,
@@ -809,14 +810,17 @@ export default function PurchaseOrders() {
             {(purchaseOrders ?? []).map((po) => (
               <TableRow key={po.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
-                  <span dir="ltr" className="[unicode-bidi:isolate]">
-                    {po.number}
-                  </span>
+                  <MiddleTruncate text={String(po.number ?? "")} />
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title" dir="auto">
                   {po.vendorName}
                 </TableCell>
-                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                <TableCell
+                  data-nowrap=""
+                  data-cell="meta"
+                  data-keep=""
+                  className="text-muted-foreground"
+                >
                   {formatDate(po.date, locale)}
                 </TableCell>
                 <TableCell data-nowrap="" className="text-muted-foreground">

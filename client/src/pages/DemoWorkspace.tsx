@@ -204,7 +204,7 @@ export default function DemoWorkspace() {
             </div>
 
             <Tabs defaultValue="invoices" className="p-4 sm:p-5">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
                 <TabsTrigger value="invoices">
                   <T k="pages.invoices" />
                 </TabsTrigger>

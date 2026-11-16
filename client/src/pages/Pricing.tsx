@@ -1,3 +1,4 @@
+import { formatMoneyText } from "@/lib/format-money";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
@@ -291,7 +292,7 @@ export default function Pricing() {
       monthly: locale === "en" ? "Monthly" : "شهري",
       yearly: locale === "en" ? "Yearly" : "سنوي",
       save20: locale === "en" ? "Save 20%" : "وفّر 20%",
-      perMonth: locale === "en" ? "/mo" : "/شهر",
+      perMonth: locale === "en" ? "/mo" : "/ شهريًا",
       free: locale === "en" ? "Free" : "مجاني",
     },
     tiers: {
@@ -559,7 +560,7 @@ export default function Pricing() {
 
   const formatPrice = (price: number) => {
     if (price === 0) return t.header.free;
-    return `AED ${price}`;
+    return formatMoneyText(price, "AED", locale, { fractionDigits: 0 });
   };
 
   const getPrice = (tier: PricingTier) => {
@@ -645,8 +646,8 @@ export default function Pricing() {
                 <p className="mk-small mk-tier__billed">
                   {price > 0 && isYearly
                     ? locale === "en"
-                      ? `Billed AED ${price * 12} a year`
-                      : `يُفوتر ${price * 12} درهم سنوياً`
+                      ? `Billed ${formatMoneyText(price * 12, "AED", locale, { fractionDigits: 0 })} a year`
+                      : `يُفوتر ${formatMoneyText(price * 12, "AED", locale, { fractionDigits: 0 })} سنوياً`
                     : " "}
                 </p>
                 {tier.id === "enterprise" ? (
@@ -717,7 +718,7 @@ export default function Pricing() {
                       <small className="mk-num">
                         {getPrice(tier) === 0
                           ? t.header.free
-                          : `AED ${getPrice(tier)}${t.header.perMonth}`}
+                          : `${formatPrice(getPrice(tier))} ${t.header.perMonth}`}
                       </small>
                     </th>
                   ))}

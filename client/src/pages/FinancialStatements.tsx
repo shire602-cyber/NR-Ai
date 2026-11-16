@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,6 +33,7 @@ interface AccountBreakdown {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr?: string | null;
   amount: number;
 }
 
@@ -126,10 +127,10 @@ function PriorYear({ value, locale }: { value: number | undefined; locale: strin
   );
 }
 
-/** Subtotal row inside a statement card. */
+/** Section subtotal band inside a statement card: a full-width tinted row, aligned with the table cells. */
 function SubtotalRow({ label, amount }: { label: string; amount: number; locale?: string }) {
   return (
-    <div className="flex justify-between items-center text-sm py-1 text-muted-foreground">
+    <div className="my-3 flex items-center justify-between gap-4 rounded-md bg-muted/60 px-4 py-2 text-sm font-semibold text-foreground">
       <span>
         <T k={label} />
       </span>
@@ -200,7 +201,7 @@ function prepareCashFlowExport(data: CashFlowData): ExportData[] {
   ];
 }
 
-function BreakdownTable({ items }: { items: AccountBreakdown[]; locale?: string }) {
+function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale?: string }) {
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-2">
@@ -227,7 +228,11 @@ function BreakdownTable({ items }: { items: AccountBreakdown[]; locale?: string 
         {items.map((item) => (
           <TableRow key={item.accountId}>
             <TableCell className="tabular-nums text-sm">{item.accountCode}</TableCell>
-            <TableCell>{item.accountName}</TableCell>
+            <TableCell>
+              <span dir="auto">
+                {locale === "ar" && item.accountNameAr ? item.accountNameAr : item.accountName}
+              </span>
+            </TableCell>
             <TableCell data-numeric>
               <Money amount={item.amount} currency={"AED"} />
             </TableCell>
@@ -263,20 +268,20 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] items-end">
             <div className="space-y-2">
               <Label>
                 <T k="pages.startDate" />
               </Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <DatePicker value={startDate} onChange={setStartDate} />
             </div>
             <div className="space-y-2">
               <Label>
                 <T k="pages.endDate" />
               </Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <DatePicker value={endDate} onChange={setEndDate} />
             </div>
-            <Button onClick={handleGenerate}>
+            <Button onClick={handleGenerate} className="md:justify-self-end">
               <Search className="h-4 w-4 me-2" />
               <T k="pages.generate" />
             </Button>
@@ -458,14 +463,14 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto] items-end">
             <div className="space-y-2">
               <Label>
                 <T k="statements.asOfDate" />
               </Label>
-              <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+              <DatePicker value={asOfDate} onChange={setAsOfDate} />
             </div>
-            <Button onClick={handleGenerate}>
+            <Button onClick={handleGenerate} className="md:justify-self-end">
               <Search className="h-4 w-4 me-2" />
               <T k="pages.generate" />
             </Button>
@@ -749,15 +754,15 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <Label>
                 <T k="pages.startDate" />
               </Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <DatePicker value={startDate} onChange={setStartDate} />
             </div>
             <div className="space-y-2">
               <Label>
                 <T k="pages.endDate" />
               </Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <DatePicker value={endDate} onChange={setEndDate} />
             </div>
-            <Button onClick={handleGenerate}>
+            <Button onClick={handleGenerate} className="md:justify-self-end">
               <Search className="h-4 w-4 me-2" />
               <T k="pages.generate" />
             </Button>

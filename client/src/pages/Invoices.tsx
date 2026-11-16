@@ -70,6 +70,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Money, MoneyCell } from "@/components/ui/money";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -200,6 +201,40 @@ const invoiceBrandingSchema = z.object({
 
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
 type InvoiceBrandingFormData = z.infer<typeof invoiceBrandingSchema>;
+
+/** Whole days past the due date for an open (sent / part-paid) invoice; 0 when not overdue. */
+function invoiceOverdueDays(invoice: InvoiceListItem): number {
+  if (invoice.status !== "sent" && invoice.status !== "partial") return 0;
+  if (!invoice.dueDate) return 0;
+  const open = invoice.openBalance ?? Number(invoice.total);
+  if (!(open > 0)) return 0;
+  const dueDay = new Date(invoice.dueDate as unknown as string).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const days = Math.round((Date.parse(today) - Date.parse(dueDay)) / 86400000);
+  return days > 0 ? days : 0;
+}
+
+function OverdueBadge({ invoice }: { invoice: InvoiceListItem }) {
+  const { t } = useTranslation();
+  const days = invoiceOverdueDays(invoice);
+  if (days <= 0) return null;
+  return (
+    <StatusBadge tone="danger" data-testid={`badge-overdue-${invoice.id}`}>
+      {days === 1 ? t["invoices.overdueDay"] : formatMessage(t["invoices.overdueDays"], { days })}
+    </StatusBadge>
+  );
+}
+
+function BalanceLine({ invoice }: { invoice: InvoiceListItem }) {
+  const { t } = useTranslation();
+  const open = invoice.openBalance;
+  if (open === undefined || !(open > 0) || open >= Number(invoice.total)) return null;
+  return (
+    <div className="text-caption font-normal text-muted-foreground">
+      {t["invoices.colBalance"]} <Money amount={open} currency={invoice.currency} />
+    </div>
+  );
+}
 
 export default function Invoices() {
   const { t, locale } = useTranslation();
@@ -1839,7 +1874,8 @@ export default function Invoices() {
                         </Select>
                       </div>
                       {/* E1: compact e-invoice badge on the mobile row-card. */}
-                      <div className="mt-1 [&>button]:ms-0">
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 [&>button]:ms-0">
+                        <OverdueBadge invoice={invoice} />
                         <EInvoiceListCell
                           companyId={selectedCompanyId}
                           invoice={invoice}
@@ -1900,6 +1936,7 @@ export default function Invoices() {
                         <TableHead>{t.invoiceNumber}</TableHead>
                         <TableHead className="w-full">{t.customerName}</TableHead>
                         <TableHead>{t.date}</TableHead>
+                        <TableHead>{t["invoices.colDue"]}</TableHead>
                         <TableHead data-numeric="">{t.total}</TableHead>
                         <TableHead>{t.status}</TableHead>
                         <TableHead data-numeric="">
@@ -1923,8 +1960,12 @@ export default function Invoices() {
                           <TableCell data-nowrap="" className="text-muted-foreground">
                             {formatDate(invoice.date, locale)}
                           </TableCell>
+                          <TableCell data-nowrap="" className="text-muted-foreground">
+                            {invoice.dueDate ? formatDate(invoice.dueDate, locale) : "—"}
+                          </TableCell>
                           <TableCell data-numeric="" className="font-medium">
                             <Money amount={Number(invoice.total)} currency={invoice.currency} />
+                            <BalanceLine invoice={invoice} />
                           </TableCell>
                           <TableCell data-nowrap="">
                             <Select
@@ -1982,6 +2023,7 @@ export default function Invoices() {
                                 </SelectItem>
                               </SelectContent>
                             </Select>
+                            <OverdueBadge invoice={invoice} />
                             {/* E1: two-track e-invoice status; opens the status sheet. */}
                             <EInvoiceListCell
                               companyId={selectedCompanyId}
@@ -2077,7 +2119,7 @@ export default function Invoices() {
                       emptyState={
                         <TableBody>
                           <TableRow>
-                            <TableCell colSpan={6} className="p-0">
+                            <TableCell colSpan={7} className="p-0">
                               <EmptyState
                                 icon={FileText}
                                 title={
@@ -2962,13 +3004,13 @@ function VirtualizedInvoiceRows({
     <TableBody>
       {paddingTop > 0 && (
         <tr aria-hidden="true">
-          <td colSpan={6} style={{ height: paddingTop, padding: 0, border: 0 }} />
+          <td colSpan={7} style={{ height: paddingTop, padding: 0, border: 0 }} />
         </tr>
       )}
       {virtualItems.map((virtualRow) => renderRow(invoices[virtualRow.index]))}
       {paddingBottom > 0 && (
         <tr aria-hidden="true">
-          <td colSpan={6} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+          <td colSpan={7} style={{ height: paddingBottom, padding: 0, border: 0 }} />
         </tr>
       )}
     </TableBody>

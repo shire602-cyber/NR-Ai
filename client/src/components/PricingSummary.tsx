@@ -1,3 +1,4 @@
+import { formatMoneyText } from "@/lib/format-money";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,7 @@ export function PricingSummary() {
     monthly: locale === "en" ? "Monthly" : "شهري",
     yearly: locale === "en" ? "Yearly" : "سنوي",
     save20: locale === "en" ? "Save 20%" : "وفّر 20%",
-    perMonth: locale === "en" ? "/mo" : "/شهر",
+    perMonth: locale === "en" ? "/mo" : "/ شهريًا",
     free: locale === "en" ? "Free" : "مجاني",
     viewAll: locale === "en" ? "View Full Pricing" : "عرض جميع الأسعار",
     recommended: locale === "en" ? "Recommended" : "موصى به",
@@ -123,7 +124,8 @@ export function PricingSummary() {
     },
   ];
 
-  const formatPrice = (price: number) => (price === 0 ? t.free : `AED ${price}`);
+  const formatPrice = (price: number) =>
+    price === 0 ? t.free : formatMoneyText(price, "AED", locale, { fractionDigits: 0 });
 
   return (
     <div className={isRTL ? "rtl" : "ltr"} dir={isRTL ? "rtl" : "ltr"}>
@@ -177,9 +179,7 @@ export function PricingSummary() {
                   }`}
                 >
                   {/* Top accent bar */}
-                  <div
-                    className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`}
-                  />
+                  <div className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`} />
 
                   <CardHeader className="pb-3">
                     {/* Badge */}
@@ -235,9 +235,7 @@ export function PricingSummary() {
                         <li key={idx} className="flex items-start gap-2 text-sm">
                           <Check
                             className={`h-4 w-4 mt-0.5 shrink-0 ${
-                              plan.highlight
-                                ? "text-success "
-                                : "text-muted-foreground"
+                              plan.highlight ? "text-success " : "text-muted-foreground"
                             }`}
                           />
                           <span>{item}</span>
@@ -276,10 +274,7 @@ export function PricingSummary() {
       {/* View all link */}
       <div className="text-center mt-8">
         <Link href="/pricing">
-          <Button
-            variant="ghost"
-            className="text-success hover:text-success "
-          >
+          <Button variant="ghost" className="text-success hover:text-success ">
             {t.viewAll}
             <ArrowRight className="h-4 w-4 ms-1" />
           </Button>

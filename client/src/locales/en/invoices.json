@@ -81,5 +81,9 @@
   "invoices.deleteTitle": "Delete invoice {number}?",
   "invoices.deleteBody": "This permanently deletes the invoice. This cannot be undone.",
   "invoices.einvoiceShort": "E-invoice",
-  "invoices.exporting": "Exporting…"
+  "invoices.exporting": "Exporting…",
+  "invoices.colDue": "Due",
+  "invoices.colBalance": "Balance",
+  "invoices.overdueDays": "Overdue {days} days",
+  "invoices.overdueDay": "Overdue 1 day"
 }

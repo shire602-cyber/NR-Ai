@@ -1,3 +1,4 @@
+import { formatAedText } from "@/lib/format";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -91,12 +92,7 @@ interface StaffMember {
 type ClientEditData = Partial<Company> & { serviceScope?: ClientServiceCode[] };
 
 function formatAed(amount: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return formatAedText(amount);
 }
 
 const MONTH_OPTIONS = [

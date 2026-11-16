@@ -1,3 +1,4 @@
+import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import {
   FormActions,
@@ -713,14 +714,17 @@ export default function Quotes() {
             {(quotes ?? []).map((quote) => (
               <TableRow key={quote.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
-                  <span dir="ltr" className="[unicode-bidi:isolate]">
-                    {quote.number}
-                  </span>
+                  <MiddleTruncate text={String(quote.number ?? "")} />
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title" dir="auto">
                   {quote.customerName}
                 </TableCell>
-                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                <TableCell
+                  data-nowrap=""
+                  data-cell="meta"
+                  data-keep=""
+                  className="text-muted-foreground"
+                >
                   {formatDate(quote.date, locale)}
                 </TableCell>
                 <TableCell data-nowrap="" className="text-muted-foreground">
