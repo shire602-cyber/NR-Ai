@@ -1027,5 +1027,13 @@
   "pageLabels.companySettings.invalidLogo": "شعار غير صالح",
   "pageLabels.companySettings.logoUploaded": "تم رفع الشعار",
   "pageLabels.companySettings.logoUploadFailed": "تعذّر رفع الشعار",
-  "pageLabels.companySettings.requiredMark": "مطلوب"
+  "pageLabels.companySettings.requiredMark": "مطلوب",
+  "pageLabels.priorityHigh": "مرتفعة",
+  "pageLabels.priorityLow": "منخفضة",
+  "pageLabels.notificationOpen": "فتح",
+  "pageLabels.notificationMarkRead": "تعليم كمقروء",
+  "pageLabels.notificationDismiss": "تجاهل",
+  "pageLabels.notificationsPageTitle": "الإشعارات والأخبار",
+  "pageLabels.notificationsPageDesc": "تابع المواعيد النهائية والتذكيرات والتغييرات التنظيمية",
+  "pageLabels.notificationsTab": "الإشعارات"
 }

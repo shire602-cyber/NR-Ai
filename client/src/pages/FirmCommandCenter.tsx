@@ -6,12 +6,14 @@
  */
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   AlertTriangle,
   ArrowDownRight,
+  ArrowRight,
   ArrowUpRight,
   Bell,
   CheckCircle2,
@@ -221,6 +223,7 @@ function MetricCard({
 export default function FirmCommandCenter() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const [search, setSearch] = useState("");
@@ -431,9 +434,9 @@ export default function FirmCommandCenter() {
             data-testid="button-refresh-alerts"
           >
             {refreshAlerts.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
             ) : (
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className="w-4 h-4 me-2" />
             )}
             Refresh alerts
           </Button>
@@ -476,7 +479,9 @@ export default function FirmCommandCenter() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold">{summary?.averageHealthScore ?? "—"}</div>
+            <div className="text-h1 font-semibold tabular-nums">
+              {summary?.averageHealthScore ?? "—"}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">across all managed clients</p>
           </CardContent>
         </Card>
@@ -488,7 +493,9 @@ export default function FirmCommandCenter() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold text-destructive">
+            <div
+              className={`text-h1 font-semibold tabular-nums ${summary?.criticalAlertCount ? "text-danger" : "text-foreground"}`}
+            >
               {summary?.criticalAlertCount ?? "—"}
             </div>
           </CardContent>
@@ -501,7 +508,7 @@ export default function FirmCommandCenter() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold text-warning">
+            <div className="text-h1 font-semibold tabular-nums">
               {summary?.warningAlertCount ?? "—"}
             </div>
           </CardContent>
@@ -563,7 +570,7 @@ export default function FirmCommandCenter() {
               {selectedCount > 0 && (
                 <div className="flex items-center gap-2 mb-3 p-3 rounded-md bg-muted">
                   <span className="text-sm font-medium">{selectedCount} selected</span>
-                  <div className="ml-auto flex gap-2">
+                  <div className="ms-auto flex gap-2">
                     <BatchActionButton
                       label="Run VAT calc"
                       icon={Calculator}
@@ -607,10 +614,10 @@ export default function FirmCommandCenter() {
                     <TableHead>
                       <T k="pages.rating" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.revenue" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.overdueAr" />
                     </TableHead>
                     <TableHead>VAT</TableHead>
@@ -635,25 +642,33 @@ export default function FirmCommandCenter() {
                         />
                       </TableCell>
                       <TableCell className="font-medium">{c.companyName}</TableCell>
-                      <TableCell className="font-mono">{c.score}</TableCell>
+                      <TableCell className="tabular-nums">{c.score}</TableCell>
                       <TableCell>
-                        <Badge className={ratingColor(c.rating)}>{c.rating}</Badge>
+                        <Badge className={ratingColor(c.rating)}>
+                          <T
+                            k={`firm.rating${c.rating.charAt(0).toUpperCase()}${c.rating.slice(1)}`}
+                          />
+                        </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{formatAed(c.revenue)}</TableCell>
-                      <TableCell className="text-right">{formatAed(c.overdueBalance)}</TableCell>
+                      <TableCell data-numeric>{formatAed(c.revenue)}</TableCell>
+                      <TableCell data-numeric>{formatAed(c.overdueBalance)}</TableCell>
                       <TableCell>
                         {c.factors.vatOverdue ? (
-                          <Badge variant="destructive">
+                          <Badge variant="danger">
                             <T k="pages.overdue" />
                           </Badge>
                         ) : (
-                          <Badge variant="secondary">OK</Badge>
+                          <Badge variant="success">
+                            <T k="firm.vatOk" />
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {c.factors.daysSinceActivity === null
                           ? "—"
-                          : `${c.factors.daysSinceActivity}d ago`}
+                          : formatMessage(t["firm.daysAgo"], {
+                              days: c.factors.daysSinceActivity,
+                            })}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -662,7 +677,8 @@ export default function FirmCommandCenter() {
                           onClick={() => navigate(`/firm/clients/${c.companyId}`)}
                           data-testid={`button-jump-${c.companyId}`}
                         >
-                          Open →
+                          <T k="pages.open" />
+                          <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -744,7 +760,7 @@ export default function FirmCommandCenter() {
                           disabled={resolveAlert.isPending}
                           data-testid={`button-resolve-${a.id}`}
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> <T k="pages.resolve" />
+                          <CheckCircle2 className="w-4 h-4 me-1" /> <T k="pages.resolve" />
                         </Button>
                       )}
                     </div>
@@ -793,7 +809,7 @@ export default function FirmCommandCenter() {
                     <TableHead>
                       <T k="pages.email" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.clients" />
                     </TableHead>
                     <TableHead>
@@ -806,10 +822,10 @@ export default function FirmCommandCenter() {
                     <TableRow key={w.userId}>
                       <TableCell className="font-medium">{w.userName}</TableCell>
                       <TableCell className="text-muted-foreground">{w.userEmail}</TableCell>
-                      <TableCell className="text-right">{w.clientCount}</TableCell>
+                      <TableCell data-numeric>{w.clientCount}</TableCell>
                       <TableCell>
                         {Object.entries(w.rolesByName).map(([role, n]) => (
-                          <Badge key={role} variant="outline" className="mr-1">
+                          <Badge key={role} variant="outline" className="me-1">
                             {role} × {n}
                           </Badge>
                         ))}
@@ -915,9 +931,9 @@ function BatchActionButton({
           data-testid={`button-batch-${label.toLowerCase().replace(/\s+/g, "-")}`}
         >
           {pending ? (
-            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            <Loader2 className="w-4 h-4 me-1 animate-spin" />
           ) : (
-            <Icon className="w-4 h-4 mr-1" />
+            <Icon className="w-4 h-4 me-1" />
           )}
           {label}
         </Button>

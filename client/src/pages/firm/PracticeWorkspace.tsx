@@ -720,7 +720,7 @@ export default function PracticeWorkspace() {
   const membership = context?.membership ?? null;
   const canWrite = (membership?.permissions ?? []).some((p) => !p.endsWith(".read"));
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
         icon={Briefcase}
         title={dict["firm.practiceWorkspace"]}

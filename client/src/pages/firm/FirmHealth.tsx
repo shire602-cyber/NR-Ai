@@ -1,9 +1,9 @@
 import { T } from "@/components/layout/T";
+import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -163,11 +163,11 @@ function SortIcon({
   sortField: SortField;
   sortDir: SortDir;
 }) {
-  if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ml-1 text-muted-foreground" />;
+  if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ms-1 text-muted-foreground" />;
   return sortDir === "asc" ? (
-    <ChevronUp className="w-3 h-3 ml-1" />
+    <ChevronUp className="w-3 h-3 ms-1" />
   ) : (
-    <ChevronDown className="w-3 h-3 ml-1" />
+    <ChevronDown className="w-3 h-3 ms-1" />
   );
 }
 
@@ -227,66 +227,54 @@ export default function FirmHealth() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Activity className="w-6 h-6 text-warning" />
-          {t.healthDashboard}
-        </h1>
-        <p className="text-muted-foreground mt-1">{t.healthDashboardDesc}</p>
-      </div>
+      <PageHeader eyebrow="Firm" title={t.healthDashboard} description={t.healthDashboardDesc} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-small font-medium text-muted-foreground">
               {t.totalClients}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{summary?.totalClients ?? 0}</p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.totalClients ?? 0}</p>
           </CardContent>
         </Card>
 
-        <Card className="border-success/30 bg-success-subtle/40 ">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-success flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4" />
+            <CardTitle className="flex items-center gap-1.5 text-small font-medium text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
               {t.healthy}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-success ">
-              {summary?.healthy ?? 0}
-            </p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.healthy ?? 0}</p>
           </CardContent>
         </Card>
 
-        <Card className="border-warning/30 bg-warning-subtle/40 ">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-warning flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4" />
+            <CardTitle className="flex items-center gap-1.5 text-small font-medium text-muted-foreground">
+              <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
               {t.needsAttention}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-warning ">
-              {summary?.attention ?? 0}
-            </p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.attention ?? 0}</p>
           </CardContent>
         </Card>
 
-        <Card className="border-destructive/30 bg-danger-subtle/40 ">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-destructive flex items-center gap-1.5">
-              <XCircle className="w-4 h-4" />
+            <CardTitle className="flex items-center gap-1.5 text-small font-medium text-muted-foreground">
+              <XCircle className="h-4 w-4 text-danger" aria-hidden />
               {t.critical}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-destructive ">
-              {summary?.critical ?? 0}
-            </p>
+            <p className="text-h1 font-semibold tabular-nums">{summary?.critical ?? 0}</p>
           </CardContent>
         </Card>
       </div>
@@ -444,9 +432,7 @@ export default function FirmHealth() {
                     <TrafficDot status={dl.status} />
                     <div>
                       <p className="font-medium text-sm">{dl.companyName}</p>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {dl.type}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{dl.type}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">

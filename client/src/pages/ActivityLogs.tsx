@@ -124,24 +124,42 @@ export default function ActivityLogs() {
   const getActionBadge = (action: string) => {
     switch (action) {
       case "create":
-        return <Badge className="bg-success/10 text-success border-success/20"><T k="pages.create" /></Badge>;
+        return (
+          <Badge className="bg-success/10 text-success border-success/20">
+            <T k="pages.create" />
+          </Badge>
+        );
       case "update":
-        return <Badge className="bg-info/10 text-info border-info/20"><T k="pages.update" /></Badge>;
+        return (
+          <Badge className="bg-info/10 text-info border-info/20">
+            <T k="pages.update" />
+          </Badge>
+        );
       case "delete":
-        return <Badge variant="destructive"><T k="pages.delete" /></Badge>;
+        return (
+          <Badge variant="destructive">
+            <T k="pages.delete" />
+          </Badge>
+        );
       case "view":
         return <Badge variant="secondary">View</Badge>;
       case "login":
         return (
-          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20"><T k="pages.login" /></Badge>
+          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">
+            <T k="pages.login" />
+          </Badge>
         );
       case "logout":
         return (
-          <Badge className="bg-warning/10 text-warning border-warning/20"><T k="pages.logout" /></Badge>
+          <Badge className="bg-warning/10 text-warning border-warning/20">
+            <T k="pages.logout" />
+          </Badge>
         );
       case "invite":
         return (
-          <Badge className="bg-info/10 text-info border-info/20"><T k="pages.invite" /></Badge>
+          <Badge className="bg-info/10 text-info border-info/20">
+            <T k="pages.invite" />
+          </Badge>
         );
       default:
         return <Badge variant="outline">{action}</Badge>;
@@ -187,7 +205,7 @@ export default function ActivityLogs() {
               <T k="security.auditVerify" />
             </Button>
             <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 me-2" />
               <T k="pages.exportLogs" />
             </Button>
           </div>
@@ -213,12 +231,12 @@ export default function ActivityLogs() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4 flex-1 min-w-[300px]">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search activities..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-logs"
                 />
               </div>
@@ -229,14 +247,28 @@ export default function ActivityLogs() {
                   <SelectValue placeholder="Action" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all"><T k="pages.allActions" /></SelectItem>
-                  <SelectItem value="create"><T k="pages.create" /></SelectItem>
-                  <SelectItem value="update"><T k="pages.update" /></SelectItem>
-                  <SelectItem value="delete"><T k="pages.delete" /></SelectItem>
+                  <SelectItem value="all">
+                    <T k="pages.allActions" />
+                  </SelectItem>
+                  <SelectItem value="create">
+                    <T k="pages.create" />
+                  </SelectItem>
+                  <SelectItem value="update">
+                    <T k="pages.update" />
+                  </SelectItem>
+                  <SelectItem value="delete">
+                    <T k="pages.delete" />
+                  </SelectItem>
                   <SelectItem value="view">View</SelectItem>
-                  <SelectItem value="login"><T k="pages.login" /></SelectItem>
-                  <SelectItem value="logout"><T k="pages.logout" /></SelectItem>
-                  <SelectItem value="invite"><T k="pages.invite" /></SelectItem>
+                  <SelectItem value="login">
+                    <T k="pages.login" />
+                  </SelectItem>
+                  <SelectItem value="logout">
+                    <T k="pages.logout" />
+                  </SelectItem>
+                  <SelectItem value="invite">
+                    <T k="pages.invite" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Select value={entityFilter} onValueChange={setEntityFilter}>
@@ -244,13 +276,27 @@ export default function ActivityLogs() {
                   <SelectValue placeholder="Entity Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all"><T k="pages.allEntities" /></SelectItem>
-                  <SelectItem value="user"><T k="pages.users" /></SelectItem>
-                  <SelectItem value="company"><T k="pages.companies" /></SelectItem>
-                  <SelectItem value="document"><T k="pages.documents" /></SelectItem>
-                  <SelectItem value="invoice"><T k="pages.invoices" /></SelectItem>
-                  <SelectItem value="journal_entry"><T k="pages.journalEntries" /></SelectItem>
-                  <SelectItem value="invitation"><T k="pages.invitations" /></SelectItem>
+                  <SelectItem value="all">
+                    <T k="pages.allEntities" />
+                  </SelectItem>
+                  <SelectItem value="user">
+                    <T k="pages.users" />
+                  </SelectItem>
+                  <SelectItem value="company">
+                    <T k="pages.companies" />
+                  </SelectItem>
+                  <SelectItem value="document">
+                    <T k="pages.documents" />
+                  </SelectItem>
+                  <SelectItem value="invoice">
+                    <T k="pages.invoices" />
+                  </SelectItem>
+                  <SelectItem value="journal_entry">
+                    <T k="pages.journalEntries" />
+                  </SelectItem>
+                  <SelectItem value="invitation">
+                    <T k="pages.invitations" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Badge variant="secondary">{filteredLogs.length} entries</Badge>
@@ -263,12 +309,22 @@ export default function ActivityLogs() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]"></TableHead>
-                  <TableHead><T k="pages.description" /></TableHead>
-                  <TableHead><T k="pages.action" /></TableHead>
-                  <TableHead><T k="pages.entity" /></TableHead>
+                  <TableHead>
+                    <T k="pages.description" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.action" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.entity" />
+                  </TableHead>
                   <TableHead>User</TableHead>
-                  <TableHead><T k="pages.client" /></TableHead>
-                  <TableHead><T k="pages.dateTime" /></TableHead>
+                  <TableHead>
+                    <T k="pages.client" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.dateTime" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

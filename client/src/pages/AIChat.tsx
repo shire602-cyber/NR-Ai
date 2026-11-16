@@ -340,7 +340,7 @@ export default function AIChat() {
   const isPending = streamMutation.isPending || nonStreamMutation.isPending;
 
   return (
-    <div className="container mx-auto p-4 max-w-6xl">
+    <div className="mx-auto max-w-6xl">
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)]">
         {/* Main Chat Area */}
         <Card className="flex-1 flex flex-col animate-fade-in">
@@ -351,17 +351,17 @@ export default function AIChat() {
                 <CardTitle>
                   <T k="pageLabels.aIAssistant" />
                 </CardTitle>
-                <Badge variant="outline" className="ml-2">
+                <Badge variant="outline" className="ms-2">
                   {model}
                 </Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
-                  <History className="h-4 w-4 mr-2" />
+                  <History className="h-4 w-4 me-2" />
                   <T k="pages.history" />
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowSettings(!showSettings)}>
-                  <Settings className="h-4 w-4 mr-2" />
+                  <Settings className="h-4 w-4 me-2" />
                   <T k="pages.settings" />
                 </Button>
               </div>

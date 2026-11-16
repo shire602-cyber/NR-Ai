@@ -33,7 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useTranslation } from "@/lib/i18n";
 import { statementUrl, type PartyKind } from "./partyStatementUrl";
 
@@ -64,7 +64,7 @@ interface Statement {
 }
 
 export default function PartyStatements() {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [kind, setKind] = useState<PartyKind>("customer");
@@ -223,8 +223,8 @@ export default function PartyStatements() {
                 <div key={section.currency} className="space-y-2">
                   <p className="text-sm font-medium" dir="ltr">
                     {section.currency} ·{" "}
-                    {formatCurrency(section.openingBalance, section.currency, locale)} →{" "}
-                    {formatCurrency(section.closingBalance, section.currency, locale)}
+                    <Money amount={section.openingBalance} currency={section.currency} /> →{" "}
+                    <Money amount={section.closingBalance} currency={section.currency} />
                   </p>
                   <Table>
                     <TableHeader>
@@ -235,13 +235,13 @@ export default function PartyStatements() {
                         <TableHead>
                           <T k="reportCenter.partyStatementReference" />
                         </TableHead>
-                        <TableHead className="text-end">
+                        <TableHead data-numeric>
                           <T k="reportCenter.partyStatementDebit" />
                         </TableHead>
-                        <TableHead className="text-end">
+                        <TableHead data-numeric>
                           <T k="reportCenter.partyStatementCredit" />
                         </TableHead>
-                        <TableHead className="text-end">
+                        <TableHead data-numeric>
                           <T k="reportCenter.partyStatementBalance" />
                         </TableHead>
                       </TableRow>
@@ -254,13 +254,13 @@ export default function PartyStatements() {
                             {line.reference}
                             {line.description ? ` · ${line.description}` : ""}
                           </TableCell>
-                          <TableCell className="text-end tabular-nums">
+                          <TableCell data-numeric className=" tabular-nums">
                             {line.debit ? line.debit.toFixed(2) : ""}
                           </TableCell>
-                          <TableCell className="text-end tabular-nums">
+                          <TableCell data-numeric className=" tabular-nums">
                             {line.credit ? line.credit.toFixed(2) : ""}
                           </TableCell>
-                          <TableCell className="text-end tabular-nums">
+                          <TableCell data-numeric className=" tabular-nums">
                             {line.balance.toFixed(2)}
                           </TableCell>
                         </TableRow>

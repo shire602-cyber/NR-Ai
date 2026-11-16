@@ -19,6 +19,9 @@ const EYEBROW_KEYS: Record<string, string> = {
   Compliance: "eyebrowCompliance",
   Purchases: "eyebrowPurchases",
   Operations: "eyebrowOperations",
+  Reports: "eyebrowReports",
+  "HR & Payroll": "eyebrowPayroll",
+  "AI hub": "eyebrowAi",
 };
 
 interface PageHeaderProps {

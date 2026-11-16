@@ -14,11 +14,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function TrialBalanceTab() {
-  const { dateRange, locale, t, trialBalance, trialBalanceLoading, trialBalanceSummary } =
+  const { dateRange, t, trialBalance, trialBalanceLoading, trialBalanceSummary } =
     useReportsPageContext();
   return (
     <>
@@ -40,14 +40,13 @@ export default function TrialBalanceTab() {
             ) : (
               <div className="space-y-1">
                 <div
-                  className="font-mono text-2xl font-bold"
+                  className="tabular-nums text-2xl font-bold"
                   data-testid="text-trial-balance-difference"
                 >
-                  {formatCurrency(
-                    trialBalance?.totals?.difference ?? 0,
-                    trialBalance?.reportCurrency ?? "AED",
-                    locale
-                  )}
+                  <Money
+                    amount={trialBalance?.totals?.difference ?? 0}
+                    currency={trialBalance?.reportCurrency ?? "AED"}
+                  />
                 </div>
                 <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
                   {trialBalanceSummary.isBalanced ? "Balanced" : "Needs review"}
@@ -70,7 +69,7 @@ export default function TrialBalanceTab() {
             {trialBalanceLoading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
+              <div className="tabular-nums text-2xl font-bold">
                 {trialBalanceSummary.activeAccounts}
               </div>
             )}
@@ -90,7 +89,7 @@ export default function TrialBalanceTab() {
             {trialBalanceLoading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
+              <div className="tabular-nums text-2xl font-bold">
                 {trialBalanceSummary.foreignCurrencyAccounts}
               </div>
             )}
@@ -129,13 +128,13 @@ export default function TrialBalanceTab() {
                       <T k="reportCenter.account" />
                     </TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.debit" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.credit" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.balance" />
                     </TableHead>
                     <TableHead>
@@ -146,7 +145,7 @@ export default function TrialBalanceTab() {
                 <TableBody>
                   {trialBalance.rows.map((row) => (
                     <TableRow key={row.accountId}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                      <TableCell className="tabular-nums text-xs text-muted-foreground">
                         {row.accountCode || "-"}
                       </TableCell>
                       <TableCell className="font-medium">
@@ -157,14 +156,20 @@ export default function TrialBalanceTab() {
                           {row.accountType}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(row.totalDebit ?? 0, trialBalance.reportCurrency, locale)}
+                      <TableCell data-numeric>
+                        <Money
+                          amount={row.totalDebit ?? 0}
+                          currency={trialBalance.reportCurrency}
+                        />
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(row.totalCredit ?? 0, trialBalance.reportCurrency, locale)}
+                      <TableCell data-numeric>
+                        <Money
+                          amount={row.totalCredit ?? 0}
+                          currency={trialBalance.reportCurrency}
+                        />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(row.balance ?? 0, trialBalance.reportCurrency, locale)}
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={row.balance ?? 0} currency={trialBalance.reportCurrency} />
                       </TableCell>
                       <TableCell>
                         {row.hasForeignLines ? (
@@ -179,26 +184,23 @@ export default function TrialBalanceTab() {
                     <TableCell colSpan={3} className="font-semibold">
                       <T k="reportCenter.totals" />
                     </TableCell>
-                    <TableCell className="text-right font-mono font-semibold">
-                      {formatCurrency(
-                        trialBalance.totals?.sumDebits ?? 0,
-                        trialBalance.reportCurrency ?? "AED",
-                        locale
-                      )}
+                    <TableCell data-numeric className=" font-semibold">
+                      <Money
+                        amount={trialBalance.totals?.sumDebits ?? 0}
+                        currency={trialBalance.reportCurrency ?? "AED"}
+                      />
                     </TableCell>
-                    <TableCell className="text-right font-mono font-semibold">
-                      {formatCurrency(
-                        trialBalance.totals?.sumCredits ?? 0,
-                        trialBalance.reportCurrency ?? "AED",
-                        locale
-                      )}
+                    <TableCell data-numeric className=" font-semibold">
+                      <Money
+                        amount={trialBalance.totals?.sumCredits ?? 0}
+                        currency={trialBalance.reportCurrency ?? "AED"}
+                      />
                     </TableCell>
-                    <TableCell className="text-right font-mono font-semibold">
-                      {formatCurrency(
-                        trialBalance.totals?.difference ?? 0,
-                        trialBalance.reportCurrency ?? "AED",
-                        locale
-                      )}
+                    <TableCell data-numeric className=" font-semibold">
+                      <Money
+                        amount={trialBalance.totals?.difference ?? 0}
+                        currency={trialBalance.reportCurrency ?? "AED"}
+                      />
                     </TableCell>
                     <TableCell />
                   </TableRow>

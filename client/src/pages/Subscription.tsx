@@ -8,6 +8,8 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatMoneyText } from "@/lib/format-money";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -144,11 +146,7 @@ const PLANS = [
 
 /** Whole-number price in AED for the active locale ("AED 49" / "‏49 د.إ.‏"). */
 function formatCurrency0(amount: number, locale: string): string {
-  return new Intl.NumberFormat(locale === "ar" ? "ar-AE" : "en-AE", {
-    style: "currency",
-    currency: "AED",
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return formatMoneyText(amount, "AED", locale, { fractionDigits: 0 });
 }
 
 function UsageMeter({
@@ -243,7 +241,7 @@ export default function Subscription() {
   const currentPlan = PLANS.find((p) => p.id === tierName) || PLANS[0];
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="space-y-6">
       <PageHeader
         eyebrow={t["pages.companyProfileEyebrow"]}
         title={t["pages.subscriptionPageTitle"]}
@@ -263,7 +261,7 @@ export default function Subscription() {
                 variant={tierName === "free" ? "secondary" : "default"}
                 className={tierName !== "free" ? "" : ""}
               >
-                <Star className="w-3 h-3 mr-1" />
+                <Star className="w-3 h-3 me-1" />
                 {t[currentPlan.name]}
               </Badge>
             </div>
@@ -275,7 +273,7 @@ export default function Subscription() {
                 <span className="text-muted-foreground">
                   <T k="banking.common.status" />
                 </span>
-                <Badge variant={subscription.status === "active" ? "default" : "destructive"}>
+                <Badge dot variant={subscription.status === "active" ? "success" : "danger"}>
                   {t[`pages.subscriptionStatus_${subscription.status}`] ?? subscription.status}
                 </Badge>
               </div>
@@ -297,9 +295,7 @@ export default function Subscription() {
                   <T k="pageLabels.currentPeriodEnds" />
                 </span>
                 <span className="font-medium">
-                  {new Date(subscription.currentPeriodEnd).toLocaleDateString(
-                    locale === "ar" ? "ar-AE" : "en-AE"
-                  )}
+                  {formatDisplayDate(subscription.currentPeriodEnd, locale)}
                 </span>
               </div>
             )}
@@ -311,9 +307,9 @@ export default function Subscription() {
                 disabled={portalMutation.isPending}
               >
                 {portalMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <ExternalLink className="w-4 h-4 mr-2" />
+                  <ExternalLink className="w-4 h-4 me-2" />
                 )}
                 {t["pages.subscriptionManageBilling"]}
               </Button>
@@ -413,7 +409,7 @@ export default function Subscription() {
               }`}
             >
               {plan.popular && (
-                <div className="absolute top-0 right-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
+                <div className="absolute top-0 end-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
                   <T k="pageLabels.mostPopular" />
                 </div>
               )}
@@ -479,9 +475,9 @@ export default function Subscription() {
                       disabled={checkoutMutation.isPending}
                     >
                       {checkoutMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
                       ) : (
-                        <CreditCard className="w-4 h-4 mr-2" />
+                        <CreditCard className="w-4 h-4 me-2" />
                       )}
                       {plan.monthlyPrice === 0
                         ? t["pages.subscriptionDowngrade"]
@@ -513,7 +509,7 @@ export default function Subscription() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-3 pr-4 font-medium text-muted-foreground">
+                  <th className="text-start py-3 pe-4 font-medium text-muted-foreground">
                     <T k="pageLabels.feature" />
                   </th>
                   {PLANS.map((plan) => (
@@ -594,7 +590,7 @@ export default function Subscription() {
                   },
                 ].map((row) => (
                   <tr key={row.label} className="border-b last:border-0">
-                    <td className="py-3 pr-4 text-muted-foreground">{t[row.label]}</td>
+                    <td className="py-3 pe-4 text-muted-foreground">{t[row.label]}</td>
                     {row.values.map((value, i) => (
                       <td key={i} className="text-center py-3 px-4">
                         {typeof value === "boolean" ? (
@@ -656,8 +652,7 @@ function BillingDocuments({ companyId }: { companyId: string }) {
       issuedAt: string;
     }>
   >({ queryKey: ["/api/companies", companyId, "billing", "documents"], retry: false });
-  const money = (fils: number, cur: string) =>
-    `${cur} ${(Number(fils) / 100).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE", { minimumFractionDigits: 2 })}`;
+  const money = (fils: number, cur: string) => formatMoneyText(Number(fils) / 100, cur, locale);
   return (
     <Card>
       <CardHeader>

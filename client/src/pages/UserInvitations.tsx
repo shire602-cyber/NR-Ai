@@ -237,7 +237,7 @@ export default function UserInvitations() {
         description="Invite clients to access their portal"
         actions={
           <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-send-invite">
-            <Mail className="w-4 h-4 mr-2" />
+            <Mail className="w-4 h-4 me-2" />
             <T k="pageLabels.sendInvitation" />
           </Button>
         }
@@ -344,7 +344,7 @@ export default function UserInvitations() {
                 disabled={createInvitationMutation.isPending}
                 data-testid="button-submit-invite"
               >
-                <Send className="w-4 h-4 mr-2" />
+                <Send className="w-4 h-4 me-2" />
                 {createInvitationMutation.isPending ? "Sending..." : "Send Invitation"}
               </Button>
             </DialogFooter>
@@ -390,12 +390,12 @@ export default function UserInvitations() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search by email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-invites"
                 />
               </div>
@@ -443,7 +443,7 @@ export default function UserInvitations() {
                     <T k="pageLabels.expires" />
                   </TableHead>
                   <TableHead>Sent</TableHead>
-                  <TableHead className="text-right">
+                  <TableHead data-numeric>
                     <T k="pages.actions" />
                   </TableHead>
                 </TableRow>
@@ -492,7 +492,7 @@ export default function UserInvitations() {
                           ? format(new Date(invitation.createdAt), "MMM d, yyyy")
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -506,7 +506,7 @@ export default function UserInvitations() {
                           <DropdownMenuContent align="end">
                             {invitation.status === "pending" && !isExpired && (
                               <DropdownMenuItem onClick={() => copyInviteLink(invitation.token)}>
-                                <Copy className="w-4 h-4 mr-2" />
+                                <Copy className="w-4 h-4 me-2" />
                                 <T k="pageLabels.copyInviteLink" />
                               </DropdownMenuItem>
                             )}
@@ -515,7 +515,7 @@ export default function UserInvitations() {
                                 onClick={() => resendInvitationMutation.mutate(invitation.id)}
                                 disabled={resendInvitationMutation.isPending}
                               >
-                                <RefreshCw className="w-4 h-4 mr-2" />
+                                <RefreshCw className="w-4 h-4 me-2" />
                                 <T k="pageLabels.resendInvitation" />
                               </DropdownMenuItem>
                             )}
@@ -527,7 +527,7 @@ export default function UserInvitations() {
                                   onClick={() => revokeInvitationMutation.mutate(invitation.id)}
                                   disabled={revokeInvitationMutation.isPending}
                                 >
-                                  <XCircle className="w-4 h-4 mr-2" />
+                                  <XCircle className="w-4 h-4 me-2" />
                                   <T k="pageLabels.revoke" />
                                 </DropdownMenuItem>
                               </>
@@ -540,7 +540,7 @@ export default function UserInvitations() {
                                 }
                               }}
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
+                              <Trash2 className="w-4 h-4 me-2" />
                               <T k="pages.delete" />
                             </DropdownMenuItem>
                           </DropdownMenuContent>

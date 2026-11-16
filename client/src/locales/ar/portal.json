@@ -118,5 +118,9 @@
   "portal.requestList": "المستندات التي طلبها مكتبك",
   "portal.noRequests": "لم يطلب مكتبك أي مستندات.",
   "portal.requestUpload": "رفع",
-  "portal.requestUploaded": "تم رفع المستند — سيراجعه مكتبك"
+  "portal.requestUploaded": "تم رفع المستند — سيراجعه مكتبك",
+  "portal.invoiceCountOne": "فاتورة واحدة",
+  "portal.invoiceCountMany": "{count} فواتير",
+  "portal.uploadedFiles": "ملفات مرفوعة",
+  "portal.dueOn": "مستحق في {date}"
 }

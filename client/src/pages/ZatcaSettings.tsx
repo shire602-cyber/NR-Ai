@@ -231,7 +231,7 @@ export default function ZatcaSettings() {
   const onboarded = status.data?.onboarded === true;
 
   return (
-    <div className="space-y-6 p-4 md:p-6" dir={lang === "ar" ? "rtl" : "ltr"}>
+    <div className="max-w-narrow space-y-6" dir={lang === "ar" ? "rtl" : "ltr"}>
       <PageHeader
         eyebrow={s.eyebrow}
         title={s.title}

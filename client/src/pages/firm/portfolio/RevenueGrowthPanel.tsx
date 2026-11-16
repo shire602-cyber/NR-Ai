@@ -94,7 +94,7 @@ export function RevenueGrowthPanel({
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
+            <RefreshCw className="w-4 h-4 me-2" />
             <T k="pages.refreshSignals" />
           </Button>
         </div>

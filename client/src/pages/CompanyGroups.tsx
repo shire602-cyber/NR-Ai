@@ -201,7 +201,7 @@ export default function CompanyGroups() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow={tr("eyebrow")}
         title={tr("groupsTitle")}
@@ -510,7 +510,7 @@ export default function CompanyGroups() {
                     <TableHead>{tr("date")}</TableHead>
                     <TableHead>{tr("kind")}</TableHead>
                     <TableHead>{tr("memo")}</TableHead>
-                    <TableHead className="text-end">{tr("debit")}</TableHead>
+                    <TableHead data-numeric>{tr("debit")}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -527,7 +527,7 @@ export default function CompanyGroups() {
                         )}
                       </TableCell>
                       <TableCell>{j.memo ?? ""}</TableCell>
-                      <TableCell className="text-end tabular-nums">
+                      <TableCell data-numeric className=" tabular-nums">
                         {j.lines.reduce((s, l) => s + l.debit, 0).toFixed(2)}
                       </TableCell>
                       <TableCell>

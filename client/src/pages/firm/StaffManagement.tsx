@@ -173,12 +173,12 @@ export default function StaffManagement() {
 
       {/* Search */}
       <div className="relative w-full sm:max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           placeholder="Search staff by name or email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="ps-9"
         />
       </div>
 
@@ -265,7 +265,7 @@ export default function StaffManagement() {
                         {pendingForMember.length} pending
                       </Badge>
                     )}
-                    <div className="text-right">
+                    <div className="text-end">
                       <p className="text-sm font-medium">
                         {member.assignedClientCount} client
                         {member.assignedClientCount !== 1 ? "s" : ""}
@@ -284,7 +284,7 @@ export default function StaffManagement() {
                 {expanded && (
                   <div className="border-t bg-muted/20">
                     <div className="p-4">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                      <p className="text-xs font-medium text-muted-foreground mb-3">
                         <T k="pages.clientAssignments" />
                       </p>
                       {clients.length === 0 ? (

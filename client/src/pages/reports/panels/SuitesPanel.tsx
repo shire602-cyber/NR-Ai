@@ -121,7 +121,7 @@ export default function SuitesPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.triggerRules" />
                       </div>
-                      <div className="mt-1 font-mono font-medium text-foreground">
+                      <div className="mt-1 tabular-nums font-medium text-foreground">
                         {suite.triggerRules.length}
                       </div>
                     </div>
@@ -137,7 +137,7 @@ export default function SuitesPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.savedViews" />
                       </div>
-                      <div className="mt-1 font-mono font-medium text-foreground">
+                      <div className="mt-1 tabular-nums font-medium text-foreground">
                         {suite.savedViews.length}
                       </div>
                     </div>
@@ -291,7 +291,7 @@ export default function SuitesPanel() {
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md border p-2">
                       <div className="text-muted-foreground">KPIs</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {brief.kpiMetricIds.length}
                       </div>
                     </div>
@@ -299,7 +299,7 @@ export default function SuitesPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.narratives" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {brief.narrativeSections.length}
                       </div>
                     </div>
@@ -307,14 +307,14 @@ export default function SuitesPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.dimensions" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {brief.dimensionBreakdowns.length}
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.kpiWidgets" />
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -335,7 +335,7 @@ export default function SuitesPanel() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.narrativeSections" />
                     </div>
                     {brief.narrativeSections.map((section) => (
@@ -359,7 +359,7 @@ export default function SuitesPanel() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.dimensionalLenses" />
                     </div>
                     <div className="grid gap-2">
@@ -463,7 +463,7 @@ export default function SuitesPanel() {
                       <div className="font-medium text-foreground">
                         <T k="reportCenter.readyReports" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {template.readyCount}/{template.reports.length}
                       </div>
                     </div>

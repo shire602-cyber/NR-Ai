@@ -118,13 +118,13 @@ export default function PortalStatements() {
                   <TableHead>
                     <T k="portal.reference" />
                   </TableHead>
-                  <TableHead className="text-end">
+                  <TableHead data-numeric>
                     <T k="portal.debit" />
                   </TableHead>
-                  <TableHead className="text-end">
+                  <TableHead data-numeric>
                     <T k="portal.credit" />
                   </TableHead>
-                  <TableHead className="text-end">
+                  <TableHead data-numeric>
                     <T k="portal.balance" />
                   </TableHead>
                 </TableRow>
@@ -139,13 +139,13 @@ export default function PortalStatements() {
                         · <T k={`portal.lineType.${l.type}`} />
                       </span>
                     </TableCell>
-                    <TableCell className="text-end tabular-nums">
+                    <TableCell data-numeric className=" tabular-nums">
                       {l.debit ? money(l.debit, s.currency) : ""}
                     </TableCell>
-                    <TableCell className="text-end tabular-nums">
+                    <TableCell data-numeric className=" tabular-nums">
                       {l.credit ? money(l.credit, s.currency) : ""}
                     </TableCell>
-                    <TableCell className="text-end tabular-nums">
+                    <TableCell data-numeric className=" tabular-nums">
                       {money(l.balance, s.currency)}
                     </TableCell>
                   </TableRow>

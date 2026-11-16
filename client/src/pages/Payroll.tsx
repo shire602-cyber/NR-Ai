@@ -1,6 +1,7 @@
 import { T } from "@/components/layout/T";
 import { Banknote, CalendarDays, FileText, Landmark, LogOut, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/page-header";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useHr } from "./payroll/shared";
 import { EmployeesTab } from "./payroll/EmployeesTab";
@@ -43,16 +44,13 @@ export default function Payroll() {
   ];
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div>
-        <h1 className="text-2xl font-bold">{tx("hr.title")}</h1>
-        <p className="text-muted-foreground">{tx("hr.subtitle")}</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader eyebrow="HR & Payroll" title={tx("hr.title")} description={tx("hr.subtitle")} />
       <Tabs defaultValue="runs" className="space-y-4">
-        <TabsList className="flex h-auto flex-wrap">
+        <TabsList>
           {tabs.map(({ value, label, icon: Icon }) => (
-            <TabsTrigger key={value} value={value} className="flex items-center gap-2">
-              <Icon className="h-4 w-4" />
+            <TabsTrigger key={value} value={value}>
+              <Icon aria-hidden />
               {tx(label)}
             </TabsTrigger>
           ))}

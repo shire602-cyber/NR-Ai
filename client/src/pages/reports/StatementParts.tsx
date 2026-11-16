@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { ReportDataBasis } from "@/lib/reportCatalog";
 
@@ -68,14 +69,14 @@ function SectionTable({
         <TableBody>
           {section.lines.map((item, index) => (
             <TableRow key={item.accountId ?? `${item.accountCode}-${index}`}>
-              <TableCell className="font-mono text-xs text-muted-foreground">
+              <TableCell className="tabular-nums text-xs text-muted-foreground">
                 {item.accountCode || "-"}
               </TableCell>
               <TableCell>
                 {locale === "ar" && item.accountNameAr ? item.accountNameAr : item.accountName}
               </TableCell>
-              <TableCell className="text-right font-mono font-medium">
-                {formatCurrency(item.amount ?? 0, "AED", locale)}
+              <TableCell data-numeric className=" font-medium">
+                <Money amount={item.amount ?? 0} currency={"AED"} />
               </TableCell>
             </TableRow>
           ))}
@@ -83,8 +84,8 @@ function SectionTable({
             <TableCell colSpan={2} className="font-semibold">
               <T k={totalKey} />
             </TableCell>
-            <TableCell className="text-right font-mono font-semibold">
-              {formatCurrency(section.total, "AED", locale)}
+            <TableCell data-numeric className=" font-semibold">
+              <Money amount={section.total} currency={"AED"} />
             </TableCell>
           </TableRow>
         </TableBody>
@@ -93,22 +94,14 @@ function SectionTable({
   );
 }
 
-function ResultLine({
-  labelKey,
-  value,
-  locale,
-}: {
-  labelKey: string;
-  value: number;
-  locale: string;
-}) {
+function ResultLine({ labelKey, value }: { labelKey: string; value: number; locale?: string }) {
   return (
     <div className="flex justify-between items-center border-t pt-3 font-semibold">
       <span>
         <T k={labelKey} />
       </span>
-      <span className={`font-mono ${value >= 0 ? "text-success" : "text-destructive"}`}>
-        {formatCurrency(value, "AED", locale)}
+      <span className={`tabular-nums ${value >= 0 ? "text-success" : "text-destructive"}`}>
+        <Money amount={value} currency={"AED"} />
       </span>
     </div>
   );
@@ -175,9 +168,9 @@ export function ProfitLossSections({ report }: { report: PlSectionsPayload | und
             <T k="reportCenter.netProfit" />
           </span>
           <span
-            className={`font-mono ${report.netProfit >= 0 ? "text-success" : "text-destructive"}`}
+            className={`tabular-nums ${report.netProfit >= 0 ? "text-success" : "text-destructive"}`}
           >
-            {formatCurrency(report.netProfit, "AED", locale)}
+            <Money amount={report.netProfit} currency={"AED"} />
           </span>
         </div>
       </div>
@@ -230,26 +223,33 @@ export function StatementDownloads({
   kind,
   from,
   to,
+  compact = false,
 }: {
   companyId: string | null | undefined;
   kind: string;
   from?: string;
   to?: string;
+  /** Quiet ghost buttons for dense statement lists. */
+  compact?: boolean;
 }) {
   if (!companyId) return null;
   const base = `/api/companies/${companyId}/reports/statements/${kind}`;
   const range = toQuery({ from, to });
+  const variant = compact ? "ghost" : "outline";
   return (
-    <div className="flex flex-wrap gap-2" data-testid={`statement-downloads-${kind}`}>
-      <Button asChild variant="outline" size="sm">
+    <div
+      className={compact ? "flex shrink-0 gap-1" : "flex flex-wrap gap-2"}
+      data-testid={`statement-downloads-${kind}`}
+    >
+      <Button asChild variant={variant} size="sm" className={compact ? "h-8 px-2.5" : undefined}>
         <a href={apiUrl(`${base}?format=pdf${range}`)} download>
-          <FileText className="w-4 h-4 mr-2" />
+          <FileText className="w-4 h-4 me-1.5" aria-hidden />
           <T k="reportCenter.downloadPdf" />
         </a>
       </Button>
-      <Button asChild variant="outline" size="sm">
+      <Button asChild variant={variant} size="sm" className={compact ? "h-8 px-2.5" : undefined}>
         <a href={apiUrl(`${base}?format=xlsx${range}`)} download>
-          <Download className="w-4 h-4 mr-2" />
+          <Download className="w-4 h-4 me-1.5" aria-hidden />
           <T k="reportCenter.downloadExcel" />
         </a>
       </Button>
@@ -263,7 +263,7 @@ export function DataBasisBadge({ basis }: { basis: ReportDataBasis | undefined }
   if (!basis || basis === "ledger") return null;
   return (
     <Badge
-      variant="warning"
+      variant="neutral"
       data-testid="data-basis-indicator"
       title={
         basis === "documents"
@@ -306,83 +306,90 @@ export function StatementsQuickPanel({
   const range = toQuery({ from, to }).replace(/^&/, "");
   return (
     <section
-      className="space-y-3 rounded-lg border border-border/70 bg-card p-4 shadow-sm"
+      className="overflow-hidden rounded-xl border border-border bg-card shadow-card-soft"
       aria-labelledby="statements-quick-title"
       data-testid="statements-quick-panel"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 id="statements-quick-title" className="text-lg font-semibold">
+      <div className="flex flex-col gap-2 px-5 pt-5 sm:flex-row sm:items-start sm:justify-between md:px-6">
+        <div className="min-w-0">
+          <h2 id="statements-quick-title" className="text-h3 font-semibold text-foreground">
             <T k="reportCenter.statementsAndTax" />
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-0.5 text-small text-muted-foreground">
             <T k="reportCenter.statementsAndTaxHint" />
           </p>
         </div>
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="outline"
+          className="self-start"
           onClick={onShowAdvanced}
           data-testid="button-reports-advanced-tools"
         >
           <T k="reportCenter.advancedTools" />
         </Button>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      {/* One hairline row per statement: name at the start, PDF / Excel at the end. */}
+      <ul className="mt-3 grid grid-cols-1 gap-x-10 px-5 md:px-6 lg:grid-cols-2">
         {QUICK_STATEMENTS.map((s) => (
-          <div
+          <li
             key={s.kind}
-            className="flex items-center justify-between gap-2 rounded-md border p-2"
+            className="flex min-h-12 items-center justify-between gap-3 border-b border-border/70 py-1.5"
           >
-            <span className="text-sm font-medium">
-              <T k={s.labelKey} />
+            <span className="flex min-w-0 items-center gap-2.5 text-body font-medium text-foreground">
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="truncate">
+                <T k={s.labelKey} />
+              </span>
             </span>
-            <StatementDownloads companyId={companyId} kind={s.kind} from={from} to={to} />
-          </div>
+            <StatementDownloads companyId={companyId} kind={s.kind} from={from} to={to} compact />
+          </li>
         ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button asChild size="sm" variant="outline">
-          <a
-            href={apiUrl(
-              `/api/companies/${companyId}/reports/share-pack${range ? `?${range}` : ""}`
-            )}
-            download
-            data-testid="link-accountant-share-pack"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            <T k="reportCenter.accountantPack" />
-          </a>
-        </Button>
-        {from && to ? (
+      </ul>
+      <div className="mt-4 space-y-3 border-t border-border bg-surface-sunken/60 px-5 py-4 md:px-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Button asChild size="sm" variant="outline">
             <a
-              href={apiUrl(`/api/companies/${companyId}/reports/faf?${range}`)}
+              href={apiUrl(
+                `/api/companies/${companyId}/reports/share-pack${range ? `?${range}` : ""}`
+              )}
               download
-              title={t["reportCenter.ftaAuditFileHint"]}
-              data-testid="link-fta-audit-file"
+              data-testid="link-accountant-share-pack"
             >
-              <FileText className="w-4 h-4 mr-2" />
-              <T k="reportCenter.ftaAuditFile" />
+              <Download className="w-4 h-4 me-2" />
+              <T k="reportCenter.accountantPack" />
             </a>
           </Button>
-        ) : null}
-        <span className="text-xs text-muted-foreground">
-          <T k="reportCenter.ftaAuditFileHint" />
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {/* S4 (R12-09): statements of account per customer / supplier (W4-D service). */}
-        <Button asChild size="sm" variant="outline">
-          <Link href="/reports/statements-of-account" data-testid="link-party-statements">
-            <ScrollText className="w-4 h-4 me-2" />
-            <T k="reportCenter.partyStatementsTitle" />
-          </Link>
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          <T k="reportCenter.partyStatementsHint" />
-        </span>
+          {from && to ? (
+            <Button asChild size="sm" variant="outline">
+              <a
+                href={apiUrl(`/api/companies/${companyId}/reports/faf?${range}`)}
+                download
+                title={t["reportCenter.ftaAuditFileHint"]}
+                data-testid="link-fta-audit-file"
+              >
+                <FileText className="w-4 h-4 me-2" />
+                <T k="reportCenter.ftaAuditFile" />
+              </a>
+            </Button>
+          ) : null}
+          <span className="text-caption text-muted-foreground">
+            <T k="reportCenter.ftaAuditFileHint" />
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {/* S4 (R12-09): statements of account per customer / supplier (W4-D service). */}
+          <Button asChild size="sm" variant="outline">
+            <Link href="/reports/statements-of-account" data-testid="link-party-statements">
+              <ScrollText className="w-4 h-4 me-2" />
+              <T k="reportCenter.partyStatementsTitle" />
+            </Link>
+          </Button>
+          <span className="text-caption text-muted-foreground">
+            <T k="reportCenter.partyStatementsHint" />
+          </span>
+        </div>
       </div>
     </section>
   );

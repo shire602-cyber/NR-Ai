@@ -154,7 +154,7 @@ export default function FirmAnalytics() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Firm"
         title={(t as any).firmAnalytics || "Firm Analytics"}
@@ -286,7 +286,7 @@ export default function FirmAnalytics() {
             {/* Top issues */}
             {(health?.topIssues?.length ?? 0) > 0 && (
               <div className="w-full border-t pt-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs font-medium text-muted-foreground">
                   {(t as any).topIssues || "Top Issues"}
                 </p>
                 {health!.topIssues.map((issue) => (
@@ -294,7 +294,7 @@ export default function FirmAnalytics() {
                     <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
                     <span>
                       <span className="font-medium">{ISSUE_LABELS[issue.type] ?? issue.type}</span>
-                      <span className="text-muted-foreground ml-1">
+                      <span className="text-muted-foreground ms-1">
                         — {issue.count} total, {issue.affectedClients} clients
                       </span>
                     </span>
@@ -316,9 +316,7 @@ export default function FirmAnalytics() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <div className="text-center">
-              <div className="text-3xl font-bold text-warning">
-                {utilization?.staffCount ?? 0}
-              </div>
+              <div className="text-3xl font-bold text-warning">{utilization?.staffCount ?? 0}</div>
               <div className="text-sm text-muted-foreground mt-1">
                 {(t as any).totalStaff || "Total Staff"}
               </div>

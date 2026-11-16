@@ -5,18 +5,14 @@ import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar } from "lucid
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
-import { format } from "date-fns";
-import { Loader2 } from "lucide-react";
 
-function formatAed(n: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
+import { Loader2 } from "lucide-react";
+import { Money } from "@/components/ui/money";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 
 function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) {
+  const { t, locale } = useTranslation();
   // Captured once per mount so the countdown is stable across re-renders.
   const [now] = useState(() => Date.now());
   if (!vat)
@@ -36,20 +32,25 @@ function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) 
   }
   if (days < 0)
     return (
-      <Badge variant="destructive">
+      <Badge variant="danger">
         <T k="pages.overdue" />
       </Badge>
     );
   if (days <= 14)
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        Due {format(due, "MMM d")}
+        {formatMessage(t["portal.dueOn"], { date: formatDate(due, locale) })}
       </Badge>
     );
-  return <Badge variant="outline">Due {format(due, "MMM d")}</Badge>;
+  return (
+    <Badge variant="outline">
+      {formatMessage(t["portal.dueOn"], { date: formatDate(due, locale) })}
+    </Badge>
+  );
 }
 
 export default function PortalDashboard() {
+  const { t, locale } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ["portal-dashboard"],
     queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
@@ -84,14 +85,16 @@ export default function PortalDashboard() {
           <CardContent className="pt-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs font-medium text-muted-foreground">
                   <T k="reportCenter.outstanding" />
                 </p>
-                <p className="text-2xl font-bold text-foreground mt-1">
-                  {formatAed(inv.outstandingTotal ?? 0)}
+                <p className="mt-1 text-h2 font-semibold tabular-nums text-foreground">
+                  <Money amount={inv.outstandingTotal ?? 0} currency="AED" />
                 </p>
-                <p className="text-xs text-muted-foreground/70 mt-1">
-                  {inv.outstanding ?? 0} invoice{inv.outstanding !== 1 ? "s" : ""}
+                <p className="mt-1 text-caption text-muted-foreground">
+                  {inv.outstanding === 1
+                    ? t["portal.invoiceCountOne"]
+                    : formatMessage(t["portal.invoiceCountMany"], { count: inv.outstanding ?? 0 })}
                 </p>
               </div>
               <AlertCircle className="w-5 h-5 text-warning mt-1" />
@@ -103,14 +106,16 @@ export default function PortalDashboard() {
           <CardContent className="pt-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs font-medium text-muted-foreground">
                   <T k="pages.totalPaid" />
                 </p>
-                <p className="text-2xl font-bold text-foreground mt-1">
-                  {formatAed(inv.paidTotal ?? 0)}
+                <p className="mt-1 text-h2 font-semibold tabular-nums text-foreground">
+                  <Money amount={inv.paidTotal ?? 0} currency="AED" />
                 </p>
-                <p className="text-xs text-muted-foreground/70 mt-1">
-                  {inv.paid ?? 0} invoice{inv.paid !== 1 ? "s" : ""}
+                <p className="mt-1 text-caption text-muted-foreground">
+                  {inv.paid === 1
+                    ? t["portal.invoiceCountOne"]
+                    : formatMessage(t["portal.invoiceCountMany"], { count: inv.paid ?? 0 })}
                 </p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-success mt-1" />
@@ -122,13 +127,13 @@ export default function PortalDashboard() {
           <CardContent className="pt-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs font-medium text-muted-foreground">
                   <T k="pages.documents" />
                 </p>
-                <p className="text-2xl font-bold text-foreground mt-1">
+                <p className="mt-1 text-h2 font-semibold tabular-nums text-foreground">
                   {data?.documents?.total ?? 0}
                 </p>
-                <p className="text-xs text-muted-foreground/70 mt-1">uploaded files</p>
+                <p className="text-xs text-muted-foreground mt-1">{t["portal.uploadedFiles"]}</p>
               </div>
               <FolderOpen className="w-5 h-5 text-info mt-1" />
             </div>
@@ -139,16 +144,15 @@ export default function PortalDashboard() {
           <CardContent className="pt-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs font-medium text-muted-foreground">
                   <T k="pages.vatStatus" />
                 </p>
                 <div className="mt-2">
                   <VatBadge vat={vatStatus} />
                 </div>
                 {vatStatus?.dueDate && (
-                  <p className="text-xs text-muted-foreground/70 mt-1">
-                    Period end:{" "}
-                    {format(new Date(vatStatus.periodEnd ?? vatStatus.dueDate), "MMM d, yyyy")}
+                  <p className="mt-1 text-caption text-muted-foreground">
+                    Period end: {formatDate(vatStatus.periodEnd ?? vatStatus.dueDate, locale)}
                   </p>
                 )}
               </div>
@@ -178,12 +182,12 @@ export default function PortalDashboard() {
                   <div>
                     <p className="text-sm font-medium text-foreground">{inv.number}</p>
                     <p className="text-xs text-muted-foreground/70">
-                      {inv.date ? format(new Date(inv.date), "MMM d, yyyy") : "—"}
+                      {inv.date ? formatDate(inv.date, locale) : "—"}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className="text-sm font-semibold text-foreground">
-                      {formatAed(Number(inv.amountDue ?? inv.total) || 0)}
+                      <Money amount={Number(inv.amountDue ?? inv.total) || 0} currency="AED" />
                     </p>
                     <Badge
                       variant="outline"

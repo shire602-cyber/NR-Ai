@@ -5,6 +5,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,6 +92,35 @@ type Verification = {
   checked: number;
   firstBroken: { seq: number; reason: string } | null;
 };
+
+/** "Chrome · Linux" from a raw user-agent string (the full string stays in the tooltip). */
+function describeUserAgent(ua: string | null | undefined): string {
+  if (!ua) return "—";
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /OPR\//.test(ua)
+      ? "Opera"
+      : /Firefox\//.test(ua)
+        ? "Firefox"
+        : /Chrome\//.test(ua)
+          ? "Chrome"
+          : /Safari\//.test(ua)
+            ? "Safari"
+            : null;
+  const os = /iPhone|iPad/.test(ua)
+    ? "iOS"
+    : /Android/.test(ua)
+      ? "Android"
+      : /Windows/.test(ua)
+        ? "Windows"
+        : /Mac OS X/.test(ua)
+          ? "macOS"
+          : /Linux/.test(ua)
+            ? "Linux"
+            : null;
+  if (!browser && !os) return ua;
+  return [browser, os].filter(Boolean).join(" · ");
+}
 
 function fmt(date: string | null | undefined, locale: string): string {
   if (!date) return "—";
@@ -259,14 +289,18 @@ export default function SecuritySettings() {
   const mfa = ov?.mfa;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6" data-testid="page-security-settings">
-      <div>
-        <h1 className="text-2xl font-semibold">{t["security.pageTitle"]}</h1>
-        <p className="text-muted-foreground">{t["security.pageSubtitle"]}</p>
-      </div>
+    <div className="max-w-narrow space-y-6" data-testid="page-security-settings">
+      <PageHeader
+        eyebrow="Settings"
+        title={t["security.pageTitle"]}
+        description={t["security.pageSubtitle"]}
+      />
 
       {ov && ov.mfaRequiredByCompanies.length > 0 && (
-        <p className="rounded-md border border-amber-500/50 p-3 text-sm" role="alert">
+        <p
+          className="rounded-lg border border-warning/40 bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
+          role="alert"
+        >
           {t["security.mfaRequiredBy"]}
         </p>
       )}
@@ -432,18 +466,20 @@ export default function SecuritySettings() {
             {(sessions.data?.sessions ?? []).map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-2 py-2">
                 <div className="min-w-0">
-                  <p className="truncate" dir="ltr">
-                    {s.userAgent ?? "—"}
+                  <p className="truncate font-medium" dir="ltr" title={s.userAgent ?? undefined}>
+                    {describeUserAgent(s.userAgent)}
                   </p>
-                  <p className="text-muted-foreground" dir="ltr">
-                    {s.ipAddress ?? "—"} ·{" "}
+                  <p className="text-caption text-muted-foreground">
+                    <bdi dir="ltr">{s.ipAddress ?? "—"}</bdi> ·{" "}
                     {formatMessage(t["security.sessionLastUsed"], {
                       date: fmt(s.lastUsedAt ?? s.createdAt, locale),
                     })}
                   </p>
                 </div>
                 {s.current ? (
-                  <Badge>{t["security.sessionCurrent"]}</Badge>
+                  <Badge variant="success" dot>
+                    {t["security.sessionCurrent"]}
+                  </Badge>
                 ) : (
                   <Button size="sm" variant="ghost" onClick={() => revoke(s.id)}>
                     {t["security.sessionRevoke"]}
@@ -464,7 +500,7 @@ export default function SecuritySettings() {
             <ul className="divide-y text-sm">
               {history.data.events.map((e) => (
                 <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2">
-                  <span className="font-mono" dir="ltr">
+                  <span className="tabular-nums" dir="ltr">
                     {e.action}
                   </span>
                   <span className="text-muted-foreground" dir="ltr">
@@ -677,7 +713,7 @@ function CompanySecurity({
                       <td className="py-1" dir="ltr">
                         {fmt(e.at, locale)}
                       </td>
-                      <td className="py-1 font-mono" dir="ltr">
+                      <td className="py-1 tabular-nums" dir="ltr">
                         {e.action}
                       </td>
                       <td className="py-1" dir="ltr">

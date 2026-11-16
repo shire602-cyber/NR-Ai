@@ -18,7 +18,7 @@ import {
 import { amountInAed, formatReportDate, invoiceStatusLabel, invoiceStatusVariant } from "../shared";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function SalesTab() {
@@ -60,8 +60,8 @@ export default function SalesTab() {
             {salesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(invoiceStatusReport.invoiceValueAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={invoiceStatusReport.invoiceValueAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -80,7 +80,7 @@ export default function SalesTab() {
             {salesLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
+              <div className="tabular-nums text-2xl font-bold">
                 {invoiceStatusReport.activeInvoiceCount}
               </div>
             )}
@@ -100,7 +100,9 @@ export default function SalesTab() {
             {salesLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{invoiceStatusReport.unpaidCount}</div>
+              <div className="tabular-nums text-2xl font-bold">
+                {invoiceStatusReport.unpaidCount}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -118,12 +120,11 @@ export default function SalesTab() {
             {salesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : invoiceStatusReport.overdueCurrency ? (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(
-                  invoiceStatusReport.overdueOutstanding,
-                  invoiceStatusReport.overdueCurrency,
-                  locale
-                )}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money
+                  amount={invoiceStatusReport.overdueOutstanding}
+                  currency={invoiceStatusReport.overdueCurrency}
+                />
               </div>
             ) : (
               <div className="text-sm font-medium">
@@ -160,30 +161,30 @@ export default function SalesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.current" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(receivableAgingSummary.current, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={receivableAgingSummary.current} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.overdue" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(receivableAgingSummary.overdue, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={receivableAgingSummary.overdue} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">Over 90 days</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(receivableAgingSummary.over90, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={receivableAgingSummary.over90} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.totalReceivable" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(receivableAgingSummary.total, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={receivableAgingSummary.total} currency={"AED"} />
                   </div>
                 </div>
               </div>
@@ -195,14 +196,14 @@ export default function SalesTab() {
                       <TableHead>
                         <T k="reportCenter.customer" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.current" />
                       </TableHead>
-                      <TableHead className="text-right">1-30</TableHead>
-                      <TableHead className="text-right">31-60</TableHead>
-                      <TableHead className="text-right">61-90</TableHead>
-                      <TableHead className="text-right">90+</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>1-30</TableHead>
+                      <TableHead data-numeric>31-60</TableHead>
+                      <TableHead data-numeric>61-90</TableHead>
+                      <TableHead data-numeric>90+</TableHead>
+                      <TableHead data-numeric>
                         <T k="reportCenter.total" />
                       </TableHead>
                     </TableRow>
@@ -211,23 +212,23 @@ export default function SalesTab() {
                     {receivableAgingRows.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.current, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.current} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.days30, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.days30} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.days60, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.days60} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.days90, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.days90} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.over90, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.over90} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.total, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={row.total} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -271,17 +272,17 @@ export default function SalesTab() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Product / service</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.invoices" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.quantity" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.sales" />
                     </TableHead>
-                    <TableHead className="text-right">VAT</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>VAT</TableHead>
+                    <TableHead data-numeric>
                       <T k="reportCenter.avgUnit" />
                     </TableHead>
                   </TableRow>
@@ -295,18 +296,18 @@ export default function SalesTab() {
                           {row.lineCount} lines - {row.supplyTypes.join(", ")}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell data-numeric>{row.invoiceCount}</TableCell>
+                      <TableCell data-numeric>
                         {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(row.amountAed, "AED", locale)}
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={row.amountAed} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(row.vatAed, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={row.vatAed} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={row.averageUnitPriceAed} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -341,10 +342,10 @@ export default function SalesTab() {
                     <TableHead>
                       <T k="reportCenter.status" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.invoices" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.value" />
                     </TableHead>
                   </TableRow>
@@ -357,9 +358,9 @@ export default function SalesTab() {
                           {invoiceStatusLabel(row.status)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">{row.count}</TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(row.amountAed, "AED", locale)}
+                      <TableCell data-numeric>{row.count}</TableCell>
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={row.amountAed} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -393,10 +394,10 @@ export default function SalesTab() {
                       <TableHead>
                         <T k="reportCenter.customer" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.invoices" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.value" />
                       </TableHead>
                     </TableRow>
@@ -405,9 +406,9 @@ export default function SalesTab() {
                     {customerRevenue.map((row) => (
                       <TableRow key={row.customerName}>
                         <TableCell className="font-medium">{row.customerName}</TableCell>
-                        <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.amountAed, "AED", locale)}
+                        <TableCell data-numeric>{row.invoiceCount}</TableCell>
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={row.amountAed} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -452,16 +453,16 @@ export default function SalesTab() {
                     <TableHead>
                       <T k="reportCenter.customer" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.invoices" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.outstanding" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.oldest" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.nextLevel" />
                     </TableHead>
                   </TableRow>
@@ -470,14 +471,12 @@ export default function SalesTab() {
                   {overdueCustomerRows.map((row) => (
                     <TableRow key={`${row.customerName}-${row.currency}`}>
                       <TableCell className="font-medium">{row.customerName}</TableCell>
-                      <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(row.outstanding, row.currency, locale)}
+                      <TableCell data-numeric>{row.invoiceCount}</TableCell>
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={row.outstanding} currency={row.currency} />
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {row.maxDaysOverdue} days
-                      </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
+                      <TableCell data-numeric>
                         <Badge variant="warning">Level {row.recommendedLevel}</Badge>
                       </TableCell>
                     </TableRow>
@@ -527,13 +526,13 @@ export default function SalesTab() {
                     <TableHead>
                       <T k="reportCenter.status" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.amount" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.aedValue" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.proof" />
                     </TableHead>
                   </TableRow>
@@ -541,7 +540,7 @@ export default function SalesTab() {
                 <TableBody>
                   {reportInvoices.map((invoice) => (
                     <TableRow key={invoice.id}>
-                      <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
+                      <TableCell className="tabular-nums font-medium">{invoice.number}</TableCell>
                       <TableCell>{invoice.customerName || "Unknown Customer"}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatReportDate(invoice.date)}
@@ -554,13 +553,13 @@ export default function SalesTab() {
                           {invoiceStatusLabel(invoice.status)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(invoice.total ?? 0, invoice.currency || "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={invoice.total ?? 0} currency={invoice.currency || "AED"} />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(amountInAed(invoice), "AED", locale)}
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={amountInAed(invoice)} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <Button asChild size="sm" variant="outline">
                           <Link href={evidenceSourceHref("invoice", invoice.id)}>
                             <T k="reportCenter.proof" />

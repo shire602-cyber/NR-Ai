@@ -7,12 +7,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function ProfitLossTab() {
-  const { dateRange, locale, plLoading, profitLoss, selectedCompanyId, t } =
-    useReportsPageContext();
+  const { dateRange, plLoading, profitLoss, selectedCompanyId, t } = useReportsPageContext();
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -29,8 +28,8 @@ export default function ProfitLossTab() {
             {plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="text-2xl font-bold font-mono" data-testid="text-total-revenue">
-                {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
+              <div className="text-2xl font-bold tabular-nums" data-testid="text-total-revenue">
+                <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -49,8 +48,8 @@ export default function ProfitLossTab() {
             {plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="text-2xl font-bold font-mono" data-testid="text-total-expenses">
-                {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
+              <div className="text-2xl font-bold tabular-nums" data-testid="text-total-expenses">
+                <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -69,8 +68,8 @@ export default function ProfitLossTab() {
             {plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="text-2xl font-bold font-mono" data-testid="text-net-profit">
-                {formatCurrency(profitLoss?.netProfit || 0, "AED", locale)}
+              <div className="text-2xl font-bold tabular-nums" data-testid="text-net-profit">
+                <Money amount={profitLoss?.netProfit || 0} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -109,12 +108,12 @@ export default function ProfitLossTab() {
                   <TableBody>
                     {profitLoss?.revenue?.map((item, index) => (
                       <TableRow key={item.accountCode || `revenue-${index}`}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
                         <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(item.amount ?? 0, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -122,8 +121,8 @@ export default function ProfitLossTab() {
                       <TableCell colSpan={2} className="font-semibold">
                         <T k="pages.totalRevenue" />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold">
-                        {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
+                      <TableCell data-numeric className=" font-semibold">
+                        <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -138,12 +137,12 @@ export default function ProfitLossTab() {
                   <TableBody>
                     {profitLoss?.expenses?.map((item, index) => (
                       <TableRow key={item.accountCode || `expense-${index}`}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
                         <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(item.amount ?? 0, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -151,8 +150,8 @@ export default function ProfitLossTab() {
                       <TableCell colSpan={2} className="font-semibold">
                         <T k="pages.totalExpenses" />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold">
-                        {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
+                      <TableCell data-numeric className=" font-semibold">
+                        <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -165,9 +164,9 @@ export default function ProfitLossTab() {
                     <T k="reportCenter.netProfit" />
                   </span>
                   <span
-                    className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
+                    className={`tabular-nums ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
                   >
-                    {formatCurrency(profitLoss?.netProfit ?? 0, "AED", locale)}
+                    <Money amount={profitLoss?.netProfit ?? 0} currency={"AED"} />
                   </span>
                 </div>
               </div>

@@ -233,7 +233,7 @@ export function LeaveTab({ companyId }: { companyId: string }) {
                   <TableHead>{tx("hr.dates")}</TableHead>
                   <TableHead>{tx("hr.days")}</TableHead>
                   <TableHead>{tx("hr.statusLabel")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.actions")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

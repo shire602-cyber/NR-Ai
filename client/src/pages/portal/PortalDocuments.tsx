@@ -113,9 +113,9 @@ export default function PortalDocuments() {
             className="bg-info hover:bg-info text-white"
           >
             {uploading ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
             ) : (
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4 me-2" />
             )}
             Upload Document
           </Button>

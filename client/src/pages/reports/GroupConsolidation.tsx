@@ -13,8 +13,7 @@ import { T } from "@/components/layout/T";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency } from "@/lib/format";
-import { useTranslation } from "@/lib/i18n";
+import { Money } from "@/components/ui/money";
 import {
   serverConsolidationCurrency,
   useFirstCompanyGroup,
@@ -22,7 +21,6 @@ import {
 } from "./groupConsolidationQueries";
 
 export function GroupConsolidationPanel({ from, to }: { from?: string; to?: string }) {
-  const { locale } = useTranslation();
   const groups = useFirstCompanyGroup();
   const group = groups.group;
   const consolidated = useServerConsolidatedStatements(group?.id, from, to);
@@ -76,24 +74,24 @@ export function GroupConsolidationPanel({ from, to }: { from?: string; to?: stri
           <div className="text-xs text-muted-foreground">
             <T k="reportCenter.revenue" />
           </div>
-          <div className="font-mono text-lg font-semibold">
-            {formatCurrency(pl.revenue ?? pl.totalIncome ?? 0, currency, locale)}
+          <div className="tabular-nums text-lg font-semibold">
+            <Money amount={pl.revenue ?? pl.totalIncome ?? 0} currency={currency} />
           </div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">
             <T k="reportCenter.netProfit" />
           </div>
-          <div className="font-mono text-lg font-semibold">
-            {formatCurrency(pl.netProfit ?? 0, currency, locale)}
+          <div className="tabular-nums text-lg font-semibold">
+            <Money amount={pl.netProfit ?? 0} currency={currency} />
           </div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">
             <T k="reportCenter.assets" />
           </div>
-          <div className="font-mono text-lg font-semibold">
-            {formatCurrency(bs.totalAssets ?? 0, currency, locale)}
+          <div className="tabular-nums text-lg font-semibold">
+            <Money amount={bs.totalAssets ?? 0} currency={currency} />
           </div>
         </div>
       </div>

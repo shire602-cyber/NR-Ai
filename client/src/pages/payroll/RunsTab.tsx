@@ -40,6 +40,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   downloadFile,
   errorMessage,
@@ -149,7 +152,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <CardTitle>{tx("hr.tab.runs")}</CardTitle>
           <CardDescription>{tx("hr.runsHint")}</CardDescription>
@@ -168,93 +171,102 @@ export function RunsTab({ companyId }: { companyId: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>{tx("hr.period")}</TableHead>
-                  <TableHead>{tx("hr.employeesCount")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.totalNet")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.employeesCount")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.totalNet")}</TableHead>
                   <TableHead>{tx("hr.statusLabel")}</TableHead>
                   <TableHead>{tx("hr.wpsStatus")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.actions")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {runs.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell>
+                    <TableCell className="font-medium" data-nowrap>
                       {monthName(r.period_month, locale)} {r.period_year}
                     </TableCell>
-                    <TableCell>{r.employee_count}</TableCell>
-                    <TableCell className="text-end">
-                      {formatCurrency(Number(r.total_net), "AED", locale)}
-                    </TableCell>
+                    <TableCell data-numeric>{r.employee_count}</TableCell>
+                    <MoneyCell amount={Number(r.total_net)} currency="AED" />
                     <TableCell>
                       <StatusBadge status={r.status} />
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={r.wps_status} />
                     </TableCell>
-                    <TableCell className="text-end space-x-1 rtl:space-x-reverse whitespace-nowrap">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setViewing(r.id)}
-                        aria-label={tx("hr.view")}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {["draft", "calculated", "reversed"].includes(r.status) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => action.mutate({ id: r.id, path: "calculate" })}
-                        >
-                          <Calculator className="me-1 h-4 w-4" />
-                          {tx("hr.calculate")}
-                        </Button>
-                      )}
-                      {r.status === "calculated" && (
-                        <Button
-                          size="sm"
-                          onClick={() => action.mutate({ id: r.id, path: "approve" })}
-                        >
-                          <CheckCircle className="me-1 h-4 w-4" />
-                          {tx("hr.approve")}
-                        </Button>
-                      )}
-                      {r.status === "approved" && (
-                        <>
-                          <Button size="sm" onClick={() => setPayRun(r)}>
-                            <Wallet className="me-1 h-4 w-4" />
-                            {tx("hr.recordPayment")}
-                          </Button>
+                    <TableCell data-nowrap>
+                      {/* One next-step action per run (outline); view, SIF and reversals stay quiet. */}
+                      <div className="flex items-center justify-end gap-1">
+                        {["draft", "calculated", "reversed"].includes(r.status) &&
+                          r.status !== "calculated" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => action.mutate({ id: r.id, path: "calculate" })}
+                            >
+                              <Calculator className="me-1.5 h-4 w-4" aria-hidden />
+                              {tx("hr.calculate")}
+                            </Button>
+                          )}
+                        {r.status === "calculated" && (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            onClick={() => setReverseRun({ run: r, action: "unapprove" })}
+                            variant="outline"
+                            onClick={() => action.mutate({ id: r.id, path: "approve" })}
                           >
-                            <Undo2 className="me-1 h-4 w-4" />
-                            {tx("hr.unapprove")}
+                            <CheckCircle className="me-1.5 h-4 w-4" aria-hidden />
+                            {tx("hr.approve")}
                           </Button>
-                        </>
-                      )}
-                      {r.status === "paid" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setReverseRun({ run: r, action: "unpay" })}
+                        )}
+                        {r.status === "approved" && (
+                          <Button size="sm" variant="outline" onClick={() => setPayRun(r)}>
+                            <Wallet className="me-1.5 h-4 w-4" aria-hidden />
+                            {tx("hr.recordPayment")}
+                          </Button>
+                        )}
+                        <RowActions
+                          menu={
+                            r.status === "calculated" ||
+                            r.status === "approved" ||
+                            r.status === "paid" ? (
+                              <>
+                                {r.status === "calculated" && (
+                                  <DropdownMenuItem
+                                    onSelect={() => action.mutate({ id: r.id, path: "calculate" })}
+                                  >
+                                    <Calculator aria-hidden />
+                                    {tx("hr.calculate")}
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onSelect={() => downloadSif(r)}>
+                                  <Download aria-hidden />
+                                  {tx("hr.downloadSif")}
+                                </DropdownMenuItem>
+                                {r.status === "approved" && (
+                                  <DropdownMenuItem
+                                    onSelect={() => setReverseRun({ run: r, action: "unapprove" })}
+                                  >
+                                    <Undo2 aria-hidden />
+                                    {tx("hr.unapprove")}
+                                  </DropdownMenuItem>
+                                )}
+                                {r.status === "paid" && (
+                                  <DropdownMenuItem
+                                    onSelect={() => setReverseRun({ run: r, action: "unpay" })}
+                                  >
+                                    <Undo2 aria-hidden />
+                                    {tx("hr.unpay")}
+                                  </DropdownMenuItem>
+                                )}
+                              </>
+                            ) : undefined
+                          }
                         >
-                          <Undo2 className="me-1 h-4 w-4" />
-                          {tx("hr.unpay")}
-                        </Button>
-                      )}
-                      {["calculated", "approved", "paid"].includes(r.status) && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => downloadSif(r)}
-                          aria-label={tx("hr.downloadSif")}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      )}
+                          <RowActionButton
+                            icon={Eye}
+                            label={tx("hr.view")}
+                            onClick={() => setViewing(r.id)}
+                          />
+                        </RowActions>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -468,7 +480,7 @@ function RunDetail({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <Button variant="ghost" size="sm" onClick={onBack} className="mb-2">
             <ChevronLeft className="me-1 h-4 w-4 rtl:rotate-180" />
@@ -513,13 +525,13 @@ function RunDetail({
           <TableHeader>
             <TableRow>
               <TableHead>{tx("hr.field.fullName")}</TableHead>
-              <TableHead className="text-end">{tx("hr.field.basicSalary")}</TableHead>
-              <TableHead className="text-end">{tx("hr.allowances")}</TableHead>
-              <TableHead className="text-end">{tx("hr.overtime")}</TableHead>
-              <TableHead className="text-end">{tx("hr.unpaidLeave")}</TableHead>
-              <TableHead className="text-end">{tx("hr.pension")}</TableHead>
-              <TableHead className="text-end">{tx("hr.deductions")}</TableHead>
-              <TableHead className="text-end">{tx("hr.net")}</TableHead>
+              <TableHead data-numeric>{tx("hr.field.basicSalary")}</TableHead>
+              <TableHead data-numeric>{tx("hr.allowances")}</TableHead>
+              <TableHead data-numeric>{tx("hr.overtime")}</TableHead>
+              <TableHead data-numeric>{tx("hr.unpaidLeave")}</TableHead>
+              <TableHead data-numeric>{tx("hr.pension")}</TableHead>
+              <TableHead data-numeric>{tx("hr.deductions")}</TableHead>
+              <TableHead data-numeric>{tx("hr.net")}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -527,8 +539,10 @@ function RunDetail({
             {items.map((i) => (
               <TableRow key={i.id}>
                 <TableCell>{i.employee_name}</TableCell>
-                <TableCell className="text-end">{fmt(i.basic_salary)}</TableCell>
-                <TableCell className="text-end">
+                <TableCell data-numeric>
+                  <Money amount={Number(i.basic_salary)} currency="AED" />
+                </TableCell>
+                <TableCell data-numeric>
                   {fmt(
                     String(
                       Number(i.housing_allowance) +
@@ -537,15 +551,23 @@ function RunDetail({
                     )
                   )}
                 </TableCell>
-                <TableCell className="text-end">{fmt(i.overtime)}</TableCell>
-                <TableCell className="text-end">
+                <TableCell data-numeric>
+                  <Money amount={Number(i.overtime)} currency="AED" />
+                </TableCell>
+                <TableCell data-numeric>
                   {Number(i.unpaid_leave_days) > 0
                     ? `${i.unpaid_leave_days} · ${fmt(i.unpaid_leave_deduction)}`
                     : "—"}
                 </TableCell>
-                <TableCell className="text-end">{fmt(i.pension_employee)}</TableCell>
-                <TableCell className="text-end">{fmt(i.deductions)}</TableCell>
-                <TableCell className="text-end font-medium">{fmt(i.net_salary)}</TableCell>
+                <TableCell data-numeric>
+                  <Money amount={Number(i.pension_employee)} currency="AED" />
+                </TableCell>
+                <TableCell data-numeric>
+                  <Money amount={Number(i.deductions)} currency="AED" />
+                </TableCell>
+                <TableCell data-numeric className="font-medium">
+                  <Money amount={Number(i.net_salary)} currency="AED" />
+                </TableCell>
                 <TableCell>
                   {editable && (
                     <Button

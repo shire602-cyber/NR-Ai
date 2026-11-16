@@ -54,7 +54,9 @@
 [dir="rtl"] input[type="tel"],
 [dir="rtl"] input[inputmode="numeric"],
 [dir="rtl"] input[inputmode="decimal"],
-[dir="rtl"] .tabular-nums {
+/* Leaf figures only: a container that merely sets tabular figures (the Table primitive,
+   a row of label + amount) must keep the RTL column/flow order (D3b). */
+[dir="rtl"] .tabular-nums:not(table):not(:has(*)) {
   direction: ltr;
   unicode-bidi: embed;
   text-align: right;

@@ -493,13 +493,13 @@ function PortalHome({ token }: { token: string | null }) {
                           <TableHead>
                             <T k="portal.dueDate" />
                           </TableHead>
-                          <TableHead className="text-end">
+                          <TableHead data-numeric>
                             <T k="portal.amountDue" />
                           </TableHead>
                           <TableHead>
                             <T k="pages.status" />
                           </TableHead>
-                          <TableHead className="text-end">
+                          <TableHead data-numeric>
                             <T k="pages.actions" />
                           </TableHead>
                         </TableRow>
@@ -520,7 +520,7 @@ function PortalHome({ token }: { token: string | null }) {
                                 ? formatDate(invoice.dueDate)
                                 : formatDate(invoice.date)}
                             </TableCell>
-                            <TableCell className="text-end font-medium">
+                            <TableCell data-numeric className=" font-medium">
                               {formatCurrency(invoice.amountDue, invoice.currency)}
                             </TableCell>
                             <TableCell>
@@ -607,13 +607,13 @@ function PortalHome({ token }: { token: string | null }) {
                           <TableHead>
                             <T k="portal.reference" />
                           </TableHead>
-                          <TableHead className="text-end">
+                          <TableHead data-numeric>
                             <T k="portal.debit" />
                           </TableHead>
-                          <TableHead className="text-end">
+                          <TableHead data-numeric>
                             <T k="portal.credit" />
                           </TableHead>
-                          <TableHead className="text-end">
+                          <TableHead data-numeric>
                             <T k="portal.balance" />
                           </TableHead>
                         </TableRow>
@@ -623,13 +623,13 @@ function PortalHome({ token }: { token: string | null }) {
                           <TableRow key={`${l.reference}-${i}`}>
                             <TableCell>{l.date}</TableCell>
                             <TableCell>{l.reference}</TableCell>
-                            <TableCell className="text-end">
+                            <TableCell data-numeric>
                               {l.debit ? formatCurrency(l.debit, s.currency) : ""}
                             </TableCell>
-                            <TableCell className="text-end">
+                            <TableCell data-numeric>
                               {l.credit ? formatCurrency(l.credit, s.currency) : ""}
                             </TableCell>
-                            <TableCell className="text-end">
+                            <TableCell data-numeric>
                               {formatCurrency(l.balance, s.currency)}
                             </TableCell>
                           </TableRow>

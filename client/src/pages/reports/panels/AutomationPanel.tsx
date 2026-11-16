@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { formatDeliveryRunTimestamp } from "../shared";
 import { reportSectionHref } from "@/lib/reportCatalog";
 import { useReportsPageContext } from "../context";
@@ -18,7 +18,6 @@ export default function AutomationPanel() {
     applyReportWorkflowGapFilter,
     automationLoading,
     latestReportDeliverySchedulerScan,
-    locale,
     personaFilter,
     personaScopeDescription,
     reportAutomationImpactTotals,
@@ -84,7 +83,7 @@ export default function AutomationPanel() {
                   <div className="text-muted-foreground">
                     <T k="reportCenter.score" />
                   </div>
-                  <div className="mt-1 font-mono text-base font-semibold">
+                  <div className="mt-1 tabular-nums text-base font-semibold">
                     {item.automationScore}%
                   </div>
                 </div>
@@ -92,7 +91,7 @@ export default function AutomationPanel() {
                   <div className="text-muted-foreground">
                     <T k="reportCenter.rules" />
                   </div>
-                  <div className="mt-1 font-mono text-base font-semibold">
+                  <div className="mt-1 tabular-nums text-base font-semibold">
                     {item.readyRuleCount}/{item.automationRuleCount}
                   </div>
                 </div>
@@ -100,7 +99,7 @@ export default function AutomationPanel() {
                   <div className="text-muted-foreground">
                     <T k="reportCenter.delivery" />
                   </div>
-                  <div className="mt-1 font-mono text-base font-semibold">
+                  <div className="mt-1 tabular-nums text-base font-semibold">
                     {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                   </div>
                 </div>
@@ -245,7 +244,7 @@ export default function AutomationPanel() {
                           <T k="reportCenter.health" />
                         </div>
                         <div className="mt-1 flex items-baseline gap-1">
-                          <span className="font-mono text-lg font-semibold">
+                          <span className="tabular-nums text-lg font-semibold">
                             {item.automationScore}
                           </span>
                           <span className="text-xs text-muted-foreground">/100</span>
@@ -258,7 +257,7 @@ export default function AutomationPanel() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.reportsReady" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.readyReportCount}/{item.reportCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
@@ -269,7 +268,7 @@ export default function AutomationPanel() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.autoSendRules" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.readyRuleCount}/{item.automationRuleCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
@@ -280,7 +279,7 @@ export default function AutomationPanel() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.deliveriesReady" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
@@ -291,7 +290,7 @@ export default function AutomationPanel() {
 
                     <div className="rounded-md border p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-xs font-medium uppercase text-muted-foreground">
+                        <div className="text-xs font-medium text-muted-foreground">
                           <T k="pages.nextAction" />
                         </div>
                         <Badge variant={item.nextAction.badgeVariant} dot>
@@ -326,15 +325,15 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.amountAtRisk" />
                         </div>
-                        <div className="mt-1 truncate font-mono font-semibold text-foreground">
-                          {formatCurrency(item.amountAtRisk, "AED", locale)}
+                        <div className="mt-1 truncate tabular-nums font-semibold text-foreground">
+                          <Money amount={item.amountAtRisk} currency={"AED"} />
                         </div>
                       </div>
                       <div className="rounded-md bg-muted/30 p-2">
                         <div className="text-muted-foreground">
                           <T k="reportCenter.comparisonWarnings" />
                         </div>
-                        <div className="mt-1 font-mono font-semibold text-foreground">
+                        <div className="mt-1 tabular-nums font-semibold text-foreground">
                           {item.comparisonWarnings}
                         </div>
                       </div>
@@ -427,7 +426,7 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.hoursSaved" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.estimate.estimatedMonthlyHoursSaved}
                         </div>
                         <div className="mt-1 text-muted-foreground">estimated / month</div>
@@ -436,7 +435,7 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.automatedItems" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.estimate.estimatedAutomatedItemCount}
                         </div>
                         <div className="mt-1 text-muted-foreground">
@@ -447,7 +446,7 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.coverage" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {item.estimate.coverageScore}%
                         </div>
                         <div className="mt-1 text-muted-foreground">
@@ -458,8 +457,8 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.amountWatched" />
                         </div>
-                        <div className="mt-1 truncate font-mono text-sm font-semibold">
-                          {formatCurrency(item.estimate.amountAtRisk, "AED", locale)}
+                        <div className="mt-1 truncate tabular-nums text-sm font-semibold">
+                          <Money amount={item.estimate.amountAtRisk} currency={"AED"} />
                         </div>
                         <div className="mt-1 text-muted-foreground">
                           {item.estimate.reviewItemCount} review items
@@ -484,7 +483,7 @@ export default function AutomationPanel() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.outcomeSignals" />
                       </div>
                       {item.profile.outcomeSignals.map((signal) => (
@@ -601,7 +600,7 @@ export default function AutomationPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.reportBundle" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {shortcut.reports.length}
                       </div>
                     </div>
@@ -708,7 +707,7 @@ export default function AutomationPanel() {
             <div className="text-muted-foreground">
               <T k="reportCenter.queuedByScan" />
             </div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="mt-1 tabular-nums text-base font-semibold">
               {latestReportDeliverySchedulerScan?.queuedRuns ?? 0}
             </div>
           </div>
@@ -716,7 +715,7 @@ export default function AutomationPanel() {
             <div className="text-muted-foreground">
               <T k="reportCenter.guardrailSkips" />
             </div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="mt-1 tabular-nums text-base font-semibold">
               {reportDeliverySchedulerGuardrailSkips}
             </div>
           </div>
@@ -724,7 +723,7 @@ export default function AutomationPanel() {
             <div className="text-muted-foreground">
               <T k="reportCenter.handoffSkips" />
             </div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="mt-1 tabular-nums text-base font-semibold">
               {reportDeliverySchedulerHandoffSkipCount}
             </div>
           </div>
@@ -732,7 +731,7 @@ export default function AutomationPanel() {
             <div className="text-muted-foreground">
               <T k="reportCenter.actorSkips" />
             </div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="mt-1 tabular-nums text-base font-semibold">
               {latestReportDeliverySchedulerScan?.skippedNoActor ?? 0}
             </div>
           </div>
@@ -740,7 +739,7 @@ export default function AutomationPanel() {
             <div className="text-muted-foreground">
               <T k="reportCenter.scanErrors" />
             </div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="mt-1 tabular-nums text-base font-semibold">
               {latestReportDeliverySchedulerScan?.errors ?? 0}
             </div>
           </div>
@@ -842,7 +841,7 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.readyReports" />
                         </div>
-                        <div className="font-mono text-base font-semibold">
+                        <div className="tabular-nums text-base font-semibold">
                           {starter.readyCount}/{starter.reports.length}
                         </div>
                       </div>
@@ -850,7 +849,7 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.playbooks" />
                         </div>
-                        <div className="font-mono text-base font-semibold">
+                        <div className="tabular-nums text-base font-semibold">
                           {starter.playbooks.length}
                         </div>
                       </div>
@@ -858,8 +857,8 @@ export default function AutomationPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.atRisk" />
                         </div>
-                        <div className="truncate font-mono text-sm font-semibold">
-                          {formatCurrency(starter.amountAtRisk, "AED", locale)}
+                        <div className="truncate tabular-nums text-sm font-semibold">
+                          <Money amount={starter.amountAtRisk} currency={"AED"} />
                         </div>
                       </div>
                     </div>
@@ -870,7 +869,7 @@ export default function AutomationPanel() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.setupChecklist" />
                       </div>
                       {starter.setupSteps.map((step) => (

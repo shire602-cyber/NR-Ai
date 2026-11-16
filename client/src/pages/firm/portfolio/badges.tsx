@@ -33,7 +33,7 @@ export function ServiceScopeBadges({
   return (
     <div className="flex flex-wrap gap-1">
       {labels.map((label) => (
-        <Badge key={label} variant="outline" className="text-[11px]">
+        <Badge key={label} variant="outline" className="text-caption">
           {label}
         </Badge>
       ))}

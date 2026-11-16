@@ -28,7 +28,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { PageHeader } from "@/components/ui/page-header";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Link2,
@@ -293,29 +294,15 @@ export default function IntegrationsHub() {
 
   return (
     <div className="space-y-6" dir={isRTL ? "rtl" : "ltr"}>
-      {/* Header */}
-      <div className="relative overflow-hidden rounded-lg border border-chart-5/20 p-8">
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-lg bg-chart-5/20">
-              <Plug className="w-6 h-6 text-chart-5" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold" data-testid="text-integrations-title">
-                <T k="pageLabels.cRMAndECommerceIntegrations" />
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                <T k="pageLabels.connectYourBusinessToolsForAutomaticDataSynchronization" />
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-chart-5/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-chart-5/5 rounded-full -ml-24 -mb-24 blur-3xl" />
-      </div>
+      <PageHeader
+        eyebrow="Settings"
+        testId="text-integrations-title"
+        title={<T k="pageLabels.cRMAndECommerceIntegrations" />}
+        description={<T k="pageLabels.connectYourBusinessToolsForAutomaticDataSynchronization" />}
+      />
 
       <Tabs defaultValue="platforms" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 lg:w-fit">
+        <TabsList>
           <TabsTrigger value="platforms" className="gap-2" data-testid="tab-platforms">
             <Plug className="w-4 h-4" />
             <span className="hidden sm:inline">
@@ -378,8 +365,8 @@ export default function IntegrationsHub() {
                 <CreditCard className="w-4 h-4 text-chart-5 " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(monthlyTransactionValue, "AED")}
+                <div className="text-2xl font-bold tabular-nums">
+                  <Money amount={monthlyTransactionValue} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   <T k="pages.thisMonth" />
@@ -419,7 +406,7 @@ export default function IntegrationsHub() {
                   className={`hover-elevate relative overflow-hidden ${isComingSoon ? "bg-muted/30" : ""}`}
                 >
                   {isComingSoon && (
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 end-3">
                       <Badge variant="secondary">
                         <T k="pages.comingSoon" />
                       </Badge>
@@ -436,7 +423,7 @@ export default function IntegrationsHub() {
                           {platform.name}
                           {isConnected && (
                             <Badge variant="secondary" className="bg-success-subtle text-success ">
-                              <Check className="w-3 h-3 mr-1" />
+                              <Check className="w-3 h-3 me-1" />
                               <T k="pages.connected" />
                             </Badge>
                           )}
@@ -498,9 +485,9 @@ export default function IntegrationsHub() {
                               data-testid={`button-sync-${platform.id}`}
                             >
                               {syncMutation.isPending ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                <Loader2 className="w-4 h-4 me-2 animate-spin" />
                               ) : (
-                                <RefreshCw className="w-4 h-4 mr-2" />
+                                <RefreshCw className="w-4 h-4 me-2" />
                               )}
                               Sync Now
                             </Button>
@@ -514,6 +501,7 @@ export default function IntegrationsHub() {
                           </>
                         ) : (
                           <Button
+                            variant="outline"
                             className="w-full gap-2"
                             onClick={() => handleConnect(platform)}
                             data-testid={`button-connect-${platform.id}`}
@@ -628,7 +616,7 @@ export default function IntegrationsHub() {
               <T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />
             </p>
             <Button variant="outline" size="sm" data-testid="button-export-transactions">
-              <FileText className="w-4 h-4 mr-2" />
+              <FileText className="w-4 h-4 me-2" />
               <T k="pages.export" />
             </Button>
           </div>
@@ -685,12 +673,12 @@ export default function IntegrationsHub() {
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
-                            <div className="text-right">
+                            <div className="text-end">
                               <p
-                                className={`font-mono font-bold ${isRefund ? "text-destructive " : "text-success "}`}
+                                className={`tabular-nums font-bold ${isRefund ? "text-destructive " : "text-success "}`}
                               >
                                 {isRefund ? "" : "+"}
-                                {formatCurrency(txn.amount, txn.currency)}
+                                <Money amount={txn.amount} currency={txn.currency} />
                               </p>
                               <div className="flex items-center gap-1 justify-end">
                                 {txn.isReconciled ? (
@@ -698,7 +686,7 @@ export default function IntegrationsHub() {
                                     variant="secondary"
                                     className="bg-success-subtle text-success text-xs"
                                   >
-                                    <Check className="w-3 h-3 mr-1" />
+                                    <Check className="w-3 h-3 me-1" />
                                     <T k="pages.reconciled" />
                                   </Badge>
                                 ) : (
@@ -706,7 +694,7 @@ export default function IntegrationsHub() {
                                     variant="secondary"
                                     className="bg-warning-subtle text-warning text-xs"
                                   >
-                                    <Clock className="w-3 h-3 mr-1" />
+                                    <Clock className="w-3 h-3 me-1" />
                                     <T k="pages.pending" />
                                   </Badge>
                                 )}
@@ -867,7 +855,7 @@ export default function IntegrationsHub() {
                 </div>
               </div>
               <Button variant="outline" className="w-full" data-testid="button-edit-mapping">
-                <Settings className="w-4 h-4 mr-2" />
+                <Settings className="w-4 h-4 me-2" />
                 <T k="pageLabels.editAccountMapping" />
               </Button>
             </CardContent>
@@ -955,9 +943,9 @@ export default function IntegrationsHub() {
               </Button>
               <Button type="submit" disabled={connectMutation.isPending}>
                 {connectMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <Plug className="w-4 h-4 mr-2" />
+                  <Plug className="w-4 h-4 me-2" />
                 )}
                 Connect
               </Button>

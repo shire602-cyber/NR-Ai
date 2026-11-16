@@ -1,4 +1,6 @@
 import { T } from "@/components/layout/T";
+import { PageHeader } from "@/components/ui/page-header";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -156,6 +158,7 @@ const vatGroupFilterByQuickFilter = new Map(
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const { setActiveClientCompany } = useActiveCompany();
   const [view, setView] = useState<"card" | "table">("card");
   const [search, setSearch] = useState("");
@@ -330,77 +333,84 @@ export default function ClientPortfolio() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            <T k="pages.clientPortfolio" />
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {clients.length} client{clients.length !== 1 ? "s" : ""} managed by NRA
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setImportResult(null);
-              setImportFile(null);
-              setImportOpen(true);
-            }}
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            <T k="pages.importClients" />
-          </Button>
-          <Button onClick={() => setAddOpen(true)} data-testid="button-add-client">
-            <Plus className="w-4 h-4 mr-2" />
-            <T k="pages.addClient" />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Firm"
+        title={<T k="pages.clientPortfolio" />}
+        description={formatMessage(
+          clients.length === 1 ? t["firm.clientsManagedOne"] : t["firm.clientsManagedMany"],
+          { count: clients.length }
+        )}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setImportResult(null);
+                setImportFile(null);
+                setImportOpen(true);
+              }}
+            >
+              <Upload className="w-4 h-4 me-2" aria-hidden />
+              <T k="pages.importClients" />
+            </Button>
+            <Button onClick={() => setAddOpen(true)} data-testid="button-add-client">
+              <Plus className="w-4 h-4 me-2" aria-hidden />
+              <T k="pages.addClient" />
+            </Button>
+          </>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card data-testid="card-total-clients">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              <p className="text-xs text-muted-foreground">
                 <T k="pages.totalClients" />
               </p>
               <Users className="w-4 h-4 text-muted-foreground" />
             </div>
-            <p className="text-2xl font-bold mt-1">{overview?.totalClients ?? clients.length}</p>
+            <p className="mt-1 text-h1 font-semibold tabular-nums">
+              {overview?.totalClients ?? clients.length}
+            </p>
           </CardContent>
         </Card>
         <Card data-testid="card-vat-due">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT due 30d</p>
-              <Calendar className="w-4 h-4 text-warning" />
+              <p className="text-xs text-muted-foreground">{t["firm.vatDue30d"]}</p>
+              <Calendar className="w-4 h-4 text-muted-foreground" aria-hidden />
             </div>
-            <p className="text-2xl font-bold mt-1">{overview?.vatDueThisMonth ?? 0}</p>
+            <p className="mt-1 text-h1 font-semibold tabular-nums">
+              {overview?.vatDueThisMonth ?? 0}
+            </p>
           </CardContent>
         </Card>
         <Card data-testid="card-overdue-ar">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              <p className="text-xs text-muted-foreground">
                 <T k="pages.overdueAr" />
               </p>
-              <Receipt className="w-4 h-4 text-destructive" />
+              <Receipt className="w-4 h-4 text-muted-foreground" aria-hidden />
             </div>
-            <p className="text-2xl font-bold mt-1">{formatAed(overview?.overdueAr ?? 0)}</p>
+            <p className="mt-1 text-h1 font-semibold tabular-nums">
+              {formatAed(overview?.overdueAr ?? 0)}
+            </p>
           </CardContent>
         </Card>
         <Card data-testid="card-attention">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              <p className="text-xs text-muted-foreground">
                 <T k="pages.needsAttention" />
               </p>
-              <AlertTriangle className="w-4 h-4 text-warning" />
+              <AlertTriangle className="w-4 h-4 text-muted-foreground" aria-hidden />
             </div>
-            <p className="text-2xl font-bold mt-1">{overview?.needsAttention ?? 0}</p>
+            <p className="mt-1 text-h1 font-semibold tabular-nums">
+              {overview?.needsAttention ?? 0}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -436,7 +446,7 @@ export default function ClientPortfolio() {
           onClick={() => setQuickFilter("critical")}
           data-testid="filter-critical"
         >
-          <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+          <AlertTriangle className="w-3.5 h-3.5 me-1.5" />
           Critical ({bookkeeperDashboard?.summary.critical ?? 0})
         </Button>
         <Button
@@ -445,7 +455,7 @@ export default function ClientPortfolio() {
           onClick={() => setQuickFilter("attention")}
           data-testid="filter-attention"
         >
-          <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+          <AlertTriangle className="w-3.5 h-3.5 me-1.5" />
           Needs Attention (
           {(bookkeeperDashboard?.summary.critical ?? 0) +
             (bookkeeperDashboard?.summary.attention ?? 0)}
@@ -457,7 +467,7 @@ export default function ClientPortfolio() {
           onClick={() => setQuickFilter("vat-due")}
           data-testid="filter-vat-due"
         >
-          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+          <Calendar className="w-3.5 h-3.5 me-1.5" />
           VAT Due Soon ({bookkeeperDashboard?.summary.vatDue28Days ?? 0})
         </Button>
         {VAT_GROUP_FILTERS.map((group) => {
@@ -472,7 +482,7 @@ export default function ClientPortfolio() {
               onClick={() => setQuickFilter(group.filter)}
               data-testid={`filter-${group.filter}`}
             >
-              <Calendar className="w-3.5 h-3.5 mr-1.5" />
+              <Calendar className="w-3.5 h-3.5 me-1.5" />
               {group.label} ({cohort?.clientCount ?? 0})
             </Button>
           );
@@ -483,7 +493,7 @@ export default function ClientPortfolio() {
           onClick={() => setQuickFilter("close-blocked")}
           data-testid="filter-close-blocked"
         >
-          <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
+          <TrendingUp className="w-3.5 h-3.5 me-1.5" />
           Close Blocked ({bookkeeperDashboard?.summary.bookkeepingBlocked ?? 0})
         </Button>
         <Button
@@ -492,7 +502,7 @@ export default function ClientPortfolio() {
           onClick={() => setQuickFilter("unassigned")}
           data-testid="filter-unassigned"
         >
-          <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+          <UserCheck className="w-3.5 h-3.5 me-1.5" />
           Unassigned ({bookkeeperDashboard?.workload?.unassignedClients ?? 0})
         </Button>
         <Button
@@ -501,7 +511,7 @@ export default function ClientPortfolio() {
           onClick={() => setQuickFilter("no-docs")}
           data-testid="filter-no-docs"
         >
-          <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+          <FolderOpen className="w-3.5 h-3.5 me-1.5" />
           <T k="pages.missingDocuments" />
         </Button>
       </div>
@@ -509,20 +519,20 @@ export default function ClientPortfolio() {
       {/* Search & view toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1 sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search by name or TRN..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="ps-9"
             data-testid="input-client-search"
           />
         </div>
-        <div className="flex border rounded-md ml-auto">
+        <div className="flex border rounded-md ms-auto">
           <Button
             variant={view === "card" ? "secondary" : "ghost"}
             size="sm"
-            className="rounded-r-none"
+            className="rounded-e-none"
             onClick={() => setView("card")}
           >
             <LayoutGrid className="w-4 h-4" />
@@ -530,7 +540,7 @@ export default function ClientPortfolio() {
           <Button
             variant={view === "table" ? "secondary" : "ghost"}
             size="sm"
-            className="rounded-l-none"
+            className="rounded-s-none"
             onClick={() => setView("table")}
           >
             <List className="w-4 h-4" />
@@ -552,7 +562,7 @@ export default function ClientPortfolio() {
           </p>
           {clients.length === 0 && (
             <Button onClick={() => setAddOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 me-2" />
               <T k="pages.addFirstClient" />
             </Button>
           )}
@@ -607,7 +617,7 @@ export default function ClientPortfolio() {
                         <button
                           type="button"
                           onClick={() => handleViewProfile(client.id)}
-                          className="font-medium text-left hover:underline"
+                          className="font-medium text-start hover:underline"
                         >
                           {client.name}
                         </button>
@@ -704,7 +714,7 @@ export default function ClientPortfolio() {
                               onClick={() => handleOpenBooks(client.id)}
                               disabled={switchMutation.isPending}
                             >
-                              <BookOpen className="w-3.5 h-3.5 mr-1" />
+                              <BookOpen className="w-3.5 h-3.5 me-1" />
                               Open
                             </Button>
                           </div>
@@ -877,7 +887,7 @@ export default function ClientPortfolio() {
                       disabled={switchMutation.isPending}
                       data-testid={`button-open-books-${client.id}`}
                     >
-                      <BookOpen className="w-3.5 h-3.5 mr-1.5" />
+                      <BookOpen className="w-3.5 h-3.5 me-1.5" />
                       <T k="pages.openBooks" />
                     </Button>
                     <Button
@@ -923,7 +933,7 @@ export default function ClientPortfolio() {
                 <TableHead>
                   <T k="pages.owner" />
                 </TableHead>
-                <TableHead className="text-right">
+                <TableHead data-numeric>
                   <T k="pages.actions" />
                 </TableHead>
               </TableRow>
@@ -984,7 +994,7 @@ export default function ClientPortfolio() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       <div className="flex justify-end gap-1">
                         {ops && (
                           <Button
@@ -1009,7 +1019,7 @@ export default function ClientPortfolio() {
                           onClick={() => handleOpenBooks(client.id)}
                           disabled={switchMutation.isPending}
                         >
-                          <BookOpen className="w-3.5 h-3.5 mr-1" />
+                          <BookOpen className="w-3.5 h-3.5 me-1" />
                           Open
                         </Button>
                         <Button
@@ -1393,7 +1403,7 @@ export default function ClientPortfolio() {
               disabled={!importFile || importMutation.isPending}
               data-testid="button-import-clients"
             >
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4 me-2" />
               {importMutation.isPending ? "Importing..." : "Import"}
             </Button>
           </DialogFooter>

@@ -34,6 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   Brain,
   Check,
@@ -313,7 +314,7 @@ export default function AIInbox() {
 
   if (isLoadingCompany) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -350,7 +351,7 @@ export default function AIInbox() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -368,9 +369,9 @@ export default function AIInbox() {
         </div>
         <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending} size="lg">
           {scanMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <Loader2 className="h-4 w-4 me-2 animate-spin" />
           ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="h-4 w-4 me-2" />
           )}
           {scanMutation.isPending ? "Scanning..." : "Run Scan"}
         </Button>
@@ -444,7 +445,7 @@ export default function AIInbox() {
             <Clock className="h-4 w-4" />
             Pending Review
             {stats && stats.pendingReview > 0 && (
-              <Badge variant="secondary" className="ml-1 text-xs">
+              <Badge variant="secondary" className="ms-1 text-xs">
                 {stats.pendingReview}
               </Badge>
             )}
@@ -469,9 +470,9 @@ export default function AIInbox() {
                 disabled={bulkAcceptMutation.isPending}
               >
                 {bulkAcceptMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 me-2 animate-spin" />
                 ) : (
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  <CheckCircle2 className="h-4 w-4 me-2" />
                 )}
                 Bulk Accept High Confidence ({highConfidencePending.length})
               </Button>
@@ -506,7 +507,7 @@ export default function AIInbox() {
                         <TableHead>
                           <T k="pages.description" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="pages.amount" />
                         </TableHead>
                         <TableHead>
@@ -518,7 +519,7 @@ export default function AIInbox() {
                         <TableHead>
                           <T k="pageLabels.aIReason" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="pages.actions" />
                         </TableHead>
                       </TableRow>
@@ -535,8 +536,8 @@ export default function AIInbox() {
                             <TableCell>
                               <span className="text-sm font-medium">{item.description}</span>
                             </TableCell>
-                            <TableCell className="text-right whitespace-nowrap font-mono text-sm">
-                              {formatCurrency(parseFloat(item.amount))}
+                            <TableCell data-numeric className=" whitespace-nowrap text-sm">
+                              <Money amount={parseFloat(item.amount)} />
                             </TableCell>
                             <TableCell>
                               {item.suggested_account_name ? (
@@ -645,7 +646,7 @@ export default function AIInbox() {
                         <TableHead>
                           <T k="pages.description" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="pages.amount" />
                         </TableHead>
                         <TableHead>
@@ -671,8 +672,8 @@ export default function AIInbox() {
                             <TableCell>
                               <span className="text-sm font-medium">{item.description}</span>
                             </TableCell>
-                            <TableCell className="text-right whitespace-nowrap font-mono text-sm">
-                              {formatCurrency(parseFloat(item.amount))}
+                            <TableCell data-numeric className=" whitespace-nowrap text-sm">
+                              <Money amount={parseFloat(item.amount)} />
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col">
@@ -698,7 +699,7 @@ export default function AIInbox() {
                               {item.journal_entry_id ? (
                                 <a
                                   href={`/journal/${item.journal_entry_id}`}
-                                  className="text-sm text-primary hover:underline font-mono"
+                                  className="text-sm text-primary hover:underline tabular-nums"
                                 >
                                   {item.journal_entry_id.substring(0, 8)}...
                                 </a>
@@ -746,7 +747,7 @@ export default function AIInbox() {
                         <TableHead>
                           <T k="pages.description" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="pages.amount" />
                         </TableHead>
                         <TableHead>
@@ -780,8 +781,8 @@ export default function AIInbox() {
                             <TableCell>
                               <span className="text-sm font-medium">{item.description}</span>
                             </TableCell>
-                            <TableCell className="text-right whitespace-nowrap font-mono text-sm">
-                              {formatCurrency(parseFloat(item.amount))}
+                            <TableCell data-numeric className=" whitespace-nowrap text-sm">
+                              <Money amount={parseFloat(item.amount)} />
                             </TableCell>
                             <TableCell>
                               {displayAccount ? (
@@ -885,9 +886,9 @@ export default function AIInbox() {
               disabled={!selectedAccountId || correctMutation.isPending}
             >
               {correctMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-4 w-4 me-2 animate-spin" />
               ) : (
-                <Check className="h-4 w-4 mr-2" />
+                <Check className="h-4 w-4 me-2" />
               )}
               Confirm Correction
             </Button>

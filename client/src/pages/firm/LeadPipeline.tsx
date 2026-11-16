@@ -338,7 +338,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
             <T k="pages.cancel" />
           </Button>
           <Button onClick={handleSubmit} disabled={mutation.isPending || !userId.trim()}>
-            {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : null}
             Add Lead
           </Button>
         </DialogFooter>
@@ -433,7 +433,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             onClick={() => deleteMutation.mutate()}
             disabled={deleteMutation.isPending}
           >
-            {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+            {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : null}
             Delete
           </Button>
           <div className="flex gap-2">
@@ -446,7 +446,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
               }
               disabled={updateMutation.isPending}
             >
-              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : null}
               Save
             </Button>
           </div>
@@ -527,7 +527,7 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
                   onClick={() => addMutation.mutate(p)}
                   disabled={addMutation.isPending}
                 >
-                  <UserPlus className="w-3.5 h-3.5 mr-1" />
+                  <UserPlus className="w-3.5 h-3.5 me-1" />
                   Add
                 </Button>
               </div>
@@ -602,7 +602,7 @@ export default function LeadPipeline() {
   const byStage = pipeline?.byStage ?? ({} as Record<Stage, Lead[]>);
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Firm"
         title={(t as any).leadPipeline || "Lead Pipeline"}
@@ -616,16 +616,16 @@ export default function LeadPipeline() {
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setShowDiscover((v) => !v)}>
-              <Sparkles className="w-4 h-4 mr-1.5 text-warning" />
+              <Sparkles className="w-4 h-4 me-1.5 text-warning" />
               Auto-discover
               {showDiscover ? (
-                <ChevronUp className="w-3.5 h-3.5 ml-1" />
+                <ChevronUp className="w-3.5 h-3.5 ms-1" />
               ) : (
-                <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                <ChevronDown className="w-3.5 h-3.5 ms-1" />
               )}
             </Button>
             <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="w-4 h-4 mr-1.5" />
+              <Plus className="w-4 h-4 me-1.5" />
               <T k="pages.addLead" />
             </Button>
           </>

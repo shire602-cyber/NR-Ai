@@ -429,7 +429,7 @@ function ComposeTab() {
           size="sm"
           onClick={() => setChannel("email")}
         >
-          <Mail className="h-4 w-4 mr-1.5" />
+          <Mail className="h-4 w-4 me-1.5" />
           {t.sendEmail}
         </Button>
         <Button
@@ -437,7 +437,7 @@ function ComposeTab() {
           size="sm"
           onClick={() => setChannel("whatsapp")}
         >
-          <MessageCircle className="h-4 w-4 mr-1.5" />
+          <MessageCircle className="h-4 w-4 me-1.5" />
           {t.sendWhatsApp}
         </Button>
       </div>
@@ -527,7 +527,7 @@ function ComposeTab() {
       </div>
 
       <Button onClick={handleSend} disabled={sendMutation.isPending}>
-        <Send className="h-4 w-4 mr-1.5" />
+        <Send className="h-4 w-4 me-1.5" />
         {sendMutation.isPending ? t.loading : t.sendEmail}
       </Button>
 
@@ -626,12 +626,12 @@ function TemplatesTab() {
               onClick={() => seedMutation.mutate()}
               disabled={seedMutation.isPending}
             >
-              <Zap className="h-4 w-4 mr-1.5" />
+              <Zap className="h-4 w-4 me-1.5" />
               {seedMutation.isPending ? t.loading : "Add Defaults"}
             </Button>
           )}
           <Button size="sm" onClick={openNew}>
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="h-4 w-4 me-1.5" />
             {t.addTemplate}
           </Button>
         </div>
@@ -874,12 +874,12 @@ function BulkActionsTab() {
               onClick={() => previewMutation.mutate()}
               disabled={previewMutation.isPending}
             >
-              <Eye className="h-4 w-4 mr-1.5" />
+              <Eye className="h-4 w-4 me-1.5" />
               {previewMutation.isPending ? t.loading : t.previewReminders}
             </Button>
             {preview !== null && preview.length > 0 && (
               <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
-                <Send className="h-4 w-4 mr-1.5" />
+                <Send className="h-4 w-4 me-1.5" />
                 {sendMutation.isPending ? t.loading : `${t.sendReminders} (${preview.length})`}
               </Button>
             )}
@@ -958,7 +958,7 @@ export default function FirmComms() {
 
       <Tabs defaultValue="inbox">
         <div className="overflow-x-auto">
-          <TabsList className="flex w-max">
+          <TabsList className="w-max">
             <TabsTrigger value="inbox" className="flex items-center gap-1.5">
               <Inbox className="h-4 w-4" />
               {t.inbox}

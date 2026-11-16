@@ -108,5 +108,15 @@
   "firm.emailTaskCreate": "إنشاء مهمة",
   "firm.emailTaskExists": "تم إنشاء المهمة",
   "firm.emailTaskCreated": "تم إنشاء مهمة المراجعة",
-  "firm.emailTaskFailed": "تعذّر إنشاء المهمة"
+  "firm.emailTaskFailed": "تعذّر إنشاء المهمة",
+  "firm.ratingExcellent": "ممتاز",
+  "firm.ratingGood": "جيد",
+  "firm.ratingFair": "مقبول",
+  "firm.ratingPoor": "ضعيف",
+  "firm.ratingCritical": "حرج",
+  "firm.daysAgo": "منذ {days} يوم",
+  "firm.vatOk": "سليم",
+  "firm.clientsManagedOne": "عميل واحد يديره مكتبك",
+  "firm.clientsManagedMany": "{count} عملاء يديرهم مكتبك",
+  "firm.vatDue30d": "ضريبة مستحقة خلال 30 يومًا"
 }

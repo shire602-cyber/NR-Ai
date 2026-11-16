@@ -121,7 +121,7 @@ describe("catalog restraint (R12-14, R18-10)", () => {
     const panel = read("client/src/pages/reports/panels/ReportsPanel.tsx");
     expect(panel.indexOf("<StatementsQuickPanel")).toBeGreaterThan(-1);
     expect(panel.indexOf("<StatementsQuickPanel")).toBeLessThan(
-      panel.indexOf('aria-label="Report Center"')
+      panel.indexOf('aria-label={t["reportCenter.reportCenter"]}')
     );
     const parts = read("client/src/pages/reports/StatementParts.tsx");
     expect(parts).toContain('data-testid="button-reports-advanced-tools"');

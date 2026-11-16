@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   formatReportDate,
   payrollAmount,
@@ -25,7 +25,7 @@ import {
 import { useReportsPageContext } from "../context";
 
 export default function PayrollTab() {
-  const { locale, payrollLoading, payrollReport, reportSectionClass } = useReportsPageContext();
+  const { payrollLoading, payrollReport, reportSectionClass } = useReportsPageContext();
   return (
     <>
       <div
@@ -47,8 +47,8 @@ export default function PayrollTab() {
             {payrollLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(payrollReport.totalNet, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={payrollReport.totalNet} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -67,7 +67,7 @@ export default function PayrollTab() {
             {payrollLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{payrollReport.runCount}</div>
+              <div className="tabular-nums text-2xl font-bold">{payrollReport.runCount}</div>
             )}
           </CardContent>
         </Card>
@@ -85,7 +85,9 @@ export default function PayrollTab() {
             {payrollLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{payrollReport.approvalQueueCount}</div>
+              <div className="tabular-nums text-2xl font-bold">
+                {payrollReport.approvalQueueCount}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -103,7 +105,7 @@ export default function PayrollTab() {
             {payrollLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{payrollReport.wpsMissingCount}</div>
+              <div className="tabular-nums text-2xl font-bold">{payrollReport.wpsMissingCount}</div>
             )}
           </CardContent>
         </Card>
@@ -156,8 +158,8 @@ export default function PayrollTab() {
                             {row.count} runs / {row.employeeCount} employees
                           </div>
                         </div>
-                        <div className="text-right font-mono">
-                          {formatCurrency(row.totalNet, "AED", locale)}
+                        <div className="text-end tabular-nums">
+                          <Money amount={row.totalNet} currency={"AED"} />
                         </div>
                       </div>
                     ))}
@@ -174,19 +176,19 @@ export default function PayrollTab() {
                         <TableHead>
                           <T k="reportCenter.status" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.employees" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.basic" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.allowances" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.deductions" />
                         </TableHead>
-                        <TableHead className="text-right">Net</TableHead>
+                        <TableHead data-numeric>Net</TableHead>
                         <TableHead>SIF</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -199,20 +201,18 @@ export default function PayrollTab() {
                               {run.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {run.employee_count}
+                          <TableCell data-numeric>{run.employee_count}</TableCell>
+                          <TableCell data-numeric>
+                            <Money amount={payrollAmount(run.total_basic)} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(payrollAmount(run.total_basic), "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={payrollAmount(run.total_allowances)} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(payrollAmount(run.total_allowances), "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={payrollAmount(run.total_deductions)} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(payrollAmount(run.total_deductions), "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(payrollAmount(run.total_net), "AED", locale)}
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={payrollAmount(run.total_net)} currency={"AED"} />
                           </TableCell>
                           <TableCell>
                             <Badge variant={run.sif_file_content ? "success" : "warning"} dot>
@@ -255,19 +255,23 @@ export default function PayrollTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.wpsReady" />
               </div>
-              <div className="font-mono text-2xl font-semibold">{payrollReport.wpsReadyCount}</div>
+              <div className="tabular-nums text-2xl font-semibold">
+                {payrollReport.wpsReadyCount}
+              </div>
             </div>
             <div className="rounded-md border p-4">
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.approvedRuns" />
               </div>
-              <div className="font-mono text-2xl font-semibold">{payrollReport.approvedCount}</div>
+              <div className="tabular-nums text-2xl font-semibold">
+                {payrollReport.approvedCount}
+              </div>
             </div>
             <div className="rounded-md border p-4">
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.latestPeriod" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {payrollPeriodLabel(payrollReport.latestRun)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">

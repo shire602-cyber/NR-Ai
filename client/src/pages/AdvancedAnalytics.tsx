@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   TrendingUp,
@@ -277,12 +278,12 @@ export default function AdvancedAnalytics() {
             </div>
           </div>
         </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-info/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-chart-5/5 rounded-full -ml-24 -mb-24 blur-3xl" />
+        <div className="absolute top-0 end-0 w-64 h-64 bg-info/5 rounded-full -me-32 -mt-32 blur-3xl" />
+        <div className="absolute bottom-0 start-0 w-48 h-48 bg-chart-5/5 rounded-full -ms-24 -mb-24 blur-3xl" />
       </div>
 
       <Tabs defaultValue="forecasts" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-fit">
+        <TabsList>
           <TabsTrigger value="forecasts" className="gap-2" data-testid="tab-forecasts">
             <TrendingUp className="w-4 h-4" />
             <span className="hidden sm:inline">
@@ -328,9 +329,9 @@ export default function AdvancedAnalytics() {
               data-testid="button-generate-forecast"
             >
               {generateForecastMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
+                <Sparkles className="w-4 h-4 me-2" />
               )}
               Generate Forecast
             </Button>
@@ -346,8 +347,8 @@ export default function AdvancedAnalytics() {
                 <ArrowUp className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-success ">
-                  {formatCurrency(forecastSummary.inflow, "AED")}
+                <div className="text-2xl font-bold tabular-nums text-success ">
+                  <Money amount={forecastSummary.inflow} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Next{" "}
@@ -365,8 +366,8 @@ export default function AdvancedAnalytics() {
                 <ArrowDown className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-info ">
-                  {formatCurrency(forecastSummary.outflow, "AED")}
+                <div className="text-2xl font-bold tabular-nums text-info ">
+                  <Money amount={forecastSummary.outflow} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   <T k="pageLabels.estimatedExpenses" />
@@ -382,8 +383,8 @@ export default function AdvancedAnalytics() {
                 <Wallet className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-success ">
-                  {formatCurrency(forecastSummary.balance, "AED")}
+                <div className="text-2xl font-bold tabular-nums text-success ">
+                  <Money amount={forecastSummary.balance} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   <T k="pageLabels.projectedBalance" />
@@ -512,8 +513,8 @@ export default function AdvancedAnalytics() {
                 <Target className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(budgetSummary.budgeted, "AED")}
+                <div className="text-2xl font-bold tabular-nums">
+                  <Money amount={budgetSummary.budgeted} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Planned for {months[budgetMonth - 1]} {budgetYear}
@@ -529,8 +530,8 @@ export default function AdvancedAnalytics() {
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(budgetSummary.actual, "AED")}
+                <div className="text-2xl font-bold tabular-nums">
+                  <Money amount={budgetSummary.actual} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   <T k="pageLabels.recordedTransactions" />
@@ -547,9 +548,9 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold font-mono ${budgetSummary.variance < 0 ? "text-destructive " : "text-success "}`}
+                  className={`text-2xl font-bold tabular-nums ${budgetSummary.variance < 0 ? "text-destructive " : "text-success "}`}
                 >
-                  {formatCurrency(budgetSummary.variance, "AED")}
+                  <Money amount={budgetSummary.variance} currency={"AED"} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {budgetSummary.variance < 0
@@ -635,16 +636,16 @@ export default function AdvancedAnalytics() {
                           <p className="font-medium">{item.category}</p>
                           <p className="text-xs text-muted-foreground">
                             Budget: {formatCurrency(item.budgeted, "AED")} | Actual:{" "}
-                            {formatCurrency(item.actual, "AED")}
+                            <Money amount={item.actual} currency={"AED"} />
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-end">
                         <p
-                          className={`font-mono font-bold ${isOverBudget ? "text-destructive " : item.variance === 0 ? "text-muted-foreground" : "text-success "}`}
+                          className={`tabular-nums font-bold ${isOverBudget ? "text-destructive " : item.variance === 0 ? "text-muted-foreground" : "text-success "}`}
                         >
                           {item.variance > 0 ? "+" : ""}
-                          {formatCurrency(item.variance, "AED")}
+                          <Money amount={item.variance} currency={"AED"} />
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {variancePercent.toFixed(1)}%{" "}
@@ -670,7 +671,7 @@ export default function AdvancedAnalytics() {
               <T k="pageLabels.realTimeFinancialIndicatorsUpdatedAutomatically" />
             </p>
             <Button variant="outline" size="sm" data-testid="button-refresh-kpis">
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className="w-4 h-4 me-2" />
               <T k="pages.refresh" />
             </Button>
           </div>
@@ -708,7 +709,7 @@ export default function AdvancedAnalytics() {
               return (
                 <Card key={idx} className="hover-elevate relative overflow-hidden">
                   <div
-                    className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20
+                    className={`absolute top-0 end-0 w-24 h-24 rounded-full blur-2xl opacity-20
                     ${isPositiveTrend ? "bg-success" : "bg-destructive"}`}
                   />
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
@@ -787,7 +788,7 @@ export default function AdvancedAnalytics() {
               Rule-based insights computed from your posted ledger and open invoices
             </p>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
-              <Sparkles className="w-3 h-3 mr-1" />
+              <Sparkles className="w-3 h-3 me-1" />
               {insightRows.length} Active Insights
             </Badge>
           </div>

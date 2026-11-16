@@ -810,7 +810,7 @@ export function VatWorkspaceDialog({
                 onClick={() => createMutation.mutate()}
                 disabled={!client || !periodStart || !periodEnd || createMutation.isPending}
               >
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 me-2" />
                 Create/Open
               </Button>
               <Button
@@ -826,7 +826,7 @@ export function VatWorkspaceDialog({
                 disabled={!selectedWorkpaperId || exportingWorkbook}
                 data-testid="button-export-workpaper"
               >
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-4 h-4 me-2" />
                 {exportingWorkbook ? "Exporting…" : "Excel"}
               </Button>
               <Button
@@ -835,7 +835,7 @@ export function VatWorkspaceDialog({
                 disabled={!selectedWorkpaperId || pullFromBooksMutation.isPending}
                 data-testid="button-pull-from-books"
               >
-                <BookOpen className="w-4 h-4 mr-2" />
+                <BookOpen className="w-4 h-4 me-2" />
                 {pullFromBooksMutation.isPending ? "Pulling…" : "Pull from books"}
               </Button>
             </div>
@@ -868,12 +868,12 @@ export function VatWorkspaceDialog({
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 px-2 text-[11px]"
+                        className="h-6 px-2 text-caption"
                         onClick={() => approveAllDraftsMutation.mutate()}
                         disabled={approveAllDraftsMutation.isPending}
                         data-testid="button-approve-all-drafts"
                       >
-                        <Check className="w-3 h-3 mr-1" />
+                        <Check className="w-3 h-3 me-1" />
                         <T k="pages.approveAll" />
                       </Button>
                     )}
@@ -900,7 +900,7 @@ export function VatWorkspaceDialog({
               </div>
 
               <Tabs value={workspaceTab} onValueChange={setWorkspaceTab} className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList>
                   <TabsTrigger value="grid">
                     <T k="pages.entryGrid" />
                   </TabsTrigger>
@@ -949,17 +949,22 @@ export function VatWorkspaceDialog({
                               <TableHead className="min-w-32">
                                 <T k="pages.emirate" />
                               </TableHead>
-                              <TableHead className="min-w-28 text-right">
+                              <TableHead data-numeric className="min-w-28">
                                 <T k="pages.taxable" />
                               </TableHead>
-                              <TableHead className="min-w-28 text-right">VAT</TableHead>
-                              <TableHead className="min-w-28 text-right">
+                              <TableHead data-numeric className="min-w-28">
+                                VAT
+                              </TableHead>
+                              <TableHead data-numeric className="min-w-28">
                                 <T k="pages.gross" />
                               </TableHead>
                               <TableHead className="min-w-32">
                                 <T k="pages.status" />
                               </TableHead>
-                              <TableHead className="min-w-36 text-right sticky right-0 bg-background z-20 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
+                              <TableHead
+                                data-numeric
+                                className="min-w-36 sticky end-0 bg-background z-20 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]"
+                              >
                                 <T k="pages.actions" />
                               </TableHead>
                             </TableRow>
@@ -1066,7 +1071,7 @@ export function VatWorkspaceDialog({
                               </TableCell>
                               <TableCell>
                                 <Input
-                                  className="h-8 min-w-24 text-right"
+                                  className="h-8 min-w-24 text-end"
                                   placeholder="0.00"
                                   value={rowForm.taxableAmount}
                                   onChange={(e) =>
@@ -1081,7 +1086,7 @@ export function VatWorkspaceDialog({
                               </TableCell>
                               <TableCell>
                                 <Input
-                                  className="h-8 min-w-24 text-right"
+                                  className="h-8 min-w-24 text-end"
                                   placeholder="0.00"
                                   value={rowForm.vatAmount}
                                   onChange={(e) =>
@@ -1093,7 +1098,7 @@ export function VatWorkspaceDialog({
                               </TableCell>
                               <TableCell>
                                 <Input
-                                  className="h-8 min-w-24 text-right"
+                                  className="h-8 min-w-24 text-end"
                                   placeholder="0.00"
                                   value={rowForm.grossAmount}
                                   onChange={(e) =>
@@ -1129,7 +1134,10 @@ export function VatWorkspaceDialog({
                                   </SelectContent>
                                 </Select>
                               </TableCell>
-                              <TableCell className="text-right sticky right-0 bg-background z-10 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
+                              <TableCell
+                                data-numeric
+                                className=" sticky end-0 bg-background z-10 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]"
+                              >
                                 <div className="flex justify-end gap-1">
                                   {editingRowId ? (
                                     <Button
@@ -1194,13 +1202,13 @@ export function VatWorkspaceDialog({
                                     {vatRowCategoryLabel(row.rowCategory)}
                                   </TableCell>
                                   <TableCell className="text-sm">{row.emirate || "—"}</TableCell>
-                                  <TableCell className="text-right">
+                                  <TableCell data-numeric>
                                     {formatAed(Number(row.taxableAmount ?? 0))}
                                   </TableCell>
-                                  <TableCell className="text-right">
+                                  <TableCell data-numeric>
                                     {formatAed(Number(row.vatAmount ?? 0))}
                                   </TableCell>
-                                  <TableCell className="text-right">
+                                  <TableCell data-numeric>
                                     {formatAed(Number(row.grossAmount ?? 0))}
                                   </TableCell>
                                   <TableCell>
@@ -1217,7 +1225,8 @@ export function VatWorkspaceDialog({
                                     </Badge>
                                   </TableCell>
                                   <TableCell
-                                    className={`text-right sticky right-0 z-10 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)] ${
+                                    data-numeric
+                                    className={` sticky end-0 z-10 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)] ${
                                       editingRowId === row.id ? "bg-primary/5" : "bg-background"
                                     }`}
                                   >
@@ -1401,7 +1410,7 @@ export function VatWorkspaceDialog({
                           placeholder={
                             "category\tinvoice number\tdate\tcustomer/vendor\tTRN\temirate\ttaxable amount\tVAT amount\tgross amount\tnotes\nstandard_expense\tBILL-1001\t2026-05-18\tSupplier LLC\t100123456700003\tdubai\t1000\t50\t1050\tMay receipt"
                           }
-                          className="min-h-36 font-mono text-xs"
+                          className="min-h-36 tabular-nums text-xs"
                           data-testid="textarea-vat-paste-rows"
                         />
                         {pastePreviewRows.length > 0 && (
@@ -1429,7 +1438,7 @@ export function VatWorkspaceDialog({
                               importRowsMutation.isPending
                             }
                           >
-                            <Upload className="w-4 h-4 mr-2" />
+                            <Upload className="w-4 h-4 me-2" />
                             <T k="pages.addPastedRows" />
                           </Button>
                           <Button
@@ -1438,7 +1447,7 @@ export function VatWorkspaceDialog({
                             onClick={() => void downloadTemplate()}
                             data-testid="button-vat-template"
                           >
-                            <Download className="w-4 h-4 mr-2" />
+                            <Download className="w-4 h-4 me-2" />
                             <T k="pages.excelTemplate" />
                           </Button>
                           <input
@@ -1460,7 +1469,7 @@ export function VatWorkspaceDialog({
                             disabled={!selectedWorkpaperId || importFileMutation.isPending}
                             data-testid="button-vat-import-file"
                           >
-                            <Upload className="w-4 h-4 mr-2" />
+                            <Upload className="w-4 h-4 me-2" />
                             {importFileMutation.isPending ? "Importing…" : "Import .xlsx"}
                           </Button>
                         </div>
@@ -1516,7 +1525,7 @@ export function VatWorkspaceDialog({
                         onClick={() => scanMutation.mutate()}
                         disabled={!selectedWorkpaperId || scanMutation.isPending}
                       >
-                        <ScanLine className="w-4 h-4 mr-2" />
+                        <ScanLine className="w-4 h-4 me-2" />
                         <T k="pages.logOcrDraft" />
                       </Button>
                     </div>
@@ -1543,8 +1552,8 @@ export function VatWorkspaceDialog({
                             <TableHead>
                               <T k="pages.category" />
                             </TableHead>
-                            <TableHead className="text-right">VAT</TableHead>
-                            <TableHead className="text-right">
+                            <TableHead data-numeric>VAT</TableHead>
+                            <TableHead data-numeric>
                               <T k="pages.review" />
                             </TableHead>
                           </TableRow>
@@ -1565,10 +1574,10 @@ export function VatWorkspaceDialog({
                                 <TableCell>{row.invoiceNumber || "—"}</TableCell>
                                 <TableCell>{row.counterpartyName || "—"}</TableCell>
                                 <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
-                                <TableCell className="text-right">
+                                <TableCell data-numeric>
                                   {formatAed(Number(row.vatAmount ?? 0))}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell data-numeric>
                                   <div className="flex justify-end gap-1">
                                     <Button
                                       size="sm"
@@ -1604,7 +1613,7 @@ export function VatWorkspaceDialog({
                                     <Button
                                       size="sm"
                                       variant="ghost"
-                                      className="text-destructive hover:text-destructive"
+                                      className="text-muted-foreground hover:text-destructive"
                                       aria-label={`Delete ${row.invoiceNumber || "draft VAT row"}`}
                                       title="Delete this draft row"
                                       disabled={deleteRowMutation.isPending}
@@ -1648,7 +1657,7 @@ export function VatWorkspaceDialog({
                           onClick={() => recalculateMutation.mutate()}
                           disabled={!selectedWorkpaperId || recalculateMutation.isPending}
                         >
-                          <RefreshCw className="w-4 h-4 mr-2" />
+                          <RefreshCw className="w-4 h-4 me-2" />
                           <T k="pages.recalculate" />
                         </Button>
                         <Button
@@ -1656,7 +1665,7 @@ export function VatWorkspaceDialog({
                           onClick={() => generateMutation.mutate()}
                           disabled={!selectedWorkpaperId || generateMutation.isPending}
                         >
-                          <FileText className="w-4 h-4 mr-2" />
+                          <FileText className="w-4 h-4 me-2" />
                           <T k="pages.generateReturn" />
                         </Button>
                       </div>
@@ -1673,7 +1682,7 @@ export function VatWorkspaceDialog({
                                   key={key}
                                   type="button"
                                   onClick={() => copyText(value)}
-                                  className="rounded-md border p-2 text-left hover:bg-muted/50 transition-colors"
+                                  className="rounded-md border p-2 text-start hover:bg-muted/50 transition-colors"
                                 >
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="text-xs text-muted-foreground">{label}</span>

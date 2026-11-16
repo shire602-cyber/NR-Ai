@@ -108,5 +108,15 @@
   "firm.emailTaskCreate": "Create task",
   "firm.emailTaskExists": "Task created",
   "firm.emailTaskCreated": "Review task created",
-  "firm.emailTaskFailed": "Could not create the task"
+  "firm.emailTaskFailed": "Could not create the task",
+  "firm.ratingExcellent": "Excellent",
+  "firm.ratingGood": "Good",
+  "firm.ratingFair": "Fair",
+  "firm.ratingPoor": "Poor",
+  "firm.ratingCritical": "Critical",
+  "firm.daysAgo": "{days}d ago",
+  "firm.vatOk": "OK",
+  "firm.clientsManagedOne": "1 client managed by your firm",
+  "firm.clientsManagedMany": "{count} clients managed by your firm",
+  "firm.vatDue30d": "VAT due in 30 days"
 }

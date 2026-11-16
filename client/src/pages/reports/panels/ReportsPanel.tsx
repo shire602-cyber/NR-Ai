@@ -1,8 +1,7 @@
 // Reports > Report Center panel (focused report tabs are lazy modules in ../tabs).
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { ArrowRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { DataBasisBadge, StatementsQuickPanel } from "../StatementParts";
 import { type ReportTab, reportCatalogDataBasis } from "@/lib/reportCatalog";
 import { T } from "@/components/layout/T";
@@ -51,46 +50,53 @@ export default function ReportsPanel() {
           />
         ) : null}
         {!hasFocusedReportSelection ? (
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Report Center">
+          <section
+            className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3"
+            aria-label={t["reportCenter.reportCenter"]}
+          >
             {reportViewerGroups.map((group) => (
               <Card key={group.category} className="overflow-hidden">
-                <CardHeader className="border-b bg-muted/20 pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="text-base">{group.label}</CardTitle>
-                    <Badge variant="outline">{group.options.length}</Badge>
-                  </div>
-                  <CardDescription className="line-clamp-2">
-                    {(t as any).reportCategoryCardDesc ??
-                      "Open a report from this category. Persona ranking changes recommendations, not report names."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="divide-y p-0">
+                <div className="flex items-baseline justify-between gap-3 px-5 pb-2 pt-4">
+                  <h2 className="text-h3 font-semibold text-foreground">{group.label}</h2>
+                  <span className="text-caption tabular-nums text-muted-foreground">
+                    {group.options.length}
+                  </span>
+                </div>
+                <div className="divide-hairline">
                   {group.options.map((option) => (
                     <button
                       key={option.id}
                       type="button"
                       disabled={!option.href && !option.tab}
                       onClick={() => openReportViewerOption(option.id)}
-                      className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="group/report flex w-full items-center justify-between gap-3 px-5 py-2.5 text-start transition-colors duration-fast hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                       data-testid={`button-report-center-${option.id}`}
                     >
                       <span className="min-w-0">
                         <span className="flex items-center gap-2">
-                          <span className="block truncate text-sm font-medium">{option.label}</span>
+                          <span className="block truncate text-body font-medium text-foreground">
+                            {option.label}
+                          </span>
                           <DataBasisBadge
                             basis={
                               option.reportId ? reportCatalogDataBasis(option.reportId) : undefined
                             }
                           />
                         </span>
-                        <span className="mt-1 block line-clamp-2 text-xs leading-snug text-muted-foreground">
+                        <span
+                          className="mt-0.5 block line-clamp-1 text-caption text-muted-foreground"
+                          title={option.description}
+                        >
                           {option.description}
                         </span>
                       </span>
-                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <ArrowRight
+                        className="h-4 w-4 shrink-0 text-muted-foreground opacity-60 transition-[opacity,transform] duration-fast group-hover/report:translate-x-0.5 group-hover/report:opacity-100 rtl:-scale-x-100 rtl:group-hover/report:-translate-x-0.5"
+                        aria-hidden
+                      />
                     </button>
                   ))}
-                </CardContent>
+                </div>
               </Card>
             ))}
           </section>

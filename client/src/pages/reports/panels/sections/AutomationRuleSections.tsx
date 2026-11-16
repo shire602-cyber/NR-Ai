@@ -8,6 +8,7 @@ import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { reportWorkspaceHref } from "@/lib/reportCatalog";
 import { triggerSeverityMeta } from "../../shared";
 import { useReportsPageContext } from "../../context";
@@ -101,7 +102,7 @@ export function AutomationRuleSections() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.openWork" />
                         </div>
-                        <div className="mt-1 font-mono text-base font-semibold">
+                        <div className="mt-1 tabular-nums text-base font-semibold">
                           {rule.openWorkItemCount}
                         </div>
                       </div>
@@ -202,13 +203,13 @@ export function AutomationRuleSections() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-md border p-3">
                         <div className="text-xs text-muted-foreground">{item.signal}</div>
-                        <div className="font-mono text-2xl font-semibold">{item.count}</div>
+                        <div className="tabular-nums text-2xl font-semibold">{item.count}</div>
                       </div>
                       <div className="rounded-md border p-3">
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.amount" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {typeof item.amount === "number"
                             ? formatCurrency(item.amount, item.currency ?? "AED", locale)
                             : "-"}
@@ -301,7 +302,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.liveReports" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {item.liveReportCount}
                         </div>
                       </div>
@@ -309,7 +310,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.automations" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {item.automatedSignalCount}
                         </div>
                       </div>
@@ -317,7 +318,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.comparisons" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {item.comparisonTypeCount}
                         </div>
                       </div>
@@ -325,7 +326,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.workflows" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {item.workflowReportCount}
                         </div>
                       </div>
@@ -333,18 +334,18 @@ export function AutomationRuleSections() {
 
                     <div className="rounded-md border p-3">
                       <div className="flex items-center justify-between gap-3 text-xs">
-                        <span className="font-medium uppercase text-muted-foreground">
+                        <span className="font-medium text-muted-foreground">
                           <T k="reportCenter.openWork" />
                         </span>
-                        <span className="font-mono">
+                        <span className="tabular-nums">
                           {item.openWorkItemCount} items -{" "}
-                          {formatCurrency(item.amountAtRisk, "AED", locale)}
+                          <Money amount={item.amountAtRisk} currency={"AED"} />
                         </span>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.signalCoverage" />
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -494,7 +495,7 @@ export function AutomationRuleSections() {
                   <div key={metric.label} className="rounded-md border p-3">
                     <div className="text-xs text-muted-foreground">{metric.label}</div>
                     <div
-                      className={`truncate font-mono text-lg font-semibold ${
+                      className={`truncate tabular-nums text-lg font-semibold ${
                         metric.className ?? ""
                       }`}
                     >
@@ -506,7 +507,7 @@ export function AutomationRuleSections() {
 
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase text-muted-foreground">
+                  <div className="text-xs font-medium text-muted-foreground">
                     <T k="reportCenter.topBlockers" />
                   </div>
                   {reportAutomationCommandCenter.topReviewRules.length ? (
@@ -525,7 +526,7 @@ export function AutomationRuleSections() {
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {rule.workspace.title} - {rule.openWorkItemCount} open work items -{" "}
-                            {formatCurrency(rule.amountAtRisk, "AED", locale)}
+                            <Money amount={rule.amountAtRisk} currency={"AED"} />
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {rule.liveReportCount}/{rule.reportCount} reports live with{" "}
@@ -545,7 +546,7 @@ export function AutomationRuleSections() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase text-muted-foreground">
+                  <div className="text-xs font-medium text-muted-foreground">
                     <T k="reportCenter.packDeliveryReadiness" />
                   </div>
                   {visibleReportPackReadiness.map((item) => (
@@ -625,7 +626,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.reports" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {rule.liveReportCount}/{rule.reportCount}
                         </div>
                       </div>
@@ -633,7 +634,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.comparisons" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {rule.comparisonMetricCount}
                         </div>
                       </div>
@@ -641,7 +642,7 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.openWork" />
                         </div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="tabular-nums text-lg font-semibold">
                           {rule.openWorkItemCount}
                         </div>
                       </div>
@@ -649,8 +650,8 @@ export function AutomationRuleSections() {
                         <div className="text-xs text-muted-foreground">
                           <T k="reportCenter.amount" />
                         </div>
-                        <div className="truncate font-mono text-sm font-semibold">
-                          {formatCurrency(rule.amountAtRisk, "AED", locale)}
+                        <div className="truncate tabular-nums text-sm font-semibold">
+                          <Money amount={rule.amountAtRisk} currency={"AED"} />
                         </div>
                       </div>
                     </div>
@@ -671,7 +672,7 @@ export function AutomationRuleSections() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.reportBundle" />
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -687,7 +688,7 @@ export function AutomationRuleSections() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.ruleSignals" />
                       </div>
                       {rule.matchingSignals.length ? (
@@ -713,7 +714,7 @@ export function AutomationRuleSections() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.automationRunbook" />
                       </div>
                       {rule.runbookSteps.map((step, index) => (

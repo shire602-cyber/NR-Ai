@@ -193,5 +193,7 @@
   "components.notificationDeliveryQueuedTitle": "التقرير في قائمة الإرسال: {title}",
   "components.clearDates": "مسح التواريخ",
   "components.launchViewAll": "عرض الكل في التقارير",
-  "components.launchReportActions": "إجراءات أخرى لـ {report}"
+  "components.launchReportActions": "إجراءات أخرى لـ {report}",
+  "components.vwOutputShort": "المخرجات",
+  "components.vwInputShort": "المدخلات"
 }

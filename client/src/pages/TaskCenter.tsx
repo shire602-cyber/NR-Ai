@@ -353,7 +353,7 @@ export default function TaskCenter() {
         }
         actions={
           <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 me-2" />
             {locale === "ar" ? "مهمة جديدة" : "New Task"}
           </Button>
         }
@@ -413,12 +413,12 @@ export default function TaskCenter() {
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder={locale === "ar" ? "بحث في المهام..." : "Search tasks..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-tasks"
               />
             </div>
@@ -526,7 +526,7 @@ export default function TaskCenter() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div className="text-right">
+                      <div className="text-end">
                         <div className="flex items-center gap-1 text-sm">
                           <Calendar className="w-3 h-3" />
                           {format(parseISO(task.dueDate), "MMM d, yyyy")}
@@ -579,7 +579,7 @@ export default function TaskCenter() {
                               }}
                               className="text-destructive"
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
+                              <Trash2 className="w-4 h-4 me-2" />
                               {locale === "ar" ? "حذف" : "Delete"}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -722,7 +722,7 @@ export default function TaskCenter() {
               disabled={isSubmitting}
               data-testid="button-confirm-create"
             >
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {locale === "ar" ? "إنشاء" : "Create"}
             </Button>
           </DialogFooter>

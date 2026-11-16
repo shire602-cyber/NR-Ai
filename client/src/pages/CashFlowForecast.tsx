@@ -25,10 +25,11 @@ import {
 } from "@/components/ui/table";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { PageHeader } from "@/components/ui/page-header";
+import { formatDateRange } from "@/lib/format-date";
 import {
   TrendingUp,
-  TrendingDown,
   DollarSign,
   AlertTriangle,
   CheckCircle2,
@@ -206,7 +207,7 @@ export default function CashFlowForecast() {
 
   if (isLoadingCompany) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Skeleton className="h-32" />
@@ -250,24 +251,16 @@ export default function CashFlowForecast() {
   const getInsightBadge = (insight: string) => {
     const lower = insight.toLowerCase();
     if (lower.includes("warning") || lower.includes("negative")) {
-      return (
-        <Badge variant="destructive" className="text-xs">
-          Risk
-        </Badge>
-      );
+      return <Badge variant="danger">{tr(locale, "Risk", "مخاطرة")}</Badge>;
     }
     if (lower.includes("positive") || lower.includes("improve")) {
       return (
-        <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">
+        <Badge variant="success">
           <T k="pageLabels.positive" />
         </Badge>
       );
     }
-    return (
-      <Badge variant="secondary" className="text-xs">
-        Info
-      </Badge>
-    );
+    return <Badge variant="neutral">{tr(locale, "Info", "معلومة")}</Badge>;
   };
 
   // Calculate summary stats from projections
@@ -277,71 +270,61 @@ export default function CashFlowForecast() {
     forecast?.projections.reduce((s, p) => s + p.expectedOutflows, 0) || 0;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <TrendingUp className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              <T k="pages.cashFlowForecast" />
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              {tr(
-                locale,
-                "Built from open invoices, vendor bills, payroll, tax dates and scheduled items. Nothing is extrapolated from past averages.",
-                "مبنية على الفواتير المفتوحة وفواتير الموردين والرواتب ومواعيد الضرائب والبنود المجدولة. لا يتم استنتاج أي شيء من المتوسطات السابقة."
-              )}
-            </p>
-          </div>
+      <PageHeader
+        eyebrow="Reports"
+        title={<T k="pages.cashFlowForecast" />}
+        description={tr(
+          locale,
+          "Built from open invoices, vendor bills, payroll, tax dates and scheduled items. Nothing is extrapolated from past averages.",
+          "مبنية على الفواتير المفتوحة وفواتير الموردين والرواتب ومواعيد الضرائب والبنود المجدولة. لا يتم استنتاج أي شيء من المتوسطات السابقة."
+        )}
+      />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Select value={forecastDays} onValueChange={setForecastDays}>
+          <SelectTrigger className="h-9 w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="30">{tr(locale, "30 days", "30 يومًا")}</SelectItem>
+            <SelectItem value="60">{tr(locale, "60 days", "60 يومًا")}</SelectItem>
+            <SelectItem value="90">{tr(locale, "90 days", "90 يومًا")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={scenario} onValueChange={(v) => setScenario(v as Scenario)}>
+          <SelectTrigger className="h-9 w-[160px]" data-testid="select-forecast-scenario">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="base">{tr(locale, "Base case", "الحالة الأساسية")}</SelectItem>
+            <SelectItem value="conservative">{tr(locale, "Conservative", "متحفظ")}</SelectItem>
+            <SelectItem value="optimistic">{tr(locale, "Optimistic", "متفائل")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground" htmlFor="delay-receipts">
+            {tr(locale, "Delay receipts (days)", "تأخير التحصيل (أيام)")}
+          </label>
+          <Input
+            id="delay-receipts"
+            type="number"
+            min={0}
+            max={180}
+            value={delayDays}
+            onChange={(e) => setDelayDays(e.target.value)}
+            className="h-9 w-20"
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <Select value={forecastDays} onValueChange={setForecastDays}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">30 Days</SelectItem>
-              <SelectItem value="60">60 Days</SelectItem>
-              <SelectItem value="90">90 Days</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={scenario} onValueChange={(v) => setScenario(v as Scenario)}>
-            <SelectTrigger className="w-[160px]" data-testid="select-forecast-scenario">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="base">{tr(locale, "Base case", "الحالة الأساسية")}</SelectItem>
-              <SelectItem value="conservative">{tr(locale, "Conservative", "متحفظ")}</SelectItem>
-              <SelectItem value="optimistic">{tr(locale, "Optimistic", "متفائل")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground" htmlFor="delay-receipts">
-              {tr(locale, "Delay receipts (days)", "تأخير التحصيل (أيام)")}
-            </label>
-            <Input
-              id="delay-receipts"
-              type="number"
-              min={0}
-              max={180}
-              value={delayDays}
-              onChange={(e) => setDelayDays(e.target.value)}
-              className="h-9 w-20"
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetchForecast()}
-            disabled={isFetchingForecast}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
-            <T k="pages.refresh" />
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => refetchForecast()}
+          disabled={isFetchingForecast}
+        >
+          <RefreshCw className={`h-4 w-4 me-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
+          <T k="pages.refresh" />
+        </Button>
       </div>
 
       {/* Current Balance + Summary Cards */}
@@ -353,7 +336,7 @@ export default function CashFlowForecast() {
         </div>
       ) : forecast ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="border-2 border-primary/20">
+          <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
                 <Wallet className="h-4 w-4" />
@@ -362,9 +345,9 @@ export default function CashFlowForecast() {
             </CardHeader>
             <CardContent>
               <div
-                className={`text-3xl font-bold ${forecast.currentBalance >= 0 ? "text-success" : "text-destructive"}`}
+                className={`text-h1 font-semibold ${forecast.currentBalance >= 0 ? "text-foreground" : "text-negative"}`}
               >
-                {formatCurrency(forecast.currentBalance, "AED", locale)}
+                <Money amount={forecast.currentBalance} currency={"AED"} />
               </div>
             </CardContent>
           </Card>
@@ -372,13 +355,14 @@ export default function CashFlowForecast() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <ArrowUpRight className="h-4 w-4 text-success" />
-                Projected Inflows ({forecastDays}d)
+                <ArrowUpRight className="h-4 w-4" aria-hidden />
+                {tr(locale, "Projected inflows", "التدفقات الداخلة المتوقعة")} ({forecastDays}
+                {tr(locale, "d", " يوم")})
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-success">
-                {formatCurrency(totalProjectedInflows, "AED", locale)}
+              <div className="text-h1 font-semibold">
+                <Money amount={totalProjectedInflows} currency={"AED"} />
               </div>
             </CardContent>
           </Card>
@@ -386,13 +370,14 @@ export default function CashFlowForecast() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <ArrowDownRight className="h-4 w-4 text-destructive" />
-                Projected Outflows ({forecastDays}d)
+                <ArrowDownRight className="h-4 w-4" aria-hidden />
+                {tr(locale, "Projected outflows", "التدفقات الخارجة المتوقعة")} ({forecastDays}
+                {tr(locale, "d", " يوم")})
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-destructive">
-                {formatCurrency(totalProjectedOutflows, "AED", locale)}
+              <div className="text-h1 font-semibold">
+                <Money amount={totalProjectedOutflows} currency={"AED"} />
               </div>
             </CardContent>
           </Card>
@@ -440,7 +425,11 @@ export default function CashFlowForecast() {
             <T k="pageLabels.weeklyProjections" />
           </CardTitle>
           <CardDescription>
-            Projected cash inflows and outflows for the next {forecastDays} days
+            {tr(
+              locale,
+              `Projected cash inflows and outflows for the next ${forecastDays} days`,
+              `التدفقات النقدية الداخلة والخارجة المتوقعة خلال ${forecastDays} يومًا القادمة`
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -455,17 +444,17 @@ export default function CashFlowForecast() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Week</TableHead>
+                    <TableHead>{tr(locale, "Week", "الأسبوع")}</TableHead>
                     <TableHead>
                       <T k="pages.period" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pageLabels.expectedIn" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pageLabels.expectedOut" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pageLabels.projectedBalance2" />
                     </TableHead>
                   </TableRow>
@@ -473,29 +462,25 @@ export default function CashFlowForecast() {
                 <TableBody>
                   {forecast.projections.map((proj) => (
                     <TableRow key={proj.week}>
-                      <TableCell className="font-medium">Week {proj.week}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {proj.weekStart} - {proj.weekEnd}
+                      <TableCell className="font-medium" data-nowrap>
+                        {tr(locale, "Week", "الأسبوع")} {proj.week}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <span className="text-success flex items-center justify-end gap-1">
-                          <TrendingUp className="h-3 w-3" />
-                          {formatCurrency(proj.expectedInflows, "AED", locale)}
-                        </span>
+                      <TableCell className="text-small text-muted-foreground" data-nowrap>
+                        {formatDateRange(proj.weekStart, proj.weekEnd, locale)}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <span className="text-destructive flex items-center justify-end gap-1">
-                          <TrendingDown className="h-3 w-3" />
-                          {formatCurrency(proj.expectedOutflows, "AED", locale)}
-                        </span>
+                      <TableCell data-numeric>
+                        <Money amount={proj.expectedInflows} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
+                        <Money amount={proj.expectedOutflows} currency={"AED"} />
+                      </TableCell>
+                      <TableCell data-numeric>
                         <span
                           className={`font-semibold ${
-                            proj.projectedBalance >= 0 ? "text-success" : "text-destructive"
+                            proj.projectedBalance >= 0 ? "text-foreground" : "text-negative"
                           }`}
                         >
-                          {formatCurrency(proj.projectedBalance, "AED", locale)}
+                          <Money amount={proj.projectedBalance} currency={"AED"} />
                         </span>
                       </TableCell>
                     </TableRow>
@@ -543,7 +528,7 @@ export default function CashFlowForecast() {
                       <TableHead>{tr(locale, "Date", "التاريخ")}</TableHead>
                       <TableHead>{tr(locale, "Type", "النوع")}</TableHead>
                       <TableHead>{tr(locale, "Description", "الوصف")}</TableHead>
-                      <TableHead className="text-right">{tr(locale, "Amount", "المبلغ")}</TableHead>
+                      <TableHead data-numeric>{tr(locale, "Amount", "المبلغ")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -564,9 +549,10 @@ export default function CashFlowForecast() {
                           )}
                         </TableCell>
                         <TableCell
-                          className={`text-right font-medium ${it.amount >= 0 ? "text-success" : "text-destructive"}`}
+                          data-numeric
+                          className={`font-medium ${it.amount >= 0 ? "text-foreground" : "text-negative"}`}
                         >
-                          {formatCurrency(it.amount, "AED", locale)}
+                          <Money amount={it.amount} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -681,7 +667,9 @@ export default function CashFlowForecast() {
                 {it.repeatMonths > 0 ? ` ×${it.occurrences}` : ""}
               </span>
               <span className="flex items-center gap-3">
-                <span className="font-mono">{formatCurrency(it.amount, "AED", locale)}</span>
+                <span className="tabular-nums">
+                  <Money amount={it.amount} currency={"AED"} />
+                </span>
                 <Button size="sm" variant="ghost" onClick={() => removeItem.mutate(it.id)}>
                   {tr(locale, "Remove", "حذف")}
                 </Button>
@@ -764,7 +752,7 @@ export default function CashFlowForecast() {
             >
               <span>
                 {a.date} · {a.description} · {a.direction === "inflow" ? "+" : "-"}
-                {formatCurrency(a.amount, "AED", locale)}
+                <Money amount={a.amount} currency={"AED"} />
               </span>
               <Button
                 size="sm"
@@ -805,13 +793,13 @@ export default function CashFlowForecast() {
                     <TableHead>
                       <T k="hr.month" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pageLabels.totalInflows" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pageLabels.totalOutflows" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pageLabels.netCashFlow" />
                     </TableHead>
                   </TableRow>
@@ -822,19 +810,19 @@ export default function CashFlowForecast() {
                       <TableCell className="font-medium">
                         {h.month} {h.year}
                       </TableCell>
-                      <TableCell className="text-right text-success">
-                        {formatCurrency(h.totalInflows, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={h.totalInflows} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right text-destructive">
-                        {formatCurrency(h.totalOutflows, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={h.totalOutflows} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <span
                           className={`font-semibold ${
-                            h.netCashFlow >= 0 ? "text-success" : "text-destructive"
+                            h.netCashFlow >= 0 ? "text-foreground" : "text-negative"
                           }`}
                         >
-                          {formatCurrency(h.netCashFlow, "AED", locale)}
+                          <Money amount={h.netCashFlow} currency={"AED"} />
                         </span>
                       </TableCell>
                     </TableRow>

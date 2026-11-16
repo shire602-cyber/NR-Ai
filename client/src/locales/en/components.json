@@ -193,5 +193,7 @@
   "components.notificationDeliveryQueuedTitle": "Report delivery queued: {title}",
   "components.clearDates": "Clear dates",
   "components.launchViewAll": "View all in Reports",
-  "components.launchReportActions": "More actions for {report}"
+  "components.launchReportActions": "More actions for {report}",
+  "components.vwOutputShort": "Output",
+  "components.vwInputShort": "Input"
 }

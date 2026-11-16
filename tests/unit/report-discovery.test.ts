@@ -4167,7 +4167,7 @@ describe("report discoverability", () => {
     );
     expect(reportsSource).toContain("budgetComparisonLines");
     expect(reportsSource).toContain("varianceReport?.varianceLines");
-    expect(reportsSource).toContain('TableHead className="text-right">Baseline</TableHead>');
+    expect(reportsSource).toContain("TableHead data-numeric>Baseline</TableHead>");
     expect(reportsSource).toContain("normalizeMonthlyBurn");
     expect(reportsSource).toContain("runwayCoverageDays");
     expect(reportsSource).toContain("cashFlowForecast?.currentBalance");

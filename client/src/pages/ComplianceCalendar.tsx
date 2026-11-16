@@ -268,7 +268,7 @@ export default function ComplianceCalendar() {
                             key={event.id}
                             className={`text-xs px-1 py-0.5 rounded truncate ${CATEGORY_COLORS[event.category]}`}
                           >
-                            <Icon className="w-3 h-3 inline-block mr-1" />
+                            <Icon className="w-3 h-3 inline-block me-1" />
                             {event.title.substring(0, 15)}
                           </div>
                         );
@@ -280,7 +280,7 @@ export default function ComplianceCalendar() {
                       )}
                     </div>
                     {hasOverdue && (
-                      <AlertTriangle className="w-3 h-3 text-destructive absolute top-1 right-1" />
+                      <AlertTriangle className="w-3 h-3 text-destructive absolute top-1 end-1" />
                     )}
                   </div>
                 );

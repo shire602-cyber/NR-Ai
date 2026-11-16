@@ -345,7 +345,7 @@ export default function CompanySettings() {
                           placeholder="100123456789012"
                           inputMode="numeric"
                           maxLength={15}
-                          className="font-mono"
+                          className="tabular-nums"
                           data-testid="input-trn"
                         />
                       </FormControl>
@@ -394,7 +394,7 @@ export default function CompanySettings() {
                   <div className="flex-1">
                     <label
                       htmlFor="logo-upload"
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background hover:bg-accent cursor-pointer text-sm"
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background hover:bg-muted cursor-pointer text-sm"
                     >
                       <Upload className="w-4 h-4" />
                       <T k="pageLabels.chooseImage" />
@@ -763,7 +763,7 @@ export default function CompanySettings() {
                 "Saving…"
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 me-2" />
                   <T k="pages.saveChanges" />
                 </>
               )}

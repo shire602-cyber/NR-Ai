@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
 import { StatusBadge } from "./StatusBadge";
 
@@ -185,7 +185,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <CardTitle>{tx("hr.tab.employees")}</CardTitle>
           <CardDescription>{tx("hr.employeesHint")}</CardDescription>
@@ -221,9 +221,9 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
                   <TableHead>{tx("hr.field.fullName")}</TableHead>
                   <TableHead>{tx("hr.field.department")}</TableHead>
                   <TableHead>{tx("hr.field.nationality")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.totalSalary")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.totalSalary")}</TableHead>
                   <TableHead>{tx("hr.statusLabel")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.actions")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -237,8 +237,11 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell>{e.department ?? "—"}</TableCell>
                     <TableCell>{e.nationality ?? "—"}</TableCell>
-                    <TableCell className="text-end">
-                      {formatCurrency(Number(e.total_salary), e.salary_currency ?? "AED")}
+                    <TableCell data-numeric>
+                      <Money
+                        amount={Number(e.total_salary)}
+                        currency={e.salary_currency ?? "AED"}
+                      />
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={e.status} />
