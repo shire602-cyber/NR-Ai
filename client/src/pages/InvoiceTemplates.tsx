@@ -254,7 +254,7 @@ export default function InvoiceTemplates() {
         <UpgradePrompt
           feature="invoiceTemplates"
           requiredTier={getRequiredTier("invoiceTemplates")}
-          description="Customize your invoice appearance with professional templates. Add your branding, colors, and layout preferences."
+          description={t["invoiceTemplates.customizeYourInvoiceAppearanceWith"]}
         />
       </div>
     );
@@ -264,8 +264,8 @@ export default function InvoiceTemplates() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Sales"
-        title="Invoice Templates"
-        description="Customize the look and feel of your invoices"
+        title={t["invoiceTemplates.invoiceTemplates"]}
+        description={t["invoiceTemplates.customizeTheLookAndFeel"]}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -284,11 +284,15 @@ export default function InvoiceTemplates() {
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingTemplate ? "Edit Template" : "Create Template"}</DialogTitle>
+              <DialogTitle>
+                {editingTemplate
+                  ? t["invoiceTemplates.editTemplate"]
+                  : t["pageLabels.createTemplate"]}
+              </DialogTitle>
               <DialogDescription>
                 {editingTemplate
-                  ? "Update your invoice template settings"
-                  : "Design a new invoice template with custom branding"}
+                  ? t["invoiceTemplates.updateYourInvoiceTemplateSettings"]
+                  : t["invoiceTemplates.designANewInvoiceTemplate"]}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -375,7 +379,7 @@ export default function InvoiceTemplates() {
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a layout" />
+                            <SelectValue placeholder={t["invoiceTemplates.selectALayout"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -406,7 +410,7 @@ export default function InvoiceTemplates() {
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Optional custom header (e.g., Tax Invoice)"
+                          placeholder={t["invoiceTemplates.optionalCustomHeaderEG"]}
                         />
                       </FormControl>
                       <FormMessage />
@@ -425,7 +429,7 @@ export default function InvoiceTemplates() {
                       <FormControl>
                         <Textarea
                           {...field}
-                          placeholder="Optional footer note (e.g., payment terms, thank you message)"
+                          placeholder={t["invoiceTemplates.optionalFooterNoteEG"]}
                           rows={3}
                         />
                       </FormControl>
@@ -611,7 +615,7 @@ export default function InvoiceTemplates() {
             <Card className="col-span-full">
               <CardContent className="text-center py-12 text-muted-foreground">
                 <Layout className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No templates yet. Create your first template to customize your invoices.</p>
+                <p>{t["invoiceTemplates.noTemplatesYetCreateYour"]}</p>
               </CardContent>
             </Card>
           )}

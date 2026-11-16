@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { companyLogoSrc } from "@/lib/company-logo";
 import { PageHeader } from "@/components/ui/page-header";
 import { useEffect } from "react";
@@ -47,6 +48,7 @@ const invoiceSettingsSchema = z.object({
 type InvoiceSettingsFormData = z.infer<typeof invoiceSettingsSchema>;
 
 export default function InvoiceSettings() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
 
@@ -132,8 +134,8 @@ export default function InvoiceSettings() {
     <div className="space-y-8 max-w-3xl">
       <PageHeader
         eyebrow="Settings"
-        title="Invoice Settings"
-        description="Customize how your invoices appear to customers"
+        title={t["invoiceSettings.invoiceSettings"]}
+        description={t["invoiceSettings.customizeHowYourInvoicesAppear"]}
       />
 
       {isVATRegistered && (
@@ -361,7 +363,7 @@ export default function InvoiceSettings() {
                     </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Thank you for your business"
+                        placeholder={t["pageLabels.thankYouForYourBusiness"]}
                         className="resize-none"
                         rows={3}
                         {...field}
@@ -386,7 +388,7 @@ export default function InvoiceSettings() {
               data-testid="button-save-settings"
             >
               <Save className="w-4 h-4 mr-2" />
-              {updateMutation.isPending ? "Saving..." : "Save Settings"}
+              {updateMutation.isPending ? "Saving..." : t["pageLabels.saveSettings"]}
             </Button>
           </div>
         </form>

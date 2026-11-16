@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -139,6 +140,7 @@ function CheckItem({ ok, label }: { ok: boolean; label: string }) {
 // ─── Tab 1: Batch OCR ─────────────────────────────────────────────────────────
 
 function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [items, setItems] = useState<OcrFileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -181,7 +183,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
     const pendingItems = items.filter((i) => i.status === "pending");
     if (!pendingItems.length) return;
     if (pendingItems.some((i) => !i.companyId)) {
-      toast({ variant: "destructive", title: "Select a client for each receipt" });
+      toast({ variant: "destructive", title: t["bulkOperations.selectAClientForEach"] });
       return;
     }
 
@@ -214,7 +216,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
         setItems((prev) =>
           prev.map((i) =>
             i.id === item.id
-              ? { ...i, status: "error", error: err?.message ?? "Request failed" }
+              ? { ...i, status: "error", error: err?.message ?? t["bulkOperations.requestFailed"] }
               : i
           )
         );
@@ -233,7 +235,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
           <T k="pages.batchOcrProcessing" />
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload multiple receipt images and assign each to a client. Processing runs one at a time.
+          {t["bulkOperations.uploadMultipleReceiptImagesAnd"]}
         </p>
       </div>
 
@@ -257,7 +259,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
           <T k="pages.dropReceiptImagesHereOrClickToBrowse" />
         </p>
         <p className="text-sm text-muted-foreground mt-1">
-          JPEG, PNG, WebP — multiple files supported
+          {t["bulkOperations.jpegPngWebpMultipleFiles"]}
         </p>
         <input
           ref={inputRef}
@@ -328,7 +330,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                           disabled={item.status !== "pending"}
                         >
                           <SelectTrigger className="w-44">
-                            <SelectValue placeholder="Select client" />
+                            <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                           </SelectTrigger>
                           <SelectContent>
                             {clients.map((c) => (
@@ -386,6 +388,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
 // ─── Tab 2: VAT Filing Queue ──────────────────────────────────────────────────
 
 function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [queue, setQueue] = useState<VatQueueEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -397,7 +400,7 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
       setQueue(data);
       toast({ title: `Prepared VAT queue for ${data.length} client(s)` });
     } catch {
-      toast({ variant: "destructive", title: "Failed to prepare VAT queue" });
+      toast({ variant: "destructive", title: t["bulkOperations.failedToPrepareVatQueue"] });
     } finally {
       setIsLoading(false);
     }
@@ -413,8 +416,7 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
             <T k="pages.vatFilingQueue" />
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Review VAT period data across all clients. Use this to prepare returns before manual
-            submission on the FTA portal.
+            {t["bulkOperations.reviewVatPeriodDataAcross"]}
           </p>
         </div>
         <Button onClick={prepareAll} disabled={isLoading}>
@@ -528,6 +530,7 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
 // ─── Tab 3: Bulk Invoicing ────────────────────────────────────────────────────
 
 function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [serviceDescription, setServiceDescription] = useState("");
@@ -561,15 +564,15 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
 
   const generate = async () => {
     if (!serviceDescription.trim()) {
-      toast({ variant: "destructive", title: "Enter a service description" });
+      toast({ variant: "destructive", title: t["bulkOperations.enterAServiceDescription"] });
       return;
     }
     if (numAmount <= 0) {
-      toast({ variant: "destructive", title: "Enter a valid amount" });
+      toast({ variant: "destructive", title: t["bulkOperations.enterAValidAmount"] });
       return;
     }
     if (selectedIds.size === 0) {
-      toast({ variant: "destructive", title: "Select at least one client" });
+      toast({ variant: "destructive", title: t["bulkOperations.selectAtLeastOneClient"] });
       return;
     }
 
@@ -585,7 +588,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
       const success = (data.results ?? []).filter((r: BulkInvoiceResult) => r.success).length;
       toast({ title: `Generated ${success} invoice(s)` });
     } catch {
-      toast({ variant: "destructive", title: "Failed to generate invoices" });
+      toast({ variant: "destructive", title: t["bulkOperations.failedToGenerateInvoices"] });
     } finally {
       setIsGenerating(false);
     }
@@ -600,8 +603,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
           <T k="pages.bulkInvoicing" />
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Generate NRA service invoices to multiple clients in one action. Each invoice is created
-          as a draft.
+          {t["bulkOperations.generateNraServiceInvoicesTo"]}
         </p>
       </div>
 
@@ -698,7 +700,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                 ) : (
                   <Square className="w-4 h-4 me-1" />
                 )}
-                {allSelected ? "Deselect All" : "Select All"}
+                {allSelected ? t["bulkOperations.deselectAll"] : t["pageLabels.selectAll"]}
               </Button>
             </div>
           </CardHeader>
@@ -789,6 +791,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
 // ─── Tab 4: Period Close ──────────────────────────────────────────────────────
 
 function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [period, setPeriod] = useState(() => {
     const now = new Date();
@@ -809,7 +812,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 
   const runCheck = async () => {
     if (selectedIds.size === 0) {
-      toast({ variant: "destructive", title: "Select at least one client" });
+      toast({ variant: "destructive", title: t["bulkOperations.selectAtLeastOneClient"] });
       return;
     }
     setIsChecking(true);
@@ -822,7 +825,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
       const readyCount = data.filter((s: PeriodCloseStatus) => s.readyToClose).length;
       toast({ title: `${readyCount}/${data.length} clients ready to close` });
     } catch {
-      toast({ variant: "destructive", title: "Period close check failed" });
+      toast({ variant: "destructive", title: t["bulkOperations.periodCloseCheckFailed"] });
     } finally {
       setIsChecking(false);
     }
@@ -846,8 +849,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
           <T k="pages.periodEndClose" />
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Run a pre-close checklist across selected clients to identify outstanding items before
-          closing the period.
+          {t["bulkOperations.runAPreCloseChecklist"]}
         </p>
       </div>
 
@@ -898,7 +900,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                   )
                 }
               >
-                {selectedIds.size === clients.length ? "Deselect All" : "Select All"}
+                {selectedIds.size === clients.length
+                  ? t["bulkOperations.deselectAll"]
+                  : t["pageLabels.selectAll"]}
               </Button>
             </div>
           </CardHeader>
@@ -977,10 +981,19 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <CheckItem ok={s.checks.trialBalanceOk} label="Trial balance" />
-                  <CheckItem ok={s.checks.bankRecDone} label="Bank reconciliation" />
-                  <CheckItem ok={s.checks.allReceiptsPosted} label="All receipts posted" />
-                  <CheckItem ok={s.checks.vatPrepared} label="VAT return prepared" />
+                  <CheckItem
+                    ok={s.checks.trialBalanceOk}
+                    label={t["reportCenter.trialBalanceShort"]}
+                  />
+                  <CheckItem ok={s.checks.bankRecDone} label={t["marketing.bankTitle"]} />
+                  <CheckItem
+                    ok={s.checks.allReceiptsPosted}
+                    label={t["bulkOperations.allReceiptsPosted"]}
+                  />
+                  <CheckItem
+                    ok={s.checks.vatPrepared}
+                    label={t["bulkOperations.vatReturnPrepared"]}
+                  />
                 </div>
                 {s.issues.length > 0 && (
                   <div className="mt-3 bg-warning-subtle border border-warning/30 rounded p-2">
@@ -1014,6 +1027,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BulkOperations() {
+  const { t } = useTranslation();
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
@@ -1030,8 +1044,8 @@ export default function BulkOperations() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Firm"
-        title="Bulk Operations"
-        description="Batch actions across all managed clients — OCR receipts, prepare VAT queues, generate invoices, and run period-close checklists."
+        title={t["bulkOperations.bulkOperations"]}
+        description={t["bulkOperations.batchActionsAcrossAllManaged"]}
       />
 
       <Tabs defaultValue="ocr">

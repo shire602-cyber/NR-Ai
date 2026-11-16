@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { Inbox, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
@@ -89,6 +89,7 @@ const fmtAed = (n: number) =>
   `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function EmailIntake() {
+  const { t } = useTranslation();
   const { toast } = useToast();
 
   const { data: sourcesData } = useQuery<SourcesResponse>({
@@ -111,10 +112,10 @@ export default function EmailIntake() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="NRA Center"
+        eyebrow={t["emailIntake.nraCenter"]}
         icon={Inbox}
-        title="Email Document Intake"
-        description="Clients email their documents; the AI extracts and drafts the bookkeeping for your review. Pilot — NRA clients only."
+        title={t["emailIntake.emailDocumentIntake"]}
+        description={t["emailIntake.clientsEmailTheirDocumentsThe"]}
       />
 
       {featureOff && (
@@ -124,8 +125,11 @@ export default function EmailIntake() {
             <T k="pages.pilotDisabled" />
           </AlertTitle>
           <AlertDescription>
-            Set <code>EMAIL_INTAKE_ENABLED=true</code> on the server to turn the intake pilot on.
-            You can still configure sender mappings below; nothing is ingested until it's enabled.
+            {t["emailIntake.pilotDisabledBefore"]}
+            <code translate="no" dir="ltr">
+              EMAIL_INTAKE_ENABLED=true
+            </code>
+            {t["emailIntake.pilotDisabledAfter"]}
           </AlertDescription>
         </Alert>
       )}
@@ -188,6 +192,7 @@ function SendersTab({
   clientName: (id: string) => string;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const { t } = useTranslation();
   const [companyId, setCompanyId] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
   const [label, setLabel] = useState("");
@@ -225,7 +230,7 @@ function SendersTab({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/firm/email-intake/sources/${id}`),
     onSuccess: () => {
-      toast({ title: "Mapping removed" });
+      toast({ title: t["emailIntake.mappingRemoved"] });
       invalidate();
     },
   });
@@ -248,7 +253,7 @@ function SendersTab({
               </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-client">
-                  <SelectValue placeholder="Select client" />
+                  <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
@@ -272,7 +277,7 @@ function SendersTab({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Label (optional)</Label>
+              <Label>{t["emailIntake.labelOptional"]}</Label>
               <Input
                 placeholder="e.g. Accounts payable"
                 value={label}
@@ -302,7 +307,9 @@ function SendersTab({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Linked senders ({sources.length})</CardTitle>
+          <CardTitle className="text-base">
+            {formatMessage(t["emailIntake.linkedSendersCount"], { count: sources.length })}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {sources.length === 0 ? (
@@ -375,6 +382,7 @@ function CompletenessTab({
   clients: ClientCompany[];
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const { t } = useTranslation();
   const [companyId, setCompanyId] = useState("");
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
@@ -426,7 +434,7 @@ function CompletenessTab({
               </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-completeness-client">
-                  <SelectValue placeholder="Select client" />
+                  <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
@@ -489,18 +497,24 @@ function CompletenessTab({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <Stat label="Bank lines" value={String(result.summary.totalLines)} />
-              <Stat label="Matched" value={String(result.summary.matchedLines)} />
+              <Stat label={t["emailIntake.bankLines"]} value={String(result.summary.totalLines)} />
               <Stat
-                label="Missing purchases"
+                label={t["consolidation.matched"]}
+                value={String(result.summary.matchedLines)}
+              />
+              <Stat
+                label={t["emailIntake.missingPurchases"]}
                 value={fmtAed(result.summary.unmatchedOutflowValue)}
               />
-              <Stat label="Missing sales" value={fmtAed(result.summary.unmatchedInflowValue)} />
+              <Stat
+                label={t["emailIntake.missingSales"]}
+                value={fmtAed(result.summary.unmatchedInflowValue)}
+              />
             </div>
 
             {result.gaps.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Every bank line in this period has a matching document. Nothing to chase.
+                {t["emailIntake.everyBankLineInThis"]}
               </p>
             ) : (
               <Table>

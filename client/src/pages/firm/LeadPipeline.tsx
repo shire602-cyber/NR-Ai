@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,31 +81,31 @@ interface SaasProspect {
 const STAGES: { key: Stage; label: string; color: string; bg: string }[] = [
   {
     key: "prospect",
-    label: "Prospect",
+    label: "leadPipeline.stage.prospect",
     color: "text-muted-foreground",
     bg: "bg-muted border-border",
   },
   {
     key: "contacted",
-    label: "Contacted",
+    label: "leadPipeline.stage.contacted",
     color: "text-info",
     bg: "bg-info-subtle border-info/30",
   },
   {
     key: "interested",
-    label: "Interested",
+    label: "leadPipeline.stage.interested",
     color: "text-warning",
     bg: "bg-warning-subtle border-warning/30",
   },
   {
     key: "converted",
-    label: "Converted",
+    label: "screens.statusConverted",
     color: "text-success",
     bg: "bg-success-subtle border-success/30",
   },
   {
     key: "lost",
-    label: "Lost",
+    label: "leadPipeline.stage.lost",
     color: "text-destructive",
     bg: "bg-danger-subtle border-destructive/30",
   },
@@ -195,6 +195,7 @@ function KanbanColumn({
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={`flex flex-col min-w-[220px] flex-1 rounded-xl border ${stage.bg} transition-colors ${isDragOver ? "ring-2 ring-primary ring-offset-1" : ""}`}
@@ -203,7 +204,7 @@ function KanbanColumn({
       onDragLeave={onDragLeave}
     >
       <div className="px-3 py-2.5 border-b flex items-center justify-between">
-        <span className={`text-sm font-semibold ${stage.color}`}>{stage.label}</span>
+        <span className={`text-sm font-semibold ${stage.color}`}>{t[stage.label]}</span>
         <Badge variant="secondary" className="text-xs">
           {leads.length}
         </Badge>
@@ -220,6 +221,7 @@ function KanbanColumn({
 // ─── Add Lead dialog ──────────────────────────────────────────────────────────
 
 function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [userId, setUserId] = useState("");
   const [notes, setNotes] = useState("");
@@ -231,7 +233,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
     mutationFn: (data: object) => apiRequest("POST", "/api/firm/pipeline/leads", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Lead added" });
+      toast({ title: t["leadPipeline.leadAdded"] });
       onClose();
       setUserId("");
       setNotes("");
@@ -280,7 +282,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
                 <SelectContent>
                   {STAGES.map((s) => (
                     <SelectItem key={s.key} value={s.key}>
-                      {s.label}
+                      {t[s.label]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -326,7 +328,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
               <T k="pages.notes" />
             </Label>
             <Textarea
-              placeholder="Optional notes..."
+              placeholder={t["leadPipeline.optionalNotes"]}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
@@ -350,6 +352,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
 // ─── Edit Lead dialog ─────────────────────────────────────────────────────────
 
 function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [notes, setNotes] = useState(lead?.notes ?? "");
   const [score, setScore] = useState(String(lead?.score ?? 50));
@@ -359,7 +362,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
     mutationFn: (data: object) => apiRequest("PUT", `/api/firm/pipeline/leads/${lead!.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Lead updated" });
+      toast({ title: t["leadPipeline.leadUpdated"] });
       onClose();
     },
     onError: () => toast({ title: "Failed to update", variant: "destructive" }),
@@ -369,7 +372,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
     mutationFn: () => apiRequest("DELETE", `/api/firm/pipeline/leads/${lead!.id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Lead removed" });
+      toast({ title: t["leadPipeline.leadRemoved"] });
       onClose();
     },
     onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
@@ -403,7 +406,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
               <SelectContent>
                 {STAGES.map((s) => (
                   <SelectItem key={s.key} value={s.key}>
-                    {s.label}
+                    {t[s.label]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -459,6 +462,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
 // ─── Auto-discover panel ──────────────────────────────────────────────────────
 
 function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
 
   const { data: prospects = [], isLoading } = useQuery<SaasProspect[]>({
@@ -476,7 +480,7 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Prospect added to pipeline" });
+      toast({ title: t["leadPipeline.prospectAddedToPipeline"] });
     },
     onError: () => toast({ title: "Failed to add", variant: "destructive" }),
   });
@@ -608,16 +612,19 @@ export default function LeadPipeline() {
         title={(t as any).leadPipeline || "Lead Pipeline"}
         description={
           <>
-            {pipeline?.totalLeads ?? 0} leads · {pipeline?.conversionRate ?? 0}% conversion
+            {formatMessage(t["leadPipeline.leadsLeadsRateConversion"], {
+              leads: pipeline?.totalLeads ?? 0,
+              rate: pipeline?.conversionRate ?? 0,
+            })}
             {pipeline?.avgDaysToConvert != null &&
-              ` · ${pipeline.avgDaysToConvert}d avg to convert`}
+              ` · ${formatMessage(t["leadPipeline.daysDAvgToConvert"], { days: pipeline.avgDaysToConvert })}`}
           </>
         }
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setShowDiscover((v) => !v)}>
               <Sparkles className="w-4 h-4 me-1.5 text-warning" />
-              Auto-discover
+              {t["leadPipeline.autoDiscover"]}
               {showDiscover ? (
                 <ChevronUp className="w-3.5 h-3.5 ms-1" />
               ) : (

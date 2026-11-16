@@ -103,6 +103,7 @@ function isComparisonCountMetric(metric: string): boolean {
 }
 
 export default function AdvancedReports() {
+  const { t } = useTranslation();
   const { locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -279,14 +280,16 @@ export default function AdvancedReports() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Insights"
-        title={locale === "ar" ? "التقارير المتقدمة" : "Advanced Financial Reports"}
+        title={
+          locale === "ar" ? "التقارير المتقدمة" : t["advancedReports.advancedFinancialReports"]
+        }
         description={
           locale === "ar"
             ? "تحليلات مالية متقدمة ومقارنات الفترات"
             : "Advanced analytics, cash flow analysis, and period comparisons"
         }
         backHref="/reports"
-        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : t["reportCenter.backToReports"]}
         actions={
           <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
             <SelectTrigger className="w-32" data-testid="select-period">
@@ -305,15 +308,15 @@ export default function AdvancedReports() {
         <TabsList>
           <TabsTrigger value="cashflow" data-testid="tab-cashflow">
             <ArrowRightLeft className="w-4 h-4 me-2" />
-            {locale === "ar" ? "التدفق النقدي" : "Cash Flow"}
+            {locale === "ar" ? "التدفق النقدي" : t["pages.cashFlow"]}
           </TabsTrigger>
           <TabsTrigger value="aging" data-testid="tab-aging">
             <Clock className="w-4 h-4 me-2" />
-            {locale === "ar" ? "تقادم الأرصدة" : "Aging Report"}
+            {locale === "ar" ? "تقادم الأرصدة" : t["pages.agingReport"]}
           </TabsTrigger>
           <TabsTrigger value="comparison" data-testid="tab-comparison">
             <TrendingUp className="w-4 h-4 me-2" />
-            {locale === "ar" ? "المقارنات" : "Period Comparison"}
+            {locale === "ar" ? "المقارنات" : t["advancedReports.periodComparison"]}
           </TabsTrigger>
         </TabsList>
 
@@ -322,7 +325,7 @@ export default function AdvancedReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {locale === "ar" ? "الأنشطة التشغيلية" : "Operating Activities"}
+                  {locale === "ar" ? "الأنشطة التشغيلية" : t["pageLabels.operatingActivities"]}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -336,7 +339,7 @@ export default function AdvancedReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {locale === "ar" ? "الأنشطة الاستثمارية" : "Investing Activities"}
+                  {locale === "ar" ? "الأنشطة الاستثمارية" : t["pageLabels.investingActivities"]}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -350,7 +353,7 @@ export default function AdvancedReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {locale === "ar" ? "الأنشطة التمويلية" : "Financing Activities"}
+                  {locale === "ar" ? "الأنشطة التمويلية" : t["pageLabels.financingActivities"]}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -364,7 +367,7 @@ export default function AdvancedReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {locale === "ar" ? "صافي التدفق النقدي" : "Net Cash Flow"}
+                  {locale === "ar" ? "صافي التدفق النقدي" : t["pageLabels.netCashFlow"]}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -381,12 +384,12 @@ export default function AdvancedReports() {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>
-                  {locale === "ar" ? "تحليل التدفق النقدي" : "Cash Flow Analysis"}
+                  {locale === "ar" ? "تحليل التدفق النقدي" : t["advancedReports.cashFlowAnalysis"]}
                 </CardTitle>
                 <CardDescription>
                   {locale === "ar"
                     ? "التدفقات النقدية الداخلة والخارجة"
-                    : "Inflows and outflows over time"}
+                    : t["advancedReports.inflowsAndOutflowsOverTime"]}
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleExportPDF("Cash Flow")}>
@@ -412,7 +415,9 @@ export default function AdvancedReports() {
                       stroke="#22c55e"
                       fill="#22c55e"
                       fillOpacity={0.6}
-                      name={locale === "ar" ? "التدفق التشغيلي" : "Operating Inflow"}
+                      name={
+                        locale === "ar" ? "التدفق التشغيلي" : t["advancedReports.operatingInflow"]
+                      }
                     />
                     <Area
                       type="monotone"
@@ -421,20 +426,24 @@ export default function AdvancedReports() {
                       stroke="#ef4444"
                       fill="#ef4444"
                       fillOpacity={0.6}
-                      name={locale === "ar" ? "التدفق الخارج" : "Operating Outflow"}
+                      name={
+                        locale === "ar" ? "التدفق الخارج" : t["advancedReports.operatingOutflow"]
+                      }
                     />
                     <Line
                       type="monotone"
                       dataKey="endingBalance"
                       stroke="#3b82f6"
                       strokeWidth={2}
-                      name={locale === "ar" ? "الرصيد الختامي" : "Ending Balance"}
+                      name={locale === "ar" ? "الرصيد الختامي" : t["advancedReports.endingBalance"]}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex items-center justify-center h-80 text-muted-foreground">
-                  {locale === "ar" ? "لا توجد بيانات متاحة" : "No data available for this period"}
+                  {locale === "ar"
+                    ? "لا توجد بيانات متاحة"
+                    : t["advancedReports.noDataAvailableForThis"]}
                 </div>
               )}
             </CardContent>
@@ -446,7 +455,7 @@ export default function AdvancedReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  {locale === "ar" ? "الذمم المدينة" : "Accounts Receivable"}
+                  {locale === "ar" ? "الذمم المدينة" : t["advancedReports.accountsReceivable"]}
                 </CardTitle>
                 <CardDescription>
                   {locale === "ar"
@@ -485,7 +494,7 @@ export default function AdvancedReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  {locale === "ar" ? "الذمم الدائنة" : "Accounts Payable"}
+                  {locale === "ar" ? "الذمم الدائنة" : t["advancedReports.accountsPayable"]}
                 </CardTitle>
                 <CardDescription>
                   {locale === "ar"
@@ -526,7 +535,9 @@ export default function AdvancedReports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>{locale === "ar" ? "تقادم الأرصدة" : "Aging Analysis"}</CardTitle>
+                <CardTitle>
+                  {locale === "ar" ? "تقادم الأرصدة" : t["advancedReports.agingAnalysis"]}
+                </CardTitle>
                 <CardDescription>
                   {locale === "ar"
                     ? "الأرصدة المفتوحة حسب تاريخ الاستحقاق، معروضة بالدرهم"
@@ -639,7 +650,9 @@ export default function AdvancedReports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>{locale === "ar" ? "مقارنة الفترات" : "Period Comparison"}</CardTitle>
+                <CardTitle>
+                  {locale === "ar" ? "مقارنة الفترات" : t["advancedReports.periodComparison"]}
+                </CardTitle>
                 <CardDescription>
                   {format(periodDates.current.start, "MMM yyyy")} vs{" "}
                   {format(periodDates.previous.start, "MMM yyyy")} -{" "}
@@ -667,10 +680,10 @@ export default function AdvancedReports() {
                       <TableRow>
                         <TableHead>{locale === "ar" ? "المقياس" : "Metric"}</TableHead>
                         <TableHead data-numeric>
-                          {locale === "ar" ? "الفترة الحالية" : "Current Period"}
+                          {locale === "ar" ? "الفترة الحالية" : t["advancedReports.currentPeriod"]}
                         </TableHead>
                         <TableHead data-numeric>
-                          {locale === "ar" ? "الفترة السابقة" : "Previous Period"}
+                          {locale === "ar" ? "الفترة السابقة" : t["advancedReports.previousPeriod"]}
                         </TableHead>
                         <TableHead data-numeric>{locale === "ar" ? "التغيير" : "Change"}</TableHead>
                         <TableHead data-numeric>%</TableHead>
@@ -713,7 +726,9 @@ export default function AdvancedReports() {
                 </div>
               ) : (
                 <div className="flex items-center justify-center py-12 text-muted-foreground">
-                  {locale === "ar" ? "لا توجد بيانات للمقارنة" : "No comparison data available"}
+                  {locale === "ar"
+                    ? "لا توجد بيانات للمقارنة"
+                    : t["advancedReports.noComparisonDataAvailable"]}
                 </div>
               )}
             </CardContent>
@@ -722,7 +737,9 @@ export default function AdvancedReports() {
           {comparisonData && comparisonData.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>{locale === "ar" ? "رسم بياني للمقارنة" : "Comparison Chart"}</CardTitle>
+                <CardTitle>
+                  {locale === "ar" ? "رسم بياني للمقارنة" : t["advancedReports.comparisonChart"]}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={350}>
@@ -745,12 +762,14 @@ export default function AdvancedReports() {
                     <Bar
                       dataKey="current"
                       fill="#3b82f6"
-                      name={locale === "ar" ? "الفترة الحالية" : "Current Period"}
+                      name={locale === "ar" ? "الفترة الحالية" : t["advancedReports.currentPeriod"]}
                     />
                     <Bar
                       dataKey="previous"
                       fill="#94a3b8"
-                      name={locale === "ar" ? "الفترة السابقة" : "Previous Period"}
+                      name={
+                        locale === "ar" ? "الفترة السابقة" : t["advancedReports.previousPeriod"]
+                      }
                     />
                   </BarChart>
                 </ResponsiveContainer>

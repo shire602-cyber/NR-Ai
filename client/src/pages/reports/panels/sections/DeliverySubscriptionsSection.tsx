@@ -38,6 +38,7 @@ import { useTranslation } from "@/lib/i18n";
 import { localizeDeliverySubscriptionTitle } from "@/lib/notification-display";
 
 export function DeliverySubscriptionsSection() {
+  const { t } = useTranslation();
   const { t: tr } = useTranslation();
   const subscriptionTitle = (title: string) =>
     localizeDeliverySubscriptionTitle(title, tr as Record<string, string>);
@@ -245,7 +246,7 @@ export function DeliverySubscriptionsSection() {
               >
                 {pinnedReportDeliveryAutomationCommand
                   ? `Pinned: ${reportDeliveryAutomationCommandLabels[pinnedReportDeliveryAutomationCommand]}`
-                  : "No pinned command"}
+                  : t["deliverySubscriptionsSection.noPinnedCommand"]}
               </Badge>
               <Badge variant="info" dot>
                 {personaFilterLabel}
@@ -392,8 +393,8 @@ export function DeliverySubscriptionsSection() {
                 data-testid="report-delivery-command-queue"
               >
                 {commandQueueSubscriptionRequiresHandoffAcknowledgement
-                  ? "Acknowledge handoff"
-                  : "Queue pack"}
+                  ? t["components.launchAcknowledgeHandoff"]
+                  : t["deliverySubscriptionsSection.queuePack"]}
               </Button>
             </div>
 
@@ -464,7 +465,11 @@ export function DeliverySubscriptionsSection() {
                 {personaFilterLabel.toLowerCase()} view.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Delivery run status">
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label={t["deliverySubscriptionsSection.deliveryRunStatus"]}
+            >
               {reportDeliveryRunStatusFilters.map((filter) => (
                 <Button
                   key={filter.id}
@@ -505,7 +510,9 @@ export function DeliverySubscriptionsSection() {
                     </div>
                     <Badge variant="outline">{run.workspaceLabel}</Badge>
                   </div>
-                  <div className="mt-2 font-medium text-foreground">{subscriptionTitle(run.subscriptionTitle)}</div>
+                  <div className="mt-2 font-medium text-foreground">
+                    {subscriptionTitle(run.subscriptionTitle)}
+                  </div>
                   <div className="mt-1 text-muted-foreground">
                     Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
                     {run.readyReportCount}/{run.reportCount} reports - {run.channel}
@@ -652,7 +659,8 @@ export function DeliverySubscriptionsSection() {
                           <T k="reportCenter.suite" />
                         </div>
                         <div className="mt-1 font-medium text-foreground">
-                          {subscription.reportSuites[0]?.title ?? "Not linked"}
+                          {subscription.reportSuites[0]?.title ??
+                            t["deliverySubscriptionsSection.notLinked"]}
                         </div>
                       </div>
                     </div>
@@ -1039,8 +1047,8 @@ export function DeliverySubscriptionsSection() {
                         }
                       >
                         {subscriptionRequiresHandoffAcknowledgement
-                          ? "Acknowledge handoff"
-                          : "Queue delivery"}
+                          ? t["components.launchAcknowledgeHandoff"]
+                          : t["components.launchQueueDelivery"]}
                       </Button>
                       {!isEditingDeliverySettings ? (
                         <Button
@@ -1070,7 +1078,9 @@ export function DeliverySubscriptionsSection() {
                           })
                         }
                       >
-                        {subscription.enabled ? "Pause delivery" : "Enable delivery"}
+                        {subscription.enabled
+                          ? t["deliverySubscriptionsSection.pauseDelivery"]
+                          : t["deliverySubscriptionsSection.enableDelivery"]}
                       </Button>
                       <Button asChild size="sm" variant="outline">
                         <Link href={subscription.packTemplateHref}>

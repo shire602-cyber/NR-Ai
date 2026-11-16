@@ -1,5 +1,6 @@
 // Reports > comparisons workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import { reportComparisonMetricBasis } from "@/lib/reportCatalog";
 import { useReportsPageContext } from "../context";
 
 export default function ComparisonsPanel() {
+  const { t } = useTranslation();
   const {
     comparisonCurrentLabel,
     comparisonLoading,
@@ -58,8 +60,8 @@ export default function ComparisonsPanel() {
           >
             {personaFilter === "all"
               ? comparisonRanges.isCustom
-                ? "Custom range"
-                : "Month to date"
+                ? t["comparisonsPanel.customRange"]
+                : t["comparisonsPanel.monthToDate"]
               : personaFilterLabel}
           </Badge>
         </div>
@@ -206,8 +208,8 @@ export default function ComparisonsPanel() {
           <Badge variant={personaFilter === "all" ? "outline" : "info"}>
             {personaFilter === "all"
               ? comparisonRanges.isCustom
-                ? "Selected range"
-                : "Month to date"
+                ? t["comparisonsPanel.selectedRange"]
+                : t["comparisonsPanel.monthToDate"]
               : personaFilterLabel}
           </Badge>
         </div>
@@ -218,7 +220,7 @@ export default function ComparisonsPanel() {
               <T k="reportCenter.currentVsPriorPeriod" />
             </CardTitle>
             <CardDescription>
-              High-level movement across revenue, profit, sales, spend, and tax cash flow.
+              {t["comparisonsPanel.highLevelMovementAcrossRevenue"]}
             </CardDescription>
           </CardHeader>
           <CardContent>

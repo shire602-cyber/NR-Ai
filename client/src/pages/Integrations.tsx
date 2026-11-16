@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 import {
   Sheet,
   FileSpreadsheet,
@@ -57,6 +57,7 @@ interface IntegrationsStatusResponse {
 
 export default function Integrations() {
   const { locale } = useI18n();
+  const { t: tr } = useTranslation();
   const { toast } = useToast();
   const { company: currentCompany } = useDefaultCompany();
   const [exportType, setExportType] = useState<string>("");
@@ -71,21 +72,25 @@ export default function Integrations() {
     title: locale === "en" ? "Integrations" : "التكاملات",
     subtitle:
       locale === "en"
-        ? "Connect your favorite apps and services to sync your financial data"
+        ? tr["integrations.connectYourFavoriteAppsAnd"]
         : "اربط تطبيقاتك وخدماتك المفضلة لمزامنة بياناتك المالية",
     connected: locale === "en" ? "Connected" : "متصل",
-    notConnected: locale === "en" ? "Not Connected" : "غير متصل",
-    comingSoon: locale === "en" ? "Requires app registration" : "يتطلب تسجيل تطبيق",
-    useCsvImport: locale === "en" ? "Import CSV exports now" : "استورد ملفات CSV الآن",
+    notConnected: locale === "en" ? tr["integrations.notConnected"] : "غير متصل",
+    comingSoon: locale === "en" ? tr["integrations.requiresAppRegistration"] : "يتطلب تسجيل تطبيق",
+    useCsvImport:
+      locale === "en" ? tr["integrations.importCsvExportsNow"] : "استورد ملفات CSV الآن",
     export: locale === "en" ? "Export" : "تصدير",
     import: locale === "en" ? "Import" : "استيراد",
     sync: locale === "en" ? "Sync" : "مزامنة",
     connect: locale === "en" ? "Connect" : "اتصال",
-    exportToSheets: locale === "en" ? "Export to Google Sheets" : "تصدير إلى جداول Google",
-    selectDataType: locale === "en" ? "Select what to export" : "اختر ما تريد تصديره",
-    importFromSheets: locale === "en" ? "Import from Google Sheets" : "استيراد من جداول Google",
-    selectImportType: locale === "en" ? "Select what to import" : "اختر ما تريد استيراده",
-    sheetUrl: locale === "en" ? "Google Sheets URL" : "رابط جداول Google",
+    exportToSheets:
+      locale === "en" ? tr["reportCenter.exportToGoogleSheets"] : "تصدير إلى جداول Google",
+    selectDataType: locale === "en" ? tr["integrations.selectWhatToExport"] : "اختر ما تريد تصديره",
+    importFromSheets:
+      locale === "en" ? tr["integrations.importFromGoogleSheets"] : "استيراد من جداول Google",
+    selectImportType:
+      locale === "en" ? tr["integrations.selectWhatToImport"] : "اختر ما تريد استيراده",
+    sheetUrl: locale === "en" ? tr["integrations.googleSheetsUrl"] : "رابط جداول Google",
     sheetUrlPlaceholder:
       locale === "en"
         ? "https://docs.google.com/spreadsheets/d/..."
@@ -94,15 +99,16 @@ export default function Integrations() {
     importSuccess: locale === "en" ? "Import successful!" : "تم الاستيراد بنجاح!",
     invoices: locale === "en" ? "Invoices" : "الفواتير",
     expenses: locale === "en" ? "Expenses" : "المصروفات",
-    journalEntries: locale === "en" ? "Journal Entries" : "القيود اليومية",
-    chartOfAccounts: locale === "en" ? "Chart of Accounts" : "دليل الحسابات",
+    journalEntries: locale === "en" ? tr["pages.journalEntries"] : "القيود اليومية",
+    chartOfAccounts: locale === "en" ? tr["onboarding.step.accounts.title"] : "دليل الحسابات",
     exporting: locale === "en" ? "Exporting..." : "جاري التصدير...",
     exportSuccess: locale === "en" ? "Export successful!" : "تم التصدير بنجاح!",
-    openSpreadsheet: locale === "en" ? "Open Spreadsheet" : "فتح الجدول",
-    syncHistory: locale === "en" ? "Sync History" : "سجل المزامنة",
-    noHistory: locale === "en" ? "No sync history yet" : "لا يوجد سجل مزامنة بعد",
+    openSpreadsheet: locale === "en" ? tr["integrations.openSpreadsheet"] : "فتح الجدول",
+    syncHistory: locale === "en" ? tr["integrations.syncHistory"] : "سجل المزامنة",
+    noHistory: locale === "en" ? tr["integrations.noSyncHistoryYet"] : "لا يوجد سجل مزامنة بعد",
     records: locale === "en" ? "records" : "سجلات",
-    availableIntegrations: locale === "en" ? "Available Integrations" : "التكاملات المتاحة",
+    availableIntegrations:
+      locale === "en" ? tr["integrations.availableIntegrations"] : "التكاملات المتاحة",
     upcomingIntegrations:
       locale === "en"
         ? "Accounting systems (CSV import today)"
@@ -153,7 +159,7 @@ export default function Integrations() {
     },
     onError: (error: Error) => {
       toast({
-        title: locale === "en" ? "Export failed" : "فشل التصدير",
+        title: locale === "en" ? tr["statements.exportFailed"] : "فشل التصدير",
         description: error?.message,
         variant: "destructive",
       });
@@ -179,7 +185,7 @@ export default function Integrations() {
     },
     onError: (error: Error) => {
       toast({
-        title: locale === "en" ? "Import failed" : "فشل الاستيراد",
+        title: locale === "en" ? tr["integrations.importFailed"] : "فشل الاستيراد",
         description: error?.message,
         variant: "destructive",
       });

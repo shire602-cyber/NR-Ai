@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
@@ -149,6 +150,7 @@ function getStatusBadge(status: string): {
 // =============================================
 
 export default function AIInbox() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [activeTab, setActiveTab] = useState("pending");
@@ -363,7 +365,7 @@ export default function AIInbox() {
               <T k="pageLabels.aIInbox" />
             </h1>
             <p className="text-muted-foreground text-sm">
-              Autonomous GL Engine — AI categorizes and posts bank transactions
+              {t["aiInbox.autonomousGlEngineAiCategorizes"]}
             </p>
           </div>
         </div>
@@ -373,7 +375,7 @@ export default function AIInbox() {
           ) : (
             <RefreshCw className="h-4 w-4 me-2" />
           )}
-          {scanMutation.isPending ? "Scanning..." : "Run Scan"}
+          {scanMutation.isPending ? t["aIInbox.scanning"] : t["aiInbox.runScan"]}
         </Button>
       </div>
 
@@ -395,7 +397,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Zap className="h-3 w-3 text-info" />
-                Auto-Posted %
+                {t["aIInbox.autoPosted"]}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -406,7 +408,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Target className="h-3 w-3 text-success" />
-                Accuracy %
+                {t["aIInbox.accuracy"]}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -443,7 +445,7 @@ export default function AIInbox() {
         <TabsList>
           <TabsTrigger value="pending" className="gap-1">
             <Clock className="h-4 w-4" />
-            Pending Review
+            {t["pageLabels.pendingReview"]}
             {stats && stats.pendingReview > 0 && (
               <Badge variant="secondary" className="ms-1 text-xs">
                 {stats.pendingReview}
@@ -490,8 +492,7 @@ export default function AIInbox() {
                     <T k="pages.allClear" />
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    No transactions pending review. Click "Run Scan" to check for new unreconciled
-                    bank transactions.
+                    {t["aIInbox.noTransactionsPendingReviewClick"]}
                   </p>
                 </div>
               </CardContent>
@@ -581,7 +582,7 @@ export default function AIInbox() {
                                   className="h-8 w-8 p-0 text-success hover:text-success hover:bg-success-subtle"
                                   onClick={() => acceptMutation.mutate(item.id)}
                                   disabled={acceptMutation.isPending || !item.suggested_account_id}
-                                  title="Accept"
+                                  title={t["pages.accept"]}
                                 >
                                   <Check className="h-4 w-4" />
                                 </Button>
@@ -591,7 +592,7 @@ export default function AIInbox() {
                                   className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-danger-subtle"
                                   onClick={() => rejectMutation.mutate(item.id)}
                                   disabled={rejectMutation.isPending}
-                                  title="Reject"
+                                  title={t["compliance.closeRejectReopen"]}
                                 >
                                   <X className="h-4 w-4" />
                                 </Button>
@@ -600,7 +601,7 @@ export default function AIInbox() {
                                   variant="ghost"
                                   className="h-8 w-8 p-0 text-info hover:text-info hover:bg-info-subtle"
                                   onClick={() => openCorrectDialog(item)}
-                                  title="Correct"
+                                  title={t["aiInbox.correct"]}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
@@ -630,7 +631,7 @@ export default function AIInbox() {
                     <T k="pageLabels.noAutoPostedItems" />
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    High-confidence transactions will be automatically posted here when scanned.
+                    {t["aiInbox.highConfidenceTransactionsWillBe"]}
                   </p>
                 </div>
               </CardContent>
@@ -731,7 +732,7 @@ export default function AIInbox() {
                     <T k="pageLabels.noHistory" />
                   </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    Transaction history will appear here after items are processed.
+                    {t["aiInbox.transactionHistoryWillAppearHere"]}
                   </p>
                 </div>
               </CardContent>
@@ -832,10 +833,7 @@ export default function AIInbox() {
             <DialogTitle>
               <T k="pageLabels.correctAccountAssignment" />
             </DialogTitle>
-            <DialogDescription>
-              Choose the correct account for this transaction. This will create a new rule so
-              similar transactions are categorized correctly in the future.
-            </DialogDescription>
+            <DialogDescription>{t["aiInbox.chooseTheCorrectAccountFor"]}</DialogDescription>
           </DialogHeader>
           {correctingItem && (
             <div className="space-y-4 py-2">
@@ -857,7 +855,7 @@ export default function AIInbox() {
                 </label>
                 <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose an account..." />
+                    <SelectValue placeholder={t["aiInbox.chooseAnAccount"]} />
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((acc) => (

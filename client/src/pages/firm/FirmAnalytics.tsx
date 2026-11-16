@@ -22,7 +22,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +82,7 @@ function MetricCard({
   icon: React.ComponentType<{ className?: string }>;
   trend?: number;
 }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -95,7 +96,9 @@ function MetricCard({
             className={`flex items-center gap-1 text-xs mt-1 ${trend >= 0 ? "text-success" : "text-destructive"}`}
           >
             {trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-            <span>{Math.abs(trend)}% vs last month</span>
+            <span>
+              {formatMessage(t["firmAnalytics.percentVsLastMonth"], { percent: Math.abs(trend) })}
+            </span>
           </div>
         )}
         {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}

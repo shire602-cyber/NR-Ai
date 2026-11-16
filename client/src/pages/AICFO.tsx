@@ -468,8 +468,8 @@ export default function AICFO() {
               ) : (
                 <EmptyState
                   icon={BarChart3}
-                  title="No trend data yet"
-                  description="Post invoices and journal entries to see revenue and expense trends here."
+                  title={t["aiCfo.noTrendDataYet"]}
+                  description={t["aiCfo.postInvoicesAndJournalEntries"]}
                   compact
                 />
               )}
@@ -514,8 +514,8 @@ export default function AICFO() {
               ) : (
                 <EmptyState
                   icon={PieChart}
-                  title="No expense data yet"
-                  description="Post expense journal entries to see how your spending breaks down."
+                  title={t["aiCfo.noExpenseDataYet"]}
+                  description={t["aiCfo.postExpenseJournalEntriesTo"]}
                   compact
                 />
               )}
@@ -557,8 +557,8 @@ export default function AICFO() {
           ) : (
             <EmptyState
               icon={Brain}
-              title="No insights generated yet"
-              description="Generate prioritized, AI-written recommendations based on your real financial data. Costs an AI request."
+              title={t["aiCfo.noInsightsGeneratedYet"]}
+              description={t["aiCfo.generatePrioritizedAiWrittenRecommendations"]}
               action={{
                 label: insightsMutation.isPending ? "Generating…" : "Generate insights",
                 onClick: () => insightsMutation.mutate(),
@@ -592,8 +592,7 @@ export default function AICFO() {
                       <T k="pageLabels.startAConversation" />
                     </h3>
                     <p className="text-sm text-muted-foreground mb-6 max-w-xs">
-                      Ask me anything about your finances. I'll provide data-backed insights and
-                      recommendations.
+                      {t["aiCfo.askMeAnythingAboutYour"]}
                     </p>
                     <div className="w-full space-y-2">
                       <p className="text-xs font-semibold text-muted-foreground mb-3">
@@ -689,7 +688,7 @@ export default function AICFO() {
                 <Textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about expenses, revenue, cash flow, tax optimization..."
+                  placeholder={t["aiCfo.askAboutExpensesRevenueCash"]}
                   rows={2}
                   data-testid="input-cfo-question"
                   disabled={askAICFOMutation.isPending}

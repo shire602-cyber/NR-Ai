@@ -1,5 +1,6 @@
 // Reports > balances tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { AlertTriangle, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function BalancesTab() {
+  const { t } = useTranslation();
   const {
     balanceReport,
     balancesLoading,
@@ -150,9 +152,7 @@ export default function BalancesTab() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle>A/P Aging</CardTitle>
-              <CardDescription>
-                Open vendor bills aged from due date, net of recorded payments.
-              </CardDescription>
+              <CardDescription>{t["balancesTab.openVendorBillsAgedFrom"]}</CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">
               <Link href="/bill-pay?tab=summary">
@@ -266,7 +266,7 @@ export default function BalancesTab() {
                               variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                               dot
                             >
-                              {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
+                              {row.overdueBalanceAed > 0 ? t["balancesTab.payQueue"] : "Current"}
                             </Badge>
                           </TableCell>
                           <TableCell data-numeric>{row.billCount}</TableCell>
@@ -311,7 +311,7 @@ export default function BalancesTab() {
                   <T k="reportCenter.customerBalanceSummary" />
                 </CardTitle>
                 <CardDescription>
-                  Current open receivables from issued invoices, net of recorded payments.
+                  {t["balancesTab.currentOpenReceivablesFromIssued"]}
                 </CardDescription>
               </div>
               <Button asChild size="sm" variant="outline">
@@ -395,9 +395,7 @@ export default function BalancesTab() {
                 <CardTitle>
                   <T k="reportCenter.vendorBalanceSummary" />
                 </CardTitle>
-                <CardDescription>
-                  Current open payables from vendor bills, net of recorded payments.
-                </CardDescription>
+                <CardDescription>{t["balancesTab.currentOpenPayablesFromVendor"]}</CardDescription>
               </div>
               <Button asChild size="sm" variant="outline">
                 <Link href="/bill-pay?tab=summary">
@@ -439,7 +437,7 @@ export default function BalancesTab() {
                             variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                             dot
                           >
-                            {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
+                            {row.overdueBalanceAed > 0 ? t["balancesTab.payQueue"] : "Current"}
                           </Badge>
                         </TableCell>
                         <TableCell data-numeric>{row.billCount}</TableCell>
@@ -481,9 +479,7 @@ export default function BalancesTab() {
               <CardTitle>
                 <T k="reportCenter.inventoryValuation" />
               </CardTitle>
-              <CardDescription>
-                Stock quantity, cost value, reorder risk, and costing exceptions.
-              </CardDescription>
+              <CardDescription>{t["balancesTab.stockQuantityCostValueReorder"]}</CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">
               <Link href="/inventory">
@@ -581,11 +577,11 @@ export default function BalancesTab() {
                             dot
                           >
                             {product.isNegativeStock
-                              ? "Negative stock"
+                              ? t["balancesTab.negativeStock"]
                               : product.isMissingCost
-                                ? "Missing cost"
+                                ? t["balancesTab.missingCost"]
                                 : product.isLowStock
-                                  ? "Low stock"
+                                  ? t["reportCenter.lowStock"]
                                   : product.isActive
                                     ? "Valued"
                                     : "Inactive"}
@@ -622,9 +618,7 @@ export default function BalancesTab() {
               <CardTitle>
                 <T k="reportCenter.inventoryMovement" />
               </CardTitle>
-              <CardDescription>
-                Stock receipts, sales, returns, and adjustments for the selected period.
-              </CardDescription>
+              <CardDescription>{t["balancesTab.stockReceiptsSalesReturnsAnd"]}</CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">
               <Link href="/inventory">
@@ -920,7 +914,7 @@ export default function BalancesTab() {
                 <T k="reportCenter.fixedAssetRegister" />
               </CardTitle>
               <CardDescription>
-                Asset cost, accumulated depreciation, net book value, and capitalization review.
+                {t["balancesTab.assetCostAccumulatedDepreciationNet"]}
               </CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">
@@ -1010,7 +1004,7 @@ export default function BalancesTab() {
                           <TableCell>
                             <Badge variant={fixedAssetStatusVariant(asset.status)} dot>
                               {asset.needs_capitalization_je
-                                ? "Capitalization review"
+                                ? t["balancesTab.capitalizationReview"]
                                 : asset.status}
                             </Badge>
                           </TableCell>
@@ -1078,9 +1072,7 @@ export default function BalancesTab() {
           <CardTitle>
             <T k="reportCenter.balanceAutomationQueues" />
           </CardTitle>
-          <CardDescription>
-            Current open-balance signals for collections and payable follow-up.
-          </CardDescription>
+          <CardDescription>{t["balancesTab.currentOpenBalanceSignalsFor"]}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-5">

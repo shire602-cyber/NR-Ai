@@ -1,0 +1,22 @@
+{
+  "invoiceSettings.invoiceSettings": "Invoice Settings",
+  "invoiceSettings.customizeHowYourInvoicesAppear": "Customize how your invoices appear to customers",
+  "invoiceTemplates.editTemplate": "Edit Template",
+  "invoiceTemplates.updateYourInvoiceTemplateSettings": "Update your invoice template settings",
+  "invoiceTemplates.customizeYourInvoiceAppearanceWith": "Customize your invoice appearance with professional templates. Add your branding, colors, and layout preferences.",
+  "invoiceTemplates.invoiceTemplates": "Invoice Templates",
+  "invoiceTemplates.customizeTheLookAndFeel": "Customize the look and feel of your invoices",
+  "invoiceTemplates.selectALayout": "Select a layout",
+  "invoiceTemplates.optionalCustomHeaderEG": "Optional custom header (e.g., Tax Invoice)",
+  "invoiceTemplates.optionalFooterNoteEG": "Optional footer note (e.g., payment terms, thank you message)",
+  "invoices.weFoundSimilarInvoicesThat": "We found similar invoices that might be duplicates. Review them before proceeding.",
+  "invoices.youNeedToCreateAt": "You need to create at least one bank or cash account before marking invoices as paid.",
+  "invoices.recurringSettingsSaved": "Recurring settings saved",
+  "invoices.noInvoicesToExport": "No invoices to export",
+  "invoices.manageInvoicesAndCustomizeTheir": "Manage invoices and customize their appearance",
+  "invoices.invoiceBranding": "Invoice Branding",
+  "invoices.noInvoicesInThisDate": "No invoices in this date range",
+  "invoices.additionalNotes": "Additional notes",
+  "invoiceTemplates.designANewInvoiceTemplate": "Design a new invoice template with custom branding",
+  "invoiceTemplates.noTemplatesYetCreateYour": "No templates yet. Create your first template to customize your invoices."
+}

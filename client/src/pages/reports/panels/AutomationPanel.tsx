@@ -1,5 +1,6 @@
 // Reports > automation workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { useReportsPageContext } from "../context";
 import { AutomationRuleSections } from "./sections/AutomationRuleSections";
 
 export default function AutomationPanel() {
+  const { t } = useTranslation();
   const {
     applyReportWorkflowGapFilter,
     automationLoading,
@@ -47,13 +49,13 @@ export default function AutomationPanel() {
               <T k="reportCenter.automationReadiness" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-specific coverage gaps before report packs, alerts, and delivery automations run.
+              {t["automationPanel.roleSpecificCoverageGapsBefore"]}
             </p>
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
             {reportAutomationOperationsNeedingReview > 0
               ? `${reportAutomationOperationsNeedingReview} need review`
-              : "Ready by role"}
+              : t["automationPanel.readyByRole"]}
           </Badge>
         </div>
 
@@ -756,8 +758,7 @@ export default function AutomationPanel() {
                   <T k="reportCenter.scheduledSendsHeldForHandoff" />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  These due report packs were not auto-sent because the latest scheduler scan found
-                  unresolved handoff gaps.
+                  {t["automationPanel.theseDueReportPacksWere"]}
                 </p>
               </div>
               <Badge variant="warning" dot>

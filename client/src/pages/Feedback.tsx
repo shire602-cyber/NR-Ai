@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -37,32 +38,43 @@ import {
 import type { UserFeedback } from "@shared/schema";
 
 const FEEDBACK_TYPES = [
-  { value: "bug", label: "Bug Report", icon: Bug, description: "Report a problem or error" },
+  {
+    value: "bug",
+    labelKey: "feedback.type.bug",
+    icon: Bug,
+    descriptionKey: "feedback.reportAProblemOrError",
+  },
   {
     value: "feature_request",
-    label: "Feature Request",
+    labelKey: "feedback.type.feature_request",
     icon: Lightbulb,
-    description: "Suggest a new feature",
+    descriptionKey: "feedback.typeHelp.feature_request",
   },
   {
     value: "improvement",
-    label: "Improvement",
+    labelKey: "feedback.type.improvement",
     icon: ThumbsUp,
-    description: "Suggest an improvement",
+    descriptionKey: "feedback.typeHelp.improvement",
   },
-  { value: "praise", label: "Praise", icon: Star, description: "Share what you love" },
+  {
+    value: "praise",
+    labelKey: "feedback.type.praise",
+    icon: Star,
+    descriptionKey: "feedback.shareWhatYouLove",
+  },
 ];
 
 const CATEGORIES = [
-  { value: "ui", label: "User Interface" },
-  { value: "performance", label: "Performance" },
-  { value: "feature", label: "Feature" },
-  { value: "billing", label: "Billing" },
-  { value: "support", label: "Support" },
-  { value: "other", label: "Other" },
+  { value: "ui", labelKey: "feedback.userInterface" },
+  { value: "performance", labelKey: "dashboard.performanceHeading" },
+  { value: "feature", labelKey: "pageLabels.feature" },
+  { value: "billing", labelKey: "feedback.category.billing" },
+  { value: "support", labelKey: "feedback.category.support" },
+  { value: "other", labelKey: "forms.claim.cat.Other" },
 ];
 
 export default function Feedback() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [location] = useLocation();
   const [activeTab, setActiveTab] = useState("submit");
@@ -153,8 +165,8 @@ export default function Feedback() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Workspace"
-        title="Feedback"
-        description="Help us improve by sharing your thoughts and suggestions"
+        title={t["feedback.feedback"]}
+        description={t["feedback.helpUsImproveBySharing"]}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -202,8 +214,10 @@ export default function Feedback() {
                         <Icon
                           className={`w-6 h-6 mb-2 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
                         />
-                        <div className="font-medium">{type.label}</div>
-                        <div className="text-xs text-muted-foreground">{type.description}</div>
+                        <div className="font-medium">{t[type.labelKey]}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {t[type.descriptionKey]}
+                        </div>
                       </button>
                     );
                   })}
@@ -220,12 +234,12 @@ export default function Feedback() {
                     onValueChange={(value) => setFormData({ ...formData, category: value })}
                   >
                     <SelectTrigger data-testid="select-category">
-                      <SelectValue placeholder="Select category" />
+                      <SelectValue placeholder={t["screens.selectCategory"]} />
                     </SelectTrigger>
                     <SelectContent>
                       {CATEGORIES.map((cat) => (
                         <SelectItem key={cat.value} value={cat.value}>
-                          {cat.label}
+                          {t[cat.labelKey]}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -233,7 +247,7 @@ export default function Feedback() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Rating (optional)</Label>
+                  <Label>{t["feedback.ratingOptional"]}</Label>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
@@ -260,7 +274,7 @@ export default function Feedback() {
                   <T k="pages.title" />
                 </Label>
                 <Input
-                  placeholder="Brief summary of your feedback"
+                  placeholder={t["feedback.briefSummaryOfYourFeedback"]}
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   data-testid="input-title"
@@ -272,7 +286,7 @@ export default function Feedback() {
                   <T k="pages.description" />
                 </Label>
                 <Textarea
-                  placeholder="Please provide as much detail as possible..."
+                  placeholder={t["feedback.pleaseProvideAsMuchDetail"]}
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   rows={5}
@@ -285,9 +299,7 @@ export default function Feedback() {
                   <Label>
                     <T k="pageLabels.allowUsToContactYou" />
                   </Label>
-                  <p className="text-sm text-muted-foreground">
-                    We may reach out for more details or to notify you of resolution
-                  </p>
+                  <p className="text-sm text-muted-foreground">{t["feedback.weMayReachOutFor"]}</p>
                 </div>
                 <Switch
                   checked={formData.allowContact}
@@ -298,7 +310,7 @@ export default function Feedback() {
 
               {formData.allowContact && (
                 <div className="space-y-2">
-                  <Label>Contact Email (optional)</Label>
+                  <Label>{t["feedback.contactEmailOptional"]}</Label>
                   <Input
                     type="email"
                     placeholder="your@email.com"

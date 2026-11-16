@@ -1,5 +1,6 @@
 // Reports > automation: trigger rules, automation queues, coverage, command center and rules.
 // Split out of AutomationPanel.tsx (R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { triggerSeverityMeta } from "../../shared";
 import { useReportsPageContext } from "../../context";
 
 export function AutomationRuleSections() {
+  const { t } = useTranslation();
   const {
     automationLoading,
     automationQueueCount,
@@ -425,7 +427,7 @@ export function AutomationRuleSections() {
                     <T k="reportCenter.autoSendReadiness" />
                   </CardTitle>
                   <CardDescription>
-                    Rule coverage and open work before scheduled report packs are sent.
+                    {t["automationRuleSections.ruleCoverageAndOpenWork"]}
                   </CardDescription>
                 </div>
                 <Badge
@@ -540,7 +542,7 @@ export function AutomationRuleSections() {
                     ))
                   ) : (
                     <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                      All visible rules are ready for auto-send when pack delivery runs.
+                      {t["automationRuleSections.allVisibleRulesAreReady"]}
                     </div>
                   )}
                 </div>

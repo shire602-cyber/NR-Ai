@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useState, type ComponentType } from "react";
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useLocation } from "wouter";
@@ -134,6 +135,7 @@ const FeatureCard = ({
 );
 
 export default function AIFeatures() {
+  const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { companyId } = useDefaultCompany();
   const { toast } = useToast();
@@ -285,14 +287,15 @@ export default function AIFeatures() {
                   <T k="pageLabels.aIFinancialAutomation" />
                 </h1>
                 <p className="text-muted-foreground">
-                  Leverage advanced AI to automate transaction categorization, detect anomalies,
-                  reconcile bank statements, and forecast cash flow.
+                  {t["aiFeatures.leverageAdvancedAiToAutomate"]}
                 </p>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <Badge variant={unresolvedAlerts.length > 0 ? "destructive" : "secondary"}>
-                    {unresolvedAlerts.length} Active Alerts
+                    {formatMessage(t["aIFeatures.countActiveAlerts"], {
+                      count: unresolvedAlerts.length,
+                    })}
                   </Badge>
                   {criticalAlerts.length > 0 && (
                     <Badge variant="destructive">{criticalAlerts.length} Critical</Badge>
@@ -345,7 +348,7 @@ export default function AIFeatures() {
                 <p className="text-xs text-muted-foreground mt-1">
                   {criticalAlerts.length > 0
                     ? `${criticalAlerts.length} require attention`
-                    : "No critical issues"}
+                    : t["aiFeatures.noCriticalIssues"]}
                 </p>
               </CardContent>
             </Card>
@@ -419,20 +422,20 @@ export default function AIFeatures() {
           <div className="grid gap-6 md:grid-cols-2">
             <FeatureCard
               icon={ShieldAlert}
-              title="Anomaly Detection"
-              description="Scan transactions for duplicates, unusual amounts, and potential fraud"
+              title={t["aiFeatures.anomalyDetection"]}
+              description={t["aiFeatures.scanTransactionsForDuplicatesUnusual"]}
               onClick={() => detectAnomaliesMutation.mutate()}
               loading={detectAnomaliesMutation.isPending}
-              buttonText="Scan for Anomalies"
+              buttonText={t["aIFeatures.scanForAnomalies"]}
               color="bg-warning"
             />
             <FeatureCard
               icon={LineChart}
-              title="Cash Flow Forecast"
-              description="Generate AI predictions for the next 3 months based on historical data"
+              title={t["pages.cashFlowForecast"]}
+              description={t["aiFeatures.generateAiPredictionsForThe"]}
               onClick={() => generateForecastMutation.mutate()}
               loading={generateForecastMutation.isPending}
-              buttonText="Generate Forecast"
+              buttonText={t["aIFeatures.generateForecast"]}
               color="bg-info"
             />
           </div>
@@ -443,9 +446,7 @@ export default function AIFeatures() {
                 <CardTitle>
                   <T k="pageLabels.cashFlowPrediction" />
                 </CardTitle>
-                <CardDescription>
-                  Projected inflows and outflows for the next 3 months
-                </CardDescription>
+                <CardDescription>{t["aiFeatures.projectedInflowsAndOutflowsFor"]}</CardDescription>
               </CardHeader>
               <CardContent className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -627,7 +628,7 @@ export default function AIFeatures() {
               ) : (
                 <Sparkles className="w-4 h-4 me-2" />
               )}
-              Generate Forecast
+              {t["aIFeatures.generateForecast"]}
             </Button>
           </div>
 
@@ -952,7 +953,7 @@ export default function AIFeatures() {
                 <Label htmlFor="resolution-note">Resolution Note (Optional)</Label>
                 <Textarea
                   id="resolution-note"
-                  placeholder="Add a note about how this was resolved..."
+                  placeholder={t["aiFeatures.addANoteAboutHow"]}
                   value={resolutionNote}
                   onChange={(e) => setResolutionNote(e.target.value)}
                   data-testid="input-resolution-note"
@@ -1001,8 +1002,7 @@ export default function AIFeatures() {
             <Alert>
               <Sparkles className="h-4 w-4" />
               <AlertDescription>
-                Smart Categorization is configured to learn from your corrections automatically.
-                Just keep correcting miscategorized transactions and the AI will improve over time.
+                {t["aiFeatures.smartCategorizationIsConfiguredTo"]}
               </AlertDescription>
             </Alert>
             <div className="space-y-2">

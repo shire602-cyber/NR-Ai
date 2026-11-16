@@ -272,7 +272,7 @@ export default function FirmCommandCenter() {
     mutationFn: () => apiRequest("POST", "/api/firm/command-center/alerts/refresh"),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
-      toast({ title: "Alerts refreshed" });
+      toast({ title: t["firmCommandCenter.alertsRefreshed"] });
     },
     onError: (e: Error) =>
       toast({ title: "Refresh failed", description: e.message, variant: "destructive" }),
@@ -423,9 +423,9 @@ export default function FirmCommandCenter() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Firm"
-        title="Firm Command Center"
+        title={t["firmCommandCenter.firmCommandCenter"]}
         testId="page-title"
-        description="Bird's-eye view across all clients with actionable insights and batch operations."
+        description={t["firmCommandCenter.birdSEyeViewAcross"]}
         actions={
           <Button
             variant="outline"
@@ -438,7 +438,7 @@ export default function FirmCommandCenter() {
             ) : (
               <RefreshCw className="w-4 h-4 me-2" />
             )}
-            Refresh alerts
+            {t["firmCommandCenter.refreshAlerts"]}
           </Button>
         }
       />
@@ -446,26 +446,36 @@ export default function FirmCommandCenter() {
       {/* Metrics row */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          title="Total clients"
+          title={t["firmCommandCenter.totalClients"]}
           value={summary ? `${summary.totalClients}` : "—"}
-          subtitle={summary ? `${summary.activeClients} active` : undefined}
+          subtitle={
+            summary
+              ? formatMessage(t["firmCommandCenter.countActive"], { count: summary.activeClients })
+              : undefined
+          }
           icon={Building2}
         />
         <MetricCard
-          title="Outstanding AR"
+          title={t["pages.outstandingAr"]}
           value={summary ? formatAed(summary.totalOutstandingAr) : "—"}
           icon={DollarSign}
         />
         <MetricCard
-          title="VAT liability"
+          title={t["firmCommandCenter.vatLiability"]}
           value={summary ? formatAed(summary.totalVatLiability) : "—"}
-          subtitle="Across unfiled returns"
+          subtitle={t["firmCommandCenter.acrossUnfiledReturns"]}
           icon={Calculator}
         />
         <MetricCard
-          title="Receipts this month"
+          title={t["firmCommandCenter.receiptsThisMonth"]}
           value={summary ? `${summary.receiptsProcessedThisMonth}` : "—"}
-          subtitle={summary ? `${summary.invoicesIssuedThisMonth} invoices issued` : undefined}
+          subtitle={
+            summary
+              ? formatMessage(t["firmCommandCenter.countInvoicesIssued"], {
+                  count: summary.invoicesIssuedThisMonth,
+                })
+              : undefined
+          }
           icon={Activity}
         />
       </div>
@@ -482,7 +492,9 @@ export default function FirmCommandCenter() {
             <div className="text-h1 font-semibold tabular-nums">
               {summary?.averageHealthScore ?? "—"}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">across all managed clients</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t["firmCommandCenter.acrossAllManagedClients"]}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -539,7 +551,7 @@ export default function FirmCommandCenter() {
                 <div className="flex items-center gap-2 flex-1 max-w-md">
                   <Search className="w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search clients..."
+                    placeholder={t["firmCommandCenter.searchClients"]}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     data-testid="input-search-clients"
@@ -572,21 +584,21 @@ export default function FirmCommandCenter() {
                   <span className="text-sm font-medium">{selectedCount} selected</span>
                   <div className="ms-auto flex gap-2">
                     <BatchActionButton
-                      label="Run VAT calc"
+                      label={t["firmCommandCenter.runVatCalc"]}
                       icon={Calculator}
                       onConfirm={() => batchVat.mutate(selectedIds)}
                       pending={batchVat.isPending}
                       description={`Run VAT calculation for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
                     />
                     <BatchActionButton
-                      label="Chase payments"
+                      label={t["firmCommandCenter.chasePayments"]}
                       icon={Mail}
                       onConfirm={() => batchChasePayments.mutate(selectedIds)}
                       pending={batchChasePayments.isPending}
                       description={`Queue payment chase for overdue invoices across ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
                     />
                     <BatchActionButton
-                      label="Chase documents"
+                      label={t["firmCommandCenter.chaseDocuments"]}
                       icon={FileSearch}
                       onConfirm={() => batchChaseDocuments.mutate(selectedIds)}
                       pending={batchChaseDocuments.isPending}
@@ -602,7 +614,7 @@ export default function FirmCommandCenter() {
                       <Checkbox
                         checked={allSelected}
                         onCheckedChange={toggleAll}
-                        aria-label="Select all"
+                        aria-label={t["firmCommandCenter.selectAll"]}
                       />
                     </TableHead>
                     <TableHead>
@@ -686,7 +698,9 @@ export default function FirmCommandCenter() {
                   {filteredClients.length === 0 && !healthQuery.isLoading && (
                     <TableRow>
                       <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                        {search ? "No clients match your search." : "No clients yet."}
+                        {search
+                          ? t["firmCommandCenter.noClientsMatchYourSearch"]
+                          : t["pages.noClientsYet"]}
                       </TableCell>
                     </TableRow>
                   )}
@@ -768,7 +782,7 @@ export default function FirmCommandCenter() {
                 ))}
                 {(alertsQuery.data ?? []).length === 0 && !alertsQuery.isLoading && (
                   <div className="text-center text-muted-foreground py-8">
-                    No active alerts. Click "Refresh alerts" above to scan all clients.
+                    {t["firmCommandCenter.noActiveAlertsClickRefresh"]}
                   </div>
                 )}
               </div>
@@ -863,9 +877,18 @@ export default function FirmCommandCenter() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4 mb-6">
-                <DeltaCard label="Revenue" value={comparisonQuery.data?.deltas.revenuePct ?? 0} />
-                <DeltaCard label="Receipts" value={comparisonQuery.data?.deltas.receiptsPct ?? 0} />
-                <DeltaCard label="Invoices" value={comparisonQuery.data?.deltas.invoicesPct ?? 0} />
+                <DeltaCard
+                  label={t["consolidation.revenue"]}
+                  value={comparisonQuery.data?.deltas.revenuePct ?? 0}
+                />
+                <DeltaCard
+                  label={t["marketing.previewNavReceipts"]}
+                  value={comparisonQuery.data?.deltas.receiptsPct ?? 0}
+                />
+                <DeltaCard
+                  label={t["marketing.previewNavInvoices"]}
+                  value={comparisonQuery.data?.deltas.invoicesPct ?? 0}
+                />
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={comparisonChartData}>

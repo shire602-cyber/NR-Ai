@@ -1,5 +1,6 @@
 // Reports > delivery workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { useReportsPageContext } from "../context";
 import { DeliverySubscriptionsSection } from "./sections/DeliverySubscriptionsSection";
 
 export default function DeliveryPanel() {
+  const { t } = useTranslation();
   const {
     handleExportWorkspacePackToSheets,
     isExporting,
@@ -40,14 +42,13 @@ export default function DeliveryPanel() {
               <T k="reportCenter.accountantHandoff" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Share role-specific report context, readiness status, and the next automation action
-              without rebuilding the workspace view.
+              {t["deliveryPanel.shareRoleSpecificReportContext"]}
             </p>
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
             {reportAutomationOperationsNeedingReview > 0
               ? `${reportAutomationOperationsNeedingReview} handoffs need action`
-              : "Handoffs ready"}
+              : t["deliveryPanel.handoffsReady"]}
           </Badge>
         </div>
 
@@ -126,7 +127,9 @@ export default function DeliveryPanel() {
                       href={item.gapHref}
                       data-testid={`report-accountant-handoff-gap-${item.workspace.persona}`}
                     >
-                      {item.priorityGap ? "Review gap" : "Open finder"}
+                      {item.priorityGap
+                        ? t["deliveryPanel.reviewGap"]
+                        : t["components.launchOpenFinder"]}
                     </Link>
                   </Button>
                   <Button asChild size="sm" variant="ghost" className="text-accent">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { History, FileText, Search, ChevronDown, ChevronRight, Clock, User } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,14 +29,15 @@ import type { DocumentVersion } from "@shared/schema";
 import { T } from "@/components/layout/T";
 
 const DOCUMENT_TYPES = [
-  { value: "invoice", label: "Invoice" },
-  { value: "quote", label: "Quote" },
-  { value: "credit_note", label: "Credit Note" },
-  { value: "purchase_order", label: "Purchase Order" },
-  { value: "receipt", label: "Receipt" },
+  { value: "invoice", labelKey: "invoices.publicInvoice" },
+  { value: "quote", labelKey: "documentVersions.type.quote" },
+  { value: "credit_note", labelKey: "documentVersions.creditNote" },
+  { value: "purchase_order", labelKey: "adminDocuments.purchaseOrder" },
+  { value: "receipt", labelKey: "pages.receipt" },
 ] as const;
 
 export default function DocumentVersions() {
+  const { t } = useTranslation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [documentType, setDocumentType] = useState<string>("");
   const [documentId, setDocumentId] = useState("");
@@ -110,9 +112,7 @@ export default function DocumentVersions() {
             <Search className="h-5 w-5" />
             <T k="pageLabels.findDocumentHistory" />
           </CardTitle>
-          <CardDescription>
-            Select a document type and enter the document ID to view its version timeline
-          </CardDescription>
+          <CardDescription>{t["documentVersions.selectADocumentTypeAnd"]}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4 items-end">
@@ -128,12 +128,12 @@ export default function DocumentVersions() {
                 }}
               >
                 <SelectTrigger id="documentType">
-                  <SelectValue placeholder="Select type..." />
+                  <SelectValue placeholder={t["documentVersions.selectType"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {DOCUMENT_TYPES.map((type) => (
                     <SelectItem key={type.value} value={type.value}>
-                      {type.label}
+                      {t[type.labelKey]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -146,7 +146,7 @@ export default function DocumentVersions() {
               </Label>
               <Input
                 id="documentId"
-                placeholder="Enter document ID..."
+                placeholder={t["documentVersions.enterDocumentId"]}
                 value={documentId}
                 onChange={(e) => {
                   setDocumentId(e.target.value);
@@ -190,7 +190,7 @@ export default function DocumentVersions() {
               </div>
             ) : isError ? (
               <div className="text-center py-12 text-destructive">
-                Failed to load version history. Please check the document ID and try again.
+                {t["documentVersions.failedToLoadVersionHistory"]}
               </div>
             ) : versions.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">

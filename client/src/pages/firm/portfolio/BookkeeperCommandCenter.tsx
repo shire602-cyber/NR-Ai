@@ -1,4 +1,5 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
+import { useTranslation } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
 import { useMemo, useState } from "react";
 import {
@@ -56,6 +57,7 @@ export function BookkeeperCommandCenter({
   onOpenBrief: (companyId: string) => void;
   onManageStaff: () => void;
 }) {
+  const { t } = useTranslation();
   const { b, fx, fdShort, fdTime } = useFirmText();
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>("vat");
   const dashboardClients = useMemo(() => dashboard?.clients ?? [], [dashboard?.clients]);
@@ -220,9 +222,9 @@ export function BookkeeperCommandCenter({
           metric: `${cohort.dueSoon} due · ${cohort.blocked} blocked`,
           action:
             cohort.blocked > 0
-              ? "Clear blockers"
+              ? t["components.srv.firm.ui.clearBlockers"]
               : cohort.dueSoon > 0
-                ? "Prepare returns"
+                ? t["components.srv.firm.ui.prepareReturns"]
                 : "Monitor cohort",
           risk:
             cohort.blocked > 0
@@ -318,7 +320,7 @@ export function BookkeeperCommandCenter({
         ],
       },
     ];
-  }, [dashboardClients, dashboard?.vatCohorts]);
+  }, [dashboardClients, dashboard?.vatCohorts, t]);
   const ctClients = dashboardClients
     .filter(
       (client) =>

@@ -1972,7 +1972,7 @@ export default function BillPay() {
                             )}
                           >
                             <CalendarIcon className="h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : "Pick a date"}
+                            {field.value ? format(field.value, "PPP") : t["pages.pickADate"]}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -2103,7 +2103,7 @@ export default function BillPay() {
                   <T k="pages.cancel" />
                 </Button>
                 <Button type="submit" disabled={recordPaymentMutation.isPending}>
-                  {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}
+                  {recordPaymentMutation.isPending ? "Recording..." : t["pages.recordPayment"]}
                 </Button>
               </DialogFooter>
             </form>
