@@ -50,7 +50,8 @@ describe("migrations", () => {
       } else {
         // Filled by its owning workstream: the header line names the file and the
         // workstream, declares the SQL idempotent, and every DDL statement is re-runnable.
-        expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\bW\d-[A-E]\b/m);
+        // Wave workstreams (W1-A ... W5-E) and the final sweep workers (S1 ... S9).
+        expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\b(W\d-[A-E]|S\d)\b/m);
         expect(body, e.tag).toMatch(/^-- .*\bIdempotent\b/im);
         expect(sqlBody, e.tag).not.toBe("SELECT 1;");
         expect(sqlBody, e.tag).not.toMatch(

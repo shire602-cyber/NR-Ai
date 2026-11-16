@@ -5,8 +5,6 @@ import { z } from "zod";
 
 import { storage } from "../storage";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
-import { insertBankTransactionSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
 import { asyncHandler } from "../middleware/errorHandler";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
@@ -52,6 +50,36 @@ import { parsedBody } from "../http/parsed-body";
 import { applyMatch } from "../services/bank-reconciliation.service";
 import { aiRowsToParsedRows, importStatementRows } from "../services/bank-import.service";
 import { aiStatementImportBody, type AiStatementImportBody } from "../../shared/validators/banking";
+import { zText, zUuid } from "../../shared/validators/primitives";
+import {
+  STORED_FORECAST_BASIS,
+  readStoredForecast,
+  regenerateStoredForecast,
+} from "../services/cashflow-forecast.service";
+
+const manualBankTransactionBody = z
+  .object({
+    bankAccountId: zUuid,
+    transactionDate: z.string().max(40),
+    description: z.string().max(1000),
+    amount: z.union([z.number(), z.string().max(40)]),
+    reference: zText(200).nullable().optional(),
+    balance: z
+      .union([z.number(), z.string().max(40)])
+      .nullable()
+      .optional(),
+    allowDuplicates: z.boolean().optional(),
+  })
+  .strict();
+type ManualBankTransactionBody = z.output<typeof manualBankTransactionBody>;
+
+const forecastCashflowBody = z
+  .object({
+    companyId: zUuid,
+    forecastMonths: z.number().int().min(1).max(12).optional(),
+    days: z.number().int().min(7).max(365).optional(),
+  })
+  .strict();
 
 const log = createLogger("ai");
 
@@ -1110,32 +1138,77 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     })
   );
 
+  // One manually keyed bank line (S3): same shared import pipeline as statement files and AI/PDF
+  // rows — a managed bank account is required, the row is strictly validated (no NaN, no
+  // client-set reconciliation state), deduplicated and recorded in an import batch with undo.
   app.post(
     "/api/companies/:companyId/bank-transactions",
     authMiddleware,
     requireCustomer,
+    strictBody(manualBankTransactionBody),
     asyncHandler(async (req: Request, res: Response) => {
-      try {
-        const { companyId } = req.params;
-        const userId = (req as any).user.id;
-
-        // Verify company access
-        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-        if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-
-        // S-M1: allowlist body fields, then pin the tenant scope.
-        const transaction = await storage.createBankTransaction({
-          ...pickAllowed(req.body, insertBankTransactionSchema, ["companyId"]),
-          companyId,
-        } as any);
-        res.json(transaction);
-      } catch (error: any) {
-        res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+      const { companyId } = req.params;
+      const userId = (req as any).user.id as string;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
+      const body = parsedBody<ManualBankTransactionBody>(req);
+      const [row] = aiRowsToParsedRows([
+        {
+          date: body.transactionDate,
+          description: body.description,
+          amount: body.amount,
+          reference: body.reference ?? null,
+          balance: body.balance ?? null,
+        },
+      ]);
+      if (row.errors.length > 0) {
+        throw new DomainError(
+          "INVALID_BANK_TRANSACTION",
+          400,
+          { errors: row.errors },
+          row.errors.join("; ")
+        );
+      }
+      const fingerprint = createHash("sha256")
+        .update(
+          JSON.stringify([
+            body.bankAccountId,
+            row.date?.toISOString() ?? "",
+            row.description,
+            row.amount,
+            row.reference,
+          ])
+        )
+        .digest("hex");
+      const result = await importStatementRows({
+        companyId,
+        bankAccountId: body.bankAccountId,
+        rows: [row],
+        kind: "csv",
+        fileFingerprint: fingerprint,
+        importSource: `manual:${fingerprint.slice(0, 16)}`,
+        source: "manual",
+        fileName: null,
+        format: "manual",
+        actorId: userId,
+        allowDuplicates: body.allowDuplicates,
+      });
+      const [created] = result.imported;
+      if (!created) {
+        const skipped = result.plan.skipped[0];
+        throw new DomainError(
+          "DUPLICATE_BANK_TRANSACTION",
+          409,
+          { reason: skipped?.reason ?? "duplicate", detail: skipped?.detail ?? null },
+          "This bank line already exists on the account. Send allowDuplicates: true to add it again."
+        );
+      }
+      res.status(201).json({
+        ...created,
+        batchId: result.batchId,
+        continuityWarning: result.continuityWarning,
+      });
     })
   );
 
@@ -1196,158 +1269,38 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     })
   );
 
-  // Predictive Cash Flow Forecasting
+  // Cash-flow forecast (S3). The figures come from the document-driven forecast
+  // (open invoices / approved bills / payroll / tax due dates / scheduled items) and are stored as
+  // a monthly snapshot. The former historical-average + model prediction fabricated inflows and
+  // outflows, so no model output is stored or returned as a figure any more.
   app.post(
     "/api/ai/forecast-cashflow",
     authMiddleware,
     aiLimiter,
     requireCustomer,
+    strictBody(forecastCashflowBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      try {
-        const { companyId, forecastMonths = 3 } = req.body;
-        const userId = (req as any).user.id;
-
-        if (!companyId) {
-          return res.status(400).json({ message: "Company ID required" });
-        }
-
-        // Verify company access
-        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-        if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-
-        const invoices = await storage.getInvoicesByCompanyId(companyId);
-        const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const _entries = await storage.getJournalEntriesByCompanyId(companyId);
-
-        // Calculate historical patterns
-        const now = new Date();
-        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
-
-        const recentInvoices = invoices.filter((i) => new Date(i.date) >= sixMonthsAgo);
-        const recentReceipts = receipts.filter((r) => r.date && new Date(r.date) >= sixMonthsAgo);
-
-        const monthlyInflow = recentInvoices.reduce((sum, i) => sum + i.total, 0) / 6;
-        const monthlyOutflow = recentReceipts.reduce((sum, r) => sum + (r.amount || 0), 0) / 6;
-
-        const historicalData = {
-          averageMonthlyRevenue: monthlyInflow,
-          averageMonthlyExpenses: monthlyOutflow,
-          totalInvoices: invoices.length,
-          paidInvoices: invoices.filter((i) => i.status === "paid").length,
-          pendingReceivables: invoices
-            .filter((i) => i.status === "sent")
-            .reduce((sum, i) => sum + i.total, 0),
-          recentMonths: Array.from({ length: 6 }, (_, i) => {
-            const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const monthInvoices = recentInvoices.filter((inv) => {
-              const d = new Date(inv.date);
-              return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
-            });
-            const monthReceipts = recentReceipts.filter((r) => {
-              if (!r.date) return false;
-              const d = new Date(r.date);
-              return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
-            });
-            return {
-              month: month.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-              revenue: monthInvoices.reduce((s, i) => s + i.total, 0),
-              expenses: monthReceipts.reduce((s, r) => s + (r.amount || 0), 0),
-            };
-          }).reverse(),
-        };
-
-        const completion = await getAI(req, "advisory").chat.completions.create({
-          model: resolveModel("advisory"),
-          messages: [
-            {
-              role: "system",
-              content: `You are an AI financial forecasting system for UAE businesses.
-
-Analyze historical financial data and provide:
-1. Cash flow predictions for the next ${forecastMonths} months
-2. Key trends and patterns
-3. Risk factors and opportunities
-4. Actionable recommendations
-
-Consider UAE-specific factors:
-- VAT payment cycles (quarterly)
-- Corporate tax considerations
-- Seasonal business patterns
-
-Respond with JSON:
-{
-  "forecasts": [
-    {
-      "month": "Jan 2025",
-      "predictedInflow": 50000,
-      "predictedOutflow": 35000,
-      "predictedBalance": 15000,
-      "confidence": 0.85
-    }
-  ],
-  "trends": [
-    {
-      "type": "positive|negative|neutral",
-      "title": "Trend title",
-      "description": "Explanation",
-      "impact": "high|medium|low"
-    }
-  ],
-  "recommendations": [
-    {
-      "priority": "high|medium|low",
-      "title": "Recommendation",
-      "description": "Action details",
-      "expectedImpact": "Expected outcome"
-    }
-  ],
-  "riskFactors": [
-    {
-      "severity": "high|medium|low",
-      "factor": "Risk description",
-      "mitigation": "Suggested action"
-    }
-  ]
-}`,
-            },
-            {
-              role: "user",
-              content: `Forecast cash flow for ${forecastMonths} months based on this data:\n${JSON.stringify(historicalData, null, 2)}`,
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3,
-        });
-
-        const aiResponse = JSON.parse(completion.choices[0].message.content || "{}");
-
-        // Clear old forecasts and store new ones
-        await storage.deleteCashFlowForecastsByCompanyId(companyId);
-
-        for (const forecast of aiResponse.forecasts || []) {
-          await storage.createCashFlowForecast({
-            companyId,
-            forecastDate: new Date(forecast.month),
-            forecastType: "monthly",
-            predictedInflow: forecast.predictedInflow,
-            predictedOutflow: forecast.predictedOutflow,
-            predictedBalance: forecast.predictedBalance,
-            confidenceLevel: forecast.confidence,
-          });
-        }
-
-        res.json({
-          ...aiResponse,
-          historicalData,
-        });
-      } catch (error: any) {
-        log.error({ err: error }, "Cash flow forecast error");
-        res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Forecasting failed", ...aiErrorBody(error) });
+      const body = parsedBody<z.infer<typeof forecastCashflowBody>>(req);
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, body.companyId))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
+      const months =
+        body.forecastMonths ?? (body.days ? Math.max(1, Math.ceil(body.days / 30)) : 3);
+      const result = await regenerateStoredForecast(body.companyId, { months });
+      if (result.insufficientData) {
+        throw new DomainError(
+          "INSUFFICIENT_DATA",
+          400,
+          { insights: result.insights },
+          "Add invoices, vendor bills or scheduled cash items before generating a cash-flow forecast."
+        );
+      }
+      res.json({
+        basis: STORED_FORECAST_BASIS,
+        forecasts: result.forecasts,
+        insights: result.insights,
+      });
     })
   );
 
@@ -1359,7 +1312,8 @@ Respond with JSON:
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId } = req.params;
-        const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
+        // Rows from the pre-0112 fabricated model are regenerated on read.
+        const forecasts = await readStoredForecast(companyId);
         res.json(forecasts);
       } catch (error: any) {
         res
@@ -1672,7 +1626,7 @@ Respond with JSON:
           totalLiabilities: figureValue("Total liabilities"),
           invoicesSummary: {
             pending: figureValue("Open invoices count"),
-            outstandingValue: figureValue("Open invoices (sent"),
+            outstandingValue: figureValue("Open receivables"),
           },
           expensesSummary: {
             total: figureValue("Receipts captured"),

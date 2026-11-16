@@ -282,6 +282,7 @@ export async function runAutopilot(
   try {
     journalEntryId = await autoPostJournalEntry({
       companyId,
+      receiptId: receipt.id,
       uploadedBy,
       ocr,
       expenseAccountId: expenseAccountId!,
@@ -510,6 +511,7 @@ export async function autoPostManualReceipt(args: {
   try {
     journalEntryId = await autoPostJournalEntry({
       companyId,
+      receiptId: receipt.id,
       uploadedBy,
       ocr,
       expenseAccountId: expenseAccountId!,
@@ -581,6 +583,7 @@ export async function autoPostManualReceipt(args: {
 
 interface AutoPostInput {
   companyId: string;
+  receiptId: string;
   uploadedBy: string;
   ocr: OcrReceipt;
   expenseAccountId: string;
@@ -592,6 +595,7 @@ interface AutoPostInput {
 async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
   const {
     companyId,
+    receiptId,
     uploadedBy,
     ocr,
     expenseAccountId,
@@ -649,21 +653,19 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
     });
   }
 
-  const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
-  const entry = await storage.createJournalEntry(
-    {
-      companyId,
-      entryNumber,
-      date: txnDate,
-      memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
-      status: "posted",
-      source: "system",
-      createdBy: uploadedBy,
-      postedBy: uploadedBy,
-      postedAt: new Date(),
-    },
-    lines
-  );
+  // Kernel post through the same atomic receipt claim as a manual post (source "receipt",
+  // sourceId = receipt id): the receipt is marked posted in the same transaction, a concurrent
+  // post cannot create a second entry, and revise/reverseBySource work on autopilot receipts.
+  const { entry } = await storage.postReceiptAtomic({
+    receiptId,
+    companyId,
+    userId: uploadedBy,
+    accountId: expenseAccountId,
+    paymentAccountId,
+    entryDate: txnDate,
+    memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
+    lines,
+  });
   return entry.id;
 }
 

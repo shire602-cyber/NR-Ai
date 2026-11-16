@@ -4344,6 +4344,9 @@ export const cashFlowForecasts = pgTable(
     predictedBalance: money("predicted_balance").notNull().default(0),
     confidenceLevel: real("confidence_level"), // 0-1
     factors: text("factors"), // JSON string of contributing factors
+    // documents_and_scheduled_items (current generator) | legacy_model (pre-0112 fabricated
+    // model rows; readers discard and regenerate them).
+    basis: text("basis"),
     generatedAt: timestamp("generated_at").defaultNow().notNull(),
   },
   (table) => ({

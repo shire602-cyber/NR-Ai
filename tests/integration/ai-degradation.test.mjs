@@ -39,7 +39,6 @@ async function main() {
   const calls = [
     ["cfo-advice", "POST", "/api/ai/cfo-advice", { companyId: cid, question: "how is my cash flow?" }],
     ["detect-anomalies", "POST", "/api/ai/detect-anomalies", { companyId: cid }],
-    ["forecast-cashflow", "POST", "/api/ai/forecast-cashflow", { companyId: cid, days: 90 }],
     ["parse-bank-statement", "POST", "/api/ai/parse-bank-statement", { companyId: cid, text: "01/01 PMT 500" }],
     ["nl-gateway", "POST", "/api/ai/nl-gateway", { companyId: cid, message: "what is my revenue" }],
     ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgo=" }],
@@ -54,6 +53,13 @@ async function main() {
         { status: r.s, code: r.j?.code, msg: String(r.j?.message).slice(0, 60) });
     }
   }
+
+  // The cash-flow forecast is document driven (S3): no model call, so no key is needed. An empty
+  // company has nothing to forecast -> 400 INSUFFICIENT_DATA, never 500 and never a fabricated row.
+  const fc = await api("POST", "/api/ai/forecast-cashflow", { token, body: { companyId: cid, days: 90 } });
+  ok("forecast-cashflow never returns 500", fc.s !== 500, { status: fc.s });
+  ok("forecast-cashflow on empty books is INSUFFICIENT_DATA", fc.s === 400 && fc.j?.code === "INSUFFICIENT_DATA",
+    { status: fc.s, code: fc.j?.code });
 
   // Auth must be enforced on the AI surface.
   const noAuth = await api("POST", "/api/ai/categorize", { body: { companyId: cid, description: "x", amount: 1, currency: "AED" } });

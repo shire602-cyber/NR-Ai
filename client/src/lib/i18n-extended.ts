@@ -85,7 +85,7 @@ export const extendedTranslations = {
     projectedBalance: "Projected Balance",
     expectedInflows: "Expected Inflows",
     expectedOutflows: "Expected Outflows",
-    aiInsights: "AI Insights",
+    aiInsights: "Insights (rule-based)",
 
     // ── Anomaly Detection ────────────────────────────────────────
     anomalyDetection: "Anomaly Detection",
@@ -194,7 +194,7 @@ export const extendedTranslations = {
     projectedBalance: "الرصيد المتوقع",
     expectedInflows: "التدفقات المتوقعة",
     expectedOutflows: "المصروفات المتوقعة",
-    aiInsights: "رؤى الذكاء الاصطناعي",
+    aiInsights: "رؤى (قائمة على القواعد)",
 
     // ── Anomaly Detection ────────────────────────────────────────
     anomalyDetection: "كشف الحالات الشاذة",
