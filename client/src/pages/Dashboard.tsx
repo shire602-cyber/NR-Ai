@@ -23,15 +23,23 @@ export default function Dashboard() {
 function CustomerDashboard() {
   const m = useCustomerDashboardModel();
   return (
-    <div className="space-y-6 md:space-y-8">
+    // Rhythm (CTO 4): 40px between sections, 16px inside them.
+    <div className="space-y-8 md:space-y-10">
       <DashboardHero m={m} />
       <DashboardOverview m={m} />
       <DashboardCharts m={m} />
       <DashboardPlanning m={m} />
       <DashboardRecent m={m} />
-      <DashboardActions m={m} />
-      <ReportWorkspaceToggle m={m} />
-      {m.showReportWorkspace && <ReportWorkspaceSection m={m} />}
+      {/* Reports: one collapsed row; the launcher and workspace open together (CTO 5). */}
+      <div className="space-y-4">
+        <ReportWorkspaceToggle m={m} />
+        {m.showReportWorkspace && (
+          <>
+            <DashboardActions m={m} />
+            <ReportWorkspaceSection m={m} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

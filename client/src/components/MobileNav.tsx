@@ -1,6 +1,28 @@
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
+import {
+  LayoutDashboard,
+  FileText,
+  Camera,
+  BarChart3,
+  MoreHorizontal,
+  BookOpen,
+  BookMarked,
+  Users,
+  Package,
+  Landmark,
+  Building2,
+  ArrowLeftRight,
+  Sparkles,
+  FolderLock,
+  Settings,
+  Sun,
+  Moon,
+  Monitor,
+  type LucideIcon,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useTheme, type ThemePreference } from "@/lib/theme";
 import { useState, useCallback } from "react";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -45,7 +67,15 @@ interface MoreLink {
   labelKey?: string;
   href: string;
   description?: string;
+  /** Leading 20px icon for workspace tiles (CTO 12). */
+  icon?: LucideIcon;
 }
+
+const THEME_OPTIONS: { value: ThemePreference; icon: LucideIcon; labelKey: string }[] = [
+  { value: "light", icon: Sun, labelKey: "shell.themeLight" },
+  { value: "dark", icon: Moon, labelKey: "shell.themeDark" },
+  { value: "system", icon: Monitor, labelKey: "shell.themeSystem" },
+];
 
 const navItems: NavItem[] = [
   { label: "Dashboard", labelKey: "shell.navDashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -204,20 +234,36 @@ const moreLinks: MoreLink[] = [
   ...mobileAutomationStarterLinks,
   ...mobilePackTemplateLinks,
   ...mobileComparisonPresetLinks,
-  { label: "Accounts", labelKey: "shell.moreAccounts", href: "/chart-of-accounts" },
-  { label: "Journal", labelKey: "shell.moreJournal", href: "/journal" },
-  { label: "Contacts", labelKey: "shell.moreContacts", href: "/contacts" },
-  { label: "Inventory", labelKey: "shell.moreInventory", href: "/inventory" },
-  { label: "VAT Filing", labelKey: "shell.moreVatFiling", href: "/vat-filing" },
-  { label: "Corporate Tax", labelKey: "shell.moreCorporateTax", href: "/corporate-tax" },
+  {
+    label: "Accounts",
+    labelKey: "shell.moreAccounts",
+    href: "/chart-of-accounts",
+    icon: BookOpen,
+  },
+  { label: "Journal", labelKey: "shell.moreJournal", href: "/journal", icon: BookMarked },
+  { label: "Contacts", labelKey: "shell.moreContacts", href: "/contacts", icon: Users },
+  { label: "Inventory", labelKey: "shell.moreInventory", href: "/inventory", icon: Package },
+  { label: "VAT Filing", labelKey: "shell.moreVatFiling", href: "/vat-filing", icon: Landmark },
+  {
+    label: "Corporate Tax",
+    labelKey: "shell.moreCorporateTax",
+    href: "/corporate-tax",
+    icon: Building2,
+  },
   {
     label: "Bank Reconciliation",
     labelKey: "shell.moreBankReconciliation",
     href: "/bank-reconciliation",
+    icon: ArrowLeftRight,
   },
-  { label: "AI hub", labelKey: "shell.moreAi", href: "/ai" },
-  { label: "Document Vault", labelKey: "shell.moreDocumentVault", href: "/document-vault" },
-  { label: "Settings", labelKey: "shell.moreSettings", href: "/company-profile" },
+  { label: "AI hub", labelKey: "shell.moreAi", href: "/ai", icon: Sparkles },
+  {
+    label: "Document Vault",
+    labelKey: "shell.moreDocumentVault",
+    href: "/document-vault",
+    icon: FolderLock,
+  },
+  { label: "Settings", labelKey: "shell.moreSettings", href: "/company-profile", icon: Settings },
 ];
 
 // Translated app destinations lead the sheet; the catalog-driven report
@@ -236,6 +282,7 @@ export function MobileNav() {
   const [location, setLocation] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const { t } = useTranslation();
+  const { preference, setPreference } = useTheme();
   const text = (item: { label: string; labelKey?: string }) =>
     item.labelKey ? t[item.labelKey] || item.label : item.label;
 
@@ -259,21 +306,29 @@ export function MobileNav() {
     [setLocation]
   );
 
-  const renderMoreLink = (link: MoreLink) => (
-    <button
-      key={link.key ?? link.href}
-      onClick={() => handleMoreLink(link.href)}
-      className={`mobile-nav-more-item ${
-        location === link.href ? "mobile-nav-more-item--active" : ""
-      }`}
-      aria-label={link.description ? `${text(link)}: ${link.description}` : text(link)}
-    >
-      <span className="mobile-nav-more-label">{text(link)}</span>
-      {link.description ? (
-        <span className="mobile-nav-more-description">{link.description}</span>
-      ) : null}
-    </button>
-  );
+  const renderMoreLink = (link: MoreLink) => {
+    const Icon = link.icon;
+    return (
+      <button
+        key={link.key ?? link.href}
+        onClick={() => handleMoreLink(link.href)}
+        className={cn(
+          "mobile-nav-more-item",
+          Icon && "mobile-nav-more-item--tile",
+          location === link.href && "mobile-nav-more-item--active"
+        )}
+        aria-label={link.description ? `${text(link)}: ${link.description}` : text(link)}
+      >
+        {Icon ? <Icon className="mobile-nav-more-icon" aria-hidden /> : null}
+        <span className="mobile-nav-more-text">
+          <span className="mobile-nav-more-label">{text(link)}</span>
+          {link.description ? (
+            <span className="mobile-nav-more-description">{link.description}</span>
+          ) : null}
+        </span>
+      </button>
+    );
+  };
 
   const isActive = (href: string) => {
     if (href === "#") return moreOpen;
@@ -307,6 +362,28 @@ export function MobileNav() {
           <nav className="mobile-nav-more-grid" aria-label={t["shell.moreSectionWorkspace"]}>
             {workspaceMoreLinks.map((link) => renderMoreLink(link))}
           </nav>
+          {/* Theme lives here on mobile; the top bar keeps only search, bell and profile (CTO 8). */}
+          <div className="mobile-nav-more-section" data-testid="mobile-theme-options">
+            <div className="mobile-nav-more-heading">{t["shell.themeLabel"]}</div>
+            <div className="mobile-nav-theme" role="group" aria-label={t["shell.themeLabel"]}>
+              {THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={preference === option.value}
+                  onClick={() => setPreference(option.value)}
+                  className={cn(
+                    "mobile-nav-theme-option",
+                    preference === option.value && "mobile-nav-theme-option--active"
+                  )}
+                  data-testid={`mobile-theme-option-${option.value}`}
+                >
+                  <option.icon className="h-4 w-4" aria-hidden />
+                  {t[option.labelKey]}
+                </button>
+              ))}
+            </div>
+          </div>
           <details className="mobile-nav-more-section">
             <summary className="mobile-nav-more-summary">
               <span>{t["shell.moreSectionReports"]}</span>

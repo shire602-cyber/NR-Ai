@@ -38,7 +38,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+              <div className="text-caption font-medium text-muted-foreground">
                 <T k="reportCenter.automationHealth" />
               </div>
               <Badge variant={reportAutomationHealth.variant} dot>
@@ -75,13 +75,13 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
 
           <div className="grid grid-cols-3 gap-2 md:min-w-[420px]">
             <div className="rounded-md border border-border/70 p-3">
-              <div className="text-[11px] uppercase font-semibold text-muted-foreground">Pack</div>
+              <div className="text-caption font-medium text-muted-foreground">Pack</div>
               <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
                 {preferredReportPackReadiness.readinessPercent}%
               </div>
             </div>
             <div className="rounded-md border border-border/70 p-3">
-              <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+              <div className="text-caption font-medium text-muted-foreground">
                 <T k="reportCenter.lanes" />
               </div>
               <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
@@ -89,7 +89,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
               </div>
             </div>
             <div className="rounded-md border border-border/70 p-3">
-              <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+              <div className="text-caption font-medium text-muted-foreground">
                 <T k="pages.review" />
               </div>
               <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
@@ -106,7 +106,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                <div className="text-caption font-medium text-muted-foreground">
                   <T k="reportCenter.automationImpact" />
                 </div>
                 <Badge
@@ -129,7 +129,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
               <div className="rounded-md bg-muted/30 p-3">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                <div className="text-caption font-medium text-muted-foreground">
                   <T k="reportCenter.hoursSaved" />
                 </div>
                 <div className="mt-1 font-mono text-lg font-semibold">
@@ -137,7 +137,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 </div>
               </div>
               <div className="rounded-md bg-muted/30 p-3">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                <div className="text-caption font-medium text-muted-foreground">
                   <T k="pageLabels.itemsHandled" />
                 </div>
                 <div className="mt-1 font-mono text-lg font-semibold">
@@ -145,7 +145,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 </div>
               </div>
               <div className="rounded-md bg-muted/30 p-3">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                <div className="text-caption font-medium text-muted-foreground">
                   <T k="reportCenter.coverage" />
                 </div>
                 <div className="mt-1 font-mono text-lg font-semibold">
@@ -153,7 +153,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 </div>
               </div>
               <div className="rounded-md bg-muted/30 p-3">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                <div className="text-caption font-medium text-muted-foreground">
                   <T k="pageLabels.watched" />
                 </div>
                 <div className="mt-1 truncate font-mono text-sm font-semibold">
@@ -222,7 +222,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                <div className="text-caption font-medium text-muted-foreground">
                   <T k="pageLabels.nextAutomationAction" />
                 </div>
                 <Badge variant={preferredAutomationNextAction.badgeVariant} dot>
@@ -311,7 +311,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                         <T k="reportCenter.reports" />
                       </div>
                       <div
-                        className="mt-1 font-mono font-semibold text-foreground"
+                        className="mt-1 font-semibold tabular-nums text-foreground"
                         data-testid="dashboard-report-delivery-run-report-count"
                       >
                         {dashboardLatestDeliveryRun.readyReportCount}/

@@ -19,7 +19,7 @@ export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="reportCenter.automationStarters" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
@@ -80,7 +80,7 @@ export function ReportWorkspacePartF({ m }: { m: DashboardModel }) {
       <div className="border-t border-border/60 p-5" data-testid="dashboard-report-pack-templates">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="pageLabels.readyMadeReportPacks" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">

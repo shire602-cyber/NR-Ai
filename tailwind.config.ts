@@ -179,7 +179,9 @@ export default {
       fontFamily: {
         sans: ["var(--font-sans)"],
         serif: ["var(--font-serif)"],
-        mono: ["var(--font-mono)"],
+        // D2b (CTO 2): `font-mono` on money / document numbers renders in the UI sans with
+        // tabular figures; real code (code, pre, kbd, samp) keeps --font-mono via index.css.
+        mono: ["var(--font-figures)"],
         display: ["var(--font-display)"],
         arabic: ["var(--font-arabic)"],
       },

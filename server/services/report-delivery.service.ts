@@ -14,6 +14,10 @@ import {
   type ReportWorkflowGapFilter,
 } from "../../client/src/lib/reportCatalog";
 import { isCapabilityLive } from "../../shared/capabilities";
+import {
+  EMAIL_NOT_SET_UP_MESSAGE,
+  REPORT_DELIVERY_TITLE_PREFIX,
+} from "../../shared/notification-copy";
 import type {
   CompanyReportDeliveryRun,
   CompanyReportDeliverySubscription,
@@ -427,12 +431,15 @@ export function buildReportDeliveryNotificationForPlan(input: {
   const recipientCount = run?.recipientAddresses?.length ?? 0;
   const title =
     status === "sent"
-      ? `Report delivery sent: ${plan.title}`
+      ? `${REPORT_DELIVERY_TITLE_PREFIX.sent}${plan.title}`
       : status === "blocked"
-        ? `Report delivery blocked: ${plan.title}`
+        ? `${REPORT_DELIVERY_TITLE_PREFIX.blocked}${plan.title}`
         : status === "failed"
-          ? `Report delivery failed: ${plan.title}`
-          : `Report delivery queued: ${plan.title}`;
+          ? `${REPORT_DELIVERY_TITLE_PREFIX.failed}${plan.title}`
+          : `${REPORT_DELIVERY_TITLE_PREFIX.queued}${plan.title}`;
+  // D2b (CTO 11): a missing email provider is reported in user terms with a link to set it up;
+  // provider and environment details are logged server-side only.
+  const emailNotSetUp = status === "blocked" && run?.blockedReason === "no_email_provider";
   const outcome =
     status === "sent"
       ? `Emailed PDF and Excel pack to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`
@@ -445,7 +452,9 @@ export function buildReportDeliveryNotificationForPlan(input: {
     companyId: input.companyId,
     type: "system",
     title,
-    message: `${outcome} ${plan.channel}.${suiteLabel} Guardrail: ${plan.deliveryGuardrail}`,
+    message: emailNotSetUp
+      ? EMAIL_NOT_SET_UP_MESSAGE
+      : `${outcome} ${plan.channel}.${suiteLabel} Guardrail: ${plan.deliveryGuardrail}`,
     priority:
       status === "sent" || (status === "queued" && plan.status === "ready") ? "normal" : "high",
     relatedEntityType: "report_delivery_subscription",

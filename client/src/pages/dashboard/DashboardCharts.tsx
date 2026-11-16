@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Money } from "@/components/ui/money";
 import { formatCurrency, formatMonthKey } from "@/lib/format";
 import { BarChart3, Coins } from "lucide-react";
 import {
@@ -13,6 +13,8 @@ import {
   Tooltip,
   AreaChart,
   Area,
+  CartesianGrid,
+  Legend,
 } from "recharts";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, PIE_PALETTE } from "./chart-colors";
 import { SectionHeader } from "./Layout";
@@ -26,31 +28,32 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
       {/* ── Charts row ───────────────────────────────────────────────────── */}
       <section>
         <SectionHeader
-          eyebrow={t["dashboard.trendsEyebrow"]}
           title={t["dashboard.trendsTitle"]}
-          action={<Badge variant="outline">{t["dashboard.lastSixMonths"]}</Badge>}
+          action={
+            <span className="text-caption text-muted-foreground">
+              {t["dashboard.lastSixMonths"]}
+            </span>
+          }
         />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardContent className="p-5 md:p-6">
               {trendsLoading ? (
-                <Skeleton className="h-[300px] w-full" />
+                <Skeleton className="h-[224px] w-full" />
               ) : monthlyTrends && monthlyTrends.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
+                // Linear series (no overshoot on sparse months), 1.5px strokes, area fill
+                // at most 8%, dashed horizontal gridlines only; revenue brand, expenses
+                // neutral, amber stays reserved for warnings (CTO 6).
+                <ResponsiveContainer width="100%" height={224}>
                   <AreaChart
                     data={monthlyTrends}
-                    margin={{ top: 12, right: 8, bottom: 0, left: -16 }}
+                    margin={{ top: 8, right: 8, bottom: 0, left: -12 }}
                   >
-                    <defs>
-                      <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={CHART_COLORS.accent} stopOpacity={0.18} />
-                        <stop offset="100%" stopColor={CHART_COLORS.accent} stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="exp" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={CHART_COLORS.warning} stopOpacity={0.14} />
-                        <stop offset="100%" stopColor={CHART_COLORS.warning} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
+                    <CartesianGrid
+                      vertical={false}
+                      stroke="hsl(var(--border))"
+                      strokeDasharray="3 4"
+                    />
                     <XAxis
                       dataKey="key"
                       tickFormatter={(key: string) => formatMonthKey(key, locale)}
@@ -65,6 +68,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                      width={44}
                     />
                     <Tooltip
                       cursor={{
@@ -76,20 +80,34 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       formatter={(value: any) => formatCurrency(value, "AED", locale)}
                       labelFormatter={(key: any) => formatMonthKey(String(key), locale)}
                     />
+                    <Legend
+                      verticalAlign="top"
+                      align="right"
+                      iconType="plainline"
+                      iconSize={14}
+                      height={28}
+                      wrapperStyle={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}
+                    />
                     <Area
-                      type="monotone"
+                      type="linear"
                       dataKey="revenue"
                       stroke={CHART_COLORS.accent}
-                      strokeWidth={2}
-                      fill="url(#rev)"
+                      strokeWidth={1.5}
+                      fill={CHART_COLORS.accent}
+                      fillOpacity={0.08}
+                      dot={false}
+                      activeDot={{ r: 3 }}
                       name={t.revenue}
                     />
                     <Area
-                      type="monotone"
+                      type="linear"
                       dataKey="expenses"
-                      stroke={CHART_COLORS.warning}
-                      strokeWidth={2}
-                      fill="url(#exp)"
+                      stroke={CHART_COLORS.neutral}
+                      strokeWidth={1.5}
+                      fill={CHART_COLORS.neutral}
+                      fillOpacity={0.05}
+                      dot={false}
+                      activeDot={{ r: 3 }}
                       name={t.expenses}
                     />
                   </AreaChart>
@@ -113,17 +131,17 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
             </CardHeader>
             <CardContent className="px-3 pt-0 md:px-4 md:pt-0">
               {expenseLoading ? (
-                <Skeleton className="h-[260px] w-full" />
+                <Skeleton className="h-[240px] w-full" />
               ) : expenseData && expenseData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={168}>
                     <PieChart>
                       <Pie
                         data={expenseData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={58}
-                        outerRadius={84}
+                        innerRadius={52}
+                        outerRadius={76}
                         paddingAngle={2}
                         dataKey="value"
                         stroke="hsl(var(--card))"
@@ -139,19 +157,22 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       />
                     </PieChart>
                   </ResponsiveContainer>
-                  <ul className="px-2 pb-3 space-y-1.5">
+                  <ul className="space-y-1.5 px-2 pb-3">
                     {expenseData.slice(0, 5).map((entry: any, i: number) => (
-                      <li key={i} className="flex items-center justify-between gap-2 text-[13px]">
+                      <li key={i} className="flex items-center justify-between gap-2 text-small">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className="w-2 h-2 rounded-full flex-shrink-0"
                             style={{ background: PIE_PALETTE[i % PIE_PALETTE.length] }}
                           />
-                          <span className="truncate text-muted-foreground">{entry.name}</span>
+                          <span className="truncate text-muted-foreground" dir="auto">
+                            {entry.name}
+                          </span>
                         </div>
-                        <span className="money font-medium text-foreground">
-                          {formatCurrency(entry.value, "AED", locale)}
-                        </span>
+                        <Money
+                          amount={Number(entry.value)}
+                          className="font-medium text-foreground"
+                        />
                       </li>
                     ))}
                   </ul>

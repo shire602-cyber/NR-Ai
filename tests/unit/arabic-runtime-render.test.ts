@@ -86,6 +86,11 @@ async function fakeModel(locale: "en" | "ar") {
     retryDashboardReportDeliveryRun: mutation,
     dashboardReportDeliveryLauncherPreviewById: {},
     queueDashboardReportDeliverySubscriptionWithHandoffGuard: () => undefined,
+    periodChoice: { preset: "month" },
+    setPeriodChoice: () => undefined,
+    stats: undefined,
+    statsLoading: false,
+    margin: 0,
   } as never;
 }
 
@@ -119,7 +124,9 @@ describe("F7 Arabic runtime render guard (R18-02)", () => {
     }
   });
 
-  it("[R18-02] dashboard quick actions, recent activity and chart empty states are Arabic", async () => {
+  it("[R18-02] dashboard header actions, recent activity and chart empty states are Arabic", async () => {
+    // D2b: the quick-action cards moved into the header (primary, outline and the ⋯ menu).
+    const { DashboardHero } = await import("../../client/src/pages/dashboard/DashboardHero");
     const { DashboardActions } = await import("../../client/src/pages/dashboard/DashboardActions");
     const { DashboardRecent } = await import("../../client/src/pages/dashboard/DashboardRecent");
     const { DashboardCharts } = await import("../../client/src/pages/dashboard/DashboardCharts");
@@ -131,6 +138,7 @@ describe("F7 Arabic runtime render guard (R18-02)", () => {
           createElement(
             "div",
             null,
+            createElement(DashboardHero, { m }),
             createElement(DashboardCharts, { m }),
             createElement(DashboardActions, { m }),
             createElement(DashboardRecent, { m })
@@ -138,7 +146,7 @@ describe("F7 Arabic runtime render guard (R18-02)", () => {
         )
       )
     );
-    expect(container.textContent).toContain("إجراءات سريعة");
+    expect(container.textContent).toContain("نظرة عامة");
     expect(container.textContent).toContain("لا توجد فواتير بعد");
     expect(englishLines()).toEqual([]);
   });

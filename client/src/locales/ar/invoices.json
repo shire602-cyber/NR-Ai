@@ -69,5 +69,17 @@
   "invoices.supplyType": "نوع التوريد الضريبي",
   "invoices.templateBankDetails": "التفاصيل البنكية المطبوعة على الفاتورة",
   "invoices.templateTerms": "الشروط المطبوعة على الفاتورة",
-  "invoices.voidCreditNote": "إلغاء الإشعار الدائن"
+  "invoices.voidCreditNote": "إلغاء الإشعار الدائن",
+  "invoices.actionAddPayment": "تسجيل دفعة",
+  "invoices.actionViewPayments": "عرض الدفعات",
+  "invoices.actionGenerateEinvoice": "إنشاء فاتورة إلكترونية",
+  "invoices.actionSetRecurring": "جعلها متكررة",
+  "invoices.actionEditRecurring": "تعديل جدول التكرار",
+  "invoices.actionCreateCreditNote": "إنشاء إشعار دائن",
+  "invoices.actionDelete": "حذف الفاتورة",
+  "invoices.actionDownloadPdf": "تنزيل PDF",
+  "invoices.deleteTitle": "حذف الفاتورة {number}؟",
+  "invoices.deleteBody": "سيؤدي هذا إلى حذف الفاتورة نهائيًا. لا يمكن التراجع عن ذلك.",
+  "invoices.einvoiceShort": "إلكترونية",
+  "invoices.exporting": "جارٍ التصدير…"
 }

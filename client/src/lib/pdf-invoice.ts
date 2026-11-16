@@ -1,7 +1,7 @@
 // i18n-ignore-file: invoice PDF document content and metadata (the PDF template sets its own language), not UI copy.
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
-import { formatCurrency, formatDate } from "./format";
+import { formatCurrencyPlain as formatCurrency, formatDatePlain as formatDate } from "./format";
 
 export type InvoicePdfTemplate = "standard" | "nra";
 
@@ -69,7 +69,6 @@ async function generateStandardInvoicePDF(data: InvoicePDFData): Promise<jsPDF> 
   const pageHeight = 297;
   const margin = 20;
   const isRTL = data.locale === "ar";
-
 
   let yPosition = margin;
 
@@ -633,13 +632,7 @@ function formatNraInvoiceDate(date: string): string {
   return `${month}/${day}/${parsed.getFullYear()}`;
 }
 
-function drawNraSingleLineCellText(
-  doc: jsPDF,
-  text: string,
-  x: number,
-  y: number,
-  width: number
-) {
+function drawNraSingleLineCellText(doc: jsPDF, text: string, x: number, y: number, width: number) {
   let fontSize = 10.5;
   doc.setFont("times", "normal");
   doc.setFontSize(fontSize);

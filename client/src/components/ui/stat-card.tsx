@@ -59,8 +59,8 @@ export function StatCard({
     delta?.direction === "up" ? ArrowUpRight : delta?.direction === "down" ? ArrowDownRight : Minus;
   const body = (
     <>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-muted-foreground">
+      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+        <div className="flex min-w-0 items-center gap-2 text-small font-medium text-muted-foreground">
           {Icon && <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />}
           <span className="truncate">{label}</span>
         </div>
@@ -72,17 +72,24 @@ export function StatCard({
             )}
             title={delta.context}
           >
-            <DeltaIcon className="h-3 w-3 rtl:-scale-x-100" aria-hidden />
-            <span className="money">{delta.label}</span>
+            {/* Trend arrows show up/down, which does not mirror in RTL (CTO 12). */}
+            <DeltaIcon className="h-3 w-3" aria-hidden />
+            <span className="money" dir="ltr">
+              {delta.label}
+            </span>
             {delta.context && <span className="sr-only">{delta.context}</span>}
           </span>
         )}
       </div>
-      <div className="mt-3 text-[1.625rem] font-semibold leading-8 tracking-[-0.02em] text-foreground tabular-nums">
+      {/* KPI figure: 28px / 600 / -0.02em on desktop, 20px in the mobile 2x2 grid (CTO 4, 12). */}
+      <div className="figure-display mt-2 text-xl leading-7 text-foreground sm:mt-3 sm:text-h1">
         {loading ? <Skeleton className="h-8 w-36" /> : value}
       </div>
-      {hint && !loading && <div className="mt-1 text-small text-muted-foreground">{hint}</div>}
-      {visual && !loading && <div className="mt-4">{visual}</div>}
+      {hint && !loading && (
+        <div className="mt-1 truncate text-caption text-muted-foreground sm:text-small">{hint}</div>
+      )}
+      {/* The sparkline slot exists only when there is a series, and only from 640px up. */}
+      {visual && !loading && <div className="mt-4 hidden sm:block">{visual}</div>}
     </>
   );
 
@@ -96,7 +103,7 @@ export function StatCard({
       >
         <Link
           href={href}
-          className="block rounded-xl p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="block h-full rounded-xl p-4 focus-visible:outline-none sm:p-5 focus-visible:ring-2 focus-visible:ring-ring"
         >
           {body}
         </Link>
@@ -104,7 +111,11 @@ export function StatCard({
     );
   }
   return (
-    <Card className={cn("p-5", className)} data-testid={testId} aria-busy={loading || undefined}>
+    <Card
+      className={cn("p-4 sm:p-5", className)}
+      data-testid={testId}
+      aria-busy={loading || undefined}
+    >
       {body}
     </Card>
   );

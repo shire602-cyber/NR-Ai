@@ -1,7 +1,22 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, FileSpreadsheet, Pin, RotateCcw, Search, Send, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  FileSpreadsheet,
+  MoreHorizontal,
+  Pin,
+  RotateCcw,
+  Search,
+  Send,
+  Sparkles,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -100,6 +115,11 @@ interface ReportLaunchPickerProps {
   preferredDeliveryAutomationCommand?: ReportDeliveryAutomationCommand | null;
   loadDeliveryAutomationPreferences?: boolean;
   companyId?: string | null;
+  /**
+   * Dashboard embed (D2b, CTO 5): five report rows plus "View all in Reports", without the
+   * side column of suites / shortcuts / packs (those stay one click away in Reports).
+   */
+  compact?: boolean;
   className?: string;
 }
 
@@ -353,6 +373,7 @@ export function ReportLaunchPicker({
   preferredDeliveryAutomationCommand,
   loadDeliveryAutomationPreferences = true,
   companyId = null,
+  compact = false,
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
@@ -624,13 +645,13 @@ export function ReportLaunchPicker({
       <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               {isDeliveryMode ? t["components.launchDeliverySetup"] : t["components.launchTitle"]}
             </div>
-            <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+            <h3 className="mt-0.5 text-h3 text-foreground">
               {ct("workspace", workspace.persona, "navLabel", workspace.navLabel)}
             </h3>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-1 max-w-2xl text-small text-muted-foreground">
               {isDeliveryMode
                 ? formatMessage(t["components.launchDeliveryIntro"], {
                     workspace: ct("workspace", workspace.persona, "navLabel", workspace.navLabel),
@@ -657,8 +678,12 @@ export function ReportLaunchPicker({
                 </span>
               </Badge>
             ) : null}
-            <Badge
-              variant={catalogQuery.isError ? "warning" : "info"}
+            {/* Sync state is plain caption text, not a pill (CTO 10). */}
+            <span
+              className={cn(
+                "text-caption",
+                catalogQuery.isError ? "text-warning-subtle-foreground" : "text-muted-foreground"
+              )}
               data-testid="report-launch-sync"
             >
               {catalogQuery.isLoading
@@ -668,22 +693,28 @@ export function ReportLaunchPicker({
                   : formatMessage(t["components.launchSyncedReports"], {
                       count: syncedCatalog?.summary.liveReportCount ?? reports.length,
                     })}
-            </Badge>
+            </span>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[168px_minmax(0,1fr)]">
-          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+        <div className="mt-4 space-y-3">
+          {/* Persona switch: one 36px segmented control (CTO 5). */}
+          <div
+            role="group"
+            aria-label={t["components.launchTitle"]}
+            className="mobile-keep-cols grid h-9 w-full grid-cols-3 items-center gap-0.5 rounded-lg bg-muted p-0.5 sm:inline-flex sm:w-auto"
+          >
             {reportPersonas.map((item) => (
               <button
                 key={item}
                 type="button"
+                aria-pressed={item === selectedPersona}
                 onClick={() => setSelectedPersona(item)}
                 className={cn(
-                  "w-full rounded-md border px-2.5 py-2 text-left text-xs font-medium transition-colors",
+                  "h-8 min-w-0 truncate rounded-md px-3 text-small font-medium transition-[color,background-color,box-shadow] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   item === selectedPersona
-                    ? "border-accent bg-accent/5 text-foreground"
-                    : "border-border/70 text-muted-foreground hover:border-accent hover:bg-accent/5"
+                    ? "bg-card text-foreground shadow-sm dark:bg-neutral-800"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
                 data-testid={`report-launch-persona-${item}`}
               >
@@ -700,17 +731,21 @@ export function ReportLaunchPicker({
 
           <div className="min-w-0">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground"
+                aria-hidden
+              />
               <Input
                 value={query}
                 onChange={(event) => updateLauncherQuery(event.target.value)}
                 placeholder={t["components.launchSearchPlaceholder"]}
-                className="pl-9"
+                aria-label={t["components.launchSearchPlaceholder"]}
+                className="h-9 ps-9"
                 data-testid="report-launch-search"
               />
             </div>
             <div className="mt-2 flex flex-wrap gap-2" data-testid="report-launch-context-actions">
-              <Button asChild size="sm" variant="outline" className="h-8 px-2">
+              <Button asChild size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground">
                 <Link href={workflowFinderHref} data-testid="report-launch-open-workflow-finder">
                   <Search className="h-3.5 w-3.5" />
                   {storedWorkflowGapFilter
@@ -718,7 +753,7 @@ export function ReportLaunchPicker({
                     : t["components.launchOpenFinder"]}
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 px-2">
+              <Button asChild size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground">
                 <Link
                   href={matchingAutomationPackHref}
                   data-testid="report-launch-open-matching-pack"
@@ -729,122 +764,155 @@ export function ReportLaunchPicker({
               </Button>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
-              <div className="overflow-hidden rounded-md border border-border/70">
-                <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
-                  <div className="text-xs font-semibold uppercase text-muted-foreground">
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-6",
+                !compact && "xl:grid-cols-[minmax(0,1fr)_20rem]"
+              )}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-2 pb-1">
+                  <div className="text-caption font-medium text-muted-foreground">
                     <T k="components.launchReports" />
                   </div>
-                  <Link href={workspaceHref(workspace)}>
-                    <Button variant="ghost" size="sm" className="h-7 gap-1 text-accent">
-                      <T k="components.launchWorkspace" /> <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
+                  <Button asChild variant="ghost" size="sm" className="h-7 gap-1 px-2 text-accent">
+                    <Link href={workspaceHref(workspace)}>
+                      {compact ? (
+                        <T k="components.launchViewAll" />
+                      ) : (
+                        <T k="components.launchWorkspace" />
+                      )}
+                      <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+                    </Link>
+                  </Button>
                 </div>
-                <div className="max-h-[30rem] divide-y divide-border/50 overflow-y-auto">
-                  {reports.map((report) => {
+                <div
+                  className={cn(
+                    "divide-hairline border-y border-border",
+                    !compact && "max-h-[30rem] overflow-y-auto"
+                  )}
+                >
+                  {(compact ? reports.slice(0, 5) : reports).map((report) => {
                     const reportAutomationContext = reportAutomationContextById.get(report.id);
+                    const hasMoreActions = Boolean(
+                      reportAutomationContext?.starter ||
+                      reportAutomationContext?.delivery ||
+                      reportAutomationContext?.comparison ||
+                      reportAutomationContext?.suite
+                    );
                     return (
                       <div
                         key={report.id}
-                        className="grid cursor-pointer gap-3 px-3 py-3 transition-colors hover:bg-accent/5 sm:grid-cols-[minmax(0,1fr)_auto]"
+                        className="flex min-h-14 items-center gap-3 py-2 transition-colors duration-fast hover:bg-muted/40"
                         data-testid={`report-launch-report-${report.id}`}
                       >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-foreground">
-                            {ct("report", report.id, "name", report.name)}
-                          </div>
-                          <div className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                            {ct("report", report.id, "decisionQuestion", report.decisionQuestion)}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <Badge variant="outline">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm font-medium text-foreground">
+                              {ct("report", report.id, "name", report.name)}
+                            </span>
+                            <Badge variant="neutral" className="hidden shrink-0 md:inline-flex">
                               {ct("category", report.category, "label", report.category)}
                             </Badge>
-                            {reportAutomationContext?.starter ? (
-                              <Badge variant="info">
-                                <T k="components.launchAutopilot" />
-                              </Badge>
-                            ) : null}
+                          </div>
+                          <div className="truncate text-caption text-muted-foreground">
+                            {ct("report", report.id, "decisionQuestion", report.decisionQuestion)}
                             {reportAutomationContext?.delivery ? (
-                              <Badge variant="success">
-                                <T k="components.launchScheduled" />
-                              </Badge>
-                            ) : null}
-                            {reportAutomationContext?.comparison ? (
-                              <Badge variant="neutral">
-                                <T k="components.launchComparison" />
-                              </Badge>
+                              <> · {t["components.launchScheduled"]}</>
                             ) : null}
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 sm:max-w-[11rem] sm:justify-end">
-                          <Button asChild size="sm" variant="outline" className="h-7 px-2">
-                            <Link
-                              href={
-                                reportAutomationContext?.syncedContext?.reportHref ??
-                                reportItemHref(report, selectedPersona)
-                              }
-                            >
-                              <T k="components.launchOpenReport" />{" "}
-                              <ArrowRight className="h-3.5 w-3.5" />
-                            </Link>
-                          </Button>
-                          {reportAutomationContext?.starter ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.starter.href}
-                                data-testid={`report-launch-report-automation-${report.id}`}
+                        <Button asChild size="sm" variant="outline" className="h-8 shrink-0 px-3">
+                          <Link
+                            aria-label={`${t["components.launchOpenReport"]}: ${ct("report", report.id, "name", report.name)}`}
+                            href={
+                              reportAutomationContext?.syncedContext?.reportHref ??
+                              reportItemHref(report, selectedPersona)
+                            }
+                          >
+                            <T k="components.launchOpen" />
+                          </Link>
+                        </Button>
+                        {hasMoreActions ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                aria-label={formatMessage(t["components.launchReportActions"], {
+                                  report: ct("report", report.id, "name", report.name),
+                                })}
                               >
-                                <T k="components.launchAutopilot" />
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {reportAutomationContext?.delivery ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.delivery.href}
-                                data-testid={`report-launch-report-delivery-${report.id}`}
-                              >
-                                <T k="components.launchDelivery" />
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {reportAutomationContext?.comparison ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.comparison.href}
-                                data-testid={`report-launch-report-comparison-${report.id}`}
-                              >
-                                <T k="components.launchCompare" />
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {reportAutomationContext?.suite ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.suite.href}
-                                data-testid={`report-launch-report-suite-${report.id}`}
-                              >
-                                <T k="components.launchSuite" />
-                              </Link>
-                            </Button>
-                          ) : null}
-                        </div>
+                                <MoreHorizontal aria-hidden />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="min-w-44">
+                              {reportAutomationContext?.starter ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.starter.href}
+                                    data-testid={`report-launch-report-automation-${report.id}`}
+                                  >
+                                    <Sparkles aria-hidden />
+                                    <T k="components.launchAutopilot" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {reportAutomationContext?.delivery ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.delivery.href}
+                                    data-testid={`report-launch-report-delivery-${report.id}`}
+                                  >
+                                    <Send aria-hidden />
+                                    <T k="components.launchDelivery" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {reportAutomationContext?.comparison ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.comparison.href}
+                                    data-testid={`report-launch-report-comparison-${report.id}`}
+                                  >
+                                    <FileSpreadsheet aria-hidden />
+                                    <T k="components.launchCompare" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {reportAutomationContext?.suite ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.suite.href}
+                                    data-testid={`report-launch-report-suite-${report.id}`}
+                                  >
+                                    <FileSpreadsheet aria-hidden />
+                                    <T k="components.launchSuite" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          <span className="w-8 shrink-0" aria-hidden />
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="max-h-[30rem] space-y-3 overflow-y-auto pr-1">
+              <div
+                className={cn("max-h-[30rem] space-y-4 overflow-y-auto pe-1", compact && "hidden")}
+              >
                 {pinnedDeliveryAutomationCommand ? (
                   <div
-                    className="rounded-md border border-accent/40 bg-accent/5 p-3"
+                    className="rounded-lg bg-surface-sunken p-3"
                     data-testid="report-launch-pinned-command"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                      <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                         <Pin className="h-3.5 w-3.5" /> <T k="components.launchPinnedAutomation" />
                       </div>
                       <Badge
@@ -912,8 +980,8 @@ export function ReportLaunchPicker({
                 ) : null}
 
                 {isDeliveryMode ? (
-                  <div className="rounded-md border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                  <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                       <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
                       <T k="components.launchDeliverySubscriptions" />
                     </div>
@@ -1103,8 +1171,8 @@ export function ReportLaunchPicker({
                   </div>
                 ) : null}
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                     <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
                     <T k="components.launchReportSuites" />
                   </div>
@@ -1124,7 +1192,7 @@ export function ReportLaunchPicker({
                       return (
                         <div
                           key={suite.id}
-                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60"
                           data-testid={`report-launch-suite-${suite.id}`}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -1187,15 +1255,15 @@ export function ReportLaunchPicker({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                     <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
                     <T k="components.launchDecisionShortcuts" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleShortcuts.slice(0, 2).map((shortcut) => (
                       <Link key={shortcut.id} href={shortcutHref(shortcut)}>
-                        <div className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5">
+                        <div className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60">
                           <div className="font-medium text-foreground">
                             {ct("shortcut", shortcut.id, "question", shortcut.question)}
                           </div>
@@ -1208,8 +1276,8 @@ export function ReportLaunchPicker({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                     <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
                     <T k="components.launchComparisonPacks" />
                   </div>
@@ -1217,7 +1285,7 @@ export function ReportLaunchPicker({
                     {visibleComparisonPresets.slice(0, 2).map((preset) => (
                       <Link key={preset.id} href={reportComparisonPresetHref(preset)}>
                         <div
-                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60"
                           data-testid={`report-launch-comparison-preset-${preset.id}`}
                         >
                           <div className="font-medium text-foreground">
@@ -1236,8 +1304,8 @@ export function ReportLaunchPicker({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                     <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
                     <T k="components.launchPackTemplates" />
                   </div>
@@ -1245,7 +1313,7 @@ export function ReportLaunchPicker({
                     {visiblePackTemplates.slice(0, 2).map((template) => (
                       <Link key={template.id} href={packTemplateHref(template)}>
                         <div
-                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60"
                           data-testid={`report-launch-pack-template-${template.id}`}
                         >
                           <div className="font-medium text-foreground">
@@ -1264,15 +1332,15 @@ export function ReportLaunchPicker({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
                     <Sparkles className="h-3.5 w-3.5" />{" "}
                     <T k="components.launchAutomationStarters" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleStarters.slice(0, 2).map((starter) => (
                       <Link key={starter.id} href={starterHref(starter)}>
-                        <div className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5">
+                        <div className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60">
                           <div className="font-medium text-foreground">
                             {ct("starter", starter.id, "title", starter.title)}
                           </div>

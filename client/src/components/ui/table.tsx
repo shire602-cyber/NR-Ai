@@ -2,13 +2,19 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
+export interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /** Row height: default 44px body rows, compact 36px (dense ledgers, embedded lists). */
+  density?: "default" | "compact";
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, density = "default", ...props }, ref) => (
     <div className="relative w-full overflow-auto">
       <table
         ref={ref}
+        data-density={density}
         className={cn(
-          "w-full caption-bottom text-sm border-separate border-spacing-0 tabular-nums",
+          "group/table w-full caption-bottom text-sm border-separate border-spacing-0 tabular-nums",
           className
         )}
         {...props}
@@ -78,7 +84,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-10 px-4 text-start align-middle text-xs font-medium text-muted-foreground whitespace-nowrap",
+      "h-9 px-4 text-start align-middle text-caption font-medium text-muted-foreground whitespace-nowrap",
       "border-b border-border",
       "[&[data-numeric]]:text-end",
       "[&:has([role=checkbox])]:pe-0",
@@ -96,8 +102,13 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      "h-12 px-4 py-2.5 align-middle border-b border-border/70",
+      /* 44px body rows (36px when the table is density="compact"), CTO issue 3. */
+      "h-11 px-4 py-2 align-middle border-b border-border/70 group-data-[density=compact]/table:h-9 group-data-[density=compact]/table:py-1.5",
       "[&[data-numeric]]:text-end [&[data-numeric]]:tabular-nums [&[data-numeric]]:whitespace-nowrap",
+      /* data-nowrap: dates, document numbers, IDs, statuses never wrap. */
+      "[&[data-nowrap]]:whitespace-nowrap",
+      /* data-truncate: the flexible name column, one line, ellipsis. */
+      "[&[data-truncate]]:max-w-[280px] [&[data-truncate]]:truncate",
       "[&:has([role=checkbox])]:pe-0",
       className
     )}

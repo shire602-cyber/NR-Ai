@@ -10,6 +10,7 @@ import { useNotifications, type AppNotification } from "@/hooks/useNotifications
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { localizeNotification } from "@/lib/notification-display";
 
 function timeAgo(iso: string, locale: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -64,9 +65,10 @@ export function NotificationBell() {
           {unreadCount > 0 && (
             <span
               aria-hidden="true"
+              dir="ltr"
               className="money absolute -top-0.5 -end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-danger-foreground ring-2 ring-background"
             >
-              {unreadCount > 99 ? "99+" : unreadCount}
+              {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           )}
         </Button>
@@ -98,54 +100,72 @@ export function NotificationBell() {
               {t["components.notificationsEmpty"]}
             </p>
           ) : (
-            recent.map((n) => (
-              <div
-                key={n.id}
-                onClick={() => handleClick(n)}
-                className={cn(
-                  "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/60 transition-colors duration-fast border-b border-border last:border-0",
-                  !n.isRead && "bg-primary/[0.03]"
-                )}
-              >
-                <span
+            recent.map((n) => {
+              const view = localizeNotification(n, t as Record<string, string>);
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => handleClick(n)}
                   className={cn(
-                    "mt-1.5 h-2 w-2 flex-shrink-0 rounded-full",
-                    n.isRead ? "bg-transparent" : priorityDot(n.priority)
+                    "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/60 transition-colors duration-fast border-b border-border last:border-0",
+                    !n.isRead && "bg-primary/[0.03]"
                   )}
-                />
-                <div className="flex-1 min-w-0">
-                  <p
-                    dir="auto"
-                    className="text-[13px] font-medium leading-snug truncate text-start"
-                  >
-                    {n.title}
-                  </p>
-                  <p
-                    dir="auto"
-                    className="text-xs text-muted-foreground leading-snug line-clamp-2 mt-0.5 text-start"
-                  >
-                    {n.message}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    {timeAgo(n.createdAt, locale)}
-                  </p>
+                >
+                  <span
+                    className={cn(
+                      "mt-1.5 h-2 w-2 flex-shrink-0 rounded-full",
+                      n.isRead ? "bg-transparent" : priorityDot(n.priority)
+                    )}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p
+                      dir="auto"
+                      className="truncate text-start text-small font-medium leading-snug"
+                    >
+                      {view.title}
+                    </p>
+                    <p
+                      dir="auto"
+                      className="mt-0.5 line-clamp-2 text-start text-caption text-muted-foreground"
+                    >
+                      {view.message}
+                    </p>
+                    {view.setupEmailHref ? (
+                      <button
+                        type="button"
+                        className="mt-1 text-caption font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!n.isRead) markAsRead(n.id);
+                          navigate(view.setupEmailHref as string);
+                          setOpen(false);
+                        }}
+                        data-testid={`notification-setup-email-${n.id}`}
+                      >
+                        {t["components.notificationEmailNotSetUpLink"]}
+                      </button>
+                    ) : null}
+                    <p className="mt-1 text-caption text-muted-foreground">
+                      {timeAgo(n.createdAt, locale)}
+                    </p>
+                  </div>
+                  {!n.isRead && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 min-h-6 w-6 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label={t["components.notificationsMarkRead"]}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markAsRead(n.id);
+                      }}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
                 </div>
-                {!n.isRead && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 min-h-6 w-6 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label={t["components.notificationsMarkRead"]}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      markAsRead(n.id);
-                    }}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

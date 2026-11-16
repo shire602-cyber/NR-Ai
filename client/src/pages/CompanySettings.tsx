@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -97,8 +98,35 @@ const DATE_FORMAT_OPTIONS = [
 
 type FormValues = CompanyPreferences;
 
+/** Option label in the UI locale (catalog key `pageLabels.companySettings.<group>.<value>`). */
+function optionLabel(t: Record<string, string>, group: string, value: string, fallback: string) {
+  return t[`pageLabels.companySettings.${group}.${value.replace(/[./]/g, "_")}`] ?? fallback;
+}
+
+/** Month name in the UI locale (ar-AE month names). */
+function monthLabel(index: number, locale: string, fallback: string) {
+  try {
+    return new Intl.DateTimeFormat(locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB", {
+      month: "long",
+    }).format(new Date(2026, index, 1));
+  } catch {
+    return fallback;
+  }
+}
+
+/** Required marker after a label: a danger-coloured asterisk (D3 form rule). */
+function RequiredMark({ label }: { label: string }) {
+  return (
+    <span aria-hidden title={label} className="ms-0.5 text-danger">
+      *
+    </span>
+  );
+}
+
 export default function CompanySettings() {
   const { toast } = useToast();
+  const { t: tr, locale } = useTranslation();
+  const t = tr as Record<string, string>;
   const { companyId } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
@@ -160,14 +188,14 @@ export default function CompanySettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Preferences saved",
-        description: "Your company preferences have been updated.",
+        title: t["pageLabels.companySettings.savedTitle"],
+        description: t["pageLabels.companySettings.savedBody"],
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save preferences",
+        title: t["pageLabels.companySettings.saveFailed"],
         description: error?.message || "Please try again.",
       });
     },
@@ -182,7 +210,11 @@ export default function CompanySettings() {
     if (!file || !companyId) return;
     const problem = companyLogoFileError(file);
     if (problem) {
-      toast({ variant: "destructive", title: "Invalid logo", description: problem });
+      toast({
+        variant: "destructive",
+        title: t["pageLabels.companySettings.invalidLogo"],
+        description: problem,
+      });
       e.target.value = "";
       return;
     }
@@ -191,11 +223,11 @@ export default function CompanySettings() {
       setLogoPreview(URL.createObjectURL(file));
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
-      toast({ title: "Logo uploaded" });
+      toast({ title: t["pageLabels.companySettings.logoUploaded"] });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Logo upload failed",
+        title: t["pageLabels.companySettings.logoUploadFailed"],
         description: error?.message || "Please try again.",
       });
     }
@@ -231,8 +263,8 @@ export default function CompanySettings() {
     <div className="space-y-8 max-w-4xl">
       <PageHeader
         eyebrow="Settings"
-        title="Company Settings"
-        description="Manage company-wide preferences: identity, currency, fiscal year, VAT, address, and locale."
+        title={t["pageLabels.companySettings.title"]}
+        description={t["pageLabels.companySettings.description"]}
       />
 
       <Form {...form}>
@@ -259,7 +291,10 @@ export default function CompanySettings() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company Name *</FormLabel>
+                      <FormLabel>
+                        {t["pageLabels.companySettings.companyName"]}
+                        <RequiredMark label={t["pageLabels.companySettings.requiredMark"]} />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -302,7 +337,7 @@ export default function CompanySettings() {
                   name="trnVatNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TRN (Tax Registration Number)</FormLabel>
+                      <FormLabel>{t["pageLabels.companySettings.trn"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -314,7 +349,7 @@ export default function CompanySettings() {
                           data-testid="input-trn"
                         />
                       </FormControl>
-                      <FormDescription>UAE: 15 digits.</FormDescription>
+                      <FormDescription>{t["pageLabels.companySettings.trnHelp"]}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -372,7 +407,9 @@ export default function CompanySettings() {
                       className="hidden"
                       data-testid="input-logo-upload"
                     />
-                    <FormDescription className="mt-2">PNG/JPG/SVG, under 1 MB.</FormDescription>
+                    <FormDescription className="mt-2">
+                      {t["pageLabels.companySettings.logoHelp"]}
+                    </FormDescription>
                   </div>
                 </div>
               </FormItem>
@@ -401,7 +438,10 @@ export default function CompanySettings() {
                   name="baseCurrency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Preferred Currency *</FormLabel>
+                      <FormLabel>
+                        {t["pageLabels.companySettings.preferredCurrency"]}
+                        <RequiredMark label={t["pageLabels.companySettings.requiredMark"]} />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "AED"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-base-currency">
@@ -411,7 +451,7 @@ export default function CompanySettings() {
                         <SelectContent>
                           {CURRENCY_OPTIONS.map((c) => (
                             <SelectItem key={c.value} value={c.value}>
-                              {c.label}
+                              {optionLabel(t, "currency", c.value, c.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -441,7 +481,7 @@ export default function CompanySettings() {
                         <SelectContent>
                           {MONTH_OPTIONS.map((label, idx) => (
                             <SelectItem key={idx + 1} value={String(idx + 1)}>
-                              {label}
+                              {monthLabel(idx, locale, label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -471,7 +511,7 @@ export default function CompanySettings() {
                         <SelectContent>
                           {VAT_RATE_OPTIONS.map((r) => (
                             <SelectItem key={r.value} value={r.value}>
-                              {r.label}
+                              {optionLabel(t, "vat", r.value, r.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -501,7 +541,7 @@ export default function CompanySettings() {
                         <SelectContent>
                           {DATE_FORMAT_OPTIONS.map((d) => (
                             <SelectItem key={d.value} value={d.value}>
-                              {d.label}
+                              {optionLabel(t, "dateFormat", d.value, d.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -529,7 +569,9 @@ export default function CompanySettings() {
                           <SelectItem value="en">
                             <T k="pageLabels.english" />
                           </SelectItem>
-                          <SelectItem value="ar">العربية (Arabic)</SelectItem>
+                          <SelectItem value="ar">
+                            {t["pageLabels.companySettings.arabicOption"]}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormDescription>
@@ -586,7 +628,7 @@ export default function CompanySettings() {
                   name="addressCity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>City</FormLabel>
+                      <FormLabel>{t["pageLabels.companySettings.city"]}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -605,7 +647,7 @@ export default function CompanySettings() {
                   name="emirate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Emirate / Region</FormLabel>
+                      <FormLabel>{t["pageLabels.companySettings.emirate"]}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "dubai"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-emirate">
@@ -615,7 +657,7 @@ export default function CompanySettings() {
                         <SelectContent>
                           {EMIRATE_OPTIONS.map((e) => (
                             <SelectItem key={e.value} value={e.value}>
-                              {e.label}
+                              {optionLabel(t, "emirate", e.value, e.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -642,7 +684,7 @@ export default function CompanySettings() {
                         <SelectContent>
                           {COUNTRY_OPTIONS.map((c) => (
                             <SelectItem key={c.value} value={c.value}>
-                              {c.label}
+                              {optionLabel(t, "country", c.value, c.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>

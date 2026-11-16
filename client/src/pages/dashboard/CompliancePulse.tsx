@@ -81,7 +81,7 @@ export function FixItRow({ check }: { check: AuditReadinessCheck }) {
     <div className="flex items-center justify-between gap-3 px-5 py-2.5">
       <div className="flex items-center gap-2.5 min-w-0">
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
-        <span className="truncate text-[13px] text-foreground" title={explanation}>
+        <span className="truncate text-small text-foreground" title={explanation}>
           {explanation}
         </span>
       </div>

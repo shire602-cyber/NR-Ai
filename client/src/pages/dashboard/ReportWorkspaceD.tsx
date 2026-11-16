@@ -19,7 +19,7 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
       <div className="border-b border-border/60 p-5" data-testid="dashboard-report-trigger-rules">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="reportCenter.triggerRules" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
@@ -94,7 +94,7 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="reportCenter.deliverySubscriptions" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
@@ -131,7 +131,7 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
                   <div className="text-muted-foreground">
                     <T k="reportCenter.readyReports" />
                   </div>
-                  <div className="mt-1 font-mono font-semibold text-foreground">
+                  <div className="mt-1 font-semibold tabular-nums text-foreground">
                     {subscription.readyReports}/{subscription.reports.length}
                   </div>
                 </div>
@@ -139,7 +139,7 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
                   <div className="text-muted-foreground">
                     <T k="reportCenter.triggerRules" />
                   </div>
-                  <div className="mt-1 font-mono font-semibold text-foreground">
+                  <div className="mt-1 font-semibold tabular-nums text-foreground">
                     {subscription.triggerRules.length}
                   </div>
                 </div>
@@ -171,7 +171,7 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="pageLabels.businessQuestions" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
@@ -237,7 +237,7 @@ export function ReportWorkspacePartD({ m }: { m: DashboardModel }) {
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               <T k="reportCenter.comparisonPresets" />
             </div>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">

@@ -205,6 +205,8 @@ import { SkipLink } from "@/components/SkipLink";
 import { RedirectTo } from "@/components/layout/RedirectTo";
 import { openCommandPalette } from "@/lib/commandPalette";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { BrandMark } from "@/components/BrandMark";
+import { CompanySwitcher } from "@/components/CompanySwitcher";
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
@@ -301,23 +303,27 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             role="banner"
             className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/85 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6"
           >
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {/* Desktop: sidebar toggle. Mobile (CTO 8): brand mark + company name button
+                  that opens the company switcher; navigation lives in the bottom bar. */}
               <SidebarTrigger
                 data-testid="button-sidebar-toggle"
                 aria-label={t["shell.toggleSidebar"]}
-                className="text-muted-foreground hover:text-foreground"
+                className="hidden text-muted-foreground hover:text-foreground md:inline-flex"
               />
-              <span aria-hidden className="mx-1 hidden h-5 w-px bg-border md:block" />
-              <div className="hidden items-center gap-2 text-xs text-muted-foreground md:flex">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[11.5px] font-medium text-foreground/80">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-success" />
-                  {t["shell.uaeTaxReady"]}
-                </span>
-                <span className="money text-[11.5px]">{t["shell.regionCurrency"]}</span>
+              <Link
+                href="/dashboard"
+                aria-label={t.dashboard}
+                className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+              >
+                <BrandMark size="sm" />
+              </Link>
+              <div className="min-w-0 md:hidden">
+                <CompanySwitcher variant="compact" />
               </div>
             </div>
 
-            <div className="flex items-center gap-1 md:gap-1.5">
+            <div className="flex shrink-0 items-center gap-0.5 md:gap-1.5">
               <button
                 type="button"
                 onClick={openCommandPalette}
@@ -327,7 +333,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                 className="me-1 hidden h-8 w-56 items-center gap-2 rounded-md border border-input bg-card ps-2.5 pe-1.5 text-muted-foreground shadow-xs transition-colors duration-fast hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex lg:w-64"
               >
                 <Search className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="flex-1 text-start text-[13px]">{t["shell.search"]}</span>
+                <span className="flex-1 text-start text-small">{t["shell.search"]}</span>
                 <kbd aria-hidden="true" className="kbd">
                   ⌘K
                 </kbd>
@@ -336,18 +342,19 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={openCommandPalette}
                 aria-label={t["shell.searchAndCommands"]}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
               >
                 <Search className="h-4 w-4" aria-hidden />
               </button>
               <OfflineIndicator />
-              <ThemeToggle />
+              {/* On mobile the theme choice lives in the More sheet (CTO 8). */}
+              <ThemeToggle className="hidden md:inline-flex" />
               <NotificationBell />
               <Button
                 asChild
                 variant="ghost"
                 size="sm"
-                className="ms-1 h-8 min-h-8 gap-2 rounded-full ps-1 pe-1 sm:pe-3"
+                className="ms-0.5 h-9 min-h-9 gap-2 rounded-full ps-1.5 pe-1.5 md:h-8 md:min-h-8 md:ps-1 md:pe-3"
               >
                 <Link href="/company-profile" data-testid="button-profile" aria-label={t.profile}>
                   <span
@@ -356,7 +363,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                   >
                     <User className="!size-3.5" />
                   </span>
-                  <span className="hidden text-[13px] font-medium sm:inline">{t.profile}</span>
+                  <span className="hidden text-small font-medium md:inline">{t.profile}</span>
                 </Link>
               </Button>
             </div>

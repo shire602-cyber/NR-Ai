@@ -69,5 +69,17 @@
   "invoices.supplyType": "VAT supply type",
   "invoices.templateBankDetails": "Bank details printed on the invoice",
   "invoices.templateTerms": "Terms printed on the invoice",
-  "invoices.voidCreditNote": "Void credit note"
+  "invoices.voidCreditNote": "Void credit note",
+  "invoices.actionAddPayment": "Record payment",
+  "invoices.actionViewPayments": "View payments",
+  "invoices.actionGenerateEinvoice": "Generate e-invoice",
+  "invoices.actionSetRecurring": "Make recurring",
+  "invoices.actionEditRecurring": "Edit recurring schedule",
+  "invoices.actionCreateCreditNote": "Create credit note",
+  "invoices.actionDelete": "Delete invoice",
+  "invoices.actionDownloadPdf": "Download PDF",
+  "invoices.deleteTitle": "Delete invoice {number}?",
+  "invoices.deleteBody": "This permanently deletes the invoice. This cannot be undone.",
+  "invoices.einvoiceShort": "E-invoice",
+  "invoices.exporting": "Exporting…"
 }

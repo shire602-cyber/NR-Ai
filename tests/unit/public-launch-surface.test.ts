@@ -149,10 +149,11 @@ describe("Public SaaS launch surface", () => {
     const onboardingWizardSource = readRepoFile("client/src/components/Onboarding.tsx");
     const onboardingPageSource = readRepoFile("client/src/pages/Onboarding.tsx");
 
-    // The header badge copy lives in the shell i18n catalog (R18-02).
+    // D2b (CTO checkpoint 10): the "UAE Tax Ready" top-bar chip implied a certification and
+    // was removed from the authenticated chrome and its catalog.
     const shellCatalog = readRepoFile("client/src/locales/en/shell.json");
-    expect(appSource).toContain('t["shell.uaeTaxReady"]');
-    expect(shellCatalog).toContain("UAE Tax Ready");
+    expect(appSource).not.toContain("shell.uaeTaxReady");
+    expect(shellCatalog).not.toContain("UAE Tax Ready");
     for (const [file, source] of [
       ["client/src/locales/en/shell.json", shellCatalog],
       [

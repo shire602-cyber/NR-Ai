@@ -1,4 +1,7 @@
 import { T } from "@/components/layout/T";
+import { Link } from "wouter";
+import { useTranslation } from "@/lib/i18n";
+import { localizeNotification } from "@/lib/notification-display";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -25,6 +28,7 @@ import type { Notification, RegulatoryNews } from "@shared/schema";
 
 export default function Notifications() {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("notifications");
 
   const { data: notificationsData, isLoading: notificationsLoading } = useQuery<{
@@ -184,7 +188,9 @@ export default function Notifications() {
                       <div className="mt-1">{getNotificationIcon(notification.type)}</div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium">{notification.title}</h4>
+                          <h4 className="font-medium" dir="auto">
+                            {localizeNotification(notification, t as Record<string, string>).title}
+                          </h4>
                           {getPriorityBadge(notification.priority)}
                           {!notification.isRead && (
                             <Badge variant="outline" className="bg-info-subtle">
@@ -192,7 +198,21 @@ export default function Notifications() {
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">{notification.message}</p>
+                        <p className="text-sm text-muted-foreground" dir="auto">
+                          {localizeNotification(notification, t as Record<string, string>).message}
+                        </p>
+                        {localizeNotification(notification, t as Record<string, string>)
+                          .setupEmailHref ? (
+                          <Link
+                            href={
+                              localizeNotification(notification, t as Record<string, string>)
+                                .setupEmailHref as string
+                            }
+                            className="mt-1 inline-block text-small font-medium text-accent hover:underline"
+                          >
+                            {t["components.notificationEmailNotSetUpLink"]}
+                          </Link>
+                        ) : null}
                         <p className="text-xs text-muted-foreground mt-2">
                           {formatDistanceToNow(new Date(notification.createdAt), {
                             addSuffix: true,

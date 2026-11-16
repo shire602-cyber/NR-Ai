@@ -18,11 +18,15 @@ interface PeriodSelectorProps {
 export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps) {
   const ar = locale === "ar";
   return (
-    <div className="flex flex-wrap items-center gap-3" data-testid="dashboard-period-selector">
+    <div
+      className="flex w-full flex-wrap items-center gap-3 sm:w-auto"
+      data-testid="dashboard-period-selector"
+    >
+      {/* Segmented control: four equal columns on mobile so nothing clips at the edge (CTO 12). */}
       <div
         role="group"
         aria-label={ar ? "الفترة" : "Period"}
-        className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-muted p-0.5"
+        className="grid w-full grid-cols-4 items-stretch gap-0.5 rounded-lg bg-muted p-0.5 sm:inline-flex sm:h-9 sm:w-auto sm:items-center"
       >
         {DASHBOARD_PRESETS.map((preset) => {
           const active = choice.preset === preset;
@@ -34,7 +38,7 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
               onClick={() => onChange({ ...choice, preset })}
               data-testid={`dashboard-period-${preset}`}
               className={cn(
-                "h-8 whitespace-nowrap rounded-md px-3 text-[13px] font-medium transition-[color,background-color,box-shadow] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "min-w-0 rounded-md px-1.5 text-caption font-medium leading-tight sm:h-8 sm:whitespace-nowrap transition-[color,background-color,box-shadow] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3 sm:text-small",
                 active
                   ? "bg-card text-foreground shadow-sm dark:bg-neutral-800"
                   : "text-muted-foreground hover:text-foreground"

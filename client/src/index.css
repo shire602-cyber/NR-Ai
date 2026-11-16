@@ -124,17 +124,22 @@
   --chart-3: 30 90% 33%;
   --chart-4: 268 45% 50%;
   --chart-5: 190 75% 30%;
+  /* Comparison series (expenses, prior period): neutral, never amber (amber = warning). */
+  --chart-neutral: var(--neutral-400);
 
   /* ── Typography ── */
   --font-sans:
     "Geist Sans", "Geist", "Noto Sans Arabic", -apple-system, BlinkMacSystemFont, "Segoe UI",
     system-ui, sans-serif;
-  --font-arabic:
-    "Noto Sans Arabic", "Geist Sans", "Segoe UI", "Geeza Pro", "Arial", system-ui, sans-serif;
+  /* D2b (CTO 2): Latin letters and digits stay Geist in Arabic; only Arabic code points fall
+     through to Noto Sans Arabic (its @font-face is the Arabic subset, unicode-range scoped). */
+  --font-arabic: "Geist Sans", "Noto Sans Arabic", system-ui, "Segoe UI", "Geeza Pro", sans-serif;
   /* One Latin face: display = Geist Sans set tight and heavy. */
   --font-display: var(--font-sans);
   --font-serif: "Instrument Serif", Georgia, serif;
   --font-mono: "Geist Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* Figures (money, document numbers, IDs): the UI sans with tabular numerals. */
+  --font-figures: var(--font-sans);
 
   /* ── Shape ── */
   --radius: 0.5rem; /* 8px — lg; md 6, sm 4, xl 12, 2xl 16 */
@@ -225,17 +230,21 @@
   --border-strong: 222 18% 24%;
   --input: 222 18% 24%;
 
-  --card: var(--neutral-900);
+  /* D2b (CTO 9): surfaces step clearly off the neutral-950 canvas. */
+  --card: 223 24% 11%;
   --card-foreground: 220 16% 93%;
-  --card-border: 222 20% 16%;
+  --card-border: 222 20% 17%;
 
-  --popover: var(--neutral-850);
+  --popover: 223 22% 13%;
   --popover-foreground: 220 16% 93%;
   --popover-border: 222 20% 20%;
 
-  --primary: var(--brand-400);
-  --primary-foreground: var(--brand-950);
-  --primary-hover: var(--brand-300);
+  /* D2b (CTO 9): a deep emerald fill with white text (4.7:1). The CTO's suggested
+     158 64% 40% / 159 66% 36% measure 3.05 / 3.62:1 with white, so the same hue is set at
+     31% lightness. brand-400 stays for text, links and icons (--accent). */
+  --primary: 159 66% 31%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 159 66% 27%;
   --secondary: var(--neutral-800);
   --secondary-foreground: 220 16% 90%;
   --muted: var(--neutral-850);
@@ -252,7 +261,7 @@
   --sidebar-muted-foreground: 220 10% 60%;
   --sidebar-border: 222 22% 13%;
   --sidebar-primary: var(--brand-400);
-  --sidebar-primary-foreground: var(--brand-950);
+  --sidebar-primary-foreground: var(--neutral-950);
   --sidebar-accent: 222 22% 13%;
   --sidebar-accent-foreground: 220 16% 96%;
   --sidebar-ring: var(--brand-400);
@@ -262,6 +271,7 @@
   --chart-3: 38 90% 60%;
   --chart-4: 268 55% 70%;
   --chart-5: 190 60% 55%;
+  --chart-neutral: var(--neutral-500);
 
   --shadow-color: 0 0% 0%;
   --shadow-2xs: 0 1px 1px 0 hsl(0 0% 0% / 0.3);
@@ -281,7 +291,7 @@
   --elevate-1: hsl(0 0% 100% / 0.04);
   --elevate-2: hsl(0 0% 100% / 0.08);
 
-  --primary-border: hsl(var(--brand-500));
+  --primary-border: hsl(159 66% 36%);
   --secondary-border: hsl(222 18% 22%);
   --muted-border: hsl(222 18% 20%);
   --accent-border: hsl(var(--brand-500));
@@ -311,11 +321,40 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Arabic: one Arabic face; letter-spacing breaks joining, so it is reset. */
+  /* Arabic: Geist for Latin + digits, Noto Sans Arabic for Arabic script; letter-spacing
+     breaks joining, so it is reset. Body copy gets more leading; headings are 600. */
   [dir="rtl"],
   [dir="rtl"] body,
   :lang(ar) {
     font-family: var(--font-arabic);
+    letter-spacing: normal;
+  }
+  [dir="rtl"] body {
+    line-height: 1.6;
+  }
+  [dir="rtl"] h1,
+  [dir="rtl"] h2,
+  [dir="rtl"] h3,
+  [dir="rtl"] h4 {
+    font-weight: 600;
+    letter-spacing: normal;
+  }
+  [dir="rtl"] {
+    --font-figures: var(--font-arabic);
+  }
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-mono);
+  }
+  /* Money and document numbers never use the mono face (CTO 2). */
+  .money,
+  .money-figure,
+  [data-numeric],
+  [data-numeric] .font-mono,
+  .money.font-mono {
+    font-family: inherit;
   }
 
   /* Headings default to the type scale so bare <h1>…<h4> already look right. */
@@ -380,6 +419,36 @@
   }
   .money-negative {
     color: hsl(var(--negative));
+  }
+  /* <Money>: [currency] [sign+digits] in LTR, [sign+digits] [currency] in RTL. The flex row
+     follows the element's own dir, so the order is fixed whatever the surrounding text is. */
+  .money-figure {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25em;
+    white-space: nowrap;
+    unicode-bidi: isolate;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  .money-currency {
+    font-size: 0.8em;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    unicode-bidi: isolate;
+  }
+  .money-sign {
+    margin-inline-end: 0.04em;
+  }
+  /* Latin display figures (KPI values): slight negative tracking (CTO 12). */
+  .figure-display {
+    font-size: 1.75rem;
+    line-height: 2.25rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  [dir="rtl"] .figure-display {
+    letter-spacing: -0.02em;
   }
 
   /* Small uppercase section label. Arabic gets normal case + no tracking. */

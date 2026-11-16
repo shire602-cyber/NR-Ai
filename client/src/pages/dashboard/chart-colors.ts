@@ -6,6 +6,8 @@ export const CHART_COLORS = {
   warning: "hsl(var(--chart-3))",
   info: "hsl(var(--chart-2))",
   muted: "hsl(var(--chart-5))",
+  /** Comparison series (expenses, prior period): neutral-400 light / neutral-500 dark. */
+  neutral: "hsl(var(--chart-neutral))",
 };
 
 export const PIE_PALETTE = [
