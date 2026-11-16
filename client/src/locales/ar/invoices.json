@@ -8,6 +8,8 @@
   "invoices.convertPartial": "فوترة جزء من عرض السعر",
   "invoices.customerCredits": "أرصدة العملاء الدائنة",
   "invoices.discountPercent": "خصم %",
+  "invoices.einvoiceIssuesBody": "لم يتم إنشاء الفاتورة الإلكترونية. صحّح كل بند أدناه ثم أعد إنشاء الفاتورة الإلكترونية.",
+  "invoices.einvoiceIssuesTitle": "الفاتورة الإلكترونية {number} تحتاج إلى تصحيح",
   "invoices.emirate.abu_dhabi": "أبوظبي",
   "invoices.emirate.ajman": "عجمان",
   "invoices.emirate.dubai": "دبي",

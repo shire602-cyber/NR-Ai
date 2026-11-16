@@ -71,7 +71,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import { einvoiceIssuesFromError, type EInvoiceIssueItem } from "@/lib/einvoice-issues";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -102,6 +103,14 @@ import { SiGooglesheets } from "react-icons/si";
 import type { Invoice, Company, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { downloadInvoicePDF } from "@/lib/pdf-invoice";
+import {
+  computeInvoiceFormLine,
+  computeInvoiceFormTotals,
+  lineVatRate,
+} from "@/lib/invoice-totals";
+import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
+import { companyLogoSrc, fetchCompanyLogoDataUrl } from "@/lib/company-logo";
+import { invoiceStatusQuery, parseInvoiceStatusFilter } from "@/lib/invoice-filters";
 
 // R07-01: each line carries an explicit UAE supply type; the VAT rate follows
 // from it (5% standard, 0% for zero-rated / exempt / out of scope).
@@ -136,11 +145,8 @@ const EMPTY_LINE = {
   discountPercent: 0,
 };
 
-const lineVatRate = (supply: SupplyTypeOption) => (supply === "standard_rated" ? 0.05 : 0);
-const lineNet = (line: { quantity: number; unitPrice: number; discountPercent?: number }) =>
-  (Number(line.quantity) || 0) *
-  (Number(line.unitPrice) || 0) *
-  (1 - (Number(line.discountPercent) || 0) / 100);
+// S1 (W5-E): form totals come from the pure, tested client/src/lib/invoice-totals.ts, which
+// follows the server engine (fils, half-up, VAT rounded once per document).
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
@@ -179,6 +185,8 @@ export default function Invoices() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  // Standard VAT rate of the issuing company's jurisdiction (UAE 5%, KSA 15%).
+  const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   // R18-07: a freshly saved invoice is a draft; offer to issue it right away.
@@ -206,6 +214,10 @@ export default function Invoices() {
 
   // Payment tracking dialog state
   const [addPaymentDialogOpen, setAddPaymentDialogOpen] = useState(false);
+  const [einvoiceIssues, setEinvoiceIssues] = useState<{
+    number: string;
+    issues: EInvoiceIssueItem[];
+  } | null>(null);
   const [viewPaymentsDialogOpen, setViewPaymentsDialogOpen] = useState(false);
   const [invoiceForPaymentDetail, setInvoiceForPaymentDetail] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -217,11 +229,9 @@ export default function Invoices() {
 
   // R13-21: dashboard drill-through links open /invoices?status=open|overdue|<status>; the
   // filter is applied server-side so the paginated list stays correct.
-  const [statusFilter, setStatusFilter] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const v = new URLSearchParams(window.location.search).get("status");
-    return v && /^[a-z_]{1,40}$/.test(v) ? v : null;
-  });
+  const [statusFilter, setStatusFilter] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : parseInvoiceStatusFilter(window.location.search)
+  );
   const clearStatusFilter = () => {
     setStatusFilter(null);
     if (typeof window === "undefined") return;
@@ -242,9 +252,7 @@ export default function Invoices() {
     queryFn: ({ pageParam }) =>
       apiRequest(
         "GET",
-        `/api/companies/${selectedCompanyId}/invoices?limit=50${
-          statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ""
-        }${pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""}`
+        `/api/companies/${selectedCompanyId}/invoices?limit=50${invoiceStatusQuery(statusFilter)}${pageParam ? `&cursor=${encodeURIComponent(String(pageParam))}` : ""}`
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
@@ -690,7 +698,7 @@ export default function Invoices() {
           description: line.description,
           quantity: Number(line.quantity),
           unitPrice: Math.round(Number(line.unitPrice) * 100) / 100,
-          vatRate: lineVatRate(line.vatSupplyType),
+          vatRate: lineVatRate(line.vatSupplyType, standardRate),
           vatSupplyType: line.vatSupplyType,
           ...(Number(line.discountPercent) > 0
             ? { discountType: "percent", discountValue: Number(line.discountPercent) }
@@ -733,12 +741,8 @@ export default function Invoices() {
 
   // Calculate totals for preview
   const watchLines = form.watch("lines");
-  const subtotal = watchLines.reduce((sum, line) => sum + lineNet(line), 0);
-  const vatAmount = watchLines.reduce(
-    (sum, line) => sum + lineNet(line) * lineVatRate(line.vatSupplyType ?? "standard_rated"),
-    0
-  );
-  const total = subtotal + vatAmount;
+  const formTotals = computeInvoiceFormTotals(watchLines, standardRate);
+  const { subtotal, vatAmount, total } = formTotals;
 
   // Invoice Branding Form
   const brandingForm = useForm<InvoiceBrandingFormData>({
@@ -884,6 +888,32 @@ export default function Invoices() {
 
   return (
     <div className="space-y-6">
+      <Dialog open={!!einvoiceIssues} onOpenChange={(open) => !open && setEinvoiceIssues(null)}>
+        <DialogContent data-testid="dialog-einvoice-issues">
+          <DialogHeader>
+            <DialogTitle>
+              {formatMessage(t["invoices.einvoiceIssuesTitle"], {
+                number: einvoiceIssues?.number ?? "",
+              })}
+            </DialogTitle>
+            <DialogDescription>
+              <T k="invoices.einvoiceIssuesBody" />
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
+            {(einvoiceIssues?.issues ?? []).map((issue, i) => (
+              <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
+                {issue.field && (
+                  <span className="block font-mono text-xs text-muted-foreground">
+                    {issue.field}
+                  </span>
+                )}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
       <PageHeader
         eyebrow="Sales"
         title={t.invoices}
@@ -1316,7 +1346,7 @@ export default function Invoices() {
                                         field.onChange(val);
                                         form.setValue(
                                           `lines.${index}.vatRate`,
-                                          lineVatRate(val as SupplyTypeOption)
+                                          lineVatRate(val as SupplyTypeOption, standardRate)
                                         );
                                       }}
                                     >
@@ -1370,11 +1400,10 @@ export default function Invoices() {
                           <div className="col-span-2">
                             <div className="h-10 flex items-center justify-end font-mono text-sm">
                               {formatCurrency(
-                                lineNet(watchLines[index] ?? EMPTY_LINE) *
-                                  (1 +
-                                    lineVatRate(
-                                      watchLines[index]?.vatSupplyType ?? "standard_rated"
-                                    )),
+                                computeInvoiceFormLine(
+                                  watchLines[index] ?? EMPTY_LINE,
+                                  standardRate
+                                ).lineTotal,
                                 "AED",
                                 locale
                               )}
@@ -1407,8 +1436,10 @@ export default function Invoices() {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">
                           {t.vat} (
-                          {watchLines.some((line) => line.vatSupplyType === "standard_rated")
-                            ? "5%"
+                          {formTotals.ratesCharged.length
+                            ? formTotals.ratesCharged
+                                .map((r) => `${Math.round(r * 100)}%`)
+                                .join(" / ")
                             : "0%"}
                           )
                         </span>
@@ -1661,7 +1692,8 @@ export default function Invoices() {
                                       companyPhone: company?.contactPhone || undefined,
                                       companyEmail: company?.contactEmail || undefined,
                                       companyWebsite: company?.websiteUrl || undefined,
-                                      companyLogo: company?.logoUrl || undefined,
+                                      companyLogo:
+                                        (await fetchCompanyLogoDataUrl(company)) ?? undefined,
                                       lines: invoiceDetails.lines || [],
                                       subtotal: invoiceDetails.subtotal,
                                       vatAmount: invoiceDetails.vatAmount,
@@ -1727,6 +1759,15 @@ export default function Invoices() {
                                       queryKey: ["/api/companies", selectedCompanyId, "invoices"],
                                     });
                                   } catch (error: any) {
+                                    // W4-C: a 422 carries the full fix-it / validation list.
+                                    const issues =
+                                      error instanceof ApiError && error.status === 422
+                                        ? einvoiceIssuesFromError(error.body)
+                                        : [];
+                                    if (issues.length > 0) {
+                                      setEinvoiceIssues({ number: invoice.number, issues });
+                                      return;
+                                    }
                                     toast({
                                       title: "Error",
                                       description: error?.message,
@@ -1973,7 +2014,7 @@ export default function Invoices() {
                               </FormLabel>
                               <FormDescription>
                                 Display your company logo at the top of invoices
-                                {!company.logoUrl && (
+                                {!companyLogoSrc(company) && (
                                   <span className="block text-xs text-warning mt-1">
                                     Note: Set your logo in Company Profile first
                                   </span>
@@ -1984,7 +2025,7 @@ export default function Invoices() {
                               <Switch
                                 checked={field.value}
                                 onCheckedChange={field.onChange}
-                                disabled={!company.logoUrl}
+                                disabled={!companyLogoSrc(company)}
                                 data-testid="switch-show-logo"
                               />
                             </FormControl>

@@ -8,8 +8,10 @@ import { allocate, sumFils } from "../../shared/money";
 import {
   classifySupply,
   resolveSupplyType,
+  STANDARD_VAT_RATES,
   type SupplyClassification,
   type SupplyType,
+  type VatJurisdiction,
 } from "../../shared/vat-classification";
 
 export interface DocumentLineInput {
@@ -82,6 +84,13 @@ export interface SalesLineTotalsInput {
   vatSupplyType?: SupplyType | string | null;
   discountType?: DiscountType | string | null;
   discountValue?: number | string | null;
+  /**
+   * S1 (R07-15): profit-margin scheme (VAT Decree-Law Art. 29, second-hand goods). The line price
+   * is VAT-inclusive and VAT is charged on the margin only: VAT = (price − purchase cost) × r/(1+r).
+   */
+  marginScheme?: boolean | null;
+  /** Purchase cost of the whole line in integer fils (margin-scheme lines). */
+  marginCostFils?: number | null;
 }
 
 export interface SalesLineTotals {
@@ -93,6 +102,8 @@ export interface SalesLineTotals {
   vatFils: number;
   vatRate: number;
   classification: SupplyClassification;
+  /** Margin-scheme lines: the VAT-exclusive margin reported in VAT 201 Box 1 (else null). */
+  marginFils: number | null;
 }
 
 export interface SalesDocumentTotals {
@@ -166,6 +177,8 @@ export function computeSalesDocument(
     discountValue?: number | string | null;
     reverseCharge?: boolean | null;
     resolve?: boolean;
+    /** Standard-rate jurisdiction (AE 5%, SA 15%); stored rows infer it from their rate. */
+    jurisdiction?: VatJurisdiction;
   } = {}
 ): SalesDocumentTotals {
   const prepared = lines.map((line, i) => {
@@ -175,20 +188,39 @@ export function computeSalesDocument(
       try {
         type = resolveSupplyType({
           supplyType: (line.vatSupplyType as SupplyType | null | undefined) ?? null,
-          vatRate: line.vatRate ?? 0.05,
+          vatRate: line.vatRate ?? STANDARD_VAT_RATES[opts.jurisdiction ?? "AE"],
           reverseCharge: opts.reverseCharge,
+          jurisdiction: opts.jurisdiction,
         });
       } catch (err) {
         const e = err as { code?: string; message?: string };
         throw new DocumentTotalsError(e.code ?? "INVALID_SUPPLY_TYPE", e.message ?? "", i);
       }
-      classification = classifySupply({ supplyType: type });
+      classification = classifySupply({ supplyType: type, jurisdiction: opts.jurisdiction });
     } else {
       classification = classifySupply({
         supplyType: line.vatSupplyType,
         vatRate: line.vatRate,
         reverseCharge: opts.reverseCharge,
+        jurisdiction: opts.jurisdiction,
       });
+    }
+    if (line.marginScheme && classification.supplyType !== "standard_rated") {
+      throw new DocumentTotalsError(
+        "MARGIN_SCHEME_NOT_STANDARD",
+        "The profit-margin scheme applies to standard-rated supplies only",
+        i
+      );
+    }
+    if (line.marginScheme) {
+      const cost = Number(line.marginCostFils);
+      if (!Number.isSafeInteger(cost) || cost < 0) {
+        throw new DocumentTotalsError(
+          "MARGIN_COST_REQUIRED",
+          "A profit-margin scheme line needs its purchase cost",
+          i
+        );
+      }
     }
     const grossFils = halfUp(new Decimal(line.quantity).times(line.unitPriceFils));
     const lineDiscountFils = discountFils(grossFils, line.discountType, line.discountValue, i);
@@ -207,8 +239,26 @@ export function computeSalesDocument(
 
   let vatExact = new Decimal(0);
   const out: SalesLineTotals[] = prepared.map((p, i) => {
-    const netFils = p.afterLine - shares[i];
     const rate = p.classification.chargedVatRate;
+    if (lines[i].marginScheme) {
+      // Price (after discounts) is VAT-inclusive; VAT is the tax fraction of the margin,
+      // rounded per line so the margin line's net + VAT equals its price exactly.
+      const price = p.afterLine - shares[i];
+      const margin = Math.max(0, price - Number(lines[i].marginCostFils ?? 0));
+      const vat = halfUp(new Decimal(margin).times(rate).dividedBy(new Decimal(1).plus(rate)));
+      vatExact = vatExact.plus(vat);
+      return {
+        grossFils: p.grossFils,
+        lineDiscountFils: p.lineDiscountFils,
+        documentDiscountFils: shares[i],
+        netFils: price - vat,
+        vatFils: vat,
+        vatRate: rate,
+        classification: p.classification,
+        marginFils: margin - vat,
+      };
+    }
+    const netFils = p.afterLine - shares[i];
     const lineVat = new Decimal(netFils).times(rate);
     vatExact = vatExact.plus(lineVat);
     return {
@@ -219,6 +269,7 @@ export function computeSalesDocument(
       vatFils: halfUp(lineVat),
       vatRate: rate,
       classification: p.classification,
+      marginFils: null,
     };
   });
 
@@ -245,6 +296,8 @@ export function storedLineToTotalsInput(line: {
   vatSupplyType?: string | null;
   discountType?: string | null;
   discountValue?: number | string | null;
+  marginScheme?: boolean | null;
+  marginPurchaseCost?: number | string | null;
 }): SalesLineTotalsInput {
   return {
     quantity: line.quantity,
@@ -253,5 +306,11 @@ export function storedLineToTotalsInput(line: {
     vatSupplyType: line.vatSupplyType,
     discountType: line.discountType,
     discountValue: line.discountValue,
+    ...(line.marginScheme
+      ? {
+          marginScheme: true,
+          marginCostFils: halfUp(new Decimal(line.marginPurchaseCost ?? 0).abs().times(100)),
+        }
+      : {}),
   };
 }

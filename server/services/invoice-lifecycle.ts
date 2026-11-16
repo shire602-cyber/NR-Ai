@@ -12,7 +12,11 @@
 
 import { DomainError } from "../errors";
 import { fromFils } from "../../shared/money";
-import type { SupplyType } from "../../shared/vat-classification";
+import {
+  STANDARD_VAT_RATES,
+  type SupplyType,
+  type VatJurisdiction,
+} from "../../shared/vat-classification";
 import {
   computeSalesDocument,
   DocumentTotalsError,
@@ -354,6 +358,9 @@ export interface SalesLineDraft {
   discountValue?: number | null;
   productId?: string | null;
   costCenterId?: string | null;
+  /** S1: profit-margin scheme line (invoices only) and its purchase cost in fils. */
+  marginScheme?: boolean | null;
+  marginPurchaseCost?: number | null;
 }
 
 export interface PreparedSalesLine {
@@ -369,6 +376,9 @@ export interface PreparedSalesLine {
   netAmount: number;
   productId: string | null;
   costCenterId: string | null;
+  marginScheme: boolean;
+  /** Major units (invoice_lines.margin_purchase_cost); null unless marginScheme. */
+  marginPurchaseCost: number | null;
 }
 
 /**
@@ -382,6 +392,8 @@ export function prepareSalesLines(
     discountType?: string | null;
     discountValue?: number | null;
     reverseCharge?: boolean | null;
+    /** Standard-rate jurisdiction of the issuing company (AE 5% default, SA 15%). */
+    jurisdiction?: VatJurisdiction;
   } = {}
 ): { rows: PreparedSalesLine[]; totals: SalesDocumentTotals } {
   let totals: SalesDocumentTotals;
@@ -390,10 +402,12 @@ export function prepareSalesLines(
       lines.map((l) => ({
         quantity: l.quantity,
         unitPriceFils: l.unitPrice,
-        vatRate: l.vatRate ?? 0.05,
+        vatRate: l.vatRate ?? STANDARD_VAT_RATES[opts.jurisdiction ?? "AE"],
         vatSupplyType: l.vatSupplyType ?? null,
         discountType: l.discountType ?? null,
         discountValue: l.discountValue ?? null,
+        marginScheme: l.marginScheme ?? false,
+        marginCostFils: l.marginScheme ? (l.marginPurchaseCost ?? null) : null,
       })),
       { ...opts, resolve: true }
     );
@@ -402,7 +416,13 @@ export function prepareSalesLines(
       const field =
         err.lineIndex === undefined
           ? "discountValue"
-          : `lines.${err.lineIndex}.${err.code.startsWith("SUPPLY") || err.code === "INVALID_VAT_RATE" ? "vatSupplyType" : "discountValue"}`;
+          : `lines.${err.lineIndex}.${
+              err.code.startsWith("SUPPLY") || err.code === "INVALID_VAT_RATE"
+                ? "vatSupplyType"
+                : err.code.startsWith("MARGIN")
+                  ? "marginScheme"
+                  : "discountValue"
+            }`;
       throw new DomainError(err.code, 400, { fields: { [field]: [err.message] } }, err.message);
     }
     throw err;
@@ -430,6 +450,8 @@ export function prepareSalesLines(
       netAmount: Number(fromFils(t.netFils)),
       productId: l.productId ?? null,
       costCenterId: l.costCenterId ?? null,
+      marginScheme: !!l.marginScheme,
+      marginPurchaseCost: l.marginScheme ? Number(fromFils(l.marginPurchaseCost ?? 0)) : null,
     };
   });
   return { rows, totals };

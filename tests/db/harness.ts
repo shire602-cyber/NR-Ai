@@ -225,15 +225,10 @@ async function buildApp(): Promise<any> {
   applySecurityMiddleware(app);
   app.use(compression());
 
-  const largeJsonRoutes = [
-    /^\/api\/ocr\//,
-    /^\/api\/export\//,
-    /^\/api\/firm\/bulk\/ocr/,
-    /^\/api\/companies\/[^/]+\/receipts$/,
-    /^\/api\/companies\/[^/]+\/bank-statements\/import$/,
-  ];
-  const largeJson = express.json({ limit: "10mb" });
-  const smallJson = express.json({ limit: "1mb" });
+  const { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, usesLargeJson } =
+    await import("../../server/http/body-limits");
+  const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
+  const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
   app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
   // Mirrors server/index.ts (W4-D raw-body webhooks).
   const rawWebhookPrefixes = ["/api/webhooks/invoice-payments", "/api/webhooks/email-events"];
@@ -241,7 +236,7 @@ async function buildApp(): Promise<any> {
   app.use((req: any, res: any, next: any) => {
     if (req.path === "/api/webhooks/email-intake") return next();
     if (rawWebhookPrefixes.some((p) => req.path.startsWith(`${p}/`))) return next();
-    const useLarge = largeJsonRoutes.some((rx) => rx.test(req.path));
+    const useLarge = usesLargeJson(req.path);
     return (useLarge ? largeJson : smallJson)(req, res, next);
   });
   app.use(express.urlencoded({ extended: false, limit: "1mb" }));

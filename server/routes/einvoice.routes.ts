@@ -234,7 +234,7 @@ export function registerEInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-      const ctx = await loadEInvoiceContext(invoice, company);
+      const ctx = await loadEInvoiceContext(invoice, company, lines);
       const issues = validateForEInvoicing(invoice, lines, company, ctx);
       const document = invoice.einvoiceXml
         ? summariseValidation(await validateEInvoiceXml(invoice.einvoiceXml))
@@ -259,7 +259,7 @@ export function registerEInvoiceRoutes(app: Express) {
         );
       }
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-      const ctx = await loadEInvoiceContext(invoice, company);
+      const ctx = await loadEInvoiceContext(invoice, company, lines);
 
       // A payload an ASP/FTA would reject must never be generated and stored.
       const issues = validateForEInvoicing(invoice, lines, company, ctx);
@@ -276,7 +276,8 @@ export function registerEInvoiceRoutes(app: Express) {
         lines,
         company,
         ctx.customer,
-        { originalInvoice: ctx.originalInvoice }
+        // S1: product GTIN / reverse-charge goods type per line, margin-scheme flag.
+        { ...(ctx.options ?? {}), originalInvoice: ctx.originalInvoice, lineExtras: ctx.lineExtras }
       );
       const validation = summariseValidation(await validateEInvoiceXml(xml));
       if (!validation.valid) {

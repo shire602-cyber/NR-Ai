@@ -1,6 +1,7 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
+import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -84,6 +85,8 @@ const creditNoteSchema = z.object({
   customerTrn: z.string().optional(),
   date: z.date(),
   reason: z.string().min(1, "Reason is required"),
+  // S1 (W4-B): product lines go back into stock (default) or are written off.
+  restock: z.boolean().default(true),
   lines: z.array(creditNoteLineSchema).min(1, "At least one line item is required"),
 });
 
@@ -143,6 +146,7 @@ export default function CreditNotes() {
       customerTrn: "",
       date: new Date(),
       reason: "",
+      restock: true,
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
   });
@@ -165,6 +169,7 @@ export default function CreditNotes() {
       apiRequest("POST", `/api/companies/${selectedCompanyId}/credit-notes`, {
         invoiceId: data.invoiceId,
         reason: data.reason,
+        restock: data.restock !== false,
         date: data.date.toISOString().slice(0, 10),
         lines: data.lines.map((l) => {
           const vat = Number(l.vatRate) > 0 ? 0.05 : 0;
@@ -505,6 +510,29 @@ export default function CreditNotes() {
                           <Input {...field} placeholder="Reason for credit note" />
                         </FormControl>
                         <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="restock"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3">
+                        <div className="space-y-1">
+                          <FormLabel>
+                            <T k="pages.creditNoteRestock" />
+                          </FormLabel>
+                          <p className="text-xs text-muted-foreground">
+                            <T k="pages.creditNoteRestockHint" />
+                          </p>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value !== false}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-credit-note-restock"
+                          />
+                        </FormControl>
                       </FormItem>
                     )}
                   />

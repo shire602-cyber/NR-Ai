@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { companyLogoSrc } from "@/lib/company-logo";
 import { PageHeader } from "@/components/ui/page-header";
 import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -169,7 +170,7 @@ export default function InvoiceSettings() {
                       </FormLabel>
                       <FormDescription>
                         Display your company logo at the top of invoices
-                        {!company.logoUrl && (
+                        {!companyLogoSrc(company) && (
                           <span className="block text-xs text-warning mt-1">
                             Note: Set your logo in Company Profile first
                           </span>
@@ -180,7 +181,7 @@ export default function InvoiceSettings() {
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
-                        disabled={!company.logoUrl}
+                        disabled={!companyLogoSrc(company)}
                         data-testid="switch-show-logo"
                       />
                     </FormControl>

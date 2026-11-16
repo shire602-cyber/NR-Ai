@@ -23,6 +23,7 @@ import { zDate, zText, zUuid } from "../../shared/validators/primitives";
 import {
   createDraftCreditNote,
   issueDraftCreditNote,
+  loadVatJurisdiction,
   voidCreditNote,
 } from "../services/invoice-posting.service";
 import { toCreditLines } from "./invoices.routes";
@@ -106,6 +107,7 @@ const standaloneCreditNoteSchema = z
   .object({
     invoiceId: zUuid,
     lines: salesLinesSchema.optional(),
+    restock: z.boolean().optional(),
     reason: zText(500).optional(),
     date: zDate.optional(),
   })
@@ -166,7 +168,10 @@ export function registerCreditNoteRoutes(app: Express) {
       const draft = await createDraftCreditNote({
         invoiceId: body.invoiceId,
         companyId,
-        lines: body.lines ? toCreditLines(body.lines, original) : undefined,
+        lines: body.lines
+          ? toCreditLines(body.lines, original, await loadVatJurisdiction(companyId))
+          : undefined,
+        restock: body.restock,
         date: body.date,
         reason: body.reason,
       });

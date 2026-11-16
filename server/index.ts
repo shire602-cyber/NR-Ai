@@ -7,6 +7,7 @@ import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
 import express from "express";
+import { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, usesLargeJson } from "./http/body-limits";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
@@ -63,17 +64,9 @@ app.use(compression());
 // ─── Body parsing ────────────────────────────────────────────
 // Most endpoints accept small JSON. A handful of image-upload routes
 // (OCR + receipts) accept base64 data URLs and need a larger limit.
-const largeJsonRoutes = [
-  /^\/api\/ocr\//,
-  /^\/api\/export\//,
-  /^\/api\/firm\/bulk\/ocr/,
-  /^\/api\/companies\/[^/]+\/receipts$/,
-  /^\/api\/companies\/[^/]+\/bank-statements\/(import|preview)$/,
-  /^\/api\/journal\/[^/]+\/attachments$/,
-];
-
-const largeJson = express.json({ limit: "10mb" });
-const smallJson = express.json({ limit: "1mb" });
+// Route list shared with the DB test harness (server/http/body-limits.ts).
+const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
+const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
 
 // The inbound email webhook needs the EXACT raw bytes to verify its HMAC
 // signature, so it gets a raw-body parser and is skipped by the JSON parser.
@@ -85,7 +78,7 @@ app.use(RAW_WEBHOOK_PREFIXES, express.raw({ type: "*/*", limit: "1mb" }));
 app.use((req, res, next) => {
   if (req.path === "/api/webhooks/email-intake") return next(); // raw body handled above
   if (RAW_WEBHOOK_PREFIXES.some((p) => req.path.startsWith(`${p}/`))) return next();
-  const useLarge = largeJsonRoutes.some((rx) => rx.test(req.path));
+  const useLarge = usesLargeJson(req.path);
   return (useLarge ? largeJson : smallJson)(req, res, next);
 });
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));

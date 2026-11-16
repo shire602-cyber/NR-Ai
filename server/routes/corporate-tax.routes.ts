@@ -139,8 +139,42 @@ async function assertPermission(
   }
 }
 
+/**
+ * S1 (R12-12, CT half): what a corporate-tax figure is. Anything before review is an estimate;
+ * a reviewed return is filing-ready; filed/paid is the filed figure; amended/void is superseded.
+ * The ledger preview (/calculate) is always an estimate. Nothing is transmitted to EmaraTax.
+ */
+export type CtFigureStatus = "estimate" | "filing_ready" | "filed" | "superseded";
+
+export function ctFigureStatus(status: string | null | undefined): CtFigureStatus {
+  if (status === "reviewed") return "filing_ready";
+  if (status === "filed" || status === "paid") return "filed";
+  if (status === "amended" || status === "void") return "superseded";
+  return "estimate";
+}
+
+const CT_FIGURE_LABELS: Record<CtFigureStatus, string> = {
+  estimate: "Estimate: not reviewed or filed",
+  filing_ready: "Reviewed: ready to file in EmaraTax (manual upload)",
+  filed: "Filed return",
+  superseded: "Superseded",
+};
+
+export function ctFigure(status: string | null | undefined) {
+  const figureStatus = ctFigureStatus(status);
+  return {
+    figureStatus,
+    isEstimate: figureStatus === "estimate",
+    figureLabel: CT_FIGURE_LABELS[figureStatus],
+  };
+}
+
 function withDeadline(r: CorporateTaxReturn) {
-  return { ...r, filingDeadline: ctFilingDeadline(uaeIsoDate(r.taxPeriodEnd)) };
+  return {
+    ...r,
+    filingDeadline: ctFilingDeadline(uaeIsoDate(r.taxPeriodEnd)),
+    ...ctFigure(r.status),
+  };
 }
 
 export function registerCorporateTaxRoutes(app: Express) {
@@ -591,6 +625,8 @@ export function registerCorporateTaxRoutes(app: Express) {
       const sbrApplied = sbrEligible && sbrElected;
 
       res.json({
+        // A ledger preview is never a return: always an estimate (R12-12).
+        ...ctFigure("preview"),
         periodStart: `${range.from}T00:00:00.000Z`,
         periodEnd: `${range.to}T00:00:00.000Z`,
         totalRevenue: Math.round(totalRevenue * 100) / 100,

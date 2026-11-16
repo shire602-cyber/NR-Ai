@@ -1,5 +1,6 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
+import { loadCompanyLogo } from "./pdf-logo";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
@@ -33,7 +34,10 @@ export interface InvoicePdfBranding {
   footerText?: string | null;
   termsText?: string | null;
   bankDetails?: string | null;
-  /** Only raster data: URLs are embedded (no network fetch while rendering). */
+  /**
+   * Legacy template logo (raster data: URL). The company's uploaded logo (companies.logo_path)
+   * wins; nothing is fetched from the network while rendering.
+   */
   logoUrl?: string | null;
   showLogo?: boolean | null;
 }
@@ -173,6 +177,12 @@ async function generateStandardInvoicePDF(
     (invoice as Invoice & { supplyDate?: Date | string | null }).supplyDate ??
     invoice.date;
 
+  // S1 (R14-13): the uploaded logo (companies.logo_path), template data: URL as legacy fallback.
+  const logo = await loadCompanyLogo(company, {
+    fallbackDataUrl: options.branding?.logoUrl ?? null,
+    show: options.branding?.showLogo,
+  });
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -212,14 +222,9 @@ async function generateStandardInvoicePDF(
 
       // Header band
       doc.rect(0, 0, pageWidth, 110).fill(bandColor);
-      if (
-        brand?.showLogo !== false &&
-        brand?.logoUrl &&
-        /^data:image\/(png|jpe?g);base64,/i.test(brand.logoUrl)
-      ) {
+      if (logo) {
         try {
-          const b64 = brand.logoUrl.slice(brand.logoUrl.indexOf(",") + 1);
-          doc.image(Buffer.from(b64, "base64"), px(margin, 60), 50, { fit: [60, 50] });
+          doc.image(logo, px(margin, 60), 50, { fit: [60, 50] });
         } catch {
           // An undecodable logo must never break the tax invoice.
         }

@@ -52,8 +52,10 @@ import {
 import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import {
   REVENUE_ACCOUNT_CODES,
+  vatJurisdictionForCountry,
   type RevenueAccountRole,
   type SupplyType,
+  type VatJurisdiction,
 } from "../../shared/vat-classification";
 import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
 import { allocateInvoiceNumber, type InvoiceDocType } from "./invoice-numbering.service";
@@ -283,6 +285,16 @@ export function toBase(docFils: number, rate: string): number {
 
 const dateOnly = (d: Date | string) =>
   (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
+
+/** S1: the company's VAT jurisdiction (standard rate AE 5% / SA 15%) from its address country. */
+export async function loadVatJurisdiction(companyId: string): Promise<VatJurisdiction> {
+  const [row] = await db
+    .select({ addressCountry: companies.addressCountry })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+  return vatJurisdictionForCountry(row?.addressCountry ?? null);
+}
 
 /** Compute a stored document's totals from its stored lines. */
 export function totalsForStoredDocument(
@@ -948,6 +960,9 @@ export interface CreditNoteLineInput {
   discountValue?: number | null;
   productId?: string | null;
   costCenterId?: string | null;
+  marginScheme?: boolean | null;
+  /** Margin-scheme purchase cost (major units, document currency). */
+  marginPurchaseCost?: number | null;
 }
 
 /**
@@ -959,6 +974,8 @@ export async function createAndIssueCreditNote(args: {
   companyId: string;
   userId: string;
   lines?: CreditNoteLineInput[];
+  /** S1: product lines return to stock (default) or are written off (false). */
+  restock?: boolean;
   date?: string;
   reason?: string;
 }): Promise<CreditNoteResult> {
@@ -993,7 +1010,13 @@ function assertCreditable(original: Invoice) {
 export async function insertCreditNoteDocument(
   tx: LedgerTx,
   original: Invoice,
-  args: { companyId: string; lines?: CreditNoteLineInput[]; date?: string; reason?: string }
+  args: {
+    companyId: string;
+    lines?: CreditNoteLineInput[];
+    date?: string;
+    reason?: string;
+    restock?: boolean;
+  }
 ): Promise<{ creditNote: Invoice; mode: "lines" | "remaining" }> {
   const originalLines: InvoiceLine[] = await tx
     .select()
@@ -1005,7 +1028,12 @@ export async function insertCreditNoteDocument(
   let totals: SalesDocumentTotals;
   if (args.lines && args.lines.length) {
     totals = computeSalesDocument(
-      args.lines.map((l) => ({ ...l })),
+      args.lines.map((l) => ({
+        ...l,
+        marginCostFils: l.marginScheme
+          ? toFils(Math.abs(Number(l.marginPurchaseCost ?? 0)), { rounding: "halfUp" })
+          : null,
+      })),
       { resolve: false }
     );
     docLines = args.lines.map((l) => ({ ...l, unitPrice: Number(fromFils(l.unitPriceFils)) }));
@@ -1033,6 +1061,8 @@ export async function insertCreditNoteDocument(
         discountValue: l.discountValue,
         productId: l.productId,
         costCenterId: l.costCenterId,
+        marginScheme: l.marginScheme,
+        marginPurchaseCost: l.marginPurchaseCost,
       }));
       header = { discountType: original.discountType, discountValue: original.discountValue };
       totals = totalsForStoredDocument(original, originalLines);
@@ -1091,6 +1121,7 @@ export async function insertCreditNoteDocument(
       reverseCharge: original.reverseCharge,
       placeOfSupplyEmirate: original.placeOfSupplyEmirate,
       notes: args.reason ?? null,
+      restock: args.restock ?? null,
     })
     .returning();
   for (let i = 0; i < docLines.length; i++) {
@@ -1108,6 +1139,8 @@ export async function insertCreditNoteDocument(
       netAmount: totals.lines[i] ? -Number(fromFils(totals.lines[i].netFils)) : null,
       productId: l.productId ?? null,
       costCenterId: l.costCenterId ?? null,
+      marginScheme: l.marginScheme ?? false,
+      marginPurchaseCost: l.marginScheme ? (l.marginPurchaseCost ?? null) : null,
     });
   }
   return { creditNote, mode };
@@ -1192,6 +1225,8 @@ async function issueCreditNoteLocked(
     creditNote: issued,
     lines: cnLines,
     userId,
+    // S1: "return to stock?" — false writes the goods off (no stock in, COGS stays).
+    restock: issued.restock !== false,
   });
   await refreshSettlementStatus(tx, original.id);
   return {
@@ -1230,6 +1265,7 @@ export async function createDraftCreditNote(args: {
   lines?: CreditNoteLineInput[];
   date?: string;
   reason?: string;
+  restock?: boolean;
 }): Promise<Invoice> {
   return withDocumentLock(args.invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const original = await lockInvoice(tx, args.invoiceId, args.companyId);

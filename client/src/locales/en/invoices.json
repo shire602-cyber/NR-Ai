@@ -8,6 +8,8 @@
   "invoices.convertPartial": "Bill part of this quote",
   "invoices.customerCredits": "Customer credits",
   "invoices.discountPercent": "Disc. %",
+  "invoices.einvoiceIssuesBody": "The invoice was not e-invoiced. Fix each item below, then generate the e-invoice again.",
+  "invoices.einvoiceIssuesTitle": "E-invoice for {number} needs fixing",
   "invoices.emirate.abu_dhabi": "Abu Dhabi",
   "invoices.emirate.ajman": "Ajman",
   "invoices.emirate.dubai": "Dubai",
