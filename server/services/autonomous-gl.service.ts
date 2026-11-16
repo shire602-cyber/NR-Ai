@@ -9,7 +9,7 @@ import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { recordAudit } from "./audit.service";
 import { deleteDraft, postDraft, postJournal } from "../ledger";
-import { DomainError } from "../errors";
+import { DomainError, errorCode, errorMessage } from "../errors";
 import {
   applyMatch,
   confirmPendingEntry,
@@ -201,7 +201,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
 
     // 3b. If rule found with confidence > 0.85, use it directly
     if (matchedRule && parseFloat(matchedRule.confidence) > 0.85) {
-      const matchedAccount = accounts.find((a: any) => a.id === matchedRule!.account_id);
+      const matchedAccount = accounts.find((a) => a.id === matchedRule!.account_id);
       await pool.query(
         `INSERT INTO ai_gl_queue
          (company_id, bank_transaction_id, description, amount, transaction_date,
@@ -281,9 +281,9 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
       );
 
       aiClassified++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Over the monthly AI cap: stop the scan and surface 429 instead of queueing every row blank.
-      if (err?.code === "AI_QUOTA_EXCEEDED") throw err;
+      if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
       log.error({ err, txnId: txn.id }, "Failed to classify transaction with OpenAI");
 
       // Store with zero confidence on error
@@ -299,7 +299,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          `AI classification error: ${err.message || "Unknown error"}`,
+          `AI classification error: ${errorMessage(err) || "Unknown error"}`,
           0,
           "pending_review",
         ]
@@ -487,9 +487,9 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
           amount: Number(item.amount),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error({ err, queueItemId: item.id }, "Failed to draft queue item");
-      errors.push(`Failed to draft item ${item.id}: ${err.message}`);
+      errors.push(`Failed to draft item ${item.id}: ${errorMessage(err)}`);
     }
   }
 
@@ -1020,7 +1020,7 @@ export async function scanAndClassifyAllCompanies(): Promise<void> {
   const { rows: companies } = await pool.query(
     `SELECT DISTINCT company_id FROM bank_transactions WHERE is_reconciled = false`
   );
-  const companyIds: string[] = companies.map((r: any) => r.company_id);
+  const companyIds: string[] = companies.map((r) => r.company_id);
   for (const companyId of companyIds) {
     try {
       await scanAndClassifyTransactions(companyId);

@@ -383,7 +383,7 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCompanyAccess("body"),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const { companyId, sheetUrl } = req.body;
       if (!companyId || !sheetUrl || !userId) {
         return res
@@ -413,7 +413,8 @@ export function registerIntegrationRoutes(app: Express) {
         try {
           await storage.createReceipt({
             companyId,
-            date: expenseData.date,
+            // The sheet gives a YYYY-MM-DD string; the column is a timestamp.
+            date: new Date(expenseData.date),
             merchant: expenseData.merchant,
             category: expenseData.category,
             amount: expenseData.amount,
@@ -475,7 +476,7 @@ export function registerIntegrationRoutes(app: Express) {
         dataType: "custom",
         status: "completed",
         recordCount: sheets.reduce(
-          (total: number, sheet: any) => total + (sheet.rows?.length || 0),
+          (total: number, sheet: { rows?: unknown[] }) => total + (sheet.rows?.length || 0),
           0
         ),
         externalId: result.spreadsheetId,

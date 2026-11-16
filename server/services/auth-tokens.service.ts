@@ -58,9 +58,7 @@ export async function isTokenBlacklisted(token: string): Promise<boolean> {
 
 export async function purgeExpiredBlacklistEntries(): Promise<number> {
   try {
-    const result: any = await db
-      .delete(tokenBlacklist)
-      .where(lt(tokenBlacklist.expiresAt, new Date()));
+    const result = await db.delete(tokenBlacklist).where(lt(tokenBlacklist.expiresAt, new Date()));
     const count = (result?.rowCount as number | undefined) ?? 0;
     return count;
   } catch (err) {
@@ -97,7 +95,7 @@ export async function consumePasswordResetToken(token: string): Promise<string |
 
 export async function purgeExpiredPasswordResetTokens(): Promise<number> {
   try {
-    const result: any = await db
+    const result = await db
       .delete(passwordResetTokens)
       .where(lt(passwordResetTokens.expiresAt, new Date()));
     return (result?.rowCount as number | undefined) ?? 0;
@@ -134,7 +132,7 @@ export async function consumeEmailVerificationToken(token: string): Promise<stri
 
 export async function purgeExpiredEmailVerificationTokens(): Promise<number> {
   try {
-    const result: any = await db
+    const result = await db
       .delete(emailVerificationTokens)
       .where(lt(emailVerificationTokens.expiresAt, new Date()));
     return (result?.rowCount as number | undefined) ?? 0;

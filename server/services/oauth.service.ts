@@ -3,7 +3,7 @@ import type { Request } from "express";
 import { and, eq, sql } from "drizzle-orm";
 import * as oidc from "openid-client";
 
-import { db } from "../db";
+import { db, rowsFromResult } from "../db";
 import { getEnv, isProduction } from "../config/env";
 import { authIdentities, oauthLoginStates, users } from "../../shared/schema";
 
@@ -286,8 +286,8 @@ export async function consumeOAuthState(
   const stateHash = hashOAuthSecret(rawState);
   const now = new Date();
 
-  return db.transaction(async (tx: any) => {
-    const result: any = await tx.execute(sql`
+  return db.transaction(async (tx) => {
+    const result = await tx.execute(sql`
       SELECT
         state_hash AS "stateHash",
         provider,
@@ -301,7 +301,16 @@ export async function consumeOAuthState(
       WHERE state_hash = ${stateHash}
       FOR UPDATE
     `);
-    const rows = (result?.rows ?? result) as any[];
+    const rows = rowsFromResult<{
+      stateHash: string;
+      provider: string;
+      encryptedCodeVerifier: string;
+      encryptedNonce: string;
+      nonceHash: string | null;
+      nextPath: string | null;
+      expiresAt: string | Date;
+      consumedAt: string | Date | null;
+    }>(result);
     const row = rows[0];
 
     if (!row) throw new OAuthStateError("OAuth state not found");
@@ -430,7 +439,7 @@ export async function linkAuthIdentity(
       providerSubject: profile.subject,
       providerEmail: profile.email,
       providerEmailVerified: profile.emailVerified,
-      profile: profile.claims as any,
+      profile: profile.claims,
       lastLoginAt: new Date(),
     })
     .onConflictDoNothing();
@@ -451,7 +460,7 @@ export async function markOAuthLogin(
     .set({
       lastLoginAt: now,
       ...(profile?.emailVerified ? { emailVerified: true } : {}),
-    } as any)
+    })
     .where(eq(users.id, userId));
 
   if (profile) {
@@ -460,7 +469,7 @@ export async function markOAuthLogin(
       .set({
         providerEmail: profile.email,
         providerEmailVerified: profile.emailVerified,
-        profile: profile.claims as any,
+        profile: profile.claims,
         lastLoginAt: now,
       })
       .where(

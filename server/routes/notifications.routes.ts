@@ -20,7 +20,7 @@ export function registerNotificationRoutes(app: Express) {
     "/api/notifications",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const notifications = await storage.getNotificationsByUserId(userId);
       const unreadCount = await storage.getUnreadNotificationCount(userId);
       res.json({ notifications, unreadCount });
@@ -43,7 +43,7 @@ export function registerNotificationRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const notification = await storage.markNotificationAsRead(id, userId);
       if (!notification) {
         return res.status(404).json({ message: "Notification not found" });
@@ -57,7 +57,7 @@ export function registerNotificationRoutes(app: Express) {
     "/api/notifications/read-all",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       await storage.markAllNotificationsAsRead(userId);
       res.json({ message: "All notifications marked as read" });
     })
@@ -69,7 +69,7 @@ export function registerNotificationRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const notification = await storage.dismissNotification(id, userId);
       if (!notification) {
         return res.status(404).json({ message: "Notification not found" });
@@ -83,7 +83,7 @@ export function registerNotificationRoutes(app: Express) {
     "/api/notifications",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       // Validate input with comprehensive schema
       const validationSchema = z.object({

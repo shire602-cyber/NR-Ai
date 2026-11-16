@@ -5,6 +5,7 @@
 
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { createLogger } from "../config/logger";
+import type { QueryResultRow } from "pg";
 import type { CompanyRuleSnapshot } from "./receipt-classifier.service";
 
 const log = createLogger("vendor-memory");
@@ -30,12 +31,12 @@ export function findTrnRule(
 }
 
 export interface VendorMemoryDeps {
-  query(sql: string, params: unknown[]): Promise<{ rows: Array<Record<string, any>> }>;
+  query(sql: string, params: unknown[]): Promise<{ rows: QueryResultRow[] }>;
 }
 
 async function defaultDeps(): Promise<VendorMemoryDeps> {
   const { pool } = await import("../db");
-  return { query: (sql, params) => (pool as any).query(sql, params) };
+  return { query: (sql, params) => pool.query(sql, params) };
 }
 
 /** Remember (or reinforce) the account a user accepted for a supplier TRN. */

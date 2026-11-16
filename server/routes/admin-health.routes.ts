@@ -16,8 +16,9 @@ import { createLogger } from "../config/logger";
 import { getPoolStats, pingDb, pool } from "../db";
 import { monitoringConfigured } from "../services/monitoring";
 import { ssoStatus } from "./auth.routes";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import * as schema from "../../shared/schema";
+import { errorMessage } from "../errors";
 
 const logger = createLogger("admin-health-routes");
 
@@ -25,8 +26,8 @@ export function registerAdminHealthRoutes(app: Express): void {
   const router = Router();
 
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
-  router.use("/admin", authMiddleware as any);
-  router.use("/admin", adminMiddleware as any);
+  router.use("/admin", authMiddleware);
+  router.use("/admin", adminMiddleware);
 
   // =========================================
   // GET /api/admin/schema-health
@@ -43,11 +44,11 @@ export function registerAdminHealthRoutes(app: Express): void {
       for (const exported of Object.values(schema)) {
         let cfg;
         try {
-          cfg = getTableConfig(exported as any);
+          cfg = getTableConfig(exported as PgTable);
         } catch {
           continue; // not a pgTable export (relation, enum, zod schema, ...)
         }
-        const cols = new Set<string>(cfg.columns.map((c: any) => c.name as string));
+        const cols = new Set<string>(cfg.columns.map((c) => c.name));
         expected.set(cfg.name, cols);
       }
       // Raw-SQL tables managed outside Drizzle.
@@ -213,9 +214,9 @@ export function registerAdminHealthRoutes(app: Express): void {
               lastActivity,
               nextDeadline,
             };
-          } catch (err: any) {
+          } catch (err: unknown) {
             logger.error(
-              { companyId: company.id, error: err.message },
+              { companyId: company.id, error: errorMessage(err) },
               "Error computing health for company"
             );
             return {
@@ -328,9 +329,9 @@ export function registerAdminHealthRoutes(app: Express): void {
               status,
             });
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           logger.error(
-            { companyId: company.id, error: err.message },
+            { companyId: company.id, error: errorMessage(err) },
             "Error fetching deadlines for company"
           );
         }

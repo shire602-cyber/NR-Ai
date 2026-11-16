@@ -528,7 +528,7 @@ export function registerTeamRoutes(app: Express) {
             userType: "customer",
             isAdmin: false,
             passwordHash,
-          } as any);
+          });
           userId = user.id;
         }
         createdUser = true;

@@ -316,8 +316,10 @@ export function AppSidebar() {
   // Auto-expand the group that owns the current route when navigating
   useEffect(() => {
     const group = getGroupForRoute(location, allGroups);
-    if (group && group !== expandedGroup) {
-      setExpandedGroup(group);
+    if (group) {
+      // Syncs the open group with the router location (an external system).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExpandedGroup((current) => (current === group ? current : group));
       try {
         localStorage.setItem(SIDEBAR_LS_KEY, group);
       } catch {

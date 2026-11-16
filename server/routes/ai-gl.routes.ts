@@ -12,6 +12,7 @@ import {
 import { createLogger } from "../config/logger";
 import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
 import { aiErrorBody } from "../services/ai/usage-meter";
+import { errorCode, errorMessage } from "../errors";
 
 const log = createLogger("ai-gl-routes");
 
@@ -32,7 +33,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const status = req.query.status as string | undefined;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -53,7 +54,7 @@ export function registerAIGLRoutes(app: Express) {
         LEFT JOIN accounts ua ON ua.id = q.user_selected_account_id
         WHERE q.company_id = $1
       `;
-      const params: any[] = [companyId];
+      const params: unknown[] = [companyId];
 
       if (status) {
         params.push(status);
@@ -80,7 +81,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -109,7 +110,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -139,7 +140,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { accountId } = req.body;
 
       if (!accountId) {
@@ -175,7 +176,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -188,9 +189,9 @@ export function registerAIGLRoutes(app: Express) {
       let scanResult;
       try {
         scanResult = await scanAndClassifyTransactions(companyId);
-      } catch (err: any) {
-        if (err?.code === "AI_QUOTA_EXCEEDED") {
-          return res.status(429).json({ message: err.message, ...aiErrorBody(err) });
+      } catch (err: unknown) {
+        if (errorCode(err) === "AI_QUOTA_EXCEEDED") {
+          return res.status(429).json({ message: errorMessage(err), ...aiErrorBody(err) });
         }
         throw err;
       }
@@ -219,7 +220,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -246,7 +247,7 @@ export function registerAIGLRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { confidenceThreshold } = req.body;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);

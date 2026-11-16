@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowRight, FileSpreadsheet, Pin, RotateCcw, Search, Send, Sparkles } from "lucide-react";
@@ -354,17 +354,22 @@ export function ReportLaunchPicker({
       getPreferredReportDeliveryAutomationCommand(persona)
     );
 
-  useEffect(() => {
+  // Follow the persona prop, then reload that persona's stored preferences
+  // (adjusting state during render instead of in effects).
+  const [propPersona, setPropPersona] = useState<ReportPersona>(persona);
+  if (propPersona !== persona) {
+    setPropPersona(persona);
     setSelectedPersona(persona);
-  }, [persona]);
-
-  useEffect(() => {
+  }
+  const [preferencePersona, setPreferencePersona] = useState<ReportPersona>(persona);
+  if (preferencePersona !== selectedPersona) {
+    setPreferencePersona(selectedPersona);
     setQuery(getPreferredReportWorkflowSearch(selectedPersona));
     setStoredWorkflowGapFilter(getPreferredReportWorkflowGapFilter(selectedPersona));
     setStoredDeliveryAutomationCommand(
       getPreferredReportDeliveryAutomationCommand(selectedPersona)
     );
-  }, [selectedPersona]);
+  }
 
   const updateLauncherQuery = useCallback(
     (value: string) => {

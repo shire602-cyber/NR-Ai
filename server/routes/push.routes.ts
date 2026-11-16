@@ -77,7 +77,7 @@ export function registerPushRoutes(app: Express) {
     requireCustomer,
     strictBody(subscribeBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { endpoint, keys } = parsedBody<z.output<typeof subscribeBody>>(req);
       await assertSafePushEndpoint(endpoint);
       const subscription = await storage.createPushSubscription({
@@ -98,7 +98,7 @@ export function registerPushRoutes(app: Express) {
     requireCustomer,
     strictBody(unsubscribeBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { endpoint } = parsedBody<z.output<typeof unsubscribeBody>>(req);
       const count = await storage.deactivatePushSubscriptionByEndpoint(userId, endpoint);
       logger.info({ userId, count }, "User unsubscribed from push notifications");
@@ -111,7 +111,7 @@ export function registerPushRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const preferences = await storage.getNotificationPreferences(userId);
       const push = getCapability("push");
       const email = getCapability("email");
@@ -151,7 +151,7 @@ export function registerPushRoutes(app: Express) {
     requireCustomer,
     strictBody(notificationPreferencesBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<NotificationPreferencesBody>(req);
       const { typePreferences, ...rest } = body;
       const preferences = await storage.upsertNotificationPreferences(userId, {

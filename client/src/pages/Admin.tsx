@@ -111,6 +111,7 @@ export default function Admin() {
       {} as Record<string, string>
     );
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
     setSystemSettings((prev) => ({
       ...prev,
       defaultCurrency: settingsMap["system.defaultCurrency"] || prev.defaultCurrency,

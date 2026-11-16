@@ -30,7 +30,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       duration: `${duration}ms`,
       ip: req.ip,
       userAgent: req.get("user-agent"),
-      userId: (req as any).user?.id,
+      userId: req.user?.id,
     };
 
     const msg = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;

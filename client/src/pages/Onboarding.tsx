@@ -153,7 +153,10 @@ function CustomerOnboarding() {
     currency: "AED",
   });
 
-  useEffect(() => {
+  // Hydrate the form once per company (not on every refetch, which would wipe edits).
+  const [hydratedCompanyId, setHydratedCompanyId] = useState<string | undefined>(undefined);
+  if (company?.id !== hydratedCompanyId) {
+    setHydratedCompanyId(company?.id);
     if (company) {
       setCompanyForm({
         name: company.name ?? "",
@@ -170,13 +173,14 @@ function CustomerOnboarding() {
         setCurrentStep(saved as Step);
       }
     }
-  }, [company?.id]);
+  }
 
+  const onboardingCompanyId = company?.id;
   useEffect(() => {
-    if (company) {
-      localStorage.setItem(STORAGE_KEY(company.id), currentStep);
+    if (onboardingCompanyId) {
+      localStorage.setItem(STORAGE_KEY(onboardingCompanyId), currentStep);
     }
-  }, [currentStep, company?.id]);
+  }, [currentStep, onboardingCompanyId]);
 
   const { data: accountsData } = useQuery<{ id: string; nameEn: string; type: string }[]>({
     queryKey: [`/api/companies/${company?.id}/accounts`],

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReportLaunchDeliveryPreview } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
@@ -107,15 +107,23 @@ export function useCustomerDashboardModel() {
       reportPersonaWorkspaces[0]
     );
   }, [preferredReportPersona]);
-  useEffect(() => {
+  // Acknowledgements belong to one persona + company: reset them when either changes.
+  const acknowledgementScope = `${preferredReportWorkspace.persona}:${selectedCompanyId ?? ""}`;
+  const [acknowledgedScope, setAcknowledgedScope] = useState(acknowledgementScope);
+  if (acknowledgedScope !== acknowledgementScope) {
+    setAcknowledgedScope(acknowledgementScope);
     setAcknowledgedDashboardReportDeliveryHandoffGaps({});
-  }, [preferredReportWorkspace.persona, selectedCompanyId]);
+  }
   const preferredReportWorkflowSearch = useMemo(
     () => getPreferredReportWorkflowSearch(preferredReportWorkspace.persona).trim(),
+    // The revision re-reads the localStorage-backed preference after a save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [preferredReportWorkspace.persona, reportWorkflowPreferenceRevision]
   );
   const preferredReportWorkflowGapFilter = useMemo(
     () => getPreferredReportWorkflowGapFilter(preferredReportWorkspace.persona),
+    // The revision re-reads the localStorage-backed preference after a save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [preferredReportWorkspace.persona, reportWorkflowPreferenceRevision]
   );
   const normalizedPreferredReportWorkflowSearch = preferredReportWorkflowSearch.toLowerCase();
@@ -418,9 +426,9 @@ export function useCustomerDashboardModel() {
     preferredReportWorkspace.persona,
     preferredWorkspaceCatalogReports,
     reportCatalogDiscoveryQuery.data?.summary.automationPlaybookCount,
-    reportCatalogDiscoveryQuery.data?.summary.liveReportCount,
     selectedReportPersonaSummary?.comparisonPresetCount,
     selectedReportPersonaSummary?.packTemplateCount,
+    selectedReportPersonaSummary?.readyReportCount,
   ]);
   const preferredReportPackTemplates = useMemo(() => {
     return reportPackTemplates

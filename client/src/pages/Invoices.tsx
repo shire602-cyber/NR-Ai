@@ -93,14 +93,13 @@ import {
   XCircle,
   AlertCircle,
   FileSpreadsheet,
-  Send,
   DollarSign,
   RefreshCw,
   RotateCcw,
   X,
 } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
-import type { Invoice, Company, InvoicePayment } from "@shared/schema";
+import type { Invoice, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { downloadInvoicePDF } from "@/lib/pdf-invoice";
 import {
@@ -723,7 +722,7 @@ export default function Invoices() {
 
       // Proceed with save directly - similar check removed for better UX
       await performInvoiceSave(invoiceData, editingInvoice);
-    } catch (error) {
+    } catch {
       // Error is handled by mutation callbacks
     }
   };

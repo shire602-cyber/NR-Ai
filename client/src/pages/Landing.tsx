@@ -54,12 +54,10 @@ import {
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
-  const [_mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   useEffect(() => {
-    setMounted(true);
     const interval = setInterval(() => {
       setActiveTestimonial((prev) => (prev + 1) % 3);
     }, 5000);

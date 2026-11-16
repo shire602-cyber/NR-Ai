@@ -42,7 +42,7 @@ export async function allocateInvoiceNumber(
   executor: Executor = db
 ): Promise<string> {
   const year = date.getUTCFullYear();
-  const result: any = await executor.execute(sql`
+  const result = await executor.execute(sql`
     INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
       VALUES (${companyId}, ${docType}, ${year}, 1, now())
     ON CONFLICT (company_id, doc_type, year)
@@ -63,7 +63,7 @@ export async function peekNextInvoiceNumber(
   executor: Executor = db
 ): Promise<string> {
   const year = date.getUTCFullYear();
-  const result: any = await executor.execute(sql`
+  const result = await executor.execute(sql`
     SELECT last_value FROM invoice_number_sequences
     WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}
   `);

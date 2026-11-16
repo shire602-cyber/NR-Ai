@@ -132,7 +132,7 @@ export async function ingestRawMessages(args: {
         receivedAt: normalized.receivedAt,
         attachmentCount: normalized.attachments.length,
         status: "received",
-      } as any);
+      });
 
       let seen = hashCache.get(normalized.companyId);
       if (!seen) {
@@ -152,7 +152,7 @@ export async function ingestRawMessages(args: {
           docKind: att.docKind,
           ocrStatus: duplicate ? "skipped" : "pending",
           isDuplicate: duplicate,
-        } as any);
+        });
         if (duplicate) {
           summary.duplicatesSkipped++;
           continue;

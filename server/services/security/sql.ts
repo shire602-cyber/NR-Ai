@@ -10,5 +10,5 @@ export async function sql<T = Record<string, unknown>>(
   text: string,
   params: unknown[] = []
 ): Promise<SqlResult<T>> {
-  return (await pool.query(text, params)) as SqlResult<T>;
+  return (await pool.query(text, params)) as unknown as SqlResult<T>;
 }

@@ -204,7 +204,7 @@ export function globalErrorHandler(
         requestId: req.id,
         method: req.method,
         url: req.url,
-        userId: (req as any).user?.id,
+        userId: req.user?.id,
         code: err.code,
         operational: err.isOperational,
       });
@@ -219,14 +219,14 @@ export function globalErrorHandler(
     requestId: req.id,
     method: req.method,
     url: req.url,
-    userId: (req as any).user?.id,
+    userId: req.user?.id,
     unhandled: true,
   });
 
   // Platform admins get the underlying message even in production — they own
   // the deployment and need it to diagnose schema/data drift without log
   // access. Regular users still get the opaque message + requestId.
-  const isAdmin = Boolean((req as any).user?.isAdmin);
+  const isAdmin = Boolean(req.user?.isAdmin);
   res.status(500).json(
     withRequestId(
       {
@@ -259,7 +259,7 @@ export function notFoundHandler(req: Request, res: Response): void {
  * Usage: app.get('/route', asyncHandler(async (req, res) => { ... }));
  */
 export function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);

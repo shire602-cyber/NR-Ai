@@ -9,9 +9,10 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { db } from "../db";
-import { eq, and, desc, gte, lte } from "drizzle-orm";
+import { eq, and, desc, gte, lte, type SQL } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
+import { errorMessage } from "../errors";
 
 const logger = createLogger("admin-routes");
 
@@ -34,12 +35,15 @@ async function seedChartOfAccounts(
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
 
   try {
-    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    const createdAccounts = await storage.createBulkAccounts(defaultAccounts);
     logger.info({ companyId, count: createdAccounts.length }, "Created chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
-  } catch (error: any) {
-    if (error.message?.includes("PARTIAL_INSERT")) {
-      logger.error({ companyId, err: error.message }, "Partial insert detected during COA seed");
+  } catch (error: unknown) {
+    if (errorMessage(error)?.includes("PARTIAL_INSERT")) {
+      logger.error(
+        { companyId, err: errorMessage(error) },
+        "Partial insert detected during COA seed"
+      );
       throw new Error(
         "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
@@ -56,8 +60,8 @@ export function registerAdminRoutes(app: Express): void {
   const router = Router();
 
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
-  router.use("/admin", authMiddleware as any);
-  router.use("/admin", adminMiddleware as any);
+  router.use("/admin", authMiddleware);
+  router.use("/admin", adminMiddleware);
 
   // =====================================
   // ADMIN SETTINGS
@@ -303,7 +307,7 @@ export function registerAdminRoutes(app: Express): void {
   router.post(
     "/admin/clients",
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const company = await storage.createCompany({
         name: req.body.name,
@@ -346,7 +350,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/clients/:clientId",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const company = await storage.updateCompany(clientId, req.body);
 
@@ -369,7 +373,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/clients/:clientId",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const company = await storage.getCompany(clientId);
       if (!company) {
@@ -412,9 +416,9 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/users/:userId",
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
-      const updates: any = {};
+      const updates: { name?: string; email?: string; isAdmin?: boolean } = {};
       if (req.body.name) updates.name = req.body.name;
       if (req.body.email) updates.email = req.body.email;
       if (typeof req.body.isAdmin === "boolean") updates.isAdmin = req.body.isAdmin;
@@ -441,7 +445,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/users/:userId",
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       // Prevent admin from deleting themselves
       if (targetUserId === adminUserId) {
@@ -485,7 +489,7 @@ export function registerAdminRoutes(app: Express): void {
   router.post(
     "/admin/invitations",
     asyncHandler(async (req: Request, res: Response) => {
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       // Check if email already has pending invitation
       const existing = await storage.getInvitationByEmail(req.body.email);
@@ -530,7 +534,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/invitations/:invitationId/revoke",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       const invitation = await storage.updateInvitation(invitationId, { status: "revoked" });
 
@@ -552,7 +556,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/invitations/:invitationId/resend",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       // Generate new token and extend expiry
       const token = crypto.randomBytes(32).toString("hex");
@@ -632,7 +636,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/clients/:clientId/notes",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const authorId = (req as any).user.id;
+      const authorId = req.user!.id;
 
       const note = await storage.createClientNote({
         companyId: clientId,
@@ -681,11 +685,11 @@ export function registerAdminRoutes(app: Express): void {
           .json({ message: "Invalid data format. Expected array of client records." });
       }
 
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const results = {
-        success: [] as any[],
-        errors: [] as any[],
-        invitations: [] as any[],
+        success: [] as Array<Record<string, unknown>>,
+        errors: [] as Array<Record<string, unknown>>,
+        invitations: [] as Array<Record<string, unknown>>,
       };
 
       for (const row of data) {
@@ -758,16 +762,16 @@ export function registerAdminRoutes(app: Express): void {
                 companyName: company.name,
                 inviteLink: `/register?invite=${token}`,
               });
-            } catch (invErr: any) {
+            } catch (invErr: unknown) {
               // Don't fail the whole import if invitation fails
               logger.error(
-                { email: row.email, err: invErr.message },
+                { email: row.email, err: errorMessage(invErr) },
                 "Failed to create invitation"
               );
             }
           }
-        } catch (rowError: any) {
-          results.errors.push({ row, error: rowError.message });
+        } catch (rowError: unknown) {
+          results.errors.push({ row, error: errorMessage(rowError) });
         }
       }
 
@@ -794,16 +798,16 @@ export function registerAdminRoutes(app: Express): void {
       let parsed;
       try {
         parsed = await parseSpreadsheet(buffer, fileName);
-      } catch (err: any) {
-        return res.status(400).json({ message: `Could not parse file: ${err.message}` });
+      } catch (err: unknown) {
+        return res.status(400).json({ message: `Could not parse file: ${errorMessage(err)}` });
       }
       const jsonData = parsed.rows;
       const headers = parsed.headers;
 
       // Map data to expected format based on column headers
-      const mappedData = jsonData.map((row: any) => {
+      const mappedData = jsonData.map((row) => {
         // Try to intelligently map columns
-        const mapped: any = {};
+        const mapped: Record<string, unknown> = {};
 
         // Name mapping (look for various name columns)
         mapped.name =
@@ -954,7 +958,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/clients/:clientId/documents",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const documentData = {
         companyId: clientId,
@@ -1010,7 +1014,7 @@ export function registerAdminRoutes(app: Express): void {
       const limit = Math.min(parseInt(limitParam ?? "50", 10), 500);
       const offset = (Math.max(parseInt(page ?? "1", 10), 1) - 1) * limit;
 
-      const conditions: any[] = [];
+      const conditions: SQL[] = [];
       if (filterUserId) conditions.push(eq(activityLogs.userId, filterUserId));
       if (action) conditions.push(eq(activityLogs.action, action));
       if (entityType) conditions.push(eq(activityLogs.entityType, entityType));

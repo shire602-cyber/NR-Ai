@@ -19,7 +19,7 @@ export function registerOnboardingRoutes(app: Express) {
     "/api/onboarding",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       let onboarding = await storage.getUserOnboarding(userId);
 
       // Create default onboarding if not exists
@@ -51,7 +51,7 @@ export function registerOnboardingRoutes(app: Express) {
     "/api/onboarding",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       // Calculate current step based on completed steps
       const { tourDismissed, ...data } = req.body ?? {};
@@ -95,7 +95,7 @@ export function registerOnboardingRoutes(app: Express) {
     "/api/onboarding/complete-step",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       const validationSchema = z.object({
         step: z.enum([
@@ -167,7 +167,7 @@ export function registerOnboardingRoutes(app: Express) {
     "/api/onboarding/dismiss-tip",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       // Validate input
       const validationSchema = z.object({
@@ -245,7 +245,7 @@ export function registerOnboardingRoutes(app: Express) {
     "/api/onboarding/optional-steps",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { rows } = await pq<{
         company_id: string;
         trn: string | null;
@@ -273,7 +273,7 @@ export function registerOnboardingRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { page } = req.query;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       const onboarding = await storage.getUserOnboarding(userId);
       const dismissedTips = onboarding?.dismissedTips ? JSON.parse(onboarding.dismissedTips) : [];

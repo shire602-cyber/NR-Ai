@@ -30,8 +30,8 @@ import {
 // Centralised company-access check. Returns the company on success or null
 // after writing the appropriate error response, so callers can early-return.
 async function requireCompanyAccess(req: Request, res: Response, companyId: string) {
-  const userId = (req as any).user?.id;
-  const firmRole = ((req as any).user?.firmRole ?? null) as string | null;
+  const userId = req.user?.id;
+  const firmRole = (req.user?.firmRole ?? null) as string | null;
   if (!userId) {
     res.status(401).json({ message: "Authentication required" });
     return null;

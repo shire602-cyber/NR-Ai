@@ -61,6 +61,11 @@ interface NLGatewayResponse {
   timestamp: string;
 }
 
+/** Chat message id; called from event handlers only, never during render. */
+function messageId(prefix: "user" | "assistant"): string {
+  return `${prefix}-${Date.now()}`;
+}
+
 export default function SmartAssistant() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -107,7 +112,7 @@ export default function SmartAssistant() {
       setMessages((prev) => [
         ...prev,
         {
-          id: `assistant-${Date.now()}`,
+          id: messageId("assistant"),
           role: "assistant",
           content: data.response,
           timestamp: new Date(data.timestamp),
@@ -130,7 +135,7 @@ export default function SmartAssistant() {
     if (!input.trim() || nlMutation.isPending) return;
 
     const userMessage: Message = {
-      id: `user-${Date.now()}`,
+      id: messageId("user"),
       role: "user",
       content: input,
       timestamp: new Date(),
@@ -145,7 +150,7 @@ export default function SmartAssistant() {
     if (nlMutation.isPending) return;
 
     const userMessage: Message = {
-      id: `user-${Date.now()}`,
+      id: messageId("user"),
       role: "user",
       content: question,
       timestamp: new Date(),

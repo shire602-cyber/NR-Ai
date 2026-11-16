@@ -33,6 +33,7 @@ import {
   formatProviderFailures,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
+import { errorMessage } from "../errors";
 
 const router = Router();
 router.use(authMiddleware);
@@ -72,7 +73,18 @@ Extract receipt data and return a JSON object with EXACTLY these fields:
 }
 Return ONLY valid JSON. No markdown.`;
 
-function extractJson(raw: string): any {
+/** Untrusted model JSON: every field is coerced before use. */
+interface BulkOcrJson {
+  merchant?: unknown;
+  date?: unknown;
+  subtotal?: unknown;
+  vatPercent?: unknown;
+  vatAmount?: unknown;
+  currency?: unknown;
+  category?: unknown;
+}
+
+function extractJson(raw: string): BulkOcrJson {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
 }
@@ -175,14 +187,19 @@ async function runOCR(
   }
 
   const result = extractJson(rawText);
-  const subtotal = parseFloat(result.subtotal) || 0;
-  const parsedVatPercent = parseFloat(result.vatPercent);
+  const subtotal = parseFloat(String(result.subtotal)) || 0;
+  const parsedVatPercent = parseFloat(String(result.vatPercent));
   const vatPercent = Number.isFinite(parsedVatPercent) ? parsedVatPercent : 5;
   const vatAmount =
-    parseFloat(result.vatAmount) || parseFloat(((subtotal * vatPercent) / 100).toFixed(2));
-  const category = BULK_VALID_CATEGORIES.includes(result.category) ? result.category : "Other";
+    parseFloat(String(result.vatAmount)) || parseFloat(((subtotal * vatPercent) / 100).toFixed(2));
+  const category =
+    typeof result.category === "string" && BULK_VALID_CATEGORIES.includes(result.category)
+      ? result.category
+      : "Other";
   let parsedDate = new Date().toISOString().split("T")[0];
-  if (result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) parsedDate = result.date;
+  if (typeof result.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) {
+    parsedDate = result.date;
+  }
 
   return {
     merchant: result.merchant ? String(result.merchant).slice(0, 200) : "Unknown Merchant",
@@ -216,7 +233,7 @@ router.post(
   requireFirmPermission("firm.clients.write"),
   strictBody(bulkOcrSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId } = (req as any).user;
+    const { id: userId } = req.user!;
     const { items } = parsedBody<z.output<typeof bulkOcrSchema>>(req);
     await resolveBulkTargets(
       firmContextOf(res),
@@ -261,12 +278,12 @@ router.post(
           success: true,
           receiptId: receipt.id,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         results.push({
           companyId: item.companyId,
           filename: item.filename,
           success: false,
-          error: err?.message || "OCR failed",
+          error: errorMessage(err) || "OCR failed",
         });
       }
     }
@@ -426,12 +443,12 @@ router.post(
           invoiceId: invoice.id,
           invoiceNumber,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         results.push({
           companyId: company.id,
           companyName: company.name,
           success: false,
-          error: err?.message || "Invoice creation failed",
+          error: errorMessage(err) || "Invoice creation failed",
         });
       }
     }
@@ -533,11 +550,11 @@ router.post(
 router.get(
   "/bulk/bank-import-status",
   asyncHandler(async (req: Request, res: Response) => {
-    const { id: userId, firmRole } = (req as any).user;
+    const { id: userId, firmRole } = req.user!;
     const accessibleIds = await getAccessibleCompanyIds(
       userId,
       firmRole ?? "",
-      (req as any).user?.isAdmin === true
+      req.user?.isAdmin === true
     );
 
     let clientCompanies: (typeof companies.$inferSelect)[];

@@ -13,12 +13,16 @@ let stripe: Stripe | null = null;
 export function getStripe(): Stripe | null {
   if (stripe) return stripe;
   const env = getEnv();
-  const key = (env as any).STRIPE_SECRET_KEY;
+  const key = env.STRIPE_SECRET_KEY;
   if (!key) {
     log.warn("Stripe not configured — STRIPE_SECRET_KEY not set");
     return null;
   }
-  stripe = new Stripe(key, { apiVersion: "2024-12-18.acacia" as any });
+  // Pinned to the API version the webhook handlers were written against, which is
+  // older than the SDK's LatestApiVersion literal.
+  stripe = new Stripe(key, {
+    apiVersion: "2024-12-18.acacia" as unknown as Stripe.LatestApiVersion,
+  });
   return stripe;
 }
 
@@ -41,7 +45,17 @@ const PLAN_PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   },
 };
 
-const PLAN_LIMITS: Record<string, any> = {
+interface PlanLimits {
+  maxUsers: number;
+  maxInvoices: number;
+  maxReceipts: number;
+  aiCreditsRemaining: number;
+  maxCompanies: number;
+  maxStorageMb: number;
+  aiCreditsPerMonth: number;
+}
+
+const PLAN_LIMITS: Record<string, PlanLimits> = {
   free: {
     maxUsers: 1,
     maxInvoices: 20,
@@ -291,13 +305,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     planName: planId.charAt(0).toUpperCase() + planId.slice(1),
     status: "active",
     stripeCustomerId:
-      typeof session.customer === "string"
-        ? session.customer
-        : (session.customer as any)?.id || undefined,
+      typeof session.customer === "string" ? session.customer : session.customer?.id || undefined,
     stripeSubscriptionId:
       typeof session.subscription === "string"
         ? session.subscription
-        : (session.subscription as any)?.id || undefined,
+        : session.subscription?.id || undefined,
     billingCycle,
     currentPeriodStart: now,
     currentPeriodEnd: periodEnd,
@@ -318,6 +330,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
 }
 
 async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void> {
+  // The pinned API version still sends the period bounds on the subscription itself.
+  const subPeriod = sub as Stripe.Subscription & {
+    current_period_start: number;
+    current_period_end: number;
+  };
   const companyId = sub.metadata?.companyId;
   if (!companyId) return;
 
@@ -340,8 +357,8 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription): Promise<void
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
     seatCount: sub.items?.data?.[0]?.quantity ?? subscription.seatCount ?? 1,
     cancelAtPeriodEnd: sub.cancel_at_period_end,
-    currentPeriodStart: new Date((sub as any).current_period_start * 1000),
-    currentPeriodEnd: new Date((sub as any).current_period_end * 1000),
+    currentPeriodStart: new Date(subPeriod.current_period_start * 1000),
+    currentPeriodEnd: new Date(subPeriod.current_period_end * 1000),
   });
 }
 

@@ -332,7 +332,7 @@ export default function FirmCommandCenter() {
 
   // ─── Derived data ──────────────────────────────────────────────────
   const summary = dashboardQuery.data?.summary;
-  const allClients = healthQuery.data ?? [];
+  const allClients = useMemo(() => healthQuery.data ?? [], [healthQuery.data]);
   const filteredClients = useMemo(
     () =>
       allClients.filter((c) =>

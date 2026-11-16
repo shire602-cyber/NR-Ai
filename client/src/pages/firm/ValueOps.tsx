@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -312,11 +312,14 @@ export default function ValueOps() {
     queryKey: ["/api/firm/value-ops/review-queue"],
   });
 
-  useEffect(() => {
+  // Open the audit pack for a `?client=` deep link whenever the location changes.
+  const [packLocation, setPackLocation] = useState<string | null>(null);
+  if (packLocation !== location) {
+    setPackLocation(location);
     const [, queryString] = location.split("?");
     const client = new URLSearchParams(queryString ?? "").get("client");
     if (client) setSelectedPack({ companyId: client, type: "audit" });
-  }, [location]);
+  }
 
   const selectedClient = useMemo(
     () =>

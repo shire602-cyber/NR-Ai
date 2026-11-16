@@ -223,7 +223,7 @@ export function registerPortalRoutes(app: Express) {
     "/api/companies/:companyId/activity-logs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.params;
       const limit = parseInt(req.query.limit as string) || 100;
 
@@ -256,7 +256,7 @@ export function registerPortalRoutes(app: Express) {
   // =====================================
 
   const vaultDocument = async (req: Request) => {
-    const userId = (req as any).user?.id;
+    const userId = req.user!.id;
     const document = /^[0-9a-f-]{36}$/i.test(req.params.documentId)
       ? await storage.getDocument(req.params.documentId)
       : undefined;
@@ -272,7 +272,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -298,7 +298,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -400,7 +400,7 @@ export function registerPortalRoutes(app: Express) {
         companyId: document.companyId,
         documentId: document.id,
         file,
-        uploadedBy: (req as any).user.id,
+        uploadedBy: req.user!.id,
         note: meta.note ?? null,
       });
       res.status(201).json(version);
@@ -421,7 +421,7 @@ export function registerPortalRoutes(app: Express) {
           companyId: document.companyId,
           documentId: document.id,
           version,
-          userId: (req as any).user.id,
+          userId: req.user!.id,
         })
       );
     })
@@ -433,7 +433,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const document = await vaultDocument(req);
-      await softDeleteVaultDocument(document.companyId, document.id, (req as any).user.id);
+      await softDeleteVaultDocument(document.companyId, document.id, req.user!.id);
       res.json({ success: true, deleted: "soft" });
     })
   );
@@ -454,7 +454,7 @@ export function registerPortalRoutes(app: Express) {
 
   const statementAccess = async (req: Request) => {
     const { companyId } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user!.id;
     if (!(await storage.hasCompanyAccess(userId, companyId))) {
       throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
     }
@@ -597,7 +597,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -615,7 +615,7 @@ export function registerPortalRoutes(app: Express) {
     strictBody(createArchiveBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<z.output<typeof createArchiveBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -659,7 +659,7 @@ export function registerPortalRoutes(app: Express) {
     strictBody(updateArchiveBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<z.output<typeof updateArchiveBody>>(req);
 
       const existing = await storage.getTaxReturnArchiveItem(id);
@@ -707,7 +707,7 @@ export function registerPortalRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const existing = await storage.getTaxReturnArchiveItem(id);
       if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
         throw new DomainError("TAX_RETURN_NOT_FOUND", 404, undefined, "Tax return not found");
@@ -737,7 +737,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -754,7 +754,7 @@ export function registerPortalRoutes(app: Express) {
     strictBody(createTaskBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<z.output<typeof createTaskBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -808,7 +808,7 @@ export function registerPortalRoutes(app: Express) {
     strictBody(updateTaskBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const { taskId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<z.output<typeof updateTaskBody>>(req);
 
       const existing = await storage.getComplianceTask(taskId);
@@ -843,7 +843,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { taskId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const existing = await storage.getComplianceTask(taskId);
       if (!existing) {
         return res.status(404).json({ message: "Compliance task not found" });
@@ -867,7 +867,7 @@ export function registerPortalRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -885,7 +885,7 @@ export function registerPortalRoutes(app: Express) {
     strictBody(createMessageBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<z.output<typeof createMessageBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);

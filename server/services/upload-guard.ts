@@ -13,6 +13,7 @@
 import { createHash } from "crypto";
 import net from "net";
 import { createLogger } from "../config/logger";
+import type sharpType from "sharp";
 
 const log = createLogger("upload-guard");
 
@@ -360,10 +361,14 @@ export function getUploadScanStatus(
 
 // ---- optional sharp ---------------------------------------------------------------
 
-async function loadSharp(): Promise<any | null> {
+type SharpFactory = typeof sharpType;
+
+async function loadSharp(): Promise<SharpFactory | null> {
   try {
     const name = "sharp";
-    const mod: any = await import(/* @vite-ignore */ name);
+    const mod = (await import(/* @vite-ignore */ name)) as SharpFactory & {
+      default?: SharpFactory;
+    };
     return mod.default ?? mod;
   } catch {
     return null;

@@ -237,7 +237,7 @@ export function registerReportRoutes(app: Express) {
     "/api/companies/:id/reports/balance-summaries",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const companyId = req.params.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -304,7 +304,7 @@ export function registerReportRoutes(app: Express) {
 
       res.json({
         generatedAt: new Date().toISOString(),
-        customers: customerResult.rows.map((row: any) => ({
+        customers: customerResult.rows.map((row) => ({
           name: row.customer_name || "Unknown Customer",
           currency: row.currency || "AED",
           invoiceCount: Number(row.invoice_count) || 0,
@@ -316,7 +316,7 @@ export function registerReportRoutes(app: Express) {
           overdueBalanceAed: Number(row.overdue_balance_aed) || 0,
           maxDaysOverdue: Number(row.max_days_overdue) || 0,
         })),
-        vendors: vendorResult.rows.map((row: any) => ({
+        vendors: vendorResult.rows.map((row) => ({
           name: row.vendor_name || "Unknown Vendor",
           currency: row.currency || "AED",
           billCount: Number(row.bill_count) || 0,
@@ -337,7 +337,7 @@ export function registerReportRoutes(app: Express) {
     "/api/companies/:id/reports/sales-product-service",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const companyId = req.params.id;
       const { startDate, endDate, from, to } = req.query as {
         startDate?: string;

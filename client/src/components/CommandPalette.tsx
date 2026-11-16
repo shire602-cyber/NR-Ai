@@ -319,9 +319,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     })
   );
 
-  useEffect(() => {
+  // Acknowledgements belong to one company: reset them when it changes.
+  const [acknowledgementCompanyId, setAcknowledgementCompanyId] = useState(selectedCompanyId);
+  if (acknowledgementCompanyId !== selectedCompanyId) {
+    setAcknowledgementCompanyId(selectedCompanyId);
     setAcknowledgedPaletteDeliveryHandoffGaps({});
-  }, [selectedCompanyId]);
+  }
 
   const commandReportDeliveryPlansQuery = useQuery<{
     subscriptions: CommandPaletteReportDeliveryPlan[];

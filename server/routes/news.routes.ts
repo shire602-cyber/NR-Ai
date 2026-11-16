@@ -88,7 +88,7 @@ export function registerNewsRoutes(app: Express) {
           b.sourceUrl ?? null,
           b.category,
           b.publishedAt,
-          (req as any).user.id,
+          req.user!.id,
         ]
       );
       res.status(201).json(rows[0]);
@@ -126,7 +126,7 @@ export function registerNewsRoutes(app: Express) {
           b.category ?? null,
           b.publishedAt ?? null,
           b.isActive ?? null,
-          (req as any).user.id,
+          req.user!.id,
         ]
       );
       if (!rows[0]) throw new DomainError("NEWS_NOT_FOUND", 404, undefined, "News item not found");
@@ -143,7 +143,7 @@ export function registerNewsRoutes(app: Express) {
       if (!zUuid.safeParse(req.params.id).success) throw new DomainError("NEWS_NOT_FOUND", 404);
       const { rowCount } = await pool.query(
         `UPDATE news_items SET is_active = false, curated_by = $2 WHERE id = $1`,
-        [req.params.id, (req as any).user.id]
+        [req.params.id, req.user!.id]
       );
       if (!rowCount) throw new DomainError("NEWS_NOT_FOUND", 404, undefined, "News item not found");
       res.json({ id: req.params.id, isActive: false });

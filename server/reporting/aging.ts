@@ -92,6 +92,9 @@ async function controlBalance(
   return { code: acct.code, name: acct.nameEn, fils };
 }
 
+/** Open-document rows the aging SQL returns (typed at the driver boundary). */
+type AgingDocRows = Parameters<typeof build>[2];
+
 function build(
   kind: "receivable" | "payable",
   asOf: IsoDate,
@@ -209,7 +212,13 @@ export async function agedReceivables(
     ),
     controlBalance(companyId, asOf, "receivable", q),
   ]);
-  return build("receivable", asOf, rows, control, await reportCurrencyOf(companyId, q));
+  return build(
+    "receivable",
+    asOf,
+    rows as AgingDocRows,
+    control,
+    await reportCurrencyOf(companyId, q)
+  );
 }
 
 export async function agedPayables(
@@ -242,5 +251,11 @@ export async function agedPayables(
     ),
     controlBalance(companyId, asOf, "payable", q),
   ]);
-  return build("payable", asOf, rows, control, await reportCurrencyOf(companyId, q));
+  return build(
+    "payable",
+    asOf,
+    rows as AgingDocRows,
+    control,
+    await reportCurrencyOf(companyId, q)
+  );
 }

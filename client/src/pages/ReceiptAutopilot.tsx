@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useHasMounted } from "@/hooks/use-has-mounted";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,8 +68,7 @@ const METHOD_DESCRIPTIONS: Record<ClassifierMethod, string> = {
 export default function ReceiptAutopilot() {
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHasMounted();
 
   const statsQuery = useQuery<ModelStats>({
     queryKey: ["/api/ai/classifier-stats", companyId],

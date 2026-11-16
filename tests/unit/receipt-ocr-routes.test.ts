@@ -153,6 +153,17 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect(classifier.calls[0].supplierTrn).toBe("100123456700003");
   });
 
+  it("S7 hands the classifier line items as { description } objects, not bare strings", async () => {
+    const { client } = anthropicReturning(goodExtraction);
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect(res.status).toBe(200);
+    // classifyOcrReceipt reads li.description; strings made every line item empty.
+    expect(classifier.calls[0].lineItems).toEqual([{ description: "Coffee قهوة" }]);
+  });
+
   it("R05-15 a missing model confidence is low (0), never the old 0.85 default", async () => {
     const { confidence: _omit, ...noConfidence } = goodExtraction;
     const { client } = anthropicReturning(noConfidence);

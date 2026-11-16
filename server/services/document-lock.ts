@@ -54,7 +54,7 @@ export async function withDocumentLock<T>(
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (let attempt = 0; ; attempt++) {
     const result = await db.transaction(async (tx: typeof db) => {
-      const res: any = await tx.execute(
+      const res = await tx.execute(
         sql`SELECT pg_try_advisory_xact_lock(${namespace}, ${lockKey(documentId)}) AS locked`
       );
       const row = (res?.rows ?? res)?.[0];

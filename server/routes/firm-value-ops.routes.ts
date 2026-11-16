@@ -26,7 +26,7 @@ async function requireAccessibleClient(req: Request, res: Response): Promise<str
     return null;
   }
 
-  const { id: userId, firmRole } = (req as any).user;
+  const { id: userId, firmRole } = req.user!;
   const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
   if (!accessible.includes(parsed.data.companyId)) {
     res.status(403).json({ message: "Access denied to this client" });
@@ -39,14 +39,14 @@ async function requireAccessibleClient(req: Request, res: Response): Promise<str
 export function registerFirmValueOpsRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
+  router.use(authMiddleware);
   // NR-only revenue ops (keyed on NR staff); other firms never reach these.
   router.use(requireNraAccess());
 
   router.get(
     "/",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const dashboard = await buildFirmValueOps(companyIds);
       res.json(dashboard);
@@ -56,7 +56,7 @@ export function registerFirmValueOpsRoutes(app: Express): void {
   router.get(
     "/review-queue",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const queue = await buildFirmReviewQueue(companyIds);
       res.json(queue);
@@ -66,7 +66,7 @@ export function registerFirmValueOpsRoutes(app: Express): void {
   router.get(
     "/action-brief",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const brief = await buildFirmActionBrief(companyIds);
       res.json(brief);

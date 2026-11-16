@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { errorMessage, errorStatusCode } from "../errors";
 
 const log = createLogger("push-notification");
 
@@ -98,15 +99,15 @@ export async function sendPushNotification(
     try {
       await webpush.sendNotification(pushSubscription, notificationPayload);
       sent++;
-    } catch (error: any) {
+    } catch (error: unknown) {
       failed++;
       // If subscription is expired/invalid, deactivate it
-      if (error.statusCode === 404 || error.statusCode === 410) {
+      if (errorStatusCode(error) === 404 || errorStatusCode(error) === 410) {
         log.info({ subscriptionId: sub.id }, "Push subscription expired, deactivating");
         await storage.deactivatePushSubscription(sub.id, userId);
       } else {
         log.error(
-          { error: error.message, subscriptionId: sub.id },
+          { error: errorMessage(error), subscriptionId: sub.id },
           "Failed to send push notification"
         );
       }

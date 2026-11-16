@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   format,
-  parseISO,
   subMonths,
   startOfMonth,
   endOfMonth,
@@ -13,11 +12,9 @@ import {
   subYears,
   startOfYear,
   endOfYear,
-  differenceInDays,
 } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -50,27 +47,16 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  LineChart,
   Line,
-  PieChart,
-  Pie,
-  Cell,
   AreaChart,
   Area,
 } from "recharts";
 import {
   Download,
   TrendingUp,
-  TrendingDown,
-  Calendar,
   Clock,
-  AlertTriangle,
   ArrowUp,
   ArrowDown,
-  DollarSign,
-  Users,
-  FileText,
-  RefreshCw,
   ArrowRightLeft,
 } from "lucide-react";
 import jsPDF from "jspdf";
@@ -108,7 +94,6 @@ interface PeriodComparison {
   changePercent: number;
 }
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 const advancedReportTabs = ["cashflow", "aging", "comparison"] as const;
 type AdvancedReportTab = (typeof advancedReportTabs)[number];
 
@@ -124,11 +109,10 @@ function isComparisonCountMetric(metric: string): boolean {
 }
 
 export default function AdvancedReports() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [selectedPeriod, setSelectedPeriod] = useState("quarter");
-  const [comparisonPeriod, setComparisonPeriod] = useState("previous");
   const [activeTab, setActiveTab] = useState<AdvancedReportTab>(initialAdvancedReportTab);
 
   const periodDates = useMemo(() => {

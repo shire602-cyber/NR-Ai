@@ -69,12 +69,6 @@ async function generateStandardInvoicePDF(data: InvoicePDFData): Promise<jsPDF> 
   const margin = 20;
   const isRTL = data.locale === "ar";
 
-  // Color scheme - professional UAE colors
-  const primaryColor = "#1E40AF"; // Blue
-  const secondaryColor = "#059669"; // Green
-  const textDark = "#1F2937";
-  const textLight = "#6B7280";
-  const borderColor = "#E5E7EB";
 
   let yPosition = margin;
 

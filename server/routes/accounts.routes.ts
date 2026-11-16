@@ -6,7 +6,7 @@ import type { Account } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
-import { DomainError } from "../errors";
+import { DomainError, errorMessage } from "../errors";
 import {
   archiveAccountBody,
   createAccountBody,
@@ -88,7 +88,7 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -109,7 +109,7 @@ export function registerAccountRoutes(app: Express) {
     strictBody(createAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -151,7 +151,7 @@ export function registerAccountRoutes(app: Express) {
     strictBody(updateAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<UpdateAccountBody>(req);
 
       // Find which of the user's companies owns this account.
@@ -234,7 +234,7 @@ export function registerAccountRoutes(app: Express) {
     strictBody(archiveAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
@@ -263,9 +263,9 @@ export function registerAccountRoutes(app: Express) {
           extra: { reason: (req.body as { reason?: string | null }).reason ?? null },
         });
         res.json(archivedAccount);
-      } catch (archiveError: any) {
+      } catch (archiveError: unknown) {
         // Handle race condition where account was marked as system between read and update
-        if (archiveError.message.includes("system account")) {
+        if ((errorMessage(archiveError) ?? "").includes("system account")) {
           return res.status(409).json({
             message:
               "System accounts cannot be archived. These are essential for proper bookkeeping.",
@@ -284,7 +284,7 @@ export function registerAccountRoutes(app: Express) {
     strictBody(archiveAccountBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
@@ -317,7 +317,7 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
@@ -373,7 +373,7 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -403,7 +403,7 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const account = await findAccountForUser(userId, id);
       if (!account) {

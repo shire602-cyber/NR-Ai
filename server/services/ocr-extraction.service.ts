@@ -17,6 +17,7 @@ import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { deriveConfidenceBand } from "../../shared/receipt-confidence";
 import { extractReceipt, RECEIPT_EXTRACTION_PROMPT } from "./ai/receipt-extraction";
 import { normalizeModelConfidence } from "./ai/structured-output";
+import { errorCode } from "../errors";
 
 const log = createLogger("ocr-extraction");
 
@@ -37,6 +38,21 @@ export const VALID_OCR_CATEGORIES = [
 
 export { RECEIPT_EXTRACTION_PROMPT };
 
+/** Untrusted model JSON; every field is coerced in normalizeOcrJson. */
+interface LooseOcrJson {
+  merchant?: unknown;
+  subtotal?: unknown;
+  vatAmount?: unknown;
+  vatPercentage?: unknown;
+  total?: unknown;
+  currency?: unknown;
+  category?: unknown;
+  date?: unknown;
+  lineItems?: unknown;
+  supplierTrn?: unknown;
+  confidence?: unknown;
+}
+
 function parseNonNegative(val: unknown): number {
   if (val === null || val === undefined) return 0;
   const n = parseFloat(String(val).replace(/,/g, ""));
@@ -49,7 +65,7 @@ function parseNonNegative(val: unknown): number {
  * `today` is injectable for deterministic tests.
  */
 export function normalizeOcrJson(
-  raw: any,
+  input: unknown,
   opts: {
     rawText?: string | null;
     imageData?: string | null;
@@ -58,12 +74,13 @@ export function normalizeOcrJson(
     issueCount?: number;
   } = {}
 ): OcrReceipt {
+  const raw = input as LooseOcrJson | null | undefined;
   const sIn = parseNonNegative(raw?.subtotal);
   const vIn = parseNonNegative(raw?.vatAmount);
   const vatPercentage =
     raw?.vatPercentage === null || raw?.vatPercentage === undefined
       ? 5
-      : parseNonNegative(raw.vatPercentage);
+      : parseNonNegative(raw?.vatPercentage);
   const tIn = parseNonNegative(raw?.total);
   const round2 = (x: number) => parseFloat(x.toFixed(2));
 
@@ -92,16 +109,20 @@ export function normalizeOcrJson(
     derivedTotal = 0;
   }
 
-  const category = (VALID_OCR_CATEGORIES as readonly string[]).includes(raw?.category)
-    ? raw.category
-    : "Other";
+  const category =
+    typeof raw?.category === "string" &&
+    (VALID_OCR_CATEGORIES as readonly string[]).includes(raw.category)
+      ? raw.category
+      : "Other";
 
   const fallbackDate = opts.today ?? new Date().toISOString().split("T")[0];
   const date =
     typeof raw?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : fallbackDate;
 
   const lineItems = Array.isArray(raw?.lineItems)
-    ? raw.lineItems.map((li: any) => ({ description: String(li?.description || "").slice(0, 500) }))
+    ? (raw.lineItems as Array<{ description?: unknown } | null>).map((li) => ({
+        description: String(li?.description || "").slice(0, 500),
+      }))
     : [];
 
   const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
@@ -161,7 +182,7 @@ export async function extractReceiptToOcr(args: {
       issueCount: outcome.issues.length,
     });
   } catch (err) {
-    if ((err as any)?.code === "AI_QUOTA_EXCEEDED") throw err;
+    if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
     log.warn(
       { err: summarizeOcrProviderError(err), mimeType: args.mimeType },
       "OCR extraction failed"

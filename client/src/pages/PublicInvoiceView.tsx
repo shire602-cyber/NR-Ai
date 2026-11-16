@@ -2,7 +2,7 @@ import { T } from "@/components/layout/T";
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, FileText, AlertCircle, Clock, CreditCard, CheckCircle2 } from "lucide-react";
+import { Download, AlertCircle, Clock, CreditCard, CheckCircle2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
 interface PublicInvoiceData {

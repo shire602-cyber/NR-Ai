@@ -50,7 +50,6 @@ function isVercelBlobConfigured(): boolean {
 
 // Lazy-load the SDK so the dependency is only needed when Blob is actually used.
 async function loadVercelBlob() {
-  // @ts-ignore optional dependency — installed in deploy environments
   return import("@vercel/blob");
 }
 
@@ -137,10 +136,11 @@ function trueContentType(buffer: Buffer, hint: string): string {
   return sniffFileType(buffer)?.mime ?? hint;
 }
 
-async function streamToBuffer(body: any): Promise<Buffer> {
+async function streamToBuffer(body: unknown): Promise<Buffer> {
   if (Buffer.isBuffer(body)) return body;
-  if (typeof body?.transformToByteArray === "function") {
-    return Buffer.from(await body.transformToByteArray());
+  const sdkBody = body as { transformToByteArray?: () => Promise<Uint8Array> } | null | undefined;
+  if (typeof sdkBody?.transformToByteArray === "function") {
+    return Buffer.from(await sdkBody.transformToByteArray());
   }
   const chunks: Buffer[] = [];
   for await (const chunk of body as AsyncIterable<Buffer>) chunks.push(Buffer.from(chunk));
@@ -445,7 +445,7 @@ export function companyStorageQuotaBytes(
 /** Bytes of receipt files stored for a company (receipts.file_size; legacy rows count as 0). */
 export async function getCompanyStorageUsage(companyId: string): Promise<number> {
   const { pool } = await import("../db");
-  const r = await (pool as any).query(
+  const r = await pool.query(
     `SELECT COALESCE(SUM(file_size),0)::float8 AS used FROM receipts WHERE company_id = $1`,
     [companyId]
   );

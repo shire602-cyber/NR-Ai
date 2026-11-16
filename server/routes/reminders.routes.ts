@@ -25,7 +25,7 @@ export function registerReminderRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -44,7 +44,7 @@ export function registerReminderRoutes(app: Express) {
     strictBody(createReminderSettingBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -69,7 +69,7 @@ export function registerReminderRoutes(app: Express) {
     strictBody(updateReminderSettingBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const existing = await storage.getReminderSetting(id);
       if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
         throw new DomainError(
@@ -98,7 +98,7 @@ export function registerReminderRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const existing = await storage.getReminderSetting(id);
       if (!existing || !(await storage.hasCompanyAccess(userId, existing.companyId))) {
         throw new DomainError(
@@ -119,7 +119,7 @@ export function registerReminderRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -154,7 +154,7 @@ export function registerReminderRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -179,7 +179,7 @@ export function registerReminderRoutes(app: Express) {
     "/api/deadlines",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.query;
 
       if (!companyId) {
@@ -193,7 +193,9 @@ export function registerReminderRoutes(app: Express) {
 
       const company = await storage.getCompany(companyId as string);
 
-      const deadlines: any[] = [];
+      const deadlines: Array<
+        Record<string, unknown> & { dueDate: string; daysRemaining: number; priority: string }
+      > = [];
       const today = new Date();
 
       // VAT Return deadlines (based on filing frequency)

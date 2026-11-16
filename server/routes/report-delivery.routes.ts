@@ -146,7 +146,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/subscriptions",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -171,7 +171,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/runs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -202,7 +202,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/scheduler-health",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -230,7 +230,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/preferences",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -250,7 +250,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/preferences/:persona",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId, persona } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -277,7 +277,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/subscriptions/:subscriptionId/settings",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId, subscriptionId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -333,7 +333,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     authMiddleware,
     strictBody(reportDeliveryQueueSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId, subscriptionId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -400,7 +400,7 @@ export function registerReportDeliveryRoutes(app: Express) {
     "/api/companies/:companyId/report-delivery/runs/:runId/retry",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId, runId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);

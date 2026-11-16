@@ -448,7 +448,8 @@ export async function upsertVatGroup(input: {
     const existing = await tx.execute(
       sql`SELECT id FROM vat_groups WHERE representative_company_id = ${input.representativeCompanyId}`
     );
-    const rows = ((existing as { rows?: Array<{ id: string }> }).rows ?? existing) as Array<{
+    const rows = ((existing as unknown as { rows?: Array<{ id: string }> }).rows ??
+      existing) as Array<{
       id: string;
     }>;
     let groupId: string;
@@ -464,7 +465,7 @@ export async function upsertVatGroup(input: {
             VALUES (${input.representativeCompanyId}, ${input.name}, ${trn.trn}, ${input.userId}) RETURNING id`
       );
       groupId = (
-        ((ins as { rows?: Array<{ id: string }> }).rows ?? ins) as Array<{ id: string }>
+        ((ins as unknown as { rows?: Array<{ id: string }> }).rows ?? ins) as Array<{ id: string }>
       )[0].id;
     }
     const members = new Set([input.representativeCompanyId, ...input.memberCompanyIds]);
