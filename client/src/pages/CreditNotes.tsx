@@ -116,7 +116,7 @@ interface Invoice {
 export default function CreditNotes() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { company: _company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCreditNote, setEditingCreditNote] = useState<CreditNote | null>(null);
@@ -256,7 +256,7 @@ export default function CreditNotes() {
     setEditingCreditNote(null);
   };
 
-  const handleEditCreditNote = async (creditNote: CreditNote) => {
+  const _handleEditCreditNote = async (creditNote: CreditNote) => {
     try {
       const full = await apiRequest("GET", `/api/credit-notes/${creditNote.id}`);
       setEditingCreditNote(full);

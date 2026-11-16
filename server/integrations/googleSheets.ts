@@ -469,8 +469,8 @@ export async function importExpensesFromSheet(spreadsheetId: string): Promise<an
           if (dateStr.includes("/")) {
             const parts = dateStr.split("/");
             if (parts.length === 3) {
-              let day = parseInt(parts[0], 10);
-              let month = parseInt(parts[1], 10);
+              const day = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10);
               let year = parseInt(parts[2], 10);
 
               // Handle 2-digit year
@@ -490,7 +490,7 @@ export async function importExpensesFromSheet(spreadsheetId: string): Promise<an
           if (parsedDate && !isNaN(parsedDate.getTime())) {
             date = parsedDate.toISOString().split("T")[0];
           }
-        } catch (e) {
+        } catch (_e) {
           // Fall back to today's date
         }
       }

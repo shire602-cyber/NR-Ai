@@ -158,7 +158,7 @@ function moneyFromCell(value: string | undefined) {
 function dateFromCell(value: string | undefined) {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
-  const dmy = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  const dmy = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
   if (dmy) {
     const [, day, month, year] = dmy;
     return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
@@ -184,7 +184,7 @@ export function evaluateAmountExpression(input: string | number | null | undefin
 
   // Normalise Arabic-Indic digits and the Arabic decimal/thousands marks.
   const ARABIC = "٠١٢٣٤٥٦٧٨٩";
-  let s = raw
+  const s = raw
     .replace(/[٠-٩]/g, (d) => String(ARABIC.indexOf(d)))
     .replace(/٫/g, ".") // Arabic decimal separator
     .replace(/aed|د\.إ|dhs?/gi, "")

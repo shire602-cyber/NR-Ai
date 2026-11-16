@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -123,7 +123,7 @@ function normalizeSeverity(severity: RawAnomalySeverity | null | undefined): Ano
 }
 
 export default function AnomalyDetection() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [severityFilter, setSeverityFilter] = useState<string>("all");

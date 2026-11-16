@@ -16,7 +16,6 @@ import {
   Edit,
   Trash2,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   Link2,
   Copy,
@@ -36,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { VirtualTable, type VirtualTableColumn } from "@/components/VirtualTable";
+import { VirtualTable } from "@/components/VirtualTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -276,7 +275,7 @@ function ContactForm({
 
 export default function CustomerContacts() {
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("list");

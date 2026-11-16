@@ -1,10 +1,10 @@
 import { T } from "@/components/layout/T";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -41,12 +40,10 @@ import jsPDF from "jspdf";
 import {
   ArrowLeft,
   Search,
-  Download,
   FileText,
   FileSpreadsheet,
   RotateCcw,
   BookOpen,
-  Calendar,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -83,7 +80,7 @@ export default function AccountLedger() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [match, params] = useRoute("/accounts/:id/ledger");
+  const [_match, params] = useRoute("/accounts/:id/ledger");
   const accountId = params?.id;
   const { companyId: selectedCompanyId } = useDefaultCompany();
 
@@ -307,7 +304,7 @@ export default function AccountLedger() {
         title: locale === "ar" ? "تم التصدير" : "Export complete",
         description: locale === "ar" ? "تم تحميل ملف PDF" : "PDF file downloaded",
       });
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: locale === "ar" ? "فشل التصدير" : "Export failed",
         description: "Could not generate PDF",

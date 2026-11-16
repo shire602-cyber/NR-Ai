@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO, differenceInDays, isBefore } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTranslation } from "@/lib/i18n";
@@ -39,12 +38,9 @@ import {
   AlertTriangle,
   Calendar,
   Loader2,
-  Filter,
   ListTodo,
-  ArrowUpDown,
   MoreHorizontal,
   Trash2,
-  Edit,
 } from "lucide-react";
 import {
   DropdownMenu,

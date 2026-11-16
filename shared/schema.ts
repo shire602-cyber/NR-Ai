@@ -1,7 +1,6 @@
 import {
   pgTable,
   text,
-  varchar,
   integer,
   real,
   boolean,

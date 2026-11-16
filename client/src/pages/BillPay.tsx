@@ -1,10 +1,10 @@
 import { T } from "@/components/layout/T";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -392,7 +392,7 @@ export default function BillPay() {
   const { t, locale } = useTranslation();
   const c: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { company, companyId } = useDefaultCompany();
+  const { company: _company, companyId } = useDefaultCompany();
 
   const [activeTab, setActiveTab] = useState<BillPayTab>(initialBillPayTab);
   const [billDialogOpen, setBillDialogOpen] = useState(false);
@@ -430,7 +430,7 @@ export default function BillPay() {
   });
 
   // Get all payments across bills
-  const allPayments = useMemo(() => {
+  const _allPayments = useMemo(() => {
     if (!bills || bills.length === 0) return [];
     // We'll collect payments from individual bill queries as they load
     return [];
@@ -1561,7 +1561,7 @@ export default function BillPay() {
                     </TableHeader>
                     <TableBody>
                       {filteredBills.map((bill) => {
-                        const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
+                        const _remaining = Number(bill.total_amount) - Number(bill.amount_paid);
                         return (
                           <TableRow key={bill.id}>
                             <TableCell className="font-medium">{bill.vendor_name}</TableCell>

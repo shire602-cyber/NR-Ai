@@ -12,8 +12,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   LineChart,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -33,7 +31,6 @@ import {
   TrendingUp,
   AlertTriangle,
   DollarSign,
-  FileText,
   Loader2,
   Brain,
   BarChart3,
@@ -85,7 +82,7 @@ interface KPI {
 }
 
 export default function AICFO() {
-  const { t } = useTranslation();
+  const { t: _t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);

@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, differenceInDays, parseISO } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
@@ -72,7 +71,6 @@ async function openVaultFile(doc: { fileUrl: string; fileName: string }, downloa
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 import {
-  Upload,
   FileText,
   Download,
   Trash2,
@@ -126,7 +124,7 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function DocumentVault() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");

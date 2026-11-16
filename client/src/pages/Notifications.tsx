@@ -17,12 +17,9 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
-  FileText,
   Newspaper,
   ChevronRight,
   Check,
-  Trash2,
-  RefreshCw,
 } from "lucide-react";
 import type { Notification, RegulatoryNews } from "@shared/schema";
 

@@ -20,7 +20,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,18 +35,13 @@ import {
   Plug,
   RefreshCw,
   Check,
-  X,
   AlertTriangle,
-  ExternalLink,
   Settings,
   ChevronRight,
   Loader2,
   CreditCard,
-  ShoppingBag,
-  Users,
   Zap,
   Clock,
-  ArrowRight,
   Shield,
   Database,
   FileText,
@@ -118,7 +112,7 @@ const PLATFORMS = [
 ];
 
 export default function IntegrationsHub() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -127,7 +121,7 @@ export default function IntegrationsHub() {
   const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: "" });
 
   // Fetch integrations
-  const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
+  const { data: integrations, isLoading: _integrationsLoading } = useQuery<EcommerceIntegration[]>({
     queryKey: ["/api/integrations/ecommerce", companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? "" });
@@ -196,7 +190,7 @@ export default function IntegrationsHub() {
   });
 
   // Toggle integration mutation
-  const toggleMutation = useMutation({
+  const _toggleMutation = useMutation({
     mutationFn: async ({
       integrationId,
       isActive,

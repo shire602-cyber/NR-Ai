@@ -18,20 +18,15 @@ import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
 } from "recharts";
 import { formatDistanceToNow } from "date-fns";
 import {
   BarChart3,
   PieChart as PieChartIcon,
-  TrendingUp,
   Eye,
   MousePointer,
   AlertTriangle,
   Activity,
-  Users,
-  Clock,
 } from "lucide-react";
 
 interface AnalyticsDashboard {

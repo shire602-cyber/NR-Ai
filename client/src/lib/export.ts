@@ -927,13 +927,13 @@ function receiptExportRate(receipt: any): number {
   return Number.isFinite(rate) && rate > 0 ? rate : 1;
 }
 
-function receiptSubtotalExportAed(receipt: any): number {
+function _receiptSubtotalExportAed(receipt: any): number {
   const base = Number(receipt?.baseCurrencyAmount ?? 0);
   if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
   return (Number(receipt?.amount) || 0) * receiptExportRate(receipt);
 }
 
-function receiptVatExportAed(receipt: any): number {
+function _receiptVatExportAed(receipt: any): number {
   return (Number(receipt?.vatAmount) || 0) * receiptExportRate(receipt);
 }
 

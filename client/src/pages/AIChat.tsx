@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -14,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,19 +21,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
-import {
-  Send,
-  Bot,
-  User,
-  Loader2,
-  Settings,
-  History,
-  Sparkles,
-  ChevronDown,
-  X,
-  Clock,
-  Zap,
-} from "lucide-react";
+import { Send, Bot, User, Loader2, Settings, History, Sparkles, X, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Message {

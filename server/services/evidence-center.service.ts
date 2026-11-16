@@ -776,7 +776,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
 
   const quarter = currentQuarter();
   const month = currentMonth();
-  const [invoices, receipts, vatReturns, ctReturns, complianceTasks] = await Promise.all([
+  const [invoices, receipts, _vatReturns, ctReturns, complianceTasks] = await Promise.all([
     storage.getInvoicesByCompanyId(companyId).catch(() => []),
     storage.getReceiptsByCompanyId(companyId).catch(() => []),
     storage.getVatReturnsByCompanyId(companyId).catch(() => []),
