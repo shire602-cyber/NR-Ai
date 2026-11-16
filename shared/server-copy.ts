@@ -19,9 +19,20 @@ export interface CopyDescriptor {
 /** Catalog key (in `components.json` en/ar) for a server copy key. */
 export const serverCopyCatalogKey = (key: string) => `components.srv.${key}`;
 
-export type CopyTemplate = { key: string; en: string; prefix?: boolean };
+export type CopyTemplate = {
+  key: string;
+  en: string;
+  prefix?: boolean;
+  /** Params filled in when an older stored sentence did not carry them (legacy wording). */
+  defaults?: Record<string, string>;
+};
 
-const T = (key: string, en: string, prefix = false): CopyTemplate => ({ key, en, prefix });
+const T = (
+  key: string,
+  en: string,
+  prefix = false,
+  defaults?: Record<string, string>
+): CopyTemplate => ({ key, en, prefix, ...(defaults ? { defaults } : {}) });
 
 /** Notification titles, most specific first. */
 export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
@@ -117,6 +128,14 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.reportDeliveryScheduled.message", "{format} scheduled for {date}.", true),
 ];
 
+/** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
+export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
+  // Legacy wording stored before the format was part of the sentence: same key, neutral format.
+  T("notification.reportDeliveryScheduled.message", "Report delivery scheduled for {date}.", true, {
+    format: "PDF + Excel",
+  }),
+];
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Tighter patterns for well-known params so free text never matches a count/amount slot. */
@@ -165,16 +184,22 @@ export function renderCopyTemplate(
     .replace(/\{(\w+)\}/g, (_m, name: string) => (has(name) ? String(params[name]) : ""));
 }
 
-const byKey = new Map<string, CopyTemplate>(
-  [...NOTIFICATION_TITLE_TEMPLATES, ...NOTIFICATION_MESSAGE_TEMPLATES].map((t) => [t.key, t])
-);
+let byKeyCache: Map<string, CopyTemplate> | null = null;
+const templateByKey = (key: string): CopyTemplate | undefined => {
+  byKeyCache ??= new Map<string, CopyTemplate>(
+    [...NOTIFICATION_TITLE_TEMPLATES, ...NOTIFICATION_MESSAGE_TEMPLATES, ...FIRM_TEMPLATES].map(
+      (t) => [t.key, t]
+    )
+  );
+  return byKeyCache.get(key);
+};
 
 /** English sentence for a key (server side: what is stored and emailed). */
 export function renderServerCopy(
   key: string,
   params: Record<string, string | number | null | undefined> = {}
 ): string {
-  const t = byKey.get(key);
+  const t = templateByKey(key);
   if (!t) throw new Error(`Unknown server copy key: ${key}`);
   return renderCopyTemplate(t.en, params);
 }
@@ -190,6 +215,7 @@ export function parseServerCopy(
     if (!m) continue;
     const params: Record<string, string> = {};
     for (const [k, v] of Object.entries(m.groups ?? {})) if (v !== undefined) params[k] = v;
+    for (const [k, v] of Object.entries(t.defaults ?? {})) if (!(k in params)) params[k] = v;
     return { key: t.key, params };
   }
   return null;
@@ -208,7 +234,10 @@ export function describeNotificationCopy(n: {
   message: string;
 }): NotificationCopyDescriptor {
   const title = parseServerCopy(n.title, NOTIFICATION_TITLE_TEMPLATES);
-  const message = parseServerCopy(n.message, NOTIFICATION_MESSAGE_TEMPLATES);
+  const message = parseServerCopy(n.message, [
+    ...NOTIFICATION_MESSAGE_TEMPLATES,
+    ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
+  ]);
   return {
     titleKey: title?.key ?? null,
     titleParams: title?.params ?? {},
@@ -431,6 +460,29 @@ export const FIRM_TEMPLATES: readonly CopyTemplate[] = [
   T("firm.ui.noActiveClients", "No active clients"),
   T("firm.ui.vatDue28", "VAT due 28d"),
   T("firm.ui.ctDue90", "CT due 90d"),
+  // Revenue opportunities (server: firm-growth.service)
+  T("firm.growth.serviceAr.title", "Recover NRA service AR"),
+  T(
+    "firm.growth.serviceAr.reason",
+    "{client} has {n} overdue invoice(s) and AED {amount} open AR."
+  ),
+  T("firm.growth.cleanup.title", "Bill cleanup work"),
+  T(
+    "firm.growth.cleanup.reason",
+    "{n} VAT/bookkeeping source items need cleanup before the file is ready."
+  ),
+  T("firm.growth.cfoPack.title", "Offer monthly CFO pack"),
+  T(
+    "firm.growth.cfoPack.reason",
+    "{client} has enough transaction volume or AR exposure for a higher-value advisory cadence."
+  ),
+  T("firm.growth.compliance.title", "Compliance setup opportunity"),
+  T(
+    "firm.growth.compliance.missingBoth",
+    "{client} is missing VAT TRN and corporate tax registration."
+  ),
+  T("firm.growth.compliance.missingTrn", "{client} is missing VAT TRN."),
+  T("firm.growth.compliance.missingCt", "{client} is missing corporate tax registration."),
 ];
 
 export function describeFirmText(text: string | null | undefined): CopyDescriptor | null {

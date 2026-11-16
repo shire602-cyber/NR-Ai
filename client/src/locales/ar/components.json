@@ -383,5 +383,15 @@
   "components.srv.firm.ui.noActiveClients": "لا عملاء نشطون",
   "components.srv.firm.ui.vatDue28": "ضريبة القيمة المضافة خلال 28 يومًا",
   "components.srv.firm.ui.ctDue90": "ضريبة الشركات خلال 90 يومًا",
-  "components.srv.firm.label.books": "الدفاتر"
+  "components.srv.firm.label.books": "الدفاتر",
+  "components.srv.firm.growth.serviceAr.title": "استرداد ذمم خدمات NRA المستحقة",
+  "components.srv.firm.growth.serviceAr.reason": "لدى {client} عدد {n} من الفواتير المتأخرة وذمم مدينة مفتوحة بقيمة {amount} د.إ.",
+  "components.srv.firm.growth.cleanup.title": "أعمال تنظيف الفواتير",
+  "components.srv.firm.growth.cleanup.reason": "يحتاج {n} من عناصر المصدر الخاصة بضريبة القيمة المضافة ومسك الدفاتر إلى تنظيف قبل أن يصبح الملف جاهزًا.",
+  "components.srv.firm.growth.cfoPack.title": "عرض حزمة المدير المالي الشهرية",
+  "components.srv.firm.growth.cfoPack.reason": "لدى {client} حجم معاملات أو انكشاف على الذمم المدينة يكفي لتقديم خدمة استشارية بقيمة أعلى.",
+  "components.srv.firm.growth.compliance.title": "فرصة إعداد الامتثال",
+  "components.srv.firm.growth.compliance.missingBoth": "{client} ينقصه رقم التسجيل الضريبي لضريبة القيمة المضافة وتسجيل ضريبة الشركات.",
+  "components.srv.firm.growth.compliance.missingTrn": "{client} ينقصه رقم التسجيل الضريبي لضريبة القيمة المضافة.",
+  "components.srv.firm.growth.compliance.missingCt": "{client} ينقصه تسجيل ضريبة الشركات."
 }

@@ -383,5 +383,15 @@
   "components.srv.firm.ui.noActiveClients": "No active clients",
   "components.srv.firm.ui.vatDue28": "VAT due 28d",
   "components.srv.firm.ui.ctDue90": "CT due 90d",
-  "components.srv.firm.label.books": "Books"
+  "components.srv.firm.label.books": "Books",
+  "components.srv.firm.growth.serviceAr.title": "Recover NRA service AR",
+  "components.srv.firm.growth.serviceAr.reason": "{client} has {n} overdue invoice(s) and AED {amount} open AR.",
+  "components.srv.firm.growth.cleanup.title": "Bill cleanup work",
+  "components.srv.firm.growth.cleanup.reason": "{n} VAT/bookkeeping source items need cleanup before the file is ready.",
+  "components.srv.firm.growth.cfoPack.title": "Offer monthly CFO pack",
+  "components.srv.firm.growth.cfoPack.reason": "{client} has enough transaction volume or AR exposure for a higher-value advisory cadence.",
+  "components.srv.firm.growth.compliance.title": "Compliance setup opportunity",
+  "components.srv.firm.growth.compliance.missingBoth": "{client} is missing VAT TRN and corporate tax registration.",
+  "components.srv.firm.growth.compliance.missingTrn": "{client} is missing VAT TRN.",
+  "components.srv.firm.growth.compliance.missingCt": "{client} is missing corporate tax registration."
 }

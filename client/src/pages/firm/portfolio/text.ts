@@ -89,7 +89,11 @@ export function useFirmText() {
     /** Localise a known firm dashboard / helper sentence; unknown text is returned as is. */
     fx: (text: string | null | undefined): string => {
       if (!text) return "";
-      return isAr ? localizeMonths(localizeFirmText(text, catalog)) : text;
+      if (!isAr) return text;
+      // "Missing VAT TRN +2" (blockerPreview): localise the sentence, keep the "+N" counter.
+      const more = /^(.*\S) (\+\d+)$/.exec(text);
+      if (more) return `${localizeMonths(localizeFirmText(more[1], catalog))} ${more[2]}`;
+      return localizeMonths(localizeFirmText(text, catalog));
     },
     /** Workpaper / VAT row status word (draft, in_review, ...). */
     status: (value: string | null | undefined): string => {
