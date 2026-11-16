@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { activityLogRiskVariant, consolidatedStatusVariant, formatReportDate } from "../shared";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function CloseTab() {
@@ -30,7 +30,6 @@ export default function CloseTab() {
     consolidatedStatementsReport,
     serverGroupConsolidation,
     dateRange,
-    locale,
     monthEndChecklist,
     monthEndCloseLoading,
     monthEndCloseStatus,
@@ -62,7 +61,7 @@ export default function CloseTab() {
             {monthEndCloseLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{monthEndReadinessPercent}%</div>
+              <div className="tabular-nums text-2xl font-bold">{monthEndReadinessPercent}%</div>
             )}
           </CardContent>
         </Card>
@@ -80,7 +79,7 @@ export default function CloseTab() {
             {monthEndCloseLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{monthEndCompletedChecks}</div>
+              <div className="tabular-nums text-2xl font-bold">{monthEndCompletedChecks}</div>
             )}
           </CardContent>
         </Card>
@@ -98,7 +97,7 @@ export default function CloseTab() {
             {monthEndCloseLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{monthEndReviewChecks}</div>
+              <div className="tabular-nums text-2xl font-bold">{monthEndReviewChecks}</div>
             )}
           </CardContent>
         </Card>
@@ -113,7 +112,7 @@ export default function CloseTab() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="font-mono text-2xl font-bold">{monthEndPeriod}</div>
+            <div className="tabular-nums text-2xl font-bold">{monthEndPeriod}</div>
             <p className="mt-1 text-xs text-muted-foreground">{monthEndPeriodLabel}</p>
           </CardContent>
         </Card>
@@ -210,13 +209,15 @@ export default function CloseTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="pages.events" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">{auditTrailReport.logCount}</div>
+                  <div className="tabular-nums text-xl font-semibold">
+                    {auditTrailReport.logCount}
+                  </div>
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.highRisk" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
+                  <div className="tabular-nums text-xl font-semibold">
                     {auditTrailReport.highRiskCount}
                   </div>
                 </div>
@@ -224,7 +225,7 @@ export default function CloseTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.postingActions" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
+                  <div className="tabular-nums text-xl font-semibold">
                     {auditTrailReport.postingActionCount}
                   </div>
                 </div>
@@ -232,7 +233,7 @@ export default function CloseTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.users" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
+                  <div className="tabular-nums text-xl font-semibold">
                     {auditTrailReport.userCount}
                   </div>
                 </div>
@@ -250,7 +251,7 @@ export default function CloseTab() {
                           <TableHead>
                             <T k="reportCenter.action" />
                           </TableHead>
-                          <TableHead className="text-right">
+                          <TableHead data-numeric>
                             <T k="pages.events" />
                           </TableHead>
                           <TableHead>
@@ -262,7 +263,7 @@ export default function CloseTab() {
                         {auditTrailReport.actionRows.slice(0, 6).map((row) => (
                           <TableRow key={row.key}>
                             <TableCell className="capitalize">{row.label}</TableCell>
-                            <TableCell className="text-right font-mono">{row.count}</TableCell>
+                            <TableCell data-numeric>{row.count}</TableCell>
                             <TableCell className="text-muted-foreground">
                               {formatReportDate(row.latestAt)}
                             </TableCell>
@@ -288,7 +289,7 @@ export default function CloseTab() {
                           <TableHead>
                             <T k="reportCenter.recordType" />
                           </TableHead>
-                          <TableHead className="text-right">
+                          <TableHead data-numeric>
                             <T k="pages.events" />
                           </TableHead>
                           <TableHead>
@@ -300,7 +301,7 @@ export default function CloseTab() {
                         {auditTrailReport.entityRows.slice(0, 6).map((row) => (
                           <TableRow key={row.key}>
                             <TableCell className="capitalize">{row.label}</TableCell>
-                            <TableCell className="text-right font-mono">{row.count}</TableCell>
+                            <TableCell data-numeric>{row.count}</TableCell>
                             <TableCell className="text-muted-foreground">
                               {formatReportDate(row.latestAt)}
                             </TableCell>
@@ -343,7 +344,7 @@ export default function CloseTab() {
                           <TableCell className="capitalize">{row.actionLabel}</TableCell>
                           <TableCell>
                             <div className="capitalize">{row.entityLabel}</div>
-                            <div className="font-mono text-xs text-muted-foreground">
+                            <div className="tabular-nums text-xs text-muted-foreground">
                               {row.entityId || "-"}
                             </div>
                           </TableCell>
@@ -410,7 +411,7 @@ export default function CloseTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.entities" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
+                  <div className="tabular-nums text-xl font-semibold">
                     {consolidatedStatementsReport.loadedEntityCount}/
                     {consolidatedStatementsReport.entityCount}
                   </div>
@@ -419,31 +420,31 @@ export default function CloseTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.revenue" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
-                    {formatCurrency(consolidatedStatementsReport.totalRevenue, "AED", locale)}
+                  <div className="tabular-nums text-xl font-semibold">
+                    <Money amount={consolidatedStatementsReport.totalRevenue} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.netProfit2" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
-                    {formatCurrency(consolidatedStatementsReport.netProfit, "AED", locale)}
+                  <div className="tabular-nums text-xl font-semibold">
+                    <Money amount={consolidatedStatementsReport.netProfit} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.assets" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
-                    {formatCurrency(consolidatedStatementsReport.totalAssets, "AED", locale)}
+                  <div className="tabular-nums text-xl font-semibold">
+                    <Money amount={consolidatedStatementsReport.totalAssets} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.reviewItems" />
                   </div>
-                  <div className="font-mono text-xl font-semibold">
+                  <div className="tabular-nums text-xl font-semibold">
                     {consolidatedStatementsReport.reviewCount}
                   </div>
                 </div>
@@ -468,13 +469,13 @@ export default function CloseTab() {
                           <T k="reportCenter.company" />
                         </TableHead>
                         <TableHead>Type</TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.revenue" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.netProfit2" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.assets" />
                         </TableHead>
                         <TableHead>
@@ -493,14 +494,14 @@ export default function CloseTab() {
                             <div className="text-xs text-muted-foreground">{row.baseCurrency}</div>
                           </TableCell>
                           <TableCell className="capitalize">{row.companyType}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.revenue, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={row.revenue} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.netProfit, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={row.netProfit} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.assets, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={row.assets} currency={"AED"} />
                           </TableCell>
                           <TableCell>
                             <Badge variant={consolidatedStatusVariant(row.status)} dot>

@@ -23,6 +23,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   Sparkles,
   AlertTriangle,
@@ -118,12 +119,12 @@ const FeatureCard = ({
       >
         {loading ? (
           <>
-            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            <RefreshCw className="w-4 h-4 me-2 animate-spin" />
             <T k="invoices.processing" />
           </>
         ) : (
           <>
-            <Sparkles className="w-4 h-4 mr-2" />
+            <Sparkles className="w-4 h-4 me-2" />
             {buttonText}
           </>
         )}
@@ -276,7 +277,7 @@ export default function AIFeatures() {
                     <Brain className="w-6 h-6 text-primary" />
                   </div>
                   <Badge variant="secondary" className="text-xs font-medium">
-                    <Zap className="w-3 h-3 mr-1" />
+                    <Zap className="w-3 h-3 me-1" />
                     <T k="pageLabels.aIPowered" />
                   </Badge>
                 </div>
@@ -304,21 +305,21 @@ export default function AIFeatures() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+        <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview">
-            <Target className="w-4 h-4 mr-2" />
+            <Target className="w-4 h-4 me-2" />
             <T k="pages.overview" />
           </TabsTrigger>
           <TabsTrigger value="anomalies" data-testid="tab-anomalies">
-            <ShieldAlert className="w-4 h-4 mr-2" />
+            <ShieldAlert className="w-4 h-4 me-2" />
             <T k="pageLabels.anomalies" />
           </TabsTrigger>
           <TabsTrigger value="forecast" data-testid="tab-forecast">
-            <LineChart className="w-4 h-4 mr-2" />
+            <LineChart className="w-4 h-4 me-2" />
             <T k="pageLabels.forecast" />
           </TabsTrigger>
           <TabsTrigger value="automation" data-testid="tab-automation">
-            <Zap className="w-4 h-4 mr-2" />
+            <Zap className="w-4 h-4 me-2" />
             <T k="reportCenter.automation" />
           </TabsTrigger>
         </TabsList>
@@ -500,9 +501,9 @@ export default function AIFeatures() {
               data-testid="button-scan-anomalies"
             >
               {detectAnomaliesMutation.isPending ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                <RefreshCw className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
+                <Sparkles className="w-4 h-4 me-2" />
               )}
               Scan Now
             </Button>
@@ -593,7 +594,7 @@ export default function AIFeatures() {
                             }}
                             data-testid={`button-resolve-${alert.id}`}
                           >
-                            <Check className="w-4 h-4 mr-1" />
+                            <Check className="w-4 h-4 me-1" />
                             <T k="pages.resolve" />
                           </Button>
                         </div>
@@ -622,9 +623,9 @@ export default function AIFeatures() {
               data-testid="button-generate-forecast"
             >
               {generateForecastMutation.isPending ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                <RefreshCw className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
+                <Sparkles className="w-4 h-4 me-2" />
               )}
               Generate Forecast
             </Button>
@@ -662,7 +663,7 @@ export default function AIFeatures() {
                           <T k="pageLabels.predictedInflow" />
                         </span>
                         <span className="font-semibold text-success ">
-                          {formatCurrency(forecast.predictedInflow)}
+                          <Money amount={forecast.predictedInflow} />
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
@@ -671,7 +672,7 @@ export default function AIFeatures() {
                           <T k="pageLabels.predictedOutflow" />
                         </span>
                         <span className="font-semibold text-destructive ">
-                          {formatCurrency(forecast.predictedOutflow)}
+                          <Money amount={forecast.predictedOutflow} />
                         </span>
                       </div>
                       <div className="border-t pt-4">
@@ -682,7 +683,7 @@ export default function AIFeatures() {
                           <span
                             className={`text-lg font-bold ${forecast.predictedBalance >= 0 ? "text-success " : "text-destructive "}`}
                           >
-                            {formatCurrency(forecast.predictedBalance)}
+                            <Money amount={forecast.predictedBalance} />
                           </span>
                         </div>
                       </div>
@@ -736,7 +737,7 @@ export default function AIFeatures() {
                   disabled={generateForecastMutation.isPending}
                   data-testid="button-first-forecast"
                 >
-                  <Sparkles className="w-4 h-4 mr-2" />
+                  <Sparkles className="w-4 h-4 me-2" />
                   <T k="pageLabels.generateFirstForecast" />
                 </Button>
               </CardContent>
@@ -792,7 +793,7 @@ export default function AIFeatures() {
                   onClick={() => setCategorizationOpen(true)}
                   data-testid="button-smart-categorization"
                 >
-                  <Zap className="w-4 h-4 mr-2" />
+                  <Zap className="w-4 h-4 me-2" />
                   <T k="pageLabels.configure" />
                 </Button>
               </CardContent>
@@ -835,7 +836,7 @@ export default function AIFeatures() {
                   onClick={() => navigate("/bank-reconciliation")}
                   data-testid="button-bank-reconciliation"
                 >
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="w-4 h-4 me-2" />
                   <T k="pageLabels.openBankReconciliation" />
                 </Button>
               </CardContent>
@@ -874,7 +875,7 @@ export default function AIFeatures() {
                 </ul>
                 <Button variant="outline" className="w-full" asChild>
                   <a href="/ai-cfo" data-testid="link-ai-cfo">
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <Sparkles className="w-4 h-4 me-2" />
                     <T k="pageLabels.askAICFO" />
                   </a>
                 </Button>
@@ -918,7 +919,7 @@ export default function AIFeatures() {
                   onClick={() => setActiveTab("anomalies")}
                   data-testid="button-view-alerts"
                 >
-                  <AlertCircle className="w-4 h-4 mr-2" />
+                  <AlertCircle className="w-4 h-4 me-2" />
                   View Alerts ({unresolvedAlerts.length})
                 </Button>
               </CardContent>
@@ -976,9 +977,9 @@ export default function AIFeatures() {
               data-testid="button-confirm-resolve"
             >
               {resolveAlertMutation.isPending ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                <RefreshCw className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Check className="w-4 h-4 mr-2" />
+                <Check className="w-4 h-4 me-2" />
               )}
               Mark Resolved
             </Button>

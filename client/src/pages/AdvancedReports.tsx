@@ -38,6 +38,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   BarChart,
   Bar,
@@ -51,14 +52,7 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import {
-  Download,
-  TrendingUp,
-  Clock,
-  ArrowUp,
-  ArrowDown,
-  ArrowRightLeft,
-} from "lucide-react";
+import { Download, TrendingUp, Clock, ArrowUp, ArrowDown, ArrowRightLeft } from "lucide-react";
 import jsPDF from "jspdf";
 
 interface CashFlowData {
@@ -308,17 +302,17 @@ export default function AdvancedReports() {
       />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdvancedReportTab)}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList>
           <TabsTrigger value="cashflow" data-testid="tab-cashflow">
-            <ArrowRightLeft className="w-4 h-4 mr-2" />
+            <ArrowRightLeft className="w-4 h-4 me-2" />
             {locale === "ar" ? "التدفق النقدي" : "Cash Flow"}
           </TabsTrigger>
           <TabsTrigger value="aging" data-testid="tab-aging">
-            <Clock className="w-4 h-4 mr-2" />
+            <Clock className="w-4 h-4 me-2" />
             {locale === "ar" ? "تقادم الأرصدة" : "Aging Report"}
           </TabsTrigger>
           <TabsTrigger value="comparison" data-testid="tab-comparison">
-            <TrendingUp className="w-4 h-4 mr-2" />
+            <TrendingUp className="w-4 h-4 me-2" />
             {locale === "ar" ? "المقارنات" : "Period Comparison"}
           </TabsTrigger>
         </TabsList>
@@ -335,7 +329,7 @@ export default function AdvancedReports() {
                 <div
                   className={`text-2xl font-bold ${cashFlowSummary.operating >= 0 ? "text-success" : "text-destructive"}`}
                 >
-                  {formatCurrency(cashFlowSummary.operating)}
+                  <Money amount={cashFlowSummary.operating} />
                 </div>
               </CardContent>
             </Card>
@@ -349,7 +343,7 @@ export default function AdvancedReports() {
                 <div
                   className={`text-2xl font-bold ${cashFlowSummary.investing >= 0 ? "text-success" : "text-destructive"}`}
                 >
-                  {formatCurrency(cashFlowSummary.investing)}
+                  <Money amount={cashFlowSummary.investing} />
                 </div>
               </CardContent>
             </Card>
@@ -363,7 +357,7 @@ export default function AdvancedReports() {
                 <div
                   className={`text-2xl font-bold ${cashFlowSummary.financing >= 0 ? "text-success" : "text-destructive"}`}
                 >
-                  {formatCurrency(cashFlowSummary.financing)}
+                  <Money amount={cashFlowSummary.financing} />
                 </div>
               </CardContent>
             </Card>
@@ -377,7 +371,7 @@ export default function AdvancedReports() {
                 <div
                   className={`text-2xl font-bold ${cashFlowSummary.net >= 0 ? "text-success" : "text-destructive"}`}
                 >
-                  {formatCurrency(cashFlowSummary.net)}
+                  <Money amount={cashFlowSummary.net} />
                 </div>
               </CardContent>
             </Card>
@@ -396,7 +390,7 @@ export default function AdvancedReports() {
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleExportPDF("Cash Flow")}>
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-4 h-4 me-2" />
                 {locale === "ar" ? "تصدير" : "Export"}
               </Button>
             </CardHeader>
@@ -466,23 +460,23 @@ export default function AdvancedReports() {
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "حالي" : "Current"}
                     </span>
-                    <span className="font-mono text-success">
-                      {formatCurrency(agingSummary.receivables.current, "AED", locale)}
+                    <span className="tabular-nums text-success">
+                      <Money amount={agingSummary.receivables.current} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "متأخر" : "Overdue"}
                     </span>
-                    <span className="font-mono text-destructive">
-                      {formatCurrency(agingSummary.receivables.overdue, "AED", locale)}
+                    <span className="tabular-nums text-destructive">
+                      <Money amount={agingSummary.receivables.overdue} currency={"AED"} />
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>{locale === "ar" ? "الإجمالي" : "Total"}</span>
-                    <span className="font-mono">
-                      {formatCurrency(agingSummary.receivables.total ?? 0, "AED", locale)}
+                    <span className="tabular-nums">
+                      <Money amount={agingSummary.receivables.total ?? 0} currency={"AED"} />
                     </span>
                   </div>
                 </div>
@@ -505,23 +499,23 @@ export default function AdvancedReports() {
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "حالي" : "Current"}
                     </span>
-                    <span className="font-mono text-success">
-                      {formatCurrency(agingSummary.payables.current, "AED", locale)}
+                    <span className="tabular-nums text-success">
+                      <Money amount={agingSummary.payables.current} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "متأخر" : "Overdue"}
                     </span>
-                    <span className="font-mono text-destructive">
-                      {formatCurrency(agingSummary.payables.overdue, "AED", locale)}
+                    <span className="tabular-nums text-destructive">
+                      <Money amount={agingSummary.payables.overdue} currency={"AED"} />
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>{locale === "ar" ? "الإجمالي" : "Total"}</span>
-                    <span className="font-mono">
-                      {formatCurrency(agingSummary.payables.total ?? 0, "AED", locale)}
+                    <span className="tabular-nums">
+                      <Money amount={agingSummary.payables.total ?? 0} currency={"AED"} />
                     </span>
                   </div>
                 </div>
@@ -540,7 +534,7 @@ export default function AdvancedReports() {
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleExportPDF("Aging")}>
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-4 h-4 me-2" />
                 {locale === "ar" ? "تصدير" : "Export"}
               </Button>
             </CardHeader>
@@ -574,7 +568,9 @@ export default function AdvancedReports() {
           {agingData && agingData.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>{locale === "ar" ? "تفاصيل التقادم" : "A/R and A/P Aging Detail"}</CardTitle>
+                <CardTitle>
+                  {locale === "ar" ? "تفاصيل التقادم" : "A/R and A/P Aging Detail"}
+                </CardTitle>
                 <CardDescription>
                   {locale === "ar"
                     ? "الأرصدة المفتوحة بعد الدفعات المسجلة، مجمعة حسب العميل أو المورد."
@@ -588,16 +584,12 @@ export default function AdvancedReports() {
                       <TableRow>
                         <TableHead>{locale === "ar" ? "الاسم" : "Name"}</TableHead>
                         <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
-                        <TableHead className="text-right">
-                          {locale === "ar" ? "حالي" : "Current"}
-                        </TableHead>
-                        <TableHead className="text-right">1-30</TableHead>
-                        <TableHead className="text-right">31-60</TableHead>
-                        <TableHead className="text-right">61-90</TableHead>
-                        <TableHead className="text-right">&gt;90</TableHead>
-                        <TableHead className="text-right">
-                          {locale === "ar" ? "الإجمالي" : "Total"}
-                        </TableHead>
+                        <TableHead data-numeric>{locale === "ar" ? "حالي" : "Current"}</TableHead>
+                        <TableHead data-numeric>1-30</TableHead>
+                        <TableHead data-numeric>31-60</TableHead>
+                        <TableHead data-numeric>61-90</TableHead>
+                        <TableHead data-numeric>&gt;90</TableHead>
+                        <TableHead data-numeric>{locale === "ar" ? "الإجمالي" : "Total"}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -615,23 +607,23 @@ export default function AdvancedReports() {
                                   : "AP"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(item.current, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={item.current} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(item.days30, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={item.days30} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(item.days60, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={item.days60} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(item.days90, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={item.days90} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono text-destructive">
-                            {formatCurrency(item.over90, "AED", locale)}
+                          <TableCell data-numeric className=" text-destructive">
+                            <Money amount={item.over90} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(item.total, "AED", locale)}
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={item.total} currency={"AED"} />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -657,7 +649,7 @@ export default function AdvancedReports() {
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleExportPDF("Comparison")}>
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-4 h-4 me-2" />
                 {locale === "ar" ? "تصدير" : "Export"}
               </Button>
             </CardHeader>
@@ -674,30 +666,29 @@ export default function AdvancedReports() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>{locale === "ar" ? "المقياس" : "Metric"}</TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           {locale === "ar" ? "الفترة الحالية" : "Current Period"}
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           {locale === "ar" ? "الفترة السابقة" : "Previous Period"}
                         </TableHead>
-                        <TableHead className="text-right">
-                          {locale === "ar" ? "التغيير" : "Change"}
-                        </TableHead>
-                        <TableHead className="text-right">%</TableHead>
+                        <TableHead data-numeric>{locale === "ar" ? "التغيير" : "Change"}</TableHead>
+                        <TableHead data-numeric>%</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {comparisonData.map((item) => (
                         <TableRow key={item.metric}>
                           <TableCell className="font-medium">{item.metric}</TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell data-numeric>
                             {formatComparisonValue(item, item.current)}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-muted-foreground">
+                          <TableCell data-numeric className=" text-muted-foreground">
                             {formatComparisonValue(item, item.previous)}
                           </TableCell>
                           <TableCell
-                            className={`text-right font-mono ${item.change >= 0 ? "text-success" : "text-destructive"}`}
+                            data-numeric
+                            className={` ${item.change >= 0 ? "text-success" : "text-destructive"}`}
                           >
                             <div className="flex items-center justify-end gap-1">
                               {item.change >= 0 ? (
@@ -709,7 +700,8 @@ export default function AdvancedReports() {
                             </div>
                           </TableCell>
                           <TableCell
-                            className={`text-right font-mono ${item.changePercent >= 0 ? "text-success" : "text-destructive"}`}
+                            data-numeric
+                            className={` ${item.changePercent >= 0 ? "text-success" : "text-destructive"}`}
                           >
                             {item.changePercent >= 0 ? "+" : ""}
                             {item.changePercent.toFixed(1)}%

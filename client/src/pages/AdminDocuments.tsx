@@ -252,7 +252,7 @@ export default function AdminDocuments() {
 
   if (isLoadingCompanies) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-12 w-full" />
         <Skeleton className="h-96" />
@@ -261,7 +261,7 @@ export default function AdminDocuments() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
         title="Client Document Management"
@@ -273,7 +273,7 @@ export default function AdminDocuments() {
             disabled={!selectedCompanyId}
             data-testid="button-upload-client-document"
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 me-2" />
             <T k="pages.uploadDocument" />
           </Button>
         }
@@ -377,18 +377,18 @@ export default function AdminDocuments() {
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
                     placeholder="Search documents..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="ps-10"
                     data-testid="input-search-client-documents"
                   />
                 </div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                   <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
-                    <Filter className="w-4 h-4 mr-2" />
+                    <Filter className="w-4 h-4 me-2" />
                     <SelectValue placeholder="Filter by category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -437,7 +437,7 @@ export default function AdminDocuments() {
                         <TableHead>
                           <T k="pages.uploaded" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="pages.actions" />
                         </TableHead>
                       </TableRow>
@@ -499,7 +499,7 @@ export default function AdminDocuments() {
                                 {format(parseISO(doc.createdAt), "MMM d, yyyy")}
                               </div>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell data-numeric>
                               <div className="flex items-center justify-end gap-1">
                                 <Button
                                   size="icon"
@@ -521,7 +521,7 @@ export default function AdminDocuments() {
                                   onClick={() => deleteMutation.mutate(doc.id)}
                                   data-testid={`button-delete-${doc.id}`}
                                 >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                  <Trash2 className="w-4 h-4 text-muted-foreground" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -671,12 +671,12 @@ export default function AdminDocuments() {
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   <T k="pages.uploading" />
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="w-4 h-4 me-2" />
                   <T k="pages.uploadDocument" />
                 </>
               )}

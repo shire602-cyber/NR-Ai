@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -330,11 +331,11 @@ export default function Admin() {
         actions={
           <>
             <Button variant="outline" size="sm" data-testid="button-export-data">
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 me-2" />
               <T k="pageLabels.exportData" />
             </Button>
             <Button variant="outline" size="sm" data-testid="button-refresh">
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className="w-4 h-4 me-2" />
               <T k="pages.refresh" />
             </Button>
           </>
@@ -342,29 +343,29 @@ export default function Admin() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-6 w-full max-w-4xl">
+        <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview">
-            <BarChart3 className="w-4 h-4 mr-2" />
+            <BarChart3 className="w-4 h-4 me-2" />
             <T k="pages.overview" />
           </TabsTrigger>
           <TabsTrigger value="pricing" data-testid="tab-pricing">
-            <DollarSign className="w-4 h-4 mr-2" />
+            <DollarSign className="w-4 h-4 me-2" />
             <T k="pages.pricing" />
           </TabsTrigger>
           <TabsTrigger value="users" data-testid="tab-users">
-            <Users className="w-4 h-4 mr-2" />
+            <Users className="w-4 h-4 me-2" />
             <T k="pages.users" />
           </TabsTrigger>
           <TabsTrigger value="settings" data-testid="tab-settings">
-            <Settings className="w-4 h-4 mr-2" />
+            <Settings className="w-4 h-4 me-2" />
             <T k="pages.settings" />
           </TabsTrigger>
           <TabsTrigger value="integrations" data-testid="tab-integrations">
-            <Plug className="w-4 h-4 mr-2" />
+            <Plug className="w-4 h-4 me-2" />
             <T k="pageLabels.integrations" />
           </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit">
-            <Shield className="w-4 h-4 mr-2" />
+            <Shield className="w-4 h-4 me-2" />
             <T k="pageLabels.auditLog" />
           </TabsTrigger>
         </TabsList>
@@ -381,12 +382,9 @@ export default function Admin() {
                 <Users className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-total-users">
+                <div className="text-h1 font-semibold tabular-nums" data-testid="stat-total-users">
                   {stats?.totalUsers || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  <span className="text-success">+12%</span> from last month
-                </p>
               </CardContent>
             </Card>
 
@@ -398,12 +396,12 @@ export default function Admin() {
                 <Building2 className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-total-companies">
+                <div
+                  className="text-h1 font-semibold tabular-nums"
+                  data-testid="stat-total-companies"
+                >
                   {stats?.totalCompanies || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  <span className="text-success">+8%</span> from last month
-                </p>
               </CardContent>
             </Card>
 
@@ -415,12 +413,12 @@ export default function Admin() {
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-monthly-revenue">
-                  AED {(stats?.monthlyRevenue || 0).toLocaleString()}
+                <div
+                  className="text-h1 font-semibold tabular-nums"
+                  data-testid="stat-monthly-revenue"
+                >
+                  <Money amount={stats?.monthlyRevenue || 0} currency="AED" />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  <span className="text-success">+15%</span> from last month
-                </p>
               </CardContent>
             </Card>
 
@@ -432,7 +430,7 @@ export default function Admin() {
                 <Activity className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-ai-credits">
+                <div className="text-h1 font-semibold tabular-nums" data-testid="stat-ai-credits">
                   {stats?.aiCreditsUsed || 0}
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -524,7 +522,7 @@ export default function Admin() {
                     }, 2000);
                   }}
                 >
-                  <Database className="w-4 h-4 mr-2" />
+                  <Database className="w-4 h-4 me-2" />
                   <T k="pageLabels.backupDatabase" />
                 </Button>
                 <Button
@@ -539,7 +537,7 @@ export default function Admin() {
                     });
                   }}
                 >
-                  <Bell className="w-4 h-4 mr-2" />
+                  <Bell className="w-4 h-4 me-2" />
                   <T k="pageLabels.sendNewsletter" />
                 </Button>
                 <Button
@@ -578,7 +576,7 @@ export default function Admin() {
                     }, 1500);
                   }}
                 >
-                  <FileText className="w-4 h-4 mr-2" />
+                  <FileText className="w-4 h-4 me-2" />
                   <T k="pageLabels.generateUsageReport" />
                 </Button>
                 <Button
@@ -598,7 +596,7 @@ export default function Admin() {
                     }, 2000);
                   }}
                 >
-                  <RefreshCw className="w-4 h-4 mr-2" />
+                  <RefreshCw className="w-4 h-4 me-2" />
                   <T k="pageLabels.syncAllIntegrations" />
                 </Button>
               </CardContent>
@@ -656,7 +654,7 @@ export default function Admin() {
             <Dialog open={newPlanDialogOpen} onOpenChange={setNewPlanDialogOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-plan">
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4 me-2" />
                   <T k="pageLabels.addPlan" />
                 </Button>
               </DialogTrigger>
@@ -732,7 +730,7 @@ export default function Admin() {
                       onClick={() => setEditingPlan(plan)}
                       data-testid={`button-edit-plan-${plan.id}`}
                     >
-                      <Edit2 className="w-4 h-4 mr-2" />
+                      <Edit2 className="w-4 h-4 me-2" />
                       Edit
                     </Button>
                     <Button
@@ -775,10 +773,10 @@ export default function Admin() {
         <TabsContent value="users" className="space-y-6">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search users..."
-                className="pl-10"
+                className="ps-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 data-testid="input-search-users"
@@ -820,7 +818,7 @@ export default function Admin() {
                     <TableHead>
                       <T k="pageLabels.joined" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="banking.common.actions" />
                     </TableHead>
                   </TableRow>
@@ -854,7 +852,7 @@ export default function Admin() {
                           </Badge>
                         </TableCell>
                         <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -963,7 +961,7 @@ export default function Admin() {
                     <TableHead>
                       <T k="pages.created" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="banking.common.actions" />
                     </TableHead>
                   </TableRow>
@@ -988,7 +986,7 @@ export default function Admin() {
                         <TableCell>{company.trnVatNumber || "-"}</TableCell>
                         <TableCell>{company.baseCurrency}</TableCell>
                         <TableCell>{new Date(company.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1265,12 +1263,12 @@ export default function Admin() {
                   >
                     {saveSystemSettingsMutation.isPending ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
                         <T k="pageLabels.saving" />
                       </>
                     ) : (
                       <>
-                        <Save className="w-4 h-4 mr-2" />
+                        <Save className="w-4 h-4 me-2" />
                         <T k="pageLabels.saveSettings" />
                       </>
                     )}
@@ -1356,12 +1354,12 @@ export default function Admin() {
                   >
                     {saveSystemSettingsMutation.isPending ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
                         <T k="pageLabels.saving" />
                       </>
                     ) : (
                       <>
-                        <Save className="w-4 h-4 mr-2" />
+                        <Save className="w-4 h-4 me-2" />
                         <T k="pageLabels.saveNotificationSettings" />
                       </>
                     )}
@@ -1417,7 +1415,7 @@ export default function Admin() {
                   />
                 </div>
                 <Button className="w-full" data-testid="button-save-stripe">
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 me-2" />
                   <T k="pageLabels.saveConfiguration" />
                 </Button>
               </CardContent>
@@ -1466,7 +1464,7 @@ export default function Admin() {
                   </Select>
                 </div>
                 <Button className="w-full" data-testid="button-save-openai">
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 me-2" />
                   <T k="pageLabels.saveConfiguration" />
                 </Button>
               </CardContent>
@@ -1497,7 +1495,7 @@ export default function Admin() {
                   <T k="pageLabels.googleSheetsIntegrationIsConfiguredAndReadyToUse" />
                 </p>
                 <Button variant="outline" className="w-full" data-testid="button-test-sheets">
-                  <RefreshCw className="w-4 h-4 mr-2" />
+                  <RefreshCw className="w-4 h-4 me-2" />
                   <T k="pageLabels.testConnection" />
                 </Button>
               </CardContent>
@@ -1509,10 +1507,10 @@ export default function Admin() {
         <TabsContent value="audit" className="space-y-6">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search audit logs..."
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-audit"
               />
             </div>
@@ -1539,7 +1537,7 @@ export default function Admin() {
               </SelectContent>
             </Select>
             <Button variant="outline" data-testid="button-export-audit">
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 me-2" />
               <T k="pages.export" />
             </Button>
           </div>
@@ -1802,9 +1800,9 @@ function PlanForm({
       <DialogFooter>
         <Button type="submit" disabled={isPending} data-testid="button-save-plan">
           {isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <Save className="w-4 h-4 mr-2" />
+            <Save className="w-4 h-4 me-2" />
           )}
           Save Plan
         </Button>

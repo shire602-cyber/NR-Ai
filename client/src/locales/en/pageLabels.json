@@ -1027,5 +1027,13 @@
   "pageLabels.companySettings.invalidLogo": "Invalid logo",
   "pageLabels.companySettings.logoUploaded": "Logo uploaded",
   "pageLabels.companySettings.logoUploadFailed": "Logo upload failed",
-  "pageLabels.companySettings.requiredMark": "Required"
+  "pageLabels.companySettings.requiredMark": "Required",
+  "pageLabels.priorityHigh": "High",
+  "pageLabels.priorityLow": "Low",
+  "pageLabels.notificationOpen": "Open",
+  "pageLabels.notificationMarkRead": "Mark as read",
+  "pageLabels.notificationDismiss": "Dismiss",
+  "pageLabels.notificationsPageTitle": "Notifications & news",
+  "pageLabels.notificationsPageDesc": "Stay updated with deadlines, reminders, and regulatory changes",
+  "pageLabels.notificationsTab": "Notifications"
 }

@@ -248,7 +248,7 @@ export default function CompanyProfile() {
   }
 
   return (
-    <div className="space-y-8 max-w-4xl">
+    <div className="max-w-narrow space-y-6">
       <PageHeader
         eyebrow={t["pages.companyProfileEyebrow"]}
         title={t["pages.companyProfileTitle"]}
@@ -359,7 +359,7 @@ export default function CompanyProfile() {
                         <Input
                           {...field}
                           placeholder="1234567890"
-                          className="font-mono"
+                          className="tabular-nums"
                           data-testid="input-registration-number"
                         />
                       </FormControl>
@@ -514,7 +514,7 @@ export default function CompanyProfile() {
                         <Input
                           {...field}
                           placeholder="123456789012345"
-                          className="font-mono"
+                          className="tabular-nums"
                           data-testid="input-trn-vat-number"
                         />
                       </FormControl>
@@ -622,7 +622,7 @@ export default function CompanyProfile() {
                         <Input
                           {...field}
                           placeholder="CT-123456789"
-                          className="font-mono"
+                          className="tabular-nums"
                           data-testid="input-corporate-tax-id"
                         />
                       </FormControl>
@@ -646,7 +646,7 @@ export default function CompanyProfile() {
                 t["pages.companyProfileSaving"]
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 me-2" />
                   <T k="pages.saveChanges" />
                 </>
               )}

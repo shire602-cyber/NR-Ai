@@ -75,27 +75,27 @@ export default function ReportsHeader() {
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline" data-testid="button-report-proof-trail">
               <Link href={evidenceSectionHref("proof-drilldown")}>
-                <FileText className="w-4 h-4 mr-2" />
+                <FileText className="w-4 h-4 me-2" />
                 {(t as any).viewProof ?? "View proof"}
               </Link>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" disabled={isExporting} data-testid="button-export">
-                  <Download className="w-4 h-4 mr-2" />
+                  <Download className="w-4 h-4 me-2" />
                   {isExporting ? "Exporting..." : t.export}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <FileSpreadsheet className="w-4 h-4 me-2" />
                   <T k="reportCenter.exportToExcel" />
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
                   data-testid="menu-export-sheets"
                 >
-                  <SiGooglesheets className="w-4 h-4 mr-2" />
+                  <SiGooglesheets className="w-4 h-4 me-2" />
                   <T k="reportCenter.exportToGoogleSheets" />
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -104,10 +104,7 @@ export default function ReportsHeader() {
         }
       />
       {activeReportWorkspaceTab === "reports" ? (
-        <section
-          className="rounded-lg border border-border/70 bg-card p-4 shadow-sm"
-          aria-labelledby="report-viewer-title"
-        >
+        <section className="space-y-4" aria-labelledby="report-viewer-title">
           <div className="flex flex-col gap-4">
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -120,7 +117,7 @@ export default function ReportsHeader() {
                     data-testid="button-back-to-report-center"
                   >
                     <Link href={backToReportsHref}>
-                      <ArrowLeft className="h-3.5 w-3.5" />
+                      <ArrowLeft className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
                       <T k="reportCenter.backToReports" />
                     </Link>
                   </Button>
@@ -130,17 +127,17 @@ export default function ReportsHeader() {
                 ) : null}
               </div>
               <div>
-                <h2 id="report-viewer-title" className="text-2xl font-semibold tracking-tight">
+                <h2 id="report-viewer-title" className="text-h2 font-semibold text-foreground">
                   {reportViewerTitle}
                 </h2>
-                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                <p className="mt-1 max-w-3xl text-small text-muted-foreground">
                   {reportViewerDescription}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
+          <div className="grid items-start gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
             <div className="space-y-1.5">
               <Label>{(t as any).reportCenter ?? "Report Center"}</Label>
               <DropdownMenu>
@@ -148,7 +145,7 @@ export default function ReportsHeader() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-left"
+                    className="h-auto min-h-11 w-full justify-between gap-3 bg-card px-3 py-1.5 text-start"
                     data-testid="button-report-viewer-menu"
                   >
                     <span className="min-w-0">
@@ -175,7 +172,7 @@ export default function ReportsHeader() {
                     <DropdownMenuSub key={group.category}>
                       <DropdownMenuSubTrigger>
                         <span className="min-w-0 flex-1 truncate">{group.label}</span>
-                        <span className="mr-2 text-xs font-normal text-muted-foreground">
+                        <span className="me-2 text-xs font-normal text-muted-foreground">
                           {group.options.length}
                         </span>
                       </DropdownMenuSubTrigger>
@@ -204,9 +201,7 @@ export default function ReportsHeader() {
             </div>
             <div className="space-y-1.5">
               <Label>{(t as any).period ?? "Period"}</Label>
-              <div className="rounded-md border bg-background p-2">
-                <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-              </div>
+              <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
             </div>
           </div>
         </section>
@@ -216,10 +211,10 @@ export default function ReportsHeader() {
           <section className="space-y-3" aria-labelledby="role-focus-title">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 id="role-focus-title" className="text-xl font-semibold">
+                <h2 id="role-focus-title" className="text-h2 font-semibold text-foreground">
                   <T k="reportCenter.roleFocus" />
                 </h2>
-                <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
+                <p className="mt-0.5 text-small text-muted-foreground">{personaScopeDescription}</p>
               </div>
               <Badge
                 variant={personaFilter === "all" ? "outline" : "info"}
@@ -248,7 +243,7 @@ export default function ReportsHeader() {
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                  <div className="text-caption font-semibold text-muted-foreground">
                     <T k="reportCenter.savedReportingContext" />
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -287,7 +282,7 @@ export default function ReportsHeader() {
                         data-testid="button-open-report-workflow-context-link"
                       >
                         <T k="reportCenter.openShareLink" />
-                        <ArrowRight className="h-3.5 w-3.5" />
+                        <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
                       </Link>
                     </Button>
                     <Button
@@ -306,23 +301,20 @@ export default function ReportsHeader() {
             </div>
           </section>
 
-          <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-2 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
             <Tabs
               value={activeReportWorkspaceTab}
               onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
             >
-              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
+              <TabsList>
                 {reportWorkspaceTabs.map((tab) => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="h-10 min-w-[7.25rem] flex-none px-3 py-2 text-center lg:min-w-0 lg:flex-1 xl:h-auto xl:flex-col xl:gap-0.5"
+                    title={tab.description}
                     data-testid={`reports-workspace-tab-${tab.id}`}
                   >
-                    <span className="text-sm font-semibold">{tab.label}</span>
-                    <span className="hidden text-[11px] font-normal text-muted-foreground xl:block">
-                      {tab.description}
-                    </span>
+                    {tab.label}
                   </TabsTrigger>
                 ))}
               </TabsList>

@@ -37,7 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { T } from "@/components/layout/T";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { resolveSelectedId } from "@/lib/selection";
 import {
@@ -546,7 +546,7 @@ export default function VatWorkpaperPanel({
               disabled={!selectedWorkpaperId || pullFromBooksMutation.isPending}
               data-testid="button-pull-vat-workpaper-from-books"
             >
-              <BookOpen className="w-4 h-4 mr-2" />
+              <BookOpen className="w-4 h-4 me-2" />
               {pullFromBooksMutation.isPending ? "Pulling..." : "Pull from books"}
             </Button>
             <Button
@@ -555,7 +555,7 @@ export default function VatWorkpaperPanel({
               disabled={!selectedWorkpaperId || exporting}
               data-testid="button-export-vat-workpaper"
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 me-2" />
               {exporting ? "Exporting..." : "Excel"}
             </Button>
             {canGenerateVatReturn ? (
@@ -565,16 +565,16 @@ export default function VatWorkpaperPanel({
                 data-testid="button-generate-return-from-workpaper"
               >
                 {generateReturnMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <Check className="w-4 h-4 mr-2" />
+                  <Check className="w-4 h-4 me-2" />
                 )}
                 Generate VAT return
               </Button>
             ) : (
               <Button asChild data-testid="link-workpaper-add-trn">
                 <Link href="/company-profile">
-                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  <AlertTriangle className="w-4 h-4 me-2" />
                   <T k="components.vwAddTrn" />
                 </Link>
               </Button>
@@ -634,7 +634,7 @@ export default function VatWorkpaperPanel({
               disabled={!companyId || !periodStart || !periodEnd || createMutation.isPending}
               data-testid="button-create-vat-workpaper"
             >
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 me-2" />
               {createMutation.isPending ? "Opening..." : "Create/Open"}
             </Button>
             <Button
@@ -684,27 +684,30 @@ export default function VatWorkpaperPanel({
               <T k="components.vwOutputAmount" />
             </p>
             <p className="text-lg font-semibold" data-testid="vat-workpaper-total-sales">
-              {formatCurrency(outputAmount)}
+              <Money amount={outputAmount} />
             </p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
             <p className="text-xs text-muted-foreground">
               <T k="components.vwInputAmount" />
             </p>
-            <p className="text-lg font-semibold">{formatCurrency(inputAmount)}</p>
+            <p className="text-lg font-semibold">
+              <Money amount={inputAmount} />
+            </p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
             <p className="text-xs text-muted-foreground">
               <T k="components.vwNetVat" />
             </p>
             <p
-              className={`text-lg font-semibold ${payableVat >= 0 ? "text-destructive" : "text-success"}`}
+              className={`text-lg font-semibold ${payableVat >= 0 ? "text-foreground" : "text-positive"}`}
               data-testid="vat-workpaper-net-vat"
             >
-              {formatCurrency(Math.abs(payableVat))}
+              <Money amount={Math.abs(payableVat)} />
             </p>
             <p className="text-xs text-muted-foreground">
-              Output {formatCurrency(outputVat)} / input {formatCurrency(inputVat)}
+              <T k="components.vwOutputShort" /> <Money amount={outputVat} /> ·{" "}
+              <T k="components.vwInputShort" /> <Money amount={inputVat} />
             </p>
           </div>
         </div>
@@ -732,17 +735,19 @@ export default function VatWorkpaperPanel({
                   <TableHead className="min-w-32">
                     <T k="components.vwColEmirate" />
                   </TableHead>
-                  <TableHead className="min-w-32 text-right">
+                  <TableHead data-numeric className="min-w-32">
                     <T k="components.vwColAmount" />
                   </TableHead>
-                  <TableHead className="min-w-32 text-right">VAT</TableHead>
-                  <TableHead className="min-w-32 text-right">
+                  <TableHead data-numeric className="min-w-32">
+                    VAT
+                  </TableHead>
+                  <TableHead data-numeric className="min-w-32">
                     <T k="components.vwColGross" />
                   </TableHead>
                   <TableHead className="min-w-28">
                     <T k="components.vwColStatus" />
                   </TableHead>
-                  <TableHead className="w-12 text-right">
+                  <TableHead data-numeric className="w-12">
                     <T k="components.vwColAction" />
                   </TableHead>
                 </TableRow>
@@ -818,7 +823,7 @@ export default function VatWorkpaperPanel({
                   </TableCell>
                   <TableCell>
                     <Input
-                      className="h-8 min-w-28 text-right"
+                      className="h-8 min-w-28 text-end"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={rowForm.taxableAmount}
@@ -828,7 +833,7 @@ export default function VatWorkpaperPanel({
                   </TableCell>
                   <TableCell>
                     <Input
-                      className="h-8 min-w-28 text-right"
+                      className="h-8 min-w-28 text-end"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={rowForm.vatAmount}
@@ -838,7 +843,7 @@ export default function VatWorkpaperPanel({
                   </TableCell>
                   <TableCell>
                     <Input
-                      className="h-8 min-w-28 text-right"
+                      className="h-8 min-w-28 text-end"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={rowForm.grossAmount}
@@ -850,7 +855,7 @@ export default function VatWorkpaperPanel({
                   <TableCell>
                     <Badge variant="default">approved</Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     <Button
                       size="sm"
                       onClick={() => addRowMutation.mutate()}
@@ -896,14 +901,14 @@ export default function VatWorkpaperPanel({
                       </TableCell>
                       <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
                       <TableCell>{row.emirate || "-"}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(Number(row.taxableAmount ?? 0))}
+                      <TableCell data-numeric>
+                        <Money amount={Number(row.taxableAmount ?? 0)} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(Number(row.vatAmount ?? 0))}
+                      <TableCell data-numeric>
+                        <Money amount={Number(row.vatAmount ?? 0)} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(Number(row.grossAmount ?? 0))}
+                      <TableCell data-numeric>
+                        <Money amount={Number(row.grossAmount ?? 0)} />
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -918,7 +923,7 @@ export default function VatWorkpaperPanel({
                           {row.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <div className="flex items-center justify-end gap-1.5">
                           {row.journalEntryId ? (
                             <Badge variant="outline">posted</Badge>
@@ -976,7 +981,7 @@ export default function VatWorkpaperPanel({
               id="vatWorkpaperPaste"
               value={pastedRows}
               onChange={(event) => setPastedRows(event.target.value)}
-              className="min-h-28 font-mono text-xs"
+              className="min-h-28 tabular-nums text-xs"
               placeholder={
                 "Date\tVendor\tSr. Number\tAmount\n06/12/2025\tABDUL LATIF BROTHERS STORE\t23319\t31030"
               }

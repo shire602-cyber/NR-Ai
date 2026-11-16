@@ -91,13 +91,13 @@ export default function AdminDashboard() {
           <>
             <Link href="/admin/clients">
               <Button variant="outline" data-testid="button-view-clients">
-                <Building2 className="w-4 h-4 mr-2" />
+                <Building2 className="w-4 h-4 me-2" />
                 <T k="pages.viewAllClients" />
               </Button>
             </Link>
             <Link href="/admin/invitations">
               <Button data-testid="button-invite-client">
-                <UserPlus className="w-4 h-4 mr-2" />
+                <UserPlus className="w-4 h-4 me-2" />
                 <T k="pageLabels.inviteClient" />
               </Button>
             </Link>
@@ -390,14 +390,14 @@ export default function AdminDashboard() {
                       data-testid={`health-card-${client.companyId}`}
                     >
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-sm truncate flex-1 mr-2">
+                        <h3 className="font-semibold text-sm truncate flex-1 me-2">
                           {client.companyName}
                         </h3>
                         <Badge
                           variant="outline"
                           className={`text-xs flex-shrink-0 ${cfg.badgeClass}`}
                         >
-                          <span className="mr-1">{cfg.icon}</span> {cfg.label}
+                          <span className="me-1">{cfg.icon}</span> {cfg.label}
                         </Badge>
                       </div>
                       <div className="space-y-1 text-xs text-muted-foreground">
@@ -468,17 +468,17 @@ export default function AdminDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-3 pr-4 font-medium">
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="pb-3 pe-4 font-medium">
                       <T k="pages.client" />
                     </th>
-                    <th className="pb-3 pr-4 font-medium">
+                    <th className="pb-3 pe-4 font-medium">
                       <T k="pageLabels.deadlineType" />
                     </th>
-                    <th className="pb-3 pr-4 font-medium">
+                    <th className="pb-3 pe-4 font-medium">
                       <T k="pages.dueDate" />
                     </th>
-                    <th className="pb-3 pr-4 font-medium text-right">
+                    <th className="pb-3 pe-4 font-medium text-end">
                       <T k="pageLabels.daysRemaining" />
                     </th>
                     <th className="pb-3 font-medium">
@@ -498,11 +498,11 @@ export default function AdminDashboard() {
                           isOverdue ? "bg-danger-subtle " : isUrgent ? "bg-danger-subtle/50 " : ""
                         }`}
                       >
-                        <td className="py-3 pr-4 font-medium">{dl.clientName}</td>
-                        <td className="py-3 pr-4">{dl.deadlineType}</td>
-                        <td className="py-3 pr-4">{format(new Date(dl.dueDate), "MMM d, yyyy")}</td>
+                        <td className="py-3 pe-4 font-medium">{dl.clientName}</td>
+                        <td className="py-3 pe-4">{dl.deadlineType}</td>
+                        <td className="py-3 pe-4">{format(new Date(dl.dueDate), "MMM d, yyyy")}</td>
                         <td
-                          className={`py-3 pr-4 text-right font-mono font-medium ${
+                          className={`py-3 pe-4 text-end tabular-nums font-medium ${
                             isOverdue
                               ? "text-destructive "
                               : isUrgent
@@ -571,14 +571,14 @@ export default function AdminDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-3 pr-4 font-medium">
+                  <tr className="border-b text-start text-muted-foreground">
+                    <th className="pb-3 pe-4 font-medium">
                       <T k="pageLabels.staffName" />
                     </th>
-                    <th className="pb-3 pr-4 font-medium">
+                    <th className="pb-3 pe-4 font-medium">
                       <T k="pages.email" />
                     </th>
-                    <th className="pb-3 pr-4 font-medium text-right">
+                    <th className="pb-3 pe-4 font-medium text-end">
                       <T k="pageLabels.assignedClients" />
                     </th>
                     <th className="pb-3 font-medium">
@@ -591,9 +591,9 @@ export default function AdminDashboard() {
                     .filter((u: any) => u.isAdmin)
                     .map((staff: any) => (
                       <tr key={staff.id} className="border-b last:border-0">
-                        <td className="py-3 pr-4 font-medium">{staff.name || "Unnamed"}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{staff.email}</td>
-                        <td className="py-3 pr-4 text-right font-mono">
+                        <td className="py-3 pe-4 font-medium">{staff.name || "Unnamed"}</td>
+                        <td className="py-3 pe-4 text-muted-foreground">{staff.email}</td>
+                        <td className="py-3 pe-4 text-end tabular-nums">
                           {clients.length > 0
                             ? Math.ceil(
                                 clients.length / adminUsers.filter((u: any) => u.isAdmin).length

@@ -16,7 +16,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   ShieldAlert,
   AlertTriangle,
@@ -170,7 +170,7 @@ export default function AnomalyDetection() {
 
   if (isLoadingCompany) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -218,7 +218,7 @@ export default function AnomalyDetection() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -250,9 +250,9 @@ export default function AnomalyDetection() {
             data-testid="button-run-scan"
           >
             {isFetching ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              <RefreshCw className="h-4 w-4 me-2 animate-spin" />
             ) : (
-              <Scan className="h-4 w-4 mr-2" />
+              <Scan className="h-4 w-4 me-2" />
             )}
             {isFetching ? "Scanning..." : "Run Scan"}
           </Button>
@@ -395,7 +395,7 @@ export default function AnomalyDetection() {
                           </Badge>
                           {typeof anomaly.amount === "number" && anomaly.amount > 0 && (
                             <span className="text-sm font-medium">
-                              {formatCurrency(anomaly.amount, "AED", locale)}
+                              <Money amount={anomaly.amount} currency={"AED"} />
                             </span>
                           )}
                         </div>
@@ -421,7 +421,7 @@ export default function AnomalyDetection() {
                       disabled={dismissMutation.isPending}
                       className="shrink-0"
                     >
-                      <X className="h-4 w-4 mr-1" />
+                      <X className="h-4 w-4 me-1" />
                       <T k="pages.dismiss" />
                     </Button>
                   </div>

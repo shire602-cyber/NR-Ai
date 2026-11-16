@@ -364,7 +364,7 @@ export function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              <p className="text-xs text-muted-foreground">
                 <T k="pages.critical" />
               </p>
               <AlertTriangle className="w-4 h-4 text-destructive" />
@@ -375,7 +375,7 @@ export function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT due 28d</p>
+              <p className="text-xs text-muted-foreground">VAT due 28d</p>
               <Calendar className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.vatDue28Days ?? 0}</p>
@@ -384,7 +384,7 @@ export function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">CT due 90d</p>
+              <p className="text-xs text-muted-foreground">CT due 90d</p>
               <Calculator className="w-4 h-4 text-info" />
             </div>
             <p className="text-2xl font-bold mt-1">
@@ -395,7 +395,7 @@ export function BookkeeperCommandCenter({
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              <p className="text-xs text-muted-foreground">
                 <T k="pages.closeBlocked" />
               </p>
               <FileText className="w-4 h-4 text-warning" />
@@ -483,7 +483,7 @@ export function BookkeeperCommandCenter({
                         key={`${bucket.key}-${item.client.companyId}`}
                         type="button"
                         onClick={() => onOpenBrief(item.client.companyId)}
-                        className="w-full rounded-md border bg-background px-2.5 py-2 text-left hover:bg-muted/50 transition-colors"
+                        className="w-full rounded-md border bg-background px-2.5 py-2 text-start hover:bg-muted/50 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -520,7 +520,7 @@ export function BookkeeperCommandCenter({
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={onManageStaff}>
-              <Users className="w-4 h-4 mr-2" />
+              <Users className="w-4 h-4 me-2" />
               <T k="pages.manageStaff" />
             </Button>
           </div>
@@ -604,7 +604,7 @@ export function BookkeeperCommandCenter({
                         {owner.critical} critical
                       </Badge>
                     </div>
-                    <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap gap-2 mt-2 text-caption text-muted-foreground">
                       <span>{owner.vatDue28Days} VAT</span>
                       <span>{owner.corporateTaxDue90Days} CT</span>
                       <span>{owner.bookkeepingBlocked} close blocked</span>
@@ -761,7 +761,7 @@ export function BookkeeperCommandCenter({
                       key={`intervention-watch-${client.companyId}`}
                       type="button"
                       onClick={() => onOpenBrief(client.companyId)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                      className="w-full rounded-md border bg-background px-3 py-2 text-start hover:bg-muted/50 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -873,7 +873,7 @@ export function BookkeeperCommandCenter({
                         type="button"
                         onClick={() => row.primaryCompanyId && onOpenBrief(row.primaryCompanyId)}
                         disabled={!row.primaryCompanyId}
-                        className="w-full rounded-md border bg-background px-3 py-2 text-left transition-colors enabled:hover:bg-muted/50 disabled:cursor-default"
+                        className="w-full rounded-md border bg-background px-3 py-2 text-start transition-colors enabled:hover:bg-muted/50 disabled:cursor-default"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -883,7 +883,7 @@ export function BookkeeperCommandCenter({
                           <Badge className={priorityClass(row.risk)}>{row.count}</Badge>
                         </div>
                         <p className="text-xs font-medium mt-2 truncate">{row.action}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1 truncate">
+                        <p className="text-caption text-muted-foreground mt-1 truncate">
                           {row.sample || "No active clients"}
                         </p>
                       </button>
@@ -977,11 +977,11 @@ export function BookkeeperCommandCenter({
                         variant="outline"
                         onClick={() => onViewProfile(item.companyId)}
                       >
-                        <ChevronRight className="w-3.5 h-3.5 mr-1" />
+                        <ChevronRight className="w-3.5 h-3.5 me-1" />
                         <T k="pages.profile" />
                       </Button>
                       <Button size="sm" onClick={() => onOpenBooks(item.companyId)}>
-                        <BookOpen className="w-3.5 h-3.5 mr-1" />
+                        <BookOpen className="w-3.5 h-3.5 me-1" />
                         Open
                       </Button>
                     </div>
@@ -1041,7 +1041,7 @@ export function BookkeeperCommandCenter({
                     style={{ width: `${owner.averageCloseProgress}%` }}
                   />
                 </div>
-                <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
+                <div className="flex flex-wrap gap-2 mt-2 text-caption text-muted-foreground">
                   <span>{owner.vatDue28Days} VAT due</span>
                   <span>{owner.corporateTaxDue90Days} CT due</span>
                   <span>{owner.bookkeepingBlocked} close blocked</span>
@@ -1093,7 +1093,7 @@ export function BookkeeperCommandCenter({
                       key={client.companyId}
                       type="button"
                       onClick={() => onOpenBooks(client.companyId)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                      className="w-full rounded-md border bg-background px-3 py-2 text-start hover:bg-muted/50 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -1135,7 +1135,7 @@ export function BookkeeperCommandCenter({
                 key={client.companyId}
                 type="button"
                 onClick={() => onOpenBooks(client.companyId)}
-                className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                className="w-full rounded-md border px-3 py-2 text-start hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>

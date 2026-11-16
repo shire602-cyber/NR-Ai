@@ -23,6 +23,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
 import { StatusBadge } from "./StatusBadge";
 
@@ -181,26 +182,27 @@ export function SettlementTab({ companyId }: { companyId: string }) {
                 })}
               </div>
               <div>
-                {tx("hr.gratuity")}: {fmt(preview.gratuity)}
+                {tx("hr.gratuity")}: <Money amount={Number(preview.gratuity)} currency="AED" />
                 {preview.isCapped && preview.gratuityCap
                   ? ` (${tx("hr.capped")} ${fmt(preview.gratuityCap)})`
                   : ""}
               </div>
               <div>
-                {tx("hr.provisionAccrued")}: {fmt(preview.provisionAccrued)}
+                {tx("hr.provisionAccrued")}:{" "}
+                <Money amount={Number(preview.provisionAccrued)} currency="AED" />
               </div>
               <div>
-                {tx("hr.noticePay")}: {fmt(preview.noticePay)}
+                {tx("hr.noticePay")}: <Money amount={Number(preview.noticePay)} currency="AED" />
               </div>
               <div>
                 {tx("hr.leaveEncashment")} ({preview.leaveEncashmentDays}):{" "}
-                {fmt(preview.leaveEncashment)}
+                <Money amount={Number(preview.leaveEncashment)} currency="AED" />
               </div>
               <div>
-                {tx("hr.deductions")}: {fmt(preview.deductions)}
+                {tx("hr.deductions")}: <Money amount={Number(preview.deductions)} currency="AED" />
               </div>
               <div className="font-semibold">
-                {tx("hr.net")}: {fmt(preview.net)}
+                {tx("hr.net")}: <Money amount={Number(preview.net)} currency="AED" />
               </div>
             </div>
           )}
@@ -221,8 +223,8 @@ export function SettlementTab({ companyId }: { companyId: string }) {
                 <TableRow>
                   <TableHead>{tx("hr.employee")}</TableHead>
                   <TableHead>{tx("hr.terminationDate")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.gratuity")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.net")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.gratuity")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.net")}</TableHead>
                   <TableHead>{tx("hr.statusLabel")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -231,8 +233,12 @@ export function SettlementTab({ companyId }: { companyId: string }) {
                   <TableRow key={s.id}>
                     <TableCell>{s.employee_name}</TableCell>
                     <TableCell>{dayOnly(s.termination_date)}</TableCell>
-                    <TableCell className="text-end">{fmt(s.gratuity_amount)}</TableCell>
-                    <TableCell className="text-end">{fmt(s.net_amount)}</TableCell>
+                    <TableCell data-numeric>
+                      <Money amount={Number(s.gratuity_amount)} currency="AED" />
+                    </TableCell>
+                    <TableCell data-numeric>
+                      <Money amount={Number(s.net_amount)} currency="AED" />
+                    </TableCell>
                     <TableCell>
                       <StatusBadge status={s.status} />
                     </TableCell>

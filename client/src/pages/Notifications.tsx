@@ -2,6 +2,7 @@ import { T } from "@/components/layout/T";
 import { Link } from "wouter";
 import { useTranslation } from "@/lib/i18n";
 import { localizeNotification } from "@/lib/notification-display";
+import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -10,14 +11,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { ar as arLocale } from "date-fns/locale";
 import {
   Bell,
   CheckCircle,
-  XCircle,
+  X,
   AlertTriangle,
   Clock,
   Newspaper,
@@ -28,7 +29,7 @@ import type { Notification, RegulatoryNews } from "@shared/schema";
 
 export default function Notifications() {
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [activeTab, setActiveTab] = useState("notifications");
 
   const { data: notificationsData, isLoading: notificationsLoading } = useQuery<{
@@ -69,17 +70,17 @@ export default function Notifications() {
     switch (type) {
       case "deadline":
       case "payment_due":
-        return <Clock className="w-5 h-5 text-warning" />;
+        return <Clock className="text-warning" />;
       case "overdue":
-        return <AlertTriangle className="w-5 h-5 text-destructive" />;
+        return <AlertTriangle className="text-danger" />;
       case "regulatory":
-        return <Newspaper className="w-5 h-5 text-info" />;
+        return <Newspaper className="text-info" />;
       case "referral":
-        return <CheckCircle className="w-5 h-5 text-success" />;
+        return <CheckCircle className="text-success" />;
       case "system":
-        return <Bell className="w-5 h-5 text-muted-foreground" />;
+        return <Bell />;
       default:
-        return <Bell className="w-5 h-5" />;
+        return <Bell />;
     }
   };
 
@@ -87,34 +88,28 @@ export default function Notifications() {
     switch (priority) {
       case "urgent":
         return (
-          <Badge variant="destructive">
+          <Badge variant="danger">
             <T k="pageLabels.urgent" />
           </Badge>
         );
       case "high":
-        return <Badge className="bg-warning">High</Badge>;
-      case "normal":
         return (
-          <Badge variant="secondary">
-            <T k="pageLabels.normal" />
+          <Badge variant="warning">
+            <T k="pageLabels.priorityHigh" />
           </Badge>
         );
+      // Normal / low priority stay quiet: a pill per row is noise (CTO issue 10).
       default:
-        return <Badge variant="outline">Low</Badge>;
+        return null;
     }
   };
 
   const getNewsBadge = (category: string) => {
-    const colors: Record<string, string> = {
-      vat: "bg-info",
-      corporate_tax: "bg-chart-5",
-      customs: "bg-success",
-      labor: "bg-warning",
-      general: "bg-muted-foreground",
-    };
+    // Categories are topics, not statuses: one neutral outline pill.
+    const label = category.replace("_", " ");
     return (
-      <Badge className={colors[category] || "bg-muted-foreground"}>
-        {category.replace("_", " ").toUpperCase()}
+      <Badge variant="outline" className="capitalize">
+        {category === "vat" ? "VAT" : label}
       </Badge>
     );
   };
@@ -123,8 +118,8 @@ export default function Notifications() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Workspace"
-        title="Notifications & News"
-        description="Stay updated with deadlines, reminders, and regulatory changes"
+        title={t["pageLabels.notificationsPageTitle"]}
+        description={t["pageLabels.notificationsPageDesc"]}
         actions={
           activeTab === "notifications" && notificationsData?.unreadCount ? (
             <Button
@@ -132,7 +127,7 @@ export default function Notifications() {
               disabled={markAllAsReadMutation.isPending}
               data-testid="button-mark-all-read"
             >
-              <Check className="w-4 h-4 mr-2" />
+              <Check className="w-4 h-4 me-2" />
               <T k="pageLabels.markAllAsRead" />
             </Button>
           ) : null
@@ -142,16 +137,16 @@ export default function Notifications() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="notifications" data-testid="tab-notifications">
-            <Bell className="w-4 h-4 mr-2" />
-            Notifications
+            <Bell aria-hidden />
+            <T k="pageLabels.notificationsTab" />
             {notificationsData?.unreadCount ? (
-              <Badge variant="destructive" className="ml-2">
+              <Badge variant="danger" className="ms-1 px-1.5 py-0 tabular-nums">
                 {notificationsData.unreadCount}
               </Badge>
             ) : null}
           </TabsTrigger>
           <TabsTrigger value="regulatory" data-testid="tab-regulatory">
-            <Newspaper className="w-4 h-4 mr-2" />
+            <Newspaper className="w-4 h-4 me-2" />
             <T k="pageLabels.regulatoryNews" />
           </TabsTrigger>
         </TabsList>
@@ -176,81 +171,106 @@ export default function Notifications() {
               </CardContent>
             </Card>
           ) : (
-            <ScrollArea className="h-[600px]">
-              <div className="space-y-3">
-                {notificationsData.notifications.map((notification) => (
-                  <Card
-                    key={notification.id}
-                    className={`transition-colors ${!notification.isRead ? "bg-accent/50" : ""}`}
-                    data-testid={`card-notification-${notification.id}`}
-                  >
-                    <CardContent className="flex items-start gap-4 p-4">
-                      <div className="mt-1">{getNotificationIcon(notification.type)}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium" dir="auto">
-                            {localizeNotification(notification, t as Record<string, string>).title}
+            <Card className="overflow-hidden">
+              <ul className="divide-hairline" aria-label={t["components.notificationsTitle"]}>
+                {notificationsData.notifications.map((notification) => {
+                  const copy = localizeNotification(notification, t as Record<string, string>);
+                  const unread = !notification.isRead;
+                  return (
+                    <li
+                      key={notification.id}
+                      className="group/notification relative flex items-start gap-3 px-4 py-3.5 transition-colors duration-fast hover:bg-muted/50 md:px-5"
+                      data-testid={`card-notification-${notification.id}`}
+                      data-unread={unread ? "" : undefined}
+                    >
+                      {/* Unread marker: brand dot at the inline start (no tinted row). */}
+                      <span
+                        className={`mt-2 h-2 w-2 shrink-0 rounded-full ${unread ? "bg-primary" : "bg-transparent"}`}
+                        aria-hidden
+                      />
+                      <span className="mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-muted-foreground sm:flex [&_svg]:h-4 [&_svg]:w-4">
+                        {getNotificationIcon(notification.type)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <h4
+                            className={`text-body ${unread ? "font-semibold text-foreground" : "font-medium text-foreground/90"}`}
+                            dir="auto"
+                          >
+                            {copy.title}
                           </h4>
                           {getPriorityBadge(notification.priority)}
-                          {!notification.isRead && (
-                            <Badge variant="outline" className="bg-info-subtle">
-                              New
-                            </Badge>
+                          {unread && (
+                            <span className="sr-only">
+                              <T k="pageLabels.unread" />
+                            </span>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground" dir="auto">
-                          {localizeNotification(notification, t as Record<string, string>).message}
+                        <p className="mt-0.5 text-small text-muted-foreground" dir="auto">
+                          {copy.message}
                         </p>
-                        {localizeNotification(notification, t as Record<string, string>)
-                          .setupEmailHref ? (
+                        {copy.setupEmailHref ? (
                           <Link
-                            href={
-                              localizeNotification(notification, t as Record<string, string>)
-                                .setupEmailHref as string
-                            }
+                            href={copy.setupEmailHref as string}
                             className="mt-1 inline-block text-small font-medium text-accent hover:underline"
                           >
                             {t["components.notificationEmailNotSetUpLink"]}
                           </Link>
                         ) : null}
-                        <p className="text-xs text-muted-foreground mt-2">
+                        <p className="mt-1.5 text-caption text-muted-foreground">
                           {formatDistanceToNow(new Date(notification.createdAt), {
                             addSuffix: true,
+                            locale: locale === "ar" ? arLocale : undefined,
                           })}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="-me-2 flex shrink-0 flex-col items-center gap-0.5 sm:me-0 sm:flex-row">
                         {notification.actionUrl && (
-                          <Button variant="ghost" size="sm" asChild>
-                            <a href={notification.actionUrl}>
-                              <ChevronRight className="w-4 h-4" />
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            asChild
+                          >
+                            <a
+                              href={notification.actionUrl}
+                              aria-label={t["pageLabels.notificationOpen"]}
+                              title={t["pageLabels.notificationOpen"]}
+                            >
+                              <ChevronRight className="rtl:-scale-x-100" aria-hidden />
                             </a>
                           </Button>
                         )}
-                        {!notification.isRead && (
+                        {unread && (
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-foreground"
                             onClick={() => markAsReadMutation.mutate(notification.id)}
+                            aria-label={t["pageLabels.notificationMarkRead"]}
+                            title={t["pageLabels.notificationMarkRead"]}
                             data-testid={`button-read-${notification.id}`}
                           >
-                            <Check className="w-4 h-4" />
+                            <Check aria-hidden />
                           </Button>
                         )}
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
                           onClick={() => dismissMutation.mutate(notification.id)}
+                          aria-label={t["pageLabels.notificationDismiss"]}
+                          title={t["pageLabels.notificationDismiss"]}
                           data-testid={`button-dismiss-${notification.id}`}
                         >
-                          <XCircle className="w-4 h-4" />
+                          <X aria-hidden />
                         </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </ScrollArea>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
           )}
         </TabsContent>
 
@@ -283,12 +303,12 @@ export default function Notifications() {
                         <div className="flex items-center gap-2">
                           {getNewsBadge(news.category)}
                           {news.importance === "critical" && (
-                            <Badge variant="destructive">
+                            <Badge variant="danger">
                               <T k="pages.critical" />
                             </Badge>
                           )}
                           {news.importance === "high" && (
-                            <Badge className="bg-warning">
+                            <Badge variant="warning">
                               <T k="pageLabels.important" />
                             </Badge>
                           )}
@@ -297,7 +317,10 @@ export default function Notifications() {
                         {news.source && <CardDescription>Source: {news.source}</CardDescription>}
                       </div>
                       <span className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(news.publishedAt), { addSuffix: true })}
+                        {formatDistanceToNow(new Date(news.publishedAt), {
+                          addSuffix: true,
+                          locale: locale === "ar" ? arLocale : undefined,
+                        })}
                       </span>
                     </div>
                   </CardHeader>
@@ -305,14 +328,14 @@ export default function Notifications() {
                     <p className="text-muted-foreground">{news.summary}</p>
                     {news.effectiveDate && (
                       <p className="text-sm mt-2">
-                        <strong>Effective:</strong>{" "}
-                        {new Date(news.effectiveDate).toLocaleDateString()}
+                        <strong>Effective:</strong> {formatDate(news.effectiveDate, locale)}
                       </p>
                     )}
                     {news.sourceUrl && (
                       <Button variant="ghost" className="p-0 mt-2" asChild>
                         <a href={news.sourceUrl} target="_blank" rel="noopener noreferrer">
-                          <T k="pageLabels.readMore" /> <ChevronRight className="w-4 h-4 ml-1" />
+                          <T k="pageLabels.readMore" />{" "}
+                          <ChevronRight className="w-4 h-4 ms-1 rtl:-scale-x-100" aria-hidden />
                         </a>
                       </Button>
                     )}

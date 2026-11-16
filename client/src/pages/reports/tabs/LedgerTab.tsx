@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { formatReportDate, ledgerDetailPageSize } from "../shared";
 import { useReportsPageContext } from "../context";
 
@@ -65,7 +66,7 @@ export default function LedgerTab() {
             {ledgerLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{ledgerReport.entryCount}</div>
+              <div className="tabular-nums text-2xl font-bold">{ledgerReport.entryCount}</div>
             )}
           </CardContent>
         </Card>
@@ -86,8 +87,8 @@ export default function LedgerTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="font-mono text-2xl font-bold">
-                  {formatCurrency(ledgerReport.difference, "AED", locale)}
+                <div className="tabular-nums text-2xl font-bold">
+                  <Money amount={ledgerReport.difference} currency={"AED"} />
                 </div>
                 <Badge variant={ledgerReport.difference < 0.005 ? "success" : "warning"} dot>
                   {ledgerReport.difference < 0.005 ? "Balanced" : "Needs review"}
@@ -110,7 +111,7 @@ export default function LedgerTab() {
             {ledgerLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">{ledgerReport.accountCount}</div>
+              <div className="tabular-nums text-2xl font-bold">{ledgerReport.accountCount}</div>
             )}
           </CardContent>
         </Card>
@@ -129,7 +130,7 @@ export default function LedgerTab() {
               <Skeleton className="h-8 w-20" />
             ) : (
               <div className="space-y-1">
-                <div className="font-mono text-2xl font-bold">{ledgerReport.reviewEntries}</div>
+                <div className="tabular-nums text-2xl font-bold">{ledgerReport.reviewEntries}</div>
                 <div className="text-xs text-muted-foreground">
                   {ledgerReport.foreignCurrencyLines} FX lines
                 </div>
@@ -161,13 +162,13 @@ export default function LedgerTab() {
                         <T k="reportCenter.account" />
                       </TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.lines" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.debit" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.credit" />
                       </TableHead>
                     </TableRow>
@@ -177,7 +178,7 @@ export default function LedgerTab() {
                       <TableRow key={row.accountId}>
                         <TableCell>
                           <div className="font-medium">{row.accountName}</div>
-                          <div className="font-mono text-xs text-muted-foreground">
+                          <div className="tabular-nums text-xs text-muted-foreground">
                             {row.accountCode || "-"}
                           </div>
                         </TableCell>
@@ -186,12 +187,12 @@ export default function LedgerTab() {
                             {row.accountType}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.debit, "AED", locale)}
+                        <TableCell data-numeric>{row.lineCount}</TableCell>
+                        <TableCell data-numeric>
+                          <Money amount={row.debit} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.credit, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.credit} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -225,16 +226,16 @@ export default function LedgerTab() {
                     <TableHead>
                       <T k="reportCenter.source" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.entries" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.lines" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.activity" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.status" />
                     </TableHead>
                   </TableRow>
@@ -243,12 +244,12 @@ export default function LedgerTab() {
                   {ledgerSourceRows.map((row) => (
                     <TableRow key={row.source}>
                       <TableCell className="capitalize">{row.source}</TableCell>
-                      <TableCell className="text-right font-mono">{row.entryCount}</TableCell>
-                      <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(row.amountAed, "AED", locale)}
+                      <TableCell data-numeric>{row.entryCount}</TableCell>
+                      <TableCell data-numeric>{row.lineCount}</TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={row.amountAed} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <Badge variant={row.needsReview ? "warning" : "success"} dot>
                           {row.needsReview ? "Review" : "Linked"}
                         </Badge>
@@ -318,10 +319,10 @@ export default function LedgerTab() {
                         <T k="reportCenter.source" />
                       </TableHead>
                       <TableHead>Memo</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.debit" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.credit" />
                       </TableHead>
                       <TableHead>
@@ -332,13 +333,15 @@ export default function LedgerTab() {
                   <TableBody>
                     {ledgerDetailPageLines.map((line) => (
                       <TableRow key={line.id}>
-                        <TableCell className="font-mono font-medium">{line.entryNumber}</TableCell>
+                        <TableCell className="tabular-nums font-medium">
+                          {line.entryNumber}
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatReportDate(line.date)}
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{line.accountName}</div>
-                          <div className="font-mono text-xs text-muted-foreground">
+                          <div className="tabular-nums text-xs text-muted-foreground">
                             {line.accountCode || "-"}
                           </div>
                         </TableCell>
@@ -346,10 +349,10 @@ export default function LedgerTab() {
                         <TableCell className="max-w-[240px] truncate text-muted-foreground">
                           {line.memo || "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell data-numeric>
                           {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell data-numeric>
                           {line.credit > 0 ? formatCurrency(line.credit, "AED", locale) : "-"}
                         </TableCell>
                         <TableCell>
@@ -376,7 +379,7 @@ export default function LedgerTab() {
                     disabled={ledgerDetailCurrentPage <= 1}
                     onClick={() => setLedgerDetailPage((page) => Math.max(1, page - 1))}
                   >
-                    <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                    <ArrowLeft className="me-1.5 h-3.5 w-3.5" />
                     <T k="reportCenter.previous" />
                   </Button>
                   <Button
@@ -389,7 +392,7 @@ export default function LedgerTab() {
                     }
                   >
                     Next
-                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                    <ArrowRight className="ms-1.5 h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>

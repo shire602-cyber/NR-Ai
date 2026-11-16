@@ -31,6 +31,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { PageHeader } from "@/components/ui/page-header";
+import { formatDate as formatDisplayDate, formatDateRange } from "@/lib/format-date";
 import {
   FileCheck,
   Calculator,
@@ -144,42 +147,42 @@ const statusBadge = (status: string) => {
     case "filed":
       return (
         <Badge variant="default" className="bg-info hover:bg-info">
-          <CheckCircle2 className="w-3 h-3 mr-1" />
+          <CheckCircle2 className="w-3 h-3 me-1" />
           <T k="pages.filed" />
         </Badge>
       );
     case "paid":
       return (
         <Badge variant="default" className="bg-success hover:bg-success">
-          <Banknote className="w-3 h-3 mr-1" />
+          <Banknote className="w-3 h-3 me-1" />
           <T k="corporateTax.statusPaid" />
         </Badge>
       );
     case "computed":
       return (
         <Badge variant="secondary">
-          <Calculator className="w-3 h-3 mr-1" />
+          <Calculator className="w-3 h-3 me-1" />
           <T k="corporateTax.statusComputed" />
         </Badge>
       );
     case "reviewed":
       return (
         <Badge variant="outline">
-          <ClipboardCheck className="w-3 h-3 mr-1" />
+          <ClipboardCheck className="w-3 h-3 me-1" />
           <T k="corporateTax.statusReviewed" />
         </Badge>
       );
     case "amended":
       return (
         <Badge variant="outline">
-          <FilePen className="w-3 h-3 mr-1" />
+          <FilePen className="w-3 h-3 me-1" />
           <T k="corporateTax.statusAmended" />
         </Badge>
       );
     default:
       return (
         <Badge variant="secondary">
-          <Clock className="w-3 h-3 mr-1" />
+          <Clock className="w-3 h-3 me-1" />
           <T k="pages.draft" />
         </Badge>
       );
@@ -481,18 +484,11 @@ export default function CorporateTax() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-3">
-          <FileCheck className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {(t as any).corporateTax || "Corporate Tax (9%)"}
-            </h1>
-            <p className="text-muted-foreground mt-1">{t["corporateTax.pageSubtitle"]}</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Compliance"
+        title={(t as any).corporateTax || "Corporate Tax (9%)"}
+        description={t["corporateTax.pageSubtitle"]}
+      />
 
       <Card>
         <CardHeader>
@@ -525,11 +521,11 @@ export default function CorporateTax() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 me-2" />
                 <T k="pageLabels.revenueRow" />
               </Button>
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("expense")}>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 me-2" />
                 <T k="pageLabels.expenseRow" />
               </Button>
               <Button
@@ -537,7 +533,7 @@ export default function CorporateTax() {
                 variant="ghost"
                 onClick={() => setWorkpaperRows(defaultWorkpaperRows())}
               >
-                <RotateCcw className="w-4 h-4 mr-2" /> <T k="pages.reset" />
+                <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
               </Button>
             </div>
           </div>
@@ -551,10 +547,10 @@ export default function CorporateTax() {
                       year: new Date(periodEnd || periodStart).getFullYear() || currentYear,
                     })}
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-right text-base font-bold">
+                  <TableHead data-numeric className="min-w-[180px] text-base font-bold">
                     <T k="pages.expense" />
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-right text-base font-bold">
+                  <TableHead data-numeric className="min-w-[180px] text-base font-bold">
                     <T k="pages.revenue" />
                   </TableHead>
                   <TableHead className="min-w-[220px]">
@@ -586,7 +582,7 @@ export default function CorporateTax() {
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
                           aria-label={`${row.label} amount`}
-                          className="text-right"
+                          className="text-end"
                           placeholder="0.00"
                         />
                       ) : (
@@ -605,7 +601,7 @@ export default function CorporateTax() {
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
                           aria-label={`${row.label} amount`}
-                          className="text-right"
+                          className="text-end"
                           placeholder="0.00"
                         />
                       ) : (
@@ -620,7 +616,7 @@ export default function CorporateTax() {
                         aria-label={`${row.label} note`}
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       {workpaperRows.length > 1 && (
                         <Button
                           type="button"
@@ -629,7 +625,7 @@ export default function CorporateTax() {
                           onClick={() => removeWorkpaperRow(row.id)}
                           aria-label={`Remove ${row.label}`}
                         >
-                          <Trash2 className="w-4 h-4 text-destructive" />
+                          <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
                         </Button>
                       )}
                     </TableCell>
@@ -639,11 +635,11 @@ export default function CorporateTax() {
                   <TableCell className="font-bold">
                     <T k="pages.totals" />
                   </TableCell>
-                  <TableCell className="text-right font-bold text-destructive">
-                    {formatCurrency(workpaperTotals.totalExpenses, "AED", locale)}
+                  <TableCell data-numeric className="font-semibold">
+                    <Money amount={workpaperTotals.totalExpenses} currency={"AED"} />
                   </TableCell>
-                  <TableCell className="text-right font-bold">
-                    {formatCurrency(workpaperTotals.totalRevenue, "AED", locale)}
+                  <TableCell data-numeric className=" font-bold">
+                    <Money amount={workpaperTotals.totalRevenue} currency={"AED"} />
                   </TableCell>
                   <TableCell colSpan={2} />
                 </TableRow>
@@ -653,7 +649,8 @@ export default function CorporateTax() {
                   </TableCell>
                   <TableCell />
                   <TableCell
-                    className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-destructive" : "text-success"}`}
+                    data-numeric
+                    className={`font-semibold ${workpaperTotals.profitOrLoss < 0 ? "text-negative" : "text-foreground"}`}
                   >
                     {workpaperTotals.profitOrLoss < 0
                       ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), "AED", locale)})`
@@ -710,12 +707,12 @@ export default function CorporateTax() {
             >
               {calculateMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   <T k="pageLabels.calculating" />
                 </>
               ) : (
                 <>
-                  <Calculator className="w-4 h-4 mr-2" />
+                  <Calculator className="w-4 h-4 me-2" />
                   <T k="hr.calculate" />
                 </>
               )}
@@ -727,7 +724,7 @@ export default function CorporateTax() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                  <h3 className="font-semibold text-sm text-muted-foreground">
                     <T k="pageLabels.incomeSummary" />
                   </h3>
                   <div className="flex justify-between">
@@ -735,14 +732,14 @@ export default function CorporateTax() {
                       <T k="pages.totalRevenue" />
                     </span>
                     <span className="font-medium">
-                      {formatCurrency(adjustedCalculation.totalRevenue, "AED", locale)}
+                      <Money amount={adjustedCalculation.totalRevenue} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>
                       <T k="pages.totalExpenses" />
                     </span>
-                    <span className="font-medium text-destructive">
+                    <span className="font-medium">
                       ({formatCurrency(adjustedCalculation.totalExpenses, "AED", locale)})
                     </span>
                   </div>
@@ -751,17 +748,18 @@ export default function CorporateTax() {
                       <T k="pageLabels.grossProfit" />
                     </span>
                     <span className="font-semibold">
-                      {formatCurrency(
-                        adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
-                        "AED",
-                        locale
-                      )}
+                      <Money
+                        amount={
+                          adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses
+                        }
+                        currency={"AED"}
+                      />
                     </span>
                   </div>
                 </div>
 
                 <div className="rounded-lg border p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                  <h3 className="font-semibold text-sm text-muted-foreground">
                     <T k="pageLabels.taxCalculation" />
                   </h3>
                   <div className="flex justify-between items-center">
@@ -770,7 +768,7 @@ export default function CorporateTax() {
                     </span>
                     <Input
                       type="number"
-                      className="w-40 text-right"
+                      className="w-40 text-end"
                       value={deductions}
                       onChange={(e) => setDeductions(parseFloat(e.target.value) || 0)}
                       min={0}
@@ -782,7 +780,7 @@ export default function CorporateTax() {
                       <T k="pages.taxableIncome" />
                     </span>
                     <span className="font-medium">
-                      {formatCurrency(adjustedCalculation.taxableIncome, "AED", locale)}
+                      <Money amount={adjustedCalculation.taxableIncome} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
@@ -790,13 +788,13 @@ export default function CorporateTax() {
                       <T k="pages.exemptionThreshold" />
                     </span>
                     <span>
-                      {formatCurrency(adjustedCalculation.exemptionThreshold, "AED", locale)}
+                      <Money amount={adjustedCalculation.exemptionThreshold} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Taxable Amount (above threshold)</span>
                     <span className="font-medium">
-                      {formatCurrency(adjustedCalculation.taxableAmount, "AED", locale)}
+                      <Money amount={adjustedCalculation.taxableAmount} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
@@ -810,7 +808,7 @@ export default function CorporateTax() {
                       <T k="pages.taxPayable" /> <FigureBadge status="estimate" />
                     </span>
                     <span className="text-lg font-bold text-primary">
-                      {formatCurrency(adjustedCalculation.taxPayable, "AED", locale)}
+                      <Money amount={adjustedCalculation.taxPayable} currency={"AED"} />
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -843,7 +841,7 @@ export default function CorporateTax() {
                 >
                   {saveDraftMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="w-4 h-4 me-2 animate-spin" />
                       <T k="pageLabels.saving" />
                     </>
                   ) : (
@@ -900,19 +898,19 @@ export default function CorporateTax() {
                     <TableHead>
                       <T k="pages.period" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.revenue" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.taxableIncome" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.taxPayable" />
                     </TableHead>
                     <TableHead>
                       <T k="pages.status" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.actions" />
                     </TableHead>
                   </TableRow>
@@ -922,18 +920,21 @@ export default function CorporateTax() {
                     .filter((r) => r.status !== "void")
                     .map((taxReturn) => (
                       <TableRow key={taxReturn.id}>
-                        <TableCell className="font-medium">
-                          {format(new Date(taxReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
-                          {format(new Date(taxReturn.taxPeriodEnd), "dd MMM yyyy")}
+                        <TableCell className="font-medium" data-nowrap>
+                          {formatDateRange(
+                            taxReturn.taxPeriodStart,
+                            taxReturn.taxPeriodEnd,
+                            locale
+                          )}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(taxReturn.totalRevenue, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={taxReturn.totalRevenue} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(taxReturn.taxableIncome, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={taxReturn.taxableIncome} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(taxReturn.taxPayable, "AED", locale)}
+                        <TableCell data-numeric className=" font-semibold">
+                          <Money amount={taxReturn.taxPayable} currency={"AED"} />
                           <div>
                             <FigureBadge status={taxReturn.figureStatus} />
                           </div>
@@ -943,12 +944,13 @@ export default function CorporateTax() {
                             {statusBadge(taxReturn.status)}
                             {taxReturn.filingDeadline && (
                               <span className="text-xs text-muted-foreground">
-                                {t["corporateTax.dueBy"]} {taxReturn.filingDeadline}
+                                {t["corporateTax.dueBy"]}{" "}
+                                {formatDisplayDate(taxReturn.filingDeadline, locale)}
                               </span>
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
@@ -1011,7 +1013,7 @@ export default function CorporateTax() {
                                 title={t["corporateTax.markReviewed"]}
                                 data-testid={`button-ct-review-${taxReturn.id}`}
                               >
-                                <ClipboardCheck className="w-4 h-4 text-info" />
+                                <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
                               </Button>
                             )}
                             {taxReturn.status === "reviewed" && (
@@ -1030,7 +1032,7 @@ export default function CorporateTax() {
                                   title={t["corporateTax.markFiled"]}
                                   data-testid={`button-ct-file-${taxReturn.id}`}
                                 >
-                                  <Send className="w-4 h-4 text-info" />
+                                  <Send className="w-4 h-4 text-muted-foreground" />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -1055,7 +1057,7 @@ export default function CorporateTax() {
                                 disabled={transitionMutation.isPending}
                                 title={t["corporateTax.voidReturn"]}
                               >
-                                <Trash2 className="w-4 h-4 text-destructive" />
+                                <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
                               </Button>
                             )}
                             {taxReturn.status === "filed" && (
@@ -1068,7 +1070,7 @@ export default function CorporateTax() {
                                 disabled={transitionMutation.isPending}
                                 title={t["corporateTax.markPaid"]}
                               >
-                                <Banknote className="w-4 h-4 text-success" />
+                                <Banknote className="w-4 h-4 text-muted-foreground" aria-hidden />
                               </Button>
                             )}
                             {(taxReturn.status === "filed" || taxReturn.status === "paid") && (
@@ -1116,48 +1118,48 @@ export default function CorporateTax() {
                 <span className="text-muted-foreground">
                   <T k="pages.totalRevenue" />
                 </span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalRevenue, "AED", locale)}
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.totalRevenue} currency={"AED"} />
                 </span>
 
                 <span className="text-muted-foreground">
                   <T k="pages.totalExpenses" />
                 </span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalExpenses, "AED", locale)}
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.totalExpenses} currency={"AED"} />
                 </span>
 
                 <span className="text-muted-foreground">
                   <T k="pages.deductions" />
                 </span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalDeductions, "AED", locale)}
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.totalDeductions} currency={"AED"} />
                 </span>
 
                 <span className="text-muted-foreground">
                   <T k="pages.taxableIncome" />
                 </span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.taxableIncome, "AED", locale)}
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.taxableIncome} currency={"AED"} />
                 </span>
 
                 <span className="text-muted-foreground">
                   <T k="pages.exemptionThreshold" />
                 </span>
-                <span className="text-right">
-                  {formatCurrency(viewReturn.exemptionThreshold, "AED", locale)}
+                <span className="text-end">
+                  <Money amount={viewReturn.exemptionThreshold} currency={"AED"} />
                 </span>
 
                 <span className="text-muted-foreground">
                   <T k="pages.taxRate" />
                 </span>
-                <span className="text-right">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
+                <span className="text-end">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
 
                 <span className="font-semibold border-t pt-2">
                   <T k="pages.taxPayable" /> <FigureBadge status={viewReturn.figureStatus} />
                 </span>
-                <span className="text-right font-bold text-primary border-t pt-2">
-                  {formatCurrency(viewReturn.taxPayable, "AED", locale)}
+                <span className="text-end font-bold text-primary border-t pt-2">
+                  <Money amount={viewReturn.taxPayable} currency={"AED"} />
                 </span>
               </div>
 
@@ -1168,7 +1170,7 @@ export default function CorporateTax() {
 
               {viewReturn.filingDeadline && (
                 <div className="text-muted-foreground text-xs">
-                  {t["corporateTax.dueBy"]} {viewReturn.filingDeadline}
+                  {t["corporateTax.dueBy"]} {formatDisplayDate(viewReturn.filingDeadline, locale)}
                   {viewReturn.amendmentNumber
                     ? ` · ${t["corporateTax.amendmentLabel"]} ${viewReturn.amendmentNumber}`
                     : ""}
@@ -1195,10 +1197,10 @@ export default function CorporateTax() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Line</TableHead>
-                          <TableHead className="text-right">
+                          <TableHead data-numeric>
                             <T k="pages.expense" />
                           </TableHead>
-                          <TableHead className="text-right">
+                          <TableHead data-numeric>
                             <T k="pages.revenue" />
                           </TableHead>
                         </TableRow>
@@ -1207,12 +1209,12 @@ export default function CorporateTax() {
                         {viewReturn.workpaper.rows.map((row) => (
                           <TableRow key={row.id}>
                             <TableCell>{row.label}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell data-numeric>
                               {row.type === "expense"
                                 ? formatCurrency(row.amount, "AED", locale)
                                 : "-"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell data-numeric>
                               {row.type === "revenue"
                                 ? formatCurrency(row.amount, "AED", locale)
                                 : "-"}
@@ -1262,7 +1264,7 @@ interface RelatedParty {
  * related-party register (W4-A: R08-15, R08-17, R08-21).
  */
 export function CtCompliancePanel({ companyId }: { companyId: string }) {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const { toast } = useToast();
   const profileKey = [`/api/companies/${companyId}/corporate-tax/profile`];
   const partiesKey = [`/api/companies/${companyId}/corporate-tax/related-parties`];
@@ -1429,7 +1431,7 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
               <Users className="w-4 h-4" /> {t["corporateTax.relatedPartiesTitle"]}
             </h3>
             <span className="text-sm text-muted-foreground">
-              {t["corporateTax.relatedPartiesTotal"]} {formatCurrency(total, "AED", locale)}
+              {t["corporateTax.relatedPartiesTotal"]} <Money amount={total} currency={"AED"} />
             </span>
           </div>
           <p className="text-xs text-muted-foreground">{t["corporateTax.relatedPartiesHelp"]}</p>
@@ -1483,14 +1485,14 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
                     </span>
                   </span>
                   <span className="flex items-center gap-2">
-                    {formatCurrency(p.transactionValue, "AED", locale)}
+                    <Money amount={p.transactionValue} currency={"AED"} />
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => removeParty.mutate(p.id)}
                       aria-label={t["corporateTax.removeParty"]}
                     >
-                      <Trash2 className="w-4 h-4 text-destructive" />
+                      <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
                     </Button>
                   </span>
                 </li>

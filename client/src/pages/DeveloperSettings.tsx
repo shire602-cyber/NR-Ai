@@ -130,7 +130,7 @@ export default function DeveloperSettings() {
 
   if (!canAccess("apiAccess")) {
     return (
-      <div className="container mx-auto py-8 px-4 max-w-6xl">
+      <div className="max-w-narrow">
         <PageHeader eyebrow="Settings" title="Developer Settings" className="mb-6" />
         <UpgradePrompt
           feature="apiAccess"
@@ -143,7 +143,7 @@ export default function DeveloperSettings() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
+    <div className="max-w-narrow">
       <PageHeader
         eyebrow="Settings"
         title="Developer Settings"
@@ -309,7 +309,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                   <TableHead>
                     <T k="pages.status" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead data-numeric>
                     <T k="pages.actions" />
                   </TableHead>
                 </TableRow>
@@ -341,9 +341,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                         }
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       <Button variant="ghost" size="icon" onClick={() => setDeleteId(key.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash2 className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -389,7 +389,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     />
                     <Label
                       htmlFor={`scope-${scope}`}
-                      className="font-mono text-xs font-normal"
+                      className="tabular-nums text-xs font-normal"
                       dir="ltr"
                     >
                       {scope}
@@ -440,7 +440,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input readOnly value={createdKey || ""} className="font-mono text-sm" />
+              <Input readOnly value={createdKey || ""} className="tabular-nums text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopy}>
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
@@ -660,7 +660,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                   <TableHead>
                     <T k="pageLabels.lastTriggered" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead data-numeric>
                     <T k="pages.actions" />
                   </TableHead>
                 </TableRow>
@@ -708,7 +708,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                         ? new Date(wh.lastTriggeredAt).toLocaleDateString()
                         : "Never"}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
@@ -732,7 +732,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                           )}
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setDeleteId(wh.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </div>
                     </TableCell>

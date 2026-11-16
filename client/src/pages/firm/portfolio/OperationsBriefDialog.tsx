@@ -212,11 +212,11 @@ export function OperationsBriefDialog({
             onClick={() => client && onViewProfile(client.companyId)}
             disabled={!client}
           >
-            <ChevronRight className="w-4 h-4 mr-2" />
+            <ChevronRight className="w-4 h-4 me-2" />
             <T k="pages.profile" />
           </Button>
           <Button onClick={() => client && onOpenBooks(client.companyId)} disabled={!client}>
-            <BookOpen className="w-4 h-4 mr-2" />
+            <BookOpen className="w-4 h-4 me-2" />
             <T k="pages.openBooks" />
           </Button>
         </DialogFooter>

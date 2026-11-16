@@ -153,7 +153,7 @@ export default function ComparisonsPanel() {
                       <div className="text-xs text-muted-foreground">
                         {row.currentLabel ?? "Current"}
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {formatComparisonValue(row, row.current, locale)}
                       </div>
                     </div>
@@ -161,7 +161,7 @@ export default function ComparisonsPanel() {
                       <div className="text-xs text-muted-foreground">
                         {row.previousLabel ?? "Previous"}
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {formatComparisonValue(row, row.previous, locale)}
                       </div>
                     </div>
@@ -171,7 +171,7 @@ export default function ComparisonsPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.movement" />
                       </div>
-                      <div className="truncate font-mono text-sm font-semibold">
+                      <div className="truncate tabular-nums text-sm font-semibold">
                         {formatComparisonValue(row, row.delta, locale)}
                       </div>
                     </div>
@@ -235,19 +235,19 @@ export default function ComparisonsPanel() {
                       <TableHead>
                         <T k="reportCenter.signal" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.current" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.baseline" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.change" />
                       </TableHead>
                       <TableHead>
                         <T k="pages.roles" />
                       </TableHead>
-                      <TableHead className="text-right">Open</TableHead>
+                      <TableHead data-numeric>Open</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -264,14 +264,14 @@ export default function ComparisonsPanel() {
                             {row.signal}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell data-numeric>
                           {formatComparisonValue(row, row.current, locale)}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell data-numeric>
                           {formatComparisonValue(row, row.previous, locale)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-mono font-medium">
+                        <TableCell data-numeric>
+                          <div className="tabular-nums font-medium">
                             {formatComparisonValue(row, row.delta, locale)}
                           </div>
                           <div className="text-xs text-muted-foreground">
@@ -287,7 +287,7 @@ export default function ComparisonsPanel() {
                             ))}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>
                           <Button
                             type="button"
                             size="sm"

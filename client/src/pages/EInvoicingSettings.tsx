@@ -404,7 +404,7 @@ export default function EInvoicingSettings() {
   const set = (k: keyof FormState) => (v: string) => setEdits((e) => ({ ...e, [k]: v }));
 
   return (
-    <div className="space-y-6 p-4 md:p-6" dir={locale === "ar" ? "rtl" : "ltr"}>
+    <div className="max-w-narrow space-y-6" dir={locale === "ar" ? "rtl" : "ltr"}>
       <PageHeader
         eyebrow={s.eyebrow}
         title={s.title}
@@ -704,7 +704,7 @@ export default function EInvoicingSettings() {
                     <TableCell>{a.documentNumber}</TableCell>
                     <TableCell>{a.direction}</TableCell>
                     <TableCell>{a.kind}</TableCell>
-                    <TableCell className="font-mono text-xs" dir="ltr">
+                    <TableCell className="tabular-nums text-xs" dir="ltr">
                       {a.sha256.slice(0, 16)}…
                     </TableCell>
                     <TableCell>{a.retainUntil}</TableCell>

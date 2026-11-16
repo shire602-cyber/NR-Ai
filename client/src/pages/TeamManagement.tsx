@@ -4,6 +4,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { formatDate } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -404,7 +406,7 @@ export default function TeamManagement() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-chart-5">{stats.owners}</div>
+            <div className="text-2xl font-semibold tabular-nums">{stats.owners}</div>
           </CardContent>
         </Card>
         <Card>
@@ -414,7 +416,7 @@ export default function TeamManagement() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">{stats.finance}</div>
+            <div className="text-2xl font-semibold tabular-nums">{stats.finance}</div>
           </CardContent>
         </Card>
         <Card>
@@ -424,7 +426,7 @@ export default function TeamManagement() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">{stats.others}</div>
+            <div className="text-2xl font-semibold tabular-nums">{stats.others}</div>
           </CardContent>
         </Card>
       </div>
@@ -461,48 +463,48 @@ export default function TeamManagement() {
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
               {teamMembers.map((member) => {
                 const ownerLocked = member.role === "owner" && access?.role !== "owner";
                 return (
                   <div
                     key={member.id}
-                    className="flex items-center justify-between p-4 border rounded-lg"
+                    className="flex items-center justify-between gap-3 px-5 py-3"
                     data-testid={`member-${member.id}`}
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
                       <Avatar>
                         <AvatarFallback>{getInitials(member.user.name)}</AvatarFallback>
                       </Avatar>
-                      <div>
-                        <p className="font-medium">{member.user.name}</p>
-                        <p className="text-sm text-muted-foreground">{member.user.email}</p>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium" dir="auto">
+                          {member.user.name}
+                        </p>
+                        <p className="truncate text-small text-muted-foreground" dir="ltr">
+                          {member.user.email}
+                        </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex shrink-0 items-center gap-3">
                       {getRoleBadge(member.role)}
                       {canManage && (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                        <RowActions>
+                          <RowActionButton
+                            icon={Edit}
+                            label={locale === "ar" ? "تعديل الدور" : "Edit role"}
                             onClick={() => handleEditMember(member)}
                             disabled={ownerLocked}
                             data-testid={`button-edit-${member.id}`}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                          />
+                          <RowActionButton
+                            icon={Trash2}
+                            label={locale === "ar" ? "إزالة العضو" : "Remove member"}
                             onClick={() => setMemberToRemove(member)}
                             disabled={ownerLocked}
-                            className="text-destructive hover:text-destructive"
+                            className="hover:text-destructive"
                             data-testid={`button-remove-${member.id}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                          />
+                        </RowActions>
                       )}
                     </div>
                   </div>
@@ -522,19 +524,21 @@ export default function TeamManagement() {
             {pendingInvitations.length === 0 ? (
               <p className="text-sm text-muted-foreground">{tr(COPY.invitationsEmpty)}</p>
             ) : (
-              <div className="space-y-3">
+              <div className="-mx-5 -mb-5 divide-hairline border-t border-border/70">
                 {pendingInvitations.map((inv) => (
                   <div
                     key={inv.id}
-                    className="flex flex-wrap items-center justify-between gap-3 p-3 border rounded-lg"
+                    className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
                     data-testid={`invitation-${inv.id}`}
                   >
                     <div className="flex items-center gap-3">
                       <Mail className="w-4 h-4 text-muted-foreground" />
                       <div>
-                        <p className="font-medium">{inv.email}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {tr(COPY.expires)}: {new Date(inv.expiresAt).toLocaleDateString(locale)}
+                        <p className="font-medium" dir="ltr">
+                          {inv.email}
+                        </p>
+                        <p className="text-caption text-muted-foreground">
+                          {tr(COPY.expires)}: {formatDate(inv.expiresAt, locale)}
                         </p>
                       </div>
                     </div>
@@ -553,7 +557,7 @@ export default function TeamManagement() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-destructive hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive"
                         onClick={() => revokeMutation.mutate(inv.id)}
                         disabled={revokeMutation.isPending}
                         data-testid={`button-revoke-${inv.id}`}

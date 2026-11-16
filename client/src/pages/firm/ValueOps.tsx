@@ -347,7 +347,7 @@ export default function ValueOps() {
   if (dashboardQuery.isLoading) {
     return (
       <div className="flex min-h-[320px] items-center justify-center text-muted-foreground">
-        <Sparkles className="mr-2 h-5 w-5 animate-pulse" />
+        <Sparkles className="me-2 h-5 w-5 animate-pulse" />
         <T k="pages.loadingValueOperations" />
       </div>
     );
@@ -369,7 +369,7 @@ export default function ValueOps() {
         description="NRA-wide cash, compliance, close, review, and client reporting queue."
         actions={
           <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
-            <Gauge className="mr-2 h-4 w-4" />
+            <Gauge className="me-2 h-4 w-4" />
             <T k="pages.refresh" />
           </Button>
         }
@@ -463,10 +463,10 @@ export default function ValueOps() {
                     <TableHead>
                       <T k="pages.whyItNeedsReview" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.confidence" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.amount" />
                     </TableHead>
                     <TableHead>Due</TableHead>
@@ -496,16 +496,14 @@ export default function ValueOps() {
                             {item.suggestedAction}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatPercent(item.confidence)}
-                        </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>{formatPercent(item.confidence)}</TableCell>
+                        <TableCell data-numeric>
                           {item.amountAed > 0 ? formatAed(item.amountAed) : "—"}
                         </TableCell>
                         <TableCell>{formatDate(item.dueDate)}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>
                           <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
-                            <T k="pages.review" /> <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                            <T k="pages.review" /> <ArrowRight className="ms-1 h-3.5 w-3.5" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -545,7 +543,7 @@ export default function ValueOps() {
                     <TableHead>
                       <T k="pages.action" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.aedImpact" />
                     </TableHead>
                     <TableHead />
@@ -563,11 +561,11 @@ export default function ValueOps() {
                         <div className="font-medium">{action.title}</div>
                         <div className="text-xs text-muted-foreground">{action.detail}</div>
                       </TableCell>
-                      <TableCell className="text-right">{formatAed(action.impactAed)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>{formatAed(action.impactAed)}</TableCell>
+                      <TableCell data-numeric>
                         <Button variant="ghost" size="sm" onClick={() => navigate(action.href)}>
                           <T k="pages.open" />
-                          <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                          <ArrowRight className="ms-1 h-3.5 w-3.5" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -606,10 +604,10 @@ export default function ValueOps() {
                       <T k="pages.close" />
                     </TableHead>
                     <TableHead>Risk</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.overdueAr" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="pages.reviewItems" />
                     </TableHead>
                     <TableHead />
@@ -633,12 +631,8 @@ export default function ValueOps() {
                       <TableCell className="min-w-[140px]">
                         <ScoreBar label="Compliance" value={client.scores.complianceRisk} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {formatAed(client.money.overdueAr)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {client.workload.reviewerQueueItems}
-                      </TableCell>
+                      <TableCell data-numeric>{formatAed(client.money.overdueAr)}</TableCell>
+                      <TableCell data-numeric>{client.workload.reviewerQueueItems}</TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
                           <Button
@@ -648,7 +642,7 @@ export default function ValueOps() {
                               setSelectedPack({ companyId: client.companyId, type: "audit" })
                             }
                           >
-                            <FileArchive className="mr-1 h-4 w-4" />
+                            <FileArchive className="me-1 h-4 w-4" />
                             <T k="pages.audit" />
                           </Button>
                           <Button
@@ -658,7 +652,7 @@ export default function ValueOps() {
                               setSelectedPack({ companyId: client.companyId, type: "cfo" })
                             }
                           >
-                            <PackageOpen className="mr-1 h-4 w-4" />
+                            <PackageOpen className="me-1 h-4 w-4" />
                             CFO
                           </Button>
                         </div>

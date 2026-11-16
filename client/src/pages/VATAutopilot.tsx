@@ -35,7 +35,7 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   AlertTriangle,
@@ -340,7 +340,7 @@ export default function VATAutopilot() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
         title="VAT Autopilot"
@@ -354,9 +354,9 @@ export default function VATAutopilot() {
             data-testid="button-calculate-now"
           >
             {calcMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 me-2 animate-spin" />
             ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className="h-4 w-4 me-2" />
             )}
             {selectedPeriod ? "Calculate selected period" : "Choose period first"}
           </Button>
@@ -430,8 +430,8 @@ export default function VATAutopilot() {
               </p>
               <p className="text-muted-foreground">
                 Calculated output VAT differs from the ledger by{" "}
-                {formatCurrency(visibleCalc.reconciliation.outputVatDelta)}; input VAT differs by{" "}
-                {formatCurrency(visibleCalc.reconciliation.inputVatDelta)}. Review journal entries
+                <Money amount={visibleCalc.reconciliation.outputVatDelta} />; input VAT differs by{" "}
+                <Money amount={visibleCalc.reconciliation.inputVatDelta} />. Review journal entries
                 before marking this period as ready.
               </p>
             </div>
@@ -486,7 +486,9 @@ export default function VATAutopilot() {
                 />
                 <div className="flex justify-between font-medium border-t pt-2">
                   <span>Box 12 — Total output VAT</span>
-                  <span>{formatCurrency(visibleCalc.boxes.totalOutputVat)}</span>
+                  <span>
+                    <Money amount={visibleCalc.boxes.totalOutputVat} />
+                  </span>
                 </div>
               </div>
               <div className="space-y-2 rounded-md border p-4">
@@ -504,12 +506,14 @@ export default function VATAutopilot() {
                 {visibleCalc.boxes.inputVatIrrecoverable > 0 && (
                   <p className="text-xs text-muted-foreground">
                     Partial exemption reduced input VAT by{" "}
-                    {formatCurrency(visibleCalc.boxes.inputVatIrrecoverable)}.
+                    <Money amount={visibleCalc.boxes.inputVatIrrecoverable} />.
                   </p>
                 )}
                 <div className="flex justify-between font-medium border-t pt-2">
                   <span>Box 13 — Total input VAT</span>
-                  <span>{formatCurrency(visibleCalc.boxes.totalInputVat)}</span>
+                  <span>
+                    <Money amount={visibleCalc.boxes.totalInputVat} />
+                  </span>
                 </div>
               </div>
             </div>
@@ -517,7 +521,7 @@ export default function VATAutopilot() {
             <div className="rounded-md bg-muted p-4 flex items-center justify-between">
               <span className="font-medium">Box 14 — Net VAT payable</span>
               <span className="text-lg font-semibold">
-                {formatCurrency(visibleCalc.boxes.netVatPayable)}
+                <Money amount={visibleCalc.boxes.netVatPayable} />
               </span>
             </div>
 
@@ -538,7 +542,7 @@ export default function VATAutopilot() {
                   disabled={statusMutation.isPending}
                   data-testid="button-mark-ready"
                 >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  <CheckCircle2 className="h-4 w-4 me-2" />
                   <T k="pageLabels.markReady" />
                 </Button>
               )}
@@ -551,7 +555,7 @@ export default function VATAutopilot() {
                   disabled={statusMutation.isPending}
                   data-testid="button-mark-submitted"
                 >
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="h-4 w-4 me-2" />
                   <T k="pageLabels.markSubmitted" />
                 </Button>
               )}
@@ -564,13 +568,13 @@ export default function VATAutopilot() {
                   disabled={statusMutation.isPending}
                   data-testid="button-mark-accepted"
                 >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  <CheckCircle2 className="h-4 w-4 me-2" />
                   <T k="pageLabels.markAcceptedByFta" />
                 </Button>
               )}
               {currentPeriodId && currentPeriodStatus === "accepted" && (
                 <Badge variant="secondary" className="text-xs">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  <CheckCircle2 className="h-3 w-3 me-1" />
                   <T k="pageLabels.acceptedByFta" />
                 </Badge>
               )}
@@ -625,13 +629,13 @@ export default function VATAutopilot() {
                   <TableHead>
                     <T k="banking.common.status" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead data-numeric>
                     <T k="pageLabels.outputVat" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead data-numeric>
                     <T k="pageLabels.inputVat" />
                   </TableHead>
-                  <TableHead className="text-right">Net</TableHead>
+                  <TableHead data-numeric>Net</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -677,10 +681,14 @@ export default function VATAutopilot() {
                           {p.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{formatCurrency(p.outputVat)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(p.inputVat)}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatCurrency(p.netVatPayable)}
+                      <TableCell data-numeric>
+                        <Money amount={p.outputVat} />
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={p.inputVat} />
+                      </TableCell>
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={p.netVatPayable} />
                       </TableCell>
                     </TableRow>
                   );
@@ -741,7 +749,7 @@ export default function VATAutopilot() {
                       <div className="flex items-center gap-2">
                         {formatDate(d.dueDate)}
                         <Badge className={LEVEL_BADGE[d.level].className}>
-                          <Clock className="h-3 w-3 mr-1" />
+                          <Clock className="h-3 w-3 me-1" />
                           {d.daysUntilDue >= 0
                             ? `${d.daysUntilDue}d`
                             : `${Math.abs(d.daysUntilDue)}d late`}
@@ -887,8 +895,8 @@ export default function VATAutopilot() {
               }
               data-testid="button-save-adjustment"
             >
-              {adjustmentMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              <FileText className="h-4 w-4 mr-2" />
+              {adjustmentMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
+              <FileText className="h-4 w-4 me-2" />
               <T k="pageLabels.saveAdjustment" />
             </Button>
           </DialogFooter>
@@ -903,8 +911,13 @@ function BoxRow({ label, amount, vat }: { label: string; amount: number; vat: nu
     <div className="flex justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span>
-        {formatCurrency(amount)}
-        {vat > 0 && <span className="text-muted-foreground"> · {formatCurrency(vat)} VAT</span>}
+        <Money amount={amount} />
+        {vat > 0 && (
+          <span className="text-muted-foreground">
+            {" "}
+            · <Money amount={vat} /> VAT
+          </span>
+        )}
       </span>
     </div>
   );

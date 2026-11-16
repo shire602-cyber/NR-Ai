@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { apiRequest } from "@/lib/queryClient";
 import { T } from "@/components/layout/T";
 import {
@@ -242,8 +242,8 @@ export default function SmartAssistant() {
                 <TrendingUp className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.revenue}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.revenue || 0, "AED")}
+              <p className="text-lg font-bold tabular-nums mt-1">
+                <Money amount={stats.revenue || 0} currency={"AED"} />
               </p>
               <p className="text-xs text-muted-foreground" data-testid="smart-stat-period-revenue">
                 <T k="pages.thisMonth" />
@@ -256,8 +256,8 @@ export default function SmartAssistant() {
                 <TrendingDown className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.expenses}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.expenses || 0, "AED")}
+              <p className="text-lg font-bold tabular-nums mt-1">
+                <Money amount={stats.expenses || 0} currency={"AED"} />
               </p>
               <p className="text-xs text-muted-foreground" data-testid="smart-stat-period-expenses">
                 <T k="pages.thisMonth" />
@@ -270,8 +270,8 @@ export default function SmartAssistant() {
                 <DollarSign className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.outstanding}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.outstanding || 0, "AED")}
+              <p className="text-lg font-bold tabular-nums mt-1">
+                <Money amount={stats.outstanding || 0} currency={"AED"} />
               </p>
               <p className="text-xs text-muted-foreground">
                 <T k="pages.aiOpenAsOfToday" />
@@ -284,7 +284,7 @@ export default function SmartAssistant() {
                 <FileText className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.invoices}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">{stats.totalInvoices}</p>
+              <p className="text-lg font-bold tabular-nums mt-1">{stats.totalInvoices}</p>
               <p className="text-xs text-muted-foreground">
                 <T k="pages.aiAllTime" />
               </p>
@@ -313,14 +313,14 @@ export default function SmartAssistant() {
                   <Button
                     key={i}
                     variant="outline"
-                    className="justify-start h-auto py-3 px-4 text-left hover-elevate"
+                    className="justify-start h-auto py-3 px-4 text-start hover-elevate"
                     onClick={() => handleQuickQuestion(q.text)}
                     disabled={nlMutation.isPending}
                     data-testid={`button-quick-question-${i}`}
                   >
-                    <q.icon className={`w-4 h-4 mr-3 flex-shrink-0 ${q.color}`} />
+                    <q.icon className={`w-4 h-4 me-3 flex-shrink-0 ${q.color}`} />
                     <span className="text-sm">{q.text}</span>
-                    <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground" />
+                    <ChevronRight className="w-4 h-4 ms-auto text-muted-foreground" />
                   </Button>
                 ))}
               </div>
@@ -362,7 +362,7 @@ export default function SmartAssistant() {
                             onClick={() => handleQuickQuestion(prompt)}
                             disabled={nlMutation.isPending}
                           >
-                            <Lightbulb className="w-3 h-3 mr-2 text-warning" />
+                            <Lightbulb className="w-3 h-3 me-2 text-warning" />
                             {prompt}
                           </Button>
                         ))}

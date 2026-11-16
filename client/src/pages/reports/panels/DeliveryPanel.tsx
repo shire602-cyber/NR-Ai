@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Link } from "wouter";
 import { SiGooglesheets } from "react-icons/si";
 import { T } from "@/components/layout/T";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { reportWorkspaceHref } from "@/lib/reportCatalog";
 import { useReportsPageContext } from "../context";
 import { DeliverySubscriptionsSection } from "./sections/DeliverySubscriptionsSection";
@@ -16,7 +16,6 @@ export default function DeliveryPanel() {
   const {
     handleExportWorkspacePackToSheets,
     isExporting,
-    locale,
     navigate,
     personaScopeDescription,
     reportAccountantHandoffSummaries,
@@ -77,7 +76,7 @@ export default function DeliveryPanel() {
                     <div className="text-muted-foreground">
                       <T k="reportCenter.reports" />
                     </div>
-                    <div className="mt-1 font-mono font-semibold text-foreground">
+                    <div className="mt-1 tabular-nums font-semibold text-foreground">
                       {item.readyReportCount}/{item.reportCount}
                     </div>
                   </div>
@@ -85,7 +84,7 @@ export default function DeliveryPanel() {
                     <div className="text-muted-foreground">
                       <T k="reportCenter.rules" />
                     </div>
-                    <div className="mt-1 font-mono font-semibold text-foreground">
+                    <div className="mt-1 tabular-nums font-semibold text-foreground">
                       {item.readyRuleCount}/{item.automationRuleCount}
                     </div>
                   </div>
@@ -93,7 +92,7 @@ export default function DeliveryPanel() {
                     <div className="text-muted-foreground">
                       <T k="reportCenter.delivery" />
                     </div>
-                    <div className="mt-1 font-mono font-semibold text-foreground">
+                    <div className="mt-1 tabular-nums font-semibold text-foreground">
                       {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                     </div>
                   </div>
@@ -107,8 +106,8 @@ export default function DeliveryPanel() {
                   <p className="mt-2 text-muted-foreground">{item.nextAction.detail}</p>
                   <div className="mt-2 text-muted-foreground">
                     Amount at risk:{" "}
-                    <span className="font-mono text-foreground">
-                      {formatCurrency(item.amountAtRisk, "AED", locale)}
+                    <span className="tabular-nums text-foreground">
+                      <Money amount={item.amountAtRisk} currency={"AED"} />
                     </span>
                   </div>
                 </div>
@@ -205,10 +204,10 @@ export default function DeliveryPanel() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs font-medium uppercase text-muted-foreground">
+                        <div className="text-xs font-medium text-muted-foreground">
                           <T k="reportCenter.automationHealth" />
                         </div>
-                        <div className="mt-1 font-mono text-2xl font-semibold">
+                        <div className="mt-1 tabular-nums text-2xl font-semibold">
                           {item.automationHealth.score}
                           <span className="text-xs font-normal text-muted-foreground">/100</span>
                         </div>
@@ -220,7 +219,7 @@ export default function DeliveryPanel() {
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                       <div>
                         <div className="text-muted-foreground">Pack</div>
-                        <div className="font-mono font-semibold">
+                        <div className="tabular-nums font-semibold">
                           {item.automationHealth.readinessScore}%
                         </div>
                       </div>
@@ -228,7 +227,7 @@ export default function DeliveryPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.lanes" />
                         </div>
-                        <div className="font-mono font-semibold">
+                        <div className="tabular-nums font-semibold">
                           {item.automationHealth.automationLaneScore}%
                         </div>
                       </div>
@@ -236,7 +235,7 @@ export default function DeliveryPanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.review" />
                         </div>
-                        <div className="font-mono font-semibold">
+                        <div className="tabular-nums font-semibold">
                           {item.automationHealth.reviewSignals}
                         </div>
                       </div>
@@ -336,7 +335,7 @@ export default function DeliveryPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.health" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {automationHealth?.score ?? 0}
                       </div>
                     </div>
@@ -344,13 +343,15 @@ export default function DeliveryPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.openSignals" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">{item.openSignalCount}</div>
+                      <div className="tabular-nums text-lg font-semibold">
+                        {item.openSignalCount}
+                      </div>
                     </div>
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.workItems" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {item.openWorkItemCount}
                       </div>
                     </div>
@@ -358,8 +359,8 @@ export default function DeliveryPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.amount" />
                       </div>
-                      <div className="truncate font-mono text-sm font-semibold">
-                        {formatCurrency(item.amountAtRisk, "AED", locale)}
+                      <div className="truncate tabular-nums text-sm font-semibold">
+                        <Money amount={item.amountAtRisk} currency={"AED"} />
                       </div>
                     </div>
                   </div>
@@ -376,7 +377,7 @@ export default function DeliveryPanel() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.reportPackReadiness" />
                     </div>
                     {readiness?.checks.slice(0, 4).map((check) => (
@@ -396,7 +397,7 @@ export default function DeliveryPanel() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.liveSignals" />
                     </div>
                     {item.signals.slice(0, 3).map((signal) => (
@@ -431,7 +432,7 @@ export default function DeliveryPanel() {
                       disabled={isExporting || !selectedCompanyId}
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                     >
-                      <SiGooglesheets className="mr-2 h-4 w-4" />
+                      <SiGooglesheets className="me-2 h-4 w-4" />
                       <T k="reportCenter.sendPack" />
                     </Button>
                   </div>

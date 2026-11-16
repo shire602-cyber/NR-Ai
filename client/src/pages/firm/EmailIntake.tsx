@@ -120,20 +120,24 @@ export default function EmailIntake() {
       {featureOff && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle><T k="pages.pilotDisabled" /></AlertTitle>
+          <AlertTitle>
+            <T k="pages.pilotDisabled" />
+          </AlertTitle>
           <AlertDescription>
-            Set <code>EMAIL_INTAKE_ENABLED=true</code> on the server to turn the intake pilot on. You
-            can still configure sender mappings below; nothing is ingested until it's enabled.
+            Set <code>EMAIL_INTAKE_ENABLED=true</code> on the server to turn the intake pilot on.
+            You can still configure sender mappings below; nothing is ingested until it's enabled.
           </AlertDescription>
         </Alert>
       )}
       {mailboxOff && (
         <Alert>
           <Mail className="h-4 w-4" />
-          <AlertTitle><T k="pages.noMailboxConnected" /></AlertTitle>
+          <AlertTitle>
+            <T k="pages.noMailboxConnected" />
+          </AlertTitle>
           <AlertDescription>
-            The pilot is enabled but no mailbox is wired (<code>EMAIL_INTAKE_PROVIDER</code>). Sender
-            mappings are saved and ready; ingestion starts once a mailbox is connected.
+            The pilot is enabled but no mailbox is wired (<code>EMAIL_INTAKE_PROVIDER</code>).
+            Sender mappings are saved and ready; ingestion starts once a mailbox is connected.
           </AlertDescription>
         </Alert>
       )}
@@ -152,7 +156,12 @@ export default function EmailIntake() {
         </TabsList>
 
         <TabsContent value="senders" className="mt-4">
-          <SendersTab sources={sourcesData?.sources ?? []} clients={clients} clientName={clientName} toast={toast} />
+          <SendersTab
+            sources={sourcesData?.sources ?? []}
+            clients={clients}
+            clientName={clientName}
+            toast={toast}
+          />
         </TabsContent>
 
         <TabsContent value="completeness" className="mt-4">
@@ -201,7 +210,8 @@ function SendersTab({
       setLabel("");
       invalidate();
     },
-    onError: (e: any) => toast({ title: "Could not link sender", description: e.message, variant: "destructive" }),
+    onError: (e: any) =>
+      toast({ title: "Could not link sender", description: e.message, variant: "destructive" }),
   });
 
   const toggleMutation = useMutation({
@@ -226,12 +236,16 @@ function SendersTab({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base"><T k="pages.linkASenderToAClient" /></CardTitle>
+          <CardTitle className="text-base">
+            <T k="pages.linkASenderToAClient" />
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label><T k="pages.client" /></Label>
+              <Label>
+                <T k="pages.client" />
+              </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-client">
                   <SelectValue placeholder="Select client" />
@@ -246,7 +260,9 @@ function SendersTab({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label><T k="pages.senderEmail" /></Label>
+              <Label>
+                <T k="pages.senderEmail" />
+              </Label>
               <Input
                 type="email"
                 placeholder="billing@client.ae"
@@ -257,7 +273,11 @@ function SendersTab({
             </div>
             <div className="space-y-1.5">
               <Label>Label (optional)</Label>
-              <Input placeholder="e.g. Accounts payable" value={label} onChange={(e) => setLabel(e.target.value)} />
+              <Input
+                placeholder="e.g. Accounts payable"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
             </div>
             <div className="flex items-end gap-3">
               <div className="flex items-center gap-2">
@@ -274,7 +294,7 @@ function SendersTab({
               disabled={!canAdd || createMutation.isPending}
               data-testid="button-add-sender"
             >
-              <Plus className="h-4 w-4 mr-1" /> <T k="pages.linkSender" />
+              <Plus className="h-4 w-4 me-1" /> <T k="pages.linkSender" />
             </Button>
           </div>
         </CardContent>
@@ -286,17 +306,29 @@ function SendersTab({
         </CardHeader>
         <CardContent>
           {sources.length === 0 ? (
-            <p className="text-sm text-muted-foreground"><T k="pages.noSendersLinkedYet" /></p>
+            <p className="text-sm text-muted-foreground">
+              <T k="pages.noSendersLinkedYet" />
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead><T k="pages.sender" /></TableHead>
-                  <TableHead><T k="pages.client" /></TableHead>
-                  <TableHead><T k="pages.label" /></TableHead>
+                  <TableHead>
+                    <T k="pages.sender" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.client" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.label" />
+                  </TableHead>
                   <TableHead>DKIM</TableHead>
-                  <TableHead><T k="pages.status" /></TableHead>
-                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -307,9 +339,11 @@ function SendersTab({
                     <TableCell className="text-muted-foreground">{s.label ?? "—"}</TableCell>
                     <TableCell>{s.requireDkimPass ? "Required" : "Off"}</TableCell>
                     <TableCell>
-                      <Badge variant={s.status === "active" ? "default" : "secondary"}>{s.status}</Badge>
+                      <Badge variant={s.status === "active" ? "default" : "secondary"}>
+                        {s.status}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
+                    <TableCell data-numeric className=" space-x-2">
                       <Button variant="outline" size="sm" onClick={() => toggleMutation.mutate(s)}>
                         {s.status === "active" ? "Pause" : "Resume"}
                       </Button>
@@ -355,7 +389,8 @@ function CompletenessTab({
         `/api/firm/email-intake/completeness/${companyId}?periodStart=${periodStart}&periodEnd=${periodEnd}`
       ),
     onSuccess: (data: CompletenessResult) => setResult(data),
-    onError: (e: any) => toast({ title: "Could not load", description: e.message, variant: "destructive" }),
+    onError: (e: any) =>
+      toast({ title: "Could not load", description: e.message, variant: "destructive" }),
   });
 
   const chaseMutation = useMutation({
@@ -369,7 +404,8 @@ function CompletenessTab({
         title: "Chase requests raised",
         description: `${r.created} created, ${r.skipped} already chased`,
       }),
-    onError: (e: any) => toast({ title: "Could not raise chases", description: e.message, variant: "destructive" }),
+    onError: (e: any) =>
+      toast({ title: "Could not raise chases", description: e.message, variant: "destructive" }),
   });
 
   const coveragePct = result ? Math.round(result.summary.coverageRatio * 100) : null;
@@ -378,12 +414,16 @@ function CompletenessTab({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base"><T k="pages.checkAPeriodForMissingDocuments" /></CardTitle>
+          <CardTitle className="text-base">
+            <T k="pages.checkAPeriodForMissingDocuments" />
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label><T k="pages.client" /></Label>
+              <Label>
+                <T k="pages.client" />
+              </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-completeness-client">
                   <SelectValue placeholder="Select client" />
@@ -398,15 +438,26 @@ function CompletenessTab({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label><T k="pages.periodStart2" /></Label>
-              <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+              <Label>
+                <T k="pages.periodStart2" />
+              </Label>
+              <Input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label><T k="pages.periodEnd2" /></Label>
+              <Label>
+                <T k="pages.periodEnd2" />
+              </Label>
               <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
             </div>
             <div className="flex items-end">
-              <Button onClick={() => runMutation.mutate()} disabled={!canRun || runMutation.isPending}>
+              <Button
+                onClick={() => runMutation.mutate()}
+                disabled={!canRun || runMutation.isPending}
+              >
                 <T k="pages.runCheck" />
               </Button>
             </div>
@@ -427,7 +478,11 @@ function CompletenessTab({
               {result.summary.gapCount === 1 ? "" : "s"}
             </CardTitle>
             {result.summary.gapCount > 0 && (
-              <Button onClick={() => chaseMutation.mutate()} disabled={chaseMutation.isPending} data-testid="button-chase">
+              <Button
+                onClick={() => chaseMutation.mutate()}
+                disabled={chaseMutation.isPending}
+                data-testid="button-chase"
+              >
                 <T k="pages.createChaseRequests" />
               </Button>
             )}
@@ -436,7 +491,10 @@ function CompletenessTab({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <Stat label="Bank lines" value={String(result.summary.totalLines)} />
               <Stat label="Matched" value={String(result.summary.matchedLines)} />
-              <Stat label="Missing purchases" value={fmtAed(result.summary.unmatchedOutflowValue)} />
+              <Stat
+                label="Missing purchases"
+                value={fmtAed(result.summary.unmatchedOutflowValue)}
+              />
               <Stat label="Missing sales" value={fmtAed(result.summary.unmatchedInflowValue)} />
             </div>
 
@@ -449,22 +507,30 @@ function CompletenessTab({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead><T k="pages.description" /></TableHead>
+                    <TableHead>
+                      <T k="pages.description" />
+                    </TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="text-right"><T k="pages.amount" /></TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.amount" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {result.gaps.map((g) => (
                     <TableRow key={g.bankTransactionId}>
                       <TableCell>{g.date.slice(0, 10)}</TableCell>
-                      <TableCell className="max-w-[320px] truncate">{g.description || "—"}</TableCell>
+                      <TableCell className="max-w-[320px] truncate">
+                        {g.description || "—"}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={g.direction === "outflow" ? "secondary" : "outline"}>
                           {g.kind === "missing_purchase_evidence" ? "Purchase" : "Sales"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{fmtAed(g.amount)}</TableCell>
+                      <TableCell data-numeric className=" font-medium">
+                        {fmtAed(g.amount)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -480,7 +546,7 @@ function CompletenessTab({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border p-3">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   );
@@ -528,9 +594,7 @@ function EmailTasksTab({
             <T k="firm.emailTasksMailboxExternal" />
           )}
         </AlertTitle>
-        <AlertDescription>
-          {note ?? <T k="firm.emailTasksHint" />}
-        </AlertDescription>
+        <AlertDescription>{note ?? <T k="firm.emailTasksHint" />}</AlertDescription>
       </Alert>
       <Card>
         <CardHeader>
@@ -574,7 +638,7 @@ function EmailTasksTab({
                   <TableHead>
                     <T k="firm.emailTasksReceived" />
                   </TableHead>
-                  <TableHead className="text-end">
+                  <TableHead data-numeric>
                     <T k="firm.task" />
                   </TableHead>
                 </TableRow>
@@ -582,12 +646,12 @@ function EmailTasksTab({
               <TableBody>
                 {messages.map((m) => (
                   <TableRow key={m.id} data-testid={`row-intake-message-${m.id}`}>
-                    <TableCell className="font-mono text-xs">{m.fromEmail}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{m.fromEmail}</TableCell>
                     <TableCell>{m.subject ?? "—"}</TableCell>
                     <TableCell className="text-xs">
                       {new Date(m.receivedAt).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE")}
                     </TableCell>
-                    <TableCell className="text-end">
+                    <TableCell data-numeric>
                       {m.taskId ? (
                         <Badge variant="secondary">
                           <CheckCircle2 className="h-3 w-3 me-1" />

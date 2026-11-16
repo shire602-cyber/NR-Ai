@@ -192,7 +192,7 @@ export default function ClientImport() {
             onClick={downloadTemplate}
             data-testid="button-download-template"
           >
-            <Download className="w-4 h-4 mr-2" />
+            <Download className="w-4 h-4 me-2" />
             <T k="pageLabels.downloadTemplate" />
           </Button>
         }
@@ -311,12 +311,12 @@ export default function ClientImport() {
                             <TableCell>
                               {row.name ? (
                                 <Badge className="bg-success/10 text-success border-success/20">
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  <CheckCircle2 className="w-3 h-3 me-1" />
                                   <T k="pageLabels.valid" />
                                 </Badge>
                               ) : (
                                 <Badge variant="destructive">
-                                  <XCircle className="w-3 h-3 mr-1" />
+                                  <XCircle className="w-3 h-3 me-1" />
                                   <T k="pageLabels.missingName" />
                                 </Badge>
                               )}
@@ -341,7 +341,7 @@ export default function ClientImport() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-2">
                     <Checkbox
                       id="createInvitations"
                       checked={createInvitations}
@@ -353,7 +353,7 @@ export default function ClientImport() {
                       <T k="pageLabels.createPortalInvitationsForClientsWithEmailAddresses" />
                     </Label>
                   </div>
-                  <p className="text-sm text-muted-foreground ml-6">
+                  <p className="text-sm text-muted-foreground ms-6">
                     If enabled, clients with email addresses will receive invitation links to access
                     their portal.
                   </p>
@@ -371,12 +371,12 @@ export default function ClientImport() {
                 >
                   {importMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="w-4 h-4 me-2 animate-spin" />
                       <T k="pageLabels.importing" />
                     </>
                   ) : (
                     <>
-                      <Upload className="w-4 h-4 mr-2" />
+                      <Upload className="w-4 h-4 me-2" />
                       Import {previewData.totalRows} Clients
                     </>
                   )}
@@ -521,14 +521,14 @@ export default function ClientImport() {
 
             <div className="flex justify-end gap-3 mt-6">
               <Button variant="outline" onClick={resetImport} data-testid="button-import-another">
-                <Upload className="w-4 h-4 mr-2" />
+                <Upload className="w-4 h-4 me-2" />
                 <T k="pageLabels.importAnotherFile" />
               </Button>
               <Button
                 onClick={() => (window.location.href = "/admin/clients")}
                 data-testid="button-view-clients"
               >
-                <Users className="w-4 h-4 mr-2" />
+                <Users className="w-4 h-4 me-2" />
                 <T k="pages.viewAllClients" />
               </Button>
             </div>

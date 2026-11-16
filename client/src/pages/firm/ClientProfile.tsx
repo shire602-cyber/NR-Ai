@@ -142,7 +142,7 @@ function ServiceBadges({ services }: { services: readonly ClientServiceCode[] })
   return (
     <div className="flex flex-wrap gap-1">
       {serviceLabels(services).map((label) => (
-        <Badge key={label} variant="outline" className="text-[11px]">
+        <Badge key={label} variant="outline" className="text-caption">
           {label}
         </Badge>
       ))}
@@ -167,7 +167,7 @@ function EditableField({
 }) {
   return (
     <div className="grid gap-1">
-      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       {editing ? (
         <Input
           type={type}
@@ -321,11 +321,11 @@ export default function ClientProfile() {
   const unassignedStaff = firmStaff.filter((s) => !assignedIds.has(s.id));
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate("/firm/clients")}>
-          <ArrowLeft className="w-4 h-4 mr-1" />
+          <ArrowLeft className="w-4 h-4 me-1" />
           <T k="pages.nraClientPortfolio" />
         </Button>
         <span className="text-muted-foreground">/</span>
@@ -350,18 +350,18 @@ export default function ClientProfile() {
           {editing ? (
             <>
               <Button variant="outline" onClick={handleCancel}>
-                <X className="w-4 h-4 mr-1" />
+                <X className="w-4 h-4 me-1" />
                 <T k="pages.cancel" />
               </Button>
               <Button onClick={handleSave} disabled={updateMutation.isPending}>
-                <Save className="w-4 h-4 mr-1" />
+                <Save className="w-4 h-4 me-1" />
                 {updateMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={handleEdit}>
-                <Edit className="w-4 h-4 mr-1" />
+                <Edit className="w-4 h-4 me-1" />
                 Edit
               </Button>
               <Button
@@ -369,9 +369,9 @@ export default function ClientProfile() {
                 disabled={switchMutation.isPending}
                 data-testid="button-open-books-profile"
               >
-                <BookOpen className="w-4 h-4 mr-2" />
+                <BookOpen className="w-4 h-4 me-2" />
                 {switchMutation.isPending ? "Switching..." : "Open Books"}
-                <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                <ExternalLink className="w-3.5 h-3.5 ms-1.5" />
               </Button>
             </>
           )}
@@ -536,7 +536,7 @@ export default function ClientProfile() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs text-muted-foreground">
                   <T k="pages.vatFiling" />
                 </p>
                 {editing ? (
@@ -563,7 +563,7 @@ export default function ClientProfile() {
                 )}
               </div>
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs text-muted-foreground">
                   <T k="pages.vatCloseGroup" />
                 </p>
                 {editing ? (
@@ -591,7 +591,7 @@ export default function ClientProfile() {
                 )}
               </div>
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs text-muted-foreground">
                   <T k="pages.financialYearStart" />
                 </p>
                 {editing ? (
@@ -630,7 +630,7 @@ export default function ClientProfile() {
             <T k="pages.assignedNraStaff" />
           </CardTitle>
           <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
-            <UserPlus className="w-4 h-4 mr-1.5" />
+            <UserPlus className="w-4 h-4 me-1.5" />
             <T k="pages.assignStaff" />
           </Button>
         </CardHeader>
@@ -665,7 +665,7 @@ export default function ClientProfile() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-destructive hover:text-destructive"
+                      className="text-muted-foreground hover:text-destructive"
                       onClick={() =>
                         assignMutation.mutate({ staffUserId: staff.id, action: "unassign" })
                       }
@@ -703,7 +703,7 @@ export default function ClientProfile() {
                       <p className="text-xs text-muted-foreground">{inv.customerName}</p>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className="text-sm font-medium">{formatAed(inv.total)}</p>
                     <Badge
                       variant={inv.status === "paid" ? "outline" : "secondary"}

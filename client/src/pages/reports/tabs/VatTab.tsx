@@ -4,11 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function VatTab() {
-  const { dateRange, locale, t, vatLoading, vatSummary } = useReportsPageContext();
+  const { dateRange, t, vatLoading, vatSummary } = useReportsPageContext();
   return (
     <>
       <Card>
@@ -33,14 +33,14 @@ export default function VatTab() {
                       <span className="text-muted-foreground">
                         <T k="reportCenter.subtotal" />
                       </span>
-                      <span className="font-mono">
-                        {formatCurrency(vatSummary?.salesSubtotal || 0, "AED", locale)}
+                      <span className="tabular-nums">
+                        <Money amount={vatSummary?.salesSubtotal || 0} currency={"AED"} />
                       </span>
                     </div>
                     <div className="flex justify-between font-medium">
                       <span>VAT Collected (5%)</span>
-                      <span className="font-mono">
-                        {formatCurrency(vatSummary?.salesVAT || 0, "AED", locale)}
+                      <span className="tabular-nums">
+                        <Money amount={vatSummary?.salesVAT || 0} currency={"AED"} />
                       </span>
                     </div>
                   </div>
@@ -53,14 +53,14 @@ export default function VatTab() {
                       <span className="text-muted-foreground">
                         <T k="reportCenter.subtotal" />
                       </span>
-                      <span className="font-mono">
-                        {formatCurrency(vatSummary?.purchasesSubtotal || 0, "AED", locale)}
+                      <span className="tabular-nums">
+                        <Money amount={vatSummary?.purchasesSubtotal || 0} currency={"AED"} />
                       </span>
                     </div>
                     <div className="flex justify-between font-medium">
                       <span>VAT Paid (5%)</span>
-                      <span className="font-mono">
-                        {formatCurrency(vatSummary?.purchasesVAT || 0, "AED", locale)}
+                      <span className="tabular-nums">
+                        <Money amount={vatSummary?.purchasesVAT || 0} currency={"AED"} />
                       </span>
                     </div>
                   </div>
@@ -73,9 +73,9 @@ export default function VatTab() {
                     <T k="reportCenter.netVatPayableToFta" />
                   </span>
                   <span
-                    className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-destructive " : "text-success "}`}
+                    className={`tabular-nums ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-destructive " : "text-success "}`}
                   >
-                    {formatCurrency(Math.abs(vatSummary?.netVATPayable ?? 0), "AED", locale)}
+                    <Money amount={Math.abs(vatSummary?.netVATPayable ?? 0)} currency={"AED"} />
                     {(vatSummary?.netVATPayable ?? 0) < 0 && " (Refund)"}
                   </span>
                 </div>

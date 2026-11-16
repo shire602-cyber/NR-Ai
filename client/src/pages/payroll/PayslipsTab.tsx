@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { downloadFile, errorMessage, monthName, useHr, type PayrollRun } from "./shared";
 
 interface PayslipRow {
@@ -115,9 +115,9 @@ export function PayslipsTab({ companyId }: { companyId: string }) {
                 <TableRow>
                   <TableHead>{tx("hr.employee")}</TableHead>
                   <TableHead>{tx("hr.field.email")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.net")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.net")}</TableHead>
                   <TableHead>{tx("hr.emailed")}</TableHead>
-                  <TableHead className="text-end">{tx("hr.actions")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -125,8 +125,8 @@ export function PayslipsTab({ companyId }: { companyId: string }) {
                   <TableRow key={r.id}>
                     <TableCell>{r.employee_name}</TableCell>
                     <TableCell>{r.email ?? "—"}</TableCell>
-                    <TableCell className="text-end">
-                      {formatCurrency(Number(r.net_salary), "AED", locale)}
+                    <TableCell data-numeric>
+                      <Money amount={Number(r.net_salary)} currency={"AED"} />
                     </TableCell>
                     <TableCell>{r.payslip_emailed_at ?? "—"}</TableCell>
                     <TableCell className="text-end space-x-1 rtl:space-x-reverse">

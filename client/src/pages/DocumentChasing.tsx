@@ -245,7 +245,9 @@ export default function DocumentChasing() {
         className="m-6 rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
         data-testid="document-chasing-error"
       >
-        <div className="font-medium mb-1"><T k="pages.failedToLoadDocumentChasingData" /></div>
+        <div className="font-medium mb-1">
+          <T k="pages.failedToLoadDocumentChasingData" />
+        </div>
         <div className="text-muted-foreground">
           {err instanceof Error ? err.message : "An unexpected error occurred."}
         </div>
@@ -265,7 +267,7 @@ export default function DocumentChasing() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="page-document-chasing">
+    <div className="space-y-6" data-testid="page-document-chasing">
       <PageHeader
         eyebrow="Compliance"
         title="Document Chasing Autopilot"
@@ -278,7 +280,7 @@ export default function DocumentChasing() {
                 disabled={queue.length === 0 || bulkSendMutation.isPending}
                 data-testid="btn-bulk-send"
               >
-                <Send className="w-4 h-4 mr-2" />
+                <Send className="w-4 h-4 me-2" />
                 Send all ({queue.length})
               </Button>
             </AlertDialogTrigger>
@@ -294,7 +296,9 @@ export default function DocumentChasing() {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+                <AlertDialogCancel>
+                  <T k="pages.cancel" />
+                </AlertDialogCancel>
                 <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
                   <T k="pages.sendAll" />
                 </AlertDialogAction>
@@ -336,10 +340,16 @@ export default function DocumentChasing() {
 
       <Tabs defaultValue="missing" className="w-full">
         <TabsList>
-          <TabsTrigger value="missing"><T k="pages.missing" /></TabsTrigger>
+          <TabsTrigger value="missing">
+            <T k="pages.missing" />
+          </TabsTrigger>
           <TabsTrigger value="queue">Chase queue ({queue.length})</TabsTrigger>
-          <TabsTrigger value="calendar"><T k="pages.complianceCalendar" /></TabsTrigger>
-          <TabsTrigger value="metrics"><T k="pages.effectiveness" /></TabsTrigger>
+          <TabsTrigger value="calendar">
+            <T k="pages.complianceCalendar" />
+          </TabsTrigger>
+          <TabsTrigger value="metrics">
+            <T k="pages.effectiveness" />
+          </TabsTrigger>
         </TabsList>
 
         {/* Missing documents */}
@@ -347,11 +357,15 @@ export default function DocumentChasing() {
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle><T k="pages.missingDocuments" /></CardTitle>
-                <CardDescription><T k="pages.whatThisClientStillOwesYou" /></CardDescription>
+                <CardTitle>
+                  <T k="pages.missingDocuments" />
+                </CardTitle>
+                <CardDescription>
+                  <T k="pages.whatThisClientStillOwesYou" />
+                </CardDescription>
               </div>
               <Button onClick={() => setShowAddRequirement(true)} data-testid="btn-add-requirement">
-                <Plus className="w-4 h-4 mr-2" /> <T k="pages.addRequirement" />
+                <Plus className="w-4 h-4 me-2" /> <T k="pages.addRequirement" />
               </Button>
             </CardHeader>
             <CardContent>
@@ -393,7 +407,7 @@ export default function DocumentChasing() {
                           onClick={() => markReceivedMutation.mutate(r.id)}
                           data-testid="btn-mark-received"
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> <T k="pages.received" />
+                          <CheckCircle2 className="w-4 h-4 me-1" /> <T k="pages.received" />
                         </Button>
                       </div>
                     );
@@ -408,7 +422,9 @@ export default function DocumentChasing() {
         <TabsContent value="queue">
           <Card>
             <CardHeader>
-              <CardTitle><T k="pages.chaseQueue" /></CardTitle>
+              <CardTitle>
+                <T k="pages.chaseQueue" />
+              </CardTitle>
               <CardDescription>
                 Auto-built from due dates and recent send history. Preview a message before sending.
               </CardDescription>
@@ -457,7 +473,7 @@ export default function DocumentChasing() {
                         disabled={sendChaseMutation.isPending}
                         data-testid="btn-send-chase"
                       >
-                        <SiWhatsapp className="w-4 h-4 mr-2" /> Send
+                        <SiWhatsapp className="w-4 h-4 me-2" /> Send
                       </Button>
                     </div>
                   ))}
@@ -472,13 +488,15 @@ export default function DocumentChasing() {
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle><T k="pages.complianceCalendar2" /></CardTitle>
+                <CardTitle>
+                  <T k="pages.complianceCalendar2" />
+                </CardTitle>
                 <CardDescription>
                   UAE deadlines (trade licence, visas, FTA filings, ESR).
                 </CardDescription>
               </div>
               <Button onClick={() => setShowAddEvent(true)} data-testid="btn-add-event">
-                <Plus className="w-4 h-4 mr-2" /> <T k="pages.addDeadline" />
+                <Plus className="w-4 h-4 me-2" /> <T k="pages.addDeadline" />
               </Button>
             </CardHeader>
             <CardContent>
@@ -509,7 +527,9 @@ export default function DocumentChasing() {
                         {dUntil < 0 ? (
                           <Badge variant="destructive">{Math.abs(dUntil)}d overdue</Badge>
                         ) : dUntil <= 30 ? (
-                          <Badge className="bg-warning-subtle text-warning-subtle-foreground">in {dUntil}d</Badge>
+                          <Badge className="bg-warning-subtle text-warning-subtle-foreground">
+                            in {dUntil}d
+                          </Badge>
                         ) : (
                           <Badge variant="secondary">in {dUntil}d</Badge>
                         )}
@@ -526,8 +546,12 @@ export default function DocumentChasing() {
         <TabsContent value="metrics">
           <Card>
             <CardHeader>
-              <CardTitle><T k="pages.effectiveness" /></CardTitle>
-              <CardDescription><T k="pages.howWellIsTheChasePipelinePerforming" /></CardDescription>
+              <CardTitle>
+                <T k="pages.effectiveness" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pages.howWellIsTheChasePipelinePerforming" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {effectivenessQuery.isLoading ? (
@@ -566,7 +590,9 @@ export default function DocumentChasing() {
       <Dialog open={!!previewItem} onOpenChange={(o) => !o && setPreviewItem(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle><T k="pages.previewChaseMessage" /></DialogTitle>
+            <DialogTitle>
+              <T k="pages.previewChaseMessage" />
+            </DialogTitle>
             <DialogDescription>
               Edit the message if you like. Sending opens WhatsApp and records the chase.
             </DialogDescription>
@@ -658,14 +684,16 @@ function PreviewBody(props: {
           {format(parseISO(props.item.requirement.dueDate), "PP")}
         </span>
       </div>
-      <Label><T k="pages.message" /></Label>
+      <Label>
+        <T k="pages.message" />
+      </Label>
       <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={10} />
       <DialogFooter>
         <Button variant="outline" onClick={props.onCancel}>
           <T k="pages.cancel" />
         </Button>
         <Button onClick={() => props.onSend(draft)} disabled={props.sending}>
-          <SiWhatsapp className="w-4 h-4 mr-2" /> <T k="pages.sendViaWhatsapp" />
+          <SiWhatsapp className="w-4 h-4 me-2" /> <T k="pages.sendViaWhatsapp" />
         </Button>
       </DialogFooter>
     </div>
@@ -709,12 +737,18 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
     <Dialog open={props.open} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle><T k="pages.newDocumentRequirement" /></DialogTitle>
-          <DialogDescription><T k="pages.whatDoesThisClientOweYou" /></DialogDescription>
+          <DialogTitle>
+            <T k="pages.newDocumentRequirement" />
+          </DialogTitle>
+          <DialogDescription>
+            <T k="pages.whatDoesThisClientOweYou" />
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="docType"><T k="pages.documentType" /></Label>
+            <Label htmlFor="docType">
+              <T k="pages.documentType" />
+            </Label>
             <Select
               value={form.documentType}
               onValueChange={(v) => setForm((f) => ({ ...f, documentType: v }))}
@@ -741,7 +775,9 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
             />
           </div>
           <div>
-            <Label htmlFor="docDueDate"><T k="pages.dueDate2" /></Label>
+            <Label htmlFor="docDueDate">
+              <T k="pages.dueDate2" />
+            </Label>
             <Input
               id="docDueDate"
               type="date"
@@ -831,12 +867,18 @@ function AddComplianceEventDialog(props: {
     <Dialog open={props.open} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle><T k="pages.newComplianceDeadline" /></DialogTitle>
-          <DialogDescription><T k="pages.uaeComplianceEventToTrackAndRemindOn" /></DialogDescription>
+          <DialogTitle>
+            <T k="pages.newComplianceDeadline" />
+          </DialogTitle>
+          <DialogDescription>
+            <T k="pages.uaeComplianceEventToTrackAndRemindOn" />
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="eventType"><T k="pages.eventType" /></Label>
+            <Label htmlFor="eventType">
+              <T k="pages.eventType" />
+            </Label>
             <Select
               value={form.eventType}
               onValueChange={(v) => setForm((f) => ({ ...f, eventType: v }))}
@@ -854,7 +896,9 @@ function AddComplianceEventDialog(props: {
             </Select>
           </div>
           <div>
-            <Label htmlFor="eventDescription"><T k="pages.description" /></Label>
+            <Label htmlFor="eventDescription">
+              <T k="pages.description" />
+            </Label>
             <Input
               id="eventDescription"
               value={form.description}

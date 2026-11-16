@@ -71,17 +71,17 @@ export default function PortalInvoices() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
                       Invoice #
                     </th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">Date</th>
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
                       <T k="pages.dueDate" />
                     </th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">
+                    <th className="text-end px-4 py-3 font-medium text-muted-foreground">
                       <T k="portal.amountDue" />
                     </th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
                       <T k="pages.status" />
                     </th>
                     <th className="px-4 py-3" />
@@ -97,7 +97,7 @@ export default function PortalInvoices() {
                       <td className="px-4 py-3 text-muted-foreground">
                         {inv.dueDate ? format(new Date(inv.dueDate), "MMM d, yyyy") : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-foreground">
+                      <td className="px-4 py-3 text-end font-semibold text-foreground">
                         {formatAed(Number(inv.amountDue) || 0)}
                       </td>
                       <td className="px-4 py-3">
@@ -111,14 +111,14 @@ export default function PortalInvoices() {
                           <T k={`portal.payStatus.${inv.paymentStatus}`} />
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-end">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 text-info hover:text-info hover:bg-info-subtle"
                           onClick={() => downloadPdf(inv.id, inv.number)}
                         >
-                          <FileDown className="w-3.5 h-3.5 mr-1.5" />
+                          <FileDown className="w-3.5 h-3.5 me-1.5" />
                           PDF
                         </Button>
                       </td>

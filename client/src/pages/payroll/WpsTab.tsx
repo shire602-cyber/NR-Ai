@@ -292,7 +292,7 @@ export function WpsTab({ companyId }: { companyId: string }) {
             rows={6}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            className="font-mono text-xs"
+            className="tabular-nums text-xs"
           />
           <Button disabled={!content || validate.isPending} onClick={() => validate.mutate()}>
             <FileSearch className="me-2 h-4 w-4" />

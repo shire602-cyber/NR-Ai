@@ -214,12 +214,16 @@ export default function Consolidation() {
             {accountName(l)}
           </TableCell>
           {included.map((e) => (
-            <TableCell key={e.companyId} className="text-end tabular-nums">
+            <TableCell data-numeric key={e.companyId} className=" tabular-nums">
               {money(l.byEntity[e.companyId])}
             </TableCell>
           ))}
-          <TableCell className="text-end tabular-nums">{money(l.eliminations)}</TableCell>
-          <TableCell className="text-end tabular-nums font-medium">{money(l.total)}</TableCell>
+          <TableCell data-numeric className=" tabular-nums">
+            {money(l.eliminations)}
+          </TableCell>
+          <TableCell data-numeric className=" tabular-nums font-medium">
+            {money(l.total)}
+          </TableCell>
         </TableRow>
       ))}
     </>
@@ -229,7 +233,7 @@ export default function Consolidation() {
       <TableCell colSpan={included.length + 2} className={strong ? "font-semibold" : ""}>
         {title}
       </TableCell>
-      <TableCell className={`text-end tabular-nums ${strong ? "font-semibold" : ""}`}>
+      <TableCell data-numeric className={` tabular-nums ${strong ? "font-semibold" : ""}`}>
         {money(value)}
       </TableCell>
     </TableRow>
@@ -239,12 +243,12 @@ export default function Consolidation() {
       <TableRow>
         <TableHead>{tr("account")}</TableHead>
         {included.map((e) => (
-          <TableHead key={e.companyId} className="text-end">
+          <TableHead data-numeric key={e.companyId}>
             {e.name}
           </TableHead>
         ))}
-        <TableHead className="text-end">{tr("eliminationsColumn")}</TableHead>
-        <TableHead className="text-end">{tr("consolidated")}</TableHead>
+        <TableHead data-numeric>{tr("eliminationsColumn")}</TableHead>
+        <TableHead data-numeric>{tr("consolidated")}</TableHead>
       </TableRow>
     </TableHeader>
   );
@@ -253,7 +257,7 @@ export default function Consolidation() {
   const bs = data?.consolidated.balanceSheet;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow={tr("eyebrow")}
         title={tr("consolidationTitle")}
@@ -433,9 +437,9 @@ export default function Consolidation() {
                     <TableHead>{tr("label")}</TableHead>
                     <TableHead>{tr("company")}</TableHead>
                     <TableHead>{tr("account")}</TableHead>
-                    <TableHead className="text-end">{tr("debit")}</TableHead>
-                    <TableHead className="text-end">{tr("credit")}</TableHead>
-                    <TableHead className="text-end">{tr("unmatched")}</TableHead>
+                    <TableHead data-numeric>{tr("debit")}</TableHead>
+                    <TableHead data-numeric>{tr("credit")}</TableHead>
+                    <TableHead data-numeric>{tr("unmatched")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -446,13 +450,13 @@ export default function Consolidation() {
                         <TableCell>{j === 0 ? e.label : ""}</TableCell>
                         <TableCell>{l?.companyName ?? ""}</TableCell>
                         <TableCell>{l ? `${l.accountCode} ${l.accountName}` : ""}</TableCell>
-                        <TableCell className="text-end tabular-nums">
+                        <TableCell data-numeric className=" tabular-nums">
                           {l ? money(l.debit) : ""}
                         </TableCell>
-                        <TableCell className="text-end tabular-nums">
+                        <TableCell data-numeric className=" tabular-nums">
                           {l ? money(l.credit) : ""}
                         </TableCell>
-                        <TableCell className="text-end tabular-nums">
+                        <TableCell data-numeric className=" tabular-nums">
                           {j === 0 && e.kind === "rule" ? money(e.unmatchedDifference) : ""}
                         </TableCell>
                       </TableRow>

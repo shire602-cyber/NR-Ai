@@ -14,6 +14,8 @@ import {
   FileSpreadsheet,
   BarChart3,
   ArrowLeft,
+  Copy,
+  Download,
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
@@ -22,6 +24,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/page-header";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -69,7 +74,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -671,49 +676,49 @@ export default function Budgets() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {selectedBudget && (
-            <Button variant="ghost" size="sm" onClick={handleBackToBudgets}>
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
+      {selectedBudget && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ms-2 -mb-2 text-muted-foreground"
+          onClick={handleBackToBudgets}
+        >
+          <ArrowLeft className="h-4 w-4 me-1 rtl:-scale-x-100" aria-hidden />
+          {tr(locale, "Back to budgets", "العودة إلى الموازنات")}
+        </Button>
+      )}
+      <PageHeader
+        eyebrow="Accounting"
+        title={selectedBudget ? selectedBudget.name : tr(locale, "Budgets", "الموازنات")}
+        description={
+          selectedBudget
+            ? `${tr(locale, "FY", "السنة المالية")} ${selectedBudget.fiscal_year} · ${getStatusBadge(selectedBudget.status).props.children}`
+            : tr(locale, "Plan, track, and analyze your budgets", "خطط موازناتك وتابعها وحللها")
+        }
+        actions={
+          !selectedBudget ? (
+            <Button onClick={handleOpenCreateBudget}>
+              <Plus className="h-4 w-4 me-2" aria-hidden />
+              <T k="pages.newBudget" />
             </Button>
-          )}
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <Wallet className="w-8 h-8" />
-              {selectedBudget ? selectedBudget.name : "Budgets"}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {selectedBudget
-                ? `FY ${selectedBudget.fiscal_year} - ${getStatusBadge(selectedBudget.status).props.children}`
-                : "Plan, track, and analyze your budgets"}
-            </p>
-          </div>
-        </div>
-        {!selectedBudget && (
-          <Button onClick={handleOpenCreateBudget} className="flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            <T k="pages.newBudget" />
-          </Button>
-        )}
-      </div>
+          ) : undefined
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="budgets" className="flex items-center gap-2">
-            <Wallet className="w-4 h-4" />
+        <TabsList className={selectedBudget ? undefined : "hidden"}>
+          <TabsTrigger value="budgets">
+            <Wallet aria-hidden />
             <T k="pages.budgets" />
           </TabsTrigger>
           {selectedBudget && (
             <>
-              <TabsTrigger value="detail" className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4" />
+              <TabsTrigger value="detail">
+                <FileSpreadsheet aria-hidden />
                 <T k="pages.budgetDetail" />
               </TabsTrigger>
-              <TabsTrigger value="variance" className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
+              <TabsTrigger value="variance">
+                <BarChart3 aria-hidden />
                 <T k="pages.variance" />
               </TabsTrigger>
             </>
@@ -728,7 +733,10 @@ export default function Budgets() {
                 <T k="pages.budgetPlans" />
               </CardTitle>
               <CardDescription>
-                {budgetPlans.length} budget plan{budgetPlans.length !== 1 ? "s" : ""}
+                {budgetPlans.length}{" "}
+                {budgetPlans.length === 1
+                  ? tr(locale, "budget plan", "خطة موازنة")
+                  : tr(locale, "budget plans", "خطط موازنة")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -745,18 +753,18 @@ export default function Budgets() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Year</TableHead>
+                        <TableHead>{tr(locale, "Name", "الاسم")}</TableHead>
+                        <TableHead>{tr(locale, "Year", "السنة")}</TableHead>
                         <TableHead>
                           <T k="pages.period" />
                         </TableHead>
                         <TableHead>
                           <T k="pages.status" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="pages.totalBudget" />
                         </TableHead>
-                        <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
+                        <TableHead data-numeric>{t.actions || "Actions"}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -776,82 +784,79 @@ export default function Budgets() {
                             {budget.end_date ? format(new Date(budget.end_date), "MMM yyyy") : "-"}
                           </TableCell>
                           <TableCell>{getStatusBadge(budget.status)}</TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(parseFloat(budget.total_budget || "0"), "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money
+                              amount={parseFloat(budget.total_budget || "0")}
+                              currency={"AED"}
+                            />
                           </TableCell>
-                          <TableCell className="text-right">
-                            <div
-                              className="flex items-center justify-end gap-1"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {budget.status === "draft" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => approveBudgetMutation.mutate(budget.id)}
-                                  title="Approve"
-                                  className="text-success hover:text-success"
-                                >
-                                  <CheckCircle className="w-4 h-4" />
-                                </Button>
-                              )}
-                              {budget.status === "draft" ? (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleOpenEditBudget(budget)}
-                                    title="Edit"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setBudgetToDelete(budget.id)}
-                                    title="Delete"
-                                    className="text-destructive hover:text-destructive"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => newVersionMutation.mutate(budget.id)}
-                                  data-testid={`button-new-version-${budget.id}`}
-                                >
-                                  {tr(locale, "New version", "نسخة جديدة")}
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  copyBudgetMutation.mutate({
-                                    id: budget.id,
-                                    fiscalYear: budget.fiscal_year + 1,
-                                  })
+                          <TableCell data-numeric>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <RowActions
+                                menu={
+                                  <>
+                                    {budget.status !== "draft" && (
+                                      <DropdownMenuItem
+                                        onSelect={() => newVersionMutation.mutate(budget.id)}
+                                        data-testid={`button-new-version-${budget.id}`}
+                                      >
+                                        <Plus aria-hidden />
+                                        {tr(locale, "New version", "نسخة جديدة")}
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem
+                                      onSelect={() =>
+                                        copyBudgetMutation.mutate({
+                                          id: budget.id,
+                                          fiscalYear: budget.fiscal_year + 1,
+                                        })
+                                      }
+                                    >
+                                      <Copy aria-hidden />
+                                      {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() => downloadBudgetExport(budget, "xlsx")}
+                                    >
+                                      <FileSpreadsheet aria-hidden />
+                                      {tr(locale, "Export Excel", "تصدير Excel")}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() => downloadBudgetExport(budget, "csv")}
+                                    >
+                                      <Download aria-hidden />
+                                      {tr(locale, "Export CSV", "تصدير CSV")}
+                                    </DropdownMenuItem>
+                                    {budget.status === "draft" && (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive"
+                                          onSelect={() => setBudgetToDelete(budget.id)}
+                                        >
+                                          <Trash2 aria-hidden />
+                                          {tr(locale, "Delete", "حذف")}
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+                                  </>
                                 }
-                                title={tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
                               >
-                                {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => downloadBudgetExport(budget, "xlsx")}
-                              >
-                                xlsx
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => downloadBudgetExport(budget, "csv")}
-                              >
-                                csv
-                              </Button>
+                                {budget.status === "draft" && (
+                                  <>
+                                    <RowActionButton
+                                      icon={CheckCircle}
+                                      label={tr(locale, "Approve", "اعتماد")}
+                                      onClick={() => approveBudgetMutation.mutate(budget.id)}
+                                    />
+                                    <RowActionButton
+                                      icon={Edit}
+                                      label={tr(locale, "Edit", "تعديل")}
+                                      onClick={() => handleOpenEditBudget(budget)}
+                                    />
+                                  </>
+                                )}
+                              </RowActions>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -921,18 +926,18 @@ export default function Budgets() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
+                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
                             <T k="pages.category" />
                           </TableHead>
                           {MONTH_LABELS.map((label) => (
-                            <TableHead key={label} className="text-right min-w-[90px]">
+                            <TableHead data-numeric key={label} className=" min-w-[90px]">
                               {label}
                             </TableHead>
                           ))}
-                          <TableHead className="text-right min-w-[110px] font-bold">
+                          <TableHead data-numeric className=" min-w-[110px] font-bold">
                             <T k="pages.annualTotal" />
                           </TableHead>
-                          <TableHead className="text-right min-w-[80px]">
+                          <TableHead data-numeric className=" min-w-[80px]">
                             {t.actions || "Actions"}
                           </TableHead>
                         </TableRow>
@@ -944,7 +949,7 @@ export default function Budgets() {
                             className="cursor-pointer hover:bg-muted/50"
                             onClick={() => handleOpenEditLine(line)}
                           >
-                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
                                 {line.category}
                                 {line.description && (
@@ -955,24 +960,26 @@ export default function Budgets() {
                               </div>
                             </TableCell>
                             {MONTH_KEYS.map((key) => (
-                              <TableCell key={key} className="text-right font-mono text-sm">
-                                {formatCurrency(
-                                  parseFloat((line as any)[key] || "0"),
-                                  "AED",
-                                  locale
-                                )}
+                              <TableCell data-numeric key={key} className=" text-sm">
+                                <Money
+                                  amount={parseFloat((line as any)[key] || "0")}
+                                  currency={"AED"}
+                                />
                               </TableCell>
                             ))}
-                            <TableCell className="text-right font-mono font-bold text-sm">
-                              {formatCurrency(parseFloat(line.annual_total || "0"), "AED", locale)}
+                            <TableCell data-numeric className=" font-bold text-sm">
+                              <Money
+                                amount={parseFloat(line.annual_total || "0")}
+                                currency={"AED"}
+                              />
                             </TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <TableCell data-numeric onClick={(e) => e.stopPropagation()}>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
                                 title="Delete"
-                                className="text-destructive hover:text-destructive"
+                                className="text-muted-foreground hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -981,16 +988,16 @@ export default function Budgets() {
                         ))}
                         {/* Totals Row */}
                         <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="sticky left-0 bg-muted/50 z-10">
+                          <TableCell className="sticky start-0 bg-muted/50 z-10">
                             <T k="pages.total" />
                           </TableCell>
                           {MONTH_KEYS.map((key) => (
-                            <TableCell key={key} className="text-right font-mono text-sm">
-                              {formatCurrency(lineTotals()[key], "AED", locale)}
+                            <TableCell data-numeric key={key} className=" text-sm">
+                              <Money amount={lineTotals()[key]} currency={"AED"} />
                             </TableCell>
                           ))}
-                          <TableCell className="text-right font-mono text-sm">
-                            {formatCurrency(lineTotals().annual, "AED", locale)}
+                          <TableCell data-numeric className=" text-sm">
+                            <Money amount={lineTotals().annual} currency={"AED"} />
                           </TableCell>
                           <TableCell />
                         </TableRow>
@@ -1029,20 +1036,20 @@ export default function Budgets() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
+                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
                             <T k="pages.category" />
                           </TableHead>
                           {MONTH_LABELS.map((label) => (
                             <TableHead key={label} className="text-center min-w-[200px]">
                               <div>{label}</div>
                               <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-right pr-1">
+                                <span className="flex-1 text-end pe-1">
                                   <T k="pages.budget" />
                                 </span>
-                                <span className="flex-1 text-right pr-1">
+                                <span className="flex-1 text-end pe-1">
                                   <T k="pages.actual" />
                                 </span>
-                                <span className="flex-1 text-right">Var</span>
+                                <span className="flex-1 text-end">Var</span>
                               </div>
                             </TableHead>
                           ))}
@@ -1051,13 +1058,13 @@ export default function Budgets() {
                               <T k="pages.annual" />
                             </div>
                             <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-right pr-1">
+                              <span className="flex-1 text-end pe-1">
                                 <T k="pages.budget" />
                               </span>
-                              <span className="flex-1 text-right pr-1">
+                              <span className="flex-1 text-end pe-1">
                                 <T k="pages.actual" />
                               </span>
-                              <span className="flex-1 text-right">Var %</span>
+                              <span className="flex-1 text-end">Var %</span>
                             </div>
                           </TableHead>
                         </TableRow>
@@ -1065,7 +1072,7 @@ export default function Budgets() {
                       <TableBody>
                         {varianceData.varianceLines.map((line) => (
                           <TableRow key={line.id}>
-                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
                                 {line.category}
                                 {line.description && (
@@ -1078,16 +1085,16 @@ export default function Budgets() {
                             {MONTH_KEYS.map((key) => {
                               const m = line.months[key];
                               return (
-                                <TableCell key={key} className="text-right">
-                                  <div className="flex text-xs font-mono">
-                                    <span className="flex-1 text-right pr-1">
+                                <TableCell data-numeric key={key}>
+                                  <div className="flex text-xs tabular-nums">
+                                    <span className="flex-1 text-end pe-1">
                                       {m.budget.toFixed(0)}
                                     </span>
-                                    <span className="flex-1 text-right pr-1">
+                                    <span className="flex-1 text-end pe-1">
                                       {m.actual.toFixed(0)}
                                     </span>
                                     <span
-                                      className={`flex-1 text-right font-semibold ${getVarianceColor(m.variance)}`}
+                                      className={`flex-1 text-end font-semibold ${getVarianceColor(m.variance)}`}
                                     >
                                       {m.variance >= 0 ? "+" : ""}
                                       {m.variance.toFixed(0)}
@@ -1096,16 +1103,16 @@ export default function Budgets() {
                                 </TableCell>
                               );
                             })}
-                            <TableCell className="text-right">
-                              <div className="flex text-xs font-mono">
-                                <span className="flex-1 text-right pr-1">
+                            <TableCell data-numeric>
+                              <div className="flex text-xs tabular-nums">
+                                <span className="flex-1 text-end pe-1">
                                   {line.totals.budget.toFixed(0)}
                                 </span>
-                                <span className="flex-1 text-right pr-1">
+                                <span className="flex-1 text-end pe-1">
                                   {line.totals.actual.toFixed(0)}
                                 </span>
                                 <span
-                                  className={`flex-1 text-right font-bold ${getVarianceColor(line.totals.variance)}`}
+                                  className={`flex-1 text-end font-bold ${getVarianceColor(line.totals.variance)}`}
                                 >
                                   {line.totals.variancePercent >= 0 ? "+" : ""}
                                   {line.totals.variancePercent.toFixed(1)}%
@@ -1130,11 +1137,13 @@ export default function Budgets() {
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          {formatCurrency(
-                            varianceData.varianceLines.reduce((s, l) => s + l.totals.budget, 0),
-                            "AED",
-                            locale
-                          )}
+                          <Money
+                            amount={varianceData.varianceLines.reduce(
+                              (s, l) => s + l.totals.budget,
+                              0
+                            )}
+                            currency={"AED"}
+                          />
                         </div>
                       </CardContent>
                     </Card>
@@ -1146,11 +1155,13 @@ export default function Budgets() {
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          {formatCurrency(
-                            varianceData.varianceLines.reduce((s, l) => s + l.totals.actual, 0),
-                            "AED",
-                            locale
-                          )}
+                          <Money
+                            amount={varianceData.varianceLines.reduce(
+                              (s, l) => s + l.totals.actual,
+                              0
+                            )}
+                            currency={"AED"}
+                          />
                         </div>
                       </CardContent>
                     </Card>
@@ -1175,7 +1186,7 @@ export default function Budgets() {
                               ) : (
                                 <TrendingDown className="w-5 h-5" />
                               )}
-                              {formatCurrency(Math.abs(totalVar), "AED", locale)}
+                              <Money amount={Math.abs(totalVar)} currency={"AED"} />
                               <span className="text-sm font-normal">
                                 {totalVar >= 0 ? "under budget" : "over budget"}
                               </span>
@@ -1383,7 +1394,7 @@ export default function Budgets() {
                 <div className="mt-3 pt-3 border-t flex justify-between items-center">
                   <span className="font-medium text-sm">Annual Total:</span>
                   <span className="font-bold text-lg">
-                    {formatCurrency(computedAnnualTotal, "AED", locale)}
+                    <Money amount={computedAnnualTotal} currency={"AED"} />
                   </span>
                 </div>
               </div>

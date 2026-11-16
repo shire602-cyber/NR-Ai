@@ -23,6 +23,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { PageHeader } from "@/components/ui/page-header";
 import { apiRequest } from "@/lib/queryClient";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -30,13 +32,11 @@ import {
   Send,
   TrendingUp,
   AlertTriangle,
-  DollarSign,
   Loader2,
   Brain,
   BarChart3,
   Zap,
   Target,
-  ArrowUp,
   ArrowDown,
   Eye,
   PieChart,
@@ -219,28 +219,14 @@ export default function AICFO() {
       value: profitMarginPct ?? 0,
       format: "percent",
       icon: TrendingUp,
-      color: "text-success ",
+      color: "text-muted-foreground",
     },
     {
       label: t["ai.kpiExpenseRatio"],
       value: expenseRatioPct ?? 0,
       format: "percent",
       icon: BarChart3,
-      color: "text-info ",
-    },
-    {
-      label: t["ai.kpiTotalRevenue"],
-      value: profitLoss?.totalRevenue ?? 0,
-      format: "currency",
-      icon: ArrowUp,
-      color: "text-chart-5 ",
-    },
-    {
-      label: t["ai.kpiNetProfit"],
-      value: profitLoss?.netProfit ?? 0,
-      format: "currency",
-      icon: DollarSign,
-      color: "text-warning ",
+      color: "text-muted-foreground",
     },
   ];
 
@@ -248,26 +234,14 @@ export default function AICFO() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="relative overflow-hidden rounded-lg border border-primary/20 p-8">
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-lg bg-primary/20">
-              <Brain className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold">
-                <T k="pageLabels.aICFOAndFinancialAdvisor" />
-              </h1>
-              <p className="text-muted-foreground mt-1">{t["ai.cfoSubtitle"]}</p>
-            </div>
-          </div>
-        </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-      </div>
+      <PageHeader
+        eyebrow="AI hub"
+        title={<T k="pageLabels.aICFOAndFinancialAdvisor" />}
+        description={t["ai.cfoSubtitle"]}
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-fit">
+        <TabsList>
           <TabsTrigger value="overview" className="gap-2">
             <Eye className="w-4 h-4" />
             <span className="hidden sm:inline">
@@ -295,21 +269,23 @@ export default function AICFO() {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* KPI Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {kpis.map((kpi, idx) => {
               const Icon = kpi.icon;
               const isLoading = plLoading;
               return (
-                <Card key={idx} className="hover-elevate cursor-pointer transition-all">
+                <Card key={idx}>
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">{kpi.label}</CardTitle>
+                    <CardTitle className="text-small font-medium text-muted-foreground">
+                      {kpi.label}
+                    </CardTitle>
                     <Icon className={`w-4 h-4 ${kpi.color}`} />
                   </CardHeader>
                   <CardContent>
                     {isLoading ? (
                       <Skeleton className="h-9 w-32" />
                     ) : (
-                      <div className={`text-3xl font-bold ${kpi.color}`}>
+                      <div className="text-h1 font-semibold tabular-nums">
                         {kpi.format === "percent"
                           ? `${Math.round(kpi.value)}%`
                           : formatCurrency(kpi.value, "AED")}
@@ -326,20 +302,20 @@ export default function AICFO() {
 
           {/* Main Financial Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Card className="hover-elevate">
+            <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
                   <T k="pages.totalRevenue" />
                 </CardTitle>
-                <TrendingUp className="w-4 h-4 text-success " />
+                <TrendingUp className="w-4 h-4 text-muted-foreground" aria-hidden />
               </CardHeader>
               <CardContent>
                 {statsLoading ? (
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-success ">
-                      {formatCurrency(stats.revenue || 0, "AED")}
+                    <div className="text-h1 font-semibold tabular-nums">
+                      <Money amount={stats.revenue || 0} currency={"AED"} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       <T k="pages.thisMonth" /> · {stats.totalInvoices || 0}{" "}
@@ -354,20 +330,20 @@ export default function AICFO() {
               </CardContent>
             </Card>
 
-            <Card className="hover-elevate">
+            <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">
                   <T k="pages.totalExpenses" />
                 </CardTitle>
-                <ArrowDown className="w-4 h-4 text-info " />
+                <ArrowDown className="w-4 h-4 text-muted-foreground" aria-hidden />
               </CardHeader>
               <CardContent>
                 {statsLoading ? (
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-info ">
-                      {formatCurrency(stats.expenses || 0, "AED")}
+                    <div className="text-h1 font-semibold tabular-nums">
+                      <Money amount={stats.expenses || 0} currency={"AED"} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       <T k="pages.thisMonth" /> · {stats.totalEntries || 0}{" "}
@@ -389,9 +365,7 @@ export default function AICFO() {
                 <CardTitle className="text-sm font-medium">
                   <T k="reportCenter.netProfit" />
                 </CardTitle>
-                <Target
-                  className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
-                />
+                <Target className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 {plLoading ? (
@@ -399,9 +373,9 @@ export default function AICFO() {
                 ) : profitLoss ? (
                   <>
                     <div
-                      className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
+                      className={`text-h1 font-semibold tabular-nums ${(profitLoss.netProfit || 0) >= 0 ? "text-foreground" : "text-negative"}`}
                     >
-                      {formatCurrency(profitLoss.netProfit || 0, "AED")}
+                      <Money amount={profitLoss.netProfit || 0} currency={"AED"} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       <T k="pages.thisMonth" /> ·{" "}
@@ -437,8 +411,8 @@ export default function AICFO() {
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-warning ">
-                      {formatCurrency(stats.outstanding || 0, "AED")}
+                    <div className="text-h1 font-semibold tabular-nums">
+                      <Money amount={stats.outstanding || 0} currency={"AED"} />
                     </div>
                     <p className="text-sm text-muted-foreground">{t["ai.cfoOutstandingHint"]}</p>
                     <Button variant="outline" size="sm" className="w-fit">
@@ -457,7 +431,7 @@ export default function AICFO() {
 
         {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-6">
-          <Card className="hover-elevate">
+          <Card>
             <CardHeader>
               <CardTitle className="text-base">
                 <T k="pageLabels.revenueVsExpensesTrend" />
@@ -503,7 +477,7 @@ export default function AICFO() {
           </Card>
 
           {/* Expense Breakdown */}
-          <Card className="hover-elevate">
+          <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <PieChart className="w-4 h-4" />
@@ -525,13 +499,13 @@ export default function AICFO() {
                       <div key={idx} className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium">{item.name}</span>
-                          <span className="text-sm font-mono font-bold">{pct.toFixed(0)}%</span>
+                          <span className="text-sm tabular-nums font-bold">{pct.toFixed(0)}%</span>
                         </div>
                         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                           <div className="bg-primary h-full" style={{ width: `${pct}%` }} />
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {formatCurrency(item.value, "AED")}
+                          <Money amount={item.value} currency={"AED"} />
                         </p>
                       </div>
                     );
@@ -574,7 +548,7 @@ export default function AICFO() {
                   disabled={insightsMutation.isPending}
                 >
                   {insightsMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   ) : null}
                   Regenerate
                 </Button>
@@ -608,7 +582,7 @@ export default function AICFO() {
 
             {/* Messages Area */}
             <CardContent className="flex-1 flex flex-col overflow-hidden pb-4">
-              <ScrollArea className="flex-1 pr-4 mb-4">
+              <ScrollArea className="flex-1 pe-4 mb-4">
                 {messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-8">
                     <div className="p-4 rounded-full bg-primary/10 mb-4">
@@ -631,11 +605,11 @@ export default function AICFO() {
                             key={i}
                             variant="outline"
                             size="sm"
-                            className="w-full justify-start text-left h-auto py-3"
+                            className="w-full justify-start text-start h-auto py-3"
                             onClick={() => setInput(item.q)}
                             data-testid={`button-quick-question-${i}`}
                           >
-                            <span className="mr-2">{item.icon}</span>
+                            <span className="me-2">{item.icon}</span>
                             <span className="text-xs">{item.q}</span>
                           </Button>
                         ))}
@@ -728,9 +702,9 @@ export default function AICFO() {
                   className="w-full"
                 >
                   {askAICFOMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   ) : (
-                    <Send className="w-4 h-4 mr-2" />
+                    <Send className="w-4 h-4 me-2" />
                   )}
                   Send Message
                 </Button>

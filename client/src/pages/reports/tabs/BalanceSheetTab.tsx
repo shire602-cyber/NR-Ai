@@ -6,12 +6,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function BalanceSheetTab() {
-  const { balanceSheet, bsLoading, dateRange, locale, selectedCompanyId, t } =
-    useReportsPageContext();
+  const { balanceSheet, bsLoading, dateRange, selectedCompanyId, t } = useReportsPageContext();
   return (
     <>
       <Card>
@@ -56,12 +55,12 @@ export default function BalanceSheetTab() {
                   <TableBody>
                     {balanceSheet?.assets?.map((item, index) => (
                       <TableRow key={item.accountCode || `asset-${index}`}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
                         <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(item.amount ?? 0, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -69,8 +68,8 @@ export default function BalanceSheetTab() {
                       <TableCell colSpan={2} className="font-semibold">
                         <T k="pages.totalAssets" />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold">
-                        {formatCurrency(balanceSheet?.totalAssets || 0, "AED", locale)}
+                      <TableCell data-numeric className=" font-semibold">
+                        <Money amount={balanceSheet?.totalAssets || 0} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -85,12 +84,12 @@ export default function BalanceSheetTab() {
                   <TableBody>
                     {balanceSheet?.liabilities?.map((item, index) => (
                       <TableRow key={item.accountCode || `liability-${index}`}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
                         <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(item.amount ?? 0, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -98,8 +97,8 @@ export default function BalanceSheetTab() {
                       <TableCell colSpan={2} className="font-semibold">
                         <T k="pages.totalLiabilities" />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold">
-                        {formatCurrency(balanceSheet?.totalLiabilities || 0, "AED", locale)}
+                      <TableCell data-numeric className=" font-semibold">
+                        <Money amount={balanceSheet?.totalLiabilities || 0} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -114,12 +113,12 @@ export default function BalanceSheetTab() {
                   <TableBody>
                     {balanceSheet?.equity?.map((item, index) => (
                       <TableRow key={item.accountCode || `equity-${index}`}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
                         <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(item.amount ?? 0, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -127,8 +126,8 @@ export default function BalanceSheetTab() {
                       <TableCell colSpan={2} className="font-semibold">
                         <T k="pages.totalEquity" />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold">
-                        {formatCurrency(balanceSheet?.totalEquity || 0, "AED", locale)}
+                      <TableCell data-numeric className=" font-semibold">
+                        <Money amount={balanceSheet?.totalEquity || 0} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   </TableBody>

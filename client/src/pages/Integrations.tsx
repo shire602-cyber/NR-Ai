@@ -245,7 +245,7 @@ export default function Integrations() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Google Sheets Integration */}
           <Card className="relative overflow-hidden" data-testid="integration-google-sheets">
-            <div className="absolute top-0 right-0 w-32 h-32 rounded-bl-full" />
+            <div className="absolute top-0 end-0 w-32 h-32 rounded-bl-full" />
             <CardHeader className="flex flex-row items-start gap-4">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg">
                 <SiGoogle className="w-6 h-6 text-white" />
@@ -262,11 +262,11 @@ export default function Integrations() {
                   >
                     {integrationStatus?.googleSheets?.connected ? (
                       <>
-                        <Check className="w-3 h-3 mr-1" /> {t.connected}
+                        <Check className="w-3 h-3 me-1" /> {t.connected}
                       </>
                     ) : (
                       <>
-                        <X className="w-3 h-3 mr-1" /> {t.notConnected}
+                        <X className="w-3 h-3 me-1" /> {t.notConnected}
                       </>
                     )}
                   </Badge>
@@ -334,11 +334,11 @@ export default function Integrations() {
                           >
                             {exportMutation.isPending ? (
                               <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.exporting}
+                                <Loader2 className="w-4 h-4 me-2 animate-spin" /> {t.exporting}
                               </>
                             ) : (
                               <>
-                                <Download className="w-4 h-4 mr-2" /> {t.export}
+                                <Download className="w-4 h-4 me-2" /> {t.export}
                               </>
                             )}
                           </Button>
@@ -407,11 +407,11 @@ export default function Integrations() {
                           >
                             {importMutation.isPending ? (
                               <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.importing}
+                                <Loader2 className="w-4 h-4 me-2 animate-spin" /> {t.importing}
                               </>
                             ) : (
                               <>
-                                <Upload className="w-4 h-4 mr-2" /> {t.import}
+                                <Upload className="w-4 h-4 me-2" /> {t.import}
                               </>
                             )}
                           </Button>
@@ -442,7 +442,7 @@ export default function Integrations() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Xero */}
           <Card className="relative overflow-hidden opacity-75" data-testid="integration-xero">
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" />
+            <div className="absolute top-0 end-0 w-24 h-24 rounded-bl-full" />
             <CardHeader className="flex flex-row items-start gap-4 pb-2">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold text-sm">X</span>
@@ -465,7 +465,7 @@ export default function Integrations() {
             className="relative overflow-hidden opacity-75"
             data-testid="integration-quickbooks"
           >
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" />
+            <div className="absolute top-0 end-0 w-24 h-24 rounded-bl-full" />
             <CardHeader className="flex flex-row items-start gap-4 pb-2">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
                 <SiQuickbooks className="w-5 h-5 text-white" />
@@ -537,7 +537,7 @@ export default function Integrations() {
                         onClick={() => window.open(sync.externalUrl!, "_blank")}
                         data-testid={`button-open-sync-${sync.id}`}
                       >
-                        <ExternalLink className="w-4 h-4 mr-2" />
+                        <ExternalLink className="w-4 h-4 me-2" />
                         {t.openSpreadsheet}
                       </Button>
                     )}

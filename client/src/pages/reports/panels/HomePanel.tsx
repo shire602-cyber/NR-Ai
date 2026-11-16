@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { T } from "@/components/layout/T";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { reportStatusMeta } from "../shared";
 import { useReportsPageContext } from "../context";
 
@@ -15,7 +15,6 @@ export default function HomePanel() {
   const {
     activeReportWorkspaceTab,
     automationQueueCount,
-    locale,
     personaFilterLabel,
     personaScopeDescription,
     reportAutomationOperationsNeedingReview,
@@ -59,19 +58,23 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.readyReports" />
                     </div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.ready}</div>
+                    <div className="mt-1 tabular-nums text-2xl font-semibold">
+                      {reportStats.ready}
+                    </div>
                   </div>
                   <div className="rounded-md border p-3">
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.liveReports" />
                     </div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.live}</div>
+                    <div className="mt-1 tabular-nums text-2xl font-semibold">
+                      {reportStats.live}
+                    </div>
                   </div>
                   <div className="rounded-md border p-3">
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.automations" />
                     </div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">
+                    <div className="mt-1 tabular-nums text-2xl font-semibold">
                       {reportStats.automationStarters}
                     </div>
                   </div>
@@ -79,7 +82,7 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.openQueue" />
                     </div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">
+                    <div className="mt-1 tabular-nums text-2xl font-semibold">
                       {automationQueueCount}
                     </div>
                   </div>
@@ -87,12 +90,12 @@ export default function HomePanel() {
 
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={reportWorkflowSearch}
                       onChange={(event) => updateReportWorkflowSearch(event.target.value)}
                       placeholder="Search reports, packs, comparisons, automations"
-                      className="pl-9"
+                      className="ps-9"
                       data-testid="input-report-home-search"
                     />
                   </div>
@@ -176,7 +179,7 @@ export default function HomePanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.health" />
                         </div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="mt-1 tabular-nums text-lg font-semibold">
                           {reportHomeAutomationOperation.automationScore}/100
                         </div>
                       </div>
@@ -184,12 +187,11 @@ export default function HomePanel() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.atRisk" />
                         </div>
-                        <div className="mt-1 truncate font-mono text-sm font-semibold">
-                          {formatCurrency(
-                            reportHomeAutomationOperation.amountAtRisk,
-                            "AED",
-                            locale
-                          )}
+                        <div className="mt-1 truncate tabular-nums text-sm font-semibold">
+                          <Money
+                            amount={reportHomeAutomationOperation.amountAtRisk}
+                            currency={"AED"}
+                          />
                         </div>
                       </div>
                     </div>
@@ -363,7 +365,7 @@ export default function HomePanel() {
                 {reportHomeSavedViews.length ? (
                   reportHomeSavedViews.map((view) => (
                     <Link key={view.id} href={view.href}>
-                      <div className="rounded-md border p-3 text-sm transition-colors hover:bg-accent/5">
+                      <div className="rounded-md border p-3 text-sm transition-colors hover:bg-muted/5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate font-medium text-foreground">{view.title}</div>

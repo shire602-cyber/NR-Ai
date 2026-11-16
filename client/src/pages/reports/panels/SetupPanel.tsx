@@ -78,7 +78,7 @@ export default function SetupPanel() {
                 {workspace.setupChecklist.map((step, index) => (
                   <Link key={step.id} href={step.href}>
                     <div
-                      className="rounded-md border p-3 transition-colors hover:bg-accent/5"
+                      className="rounded-md border p-3 transition-colors hover:bg-muted/5"
                       data-testid={`report-role-setup-step-${step.id}`}
                     >
                       <div className="flex items-start gap-3">
@@ -388,7 +388,7 @@ export default function SetupPanel() {
 
                         {subgoal.requiredSourceRecords?.length ? (
                           <div className="mt-3 space-y-2">
-                            <div className="text-xs font-medium uppercase text-muted-foreground">
+                            <div className="text-xs font-medium text-muted-foreground">
                               <T k="reportCenter.requiredSourceRecords" />
                             </div>
                             <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
@@ -494,13 +494,15 @@ export default function SetupPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.liveNow" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">{item.liveReportCount}</div>
+                      <div className="tabular-nums text-lg font-semibold">
+                        {item.liveReportCount}
+                      </div>
                     </div>
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.planned" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {item.plannedReportCount}
                       </div>
                     </div>
@@ -508,7 +510,7 @@ export default function SetupPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.categories" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {item.plannedCategories.length}
                       </div>
                     </div>
@@ -516,7 +518,7 @@ export default function SetupPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.prereqs" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {item.prerequisiteCount}
                       </div>
                     </div>
@@ -526,7 +528,7 @@ export default function SetupPanel() {
                     <div className="rounded-md border p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <div className="text-xs font-medium uppercase text-muted-foreground">
+                          <div className="text-xs font-medium text-muted-foreground">
                             <T k="reportCenter.topRoadmapPriority" />
                           </div>
                           <div className="mt-1 text-sm font-medium">
@@ -549,7 +551,7 @@ export default function SetupPanel() {
                   ) : null}
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.nextReportUnlocks" />
                     </div>
                     {item.nextReports.length > 0 ? (
@@ -625,7 +627,7 @@ export default function SetupPanel() {
                   </div>
 
                   <div className="rounded-md border p-3">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.automationUnlocks" />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -641,7 +643,7 @@ export default function SetupPanel() {
                   </div>
 
                   <div className="rounded-md border p-3">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.workflowDependencies" />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -711,7 +713,7 @@ export default function SetupPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.reports" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {workspace.catalogReportCount}
                       </div>
                     </div>
@@ -719,7 +721,7 @@ export default function SetupPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.ready" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {workspace.readyReports}
                       </div>
                     </div>
@@ -727,7 +729,7 @@ export default function SetupPanel() {
                       <div className="text-xs text-muted-foreground">
                         <T k="reportCenter.automations" />
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="tabular-nums text-lg font-semibold">
                         {workspace.automationCount}
                       </div>
                     </div>
@@ -741,7 +743,7 @@ export default function SetupPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.packs" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {workspace.packTemplateCount}
                       </div>
                     </div>
@@ -749,7 +751,7 @@ export default function SetupPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.comparisons" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {workspace.comparisonPresetCount}
                       </div>
                     </div>
@@ -757,7 +759,7 @@ export default function SetupPanel() {
                       <div className="text-muted-foreground">
                         <T k="reportCenter.starters" />
                       </div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="mt-1 tabular-nums text-base font-semibold">
                         {workspace.automationStarterCount}
                       </div>
                     </div>
@@ -768,7 +770,7 @@ export default function SetupPanel() {
                       <span className="font-medium">
                         <T k="reportCenter.readiness" />
                       </span>
-                      <span className="font-mono">{workspace.readiness}%</span>
+                      <span className="tabular-nums">{workspace.readiness}%</span>
                     </div>
                     <div className="h-2 rounded-full bg-secondary">
                       <div
@@ -789,7 +791,7 @@ export default function SetupPanel() {
                   </div>
 
                   <div className="rounded-md border p-3">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.automationOutcome" />
                     </div>
                     <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -798,7 +800,7 @@ export default function SetupPanel() {
                   </div>
 
                   <div className="rounded-md border p-3">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.reportPackCadence" />
                     </div>
                     <div className="mt-2 space-y-2 text-xs text-muted-foreground">
@@ -818,7 +820,7 @@ export default function SetupPanel() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                    <div className="text-xs font-medium text-muted-foreground">
                       <T k="reportCenter.automationPlaybooks" />
                     </div>
                     {workspace.automations.map((playbook) => {
@@ -892,7 +894,7 @@ export default function SetupPanel() {
                       onClick={() => handleExportWorkspacePack(workspace)}
                       data-testid={`button-export-workspace-pack-${workspace.persona}`}
                     >
-                      <Download className="mr-2 h-4 w-4" />
+                      <Download className="me-2 h-4 w-4" />
                       <T k="reportCenter.exportPack" />
                     </Button>
                     <Button
@@ -903,7 +905,7 @@ export default function SetupPanel() {
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                       data-testid={`button-export-workspace-pack-sheets-${workspace.persona}`}
                     >
-                      <SiGooglesheets className="mr-2 h-4 w-4" />
+                      <SiGooglesheets className="me-2 h-4 w-4" />
                       <T k="reportCenter.sheetsPack" />
                     </Button>
                   </div>

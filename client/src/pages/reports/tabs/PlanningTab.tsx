@@ -16,11 +16,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function PlanningTab() {
-  const { hasFocusedReportSelection, locale, planningLoading, planningReport, reportSectionClass } =
+  const { hasFocusedReportSelection, planningLoading, planningReport, reportSectionClass } =
     useReportsPageContext();
   return (
     <>
@@ -43,8 +43,8 @@ export default function PlanningTab() {
             {planningLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(planningReport.budgetTotal, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={planningReport.budgetTotal} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -63,8 +63,8 @@ export default function PlanningTab() {
             {planningLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(planningReport.actualTotal, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={planningReport.actualTotal} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -88,8 +88,8 @@ export default function PlanningTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="font-mono text-2xl font-bold">
-                  {formatCurrency(planningReport.variance, "AED", locale)}
+                <div className="tabular-nums text-2xl font-bold">
+                  <Money amount={planningReport.variance} currency={"AED"} />
                 </div>
                 <Badge variant={planningReport.variance >= 0 ? "success" : "warning"} dot>
                   {planningReport.variance >= 0 ? "Under budget" : "Over budget"}
@@ -113,8 +113,8 @@ export default function PlanningTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="font-mono text-2xl font-bold">
-                  {formatCurrency(planningReport.projectedEndingBalance, "AED", locale)}
+                <div className="tabular-nums text-2xl font-bold">
+                  <Money amount={planningReport.projectedEndingBalance} currency={"AED"} />
                 </div>
                 <Badge
                   variant={
@@ -165,16 +165,16 @@ export default function PlanningTab() {
                     <TableHead>
                       <T k="reportCenter.category" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.budget" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.actual" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.variance" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.status" />
                     </TableHead>
                   </TableRow>
@@ -183,16 +183,16 @@ export default function PlanningTab() {
                   {planningReport.largestVarianceLines.map((line) => (
                     <TableRow key={line.id}>
                       <TableCell className="font-medium">{line.category}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(line.totals.budget, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={line.totals.budget} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(line.totals.actual, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={line.totals.actual} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(line.totals.variance, "AED", locale)}
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={line.totals.variance} currency={"AED"} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <Badge variant={line.totals.variance >= 0 ? "success" : "warning"} dot>
                           {line.totals.variance >= 0 ? "Under" : "Over"}
                         </Badge>
@@ -237,9 +237,9 @@ export default function PlanningTab() {
                       <TableHead>
                         <T k="reportCenter.period" />
                       </TableHead>
-                      <TableHead className="text-right">In</TableHead>
-                      <TableHead className="text-right">Out</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>In</TableHead>
+                      <TableHead data-numeric>Out</TableHead>
+                      <TableHead data-numeric>
                         <T k="reportCenter.balance" />
                       </TableHead>
                     </TableRow>
@@ -251,14 +251,14 @@ export default function PlanningTab() {
                         <TableCell className="text-muted-foreground">
                           {row.weekStart} - {row.weekEnd}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.expectedInflows, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.expectedInflows} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.expectedOutflows, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.expectedOutflows} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.projectedBalance, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={row.projectedBalance} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -289,7 +289,7 @@ export default function PlanningTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.overBudgetLines" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {planningReport.overBudgetLines}
               </div>
             </div>
@@ -297,15 +297,15 @@ export default function PlanningTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.cashMovement" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
-                {formatCurrency(planningReport.cashMovement, "AED", locale)}
+              <div className="tabular-nums text-2xl font-semibold">
+                <Money amount={planningReport.cashMovement} currency={"AED"} />
               </div>
             </div>
             <div className="rounded-md border p-4">
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.forecastInsights" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {planningReport.insights.length}
               </div>
             </div>

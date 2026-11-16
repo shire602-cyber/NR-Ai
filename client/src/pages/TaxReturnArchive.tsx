@@ -36,7 +36,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   FileText,
   Download,
@@ -224,7 +224,7 @@ export default function TaxReturnArchive() {
         }
         actions={
           <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 me-2" />
             {locale === "ar" ? "إضافة إقرار" : "Add Return"}
           </Button>
         }
@@ -276,7 +276,7 @@ export default function TaxReturnArchive() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success">
-              {formatCurrency(stats.totalTaxPaid)}
+              <Money amount={stats.totalTaxPaid} />
             </div>
           </CardContent>
         </Card>
@@ -286,7 +286,7 @@ export default function TaxReturnArchive() {
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder={
                   locale === "ar"
@@ -295,7 +295,7 @@ export default function TaxReturnArchive() {
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-returns"
               />
             </div>
@@ -351,11 +351,9 @@ export default function TaxReturnArchive() {
                     <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
                     <TableHead>{locale === "ar" ? "تاريخ التقديم" : "Filing Date"}</TableHead>
                     <TableHead>{locale === "ar" ? "رقم المرجع" : "Reference No."}</TableHead>
-                    <TableHead className="text-right">{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
+                    <TableHead data-numeric>{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
                     <TableHead>{locale === "ar" ? "حالة الدفع" : "Payment"}</TableHead>
-                    <TableHead className="text-right">
-                      {locale === "ar" ? "إجراءات" : "Actions"}
-                    </TableHead>
+                    <TableHead data-numeric>{locale === "ar" ? "إجراءات" : "Actions"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -383,8 +381,8 @@ export default function TaxReturnArchive() {
                           </div>
                         </TableCell>
                         <TableCell>{ret.ftaReferenceNumber || "-"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(ret.taxAmount)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={ret.taxAmount} />
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -398,25 +396,25 @@ export default function TaxReturnArchive() {
                           >
                             {ret.paymentStatus === "paid" && (
                               <>
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                <CheckCircle2 className="w-3 h-3 me-1" />
                                 {locale === "ar" ? "مدفوع" : "Paid"}
                               </>
                             )}
                             {ret.paymentStatus === "partial" && (
                               <>
-                                <Clock className="w-3 h-3 mr-1" />
+                                <Clock className="w-3 h-3 me-1" />
                                 {locale === "ar" ? "جزئي" : "Partial"}
                               </>
                             )}
                             {ret.paymentStatus === "unpaid" && (
                               <>
-                                <AlertCircle className="w-3 h-3 mr-1" />
+                                <AlertCircle className="w-3 h-3 me-1" />
                                 {locale === "ar" ? "غير مدفوع" : "Unpaid"}
                               </>
                             )}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-numeric>
                           <div className="flex justify-end gap-2">
                             {ret.fileUrl && (
                               <>
@@ -610,7 +608,7 @@ export default function TaxReturnArchive() {
               {locale === "ar" ? "إلغاء" : "Cancel"}
             </Button>
             <Button onClick={handleSubmit} disabled={isSubmitting} data-testid="button-confirm-add">
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {locale === "ar" ? "إضافة" : "Add"}
             </Button>
           </DialogFooter>

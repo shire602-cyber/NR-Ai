@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { formatReportDate } from "../shared";
 import { useReportsPageContext } from "../context";
 
@@ -26,7 +26,6 @@ export default function CorporateTaxTab() {
     corporateTaxLoading,
     corporateTaxPeriodLabel,
     corporateTaxStatus,
-    locale,
   } = useReportsPageContext();
   return (
     <>
@@ -45,10 +44,10 @@ export default function CorporateTaxTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div
-                className="font-mono text-2xl font-bold"
+                className="tabular-nums text-2xl font-bold"
                 data-testid="text-corporate-tax-payable"
               >
-                {formatCurrency(corporateTaxEstimate?.taxPayable ?? 0, "AED", locale)}
+                <Money amount={corporateTaxEstimate?.taxPayable ?? 0} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -67,8 +66,8 @@ export default function CorporateTaxTab() {
             {corporateTaxLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(corporateTaxEstimate?.taxableIncome ?? 0, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={corporateTaxEstimate?.taxableIncome ?? 0} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -88,8 +87,8 @@ export default function CorporateTaxTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <>
-                <div className="font-mono text-2xl font-bold">
-                  {formatCurrency(corporateTaxEstimate?.taxableAmount ?? 0, "AED", locale)}
+                <div className="tabular-nums text-2xl font-bold">
+                  <Money amount={corporateTaxEstimate?.taxableAmount ?? 0} currency={"AED"} />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2)}% returned rate
@@ -112,7 +111,7 @@ export default function CorporateTaxTab() {
             {corporateTaxLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
+              <div className="tabular-nums text-2xl font-bold">
                 {corporateTaxEstimate?.journalEntriesProcessed ?? 0}
               </div>
             )}
@@ -164,7 +163,7 @@ export default function CorporateTaxTab() {
                     <TableHead>
                       <T k="reportCenter.bridge" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.amount" />
                     </TableHead>
                     <TableHead>Note</TableHead>
@@ -174,8 +173,8 @@ export default function CorporateTaxTab() {
                   {corporateTaxBridgeRows.map((row) => (
                     <TableRow key={row.metric}>
                       <TableCell className="font-medium">{row.metric}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(row.amount, "AED", locale)}
+                      <TableCell data-numeric>
+                        <Money amount={row.amount} currency={"AED"} />
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{row.note}</TableCell>
                     </TableRow>

@@ -167,15 +167,15 @@ export default function Analytics() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview">
-            <BarChart3 className="w-4 h-4 mr-2" />
+            <BarChart3 className="w-4 h-4 me-2" />
             <T k="pages.overview" />
           </TabsTrigger>
           <TabsTrigger value="pages" data-testid="tab-pages">
-            <Eye className="w-4 h-4 mr-2" />
+            <Eye className="w-4 h-4 me-2" />
             <T k="pages.pages" />
           </TabsTrigger>
           <TabsTrigger value="events" data-testid="tab-events">
-            <Activity className="w-4 h-4 mr-2" />
+            <Activity className="w-4 h-4 me-2" />
             <T k="pages.events" />
           </TabsTrigger>
         </TabsList>

@@ -260,17 +260,17 @@ export default function VAT201Form({
             <TableHeader>
               <TableRow className="bg-muted/50">
                 <TableHead className="w-[40%]">Description / وصف</TableHead>
-                <TableHead className="text-right w-[20%]">
+                <TableHead data-numeric className=" w-[20%]">
                   Amount (AED)
                   <br />
                   <span className="text-muted-foreground text-xs">المبلغ (درهم)</span>
                 </TableHead>
-                <TableHead className="text-right w-[20%]">
+                <TableHead data-numeric className=" w-[20%]">
                   VAT Amount (AED)
                   <br />
                   <span className="text-muted-foreground text-xs">قيمة الضريبة (درهم)</span>
                 </TableHead>
-                <TableHead className="text-right w-[20%]">
+                <TableHead data-numeric className=" w-[20%]">
                   Adjustment (AED)
                   <br />
                   <span className="text-muted-foreground text-xs">تسوية (درهم)</span>
@@ -288,11 +288,11 @@ export default function VAT201Form({
                       التوريدات الخاضعة للنسبة الأساسية في {emirate.ar}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     <Input
                       type="number"
                       step="0.01"
-                      className="text-right h-8"
+                      className="text-end h-8"
                       value={(data as any)[`${emirate.prefix}Amount`] || ""}
                       onChange={(e) =>
                         handleFieldChange(
@@ -304,11 +304,11 @@ export default function VAT201Form({
                       data-testid={`input-${emirate.prefix}-amount`}
                     />
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     <Input
                       type="number"
                       step="0.01"
-                      className="text-right h-8 bg-muted"
+                      className="text-end h-8 bg-muted"
                       value={(data as any)[`${emirate.prefix}Vat`] || ""}
                       onChange={(e) =>
                         handleFieldChange(
@@ -320,11 +320,11 @@ export default function VAT201Form({
                       data-testid={`input-${emirate.prefix}-vat`}
                     />
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     <Input
                       type="number"
                       step="0.01"
-                      className="text-right h-8"
+                      className="text-end h-8"
                       value={(data as any)[`${emirate.prefix}Adj`] || ""}
                       onChange={(e) =>
                         handleFieldChange(
@@ -348,21 +348,21 @@ export default function VAT201Form({
                     المبالغ التي تم ردها للسياح
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box2TouristRefundAmount || ""}
                     onChange={(e) => handleFieldChange("box2TouristRefundAmount", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8 bg-muted"
+                    className="text-end h-8 bg-muted"
                     value={data.box2TouristRefundVat || ""}
                     onChange={(e) => handleFieldChange("box2TouristRefundVat", e.target.value)}
                     disabled={readOnly}
@@ -380,21 +380,21 @@ export default function VAT201Form({
                     تخضع التوريدات لأحكام الاحتساب العكسي
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box3ReverseChargeAmount || ""}
                     onChange={(e) => handleFieldChange("box3ReverseChargeAmount", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8 bg-muted"
+                    className="text-end h-8 bg-muted"
                     value={data.box3ReverseChargeVat || ""}
                     onChange={(e) => handleFieldChange("box3ReverseChargeVat", e.target.value)}
                     disabled={readOnly}
@@ -412,11 +412,11 @@ export default function VAT201Form({
                     توريدات خاضعة للنسبة الصفرية
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box4ZeroRatedAmount || ""}
                     onChange={(e) => handleFieldChange("box4ZeroRatedAmount", e.target.value)}
                     disabled={readOnly}
@@ -435,11 +435,11 @@ export default function VAT201Form({
                     التوريدات المعفاة
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box5ExemptAmount || ""}
                     onChange={(e) => handleFieldChange("box5ExemptAmount", e.target.value)}
                     disabled={readOnly}
@@ -458,21 +458,21 @@ export default function VAT201Form({
                     البضائع الواردة إلى الدولة
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box6ImportsAmount || ""}
                     onChange={(e) => handleFieldChange("box6ImportsAmount", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8 bg-muted"
+                    className="text-end h-8 bg-muted"
                     value={data.box6ImportsVat || ""}
                     onChange={(e) => handleFieldChange("box6ImportsVat", e.target.value)}
                     disabled={readOnly}
@@ -490,21 +490,21 @@ export default function VAT201Form({
                     تسوية على البضائع المستوردة
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box7ImportsAdjAmount || ""}
                     onChange={(e) => handleFieldChange("box7ImportsAdjAmount", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8 bg-muted"
+                    className="text-end h-8 bg-muted"
                     value={data.box7ImportsAdjVat || ""}
                     onChange={(e) => handleFieldChange("box7ImportsAdjVat", e.target.value)}
                     disabled={readOnly}
@@ -522,15 +522,9 @@ export default function VAT201Form({
                     المجموع
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
-                  {formatNumber(calculateTotalSalesAmount())}
-                </TableCell>
-                <TableCell className="text-right">
-                  {formatNumber(calculateTotalSalesVat())}
-                </TableCell>
-                <TableCell className="text-right">
-                  {formatNumber(calculateTotalSalesAdj())}
-                </TableCell>
+                <TableCell data-numeric>{formatNumber(calculateTotalSalesAmount())}</TableCell>
+                <TableCell data-numeric>{formatNumber(calculateTotalSalesVat())}</TableCell>
+                <TableCell data-numeric>{formatNumber(calculateTotalSalesAdj())}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -550,17 +544,17 @@ export default function VAT201Form({
             <TableHeader>
               <TableRow className="bg-muted/50">
                 <TableHead className="w-[40%]">Description / وصف</TableHead>
-                <TableHead className="text-right w-[20%]">
+                <TableHead data-numeric className=" w-[20%]">
                   Amount (AED)
                   <br />
                   <span className="text-muted-foreground text-xs">المبلغ (درهم)</span>
                 </TableHead>
-                <TableHead className="text-right w-[20%]">
+                <TableHead data-numeric className=" w-[20%]">
                   VAT Amount (AED)
                   <br />
                   <span className="text-muted-foreground text-xs">قيمة الضريبة (درهم)</span>
                 </TableHead>
-                <TableHead className="text-right w-[20%]">
+                <TableHead data-numeric className=" w-[20%]">
                   Adjustment (AED)
                   <br />
                   <span className="text-muted-foreground text-xs">تسوية (درهم)</span>
@@ -577,31 +571,31 @@ export default function VAT201Form({
                     النفقات الخاضعة للنسبة الأساسية
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box9ExpensesAmount || ""}
                     onChange={(e) => handleFieldChange("box9ExpensesAmount", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8 bg-muted"
+                    className="text-end h-8 bg-muted"
                     value={data.box9ExpensesVat || ""}
                     onChange={(e) => handleFieldChange("box9ExpensesVat", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box9ExpensesAdj || ""}
                     onChange={(e) => handleFieldChange("box9ExpensesAdj", e.target.value)}
                     disabled={readOnly}
@@ -618,21 +612,21 @@ export default function VAT201Form({
                     تخضع التوريدات لأحكام الاحتساب العكسي
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8"
+                    className="text-end h-8"
                     value={data.box10ReverseChargeAmount || ""}
                     onChange={(e) => handleFieldChange("box10ReverseChargeAmount", e.target.value)}
                     disabled={readOnly}
                   />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   <Input
                     type="number"
                     step="0.01"
-                    className="text-right h-8 bg-muted"
+                    className="text-end h-8 bg-muted"
                     value={data.box10ReverseChargeVat || ""}
                     onChange={(e) => handleFieldChange("box10ReverseChargeVat", e.target.value)}
                     disabled={readOnly}
@@ -650,13 +644,11 @@ export default function VAT201Form({
                     المجموع
                   </span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell data-numeric>
                   {formatNumber(data.box9ExpensesAmount + data.box10ReverseChargeAmount)}
                 </TableCell>
-                <TableCell className="text-right">
-                  {formatNumber(calculateTotalInputVat())}
-                </TableCell>
-                <TableCell className="text-right">{formatNumber(data.box9ExpensesAdj)}</TableCell>
+                <TableCell data-numeric>{formatNumber(calculateTotalInputVat())}</TableCell>
+                <TableCell data-numeric>{formatNumber(data.box9ExpensesAdj)}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -683,7 +675,7 @@ export default function VAT201Form({
                     إجمالي قيمة الضريبة المستحقة للفترة
                   </span>
                 </TableCell>
-                <TableCell className="text-right text-lg font-bold">
+                <TableCell data-numeric className=" text-lg font-bold">
                   {formatNumber(calculateDueTax())}
                 </TableCell>
               </TableRow>
@@ -696,7 +688,7 @@ export default function VAT201Form({
                     إجمالي قيمة الضريبة القابلة للاسترداد
                   </span>
                 </TableCell>
-                <TableCell className="text-right text-lg font-bold">
+                <TableCell data-numeric className=" text-lg font-bold">
                   {formatNumber(calculateRecoverableTax())}
                 </TableCell>
               </TableRow>
@@ -710,12 +702,13 @@ export default function VAT201Form({
                   </span>
                 </TableCell>
                 <TableCell
-                  className={`text-right text-xl font-bold ${calculateNetVat() >= 0 ? "text-destructive" : "text-success"}`}
+                  data-numeric
+                  className={` text-xl font-bold ${calculateNetVat() >= 0 ? "text-destructive" : "text-success"}`}
                 >
                   {calculateNetVat() >= 0 ? "" : "("}
                   {formatNumber(Math.abs(calculateNetVat()))}
                   {calculateNetVat() >= 0 ? "" : ")"}
-                  <span className="text-xs ml-2 font-normal text-muted-foreground">
+                  <span className="text-xs ms-2 font-normal text-muted-foreground">
                     {calculateNetVat() >= 0 ? "Payable / مستحق الدفع" : "Refundable / مسترد"}
                   </span>
                 </TableCell>

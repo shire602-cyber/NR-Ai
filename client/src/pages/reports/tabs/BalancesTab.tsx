@@ -24,6 +24,7 @@ import {
 } from "../shared";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function BalancesTab() {
@@ -71,8 +72,8 @@ export default function BalancesTab() {
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(balanceReport.customerOpenAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={balanceReport.customerOpenAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -92,8 +93,8 @@ export default function BalancesTab() {
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="font-mono text-2xl font-bold">
-                  {formatCurrency(balanceReport.customerOverdueAed, "AED", locale)}
+                <div className="tabular-nums text-2xl font-bold">
+                  <Money amount={balanceReport.customerOverdueAed} currency={"AED"} />
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {balanceReport.overdueCustomerCount} customers
@@ -116,8 +117,8 @@ export default function BalancesTab() {
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(balanceReport.vendorOpenAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={balanceReport.vendorOpenAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -136,8 +137,8 @@ export default function BalancesTab() {
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(balanceReport.netBalanceAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={balanceReport.netBalanceAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -170,29 +171,29 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.current" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(payableAgingSummary.current, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={payableAgingSummary.current} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.overdue" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(payableAgingSummary.overdue, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={payableAgingSummary.overdue} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">Over 90 days</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(payableAgingSummary.over90, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={payableAgingSummary.over90} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.openBills" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {payableAgingSummary.billCount.toLocaleString(locale)}
                   </div>
                 </div>
@@ -214,10 +215,10 @@ export default function BalancesTab() {
                         <TableHead>
                           <T k="reportCenter.bucket" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.bills" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.amount" />
                         </TableHead>
                       </TableRow>
@@ -226,11 +227,9 @@ export default function BalancesTab() {
                       {payableAgingBuckets.map((bucket) => (
                         <TableRow key={bucket.label}>
                           <TableCell className="font-medium">{bucket.label}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {bucket.count.toLocaleString(locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(bucket.amount, "AED", locale)}
+                          <TableCell data-numeric>{bucket.count.toLocaleString(locale)}</TableCell>
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={bucket.amount} currency={"AED"} />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -245,14 +244,14 @@ export default function BalancesTab() {
                         <TableHead>
                           <T k="reportCenter.vendor" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.bills" />
                         </TableHead>
-                        <TableHead className="text-right">Open</TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>Open</TableHead>
+                        <TableHead data-numeric>
                           <T k="reportCenter.overdue" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.oldest" />
                         </TableHead>
                       </TableRow>
@@ -270,26 +269,24 @@ export default function BalancesTab() {
                               {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">{row.billCount}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="font-mono font-medium">
-                              {formatCurrency(row.openBalance, row.currency, locale)}
+                          <TableCell data-numeric>{row.billCount}</TableCell>
+                          <TableCell data-numeric>
+                            <div className="tabular-nums font-medium">
+                              <Money amount={row.openBalance} currency={row.currency} />
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {formatCurrency(row.openBalanceAed, "AED", locale)}
+                              <Money amount={row.openBalanceAed} currency={"AED"} />
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
-                            <div className="font-mono font-medium">
-                              {formatCurrency(row.overdueBalance, row.currency, locale)}
+                          <TableCell data-numeric>
+                            <div className="tabular-nums font-medium">
+                              <Money amount={row.overdueBalance} currency={row.currency} />
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                              <Money amount={row.overdueBalanceAed} currency={"AED"} />
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.maxDaysOverdue} days
-                          </TableCell>
+                          <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -335,14 +332,14 @@ export default function BalancesTab() {
                       <TableHead>
                         <T k="reportCenter.customer" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.invoices" />
                       </TableHead>
-                      <TableHead className="text-right">Open</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>Open</TableHead>
+                      <TableHead data-numeric>
                         <T k="reportCenter.overdue" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.oldest" />
                       </TableHead>
                     </TableRow>
@@ -360,26 +357,24 @@ export default function BalancesTab() {
                             {row.overdueBalanceAed > 0 ? "Collections" : "Current"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-mono font-medium">
-                            {formatCurrency(row.openBalance, row.currency, locale)}
+                        <TableCell data-numeric>{row.invoiceCount}</TableCell>
+                        <TableCell data-numeric>
+                          <div className="tabular-nums font-medium">
+                            <Money amount={row.openBalance} currency={row.currency} />
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(row.openBalanceAed, "AED", locale)}
+                            <Money amount={row.openBalanceAed} currency={"AED"} />
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-mono font-medium">
-                            {formatCurrency(row.overdueBalance, row.currency, locale)}
+                        <TableCell data-numeric>
+                          <div className="tabular-nums font-medium">
+                            <Money amount={row.overdueBalance} currency={row.currency} />
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                            <Money amount={row.overdueBalanceAed} currency={"AED"} />
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {row.maxDaysOverdue} days
-                        </TableCell>
+                        <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -422,14 +417,14 @@ export default function BalancesTab() {
                       <TableHead>
                         <T k="reportCenter.vendor" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.bills" />
                       </TableHead>
-                      <TableHead className="text-right">Open</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>Open</TableHead>
+                      <TableHead data-numeric>
                         <T k="reportCenter.overdue" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.oldest" />
                       </TableHead>
                     </TableRow>
@@ -447,26 +442,24 @@ export default function BalancesTab() {
                             {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono">{row.billCount}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-mono font-medium">
-                            {formatCurrency(row.openBalance, row.currency, locale)}
+                        <TableCell data-numeric>{row.billCount}</TableCell>
+                        <TableCell data-numeric>
+                          <div className="tabular-nums font-medium">
+                            <Money amount={row.openBalance} currency={row.currency} />
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(row.openBalanceAed, "AED", locale)}
+                            <Money amount={row.openBalanceAed} currency={"AED"} />
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-mono font-medium">
-                            {formatCurrency(row.overdueBalance, row.currency, locale)}
+                        <TableCell data-numeric>
+                          <div className="tabular-nums font-medium">
+                            <Money amount={row.overdueBalance} currency={row.currency} />
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                            <Money amount={row.overdueBalanceAed} currency={"AED"} />
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {row.maxDaysOverdue} days
-                        </TableCell>
+                        <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -509,7 +502,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.activeProducts" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {inventoryValuationReport.activeProductCount}
                   </div>
                 </div>
@@ -517,15 +510,15 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.stockValue" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(inventoryValuationReport.totalStockValueAed, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={inventoryValuationReport.totalStockValueAed} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.lowStock" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {inventoryValuationReport.lowStockCount}
                   </div>
                 </div>
@@ -533,7 +526,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.costingReview" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {inventoryValuationReport.missingCostCount}
                   </div>
                 </div>
@@ -550,16 +543,16 @@ export default function BalancesTab() {
                       <TableHead>
                         <T k="reportCenter.status" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.stock" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.unitCost" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.value" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.movements" />
                       </TableHead>
                     </TableRow>
@@ -598,18 +591,16 @@ export default function BalancesTab() {
                                     : "Inactive"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell data-numeric>
                           {product.currentStock.toLocaleString(locale)}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(product.unitCost, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={product.unitCost} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(product.stockValueAed, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={product.stockValueAed} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {product.movementCount}
-                        </TableCell>
+                        <TableCell data-numeric>{product.movementCount}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -652,7 +643,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.movements" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {inventoryMovementReport.movementCount}
                   </div>
                 </div>
@@ -660,7 +651,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.inboundUnits" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {inventoryMovementReport.inboundUnits.toLocaleString(locale)}
                   </div>
                 </div>
@@ -668,7 +659,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.outboundUnits" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {inventoryMovementReport.outboundUnits.toLocaleString(locale)}
                   </div>
                 </div>
@@ -676,8 +667,11 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.movementValue" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(inventoryMovementReport.totalMovementValueAed, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money
+                      amount={inventoryMovementReport.totalMovementValueAed}
+                      currency={"AED"}
+                    />
                   </div>
                 </div>
               </div>
@@ -706,8 +700,8 @@ export default function BalancesTab() {
                             {row.count} movements / {row.quantity.toLocaleString(locale)} units
                           </div>
                         </div>
-                        <div className="text-right font-mono">
-                          {formatCurrency(row.valueAed, "AED", locale)}
+                        <div className="text-end tabular-nums">
+                          <Money amount={row.valueAed} currency={"AED"} />
                         </div>
                       </div>
                     ))}
@@ -723,13 +717,13 @@ export default function BalancesTab() {
                           <T k="reportCenter.product" />
                         </TableHead>
                         <TableHead>Type</TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.quantity" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.unitCost" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.value" />
                         </TableHead>
                         <TableHead>
@@ -754,17 +748,17 @@ export default function BalancesTab() {
                               {movement.type}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell data-numeric>
                             {movement.type === "sale" ? "-" : "+"}
                             {Math.abs(movement.quantity).toLocaleString(locale)}
                           </TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell data-numeric>
                             {movement.unitCost
                               ? formatCurrency(movement.unitCost, "AED", locale)
                               : "-"}
                           </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(movement.valueAed, "AED", locale)}
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={movement.valueAed} currency={"AED"} />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {movement.reference || "-"}
@@ -813,31 +807,29 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.periodDepreciation" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(
-                      depreciationScheduleReport.periodDepreciationAed,
-                      "AED",
-                      locale
-                    )}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money
+                      amount={depreciationScheduleReport.periodDepreciationAed}
+                      currency={"AED"}
+                    />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.annualRunRate" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(
-                      depreciationScheduleReport.annualDepreciationAed,
-                      "AED",
-                      locale
-                    )}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money
+                      amount={depreciationScheduleReport.annualDepreciationAed}
+                      currency={"AED"}
+                    />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.readyToPost" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {depreciationScheduleReport.readyToPostCount}
                   </div>
                 </div>
@@ -845,7 +837,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.setupReview" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {depreciationScheduleReport.reviewCount}
                   </div>
                 </div>
@@ -861,13 +853,13 @@ export default function BalancesTab() {
                       <TableHead>
                         <T k="reportCenter.method" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.remaining" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.monthlyDepreciation" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.projectedNbv" />
                       </TableHead>
                       <TableHead>
@@ -887,14 +879,14 @@ export default function BalancesTab() {
                         <TableCell className="capitalize">
                           {row.method.replace(/_/g, " ")}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.remainingDepreciable, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.remainingDepreciable} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.monthlyDepreciation, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={row.monthlyDepreciation} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.projectedNetBookValue, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.projectedNetBookValue} currency={"AED"} />
                         </TableCell>
                         <TableCell>
                           <Badge variant={depreciationStatusVariant(row.status)} dot>
@@ -948,7 +940,7 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.activeAssets" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {fixedAssetRegisterReport.totalAssets}
                   </div>
                 </div>
@@ -956,23 +948,23 @@ export default function BalancesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.assetCost" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(fixedAssetRegisterReport.totalCost, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={fixedAssetRegisterReport.totalCost} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.netBookValue" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(fixedAssetRegisterReport.totalNetBookValue, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={fixedAssetRegisterReport.totalNetBookValue} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.reviewItems" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {fixedAssetRegisterReport.reviewCount}
                   </div>
                 </div>
@@ -995,11 +987,11 @@ export default function BalancesTab() {
                         <TableHead>
                           <T k="reportCenter.status" />
                         </TableHead>
-                        <TableHead className="text-right">Cost</TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>Cost</TableHead>
+                        <TableHead data-numeric>
                           <T k="reportCenter.depreciation" />
                         </TableHead>
-                        <TableHead className="text-right">NBV</TableHead>
+                        <TableHead data-numeric>NBV</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1022,14 +1014,14 @@ export default function BalancesTab() {
                                 : asset.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(asset.purchaseCost, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={asset.purchaseCost} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(asset.accumulatedDepreciation, "AED", locale)}
+                          <TableCell data-numeric>
+                            <Money amount={asset.accumulatedDepreciation} currency={"AED"} />
                           </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(asset.netBookValue, "AED", locale)}
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={asset.netBookValue} currency={"AED"} />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1046,7 +1038,7 @@ export default function BalancesTab() {
                       <T k="reportCenter.activeAssetsGroupedByCategory" />
                     </div>
                   </div>
-                  <div className="max-h-[420px] space-y-3 overflow-auto pr-1">
+                  <div className="max-h-[420px] space-y-3 overflow-auto pe-1">
                     {fixedAssetRegisterReport.byCategory.length ? (
                       fixedAssetRegisterReport.byCategory.map((category) => (
                         <div
@@ -1059,8 +1051,8 @@ export default function BalancesTab() {
                               {category.count} assets
                             </div>
                           </div>
-                          <div className="text-right font-mono">
-                            {formatCurrency(category.totalNetBookValue, "AED", locale)}
+                          <div className="text-end tabular-nums">
+                            <Money amount={category.totalNetBookValue} currency={"AED"} />
                           </div>
                         </div>
                       ))
@@ -1096,7 +1088,7 @@ export default function BalancesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.collectionsQueue" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {balanceReport.overdueCustomerCount}
               </div>
             </div>
@@ -1104,7 +1096,7 @@ export default function BalancesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.billPayQueue" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {balanceReport.overdueVendorCount}
               </div>
             </div>
@@ -1112,7 +1104,7 @@ export default function BalancesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.inventoryReview" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {inventoryValuationReport.reviewCount}
               </div>
             </div>
@@ -1120,7 +1112,7 @@ export default function BalancesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.assetReview" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {fixedAssetRegisterReport.reviewCount}
               </div>
             </div>

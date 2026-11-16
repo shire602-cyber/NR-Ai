@@ -277,12 +277,12 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
               <CardTitle className="text-base">
                 {items.length} file{items.length !== 1 ? "s" : ""} queued
                 {successCount > 0 && (
-                  <span className="ml-2 text-success text-sm font-normal">
+                  <span className="ms-2 text-success text-sm font-normal">
                     · {successCount} done
                   </span>
                 )}
                 {errorCount > 0 && (
-                  <span className="ml-2 text-destructive text-sm font-normal">
+                  <span className="ms-2 text-destructive text-sm font-normal">
                     · {errorCount} failed
                   </span>
                 )}
@@ -292,9 +292,9 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                 disabled={isProcessing || items.every((i) => i.status !== "pending")}
               >
                 {isProcessing ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <Play className="w-4 h-4 mr-2" />
+                  <Play className="w-4 h-4 me-2" />
                 )}
                 Process All
               </Button>
@@ -347,19 +347,19 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                         )}
                         {item.status === "processing" && (
                           <Badge className="bg-info-subtle text-info">
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            <Loader2 className="w-3 h-3 me-1 animate-spin" />
                             <T k="pages.processing" />
                           </Badge>
                         )}
                         {item.status === "success" && (
                           <Badge className="bg-success-subtle text-success">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            <CheckCircle2 className="w-3 h-3 me-1" />
                             Done
                           </Badge>
                         )}
                         {item.status === "error" && (
                           <Badge variant="destructive" title={item.error}>
-                            <XCircle className="w-3 h-3 mr-1" />
+                            <XCircle className="w-3 h-3 me-1" />
                             <T k="pages.failed" />
                           </Badge>
                         )}
@@ -419,9 +419,9 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
         </div>
         <Button onClick={prepareAll} disabled={isLoading}>
           {isLoading ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <RefreshCw className="w-4 h-4 mr-2" />
+            <RefreshCw className="w-4 h-4 me-2" />
           )}
           Prepare All
         </Button>
@@ -471,13 +471,13 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
                       <TableHead>
                         <T k="pages.period" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="pages.sales" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="pages.purchases" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="pages.vatPayable" />
                       </TableHead>
                       <TableHead>
@@ -489,15 +489,13 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
                     {queue.map((entry) => (
                       <TableRow key={entry.companyId}>
                         <TableCell className="font-medium">{entry.companyName}</TableCell>
-                        <TableCell className="text-muted-foreground font-mono text-sm">
+                        <TableCell className="text-muted-foreground tabular-nums text-sm">
                           {entry.trn}
                         </TableCell>
                         <TableCell>{entry.period}</TableCell>
-                        <TableCell className="text-right">{formatAed(entry.totalSales)}</TableCell>
-                        <TableCell className="text-right">
-                          {formatAed(entry.totalPurchases)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
+                        <TableCell data-numeric>{formatAed(entry.totalSales)}</TableCell>
+                        <TableCell data-numeric>{formatAed(entry.totalPurchases)}</TableCell>
+                        <TableCell data-numeric className=" font-semibold">
                           {formatAed(entry.vatPayable)}
                         </TableCell>
                         <TableCell>
@@ -696,15 +694,15 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={toggleAll}>
                 {allSelected ? (
-                  <CheckSquare className="w-4 h-4 mr-1" />
+                  <CheckSquare className="w-4 h-4 me-1" />
                 ) : (
-                  <Square className="w-4 h-4 mr-1" />
+                  <Square className="w-4 h-4 me-1" />
                 )}
                 {allSelected ? "Deselect All" : "Select All"}
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="max-h-64 overflow-y-auto space-y-1 pr-2">
+          <CardContent className="max-h-64 overflow-y-auto space-y-1 pe-2">
             {clients.map((client) => (
               <div
                 key={client.id}
@@ -728,9 +726,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
       <div className="flex justify-end">
         <Button onClick={generate} disabled={isGenerating || selectedIds.size === 0}>
           {isGenerating ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <Play className="w-4 h-4 mr-2" />
+            <Play className="w-4 h-4 me-2" />
           )}
           Generate{" "}
           {selectedIds.size > 0
@@ -763,16 +761,16 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                 {results.map((r) => (
                   <TableRow key={r.companyId}>
                     <TableCell className="font-medium">{r.companyName}</TableCell>
-                    <TableCell className="font-mono text-sm">{r.invoiceNumber ?? "—"}</TableCell>
+                    <TableCell className="tabular-nums text-sm">{r.invoiceNumber ?? "—"}</TableCell>
                     <TableCell>
                       {r.success ? (
                         <Badge className="bg-success-subtle text-success">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          <CheckCircle2 className="w-3 h-3 me-1" />
                           <T k="pages.created" />
                         </Badge>
                       ) : (
                         <Badge variant="destructive" title={r.error}>
-                          <XCircle className="w-3 h-3 mr-1" />
+                          <XCircle className="w-3 h-3 me-1" />
                           <T k="pages.failed" />
                         </Badge>
                       )}
@@ -873,9 +871,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
         </div>
         <Button onClick={runCheck} disabled={isChecking || selectedIds.size === 0}>
           {isChecking ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <CheckCircle2 className="w-4 h-4 mr-2" />
+            <CheckCircle2 className="w-4 h-4 me-2" />
           )}
           Run Checklist
         </Button>
@@ -1038,21 +1036,21 @@ export default function BulkOperations() {
 
       <Tabs defaultValue="ocr">
         <div className="overflow-x-auto">
-          <TabsList className="grid w-full grid-cols-4 min-w-[500px]">
+          <TabsList>
             <TabsTrigger value="ocr">
-              <ReceiptIcon className="w-4 h-4 mr-2" />
+              <ReceiptIcon className="w-4 h-4 me-2" />
               <T k="pages.batchOcr" />
             </TabsTrigger>
             <TabsTrigger value="vat">
-              <FileText className="w-4 h-4 mr-2" />
+              <FileText className="w-4 h-4 me-2" />
               <T k="pages.vatQueue" />
             </TabsTrigger>
             <TabsTrigger value="invoices">
-              <Building2 className="w-4 h-4 mr-2" />
+              <Building2 className="w-4 h-4 me-2" />
               <T k="pages.invoicing" />
             </TabsTrigger>
             <TabsTrigger value="close">
-              <CheckCircle2 className="w-4 h-4 mr-2" />
+              <CheckCircle2 className="w-4 h-4 me-2" />
               <T k="pages.periodClose" />
             </TabsTrigger>
           </TabsList>

@@ -1,4 +1,6 @@
 import { T } from "@/components/layout/T";
+import { PageHeader } from "@/components/ui/page-header";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +41,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  CalendarCheck,
   CheckCircle2,
   XCircle,
   Lock,
@@ -448,7 +449,7 @@ export default function MonthEndClose() {
 
   if (isLoadingCompany) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-40 w-full" />
         <Skeleton className="h-60 w-full" />
@@ -471,32 +472,29 @@ export default function MonthEndClose() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-info-subtle rounded-lg">
-            <CalendarCheck className="h-6 w-6 text-info" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              <T k="pageLabels.monthEndClose" />
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              <T k="pageLabels.reviewValidateAndLockYourMonthly" />
-            </p>
-          </div>
-        </div>
-
-        {isCurrentPeriodLocked && (
-          <Badge variant="destructive" className="flex items-center gap-1 text-sm px-3 py-1">
-            <Lock className="h-4 w-4" />
-            {lockThroughDate
-              ? formatMessage(t["monthEnd.lockedThrough"], { date: lockThroughDate })
-              : t["monthEnd.periodLocked"]}
-          </Badge>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Accounting"
+        title={<T k="pageLabels.monthEndClose" />}
+        description={<T k="pageLabels.reviewValidateAndLockYourMonthly" />}
+        actions={
+          isCurrentPeriodLocked ? (
+            <>
+              {isCurrentPeriodLocked && (
+                <Badge variant="neutral" className="gap-1.5 px-2.5 py-1">
+                  <Lock className="h-3.5 w-3.5" aria-hidden />
+                  {lockThroughDate
+                    ? formatMessage(t["monthEnd.lockedThrough"], {
+                        date: formatDisplayDate(lockThroughDate, locale),
+                      })
+                    : t["monthEnd.periodLocked"]}
+                </Badge>
+              )}
+            </>
+          ) : undefined
+        }
+      />
 
       {/* Period Selector */}
       <Card>
@@ -533,7 +531,7 @@ export default function MonthEndClose() {
               onClick={() => refetchChecklist()}
               disabled={isLoadingChecklist}
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingChecklist ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 me-2 ${isLoadingChecklist ? "animate-spin" : ""}`} />
               <T k="pages.refresh" />
             </Button>
           </div>
@@ -572,9 +570,7 @@ export default function MonthEndClose() {
                 <div
                   key={item.id}
                   className={`flex items-center justify-between p-3 rounded-lg border ${
-                    stepDone(item)
-                      ? "bg-success-subtle border-success/30"
-                      : "bg-danger-subtle border-destructive/30"
+                    stepDone(item) ? "border-border bg-card" : "border-border bg-card"
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -624,7 +620,7 @@ export default function MonthEndClose() {
                           size="sm"
                           className="text-destructive hover:text-destructive"
                         >
-                          Fix <ArrowRight className="h-3 w-3 ml-1" />
+                          Fix <ArrowRight className="h-3 w-3 ms-1" />
                         </Button>
                       </a>
                     )}
@@ -656,9 +652,9 @@ export default function MonthEndClose() {
               variant="outline"
             >
               {validationMutation.isPending ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <RefreshCw className="h-4 w-4 me-2 animate-spin" />
               ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
+                <Sparkles className="h-4 w-4 me-2" />
               )}
               Run Validation
             </Button>
@@ -669,8 +665,8 @@ export default function MonthEndClose() {
             <div
               className={`p-4 rounded-lg border ${
                 validationMutation.data.ready
-                  ? "bg-success-subtle border-success/30"
-                  : "bg-warning-subtle border-warning/30"
+                  ? "border-border bg-card"
+                  : "border-warning/40 bg-warning-subtle/40"
               }`}
             >
               <div className="flex items-start gap-3">
@@ -711,9 +707,9 @@ export default function MonthEndClose() {
           <AlertDialogTrigger asChild>
             <Button disabled={closingEntriesMutation.isPending} className="bg-info hover:bg-info">
               {closingEntriesMutation.isPending ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <RefreshCw className="h-4 w-4 me-2 animate-spin" />
               ) : (
-                <FileText className="h-4 w-4 mr-2" />
+                <FileText className="h-4 w-4 me-2" />
               )}
               <T k="monthEnd.computeClose" />
             </Button>
@@ -752,9 +748,9 @@ export default function MonthEndClose() {
               }
             >
               {lockPeriodMutation.isPending ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <RefreshCw className="h-4 w-4 me-2 animate-spin" />
               ) : (
-                <Lock className="h-4 w-4 mr-2" />
+                <Lock className="h-4 w-4 me-2" />
               )}
               <T k="pages.lockPeriod" />
             </Button>
@@ -850,23 +846,23 @@ export default function MonthEndClose() {
                   <TableHead>
                     <T k="pages.account" />
                   </TableHead>
-                  <TableHead className="text-right">Debit (AED)</TableHead>
-                  <TableHead className="text-right">Credit (AED)</TableHead>
+                  <TableHead data-numeric>Debit (AED)</TableHead>
+                  <TableHead data-numeric>Credit (AED)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {closingEntriesMutation.data.lines.map((line, idx) => (
                   <TableRow key={idx}>
                     <TableCell>
-                      <span className="font-mono text-xs mr-2">{line.accountCode}</span>
+                      <span className="tabular-nums text-xs me-2">{line.accountCode}</span>
                       {line.accountName}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       {line.debit > 0
                         ? line.debit.toLocaleString("en-AE", { minimumFractionDigits: 2 })
                         : ""}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       {line.credit > 0
                         ? line.credit.toLocaleString("en-AE", { minimumFractionDigits: 2 })
                         : ""}
@@ -877,12 +873,12 @@ export default function MonthEndClose() {
                   <TableCell>
                     <T k="pages.total2" />
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     {closingEntriesMutation.data.totalDebits.toLocaleString("en-AE", {
                       minimumFractionDigits: 2,
                     })}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     {closingEntriesMutation.data.totalCredits.toLocaleString("en-AE", {
                       minimumFractionDigits: 2,
                     })}
@@ -972,7 +968,7 @@ export default function MonthEndClose() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="mr-2"
+                          className="me-2"
                           onClick={() => setReopenTarget(String(record.periodEnd).slice(0, 10))}
                           data-testid={`button-reopen-${String(record.periodEnd).slice(0, 10)}`}
                         >
@@ -986,7 +982,7 @@ export default function MonthEndClose() {
                           onClick={() => setUnlockTarget(String(record.periodEnd).slice(0, 10))}
                           data-testid={`button-unlock-${String(record.periodEnd).slice(0, 10)}`}
                         >
-                          <Unlock className="h-3 w-3 mr-1" />
+                          <Unlock className="h-3 w-3 me-1" />
                           <T k="monthEnd.unlock" />
                         </Button>
                       )}
@@ -1125,7 +1121,7 @@ export default function MonthEndClose() {
                   (overrideChecklist && yearEndReason.trim().length < 3)
                 }
               >
-                <Lock className="h-4 w-4 mr-2" />
+                <Lock className="h-4 w-4 me-2" />
                 <T k="monthEnd.closeYear" />
               </Button>
             </div>

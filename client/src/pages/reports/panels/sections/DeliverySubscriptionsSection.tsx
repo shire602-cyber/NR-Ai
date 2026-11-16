@@ -470,7 +470,7 @@ export function DeliverySubscriptionsSection() {
                   data-testid={`report-delivery-run-filter-${filter.id}`}
                 >
                   {filter.label}
-                  <span className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px]">
+                  <span className="rounded bg-background/70 px-1.5 py-0.5 tabular-nums text-caption">
                     {reportDeliveryRunStatusCounts[filter.id]}
                   </span>
                 </Button>
@@ -609,7 +609,7 @@ export function DeliverySubscriptionsSection() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.readyReports" />
                         </div>
-                        <div className="mt-1 font-mono text-base font-semibold">
+                        <div className="mt-1 tabular-nums text-base font-semibold">
                           {subscription.readyCount}/{subscription.reports.length}
                         </div>
                       </div>
@@ -617,7 +617,7 @@ export function DeliverySubscriptionsSection() {
                         <div className="text-muted-foreground">
                           <T k="reportCenter.openWork" />
                         </div>
-                        <div className="mt-1 font-mono text-base font-semibold">
+                        <div className="mt-1 tabular-nums text-base font-semibold">
                           {subscription.openWorkItemCount}
                         </div>
                       </div>
@@ -991,7 +991,7 @@ export function DeliverySubscriptionsSection() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                      <div className="text-xs font-medium text-muted-foreground">
                         <T k="reportCenter.triggerRules" />
                       </div>
                       <div className="flex flex-wrap gap-1">

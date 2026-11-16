@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { expenseClaimAmount, expenseClaimStatusVariant, formatReportDate } from "../shared";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function ExpensesTab() {
@@ -60,8 +61,8 @@ export default function ExpensesTab() {
             {expensesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(expenseReport.totalAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={expenseReport.totalAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -80,8 +81,8 @@ export default function ExpensesTab() {
             {expensesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(expenseReport.subtotalAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={expenseReport.subtotalAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -100,8 +101,8 @@ export default function ExpensesTab() {
             {expensesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="font-mono text-2xl font-bold">
-                {formatCurrency(expenseReport.vatAed, "AED", locale)}
+              <div className="tabular-nums text-2xl font-bold">
+                <Money amount={expenseReport.vatAed} currency={"AED"} />
               </div>
             )}
           </CardContent>
@@ -121,7 +122,9 @@ export default function ExpensesTab() {
               <Skeleton className="h-8 w-20" />
             ) : (
               <div className="space-y-1">
-                <div className="font-mono text-2xl font-bold">{expenseReport.unpostedReceipts}</div>
+                <div className="tabular-nums text-2xl font-bold">
+                  {expenseReport.unpostedReceipts}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {expenseReport.autoPostedReceipts} auto-posted
                 </div>
@@ -152,13 +155,13 @@ export default function ExpensesTab() {
                       <TableHead>
                         <T k="reportCenter.vendor" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.entries" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.lines" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.netExpense" />
                       </TableHead>
                     </TableRow>
@@ -167,12 +170,12 @@ export default function ExpensesTab() {
                     {expenseReport.byVendor.map((row) => (
                       <TableRow key={row.label}>
                         <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell className="text-right font-mono">{row.entryCount}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
+                        <TableCell data-numeric>{row.entryCount}</TableCell>
+                        <TableCell data-numeric className=" font-medium">
                           {row.lineCount}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.netExpenseAed, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.netExpenseAed} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -207,16 +210,16 @@ export default function ExpensesTab() {
                       <TableHead>
                         <T k="reportCenter.category" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.lines" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.debit" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.credit" />
                       </TableHead>
-                      <TableHead className="text-right">
+                      <TableHead data-numeric>
                         <T k="reportCenter.netExpense" />
                       </TableHead>
                     </TableRow>
@@ -225,15 +228,15 @@ export default function ExpensesTab() {
                     {expenseReport.byCategory.map((row) => (
                       <TableRow key={row.label}>
                         <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.debitAed, "AED", locale)}
+                        <TableCell data-numeric>{row.lineCount}</TableCell>
+                        <TableCell data-numeric>
+                          <Money amount={row.debitAed} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.creditAed, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={row.creditAed} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.netExpenseAed, "AED", locale)}
+                        <TableCell data-numeric className=" font-medium">
+                          <Money amount={row.netExpenseAed} currency={"AED"} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -277,7 +280,7 @@ export default function ExpensesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.claims" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {expenseClaimReport.claimCount}
                   </div>
                 </div>
@@ -285,15 +288,15 @@ export default function ExpensesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.claimValue" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(expenseClaimReport.totalAmount, "AED", locale)}
+                  <div className="tabular-nums text-2xl font-semibold">
+                    <Money amount={expenseClaimReport.totalAmount} currency={"AED"} />
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.needsApproval" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {expenseClaimReport.submittedCount}
                   </div>
                 </div>
@@ -301,7 +304,7 @@ export default function ExpensesTab() {
                   <div className="text-xs text-muted-foreground">
                     <T k="reportCenter.approvedUnpaid" />
                   </div>
-                  <div className="font-mono text-2xl font-semibold">
+                  <div className="tabular-nums text-2xl font-semibold">
                     {expenseClaimReport.approvedUnpaidCount}
                   </div>
                 </div>
@@ -331,8 +334,8 @@ export default function ExpensesTab() {
                             {row.count} claims
                           </div>
                         </div>
-                        <div className="text-right font-mono">
-                          {formatCurrency(row.totalAmount, "AED", locale)}
+                        <div className="text-end tabular-nums">
+                          <Money amount={row.totalAmount} currency={"AED"} />
                         </div>
                       </div>
                     ))}
@@ -355,7 +358,7 @@ export default function ExpensesTab() {
                         <TableHead>
                           <T k="reportCenter.submitted" />
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead data-numeric>
                           <T k="reportCenter.amount" />
                         </TableHead>
                       </TableRow>
@@ -380,12 +383,11 @@ export default function ExpensesTab() {
                           <TableCell className="text-muted-foreground">
                             {formatReportDate(claim.submitted_at)}
                           </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(
-                              expenseClaimAmount(claim),
-                              claim.currency || "AED",
-                              locale
-                            )}
+                          <TableCell data-numeric className=" font-medium">
+                            <Money
+                              amount={expenseClaimAmount(claim)}
+                              currency={claim.currency || "AED"}
+                            />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -426,13 +428,15 @@ export default function ExpensesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.capturedReceipts" />
               </div>
-              <div className="font-mono text-2xl font-semibold">{expenseReport.receiptCount}</div>
+              <div className="tabular-nums text-2xl font-semibold">
+                {expenseReport.receiptCount}
+              </div>
             </div>
             <div className="rounded-md border p-4">
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.autoPosted" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {expenseReport.autoPostedReceipts}
               </div>
             </div>
@@ -440,7 +444,7 @@ export default function ExpensesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.needsPosting" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {expenseReport.unpostedReceipts}
               </div>
             </div>
@@ -448,7 +452,7 @@ export default function ExpensesTab() {
               <div className="text-xs text-muted-foreground">
                 <T k="reportCenter.claimsReview" />
               </div>
-              <div className="font-mono text-2xl font-semibold">
+              <div className="tabular-nums text-2xl font-semibold">
                 {expenseClaimReport.reviewCount}
               </div>
             </div>
@@ -488,13 +492,13 @@ export default function ExpensesTab() {
                     <TableHead>
                       <T k="reportCenter.source" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.debit" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.credit" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead data-numeric>
                       <T k="reportCenter.netExpense" />
                     </TableHead>
                   </TableRow>
@@ -502,26 +506,26 @@ export default function ExpensesTab() {
                 <TableBody>
                   {expenseReport.lines.map((line) => (
                     <TableRow key={line.id}>
-                      <TableCell className="font-mono font-medium">{line.entryNumber}</TableCell>
+                      <TableCell className="tabular-nums font-medium">{line.entryNumber}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatReportDate(line.date)}
                       </TableCell>
                       <TableCell className="font-medium">{line.vendor}</TableCell>
                       <TableCell>
                         <div className="font-medium">{line.accountName}</div>
-                        <div className="font-mono text-xs text-muted-foreground">
+                        <div className="tabular-nums text-xs text-muted-foreground">
                           {line.accountCode || "-"}
                         </div>
                       </TableCell>
                       <TableCell className="capitalize">{line.source}</TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell data-numeric>
                         {line.debitAed > 0 ? formatCurrency(line.debitAed, "AED", locale) : "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell data-numeric>
                         {line.creditAed > 0 ? formatCurrency(line.creditAed, "AED", locale) : "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(line.netExpenseAed, "AED", locale)}
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={line.netExpenseAed} currency={"AED"} />
                       </TableCell>
                     </TableRow>
                   ))}
