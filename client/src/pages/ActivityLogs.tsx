@@ -361,14 +361,14 @@ export default function ActivityLogs() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-muted-foreground" />
-                        {getUserName(log.userId)}
+                        <span translate="no">{getUserName(log.userId)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
                       {log.companyId ? (
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {getCompanyName(log.companyId)}
+                          <span translate="no">{getCompanyName(log.companyId)}</span>
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
