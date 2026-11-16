@@ -1,3 +1,4 @@
+import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
@@ -722,9 +723,7 @@ export default function CreditNotes() {
             {(creditNotes ?? []).map((creditNote) => (
               <TableRow key={creditNote.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
-                  <span dir="ltr" className="[unicode-bidi:isolate]">
-                    {creditNote.number}
-                  </span>
+                  <MiddleTruncate text={String(creditNote.number ?? "")} />
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title" dir="auto">
                   {creditNote.customerName}
@@ -734,7 +733,12 @@ export default function CreditNotes() {
                     {creditNote.invoiceNumber || "—"}
                   </span>
                 </TableCell>
-                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                <TableCell
+                  data-nowrap=""
+                  data-cell="meta"
+                  data-keep=""
+                  className="text-muted-foreground"
+                >
                   {formatDate(creditNote.date, locale)}
                 </TableCell>
                 <MoneyCell

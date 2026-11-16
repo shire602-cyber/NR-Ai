@@ -345,7 +345,12 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     .filter((l) => l.amount > 0)
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5)
-    .map((l) => ({ name: l.accountName, value: l.amount, accountId: l.accountId }));
+    .map((l) => ({
+      name: l.accountName,
+      nameAr: l.accountNameAr ?? null,
+      value: l.amount,
+      accountId: l.accountId,
+    }));
 
   const dso =
     plTrailing.revenue > 0
@@ -492,5 +497,10 @@ export async function getExpenseBreakdown(companyId: string, input: DashboardSta
     .filter((l) => l.amount > 0)
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5)
-    .map((l) => ({ name: l.accountName, value: l.amount, accountId: l.accountId }));
+    .map((l) => ({
+      name: l.accountName,
+      nameAr: l.accountNameAr ?? null,
+      value: l.amount,
+      accountId: l.accountId,
+    }));
 }

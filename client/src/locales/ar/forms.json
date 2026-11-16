@@ -148,7 +148,7 @@
   "forms.product.unit.hr": "ساعات (hr)",
   "forms.product.unit.box": "صندوق",
   "forms.product.vat0": "0% (صفرية أو معفاة)",
-  "forms.product.vat5": "5% (القياسية)",
+  "forms.product.vat5": "⁦5%⁩ (القياسية)",
   "forms.product.einvoiceTitle": "الفوترة الإلكترونية",
   "forms.product.einvoiceDesc": "مطلوبة فقط لسلع الاحتساب العكسي المحلية.",
   "forms.product.gtinHelp": "8 أو 12 أو 13 أو 14 رقمًا مع رقم تحقق صحيح.",

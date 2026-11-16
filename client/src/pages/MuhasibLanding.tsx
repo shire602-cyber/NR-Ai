@@ -1,3 +1,4 @@
+import { formatMoneyText } from "@/lib/format-money";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -402,7 +403,7 @@ const PLANS = [
 ];
 
 function PricingTeaser() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   return (
     <section className="mk-section mk-section--sunken" aria-labelledby="mk-pricing-title">
       <div className="mk-container">
@@ -423,7 +424,9 @@ function PricingTeaser() {
               {plan.featured && <span className="mk-plan__tag">{t["marketing.planPopular"]}</span>}
               <h3 className="mk-plan__name">{t[`marketing.plan${plan.id}`]}</h3>
               <p className="mk-plan__price">
-                <strong className="mk-num">{`AED ${plan.price}`}</strong>
+                <strong className="mk-num">
+                  {formatMoneyText(plan.price, "AED", locale, { fractionDigits: 0 })}
+                </strong>
                 <span>{t["marketing.pricingPerMonth"]}</span>
               </p>
               <p className="mk-small">{t[`marketing.plan${plan.id}Summary`]}</p>

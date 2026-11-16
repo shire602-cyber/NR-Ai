@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { useMemo } from "react";
-import { ResponsiveContainer, LineChart, Line } from "recharts";
+import { ResponsiveContainer, LineChart, Line, XAxis } from "recharts";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatPercentDelta } from "@/lib/format-money";
+import { useTranslation } from "@/lib/i18n";
 
 // ─── KPI tile (dashboard) ────────────────────────────────────────────────────
 // Built on the shared StatCard: neutral figure (a <Money/>), a delta pill whose
@@ -46,6 +47,7 @@ export function KpiCard({
   testId,
   deltaContext,
 }: KpiCardProps) {
+  const { locale } = useTranslation();
   const sparkColor = SPARK_COLOR[accent];
   const sparkData = useMemo(() => (spark ?? []).map((v, i) => ({ i, v })), [spark]);
   const hasSeries = sparkData.length > 1 && sparkData.some((d) => d.v !== 0);
@@ -74,6 +76,8 @@ export function KpiCard({
           <div className="-mx-1 h-9" dir="ltr" aria-hidden>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                {/* RTL: time runs right to left, so the series is mirrored with the axis (R2-20). */}
+                <XAxis hide reversed={locale === "ar"} />
                 {/* Linear segments: sparse monthly points never overshoot (CTO 6). */}
                 <Line
                   type="linear"

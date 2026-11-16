@@ -1,3 +1,4 @@
+import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import {
   FormActions,
@@ -1561,13 +1562,12 @@ export default function BillPay() {
                         <EInvoiceOriginTag origin={bill.origin} />
                       </TableCell>
                       <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
-                        <span dir="ltr" className="[unicode-bidi:isolate]">
-                          {bill.bill_number || "—"}
-                        </span>
+                        <MiddleTruncate text={bill.bill_number || "—"} />
                       </TableCell>
                       <TableCell
                         data-nowrap=""
                         data-cell="meta"
+                        data-keep=""
                         className="hidden text-muted-foreground 2xl:table-cell"
                       >
                         {formatDate(bill.bill_date, locale)}

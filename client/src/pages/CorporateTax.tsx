@@ -5,6 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -503,23 +504,13 @@ export default function CorporateTax() {
               <Label htmlFor="workpaperPeriodStart">
                 <T k="pages.periodStart" />
               </Label>
-              <Input
-                id="workpaperPeriodStart"
-                type="date"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
+              <DatePicker id="workpaperPeriodStart" value={periodStart} onChange={setPeriodStart} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="workpaperPeriodEnd">
                 <T k="pages.periodEnd" />
               </Label>
-              <Input
-                id="workpaperPeriodEnd"
-                type="date"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
-              />
+              <DatePicker id="workpaperPeriodEnd" value={periodEnd} onChange={setPeriodEnd} />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
@@ -768,33 +759,23 @@ export default function CorporateTax() {
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Period Selector */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
             <div className="space-y-2">
               <Label htmlFor="periodStart">
                 <T k="pages.periodStart" />
               </Label>
-              <Input
-                id="periodStart"
-                type="date"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
+              <DatePicker id="periodStart" value={periodStart} onChange={setPeriodStart} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="periodEnd">
                 <T k="pages.periodEnd" />
               </Label>
-              <Input
-                id="periodEnd"
-                type="date"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
-              />
+              <DatePicker id="periodEnd" value={periodEnd} onChange={setPeriodEnd} />
             </div>
             <Button
               onClick={() => calculateMutation.mutate()}
               disabled={calculateMutation.isPending || !periodStart || !periodEnd}
-              className="w-full md:w-auto"
+              className="w-full md:w-auto md:justify-self-end"
             >
               {calculateMutation.isPending ? (
                 <>
@@ -1486,13 +1467,12 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor="ct-licence">{t["corporateTax.tradeLicenceExpiry"]}</Label>
-            <Input
+            <DatePicker
               id="ct-licence"
-              type="date"
-              defaultValue={profile?.tradeLicenceExpiry ?? ""}
-              onBlur={(e) =>
-                e.target.value !== (profile?.tradeLicenceExpiry ?? "") &&
-                saveProfile.mutate({ tradeLicenceExpiry: e.target.value || null })
+              value={profile?.tradeLicenceExpiry ?? ""}
+              onChange={(v) =>
+                v !== (profile?.tradeLicenceExpiry ?? "") &&
+                saveProfile.mutate({ tradeLicenceExpiry: v || null })
               }
             />
           </div>

@@ -12,6 +12,14 @@ import {
   type NotificationCopyDescriptor,
 } from "@shared/server-copy";
 import { reportDeliverySubscriptions } from "@/lib/reportCatalog";
+import { formatAedText } from "@/lib/format";
+
+/** Server strings carry "AED 15000.00"; re-render amounts through the one money formatter. */
+function localizeAmounts(text: string): string {
+  return text.replace(/AED\s?(\d[\d,]*(?:\.\d+)?)/g, (_m, n: string) =>
+    formatAedText(Number(n.replace(/,/g, "")))
+  );
+}
 
 type NotificationLike = {
   title: string;
@@ -49,6 +57,6 @@ export function localizeNotification(
   }
   return {
     title,
-    message: renderDescriptor(copy.messageKey, copy.messageParams, n.message, t),
+    message: localizeAmounts(renderDescriptor(copy.messageKey, copy.messageParams, n.message, t)),
   };
 }

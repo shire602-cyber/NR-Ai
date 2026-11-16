@@ -40,7 +40,6 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { exportToExcel } from "@/lib/export";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
@@ -926,11 +925,13 @@ export default function VATFiling() {
                 }`}
                 data-testid="text-vat-net-hero"
               >
-                {currentFiling.hasReturn
-                  ? formatCurrency(Math.abs(currentFiling.net))
-                  : locale === "ar"
-                    ? "لم تُحتسب بعد"
-                    : "Not yet calculated"}
+                {currentFiling.hasReturn ? (
+                  <Money amount={Math.abs(currentFiling.net)} />
+                ) : locale === "ar" ? (
+                  "لم تُحتسب بعد"
+                ) : (
+                  "Not yet calculated"
+                )}
               </p>
               {currentFiling.hasReturn && (
                 <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-small text-muted-foreground tabular-nums">
@@ -1128,7 +1129,7 @@ export default function VATFiling() {
                         : locale === "ar"
                           ? "إجمالي الاسترداد"
                           : "Total refundable",
-                    value: formatCurrency(Math.abs(stats.totalPayable)),
+                    value: <Money amount={Math.abs(stats.totalPayable)} />,
                     tone: stats.totalPayable >= 0 ? "text-destructive" : "text-success",
                   },
                 ] as const

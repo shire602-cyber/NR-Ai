@@ -70,7 +70,7 @@
   "banking.line.account": "الحساب المقابل",
   "banking.line.vatTreatment": "ضريبة القيمة المضافة",
   "banking.line.vat.none": "بدون ضريبة",
-  "banking.line.vat.standard": "قياسية 5% (المبلغ شامل الضريبة)",
+  "banking.line.vat.standard": "قياسية ⁦5%⁩ (المبلغ شامل الضريبة)",
   "banking.line.vat.zero_rated": "خاضعة لنسبة الصفر",
   "banking.line.vat.exempt": "معفاة",
   "banking.line.bankFee": "رسوم بنكية ضمن هذه الحركة",

@@ -133,7 +133,7 @@ describe("server copy templates", () => {
       },
     } as never);
     expect(issued?.title).toBe("Invoice INV-1 issued");
-    expect(issued?.message).toBe("Invoice INV-1 was issued for AED 1050.00.");
+    expect(issued?.message).toBe("Invoice INV-1 was issued for AED 1,050.00.");
     const copy = withNotificationCopy({ title: issued!.title, message: issued!.message }).copy;
     expect(copy.titleKey).toBe("notification.invoiceIssued.title");
     const deadline = await notificationForEvent({

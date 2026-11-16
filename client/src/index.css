@@ -891,3 +891,15 @@ textarea:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* R2-11: no native number spinners on quantity/price/amount inputs (they crowd the value and
+   flip sides in RTL); values are typed or stepped with the keyboard. */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

@@ -1,3 +1,4 @@
+import { formatAedText } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -48,12 +49,7 @@ interface HealthSummaryData {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatAed(amount: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return formatAedText(amount);
 }
 
 const HEALTH_COLORS = {

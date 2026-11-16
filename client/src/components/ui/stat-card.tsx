@@ -26,6 +26,8 @@ export interface StatCardProps {
   icon?: LucideIcon;
   /** Optional chart/sparkline rendered under the figure. */
   visual?: React.ReactNode;
+  /** Pin the visual to the card bottom edge so it adds no height (tiles in a row stay equal). */
+  visualOverlay?: boolean;
   href?: string;
   loading?: boolean;
   className?: string;
@@ -50,6 +52,7 @@ export function StatCard({
   hint,
   icon: Icon,
   visual,
+  visualOverlay,
   href,
   loading = false,
   className,
@@ -89,7 +92,10 @@ export function StatCard({
         <div className="mt-1 truncate text-caption text-muted-foreground sm:text-small">{hint}</div>
       )}
       {/* The sparkline slot exists only when there is a series, and only from 640px up. */}
-      {visual && !loading && <div className="mt-4 hidden sm:block">{visual}</div>}
+      {visual && !loading && visualOverlay && (
+        <div className="absolute inset-x-5 bottom-3 hidden sm:block">{visual}</div>
+      )}
+      {visual && !loading && !visualOverlay && <div className="mt-4 hidden sm:block">{visual}</div>}
     </>
   );
 
@@ -112,7 +118,7 @@ export function StatCard({
   }
   return (
     <Card
-      className={cn("p-4 sm:p-5", className)}
+      className={cn("relative p-4 sm:p-5", className)}
       data-testid={testId}
       aria-busy={loading || undefined}
     >

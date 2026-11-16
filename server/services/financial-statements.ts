@@ -30,6 +30,7 @@ export type CFAccount = {
   subType?: string | null;
   code?: string | null;
   nameEn: string;
+  nameAr?: string | null;
 };
 
 export type CFLine = { accountId: string; debit?: number | null; credit?: number | null };
@@ -207,6 +208,7 @@ export type CashFlowBreakdownLine = {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr?: string | null;
   amount: number; // signed: positive = cash inflow
 };
 
@@ -274,6 +276,7 @@ export function computeCashFlow(args: {
         accountId,
         accountCode: acct?.code ?? "",
         accountName: acct?.nameEn ?? "Unclassified",
+        accountNameAr: acct?.nameAr ?? null,
         amount: round2(amount),
       });
     }

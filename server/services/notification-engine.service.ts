@@ -278,7 +278,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
 // ─── Domain event → notification ────────────────────────────────────────────
 
 const fmtAmount = (fils?: number) =>
-  typeof fils === "number" ? `AED ${(fils / 100).toFixed(2)}` : "";
+  typeof fils === "number" ? `AED ${(fils / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "";
 
 async function invoiceNumber(id: string | undefined): Promise<string> {
   if (!id) return "";

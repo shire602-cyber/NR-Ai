@@ -877,6 +877,7 @@ export default function BankReconciliation() {
             done: stats.reconciled,
             total: stats.total,
           })}
+          visualOverlay
           visual={
             stats.total > 0 ? (
               <Progress value={(stats.reconciled / stats.total) * 100} className="h-1" />

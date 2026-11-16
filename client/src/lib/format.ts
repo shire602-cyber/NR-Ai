@@ -1,5 +1,6 @@
 // Formatting utilities for currency and numbers
 import { formatMoneyText } from "./format-money";
+import { useI18n } from "./i18n";
 import { formatDate as formatDisplayDate } from "./format-date";
 
 /**
@@ -85,4 +86,12 @@ export function calculateVAT(amount: number, vatRate: number = 0.05): number {
 
 export function calculateTotal(subtotal: number, vatAmount: number): number {
   return subtotal + vatAmount;
+}
+
+/**
+ * Money as text for helpers that cannot call hooks (module-level formatters). Reads the
+ * current UI locale from the i18n store; always two decimals, locale currency label.
+ */
+export function formatAedText(amount: number): string {
+  return formatMoneyText(Number(amount) || 0, "AED", useI18n.getState().locale);
 }

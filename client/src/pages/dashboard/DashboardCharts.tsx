@@ -47,7 +47,11 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                 <ResponsiveContainer width="100%" height={224}>
                   <AreaChart
                     data={monthlyTrends}
-                    margin={{ top: 8, right: 8, bottom: 0, left: -12 }}
+                    margin={
+                      locale === "ar"
+                        ? { top: 8, right: 8, bottom: 0, left: 8 }
+                        : { top: 8, right: 8, bottom: 0, left: -12 }
+                    }
                   >
                     <CartesianGrid
                       vertical={false}
@@ -56,6 +60,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                     />
                     <XAxis
                       dataKey="key"
+                      reversed={locale === "ar"}
                       tickFormatter={(key: string) => formatMonthKey(key, locale)}
                       stroke="hsl(var(--muted-foreground))"
                       fontSize={11}
@@ -63,6 +68,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                       axisLine={false}
                     />
                     <YAxis
+                      orientation={locale === "ar" ? "right" : "left"}
                       stroke="hsl(var(--muted-foreground))"
                       fontSize={11}
                       tickLine={false}
@@ -166,7 +172,7 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
                             style={{ background: PIE_PALETTE[i % PIE_PALETTE.length] }}
                           />
                           <span className="truncate text-muted-foreground" dir="auto">
-                            {entry.name}
+                            {locale === "ar" && entry.nameAr ? entry.nameAr : entry.name}
                           </span>
                         </div>
                         <Money

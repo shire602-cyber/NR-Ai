@@ -1,4 +1,5 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
+import { formatAedText } from "@/lib/format";
 import { Calendar, Calculator, CheckCircle2, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -15,12 +16,7 @@ import type {
 } from "./types";
 
 export function formatAed(amount: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return formatAedText(amount);
 }
 
 export function formatDateShort(date: string | null | undefined) {
