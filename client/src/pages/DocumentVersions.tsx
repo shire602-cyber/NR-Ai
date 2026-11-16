@@ -25,6 +25,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 import type { DocumentVersion } from "@shared/schema";
+import { T } from "@/components/layout/T";
 
 const DOCUMENT_TYPES = [
   { value: "invoice", label: "Invoice" },
@@ -93,9 +94,11 @@ export default function DocumentVersions() {
       <div className="flex items-center gap-3">
         <History className="h-8 w-8 text-primary" />
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Document Versions</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            <T k="pageLabels.documentVersions" />
+          </h1>
           <p className="text-muted-foreground">
-            View the full version history and audit trail for any document
+            <T k="pageLabels.viewTheFullVersionHistoryAndAuditTrailForAnyDocument" />
           </p>
         </div>
       </div>
@@ -105,7 +108,7 @@ export default function DocumentVersions() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Search className="h-5 w-5" />
-            Find Document History
+            <T k="pageLabels.findDocumentHistory" />
           </CardTitle>
           <CardDescription>
             Select a document type and enter the document ID to view its version timeline
@@ -114,7 +117,9 @@ export default function DocumentVersions() {
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4 items-end">
             <div className="flex-1 space-y-2">
-              <Label htmlFor="documentType">Document Type</Label>
+              <Label htmlFor="documentType">
+                <T k="pageLabels.documentType" />
+              </Label>
               <Select
                 value={documentType}
                 onValueChange={(value) => {
@@ -136,7 +141,9 @@ export default function DocumentVersions() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <Label htmlFor="documentId">Document ID</Label>
+              <Label htmlFor="documentId">
+                <T k="pageLabels.documentID" />
+              </Label>
               <Input
                 id="documentId"
                 placeholder="Enter document ID..."
@@ -151,7 +158,7 @@ export default function DocumentVersions() {
 
             <Button onClick={handleSearch} disabled={!canSearch}>
               <Search className="h-4 w-4 mr-2" />
-              Search
+              <T k="shell.search" />
             </Button>
           </div>
         </CardContent>
@@ -179,7 +186,7 @@ export default function DocumentVersions() {
             {isLoading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
                 <Clock className="h-5 w-5 mr-2 animate-spin" />
-                Loading version history...
+                <T k="pageLabels.loadingVersionHistory" />
               </div>
             ) : isError ? (
               <div className="text-center py-12 text-destructive">
@@ -188,18 +195,30 @@ export default function DocumentVersions() {
             ) : versions.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <History className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                <p className="text-lg font-medium">No versions found</p>
-                <p className="text-sm">No version history exists for this document yet.</p>
+                <p className="text-lg font-medium">
+                  <T k="pageLabels.noVersionsFound" />
+                </p>
+                <p className="text-sm">
+                  <T k="pageLabels.noVersionHistoryExistsForThisDocumentYet" />
+                </p>
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[80px]">Version</TableHead>
-                    <TableHead>Change Description</TableHead>
-                    <TableHead className="w-[160px]">Changed By</TableHead>
+                    <TableHead className="w-[80px]">
+                      <T k="pageLabels.version" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.changeDescription" />
+                    </TableHead>
+                    <TableHead className="w-[160px]">
+                      <T k="pageLabels.changedBy" />
+                    </TableHead>
                     <TableHead className="w-[180px]">Date</TableHead>
-                    <TableHead className="w-[100px]">Snapshot</TableHead>
+                    <TableHead className="w-[100px]">
+                      <T k="pageLabels.snapshot" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -215,7 +234,9 @@ export default function DocumentVersions() {
                           </TableCell>
                           <TableCell>
                             {version.changeDescription || (
-                              <span className="text-muted-foreground italic">No description</span>
+                              <span className="text-muted-foreground italic">
+                                <T k="pageLabels.noDescription" />
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>
@@ -251,7 +272,7 @@ export default function DocumentVersions() {
                             <TableCell colSpan={5} className="p-0">
                               <div className="bg-muted/30 border-t px-6 py-4">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
-                                  Snapshot Data
+                                  <T k="pageLabels.snapshotData" />
                                 </Label>
                                 <pre className="text-xs font-mono bg-background rounded-md border p-4 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap">
                                   {formatSnapshotData(version.snapshotData)}

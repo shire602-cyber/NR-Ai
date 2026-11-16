@@ -467,7 +467,9 @@ export default function Journal() {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Journal Lines</h3>
+                  <h3 className="font-medium">
+                    <T k="pageLabels.journalLines" />
+                  </h3>
                   <Button
                     type="button"
                     variant="outline"
@@ -481,7 +483,9 @@ export default function Journal() {
                 </div>
 
                 <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground px-3 pb-2">
-                  <div className="col-span-5">Account</div>
+                  <div className="col-span-5">
+                    <T k="consolidation.account" />
+                  </div>
                   <div className="col-span-3 text-right">{t.debit}</div>
                   <div className="col-span-3 text-right">{t.credit}</div>
                   <div className="col-span-1"></div>
@@ -675,7 +679,7 @@ export default function Journal() {
                 return (
                   <StatusBadge tone="success">
                     <Lock className="w-3 h-3 mr-1" />
-                    Posted
+                    <T k="hr.status.posted" />
                   </StatusBadge>
                 );
               } else if (isVoid) {
@@ -689,7 +693,7 @@ export default function Journal() {
                 return (
                   <StatusBadge tone="warning">
                     <FileText className="w-3 h-3 mr-1" />
-                    Draft
+                    <T k="banking.statement.draft" />
                   </StatusBadge>
                 );
               }
@@ -764,7 +768,7 @@ export default function Journal() {
                       >
                         <Link href={sourceProofHref}>
                           <FileText className="w-4 h-4 mr-2" />
-                          Proof
+                          <T k="reportCenter.proof" />
                         </Link>
                       </Button>
 
@@ -801,7 +805,9 @@ export default function Journal() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Draft Entry?</AlertDialogTitle>
+                                <AlertDialogTitle>
+                                  <T k="pageLabels.deleteDraftEntry" />
+                                </AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently delete this draft entry. This action cannot
                                   be undone.
@@ -815,7 +821,7 @@ export default function Journal() {
                                   onClick={() => deleteMutation.mutate(entry.id)}
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 >
-                                  Delete
+                                  <T k="hr.delete" />
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>

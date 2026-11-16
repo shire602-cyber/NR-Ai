@@ -415,7 +415,7 @@ export default function Landing() {
               transition={{ duration: 0.5, delay: 0.1 }}
             >
               <span className="font-bold text-xl leading-none tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-                Muhasib.ai
+                <T k="pageLabels.muhasibAi" />
               </span>
               <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
                 {locale === "en" ? "by NR Accounting Services" : "من NR Accounting Services"}
@@ -1240,7 +1240,9 @@ export default function Landing() {
                   <Briefcase className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <div className="font-bold text-xl">Muhasib.ai</div>
+                  <div className="font-bold text-xl">
+                    <T k="pageLabels.muhasibAi" />
+                  </div>
                   <div className="text-xs text-muted-foreground">by NR Accounting Services</div>
                 </div>
               </div>

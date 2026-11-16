@@ -241,7 +241,7 @@ export default function AIFeatures() {
           {loading ? (
             <>
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              Processing...
+              <T k="invoices.processing" />
             </>
           ) : (
             <>
@@ -270,11 +270,11 @@ export default function AIFeatures() {
                   </div>
                   <Badge variant="secondary" className="text-xs font-medium">
                     <Zap className="w-3 h-3 mr-1" />
-                    AI-Powered
+                    <T k="pageLabels.aIPowered" />
                   </Badge>
                 </div>
                 <h1 className="text-3xl font-bold mb-2" data-testid="text-ai-features-title">
-                  AI Financial Automation
+                  <T k="pageLabels.aIFinancialAutomation" />
                 </h1>
                 <p className="text-muted-foreground">
                   Leverage advanced AI to automate transaction categorization, detect anomalies,
@@ -304,15 +304,15 @@ export default function AIFeatures() {
           </TabsTrigger>
           <TabsTrigger value="anomalies" data-testid="tab-anomalies">
             <ShieldAlert className="w-4 h-4 mr-2" />
-            Anomalies
+            <T k="pageLabels.anomalies" />
           </TabsTrigger>
           <TabsTrigger value="forecast" data-testid="tab-forecast">
             <LineChart className="w-4 h-4 mr-2" />
-            Forecast
+            <T k="pageLabels.forecast" />
           </TabsTrigger>
           <TabsTrigger value="automation" data-testid="tab-automation">
             <Zap className="w-4 h-4 mr-2" />
-            Automation
+            <T k="reportCenter.automation" />
           </TabsTrigger>
         </TabsList>
 
@@ -324,7 +324,7 @@ export default function AIFeatures() {
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Active Alerts
+                  <T k="pageLabels.activeAlerts" />
                 </CardTitle>
                 <AlertTriangle
                   className={`w-5 h-5 ${unresolvedAlerts.length > 0 ? "text-warning" : "text-muted-foreground"}`}
@@ -348,7 +348,7 @@ export default function AIFeatures() {
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Resolved Today
+                  <T k="pageLabels.resolvedToday" />
                 </CardTitle>
                 <CheckCircle2 className="w-5 h-5 text-success" />
               </CardHeader>
@@ -356,7 +356,9 @@ export default function AIFeatures() {
                 <div className="text-3xl font-bold" data-testid="text-resolved-today">
                   {anomalyAlerts?.filter((a) => a.isResolved).length || 0}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Issues addressed</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.issuesAddressed" />
+                </p>
               </CardContent>
             </Card>
 
@@ -366,7 +368,7 @@ export default function AIFeatures() {
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Forecast Months
+                  <T k="pageLabels.forecastMonths" />
                 </CardTitle>
                 <LineChart className="w-5 h-5 text-primary" />
               </CardHeader>
@@ -374,7 +376,9 @@ export default function AIFeatures() {
                 <div className="text-3xl font-bold" data-testid="text-forecast-months">
                   {forecasts?.length || 0}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Predicted ahead</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.predictedAhead" />
+                </p>
               </CardContent>
             </Card>
 
@@ -384,7 +388,7 @@ export default function AIFeatures() {
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  AI Confidence
+                  <T k="pageLabels.aIConfidence" />
                 </CardTitle>
                 <Brain className="w-5 h-5 text-chart-5" />
               </CardHeader>
@@ -397,7 +401,9 @@ export default function AIFeatures() {
                     : 0}
                   %
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Average prediction accuracy</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.averagePredictionAccuracy" />
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -426,7 +432,9 @@ export default function AIFeatures() {
           {forecastData.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Cash Flow Prediction</CardTitle>
+                <CardTitle>
+                  <T k="pageLabels.cashFlowPrediction" />
+                </CardTitle>
                 <CardDescription>
                   Projected inflows and outflows for the next 3 months
                 </CardDescription>
@@ -472,8 +480,12 @@ export default function AIFeatures() {
         <TabsContent value="anomalies" className="space-y-6">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-xl font-semibold">Anomaly Alerts</h2>
-              <p className="text-muted-foreground">AI-detected issues requiring review</p>
+              <h2 className="text-xl font-semibold">
+                <T k="pageLabels.anomalyAlerts" />
+              </h2>
+              <p className="text-muted-foreground">
+                <T k="pageLabels.aIDetectedIssuesRequiringReview" />
+              </p>
             </div>
             <Button
               onClick={() => detectAnomaliesMutation.mutate()}
@@ -506,7 +518,9 @@ export default function AIFeatures() {
                 <h3 className="text-lg font-semibold">
                   <T k="pages.allClear" />
                 </h3>
-                <p className="text-muted-foreground">No anomalies detected in your transactions</p>
+                <p className="text-muted-foreground">
+                  <T k="pageLabels.noAnomaliesDetectedInYourTransactions" />
+                </p>
                 <Button
                   variant="outline"
                   className="mt-4"
@@ -514,7 +528,7 @@ export default function AIFeatures() {
                   disabled={detectAnomaliesMutation.isPending}
                   data-testid="button-run-scan"
                 >
-                  Run New Scan
+                  <T k="pageLabels.runNewScan" />
                 </Button>
               </CardContent>
             </Card>
@@ -592,7 +606,7 @@ export default function AIFeatures() {
                 <T k="pages.cashFlowForecast" />
               </h2>
               <p className="text-muted-foreground">
-                AI-powered predictions based on your financial history
+                <T k="pageLabels.aIPoweredPredictionsBasedOnYourFinancialHistory" />
               </p>
             </div>
             <Button
@@ -638,7 +652,7 @@ export default function AIFeatures() {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground flex items-center gap-1">
                           <ArrowUpRight className="w-4 h-4 text-success" />
-                          Predicted Inflow
+                          <T k="pageLabels.predictedInflow" />
                         </span>
                         <span className="font-semibold text-success ">
                           {formatCurrency(forecast.predictedInflow)}
@@ -647,7 +661,7 @@ export default function AIFeatures() {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground flex items-center gap-1">
                           <ArrowDownRight className="w-4 h-4 text-destructive" />
-                          Predicted Outflow
+                          <T k="pageLabels.predictedOutflow" />
                         </span>
                         <span className="font-semibold text-destructive ">
                           {formatCurrency(forecast.predictedOutflow)}
@@ -655,7 +669,9 @@ export default function AIFeatures() {
                       </div>
                       <div className="border-t pt-4">
                         <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">Net Balance</span>
+                          <span className="text-sm font-medium">
+                            <T k="pageLabels.netBalance" />
+                          </span>
                           <span
                             className={`text-lg font-bold ${forecast.predictedBalance >= 0 ? "text-success " : "text-destructive "}`}
                           >
@@ -670,7 +686,9 @@ export default function AIFeatures() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Trend Visualization</CardTitle>
+                  <CardTitle>
+                    <T k="pageLabels.trendVisualization" />
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
@@ -700,9 +718,11 @@ export default function AIFeatures() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <LineChart className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold">No Forecasts Yet</h3>
+                <h3 className="text-lg font-semibold">
+                  <T k="pageLabels.noForecastsYet" />
+                </h3>
                 <p className="text-muted-foreground mb-4">
-                  Generate AI-powered cash flow predictions
+                  <T k="pageLabels.generateAIPoweredCashFlowPredictions" />
                 </p>
                 <Button
                   onClick={() => generateForecastMutation.mutate()}
@@ -710,7 +730,7 @@ export default function AIFeatures() {
                   data-testid="button-first-forecast"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Generate First Forecast
+                  <T k="pageLabels.generateFirstForecast" />
                 </Button>
               </CardContent>
             </Card>
@@ -719,9 +739,11 @@ export default function AIFeatures() {
 
         <TabsContent value="automation" className="space-y-6">
           <div>
-            <h2 className="text-xl font-semibold mb-2">AI Automation Tools</h2>
+            <h2 className="text-xl font-semibold mb-2">
+              <T k="pageLabels.aIAutomationTools" />
+            </h2>
             <p className="text-muted-foreground mb-6">
-              Streamline your bookkeeping with intelligent automation
+              <T k="pageLabels.streamlineYourBookkeepingWithIntelligentAutomation" />
             </p>
           </div>
 
@@ -733,8 +755,12 @@ export default function AIFeatures() {
                     <Brain className="w-6 h-6 text-chart-5" />
                   </div>
                   <div>
-                    <CardTitle>Smart Categorization</CardTitle>
-                    <CardDescription>Auto-categorize transactions using AI</CardDescription>
+                    <CardTitle>
+                      <T k="pageLabels.smartCategorization" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="pageLabels.autoCategorizeTransactionsUsingAI" />
+                    </CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -742,15 +768,15 @@ export default function AIFeatures() {
                 <ul className="space-y-2 text-sm text-muted-foreground mb-4">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    UAE-specific vendor recognition
+                    <T k="pageLabels.uAESpecificVendorRecognition" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Learns from your corrections
+                    <T k="pageLabels.learnsFromYourCorrections" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Batch processing support
+                    <T k="pageLabels.batchProcessingSupport" />
                   </li>
                 </ul>
                 <Button
@@ -760,7 +786,7 @@ export default function AIFeatures() {
                   data-testid="button-smart-categorization"
                 >
                   <Zap className="w-4 h-4 mr-2" />
-                  Configure
+                  <T k="pageLabels.configure" />
                 </Button>
               </CardContent>
             </Card>
@@ -772,8 +798,12 @@ export default function AIFeatures() {
                     <RefreshCw className="w-6 h-6 text-info" />
                   </div>
                   <div>
-                    <CardTitle>Bank Reconciliation</CardTitle>
-                    <CardDescription>AI-assisted matching of bank transactions</CardDescription>
+                    <CardTitle>
+                      <T k="shell.moreBankReconciliation" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="pageLabels.aIAssistedMatchingOfBankTransactions" />
+                    </CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -785,11 +815,11 @@ export default function AIFeatures() {
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Smart matching suggestions
+                    <T k="pageLabels.smartMatchingSuggestions" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    One-click reconciliation
+                    <T k="pageLabels.oneClickReconciliation" />
                   </li>
                 </ul>
                 <Button
@@ -799,7 +829,7 @@ export default function AIFeatures() {
                   data-testid="button-bank-reconciliation"
                 >
                   <Upload className="w-4 h-4 mr-2" />
-                  Open Bank Reconciliation
+                  <T k="pageLabels.openBankReconciliation" />
                 </Button>
               </CardContent>
             </Card>
@@ -811,8 +841,12 @@ export default function AIFeatures() {
                     <Lightbulb className="w-6 h-6 text-success" />
                   </div>
                   <div>
-                    <CardTitle>Financial Insights</CardTitle>
-                    <CardDescription>Get AI-powered business recommendations</CardDescription>
+                    <CardTitle>
+                      <T k="pageLabels.financialInsights" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="pageLabels.getAIPoweredBusinessRecommendations" />
+                    </CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -820,21 +854,21 @@ export default function AIFeatures() {
                 <ul className="space-y-2 text-sm text-muted-foreground mb-4">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Cost optimization tips
+                    <T k="pageLabels.costOptimizationTips" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Cash flow warnings
+                    <T k="pageLabels.cashFlowWarnings" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    UAE tax compliance alerts
+                    <T k="pageLabels.uAETaxComplianceAlerts" />
                   </li>
                 </ul>
                 <Button variant="outline" className="w-full" asChild>
                   <a href="/ai-cfo" data-testid="link-ai-cfo">
                     <Sparkles className="w-4 h-4 mr-2" />
-                    Ask AI CFO
+                    <T k="pageLabels.askAICFO" />
                   </a>
                 </Button>
               </CardContent>
@@ -847,8 +881,12 @@ export default function AIFeatures() {
                     <ShieldAlert className="w-6 h-6 text-warning" />
                   </div>
                   <div>
-                    <CardTitle>Fraud Protection</CardTitle>
-                    <CardDescription>Continuous monitoring for suspicious activity</CardDescription>
+                    <CardTitle>
+                      <T k="pageLabels.fraudProtection" />
+                    </CardTitle>
+                    <CardDescription>
+                      <T k="pageLabels.continuousMonitoringForSuspiciousActivity" />
+                    </CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -856,15 +894,15 @@ export default function AIFeatures() {
                 <ul className="space-y-2 text-sm text-muted-foreground mb-4">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Duplicate detection
+                    <T k="pageLabels.duplicateDetection" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Unusual pattern alerts
+                    <T k="pageLabels.unusualPatternAlerts" />
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-success" />
-                    Real-time notifications
+                    <T k="pageLabels.realTimeNotifications" />
                   </li>
                 </ul>
                 <Button
@@ -885,8 +923,12 @@ export default function AIFeatures() {
       <Dialog open={resolveDialogOpen} onOpenChange={setResolveDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Resolve Alert</DialogTitle>
-            <DialogDescription>Mark this anomaly as reviewed and resolved</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.resolveAlert" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.markThisAnomalyAsReviewedAndResolved" />
+            </DialogDescription>
           </DialogHeader>
           {selectedAlert && (
             <div className="space-y-4">
@@ -940,8 +982,12 @@ export default function AIFeatures() {
       <Dialog open={categorizationOpen} onOpenChange={setCategorizationOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Smart Categorization Settings</DialogTitle>
-            <DialogDescription>Configure how AI categorizes your transactions</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.smartCategorizationSettings" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.configureHowAICategorizesYourTransactions" />
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Alert>
@@ -952,7 +998,9 @@ export default function AIFeatures() {
               </AlertDescription>
             </Alert>
             <div className="space-y-2">
-              <Label>Current Settings</Label>
+              <Label>
+                <T k="pageLabels.currentSettings" />
+              </Label>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-success" />
@@ -983,7 +1031,7 @@ export default function AIFeatures() {
               }}
               data-testid="button-save-categorization"
             >
-              Got It
+              <T k="pageLabels.gotIt" />
             </Button>
           </DialogFooter>
         </DialogContent>

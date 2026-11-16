@@ -469,9 +469,17 @@ export default function FixedAssets() {
           </StatusBadge>
         );
       case "disposed":
-        return <StatusBadge tone="danger">Disposed</StatusBadge>;
+        return (
+          <StatusBadge tone="danger">
+            <T k="pageLabels.disposed" />
+          </StatusBadge>
+        );
       case "fully_depreciated":
-        return <StatusBadge tone="warning">Fully Depreciated</StatusBadge>;
+        return (
+          <StatusBadge tone="warning">
+            <T k="pageLabels.fullyDepreciated" />
+          </StatusBadge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -526,7 +534,7 @@ export default function FixedAssets() {
             <T k="pages.fixedAssets" />
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage fixed assets, depreciation, and disposals
+            <T k="pageLabels.manageFixedAssetsDepreciationAndDisposals" />
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -541,11 +549,11 @@ export default function FixedAssets() {
             className="flex items-center gap-2"
           >
             <PlayCircle className="w-4 h-4" />
-            Run Depreciation
+            <T k="pageLabels.runDepreciation" />
           </Button>
           <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            Add Asset
+            <T k="pageLabels.addAsset" />
           </Button>
         </div>
       </div>
@@ -571,7 +579,9 @@ export default function FixedAssets() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Accumulated Depreciation</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                <T k="pageLabels.accumulatedDepreciation" />
+              </CardTitle>
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -596,7 +606,9 @@ export default function FixedAssets() {
               <div className="text-2xl font-bold">
                 {formatCurrency(summary.totalNetBookValue, "AED", locale)}
               </div>
-              <p className="text-xs text-muted-foreground">Current carrying value</p>
+              <p className="text-xs text-muted-foreground">
+                <T k="pageLabels.currentCarryingValue" />
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -606,7 +618,9 @@ export default function FixedAssets() {
       {summary && summary.byCategory.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Asset Category Breakdown</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pageLabels.assetCategoryBreakdown" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -616,11 +630,15 @@ export default function FixedAssets() {
                     <TableHead>
                       <T k="pages.category" />
                     </TableHead>
-                    <TableHead className="text-right">Count</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pageLabels.count" />
+                    </TableHead>
                     <TableHead className="text-right">
                       <T k="pages.totalCost" />
                     </TableHead>
-                    <TableHead className="text-right">Accum. Depreciation</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pageLabels.accumDepreciation" />
+                    </TableHead>
                     <TableHead className="text-right">
                       <T k="pages.netBookValue" />
                     </TableHead>
@@ -701,13 +719,19 @@ export default function FixedAssets() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Asset Name</TableHead>
+                    <TableHead>
+                      <T k="pageLabels.assetName" />
+                    </TableHead>
                     <TableHead>
                       <T k="pages.category" />
                     </TableHead>
-                    <TableHead>Purchase Date</TableHead>
+                    <TableHead>
+                      <T k="pageLabels.purchaseDate" />
+                    </TableHead>
                     <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Accum. Dep.</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pageLabels.accumDep" />
+                    </TableHead>
                     <TableHead className="text-right">NBV</TableHead>
                     <TableHead>
                       <T k="pages.status" />
@@ -875,7 +899,9 @@ export default function FixedAssets() {
                   name="assetNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Asset Number</FormLabel>
+                      <FormLabel>
+                        <T k="pageLabels.assetNumber" />
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., FA-001" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1014,7 +1040,9 @@ export default function FixedAssets() {
                 name="depreciationMethod"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Depreciation Method</FormLabel>
+                    <FormLabel>
+                      <T k="pageLabels.depreciationMethod" />
+                    </FormLabel>
                     <Select onValueChange={field.onChange} value={field.value || "straight_line"}>
                       <FormControl>
                         <SelectTrigger>
@@ -1022,8 +1050,12 @@ export default function FixedAssets() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="straight_line">Straight-Line</SelectItem>
-                        <SelectItem value="declining_balance">Declining Balance</SelectItem>
+                        <SelectItem value="straight_line">
+                          <T k="pageLabels.straightLine" />
+                        </SelectItem>
+                        <SelectItem value="declining_balance">
+                          <T k="pageLabels.decliningBalance" />
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1037,7 +1069,9 @@ export default function FixedAssets() {
                   name="location"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Location</FormLabel>
+                      <FormLabel>
+                        <T k="pageLabels.location" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="e.g., Dubai Office"
@@ -1055,7 +1089,9 @@ export default function FixedAssets() {
                   name="serialNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Serial Number</FormLabel>
+                      <FormLabel>
+                        <T k="pageLabels.serialNumber" />
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., SN-12345" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1109,7 +1145,9 @@ export default function FixedAssets() {
       <Dialog open={disposeDialogOpen} onOpenChange={setDisposeDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Dispose Asset</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.disposeAsset" />
+            </DialogTitle>
             <DialogDescription>
               {disposingAsset
                 ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
@@ -1264,7 +1302,9 @@ export default function FixedAssets() {
       <Dialog open={depRunDialogOpen} onOpenChange={setDepRunDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Run Monthly Depreciation</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.runMonthlyDepreciation" />
+            </DialogTitle>
             <DialogDescription>
               Calculate and record depreciation for all active assets for the selected month.
             </DialogDescription>
@@ -1364,7 +1404,9 @@ export default function FixedAssets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Fixed Asset?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.deleteFixedAsset" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this asset record. This action cannot be undone.
             </AlertDialogDescription>

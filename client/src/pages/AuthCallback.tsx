@@ -5,6 +5,7 @@ import { currentUserQueryKey } from "@/hooks/useCurrentUser";
 import { probeCurrentUser } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { T } from "@/components/layout/T";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
@@ -61,7 +62,7 @@ export default function AuthCallback() {
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="flex items-center gap-3 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
-        Completing secure login...
+        <T k="pageLabels.completingSecureLogin" />
       </div>
     </div>
   );

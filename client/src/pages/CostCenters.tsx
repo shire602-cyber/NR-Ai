@@ -290,8 +290,7 @@ export default function CostCenters() {
     } catch (error) {
       toast({
         title: "Export failed",
-        description:
-          error instanceof Error ? error.message : "Unable to export Cost Center P&L.",
+        description: error instanceof Error ? error.message : "Unable to export Cost Center P&L.",
         variant: "destructive",
       });
     }
@@ -373,7 +372,7 @@ export default function CostCenters() {
             </Button>
             <Button onClick={handleOpenCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Cost Center
+              <T k="pageLabels.addCostCenter" />
             </Button>
           </>
         }
@@ -382,14 +381,16 @@ export default function CostCenters() {
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>Cost Center P&L</CardTitle>
+            <CardTitle>
+              <T k="pageLabels.costCenterPAndL" />
+            </CardTitle>
             <CardDescription>
               Period: {profitabilityPeriodLabel}. Source basis: posted journal lines allocated to
               cost centers, grouped by income and expense accounts.
             </CardDescription>
           </div>
           <Badge variant="secondary" className="w-fit">
-            Accrual basis
+            <T k="pageLabels.accrualBasis" />
           </Badge>
         </CardHeader>
         <CardContent>
@@ -403,10 +404,11 @@ export default function CostCenters() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Active centers
+                    <T k="pageLabels.activeCenters" />
                   </p>
                   <p className="mt-1 text-2xl font-semibold">
-                    {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
+                    {profitabilityTotals.activeCostCenterCount}/
+                    {profitabilityTotals.costCenterCount}
                   </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
@@ -427,7 +429,7 @@ export default function CostCenters() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Net income
+                    <T k="pageLabels.netIncome" />
                   </p>
                   <p
                     className={`mt-1 text-2xl font-semibold ${
@@ -444,11 +446,21 @@ export default function CostCenters() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Code</TableHead>
-                      <TableHead>Cost Center</TableHead>
-                      <TableHead><T k="pages.status" /></TableHead>
-                      <TableHead className="text-right"><T k="pages.income" /></TableHead>
-                      <TableHead className="text-right"><T k="pages.expenses" /></TableHead>
-                      <TableHead className="text-right"><T k="pages.netIncome" /></TableHead>
+                      <TableHead>
+                        <T k="pageLabels.costCenter" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="pages.status" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.income" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.expenses" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="pages.netIncome" />
+                      </TableHead>
                       <TableHead className="text-right">{cc.rollup}</TableHead>
                       <TableHead className="text-right">{cc.lines}</TableHead>
                     </TableRow>
@@ -457,7 +469,7 @@ export default function CostCenters() {
                     {profitabilityRows.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                          No cost center allocations have been posted yet.
+                          <T k="pageLabels.noCostCenterAllocationsHaveBeenPostedYet" />
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -467,7 +479,10 @@ export default function CostCenters() {
                           className={row.isUnallocated ? "bg-muted/40 italic" : undefined}
                         >
                           <TableCell className="font-mono text-sm">{row.code}</TableCell>
-                          <TableCell className="font-medium" style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}>
+                          <TableCell
+                            className="font-medium"
+                            style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
+                          >
                             {row.isUnallocated
                               ? cc.unallocated
                               : locale === "ar" && row.nameAr
@@ -518,7 +533,9 @@ export default function CostCenters() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Cost Centers</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pageLabels.totalCostCenters" />
+            </CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -527,7 +544,9 @@ export default function CostCenters() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium"><T k="pages.active" /></CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.active" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success">{activeCount}</div>
@@ -535,7 +554,9 @@ export default function CostCenters() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium"><T k="pages.inactive" /></CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pages.inactive" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-muted-foreground">{inactiveCount}</div>
@@ -564,10 +585,18 @@ export default function CostCenters() {
               <TableRow>
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead><T k="pages.description" /></TableHead>
-                <TableHead>Parent</TableHead>
-                <TableHead><T k="pages.status" /></TableHead>
-                <TableHead className="text-right"><T k="pages.actions" /></TableHead>
+                <TableHead>
+                  <T k="pages.description" />
+                </TableHead>
+                <TableHead>
+                  <T k="consolidation.parent" />
+                </TableHead>
+                <TableHead>
+                  <T k="pages.status" />
+                </TableHead>
+                <TableHead className="text-right">
+                  <T k="pages.actions" />
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -658,7 +687,9 @@ export default function CostCenters() {
               <div className="grid gap-4 md:grid-cols-3">
                 <Card className="bg-success-subtle border-success/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-success"><T k="pages.income" /></CardTitle>
+                    <CardTitle className="text-sm font-medium text-success">
+                      <T k="pages.income" />
+                    </CardTitle>
                     <TrendingUp className="h-4 w-4 text-success" />
                   </CardHeader>
                   <CardContent>
@@ -669,7 +700,9 @@ export default function CostCenters() {
                 </Card>
                 <Card className="bg-danger-subtle border-destructive/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-destructive"><T k="pages.expenses" /></CardTitle>
+                    <CardTitle className="text-sm font-medium text-destructive">
+                      <T k="pages.expenses" />
+                    </CardTitle>
                     <TrendingDown className="h-4 w-4 text-destructive" />
                   </CardHeader>
                   <CardContent>
@@ -706,7 +739,7 @@ export default function CostCenters() {
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">
-                No report data available for this cost center.
+                <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
               </p>
             )}
           </CardContent>
@@ -798,7 +831,9 @@ export default function CostCenters() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><T k="pages.description" /></FormLabel>
+                    <FormLabel>
+                      <T k="pages.description" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Optional description for this cost center"
@@ -817,7 +852,9 @@ export default function CostCenters() {
                 name="parentId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Parent Cost Center</FormLabel>
+                    <FormLabel>
+                      <T k="pageLabels.parentCostCenter" />
+                    </FormLabel>
                     <Select
                       onValueChange={(value) => field.onChange(value === "_none" ? null : value)}
                       value={field.value || "_none"}
@@ -847,9 +884,11 @@ export default function CostCenters() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <FormLabel><T k="pages.active" /></FormLabel>
+                      <FormLabel>
+                        <T k="pages.active" />
+                      </FormLabel>
                       <p className="text-sm text-muted-foreground">
-                        Inactive cost centers cannot receive new transactions
+                        <T k="pageLabels.inactiveCostCentersCannotReceiveNewTransactions" />
                       </p>
                     </div>
                     <FormControl>

@@ -28,14 +28,18 @@ export default function CookiePolicy() {
 
       <h2>2. Categories of Cookies We Use</h2>
 
-      <h3>Strictly necessary</h3>
+      <h3>
+        <T k="pageLabels.strictlyNecessary" />
+      </h3>
       <p>
         These are required for the Service to function — for example, authentication tokens, your
         selected language (English / Arabic), and security cookies. The Service cannot function
         without them, so they cannot be disabled.
       </p>
 
-      <h3>Functional</h3>
+      <h3>
+        <T k="pageLabels.functional" />
+      </h3>
       <p>
         These remember choices you make to provide a more personalised experience, such as your
         default company, dashboard layout, and notification preferences.
@@ -50,7 +54,9 @@ export default function CookiePolicy() {
         use cross-site tracking cookies.
       </p>
 
-      <h3>Marketing</h3>
+      <h3>
+        <T k="pageLabels.marketing" />
+      </h3>
       <p>
         We do not currently set marketing or advertising cookies. If this changes, we will update
         this policy and request your consent where required.

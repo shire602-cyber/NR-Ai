@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { T } from "@/components/layout/T";
 
 const money = (value: number) =>
   `AED ${value.toLocaleString("en-AE", {
@@ -114,17 +115,19 @@ export default function DemoWorkspace() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0D5C3D]">
               <Building2 className="h-4 w-4 text-white" />
             </div>
-            <span className="font-semibold">Muhasib.ai</span>
+            <span className="font-semibold">
+              <T k="pageLabels.muhasibAi" />
+            </span>
           </Link>
           <div className="flex items-center gap-2">
             <Link href="/pricing">
               <Button variant="ghost" size="sm">
-                Pricing
+                <T k="pages.pricing" />
               </Button>
             </Link>
             <Link href="/register">
               <Button size="sm" className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                Start Free
+                <T k="pageLabels.startFree" />
               </Button>
             </Link>
           </div>
@@ -135,10 +138,10 @@ export default function DemoWorkspace() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-3">
             <Badge className="bg-[#E6F1EC] text-[#0D5C3D] hover:bg-[#E6F1EC]">
-              Sample company workspace
+              <T k="pageLabels.sampleCompanyWorkspace" />
             </Badge>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              See the SaaS product with real accounting context.
+              <T k="pageLabels.seeTheSaaSProductWithRealAccountingContext" />
             </h1>
             <p className="max-w-2xl text-sm leading-6 text-black/65 sm:text-base">
               Explore a launch-ready UAE SME workflow using sample invoices, receipts, bank imports,
@@ -148,12 +151,14 @@ export default function DemoWorkspace() {
           <div className="flex flex-wrap gap-2">
             <Link href="/register">
               <Button className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                Create My Workspace
+                <T k="pageLabels.createMyWorkspace" />
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
             <Link href="/help">
-              <Button variant="outline">View Help Docs</Button>
+              <Button variant="outline">
+                <T k="pageLabels.viewHelpDocs" />
+              </Button>
             </Link>
           </div>
         </div>
@@ -192,15 +197,19 @@ export default function DemoWorkspace() {
                   </p>
                 </div>
                 <Badge variant="outline" className="w-fit">
-                  Demo data
+                  <T k="pageLabels.demoData" />
                 </Badge>
               </div>
             </div>
 
             <Tabs defaultValue="invoices" className="p-4 sm:p-5">
               <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="invoices">Invoices</TabsTrigger>
-                <TabsTrigger value="banking">Banking</TabsTrigger>
+                <TabsTrigger value="invoices">
+                  <T k="pages.invoices" />
+                </TabsTrigger>
+                <TabsTrigger value="banking">
+                  <T k="pageLabels.banking" />
+                </TabsTrigger>
                 <TabsTrigger value="vat">VAT</TabsTrigger>
                 <TabsTrigger value="ct">CT</TabsTrigger>
               </TabsList>
@@ -210,12 +219,20 @@ export default function DemoWorkspace() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead>Customer</TableHead>
+                        <TableHead>
+                          <T k="invoices.publicInvoice" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.customer" />
+                        </TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead className="text-right">VAT</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.total2" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="banking.common.status" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -260,7 +277,9 @@ export default function DemoWorkspace() {
                             <p className="font-mono">{money(invoice.vat)}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-black/50">Total</p>
+                            <p className="text-xs text-black/50">
+                              <T k="pages.total2" />
+                            </p>
                             <p className="font-mono font-semibold">{money(invoice.total)}</p>
                           </div>
                         </div>
@@ -274,7 +293,9 @@ export default function DemoWorkspace() {
                 <div className="rounded-lg border border-[#C19E50]/30 bg-[#FFF8E6] p-4">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-[#9A762A]" />
-                    <p className="text-sm font-medium">CSV statement import, no live feed needed</p>
+                    <p className="text-sm font-medium">
+                      <T k="pageLabels.cSVStatementImportNoLiveFeedNeeded" />
+                    </p>
                   </div>
                   <p className="mt-1 text-sm text-black/60">
                     Sample bank lines are matched against invoices, receipts, and expenses with
@@ -355,7 +376,9 @@ export default function DemoWorkspace() {
                   ))}
                 </div>
                 <div className="mt-4 rounded-md border border-black/10 p-4">
-                  <p className="text-sm font-medium">Corporate tax support schedule</p>
+                  <p className="text-sm font-medium">
+                    <T k="pageLabels.corporateTaxSupportSchedule" />
+                  </p>
                   <p className="mt-1 text-sm text-black/60">
                     Revenue and expense rows roll into a draft CT estimate and can be exported as an
                     Excel workpaper for accountant review.
@@ -370,7 +393,7 @@ export default function DemoWorkspace() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CheckCircle2 className="h-5 w-5 text-[#0D5C3D]" />
-                  Launch checklist
+                  <T k="pageLabels.launchChecklist" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -387,7 +410,9 @@ export default function DemoWorkspace() {
               <CardContent className="space-y-4 p-5">
                 <Receipt className="h-8 w-8 text-[#C19E50]" />
                 <div>
-                  <p className="font-semibold">Want your own books in this shape?</p>
+                  <p className="font-semibold">
+                    <T k="pageLabels.wantYourOwnBooksInThisShape" />
+                  </p>
                   <p className="mt-1 text-sm text-white/65">
                     Register, create a company, then use express onboarding to seed the UAE chart of
                     accounts and start with guided setup.
@@ -395,7 +420,7 @@ export default function DemoWorkspace() {
                 </div>
                 <Link href="/register">
                   <Button className="w-full bg-card text-[#0E1320] hover:bg-card/90">
-                    Start setup
+                    <T k="pageLabels.startSetup" />
                   </Button>
                 </Link>
               </CardContent>

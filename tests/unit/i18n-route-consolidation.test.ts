@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isCustomerOnlyRoute, mergeLegacySearch } from "../../client/src/lib/route-config";
@@ -116,6 +117,6 @@ describe("consolidated navigation redirects", () => {
   it("R18-09: the mobile More sheet and command palette point at the hub, not the retired routes", () => {
     expect(read("client/src/components/MobileNav.tsx")).toContain('href: "/ai"');
     expect(read("client/src/components/CommandPalette.tsx")).toContain('href: "/ai?tab=chat"');
-    expect(read("client/src/pages/Dashboard.tsx")).toContain('<Link href="/ai?tab=cfo">');
+    expect(readDashboardSource()).toContain('<Link href="/ai?tab=cfo">');
   });
 });

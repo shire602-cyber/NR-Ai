@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -156,7 +157,7 @@ describe("report discoverability", () => {
 
   const catalogSource = read("client/src/lib/reportCatalog.ts");
   const commandSource = read("client/src/components/CommandPalette.tsx");
-  const dashboardSource = read("client/src/pages/Dashboard.tsx");
+  const dashboardSource = readDashboardSource(process.cwd(), true);
   const reportLaunchPickerSource = read("client/src/components/reports/ReportLaunchPicker.tsx");
   const mobileNavSource = read("client/src/components/MobileNav.tsx");
   const onboardingSource = read("client/src/pages/Onboarding.tsx");
@@ -757,7 +758,7 @@ describe("report discoverability", () => {
       'reportsHref({ tab: "pl", persona: preferredReportWorkspace.persona })'
     );
     expect(dashboardSource).toContain("href={row.href}");
-    expect(dashboardSource).toContain("Open <ArrowUpRight");
+    expect(dashboardSource).toMatch(/<T k="firm.statusOpen" \/>\s*<ArrowUpRight/);
     expect(dashboardSource).toContain("reportCatalog");
     expect(dashboardSource).toContain('data-testid="dashboard-report-workspace"');
     expect(dashboardSource).toContain('data-testid="dashboard-open-report-workspace"');
@@ -3722,8 +3723,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("recommendations.slice(0, 3)");
   });
 
-  it("surfaces report-level favorite pins in the report library", () => {
-  });
+  it("surfaces report-level favorite pins in the report library", () => {});
 
   it("surfaces the five product-depth headers and subgoals", () => {
     expect(reportsSource).toContain("Reporting workflow map");

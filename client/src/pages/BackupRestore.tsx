@@ -16,13 +16,7 @@ import {
   FileJson,
   RefreshCw,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -93,9 +87,11 @@ const BACKUP_COPY = {
     restoreTitle: "Restore from backup",
     restoreDescription: "Choose how to restore, review the dry-run changes, then confirm.",
     modeMerge: "Merge: add missing records only",
-    modeMergeHelp: "Records that were deleted are added back. Edited records keep their current values; nothing is deleted.",
+    modeMergeHelp:
+      "Records that were deleted are added back. Edited records keep their current values; nothing is deleted.",
     modeReplace: "Replace: make company data match the backup",
-    modeReplaceHelp: "Records created after the backup are deleted and edited records are reverted. A pre-restore backup is taken first.",
+    modeReplaceHelp:
+      "Records created after the backup are deleted and edited records are reverted. A pre-restore backup is taken first.",
     table: "Table",
     insert: "Add",
     update: "Revert",
@@ -108,13 +104,20 @@ const BACKUP_COPY = {
     restoreDone: "Restore complete",
     restoreFailed: "Restore failed",
     aboutTitle: "About backups",
-    about1: "A backup is an encrypted snapshot of every company table: ledger, invoices, bills, payments, contacts, products, bank, payroll, fixed assets, budgets, claims and VAT.",
-    about2: "Audit logs, team access, API keys, billing and the email queue are never captured or overwritten by a restore.",
-    about3: "Snapshots are checksummed and verified before a restore; a restore either completes in one transaction or changes nothing.",
-    about4: "Point-in-time recovery and an off-site copy are set up on the database host and storage bucket (outside the app).",
+    about1:
+      "A backup is an encrypted snapshot of every company table: ledger, invoices, bills, payments, contacts, products, bank, payroll, fixed assets, budgets, claims and VAT.",
+    about2:
+      "Audit logs, team access, API keys, billing and the email queue are never captured or overwritten by a restore.",
+    about3:
+      "Snapshots are checksummed and verified before a restore; a restore either completes in one transaction or changes nothing.",
+    about4:
+      "Point-in-time recovery and an off-site copy are set up on the database host and storage bucket (outside the app).",
     scheduleTitle: "Scheduled backups",
     scheduleHelp: "Runs nightly when due and keeps scheduled backups for the retention period.",
-    frequency: { off: "Off", daily: "Daily", weekly: "Weekly", monthly: "Monthly" } as Record<string, string>,
+    frequency: { off: "Off", daily: "Daily", weekly: "Weekly", monthly: "Monthly" } as Record<
+      string,
+      string
+    >,
     retention: "Keep for (days)",
     save: "Save schedule",
     saved: "Schedule saved",
@@ -126,7 +129,8 @@ const BACKUP_COPY = {
     modeMerge: "دمج: إضافة السجلات المفقودة فقط",
     modeMergeHelp: "تُعاد السجلات المحذوفة. تحتفظ السجلات المعدلة بقيمها الحالية ولا يُحذف شيء.",
     modeReplace: "استبدال: مطابقة بيانات الشركة للنسخة الاحتياطية",
-    modeReplaceHelp: "تُحذف السجلات المنشأة بعد النسخة وتُعاد السجلات المعدلة. تُؤخذ نسخة قبل الاستعادة أولاً.",
+    modeReplaceHelp:
+      "تُحذف السجلات المنشأة بعد النسخة وتُعاد السجلات المعدلة. تُؤخذ نسخة قبل الاستعادة أولاً.",
     table: "الجدول",
     insert: "إضافة",
     update: "استرجاع",
@@ -139,20 +143,26 @@ const BACKUP_COPY = {
     restoreDone: "اكتملت الاستعادة",
     restoreFailed: "فشلت الاستعادة",
     aboutTitle: "حول النسخ الاحتياطية",
-    about1: "النسخة الاحتياطية لقطة مشفرة لكل جداول الشركة: الدفاتر والفواتير والمدفوعات وجهات الاتصال والمنتجات والبنوك والرواتب والأصول والميزانيات والمطالبات والضريبة.",
-    about2: "لا تُنسخ سجلات التدقيق وصلاحيات الفريق ومفاتيح API والفوترة وقائمة البريد ولا تُستبدل عند الاستعادة.",
-    about3: "يتم التحقق من بصمة كل لقطة قبل الاستعادة؛ إما أن تكتمل الاستعادة في معاملة واحدة أو لا يتغير شيء.",
-    about4: "الاستعادة لنقطة زمنية والنسخة خارج الموقع تُعدّان لدى مزود قاعدة البيانات والتخزين (خارج التطبيق).",
+    about1:
+      "النسخة الاحتياطية لقطة مشفرة لكل جداول الشركة: الدفاتر والفواتير والمدفوعات وجهات الاتصال والمنتجات والبنوك والرواتب والأصول والميزانيات والمطالبات والضريبة.",
+    about2:
+      "لا تُنسخ سجلات التدقيق وصلاحيات الفريق ومفاتيح API والفوترة وقائمة البريد ولا تُستبدل عند الاستعادة.",
+    about3:
+      "يتم التحقق من بصمة كل لقطة قبل الاستعادة؛ إما أن تكتمل الاستعادة في معاملة واحدة أو لا يتغير شيء.",
+    about4:
+      "الاستعادة لنقطة زمنية والنسخة خارج الموقع تُعدّان لدى مزود قاعدة البيانات والتخزين (خارج التطبيق).",
     scheduleTitle: "النسخ الاحتياطي المجدول",
     scheduleHelp: "يعمل ليلاً عند الاستحقاق ويحتفظ بالنسخ المجدولة طوال مدة الاحتفاظ.",
-    frequency: { off: "إيقاف", daily: "يومي", weekly: "أسبوعي", monthly: "شهري" } as Record<string, string>,
+    frequency: { off: "إيقاف", daily: "يومي", weekly: "أسبوعي", monthly: "شهري" } as Record<
+      string,
+      string
+    >,
     retention: "مدة الاحتفاظ (أيام)",
     save: "حفظ الجدولة",
     saved: "تم حفظ الجدولة",
     lastRun: "آخر تشغيل",
   },
 };
-
 
 export default function BackupRestore() {
   const { toast } = useToast();
@@ -260,9 +270,10 @@ export default function BackupRestore() {
     queryKey: ["/api/companies", selectedCompanyId, "backups", "schedule"],
     enabled: !!selectedCompanyId,
   });
-  const [scheduleDraft, setScheduleDraft] = useState<{ frequency: string; retentionDays: number } | null>(
-    null
-  );
+  const [scheduleDraft, setScheduleDraft] = useState<{
+    frequency: string;
+    retentionDays: number;
+  } | null>(null);
   const scheduleMutation = useMutation({
     mutationFn: async (body: { frequency: string; retentionDays: number }) =>
       apiRequest("PUT", `/api/companies/${selectedCompanyId}/backups/schedule`, body),
@@ -363,7 +374,9 @@ export default function BackupRestore() {
   if (!selectedCompanyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Please select a company to manage backups.</p>
+        <p className="text-muted-foreground">
+          <T k="pageLabels.pleaseSelectACompanyToManageBackups" />
+        </p>
       </div>
     );
   }
@@ -385,12 +398,16 @@ export default function BackupRestore() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Backup</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.createNewBackup" />
+            </DialogTitle>
             <DialogDescription>{c.about1}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="backup-name">Backup Name</Label>
+              <Label htmlFor="backup-name">
+                <T k="pageLabels.backupName" />
+              </Label>
               <Input
                 id="backup-name"
                 placeholder={`Backup ${new Date().toLocaleDateString()}`}
@@ -427,7 +444,7 @@ export default function BackupRestore() {
               {createBackupMutation.isPending ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Creating...
+                  <T k="pageLabels.creating" />
                 </>
               ) : (
                 <>
@@ -445,35 +462,39 @@ export default function BackupRestore() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Database className="h-4 w-4" />
-              Total Backups
+              <T k="pageLabels.totalBackups" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold" data-testid="text-total-backups">
               {backups.length}
             </p>
-            <p className="text-xs text-muted-foreground">Backup history</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pageLabels.backupHistory" />
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <HardDrive className="h-4 w-4" />
-              Storage Used
+              <T k="pageLabels.storageUsed" />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold" data-testid="text-storage-used">
               {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
             </p>
-            <p className="text-xs text-muted-foreground">Total backup size</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="pageLabels.totalBackupSize" />
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Clock className="h-4 w-4" />
-              Last Backup
+              <T k="pageLabels.lastBackup" />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -493,8 +514,12 @@ export default function BackupRestore() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Backup History</CardTitle>
-          <CardDescription>View and manage your financial data backups</CardDescription>
+          <CardTitle>
+            <T k="pageLabels.backupHistory2" />
+          </CardTitle>
+          <CardDescription>
+            <T k="pageLabels.viewAndManageYourFinancialDataBackups" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -504,16 +529,18 @@ export default function BackupRestore() {
           ) : backups.length === 0 ? (
             <div className="text-center py-8">
               <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No Backups Yet</h3>
+              <h3 className="text-lg font-medium mb-2">
+                <T k="pageLabels.noBackupsYet" />
+              </h3>
               <p className="text-muted-foreground mb-4">
-                Create your first backup to protect your financial records
+                <T k="pageLabels.createYourFirstBackupToProtectYourFinancialRecords" />
               </p>
               <Button
                 onClick={() => setIsCreateDialogOpen(true)}
                 data-testid="button-create-first-backup"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Create First Backup
+                <T k="pageLabels.createFirstBackup" />
               </Button>
             </div>
           ) : (
@@ -522,11 +549,19 @@ export default function BackupRestore() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead><T k="pages.status" /></TableHead>
-                  <TableHead>Records</TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pageLabels.records" />
+                  </TableHead>
                   <TableHead>Size</TableHead>
-                  <TableHead><T k="pages.created" /></TableHead>
-                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
+                  <TableHead>
+                    <T k="pages.created" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -603,14 +638,18 @@ export default function BackupRestore() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Backup?</AlertDialogTitle>
+                              <AlertDialogTitle>
+                                <T k="pageLabels.deleteBackup" />
+                              </AlertDialogTitle>
                               <AlertDialogDescription>
                                 This will permanently delete "{backup.name}". This action cannot be
                                 undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+                              <AlertDialogCancel>
+                                <T k="pages.cancel" />
+                              </AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => deleteBackupMutation.mutate(backup.id)}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -657,7 +696,10 @@ export default function BackupRestore() {
                     onClick={() => {
                       setRestoreMode(m);
                       if (selectedBackupForRestore) {
-                        getRestorePreviewMutation.mutate({ id: selectedBackupForRestore.id, mode: m });
+                        getRestorePreviewMutation.mutate({
+                          id: selectedBackupForRestore.id,
+                          mode: m,
+                        });
                       }
                     }}
                     className={`rounded-lg border p-3 text-start text-sm ${

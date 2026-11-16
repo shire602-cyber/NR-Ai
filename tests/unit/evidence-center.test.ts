@@ -51,7 +51,10 @@ describe("evidence center model", () => {
 
   it("keeps all ten workflow ideas represented in API and UI source", () => {
     const serviceSource = readFileSync("server/services/evidence-center.service.ts", "utf8");
-    const pageSource = readFileSync("client/src/pages/EvidenceCenter.tsx", "utf8");
+    // Page copy lives in the en catalog since S6a; assertions accept source or catalog text.
+    const pageSource =
+      readFileSync("client/src/pages/EvidenceCenter.tsx", "utf8") +
+      readFileSync("client/src/locales/en/pageLabels.json", "utf8");
     const routeSource = readFileSync("server/routes/evidence-center.routes.ts", "utf8");
 
     for (const id of workflowIds) {

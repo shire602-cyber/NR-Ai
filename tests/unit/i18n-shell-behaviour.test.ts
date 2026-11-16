@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -224,7 +225,7 @@ describe("welcome tour and onboarding redirect", () => {
 
 describe("first-invoice experience", () => {
   const invoices = read("client/src/pages/Invoices.tsx");
-  const dashboard = read("client/src/pages/Dashboard.tsx");
+  const dashboard = readDashboardSource();
 
   it("R18-06: the epoch-based INV-<ms> placeholder is gone and the field says it is assigned on save", () => {
     expect(invoices).not.toContain("INV-${Date.now()}");

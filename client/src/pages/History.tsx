@@ -135,7 +135,9 @@ export default function History() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Please select a company to view history.</p>
+        <p className="text-muted-foreground">
+          <T k="pageLabels.pleaseSelectACompanyToViewHistory" />
+        </p>
       </div>
     );
   }
@@ -198,16 +200,24 @@ export default function History() {
                   <SelectValue placeholder="Entity Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="account">Accounts</SelectItem>
+                  <SelectItem value="all">
+                    <T k="pageLabels.allTypes" />
+                  </SelectItem>
+                  <SelectItem value="account">
+                    <T k="shell.moreAccounts" />
+                  </SelectItem>
                   <SelectItem value="invoice">
                     <T k="pages.invoices" />
                   </SelectItem>
                   <SelectItem value="journal_entry">
                     <T k="pages.journalEntries" />
                   </SelectItem>
-                  <SelectItem value="receipt">Receipts</SelectItem>
-                  <SelectItem value="backup">Backups</SelectItem>
+                  <SelectItem value="receipt">
+                    <T k="shell.navReceipts" />
+                  </SelectItem>
+                  <SelectItem value="backup">
+                    <T k="pageLabels.backups" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Badge variant="secondary">{filteredLogs.length} entries</Badge>
@@ -219,7 +229,9 @@ export default function History() {
             {filteredLogs.length === 0 ? (
               <div className="text-center py-12">
                 <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">No Activity Yet</h3>
+                <h3 className="text-lg font-medium mb-2">
+                  <T k="pageLabels.noActivityYet" />
+                </h3>
                 <p className="text-muted-foreground">
                   Activity will appear here as you create invoices, journal entries, and other
                   records.

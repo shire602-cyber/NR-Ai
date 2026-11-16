@@ -101,7 +101,12 @@ const PLATFORMS = [
     icon: SiShopify,
     color: "text-[#95BF47]",
     bgColor: "bg-[#95BF47]/10",
-    features: ["Orders to draft invoices", "Refunds to credit notes", "VAT per line", "No duplicates"],
+    features: [
+      "Orders to draft invoices",
+      "Refunds to credit notes",
+      "VAT per line",
+      "No duplicates",
+    ],
     status: "available",
   },
 ];
@@ -119,7 +124,8 @@ const HUB_COPY = {
   ar: {
     syncDone: "اكتملت المزامنة",
     connectorsTitle: "موصلات المحاسبة ونقاط البيع",
-    connectorsHelp: "تتطلب الاتصالات المباشرة تسجيل تطبيق لدى كل مزود. حتى ذلك الحين استورد البيانات عبر CSV.",
+    connectorsHelp:
+      "تتطلب الاتصالات المباشرة تسجيل تطبيق لدى كل مزود. حتى ذلك الحين استورد البيانات عبر CSV.",
     requiresRegistration: "يتطلب تسجيل تطبيق",
     oauthConfigured: "تم إعداد OAuth",
     useImport: "استخدم الاستيراد عبر CSV",
@@ -315,10 +321,10 @@ export default function IntegrationsHub() {
             </div>
             <div>
               <h1 className="text-3xl font-bold" data-testid="text-integrations-title">
-                CRM & E-Commerce Integrations
+                <T k="pageLabels.cRMAndECommerceIntegrations" />
               </h1>
               <p className="text-muted-foreground mt-1">
-                Connect your business tools for automatic data synchronization
+                <T k="pageLabels.connectYourBusinessToolsForAutomaticDataSynchronization" />
               </p>
             </div>
           </div>
@@ -331,15 +337,21 @@ export default function IntegrationsHub() {
         <TabsList className="grid w-full grid-cols-3 lg:w-fit">
           <TabsTrigger value="platforms" className="gap-2" data-testid="tab-platforms">
             <Plug className="w-4 h-4" />
-            <span className="hidden sm:inline">Platforms</span>
+            <span className="hidden sm:inline">
+              <T k="pageLabels.platforms" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="transactions" className="gap-2" data-testid="tab-transactions">
             <CreditCard className="w-4 h-4" />
-            <span className="hidden sm:inline">Transactions</span>
+            <span className="hidden sm:inline">
+              <T k="pageLabels.transactions" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2" data-testid="tab-settings">
             <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline"><T k="pages.settings" /></span>
+            <span className="hidden sm:inline">
+              <T k="pages.settings" />
+            </span>
           </TabsTrigger>
         </TabsList>
 
@@ -349,47 +361,63 @@ export default function IntegrationsHub() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium"><T k="pages.connected" /></CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.connected" />
+                </CardTitle>
                 <Link2 className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{activeIntegrationCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">Active integrations</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.activeIntegrations" />
+                </p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Synced Today</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pageLabels.syncedToday" />
+                </CardTitle>
                 <RefreshCw className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{syncedTodayCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">Transactions imported</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.transactionsImported" />
+                </p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pageLabels.totalValue" />
+                </CardTitle>
                 <CreditCard className="w-4 h-4 text-chart-5 " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono">
                   {formatCurrency(monthlyTransactionValue, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1"><T k="pages.thisMonth" /></p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pages.thisMonth" />
+                </p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium"><T k="pages.reconciled" /></CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.reconciled" />
+                </CardTitle>
                 <Check className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{reconciledPercent}%</div>
-                <p className="text-xs text-muted-foreground mt-1">Auto-matched</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.autoMatched" />
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -411,7 +439,9 @@ export default function IntegrationsHub() {
                 >
                   {isComingSoon && (
                     <div className="absolute top-3 right-3">
-                      <Badge variant="secondary"><T k="pages.comingSoon" /></Badge>
+                      <Badge variant="secondary">
+                        <T k="pages.comingSoon" />
+                      </Badge>
                     </div>
                   )}
 
@@ -424,16 +454,15 @@ export default function IntegrationsHub() {
                         <CardTitle className="text-lg flex items-center gap-2">
                           {platform.name}
                           {isConnected && (
-                            <Badge
-                              variant="secondary"
-                              className="bg-success-subtle text-success "
-                            >
+                            <Badge variant="secondary" className="bg-success-subtle text-success ">
                               <Check className="w-3 h-3 mr-1" />
                               <T k="pages.connected" />
                             </Badge>
                           )}
                         </CardTitle>
-                        <CardDescription className="mt-1 text-muted-foreground">{platform.description}</CardDescription>
+                        <CardDescription className="mt-1 text-muted-foreground">
+                          {platform.description}
+                        </CardDescription>
                       </div>
                     </div>
                   </CardHeader>
@@ -558,7 +587,7 @@ export default function IntegrationsHub() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Zap className="w-5 h-5 text-primary" />
-                Why Connect Your Platforms?
+                <T k="pageLabels.whyConnectYourPlatforms" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -568,9 +597,11 @@ export default function IntegrationsHub() {
                     <Clock className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-medium">Save Time</p>
+                    <p className="font-medium">
+                      <T k="pageLabels.saveTime" />
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      Automatic transaction import eliminates manual data entry
+                      <T k="pageLabels.automaticTransactionImportEliminatesManualDataEntry" />
                     </p>
                   </div>
                 </div>
@@ -579,9 +610,11 @@ export default function IntegrationsHub() {
                     <Shield className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-medium">Reduce Errors</p>
+                    <p className="font-medium">
+                      <T k="pageLabels.reduceErrors" />
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      AI-powered matching ensures accurate reconciliation
+                      <T k="pageLabels.aIPoweredMatchingEnsuresAccurateReconciliation" />
                     </p>
                   </div>
                 </div>
@@ -590,9 +623,11 @@ export default function IntegrationsHub() {
                     <Database className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-medium">Real-time Data</p>
+                    <p className="font-medium">
+                      <T k="pageLabels.realTimeData" />
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      Always have up-to-date financial information
+                      <T k="pageLabels.alwaysHaveUpToDateFinancialInformation" />
                     </p>
                   </div>
                 </div>
@@ -605,7 +640,7 @@ export default function IntegrationsHub() {
         <TabsContent value="transactions" className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Recent transactions imported from connected platforms
+              <T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />
             </p>
             <Button variant="outline" size="sm" data-testid="button-export-transactions">
               <FileText className="w-4 h-4 mr-2" />
@@ -627,7 +662,9 @@ export default function IntegrationsHub() {
                   {!transactionsLoading && transactionRows.length === 0 && (
                     <div className="p-10 text-center text-muted-foreground">
                       <CreditCard className="w-8 h-8 mx-auto mb-3" />
-                      <p className="font-medium">No imported transactions yet</p>
+                      <p className="font-medium">
+                        <T k="pageLabels.noImportedTransactionsYet" />
+                      </p>
                       <p className="text-sm">
                         Connect Stripe or Shopify and run a sync to populate this list.
                       </p>
@@ -708,29 +745,41 @@ export default function IntegrationsHub() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Pending Reconciliation</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pageLabels.pendingReconciliation" />
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-warning ">12</div>
-                <p className="text-xs text-muted-foreground mt-1">Transactions need review</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.transactionsNeedReview" />
+                </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Auto-Matched</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pageLabels.autoMatched2" />
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-success ">156</div>
-                <p className="text-xs text-muted-foreground mt-1"><T k="pages.thisMonth" /></p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pages.thisMonth" />
+                </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Failed Imports</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pageLabels.failedImports" />
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-destructive ">3</div>
-                <p className="text-xs text-muted-foreground mt-1">Require attention</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <T k="pageLabels.requireAttention" />
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -740,25 +789,33 @@ export default function IntegrationsHub() {
         <TabsContent value="settings" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Sync Settings</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pageLabels.syncSettings" />
+              </CardTitle>
               <CardDescription>
-                Configure how data is synchronized from connected platforms
+                <T k="pageLabels.configureHowDataIsSynchronizedFromConnectedPlatforms" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">Automatic Sync</p>
-                  <p className="text-sm text-muted-foreground">Sync new transactions every hour</p>
+                  <p className="font-medium">
+                    <T k="pageLabels.automaticSync" />
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    <T k="pageLabels.syncNewTransactionsEveryHour" />
+                  </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-auto-sync" />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">Auto-Reconciliation</p>
+                  <p className="font-medium">
+                    <T k="pageLabels.autoReconciliation" />
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    Automatically match transactions with invoices
+                    <T k="pageLabels.automaticallyMatchTransactionsWithInvoices" />
                   </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-auto-reconcile" />
@@ -766,9 +823,11 @@ export default function IntegrationsHub() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">Create Journal Entries</p>
+                  <p className="font-medium">
+                    <T k="pageLabels.createJournalEntries" />
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    Automatically create journal entries for matched transactions
+                    <T k="pageLabels.automaticallyCreateJournalEntriesForMatchedTransactions" />
                   </p>
                 </div>
                 <Switch data-testid="switch-auto-journal" />
@@ -776,9 +835,11 @@ export default function IntegrationsHub() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">Import Refunds</p>
+                  <p className="font-medium">
+                    <T k="pageLabels.importRefunds" />
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    Include refunds in transaction imports
+                    <T k="pageLabels.includeRefundsInTransactionImports" />
                   </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-import-refunds" />
@@ -788,31 +849,43 @@ export default function IntegrationsHub() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Account Mapping</CardTitle>
-              <CardDescription>Map platform transactions to your chart of accounts</CardDescription>
+              <CardTitle className="text-base">
+                <T k="pageLabels.accountMapping" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pageLabels.mapPlatformTransactionsToYourChartOfAccounts" />
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm text-muted-foreground">Stripe Payments</Label>
+                  <Label className="text-sm text-muted-foreground">
+                    <T k="pageLabels.stripePayments" />
+                  </Label>
                   <p className="font-medium">1000 - Cash</p>
                 </div>
                 <div>
-                  <Label className="text-sm text-muted-foreground">Stripe Fees</Label>
+                  <Label className="text-sm text-muted-foreground">
+                    <T k="pageLabels.stripeFees" />
+                  </Label>
                   <p className="font-medium">5200 - Bank Charges</p>
                 </div>
                 <div>
-                  <Label className="text-sm text-muted-foreground">Shopify Sales</Label>
+                  <Label className="text-sm text-muted-foreground">
+                    <T k="pageLabels.shopifySales" />
+                  </Label>
                   <p className="font-medium">4000 - Sales Revenue</p>
                 </div>
                 <div>
-                  <Label className="text-sm text-muted-foreground">Shopify Fees</Label>
+                  <Label className="text-sm text-muted-foreground">
+                    <T k="pageLabels.shopifyFees" />
+                  </Label>
                   <p className="font-medium">5300 - Platform Fees</p>
                 </div>
               </div>
               <Button variant="outline" className="w-full" data-testid="button-edit-mapping">
                 <Settings className="w-4 h-4 mr-2" />
-                Edit Account Mapping
+                <T k="pageLabels.editAccountMapping" />
               </Button>
             </CardContent>
           </Card>
@@ -841,7 +914,9 @@ export default function IntegrationsHub() {
             <div className="space-y-4 py-4">
               {selectedPlatform?.id === "stripe_payouts" && (
                 <div className="space-y-2">
-                  <Label htmlFor="apiKey">Stripe Secret Key</Label>
+                  <Label htmlFor="apiKey">
+                    <T k="pageLabels.stripeSecretKey" />
+                  </Label>
                   <Input
                     id="apiKey"
                     type="password"
@@ -859,7 +934,9 @@ export default function IntegrationsHub() {
               {selectedPlatform?.id === "shopify" && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="shopDomain">Shop Domain</Label>
+                    <Label htmlFor="shopDomain">
+                      <T k="pageLabels.shopDomain" />
+                    </Label>
                     <Input
                       id="shopDomain"
                       placeholder="mystore.myshopify.com"
@@ -869,7 +946,9 @@ export default function IntegrationsHub() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="accessToken">Access Token</Label>
+                    <Label htmlFor="accessToken">
+                      <T k="pageLabels.accessToken" />
+                    </Label>
                     <Input
                       id="accessToken"
                       type="password"

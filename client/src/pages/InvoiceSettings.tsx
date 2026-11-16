@@ -121,7 +121,9 @@ export default function InvoiceSettings() {
   if (!company) {
     return (
       <div className="text-center py-8">
-        <p className="text-muted-foreground">Company not found</p>
+        <p className="text-muted-foreground">
+          <T k="pageLabels.companyNotFound" />
+        </p>
       </div>
     );
   }
@@ -152,10 +154,10 @@ export default function InvoiceSettings() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
-                Company Details Display
+                <T k="pageLabels.companyDetailsDisplay" />
               </CardTitle>
               <CardDescription>
-                Choose which company information to display on invoices
+                <T k="pageLabels.chooseWhichCompanyInformationToDisplayOnInvoices" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -195,7 +197,9 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Business Address</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pageLabels.showBusinessAddress" />
+                      </FormLabel>
                       <FormDescription>
                         Display your business address on invoices
                         {!company.businessAddress && (
@@ -223,7 +227,9 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Phone Number</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pageLabels.showPhoneNumber" />
+                      </FormLabel>
                       <FormDescription>
                         Display your business phone number on invoices
                         {!company.contactPhone && (
@@ -251,7 +257,9 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Email Address</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pageLabels.showEmailAddress" />
+                      </FormLabel>
                       <FormDescription>
                         Display your business email on invoices
                         {!company.contactEmail && (
@@ -279,7 +287,9 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Website</FormLabel>
+                      <FormLabel className="text-base">
+                        <T k="pageLabels.showWebsite" />
+                      </FormLabel>
                       <FormDescription>
                         Display your website URL on invoices
                         {!company.websiteUrl && (
@@ -306,8 +316,12 @@ export default function InvoiceSettings() {
           {/* Customization Section */}
           <Card>
             <CardHeader>
-              <CardTitle>Invoice Customization</CardTitle>
-              <CardDescription>Customize the appearance and text of your invoices</CardDescription>
+              <CardTitle>
+                <T k="pageLabels.invoiceCustomization" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pageLabels.customizeTheAppearanceAndTextOfYourInvoices" />
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -315,7 +329,9 @@ export default function InvoiceSettings() {
                 name="invoiceCustomTitle"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Invoice Title</FormLabel>
+                    <FormLabel>
+                      <T k="pageLabels.invoiceTitle" />
+                    </FormLabel>
                     <FormControl>
                       <Input
                         placeholder={
@@ -340,7 +356,9 @@ export default function InvoiceSettings() {
                 name="invoiceFooterNote"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Footer Note</FormLabel>
+                    <FormLabel>
+                      <T k="pageLabels.footerNote" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Thank you for your business"

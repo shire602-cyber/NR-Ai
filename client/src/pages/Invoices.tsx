@@ -1042,14 +1042,14 @@ export default function Invoices() {
                         data-testid="menu-export-invoices-excel"
                       >
                         <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        Export to Excel
+                        <T k="reportCenter.exportToExcel" />
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={handleExportGoogleSheets}
                         data-testid="menu-export-invoices-sheets"
                       >
                         <SiGooglesheets className="w-4 h-4 mr-2" />
-                        Export to Google Sheets
+                        <T k="reportCenter.exportToGoogleSheets" />
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -1595,7 +1595,9 @@ export default function Invoices() {
                             <SelectItem value="draft">{t.draft}</SelectItem>
                             <SelectItem value="sent">{t.sent}</SelectItem>
                             <SelectItem value="paid">{t.paid}</SelectItem>
-                            <SelectItem value="partial">Partial</SelectItem>
+                            <SelectItem value="partial">
+                              <T k="pages.partial" />
+                            </SelectItem>
                             <SelectItem value="void">{t.void}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1616,7 +1618,7 @@ export default function Invoices() {
                         >
                           <Link href={evidenceSourceHref("invoice", invoice.id)}>
                             <FileText className="w-4 h-4 mr-1" />
-                            Proof
+                            <T k="reportCenter.proof" />
                           </Link>
                         </Button>
                       </div>
@@ -1696,7 +1698,7 @@ export default function Invoices() {
                                   value="partial"
                                   data-testid={`status-option-partial-${invoice.id}`}
                                 >
-                                  Partial
+                                  <T k="pages.partial" />
                                 </SelectItem>
                                 <SelectItem
                                   value="void"
@@ -1725,7 +1727,7 @@ export default function Invoices() {
                               >
                                 <Link href={evidenceSourceHref("invoice", invoice.id)}>
                                   <FileText className="w-4 h-4 mr-2" />
-                                  Proof
+                                  <T k="reportCenter.proof" />
                                 </Link>
                               </Button>
                               <Button
@@ -1965,7 +1967,7 @@ export default function Invoices() {
                                       onClick={() => deleteMutation.mutate(invoice.id)}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                     >
-                                      Delete
+                                      <T k="hr.delete" />
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
@@ -2047,7 +2049,9 @@ export default function Invoices() {
             <Skeleton className="h-96" />
           ) : !company ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground">Company not found</p>
+              <p className="text-muted-foreground">
+                <T k="pageLabels.companyNotFound" />
+              </p>
             </div>
           ) : (
             <div className="space-y-6 max-w-3xl">
@@ -2068,10 +2072,10 @@ export default function Invoices() {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <FileText className="w-5 h-5" />
-                        Company Details Display
+                        <T k="pageLabels.companyDetailsDisplay" />
                       </CardTitle>
                       <CardDescription>
-                        Choose which company information to display on invoices
+                        <T k="pageLabels.chooseWhichCompanyInformationToDisplayOnInvoices" />
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -2111,7 +2115,9 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Business Address</FormLabel>
+                              <FormLabel className="text-base">
+                                <T k="pageLabels.showBusinessAddress" />
+                              </FormLabel>
                               <FormDescription>
                                 Display your business address on invoices
                                 {!company.businessAddress && (
@@ -2139,7 +2145,9 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Phone Number</FormLabel>
+                              <FormLabel className="text-base">
+                                <T k="pageLabels.showPhoneNumber" />
+                              </FormLabel>
                               <FormDescription>
                                 Display your business phone number on invoices
                                 {!company.contactPhone && (
@@ -2167,7 +2175,9 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Email Address</FormLabel>
+                              <FormLabel className="text-base">
+                                <T k="pageLabels.showEmailAddress" />
+                              </FormLabel>
                               <FormDescription>
                                 Display your business email on invoices
                                 {!company.contactEmail && (
@@ -2195,7 +2205,9 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Website</FormLabel>
+                              <FormLabel className="text-base">
+                                <T k="pageLabels.showWebsite" />
+                              </FormLabel>
                               <FormDescription>
                                 Display your website URL on invoices
                                 {!company.websiteUrl && (
@@ -2221,9 +2233,11 @@ export default function Invoices() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>Invoice Customization</CardTitle>
+                      <CardTitle>
+                        <T k="pageLabels.invoiceCustomization" />
+                      </CardTitle>
                       <CardDescription>
-                        Customize the appearance and text of your invoices
+                        <T k="pageLabels.customizeTheAppearanceAndTextOfYourInvoices" />
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -2232,7 +2246,9 @@ export default function Invoices() {
                         name="invoiceCustomTitle"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Invoice Title</FormLabel>
+                            <FormLabel>
+                              <T k="pageLabels.invoiceTitle" />
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 placeholder={
@@ -2257,7 +2273,9 @@ export default function Invoices() {
                         name="invoiceFooterNote"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Footer Note</FormLabel>
+                            <FormLabel>
+                              <T k="pageLabels.footerNote" />
+                            </FormLabel>
                             <FormControl>
                               <Textarea
                                 placeholder="Thank you for your business"
@@ -2301,7 +2319,7 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
-              Similar Invoices Found
+              <T k="pageLabels.similarInvoicesFound" />
             </DialogTitle>
             <DialogDescription>
               We found similar invoices that might be duplicates. Review them before proceeding.
@@ -2352,7 +2370,7 @@ export default function Invoices() {
                 }}
                 className="flex-1"
               >
-                Create Anyway
+                <T k="pageLabels.createAnyway" />
               </Button>
             </div>
           </div>
@@ -2365,7 +2383,7 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-chart-5" />
-              Recurring Invoice Settings
+              <T k="pageLabels.recurringInvoiceSettings" />
             </DialogTitle>
             <DialogDescription>
               Configure automatic recurring copies for Invoice {invoiceForRecurring?.number}
@@ -2374,9 +2392,11 @@ export default function Invoices() {
           <div className="space-y-4 py-2">
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div>
-                <p className="font-medium">Enable Recurring</p>
+                <p className="font-medium">
+                  <T k="pageLabels.enableRecurring" />
+                </p>
                 <p className="text-sm text-muted-foreground">
-                  Automatically create new invoice copies on schedule
+                  <T k="pageLabels.automaticallyCreateNewInvoiceCopiesOnSchedule" />
                 </p>
               </div>
               <Switch checked={recurringEnabled} onCheckedChange={setRecurringEnabled} />
@@ -2385,22 +2405,34 @@ export default function Invoices() {
             {recurringEnabled && (
               <>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Frequency</label>
+                  <label className="text-sm font-medium">
+                    <T k="pageLabels.frequency" />
+                  </label>
                   <Select value={recurringInterval} onValueChange={setRecurringInterval}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
-                      <SelectItem value="yearly">Yearly</SelectItem>
+                      <SelectItem value="weekly">
+                        <T k="pageLabels.weekly" />
+                      </SelectItem>
+                      <SelectItem value="monthly">
+                        <T k="firm.cycleMonthly" />
+                      </SelectItem>
+                      <SelectItem value="quarterly">
+                        <T k="firm.cycleQuarterly" />
+                      </SelectItem>
+                      <SelectItem value="yearly">
+                        <T k="pageLabels.yearly" />
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Next Run Date</label>
+                  <label className="text-sm font-medium">
+                    <T k="pageLabels.nextRunDate" />
+                  </label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -2450,7 +2482,7 @@ export default function Invoices() {
                       onClick={() => setRecurringEndDate(undefined)}
                       className="text-xs text-muted-foreground"
                     >
-                      Clear end date
+                      <T k="pageLabels.clearEndDate" />
                     </Button>
                   )}
                 </div>
@@ -2512,7 +2544,9 @@ export default function Invoices() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Amount</label>
+              <label className="text-sm font-medium">
+                <T k="banking.common.amount" />
+              </label>
               <Input
                 type="number"
                 step="0.01"
@@ -2539,13 +2573,17 @@ export default function Invoices() {
                   <SelectItem value="cheque">
                     <T k="pages.cheque" />
                   </SelectItem>
-                  <SelectItem value="online">Online Payment</SelectItem>
+                  <SelectItem value="online">
+                    <T k="pageLabels.onlinePayment" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Deposit Account</label>
+              <label className="text-sm font-medium">
+                <T k="pageLabels.depositAccount" />
+              </label>
               {paymentAccounts.length > 0 ? (
                 <Select value={paymentAccountForAdd} onValueChange={setPaymentAccountForAdd}>
                   <SelectTrigger>
@@ -2624,20 +2662,30 @@ export default function Invoices() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
-            <DialogDescription>All payments recorded for this invoice</DialogDescription>
+            <DialogDescription>
+              <T k="pageLabels.allPaymentsRecordedForThisInvoice" />
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {invoicePayments.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">No payments recorded yet.</p>
+              <p className="text-center text-muted-foreground py-6">
+                <T k="pageLabels.noPaymentsRecordedYet" />
+              </p>
             ) : (
               <>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>
+                        <T k="consolidation.method" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="banking.common.reference" />
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <T k="banking.common.amount" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2679,7 +2727,7 @@ export default function Invoices() {
             onClick={() => setViewPaymentsDialogOpen(false)}
             className="w-full mt-2"
           >
-            Close
+            <T k="banking.common.close" />
           </Button>
         </DialogContent>
       </Dialog>
@@ -2688,7 +2736,9 @@ export default function Invoices() {
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Select Payment Account</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.selectPaymentAccount" />
+            </DialogTitle>
             <DialogDescription>
               Choose where the payment for invoice {invoiceForPayment?.number} was deposited
             </DialogDescription>

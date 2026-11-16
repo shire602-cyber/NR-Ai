@@ -74,7 +74,10 @@ const productFormSchema = z.object({
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
   productType: z.enum(["inventory", "service", "bundle"]).optional(),
   reorderPoint: z
-    .preprocess((v) => (v === "" || v === undefined ? null : v), z.coerce.number().int().min(0).nullable())
+    .preprocess(
+      (v) => (v === "" || v === undefined ? null : v),
+      z.coerce.number().int().min(0).nullable()
+    )
     .optional(),
   // S1 (W4-C): e-invoicing identity for domestic reverse-charge goods (PINT AE).
   gtin: z
@@ -82,7 +85,10 @@ const productFormSchema = z.object({
     .trim()
     .optional()
     .nullable()
-    .refine((v) => !v || isValidGtin(v), "GTIN must be 8, 12, 13 or 14 digits with a valid check digit"),
+    .refine(
+      (v) => !v || isValidGtin(v),
+      "GTIN must be 8, 12, 13 or 14 digits with a valid check digit"
+    ),
   rcmGoodsType: z.string().optional().nullable(),
 });
 
@@ -232,10 +238,14 @@ export default function Inventory() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/inventory-movements`],
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/inventory/valuation`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/inventory/valuation`],
+      });
       toast({
         title: c.stockUpdated,
-        description: res?.warnings?.includes("NEGATIVE_STOCK") ? c.negativeWarning : c.postedToLedger,
+        description: res?.warnings?.includes("NEGATIVE_STOCK")
+          ? c.negativeWarning
+          : c.postedToLedger,
       });
       setAddStockDialogOpen(false);
       setStockProduct(null);
@@ -311,13 +321,29 @@ export default function Inventory() {
   const getMovementTypeBadge = (type: string) => {
     switch (type) {
       case "purchase":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle"><T k="pages.purchase" /></Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            <T k="pages.purchase" />
+          </Badge>
+        );
       case "sale":
-        return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sale</Badge>;
+        return (
+          <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">
+            Sale
+          </Badge>
+        );
       case "adjustment":
-        return <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle"><T k="pages.adjustment" /></Badge>;
+        return (
+          <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle">
+            <T k="pages.adjustment" />
+          </Badge>
+        );
       case "return":
-        return <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10"><T k="pages.return" /></Badge>;
+        return (
+          <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10">
+            <T k="pages.return" />
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{type}</Badge>;
     }
@@ -351,7 +377,9 @@ export default function Inventory() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground"><T k="pages.pleaseCreateACompanyFirst" /></div>
+        <div className="text-muted-foreground">
+          <T k="pages.pleaseCreateACompanyFirst" />
+        </div>
       </div>
     );
   }
@@ -367,7 +395,7 @@ export default function Inventory() {
             {(t as any).inventory || "Inventory"}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage your products and track inventory movements
+            <T k="pageLabels.manageYourProductsAndTrackInventoryMovements" />
           </p>
         </div>
       </div>
@@ -388,7 +416,12 @@ export default function Inventory() {
           <TabsTrigger value="settings">{c.settings}</TabsTrigger>
         </TabsList>
 
-        <InventoryAccountingTabs companyId={companyId} products={productsList} c={c} locale={locale} />
+        <InventoryAccountingTabs
+          companyId={companyId}
+          products={productsList}
+          c={c}
+          locale={locale}
+        />
 
         {/* ─── Products Tab ──────────────────────────────── */}
         <TabsContent value="products">
@@ -396,14 +429,16 @@ export default function Inventory() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle><T k="pages.products" /></CardTitle>
+                  <CardTitle>
+                    <T k="pages.products" />
+                  </CardTitle>
                   <CardDescription>
                     {productsList.length} product{productsList.length !== 1 ? "s" : ""} in inventory
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  Add Product
+                  <T k="pageLabels.addProduct" />
                 </Button>
               </div>
               <div className="mt-4">
@@ -433,11 +468,19 @@ export default function Inventory() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead className="text-right"><T k="pages.unitPrice" /></TableHead>
-                        <TableHead className="text-right"><T k="pages.costPrice" /></TableHead>
-                        <TableHead className="text-right">Stock</TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.unitPrice" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.costPrice" />
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <T k="reportCenter.stock" />
+                        </TableHead>
                         <TableHead>Unit</TableHead>
-                        <TableHead><T k="pages.status" /></TableHead>
+                        <TableHead>
+                          <T k="pages.status" />
+                        </TableHead>
                         <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -482,7 +525,10 @@ export default function Inventory() {
                             <TableCell>{product.unit}</TableCell>
                             <TableCell>
                               {product.isActive ? (
-                                <Badge variant="secondary" className="bg-success-subtle text-success-subtle-foreground">
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-success-subtle text-success-subtle-foreground"
+                                >
                                   <T k="pages.active" />
                                 </Badge>
                               ) : (
@@ -533,8 +579,12 @@ export default function Inventory() {
         <TabsContent value="movements">
           <Card>
             <CardHeader>
-              <CardTitle>Inventory Movements</CardTitle>
-              <CardDescription>History of all inventory changes across products</CardDescription>
+              <CardTitle>
+                <T k="pageLabels.inventoryMovements" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pageLabels.historyOfAllInventoryChangesAcrossProducts" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingMovements ? (
@@ -551,12 +601,18 @@ export default function Inventory() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t.date || "Date"}</TableHead>
-                        <TableHead><T k="pages.product" /></TableHead>
+                        <TableHead>
+                          <T k="pages.product" />
+                        </TableHead>
                         <TableHead>{t.type || "Type"}</TableHead>
                         <TableHead className="text-right">{t.quantity || "Quantity"}</TableHead>
-                        <TableHead className="text-right"><T k="pages.unitCost" /></TableHead>
+                        <TableHead className="text-right">
+                          <T k="pages.unitCost" />
+                        </TableHead>
                         <TableHead>{t.reference || "Reference"}</TableHead>
-                        <TableHead><T k="pages.notes" /></TableHead>
+                        <TableHead>
+                          <T k="pages.notes" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -721,7 +777,9 @@ export default function Inventory() {
                   name="costPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel><T k="pages.costPrice" /></FormLabel>
+                      <FormLabel>
+                        <T k="pages.costPrice" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -743,7 +801,9 @@ export default function Inventory() {
                   name="vatRate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel><T k="pages.vatRate" /></FormLabel>
+                      <FormLabel>
+                        <T k="pages.vatRate" />
+                      </FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseFloat(v))}
                         value={String(field.value)}
@@ -842,7 +902,13 @@ export default function Inventory() {
                     <FormItem>
                       <FormLabel>{c.reorderPoint}</FormLabel>
                       <FormControl>
-                        <Input type="number" min="0" step="1" {...field} value={field.value ?? ""} />
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -854,7 +920,9 @@ export default function Inventory() {
                   name="lowStockThreshold"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Low Stock Threshold</FormLabel>
+                      <FormLabel>
+                        <T k="pageLabels.lowStockThreshold" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -894,7 +962,9 @@ export default function Inventory() {
       <Dialog open={addStockDialogOpen} onOpenChange={setAddStockDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Stock</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.addStock" />
+            </DialogTitle>
             <DialogDescription>
               {stockProduct
                 ? `Record inventory movement for "${stockProduct.name}"`
@@ -917,10 +987,16 @@ export default function Inventory() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="purchase"><T k="pages.purchase" /></SelectItem>
+                        <SelectItem value="purchase">
+                          <T k="pages.purchase" />
+                        </SelectItem>
                         <SelectItem value="sale">{c.saleIssue}</SelectItem>
-                        <SelectItem value="adjustment"><T k="pages.adjustment" /></SelectItem>
-                        <SelectItem value="return"><T k="pages.return" /></SelectItem>
+                        <SelectItem value="adjustment">
+                          <T k="pages.adjustment" />
+                        </SelectItem>
+                        <SelectItem value="return">
+                          <T k="pages.return" />
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -947,7 +1023,9 @@ export default function Inventory() {
                 name="unitCost"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><T k="pages.unitCost" /></FormLabel>
+                    <FormLabel>
+                      <T k="pages.unitCost" />
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -967,7 +1045,9 @@ export default function Inventory() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel><T k="pages.notes" /></FormLabel>
+                    <FormLabel>
+                      <T k="pages.notes" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
                     </FormControl>
@@ -1001,14 +1081,18 @@ export default function Inventory() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.deleteProduct" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this product from inventory. This action cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (productToDelete) {
@@ -1038,7 +1122,8 @@ const INVENTORY_COPY = {
     settings: "Settings",
     stockUpdated: "Stock updated",
     postedToLedger: "The movement and its journal entry were posted.",
-    negativeWarning: "Recorded. Stock is now negative: the cost is an estimate until the next receipt.",
+    negativeWarning:
+      "Recorded. Stock is now negative: the cost is an estimate until the next receipt.",
     saleIssue: "Issue / sale (no invoice)",
     productType: "Product type",
     typeInventory: "Stock item",
@@ -1141,7 +1226,15 @@ const INVENTORY_COPY = {
 type InventoryCopy = (typeof INVENTORY_COPY)["en"] | (typeof INVENTORY_COPY)["ar"];
 
 interface ValuationReport {
-  rows: Array<{ productId: string; name: string; nameAr: string | null; sku: string | null; quantity: number; unitCost: string; value: string }>;
+  rows: Array<{
+    productId: string;
+    name: string;
+    nameAr: string | null;
+    sku: string | null;
+    quantity: number;
+    unitCost: string;
+    value: string;
+  }>;
   totalValue: string;
   glBalance: string;
   difference: string;
@@ -1194,25 +1287,46 @@ function InventoryAccountingTabs({
   const settingsQ = useQuery<{ costingMethod: string; allowNegativeStock: boolean }>({
     queryKey: [`${base}/inventory/settings`],
   });
-  const stocked = products.filter((p) => (p as Product & { productType?: string }).productType !== "service");
+  const stocked = products.filter(
+    (p) => (p as Product & { productType?: string }).productType !== "service"
+  );
 
-  const fail = (e: Error) => toast({ title: c.error, description: e?.message, variant: "destructive" });
+  const fail = (e: Error) =>
+    toast({ title: c.error, description: e?.message, variant: "destructive" });
   const refresh = () => {
-    for (const k of ["inventory/valuation", "inventory/ageing", "inventory/reorder", "warehouses", "stocktakes", "products", "inventory-movements"]) {
+    for (const k of [
+      "inventory/valuation",
+      "inventory/ageing",
+      "inventory/reorder",
+      "warehouses",
+      "stocktakes",
+      "products",
+      "inventory-movements",
+    ]) {
       queryClient.invalidateQueries({ queryKey: [`${base}/${k}`] });
     }
   };
 
   const [wh, setWh] = useState({ code: "", name: "", nameAr: "" });
   const addWarehouse = useMutation({
-    mutationFn: () => apiRequest("POST", `${base}/warehouses`, { code: wh.code, name: wh.name, nameAr: wh.nameAr || null }),
+    mutationFn: () =>
+      apiRequest("POST", `${base}/warehouses`, {
+        code: wh.code,
+        name: wh.name,
+        nameAr: wh.nameAr || null,
+      }),
     onSuccess: () => {
       setWh({ code: "", name: "", nameAr: "" });
       refresh();
     },
     onError: fail,
   });
-  const [tr, setTr] = useState({ productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: 1 });
+  const [tr, setTr] = useState({
+    productId: "",
+    fromWarehouseId: "",
+    toWarehouseId: "",
+    quantity: 1,
+  });
   const transfer = useMutation({
     mutationFn: () => apiRequest("POST", `${base}/inventory/transfers`, tr),
     onSuccess: () => {
@@ -1221,7 +1335,11 @@ function InventoryAccountingTabs({
     },
     onError: fail,
   });
-  const [count, setCount] = useState({ productId: "", countedQty: 0, countDate: new Date().toISOString().slice(0, 10) });
+  const [count, setCount] = useState({
+    productId: "",
+    countedQty: 0,
+    countDate: new Date().toISOString().slice(0, 10),
+  });
   const createCount = useMutation({
     mutationFn: () =>
       apiRequest("POST", `${base}/stocktakes`, {
@@ -1248,7 +1366,8 @@ function InventoryAccountingTabs({
     },
     onError: fail,
   });
-  const nameOf = (p: { name: string; nameAr?: string | null }) => (locale === "ar" && p.nameAr ? p.nameAr : p.name);
+  const nameOf = (p: { name: string; nameAr?: string | null }) =>
+    locale === "ar" && p.nameAr ? p.nameAr : p.name;
   const v = valuation.data;
 
   return (
@@ -1280,8 +1399,12 @@ function InventoryAccountingTabs({
                   <TableRow key={r.productId}>
                     <TableCell>{nameOf(r)}</TableCell>
                     <TableCell className="text-end">{r.quantity}</TableCell>
-                    <TableCell className="text-end">{formatCurrency(Number(r.unitCost), "AED", locale)}</TableCell>
-                    <TableCell className="text-end">{formatCurrency(Number(r.value), "AED", locale)}</TableCell>
+                    <TableCell className="text-end">
+                      {formatCurrency(Number(r.unitCost), "AED", locale)}
+                    </TableCell>
+                    <TableCell className="text-end">
+                      {formatCurrency(Number(r.value), "AED", locale)}
+                    </TableCell>
                   </TableRow>
                 ))}
                 {v && (
@@ -1290,19 +1413,25 @@ function InventoryAccountingTabs({
                       <TableCell className="font-semibold">{c.total}</TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-end font-semibold">{formatCurrency(Number(v.totalValue), "AED", locale)}</TableCell>
+                      <TableCell className="text-end font-semibold">
+                        {formatCurrency(Number(v.totalValue), "AED", locale)}
+                      </TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>{c.glBalance}</TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-end">{formatCurrency(Number(v.glBalance), "AED", locale)}</TableCell>
+                      <TableCell className="text-end">
+                        {formatCurrency(Number(v.glBalance), "AED", locale)}
+                      </TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>{c.difference}</TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-end">{formatCurrency(Number(v.difference), "AED", locale)}</TableCell>
+                      <TableCell className="text-end">
+                        {formatCurrency(Number(v.difference), "AED", locale)}
+                      </TableCell>
                     </TableRow>
                   </>
                 )}
@@ -1322,7 +1451,9 @@ function InventoryAccountingTabs({
                     <TableRow key={b.label}>
                       <TableCell>{b.label}</TableCell>
                       <TableCell className="text-end">{b.qty}</TableCell>
-                      <TableCell className="text-end">{formatCurrency(Number(b.value), "AED", locale)}</TableCell>
+                      <TableCell className="text-end">
+                        {formatCurrency(Number(b.value), "AED", locale)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1393,10 +1524,29 @@ function InventoryAccountingTabs({
               </TableBody>
             </Table>
             <div className="grid gap-2 md:grid-cols-4">
-              <Input aria-label={c.code} placeholder={c.code} value={wh.code} onChange={(e) => setWh({ ...wh, code: e.target.value })} />
-              <Input aria-label={c.name} placeholder={c.name} value={wh.name} onChange={(e) => setWh({ ...wh, name: e.target.value })} />
-              <Input aria-label={c.nameAr} placeholder={c.nameAr} dir="rtl" value={wh.nameAr} onChange={(e) => setWh({ ...wh, nameAr: e.target.value })} />
-              <Button disabled={!wh.code || !wh.name || addWarehouse.isPending} onClick={() => addWarehouse.mutate()}>
+              <Input
+                aria-label={c.code}
+                placeholder={c.code}
+                value={wh.code}
+                onChange={(e) => setWh({ ...wh, code: e.target.value })}
+              />
+              <Input
+                aria-label={c.name}
+                placeholder={c.name}
+                value={wh.name}
+                onChange={(e) => setWh({ ...wh, name: e.target.value })}
+              />
+              <Input
+                aria-label={c.nameAr}
+                placeholder={c.nameAr}
+                dir="rtl"
+                value={wh.nameAr}
+                onChange={(e) => setWh({ ...wh, nameAr: e.target.value })}
+              />
+              <Button
+                disabled={!wh.code || !wh.name || addWarehouse.isPending}
+                onClick={() => addWarehouse.mutate()}
+              >
                 <Plus className="w-4 h-4" />
                 {c.addWarehouse}
               </Button>
@@ -1442,7 +1592,9 @@ function InventoryAccountingTabs({
               onChange={(e) => setTr({ ...tr, quantity: Number(e.target.value) })}
             />
             <Button
-              disabled={!tr.productId || !tr.fromWarehouseId || !tr.toWarehouseId || transfer.isPending}
+              disabled={
+                !tr.productId || !tr.fromWarehouseId || !tr.toWarehouseId || transfer.isPending
+              }
               onClick={() => transfer.mutate()}
             >
               {c.submit}
@@ -1458,7 +1610,10 @@ function InventoryAccountingTabs({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-2 md:grid-cols-4">
-              <Select value={count.productId} onValueChange={(productId) => setCount({ ...count, productId })}>
+              <Select
+                value={count.productId}
+                onValueChange={(productId) => setCount({ ...count, productId })}
+              >
                 <SelectTrigger aria-label={c.product}>
                   <SelectValue placeholder={c.product} />
                 </SelectTrigger>
@@ -1483,7 +1638,10 @@ function InventoryAccountingTabs({
                 value={count.countDate}
                 onChange={(e) => setCount({ ...count, countDate: e.target.value })}
               />
-              <Button disabled={!count.productId || createCount.isPending} onClick={() => createCount.mutate()}>
+              <Button
+                disabled={!count.productId || createCount.isPending}
+                onClick={() => createCount.mutate()}
+              >
                 {c.createCount}
               </Button>
             </div>
@@ -1502,7 +1660,11 @@ function InventoryAccountingTabs({
                     <TableCell>{s.lineCount}</TableCell>
                     <TableCell className="text-end">
                       {s.status === "draft" ? (
-                        <Button size="sm" disabled={postCount.isPending} onClick={() => postCount.mutate(s.id)}>
+                        <Button
+                          size="sm"
+                          disabled={postCount.isPending}
+                          onClick={() => postCount.mutate(s.id)}
+                        >
                           {c.post}
                         </Button>
                       ) : (

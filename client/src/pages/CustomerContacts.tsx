@@ -177,7 +177,9 @@ function ContactForm({
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Phone</Label>
+          <Label>
+            <T k="pages.phone" />
+          </Label>
           <Input
             value={formData.phone}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -188,7 +190,9 @@ function ContactForm({
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>TRN Number</Label>
+          <Label>
+            <T k="pageLabels.tRNNumber" />
+          </Label>
           <Input
             value={formData.trnNumber}
             onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
@@ -229,7 +233,9 @@ function ContactForm({
         </div>
       </div>
       <div className="space-y-2">
-        <Label>Address</Label>
+        <Label>
+          <T k="pageLabels.address" />
+        </Label>
         <Input
           value={formData.address}
           onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -248,7 +254,9 @@ function ContactForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>Country</Label>
+          <Label>
+            <T k="pageLabels.country" />
+          </Label>
           <Input
             value={formData.country}
             onChange={(e) => setFormData({ ...formData, country: e.target.value })}
@@ -546,7 +554,7 @@ export default function CustomerContacts() {
               data-testid="button-download-template"
             >
               <Download className="w-4 h-4 mr-2" />
-              Download Template
+              <T k="pageLabels.downloadTemplate" />
             </Button>
             <Button
               variant="destructive"
@@ -558,19 +566,23 @@ export default function CustomerContacts() {
               data-testid="button-clear-all-contacts"
             >
               <Trash2 className="w-4 h-4 mr-2" />
-              Clear All
+              <T k="pageLabels.clearAll" />
             </Button>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-contact">
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Contact
+                  <T k="pageLabels.addContact" />
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
-                  <DialogTitle>Add New Contact</DialogTitle>
-                  <DialogDescription>Add a new customer or business contact</DialogDescription>
+                  <DialogTitle>
+                    <T k="pageLabels.addNewContact" />
+                  </DialogTitle>
+                  <DialogDescription>
+                    <T k="pageLabels.addANewCustomerOrBusinessContact" />
+                  </DialogDescription>
                 </DialogHeader>
                 <ContactForm
                   onSubmit={(data) => createMutation.mutate(data)}
@@ -590,7 +602,7 @@ export default function CustomerContacts() {
           </TabsTrigger>
           <TabsTrigger value="import" data-testid="tab-contacts-import">
             <Upload className="w-4 h-4 mr-2" />
-            Import from Excel
+            <T k="pageLabels.importFromExcel" />
           </TabsTrigger>
         </TabsList>
 
@@ -752,7 +764,7 @@ export default function CustomerContacts() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileSpreadsheet className="w-5 h-5" />
-                    Upload Excel File
+                    <T k="pageLabels.uploadExcelFile" />
                   </CardTitle>
                   <CardDescription>
                     Upload an Excel file (.xlsx) or CSV containing your customer contacts. We'll
@@ -776,14 +788,16 @@ export default function CustomerContacts() {
                         <FileSpreadsheet className="w-10 h-10 text-success" />
                         <p className="font-medium">{file.name}</p>
                         <Button variant="outline" size="sm" onClick={resetImport}>
-                          Choose Different File
+                          <T k="pageLabels.chooseDifferentFile" />
                         </Button>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3">
                         <Upload className="w-10 h-10 text-muted-foreground" />
                         <div>
-                          <p className="font-medium">Drop your Excel file here</p>
+                          <p className="font-medium">
+                            <T k="pageLabels.dropYourExcelFileHere" />
+                          </p>
                           <p className="text-sm text-muted-foreground">or click to browse</p>
                         </div>
                         <input
@@ -816,8 +830,12 @@ export default function CustomerContacts() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Name</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Phone</TableHead>
+                            <TableHead>
+                              <T k="hr.field.email" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="pages.phone" />
+                            </TableHead>
                             <TableHead>TRN</TableHead>
                             <TableHead>City</TableHead>
                           </TableRow>
@@ -861,7 +879,7 @@ export default function CustomerContacts() {
                         {importMutation.isPending ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Importing...
+                            <T k="pageLabels.importing" />
                           </>
                         ) : (
                           <>
@@ -880,22 +898,28 @@ export default function CustomerContacts() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-success" />
-                  Import Complete
+                  <T k="pageLabels.importComplete" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-success/10 rounded-lg">
                     <p className="text-2xl font-bold text-success">{importResults.created}</p>
-                    <p className="text-sm text-muted-foreground">Created</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pages.created" />
+                    </p>
                   </div>
                   <div className="text-center p-4 bg-info/10 rounded-lg">
                     <p className="text-2xl font-bold text-info">{importResults.updated}</p>
-                    <p className="text-sm text-muted-foreground">Updated</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pageLabels.updated" />
+                    </p>
                   </div>
                   <div className="text-center p-4 bg-warning/10 rounded-lg">
                     <p className="text-2xl font-bold text-warning">{importResults.skipped}</p>
-                    <p className="text-sm text-muted-foreground">Skipped</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pageLabels.skipped" />
+                    </p>
                   </div>
                 </div>
 
@@ -926,10 +950,10 @@ export default function CustomerContacts() {
                     }}
                     data-testid="button-view-contacts"
                   >
-                    View Contacts
+                    <T k="pageLabels.viewContacts" />
                   </Button>
                   <Button onClick={resetImport} data-testid="button-import-more">
-                    Import More
+                    <T k="pageLabels.importMore" />
                   </Button>
                 </div>
               </CardContent>
@@ -941,8 +965,12 @@ export default function CustomerContacts() {
       <Dialog open={!!editContact} onOpenChange={(open) => !open && setEditContact(null)}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Edit Contact</DialogTitle>
-            <DialogDescription>Update customer contact information</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.editContact" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.updateCustomerContactInformation" />
+            </DialogDescription>
           </DialogHeader>
           {editContact && (
             <ContactForm
@@ -965,7 +993,7 @@ export default function CustomerContacts() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="w-5 h-5" />
-              Client Portal Link
+              <T k="pageLabels.clientPortalLink" />
             </DialogTitle>
             <DialogDescription>
               Share this link with {portalLinkDialog.contactName} to give them access to view their
@@ -1000,7 +1028,7 @@ export default function CustomerContacts() {
                 data-testid="button-open-portal"
               >
                 <ExternalLink className="w-4 h-4 mr-2" />
-                Open Portal
+                <T k="pageLabels.openPortal" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -1024,7 +1052,7 @@ export default function CustomerContacts() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="w-5 h-5" />
-              Delete ALL contacts?
+              <T k="pageLabels.deleteALLContacts" />
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
@@ -1051,7 +1079,11 @@ export default function CustomerContacts() {
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="clear-all-confirm">
-                    Type <strong>DELETE ALL</strong> to confirm:
+                    <T k="consolidation.kind" />
+                    <strong>
+                      <T k="pageLabels.dELETEALL" />
+                    </strong>{" "}
+                    to confirm:
                   </Label>
                   <Input
                     id="clear-all-confirm"
@@ -1081,7 +1113,7 @@ export default function CustomerContacts() {
               {clearAllMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deleting...
+                  <T k="pageLabels.deleting" />
                 </>
               ) : (
                 "Delete all contacts"
@@ -1099,10 +1131,12 @@ export default function CustomerContacts() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Contact?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.deleteContact" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{contactToDelete?.name}</strong>? This action
-              cannot be undone.
+              <T k="pageLabels.areYouSureYouWantToDelete" />
+              <strong>{contactToDelete?.name}</strong>? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1118,7 +1152,7 @@ export default function CustomerContacts() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="hr.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

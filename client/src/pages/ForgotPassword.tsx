@@ -97,13 +97,17 @@ export default function ForgotPassword() {
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-lg">Muhasib.ai</span>
+          <span className="font-bold text-lg">
+            <T k="pageLabels.muhasibAi" />
+          </span>
         </Link>
       </div>
 
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">Forgot password?</CardTitle>
+          <CardTitle className="text-2xl font-semibold">
+            <T k="pageLabels.forgotPassword" />
+          </CardTitle>
           <CardDescription>
             Enter the email associated with your account and we'll send a reset link.
           </CardDescription>
@@ -115,7 +119,9 @@ export default function ForgotPassword() {
               <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
                 <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
                 <div className="text-sm">
-                  <p className="font-medium text-success-subtle-foreground ">Check your inbox</p>
+                  <p className="font-medium text-success-subtle-foreground ">
+                    <T k="pageLabels.checkYourInbox" />
+                  </p>
                   <p className="text-success mt-0.5">
                     If that email is registered, a reset link is on its way. The link is valid for
                     one hour.
@@ -180,7 +186,7 @@ export default function ForgotPassword() {
           <div className="text-sm text-muted-foreground text-center">
             Remembered your password?{" "}
             <Link href="/login" className="text-primary hover:underline font-medium">
-              Sign in
+              <T k="portal.signIn" />
             </Link>
           </div>
         </CardFooter>

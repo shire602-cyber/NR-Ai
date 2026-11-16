@@ -1,16 +1,9 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readDashboardSource } from "./dashboardSource";
 import { describe, expect, it } from "vitest";
-
-const repoRoot = process.cwd();
-
-function readRepoFile(path: string): string {
-  return readFileSync(join(repoRoot, path), "utf8");
-}
 
 describe("dashboard role workday path", () => {
   it("keeps a lightweight owner/solo path before the full report workspace", () => {
-    const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
+    const dashboardSource = readDashboardSource(process.cwd(), true);
 
     expect(dashboardSource).toContain("dashboard-report-role-workday-path");
     expect(dashboardSource).toContain("dashboard-report-role-workday-action-${action.id}");
@@ -28,7 +21,7 @@ describe("dashboard role workday path", () => {
   });
 
   it("keeps a smaller freelancer path focused on billing, receipts, tax, and automation", () => {
-    const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
+    const dashboardSource = readDashboardSource(process.cwd(), true);
 
     expect(dashboardSource).toContain("Freelancer path");
     expect(dashboardSource).toContain("Start with billing, receipts, tax, then automation.");
