@@ -219,7 +219,7 @@ const bulkOcrSchema = z.object({
   items: z
     .array(
       z.object({
-        companyId: z.string().uuid(),
+        companyId: z.string().guid(),
         imageData: z.string().min(1),
         filename: z.string().optional(),
       })

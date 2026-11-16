@@ -5,7 +5,7 @@ import { RetentionViolationError } from "../services/retention.service";
 import { AppError, RetentionError, ValidationError, AuthError } from "../errors";
 import { captureException } from "../services/monitoring";
 import { MoneyError } from "../../shared/money";
-import { zodFieldErrors } from "../http/strict-body";
+import { flattenIssues, zodFieldErrors } from "../http/strict-body";
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -155,9 +155,10 @@ export function globalErrorHandler(
   // Zod errors thrown directly from handlers — render the same shape that
   // the validate()/strictBody() middleware produces so the client sees one schema.
   if (err instanceof ZodError) {
+    const flat = flattenIssues(err);
     const ve = new ValidationError("Validation error", {
-      errors: err.flatten().fieldErrors,
-      formErrors: err.flatten().formErrors,
+      errors: flat.fieldErrors,
+      formErrors: flat.formErrors,
     });
     res
       .status(ve.statusCode)

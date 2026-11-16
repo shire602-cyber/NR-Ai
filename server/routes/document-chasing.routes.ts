@@ -91,14 +91,14 @@ const sendChaseSchema = z.object({
 // Path-param schemas. Drizzle parameterizes, but invalid UUIDs reach Postgres
 // and surface as 500 (22P02). Validate at the edge so malformed input returns
 // 400 deterministically and never touches the DB.
-const companyIdParams = z.object({ companyId: z.string().uuid() });
+const companyIdParams = z.object({ companyId: z.string().guid() });
 const companyIdAndIdParams = z.object({
-  companyId: z.string().uuid(),
-  id: z.string().uuid(),
+  companyId: z.string().guid(),
+  id: z.string().guid(),
 });
 const companyIdAndRequirementIdParams = z.object({
-  companyId: z.string().uuid(),
-  requirementId: z.string().uuid(),
+  companyId: z.string().guid(),
+  requirementId: z.string().guid(),
 });
 
 // Parse path params via the given Zod schema; on failure write a 400 and

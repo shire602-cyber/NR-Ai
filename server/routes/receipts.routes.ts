@@ -1361,5 +1361,5 @@ export function registerReceiptRoutes(app: Express) {
 // Body schema for the bulk Excel export. `ids` is optional — omitting it (or
 // passing an empty array) exports every receipt the company has access to.
 const receiptsExportSchema = z.object({
-  ids: z.array(z.string().uuid()).max(5000).optional(),
+  ids: z.array(z.string().guid()).max(5000).optional(),
 });

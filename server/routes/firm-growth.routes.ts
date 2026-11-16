@@ -19,11 +19,11 @@ import {
 
 const logger = createLogger("firm-growth-routes");
 
-const opportunityIdParamSchema = z.object({ id: z.string().uuid() });
+const opportunityIdParamSchema = z.object({ id: z.string().guid() });
 
 const updateOpportunitySchema = z.object({
   status: z.enum(["open", "accepted", "snoozed", "dismissed", "completed"]).optional(),
-  ownerUserId: z.string().uuid().nullable().optional(),
+  ownerUserId: z.string().guid().nullable().optional(),
   snoozedUntil: z.string().datetime().nullable().optional(),
   resolutionNote: z.string().trim().max(2000).nullable().optional(),
   note: z.string().trim().max(4000).nullable().optional(),

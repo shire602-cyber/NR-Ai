@@ -47,7 +47,7 @@ const analyticsEventBody = z.object({
   pageUrl: zText(2000).optional().nullable(),
   pageTitle: zText(500).optional().nullable(),
   properties: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .refine((v) => JSON.stringify(v).length <= 5000, "properties is too large")
     .optional()
     .nullable(),

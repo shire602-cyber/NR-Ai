@@ -10,3 +10,6 @@ process.env.SESSION_SECRET = "test-session-secret-at-least-32-characters-long";
 process.env.JWT_SECRET = "test-jwt-secret-at-least-32-characters-long-unique";
 process.env.PORT = "5001";
 process.env.LOG_LEVEL = "error"; // Suppress logs during tests
+
+// zod 3-compatible validation messages, as installed by the server entry (R17-27).
+import "../shared/zod-config";

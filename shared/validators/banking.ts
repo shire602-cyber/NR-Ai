@@ -276,7 +276,7 @@ const ruleShape = {
   name: zText(200, { min: 1 }),
   matchField: z.enum(RULE_MATCH_FIELDS).optional(),
   matchType: z.enum(RULE_MATCH_TYPES, {
-    errorMap: () => ({ message: `matchType must be one of: ${RULE_MATCH_TYPES.join(", ")}` }),
+    error: () => `matchType must be one of: ${RULE_MATCH_TYPES.join(", ")}`,
   }),
   matchValue: z.string().trim().min(1).max(300),
   /** GL account the rule posts to (required). */

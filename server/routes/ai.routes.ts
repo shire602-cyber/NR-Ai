@@ -1346,10 +1346,10 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
 
   // Transaction Classification Feedback (for ML learning)
   const classificationFeedbackSchema = z.object({
-    classificationId: z.string().uuid(),
+    classificationId: z.string().guid(),
     wasAccepted: z.boolean(),
     // null clears the column; undefined leaves it untouched.
-    userSelectedAccountId: z.string().uuid().nullable().optional(),
+    userSelectedAccountId: z.string().guid().nullable().optional(),
   });
 
   app.post(
@@ -1431,7 +1431,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
   // and disclose arbitrary server-readable files to anyone with access to
   // their own company.
   const autopilotProcessSchema = z.object({
-    companyId: z.string().uuid(),
+    companyId: z.string().guid(),
     ocr: z.object({
       merchant: z.string().min(1).max(200),
       amount: z.number().finite().nonnegative().optional().default(0),
@@ -1457,7 +1457,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
   });
 
   const classifierConfigPatchSchema = z.object({
-    companyId: z.string().uuid(),
+    companyId: z.string().guid(),
     mode: z.enum(["hybrid", "openai_only"]).optional(),
     // Floor at 0.5 so a user cannot effectively disable the OpenAI fallback or
     // the auto-failsafe by setting an unreachable threshold. Cap at 0.99 so
@@ -1470,7 +1470,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
   });
 
   const companyIdQuerySchema = z.object({
-    companyId: z.string().uuid(),
+    companyId: z.string().guid(),
   });
 
   // Run the full Receipt Autopilot pipeline on an OCR-extracted receipt.
@@ -1821,7 +1821,7 @@ Company: ${company.name}`;
       const allowedModels = allowedClientModels();
       const validationSchema = z.object({
         message: z.string().min(1, "Message is required").max(10000, "Message is too long"),
-        companyId: z.string().uuid("Invalid company ID format").optional(),
+        companyId: z.string().guid("Invalid company ID format").optional(),
         // Unknown or legacy model names (e.g. gpt-3.5-turbo from older clients) fall back to the
         // configured default rather than failing the request or reaching an unapproved model.
         model: z
@@ -2054,7 +2054,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
         if (error instanceof z.ZodError) {
           return res.status(400).json({
             message: "Validation error",
-            errors: error.errors.map((e) => ({ path: e.path.join("."), message: e.message })),
+            errors: error.issues.map((e) => ({ path: e.path.join("."), message: e.message })),
           });
         }
 

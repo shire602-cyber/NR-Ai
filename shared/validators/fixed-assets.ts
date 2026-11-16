@@ -36,7 +36,7 @@ const lifeYears = z
   });
 
 const method = z.enum(DEPRECIATION_METHODS, {
-  errorMap: () => ({ message: "depreciationMethod must be straight_line or declining_balance" }),
+  error: () => "depreciationMethod must be straight_line or declining_balance",
 });
 
 const assetFields = {

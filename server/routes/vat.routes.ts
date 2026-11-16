@@ -85,15 +85,15 @@ import {
 type Body<T extends z.ZodTypeAny> = z.output<T>;
 
 const companyScopedWorkpaperParams = z.object({
-  companyId: z.string().uuid(),
-  workpaperId: z.string().uuid(),
+  companyId: z.string().guid(),
+  workpaperId: z.string().guid(),
 });
 
 const companyScopedWorkpaperRowParams = companyScopedWorkpaperParams.extend({
-  rowId: z.string().uuid(),
+  rowId: z.string().guid(),
 });
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 
 function userIdOf(req: Request): string | undefined {
   return (req as Request & { user?: { id: string } }).user?.id;

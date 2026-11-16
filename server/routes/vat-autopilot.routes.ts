@@ -52,18 +52,18 @@ const calculateQuerySchema = z.object({
 // can't blow up downstream numeric columns. NaN/Infinity are rejected by the
 // `.finite()` clause.
 const adjustmentBodySchema = z.strictObject({
-  companyId: z.string().uuid(),
-  periodId: z.string().uuid(),
+  companyId: z.string().guid(),
+  periodId: z.string().guid(),
   box: z.string().refine(isValidVat201BoxKey, { message: "Unknown VAT 201 box key" }),
   amount: z.number().finite().min(-1e12).max(1e12),
   reason: z.string().min(1).max(2000),
 });
 
 const dueDatesQuerySchema = z.object({
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().guid().optional(),
 });
 
-const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
+const companyIdParamSchema = z.object({ companyId: z.string().guid() });
 
 /**
  * An explicit period must be exactly one tax period of the company's stagger (R07-07): a
@@ -170,8 +170,8 @@ export function registerVATAutopilotRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const params = z
         .object({
-          companyId: z.string().uuid(),
-          periodId: z.string().uuid(),
+          companyId: z.string().guid(),
+          periodId: z.string().guid(),
         })
         .safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
@@ -229,7 +229,7 @@ export function registerVATAutopilotRoutes(app: Express) {
     authMiddleware,
     strictBody(vatAutopilotStatusBody, { allowServerOwned: ["companyId", "status"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const params = z.object({ periodId: z.string().uuid() }).safeParse(req.params);
+      const params = z.object({ periodId: z.string().guid() }).safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
 
       const { periodId } = params.data;

@@ -33,7 +33,12 @@ export const stockMovementBody = z
   .object({
     type: z.enum(["purchase", "sale", "adjustment", "return"]),
     quantity: z
-      .number({ invalid_type_error: "Quantity must be a number" })
+      .number({
+        error: (iss) =>
+          iss.code === "invalid_type" && iss.input !== undefined
+            ? "Quantity must be a number"
+            : undefined,
+      })
       .int("Quantity must be an integer")
       .refine((n) => n !== 0, { message: "Quantity must not be zero" }),
     unitCost: zMoneyFils.optional().nullable(),

@@ -35,7 +35,7 @@ export const zBulkPeriod = z
   .regex(PERIOD_RE, 'period must be "YYYY-MM", "YYYY-Qn" or "Qn YYYY"');
 
 export const zBulkCompanyIds = z
-  .array(z.string().uuid("companyIds must contain client ids (uuid)"))
+  .array(z.string().guid("companyIds must contain client ids (uuid)"))
   .min(1, "companyIds must list at least one client")
   .max(500, "companyIds is limited to 500 clients per request");
 

@@ -120,7 +120,7 @@ const statementSourceMessage = {
 
 const bankStatementImportSchema = z
   .object({
-    bankAccountId: z.string().uuid("bankAccountId must be a valid UUID"),
+    bankAccountId: z.string().guid("bankAccountId must be a valid UUID"),
     ...statementSourceShape,
     /** Import rows even when they match transactions already on the account. */
     allowDuplicates: z.boolean().optional(),
@@ -131,7 +131,7 @@ const bankStatementImportSchema = z
 
 const bankStatementPreviewSchema = z
   .object({
-    bankAccountId: z.string().uuid().optional(),
+    bankAccountId: z.string().guid().optional(),
     ...statementSourceShape,
   })
   .refine(hasStatementSource, statementSourceMessage);

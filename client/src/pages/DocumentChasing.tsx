@@ -52,7 +52,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from "@shared/schema";
+import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from "@shared/schema-values";
 
 // ── Types echoed from server response shape ───────────────────────────
 interface Requirement {

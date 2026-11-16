@@ -64,7 +64,10 @@ const zItemAmount = zMoney.refine((v) => Number(v) <= 1_000_000, "Amount is too 
 
 const zDays = (max: number) =>
   z.coerce
-    .number({ invalid_type_error: "Must be a number" })
+    .number({
+      error: (iss) =>
+        iss.code === "invalid_type" && iss.input !== undefined ? "Must be a number" : undefined,
+    })
     .min(0, "Must be zero or more")
     .max(max, `Must be at most ${max}`)
     .refine((v) => Number.isInteger(v * 2), "Use whole or half days");
@@ -118,7 +121,8 @@ const OPTIONAL_CREATE_KEYS = Object.keys(employeeFields).filter(
   (k) => k !== "fullName"
 ) as EmployeeFieldKey[];
 
-function contractDatesOk(v: { contractStart?: string | null; contractEnd?: string | null }) {
+function contractDatesOk(input: unknown) {
+  const v = input as { contractStart?: string | null; contractEnd?: string | null };
   return !v.contractStart || !v.contractEnd || v.contractEnd >= v.contractStart;
 }
 
@@ -126,7 +130,7 @@ export const employeeCreateSchema = z
   .object({
     ...Object.fromEntries(OPTIONAL_CREATE_KEYS.map((k) => [k, opt(employeeFields[k])])),
     fullName: employeeFields.fullName,
-  } as { [K in EmployeeFieldKey]: z.ZodTypeAny })
+  } as unknown as { [K in EmployeeFieldKey]: z.ZodTypeAny })
   .strict()
   .refine(contractDatesOk, {
     message: "Contract end must be on or after its start",

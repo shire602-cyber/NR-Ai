@@ -16,9 +16,39 @@ import {
   numeric,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createSchemaFactory } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
+import { COMPLIANCE_EVENT_TYPES, DOCUMENT_TYPES, companyPreferencesSchema } from "./schema-values";
+
+// Runtime values client pages import live in ./schema-values (R17-27); re-exported here.
+export { COMPLIANCE_EVENT_TYPES, DOCUMENT_TYPES, companyPreferencesSchema };
+
+// drizzle-zod 0.8 + zod 4, kept equivalent to drizzle-zod 0.7 + zod 3 (R17-27):
+// - uuid columns map to z.uuid(), which only accepts RFC 9562 version/variant
+//   UUIDs; zod 3's z.string().uuid() accepted any 8-4-4-4-12 hex id, which is
+//   z.guid() in zod 4.
+// - custom column types (money, rate) map to z.any(); zod 3 objects let a
+//   z.any() key be omitted, zod 4 requires it unless it is .optional().
+// The members are listed (not `{ ...z }`) so the client bundle can still
+// tree-shake zod: spreading the namespace would pull in every zod locale.
+const { createInsertSchema } = createSchemaFactory({
+  zodInstance: {
+    any: () => z.any().optional(),
+    array: z.array,
+    bigint: z.bigint,
+    boolean: z.boolean,
+    coerce: z.coerce,
+    date: z.date,
+    enum: z.enum,
+    int: z.int,
+    number: z.number,
+    object: z.object,
+    string: z.string,
+    tuple: z.tuple,
+    uuid: z.guid,
+  },
+});
 
 // Monetary amount stored as NUMERIC(15,2) in Postgres for exact decimal arithmetic.
 // fromDriver rounds to 2 decimals so JS-side floating-point drift cannot accumulate
@@ -406,55 +436,6 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
 
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Company = typeof companies.$inferSelect;
-
-// Schema for the QuickBooks-style Company Preferences page (PATCH /api/companies/:id).
-// All fields are optional so the page can be saved partially and so legacy clients
-// that omit a field continue to work.
-export const companyPreferencesSchema = z.object({
-  name: z.string().min(2, "Company name must be at least 2 characters").optional(),
-  legalName: z.string().max(200).optional().nullable(),
-  trnVatNumber: z
-    .string()
-    .regex(/^\d{15}$/u, "TRN must be exactly 15 digits")
-    .optional()
-    .nullable()
-    .or(z.literal("").transform(() => null)),
-  baseCurrency: z
-    .enum(["AED", "USD", "EUR", "GBP", "SAR", "QAR", "KWD", "BHD", "OMR", "INR"]) // common GCC + global currencies
-    .optional(),
-  fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
-  defaultVatRate: z.number().min(0).max(1).optional(), // stored as fraction (0.05 = 5%)
-  addressStreet: z.string().max(200).optional().nullable(),
-  addressCity: z.string().max(100).optional().nullable(),
-  emirate: z
-    .enum(["abu_dhabi", "dubai", "sharjah", "ajman", "umm_al_quwain", "ras_al_khaimah", "fujairah"])
-    .optional()
-    .nullable(),
-  addressCountry: z.string().max(2).optional().nullable(), // ISO-3166 alpha-2
-  contactPhone: z.string().max(40).optional().nullable(),
-  contactEmail: z
-    .string()
-    .email("Invalid email address")
-    .optional()
-    .nullable()
-    .or(z.literal("").transform(() => null)),
-  industry: z.string().max(100).optional().nullable(),
-  // W2-D: same rule as shared/validators/companies.ts (https or raster data:image, ~1 MB cap).
-  logoUrl: z
-    .string()
-    .max(1_000_000, "Logo must be 1 MB or smaller")
-    .refine(
-      (v) =>
-        v === "" ||
-        /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(v) ||
-        /^https:\/\/[^\s/]+/i.test(v),
-      "Logo must be an https:// URL or a PNG/JPEG/GIF/WebP image"
-    )
-    .optional()
-    .nullable(),
-  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
-  locale: z.enum(["en", "ar"]).optional(),
-});
 
 export type CompanyPreferences = z.infer<typeof companyPreferencesSchema>;
 
@@ -3795,7 +3776,7 @@ export interface JournalEntryWithLines extends JournalEntry {
 
 // AI Categorization Request/Response
 export const categorizationRequestSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   description: z.string().min(1),
   amount: z.number(),
   currency: z.string().default("AED"),
@@ -7249,26 +7230,6 @@ export type ChaseConfig = typeof chaseConfigs.$inferSelect;
 // calendar is the source of truth for upcoming UAE deadlines that drive
 // auto-scheduled reminders.
 
-// UAE-specific document types — kept as a const tuple so the Zod enum below
-// stays in lockstep. Free-form types are stored under "other".
-export const DOCUMENT_TYPES = [
-  "trade_license",
-  "emirates_id",
-  "visa_copy",
-  "passport_copy",
-  "bank_statement",
-  "tenancy_contract",
-  "moa_aoa",
-  "vat_certificate",
-  "corporate_tax_certificate",
-  "esr_notification",
-  "esr_report",
-  "audited_financials",
-  "invoice",
-  "receipt",
-  "payslip",
-  "other",
-] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
 export const CHASE_LEVELS = ["friendly", "follow_up", "urgent", "final"] as const;
@@ -7286,18 +7247,6 @@ export const REQUIREMENT_STATUSES = [
 ] as const;
 export type RequirementStatus = (typeof REQUIREMENT_STATUSES)[number];
 
-export const COMPLIANCE_EVENT_TYPES = [
-  "trade_license_renewal",
-  "visa_expiry",
-  "emirates_id_expiry",
-  "vat_filing",
-  "corporate_tax_filing",
-  "esr_notification",
-  "esr_report",
-  "tenancy_renewal",
-  "audit_deadline",
-  "other",
-] as const;
 export type ComplianceEventType = (typeof COMPLIANCE_EVENT_TYPES)[number];
 
 // Document requirements: what a client owes the firm per period.

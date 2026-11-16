@@ -29,13 +29,13 @@ export const WHATSAPP_BRIDGE_DELIVERY_STATUSES = [
 ] as const;
 
 export const createBridgeJobSchema = z.object({
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().guid().optional(),
   to: z.string().min(1).max(64),
   recipientName: z.string().max(200).optional().nullable(),
   message: z.string().min(1).max(5000),
   kind: z.enum(WHATSAPP_BRIDGE_JOB_KINDS).default("direct_message"),
   sourceType: z.string().max(80).optional().nullable(),
-  sourceId: z.string().uuid().optional().nullable(),
+  sourceId: z.string().guid().optional().nullable(),
   attachmentUrl: z.string().url().optional().nullable().or(z.literal("")),
   attachmentLabel: z.string().max(200).optional().nullable(),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -49,7 +49,7 @@ export const bridgeStatusUpdateSchema = z.object({
 });
 
 export const createBridgeSessionSchema = z.object({
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().guid().optional(),
   extensionId: z.string().min(3).max(128),
   extensionVersion: z.string().max(40).optional().nullable(),
   userAgent: z.string().max(500).optional().nullable(),

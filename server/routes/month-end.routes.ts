@@ -48,7 +48,10 @@ function parseStepKey(raw: unknown): CloseStepKey {
 }
 
 const signOffBody = z.object({ period: z.string().max(20), note: zText(500).optional() });
-const reopenRequestBody = z.object({ periodEnd: z.unknown(), reason: zText(500, { min: 3 }) });
+const reopenRequestBody = z.object({
+  periodEnd: z.unknown().optional(),
+  reason: zText(500, { min: 3 }),
+});
 const reopenDecisionBody = z.object({ note: zText(500).optional() });
 
 /** Derive periodStart and periodEnd from a YYYY-MM value; 400 on garbage (R08-11). */
@@ -124,10 +127,13 @@ async function enforceChecklist(
 
 const zReason = zText(500, { min: 3 });
 
-const closingEntriesBody = z.object({ periodStart: z.unknown(), periodEnd: z.unknown() });
+const closingEntriesBody = z.object({
+  periodStart: z.unknown().optional(),
+  periodEnd: z.unknown().optional(),
+});
 
 const lockBody = z.object({
-  periodEnd: z.unknown(),
+  periodEnd: z.unknown().optional(),
   lockType: z.enum(["soft", "hard"]).optional(),
   lockScope: z.enum(["month", "through"]).optional(),
   reason: zReason.optional(),
@@ -148,13 +154,13 @@ const settingsBody = z.object({
 });
 
 const yearEndBody = z.object({
-  fiscalYearEnd: z.unknown(),
+  fiscalYearEnd: z.unknown().optional(),
   hardClose: z.boolean().optional(),
   reason: zReason.optional(),
   overrideChecklist: z.boolean().optional(),
 });
 
-const reopenBody = z.object({ fiscalYearEnd: z.unknown(), reason: zReason });
+const reopenBody = z.object({ fiscalYearEnd: z.unknown().optional(), reason: zReason });
 
 function resolveUnlockPeriodEnd(body: { period?: string; periodEnd?: unknown }): string {
   if (body.period !== undefined) return parsePeriod(body.period).periodEnd;

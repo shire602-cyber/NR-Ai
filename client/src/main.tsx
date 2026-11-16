@@ -1,3 +1,5 @@
+// zod 3-compatible validation messages for forms (R17-27).
+import "@shared/zod-config";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 // Self-hosted fonts (Fontsource) — no external Google Fonts dependency, so the

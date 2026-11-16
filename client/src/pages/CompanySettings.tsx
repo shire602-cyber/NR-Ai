@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
-import { companyPreferencesSchema, type Company, type CompanyPreferences } from "@shared/schema";
+import type { Company, CompanyPreferences } from "@shared/schema";
+import { companyPreferencesSchema } from "@shared/schema-values";
 import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
 import { WpsSettingsCard } from "./payroll/WpsTab";
 

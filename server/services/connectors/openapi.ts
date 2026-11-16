@@ -1,56 +1,80 @@
 /**
- * Minimal zod (v3) -> JSON Schema converter for the OpenAPI document of the
+ * Minimal zod (v4) -> JSON Schema converter for the OpenAPI document of the
  * public API (/api/v1/openapi.json). Covers the constructs the v1 schemas use:
  * objects, strings (uuid/regex/length), numbers, booleans, enums, literals,
- * arrays, unions, optional/nullable/default and effects (transform/refine,
- * described by their input schema).
+ * arrays, unions, optional/nullable/default and pipes (transform/preprocess,
+ * described by their input schema; refinements live on the schema itself).
+ * OpenAPI 3.0 output (`nullable: true`), so z.toJSONSchema() is not used.
  */
 import { z, type ZodTypeAny } from "zod";
 
 export type JsonSchema = Record<string, unknown>;
 
+type CheckDef = {
+  check?: string;
+  format?: string;
+  pattern?: RegExp;
+  minimum?: number;
+  maximum?: number;
+  value?: number;
+};
+
+function checkDefs(def: Record<string, unknown>): CheckDef[] {
+  const checks = (def.checks as Array<{ _zod: { def: CheckDef } }> | undefined) ?? [];
+  return checks.map((c) => c._zod.def);
+}
+
+function stringFormat(format: string | undefined, out: JsonSchema, pattern?: RegExp): void {
+  if (format === "uuid" || format === "guid") out.format = "uuid";
+  if (format === "email") out.format = "email";
+  if (format === "url") out.format = "uri";
+  if (format === "regex" && pattern) out.pattern = String(pattern.source);
+}
+
 export function zodToJsonSchema(schema: ZodTypeAny): JsonSchema {
-  const def = schema._def as { typeName?: string; description?: string } & Record<string, unknown>;
+  const def = schema._zod.def as unknown as { type: string } & Record<string, unknown>;
   const withDesc = (s: JsonSchema): JsonSchema =>
     schema.description ? { ...s, description: schema.description } : s;
-  switch (def.typeName) {
-    case z.ZodFirstPartyTypeKind.ZodString: {
+  switch (def.type) {
+    case "string": {
       const out: JsonSchema = { type: "string" };
-      for (const c of (def.checks as Array<Record<string, unknown>>) ?? []) {
-        if (c.kind === "uuid") out.format = "uuid";
-        if (c.kind === "email") out.format = "email";
-        if (c.kind === "url") out.format = "uri";
-        if (c.kind === "min") out.minLength = c.value;
-        if (c.kind === "max") out.maxLength = c.value;
-        if (c.kind === "regex") out.pattern = String((c.regex as RegExp).source);
+      // z.guid()/z.uuid() carry their format on the schema itself.
+      stringFormat(def.format as string | undefined, out);
+      for (const c of checkDefs(def)) {
+        if (c.check === "string_format") stringFormat(c.format, out, c.pattern);
+        if (c.check === "min_length") out.minLength = c.minimum;
+        if (c.check === "max_length") out.maxLength = c.maximum;
       }
       return withDesc(out);
     }
-    case z.ZodFirstPartyTypeKind.ZodNumber: {
+    case "number": {
       const out: JsonSchema = { type: "number" };
-      for (const c of (def.checks as Array<Record<string, unknown>>) ?? []) {
-        if (c.kind === "int") out.type = "integer";
-        if (c.kind === "min") out.minimum = c.value;
-        if (c.kind === "max") out.maximum = c.value;
+      for (const c of checkDefs(def)) {
+        if (c.check === "number_format" && /int/.test(c.format ?? "")) out.type = "integer";
+        if (c.check === "greater_than") out.minimum = c.value;
+        if (c.check === "less_than") out.maximum = c.value;
       }
       return withDesc(out);
     }
-    case z.ZodFirstPartyTypeKind.ZodBoolean:
+    case "boolean":
       return withDesc({ type: "boolean" });
-    case z.ZodFirstPartyTypeKind.ZodEnum:
-      return withDesc({ type: "string", enum: [...(def.values as string[])] });
-    case z.ZodFirstPartyTypeKind.ZodNativeEnum:
-      return withDesc({ enum: Object.values(def.values as Record<string, unknown>) });
-    case z.ZodFirstPartyTypeKind.ZodLiteral:
-      return withDesc({ const: def.value });
-    case z.ZodFirstPartyTypeKind.ZodArray: {
-      const out: JsonSchema = { type: "array", items: zodToJsonSchema(def.type as ZodTypeAny) };
-      if (def.minLength) out.minItems = (def.minLength as { value: number }).value;
-      if (def.maxLength) out.maxItems = (def.maxLength as { value: number }).value;
+    case "enum":
+      return withDesc({
+        type: "string",
+        enum: Object.values(def.entries as Record<string, string>),
+      });
+    case "literal":
+      return withDesc({ const: (def.values as unknown[])[0] });
+    case "array": {
+      const out: JsonSchema = { type: "array", items: zodToJsonSchema(def.element as ZodTypeAny) };
+      for (const c of checkDefs(def)) {
+        if (c.check === "min_length") out.minItems = c.minimum;
+        if (c.check === "max_length") out.maxItems = c.maximum;
+      }
       return withDesc(out);
     }
-    case z.ZodFirstPartyTypeKind.ZodObject: {
-      const shape = (schema as z.AnyZodObject).shape as Record<string, ZodTypeAny>;
+    case "object": {
+      const shape = def.shape as Record<string, ZodTypeAny>;
       const properties: Record<string, JsonSchema> = {};
       const required: string[] = [];
       for (const [k, v] of Object.entries(shape)) {
@@ -59,26 +83,28 @@ export function zodToJsonSchema(schema: ZodTypeAny): JsonSchema {
       }
       const out: JsonSchema = { type: "object", properties };
       if (required.length) out.required = required;
-      if ((def.unknownKeys as string) === "strict") out.additionalProperties = false;
+      if (def.catchall instanceof z.ZodNever) out.additionalProperties = false;
       return withDesc(out);
     }
-    case z.ZodFirstPartyTypeKind.ZodUnion:
+    case "union":
       return withDesc({
         oneOf: (def.options as ZodTypeAny[]).map((o) => zodToJsonSchema(o)),
       });
-    case z.ZodFirstPartyTypeKind.ZodOptional:
+    case "optional":
       return zodToJsonSchema(def.innerType as ZodTypeAny);
-    case z.ZodFirstPartyTypeKind.ZodNullable:
+    case "nullable":
       return { ...zodToJsonSchema(def.innerType as ZodTypeAny), nullable: true };
-    case z.ZodFirstPartyTypeKind.ZodDefault: {
+    case "default": {
       const inner = zodToJsonSchema(def.innerType as ZodTypeAny);
-      return { ...inner, default: (def.defaultValue as () => unknown)() };
+      return { ...inner, default: def.defaultValue };
     }
-    case z.ZodFirstPartyTypeKind.ZodEffects:
-      return withDesc(zodToJsonSchema(def.schema as ZodTypeAny));
-    case z.ZodFirstPartyTypeKind.ZodPipeline:
-      return zodToJsonSchema(def.in as ZodTypeAny);
-    case z.ZodFirstPartyTypeKind.ZodRecord:
+    case "pipe": {
+      // .transform() is pipe(input, transform); z.preprocess() is pipe(transform, schema).
+      const input = def.in as ZodTypeAny;
+      const target = input instanceof z.ZodTransform ? (def.out as ZodTypeAny) : input;
+      return withDesc(zodToJsonSchema(target));
+    }
+    case "record":
       return withDesc({ type: "object", additionalProperties: true });
     default:
       return withDesc({});
@@ -90,7 +116,7 @@ export interface OpenApiOperation {
   path: string; // OpenAPI form: /invoices/{id}
   summary: string;
   scope: string;
-  query?: z.AnyZodObject;
+  query?: z.ZodObject;
   body?: ZodTypeAny;
   pathParams?: string[];
   responseDescription: string;

@@ -1,5 +1,7 @@
 // ─── Load environment variables first ────────────────────────
 import "dotenv/config";
+// zod 3-compatible validation messages, before any schema parses (R17-27).
+import "../shared/zod-config";
 
 import fs from "fs";
 import path from "path";

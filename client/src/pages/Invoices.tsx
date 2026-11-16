@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,7 +153,7 @@ const EMPTY_LINE = {
 // follows the server engine (fils, half-up, VAT rounded once per document).
 
 const invoiceSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   // R18-06: the server allocates the gap-free FTA number on save, so new
   // invoices carry no client-side number.
   number: z.string(),
