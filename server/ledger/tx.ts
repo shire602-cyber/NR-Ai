@@ -11,6 +11,12 @@
  * and its callbacks join the outer transaction's queue. When `outer` is a
  * transaction this helper did not open, callbacks run on the next tick after
  * `fn` resolves (best effort: the caller owns that commit).
+ *
+ * After-commit callbacks are fire-and-forget: failures are only logged and nothing retries them.
+ * Use them only for side effects that may lag or be lost (in-memory domain events). Anything that
+ * must be atomic with the document (journals, stock, GRNI, payments, status, audit rows) runs in
+ * `tx` itself; pass `tx` down (e.g. `inventory.onGoodsReceived(event, tx)`,
+ * `recordAudit({ ..., tx })`).
  */
 import { db } from "../db";
 import { createLogger } from "../config/logger";

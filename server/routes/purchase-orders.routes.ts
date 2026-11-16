@@ -601,7 +601,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
       }
       if (wanted.length === 0) throw new DomainError("PO_NOTHING_TO_RECEIVE", 409);
       const receivedDate = body.receivedDate ?? new Date().toISOString().slice(0, 10);
-      const result = await withLedgerTx(async (tx, { afterCommit }) => {
+      const result = await withLedgerTx(async (tx) => {
         const [receipt] = await tx
           .insert(purchaseOrderReceipts)
           .values({
@@ -654,15 +654,20 @@ export function registerPurchaseOrderRoutes(app: Express) {
           );
           if (!row) throw new DomainError("PO_STATE_CHANGED", 409);
         }
-        afterCommit(async () => {
-          // Inventory hand-off for a later workstream; a no-op until it is registered.
-          if (has("inventory.onGoodsReceived")) {
-            const fn = resolve<(e: unknown) => Promise<void> | void>("inventory.onGoodsReceived");
-            await fn({
+        // Inventory hand-off (F2): stock + GRNI post inside this receipt's transaction, so the
+        // response is sent only after both commit and an inventory failure rolls the receipt back.
+        let inventoryUpdated = false;
+        if (has("inventory.onGoodsReceived")) {
+          const fn = resolve<(e: unknown, outer?: unknown) => Promise<unknown> | unknown>(
+            "inventory.onGoodsReceived"
+          );
+          await fn(
+            {
               companyId: po.companyId,
               purchaseOrderId: po.id,
               receiptId: receipt.id,
               receivedDate,
+              actorId: req.user!.id,
               lines: wanted.map((w) => {
                 const l = after.find((x) => x.id === w.lineId)!;
                 return {
@@ -672,17 +677,19 @@ export function registerPurchaseOrderRoutes(app: Express) {
                   unitPrice: l.unitPrice,
                 };
               }),
-            });
-          }
-        });
-        return { receiptId: receipt.id, status: target, lines: after };
+            },
+            tx
+          );
+          inventoryUpdated = true;
+        }
+        return { receiptId: receipt.id, status: target, lines: after, inventoryUpdated };
       });
       res.json({
         ...(await storage.getPurchaseOrder(po.id)),
         receiptId: result.receiptId,
         lines: result.lines,
         match: matchOf(result.lines),
-        inventoryUpdated: has("inventory.onGoodsReceived"),
+        inventoryUpdated: result.inventoryUpdated,
         message:
           result.status === "received" ? "Purchase order received" : "Partial receipt recorded",
       });

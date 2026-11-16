@@ -2,7 +2,7 @@
  * Inventory module entry (W4-B). Registers the cross-module services other modules call through
  * the service registry (they never import this module):
  *
- *   inventory.onGoodsReceived(event)              purchase-order receipts (W3-B)
+ *   inventory.onGoodsReceived(event, tx?)         purchase-order receipts (W3-B; in the receipt tx)
  *   inventory.onInvoiceIssued(tx, {invoice, lines, userId})
  *   inventory.onInvoiceVoided(tx, {companyId, invoiceId, number, userId})
  *   inventory.onCreditNoteIssued(tx, {original, creditNote, lines, userId})

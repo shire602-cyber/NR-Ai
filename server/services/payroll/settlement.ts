@@ -298,17 +298,16 @@ export async function postSettlement(
       [p.employee.id, companyId, body.terminationDate, body.reason],
       tx
     );
-    afterCommit(() =>
-      recordAudit({
-        userId: actorId,
-        companyId,
-        action: "payroll.settlement",
-        entityType: "employee",
-        entityId: p.employee.id,
-        after: { settlementId: settlementRow!.id, journalEntryId, net: fromFils(p.result.netFils) },
-        req,
-      })
-    );
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.settlement",
+      entityType: "employee",
+      entityId: p.employee.id,
+      after: { settlementId: settlementRow!.id, journalEntryId, net: fromFils(p.result.netFils) },
+      req,
+      tx,
+    });
     if (!body.paymentAccountId && p.result.netFils > 0) {
       // Decree-Law 33/2021 Art. 53 reading: dues are paid within 14 days of the end of service.
       const dueDate = isoDay(addDays(utcDate(body.terminationDate), 14));

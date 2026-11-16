@@ -1,6 +1,8 @@
 import type { Request } from "express";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { auditLogs } from "../../shared/schema";
+import type { LedgerTx } from "../ledger/types";
 
 const log = createLogger("audit");
 
@@ -14,6 +16,12 @@ interface AuditParams {
   after?: unknown;
   req?: Request;
   extra?: Record<string, unknown>;
+  /**
+   * Write the row inside this transaction (F2): it then commits or rolls back with the document
+   * it describes, instead of a detached after-commit write whose failure is only logged. The
+   * insert runs in a savepoint so a failing audit write still never aborts the business operation.
+   */
+  tx?: LedgerTx;
 }
 
 /**
@@ -36,7 +44,7 @@ export async function recordAudit(params: AuditParams): Promise<void> {
     // req.ip honours TRUST_PROXY_HOPS; a raw X-Forwarded-For header is client-controlled.
     const ipAddress = req?.ip || req?.socket?.remoteAddress || null;
     const userAgent = (req?.headers["user-agent"] as string | undefined) || null;
-    await storage.createAuditLog({
+    const row = {
       userId: userId || null,
       companyId: companyId ?? null,
       action,
@@ -45,7 +53,14 @@ export async function recordAudit(params: AuditParams): Promise<void> {
       details,
       ipAddress,
       userAgent,
-    });
+    };
+    if (params.tx) {
+      await params.tx.transaction(async (sp: LedgerTx) => {
+        await sp.insert(auditLogs).values(row);
+      });
+      return;
+    }
+    await storage.createAuditLog(row);
   } catch (err) {
     log.error({ err: (err as Error).message }, "failed to record audit log");
   }

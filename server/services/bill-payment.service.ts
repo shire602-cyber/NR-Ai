@@ -900,10 +900,10 @@ export async function voidBillPayment(args: {
   /** Run inside the caller's ledger transaction (bank unmatch / compensation). */
   tx?: LedgerTx;
 }): Promise<{ billStatus: BillState; amountPaid: number }> {
-  // INT-W3: the audit row is written after the (outermost) transaction commits, so a caller's
-  // rollback (bank unmatch / compensation inside its own withLedgerTx) leaves no audit of a void
+  // F2: the audit row is written inside the transaction (savepoint), so a caller's
+  // rollback (bank unmatch / compensation, in any transaction) leaves no audit of a void
   // that never happened.
-  return withLedgerTx(async (tx, { afterCommit }) => {
+  return withLedgerTx(async (tx) => {
     const bill = await lockBill(tx, args.billId, args.companyId);
     const rows = await txRows<Record<string, string | null>>(
       tx,
@@ -968,17 +968,16 @@ export async function voidBillPayment(args: {
     }
     const settled = await settleStatus(tx, bill);
     const result = { billStatus: settled.status, amountPaid: Number(fromFils(settled.paidFils)) };
-    afterCommit(() =>
-      recordAudit({
-        userId: args.actorId,
-        companyId: args.companyId,
-        action: "bill.payment.void",
-        entityType: "vendor_bill",
-        entityId: args.billId,
-        after: { paymentId: args.paymentId, ...result, reason: args.reason ?? null },
-        req: args.req,
-      })
-    );
+    await recordAudit({
+      userId: args.actorId,
+      companyId: args.companyId,
+      action: "bill.payment.void",
+      entityType: "vendor_bill",
+      entityId: args.billId,
+      after: { paymentId: args.paymentId, ...result, reason: args.reason ?? null },
+      req: args.req,
+      tx,
+    });
     return result;
   }, args.tx);
 }
@@ -1381,7 +1380,7 @@ export async function createVendorCreditFromInbound(args: {
     lines,
   });
   await assertPeriodNotLocked(companyId, input.note_date);
-  const out = await withLedgerTx(async (tx, { afterCommit }) => {
+  const out = await withLedgerTx(async (tx) => {
     const claimed = await txRows<{ id: string }>(
       tx,
       `UPDATE einvoice_inbound_documents SET status = 'credit_created', error = NULL
@@ -1401,21 +1400,20 @@ export async function createVendorCreditFromInbound(args: {
       inboundId,
       created.debitNote.id,
     ]);
-    afterCommit(() =>
-      recordAudit({
-        userId: args.actorId,
-        companyId,
-        action: "bill.inbound.vendor_credit",
-        entityType: "vendor_debit_note",
-        entityId: created.debitNote.id,
-        after: {
-          inboundId,
-          documentNumber: parsed.documentNumber,
-          total: created.debitNote.total_amount,
-        },
-        req: args.req,
-      })
-    );
+    await recordAudit({
+      userId: args.actorId,
+      companyId,
+      action: "bill.inbound.vendor_credit",
+      entityType: "vendor_debit_note",
+      entityId: created.debitNote.id,
+      after: {
+        inboundId,
+        documentNumber: parsed.documentNumber,
+        total: created.debitNote.total_amount,
+      },
+      req: args.req,
+      tx,
+    });
     return created;
   });
   return { ...out, inboundId };
