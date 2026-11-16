@@ -231,7 +231,11 @@ async function buildApp(): Promise<any> {
   const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
   app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
   // Mirrors server/index.ts (W4-D raw-body webhooks).
-  const rawWebhookPrefixes = ["/api/webhooks/invoice-payments", "/api/webhooks/email-events"];
+  const rawWebhookPrefixes = [
+    "/api/webhooks/invoice-payments",
+    "/api/webhooks/email-events",
+    "/api/webhooks/einvoice/acube",
+  ];
   app.use(rawWebhookPrefixes, express.raw({ type: "*/*", limit: "1mb" }));
   app.use((req: any, res: any, next: any) => {
     if (req.path === "/api/webhooks/email-intake") return next();

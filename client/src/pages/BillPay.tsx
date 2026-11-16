@@ -57,6 +57,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useSearch } from "wouter";
 import { InboundCreditNotesCard } from "@/components/bills/InboundCreditNotesCard";
+import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
 import {
   billPayTabFromSearch,
   billStatusFilterFromSearch,
@@ -224,6 +225,8 @@ interface VendorBill {
   import_vat_amount?: string;
   place_of_supply?: string | null;
   display_status?: string;
+  /** E1: "einvoice" when the bill was created from a received structured e-invoice. */
+  origin?: string | null;
 }
 
 interface BillLineItem {
@@ -1607,7 +1610,10 @@ export default function BillPay() {
                         const _remaining = Number(bill.total_amount) - Number(bill.amount_paid);
                         return (
                           <TableRow key={bill.id}>
-                            <TableCell className="font-medium">{bill.vendor_name}</TableCell>
+                            <TableCell className="font-medium">
+                              {bill.vendor_name}
+                              <EInvoiceOriginTag origin={bill.origin} />
+                            </TableCell>
                             <TableCell className="font-mono text-sm">
                               {bill.bill_number || "-"}
                             </TableCell>

@@ -75,6 +75,8 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { einvoiceIssuesFromError, type EInvoiceIssueItem } from "@/lib/einvoice-issues";
+import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
+import { EInvoicePanel } from "@/components/einvoice/EInvoiceStatus";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -689,6 +691,9 @@ export default function Invoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "einvoicing"],
+      });
     } catch (error: any) {
       // W4-C: a 422 carries the full fix-it / validation list.
       const issues =
@@ -857,6 +862,8 @@ export default function Invoices() {
   const performInvoiceSave = async (invoiceData: any, editing: any) => {
     if (editing) {
       await editMutation.mutateAsync({ id: editing.id, data: invoiceData });
+      // E1 validate-on-save: the e-invoice status re-runs its checks on the saved data.
+      queryClient.invalidateQueries({ queryKey: ["einvoice-status", editing.id] });
     } else {
       await createMutation.mutateAsync(invoiceData);
     }
@@ -1239,6 +1246,10 @@ export default function Invoices() {
                       : "Create a new invoice with automatic VAT calculation"}
                   </DialogDescription>
                 </DialogHeader>
+                {/* E1: e-invoice status of an issued invoice (re-checked after each save). */}
+                {editingInvoice && editingInvoice.status !== "draft" && (
+                  <EInvoicePanel invoiceId={editingInvoice.id} compact />
+                )}
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
@@ -1901,11 +1912,12 @@ export default function Invoices() {
                                 </SelectItem>
                               </SelectContent>
                             </Select>
-                            {(invoice as any).einvoiceStatus && (
-                              <Badge variant="info" className="ms-1.5 px-1.5">
-                                <T k="invoices.einvoiceShort" />
-                              </Badge>
-                            )}
+                            {/* E1: two-track e-invoice status; opens the status sheet. */}
+                            <EInvoiceListCell
+                              companyId={selectedCompanyId}
+                              invoice={invoice}
+                              onEdit={() => handleEditInvoice(invoice)}
+                            />
                           </TableCell>
                           <TableCell data-nowrap="" className="w-px">
                             <RowActions

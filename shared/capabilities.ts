@@ -226,15 +226,30 @@ const DEFS: readonly CapabilityDef[] = [
       en: "Contract an MoF-accredited ASP (Peppol PINT AE) and obtain production credentials.",
       ar: "تعاقد مع مزود خدمة معتمد من وزارة المالية (Peppol PINT AE) واحصل على بيانات اعتماد إنتاجية.",
     },
-    envVars: ["EINVOICE_ASP_API_KEY", "EINVOICE_ASP_BASE_URL", "EINVOICE_ASP_ENV"],
+    envVars: [
+      "EINVOICE_ASP_API_KEY",
+      "EINVOICE_ASP_BASE_URL",
+      "EINVOICE_ASP_ENV",
+      "EINVOICE_PROVIDER",
+      "ACUBE_ENV",
+      "ACUBE_EMAIL",
+      "ACUBE_PASSWORD",
+    ],
     whenUnconfigured: "requires_external",
+    // E1: A-Cube (EINVOICE_PROVIDER=acube) is live with production credentials, else sandbox.
     detect: (env) =>
-      all(env, ["EINVOICE_ASP_API_KEY", "EINVOICE_ASP_BASE_URL"])
-        ? (env.EINVOICE_ASP_ENV ?? "").toLowerCase() === "production" &&
-          !looksSandbox(env.EINVOICE_ASP_BASE_URL)
-          ? "live"
-          : "sandbox"
-        : null,
+      (env.EINVOICE_PROVIDER ?? "").toLowerCase() === "acube"
+        ? all(env, ["ACUBE_EMAIL", "ACUBE_PASSWORD"])
+          ? (env.ACUBE_ENV ?? "").toLowerCase() === "production"
+            ? "live"
+            : "sandbox"
+          : null
+        : all(env, ["EINVOICE_ASP_API_KEY", "EINVOICE_ASP_BASE_URL"])
+          ? (env.EINVOICE_ASP_ENV ?? "").toLowerCase() === "production" &&
+            !looksSandbox(env.EINVOICE_ASP_BASE_URL)
+            ? "live"
+            : "sandbox"
+          : null,
   },
   {
     id: "zatca",

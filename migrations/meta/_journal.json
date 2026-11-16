@@ -806,6 +806,13 @@
    "when": 1781430300000,
    "tag": "0115_f8_event_outbox",
    "breakpoints": false
+  },
+  {
+   "idx": 115,
+   "version": "7",
+   "when": 1781430310000,
+   "tag": "0116_e1_einvoice_acube",
+   "breakpoints": false
   }
  ]
 }

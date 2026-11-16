@@ -484,6 +484,20 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   to the original (PINT AE rejects 383); 383 is used only on the ZATCA path. Run
   `node scripts/validate-ubl.mjs --fixtures` and `npx vitest run tests/unit/einvoice-pint-ae.test.ts`
   after UBL changes.
+- E-invoicing through A-Cube (E1, MoF accreditation 188961; `EINVOICE_PROVIDER=acube`,
+  `server/services/einvoice/providers/acube.ts`, full notes in
+  [einvoicing-acube.md](einvoicing-acube.md)): every invoice carries two tracks on
+  `einvoice_documents` (delivery: draft/validated/queued/sending/delivered/delivery_failed/rejected;
+  FTA reporting: not_required/pending/reported/report_failed, reported = TDD present) with history in
+  `einvoice_document_events`; the legacy `einvoice_status` is derived (`tracks.ts`). Sending needs an
+  active `einvoice_legal_entities` row (409 `EINVOICE_LEGAL_ENTITY_NOT_ACTIVE` / `_DELINKED`) and the
+  supplier endpoint `0235:<linked TIN>` (422 `EINVOICE_SUPPLIER_ENDPOINT_MISMATCH`); submissions are
+  claimed (`submit_claimed_at`) so they are never sent twice, and an ambiguous transport failure is
+  looked up before re-posting. Webhooks (`/api/webhooks/einvoice/acube/:environment`, Ed25519 HTTP
+  Message Signatures + optional token) are stored in `einvoice_provider_events` and processed by the
+  `einvoice.providerEvents` job; `einvoice.acubePoll` is the fallback. Contract fixtures in
+  `tests/fixtures/pint-ae/asp/acube/` are doc-derived and must be re-recorded in sandbox. Verify with
+  `tests/db/einvoice-acube.test.ts` and `tests/unit/einvoice-acube-*.test.ts`.
 - Customer communications (W4-D): every email goes through the durable outbox in `server/outbox/`
   (job `email.outboxDelivery`; with no provider rows stay `blocked_no_provider`, never "sent");
   bounces arrive on `/api/webhooks/email-events/*`. Portal access is bound to one contact via

@@ -25,6 +25,7 @@ import { registerCompanyRoutes } from "./routes/companies.routes";
 import { registerAccountRoutes } from "./routes/accounts.routes";
 import { registerInvoiceRoutes } from "./routes/invoices.routes";
 import { registerEInvoiceRoutes } from "./routes/einvoice.routes";
+import { registerEInvoiceAcubeRoutes } from "./routes/einvoice-acube.routes";
 import { registerZatcaRoutes } from "./routes/zatca.routes";
 import { registerInvoiceShareRoutes } from "./routes/invoice-share.routes";
 import { registerChasingRoutes } from "./routes/chasing.routes";
@@ -139,6 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAccountRoutes(app);
   registerInvoiceRoutes(app);
   registerEInvoiceRoutes(app);
+  registerEInvoiceAcubeRoutes(app); // E1: A-Cube onboarding + signed webhooks
   registerZatcaRoutes(app);
   registerInvoiceShareRoutes(app);
   registerRecurringInvoiceRoutes(app);

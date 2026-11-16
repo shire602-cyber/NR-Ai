@@ -21,7 +21,11 @@ import {
   type EInvoiceRejectionReason,
   type EInvoiceStatus,
 } from "./einvoice-status";
-import type { EInvoiceProvider, EInvoiceProviderResult } from "./einvoice-provider";
+import type {
+  EInvoiceDocumentRef,
+  EInvoiceProvider,
+  EInvoiceProviderResult,
+} from "./einvoice-provider";
 import {
   summariseValidation,
   validateEInvoiceXml,
@@ -71,6 +75,8 @@ type SubmitOk = {
   xml: string;
   /** True when the ASP took the document (archive it as "submitted"). */
   handedOver: boolean;
+  /** E1: the provider's own outcome (two-track status, error code). */
+  result: EInvoiceProviderResult;
 };
 type SubmitErr = {
   ok: false;
@@ -92,6 +98,9 @@ export function buildEInvoiceDocument(
   | { ok: false; issues: EInvoiceIssue[] } {
   const issues = validateForEInvoicing(invoice, lines, company, ctx);
   if (issues.length > 0) return { ok: false, issues };
+  // E1: a regenerated document keeps the invoice's e-invoice UUID, so a resubmission after a
+  // fix is the same document to the ASP (idempotency key) rather than a new one.
+  const uuid = ctx.options?.uuid ?? invoice.einvoiceUuid ?? undefined;
   if (invoice.einvoiceXml && invoice.einvoiceUuid && invoice.einvoiceHash) {
     return {
       ok: true,
@@ -106,12 +115,19 @@ export function buildEInvoiceDocument(
     (invoice.customerName
       ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
       : undefined);
-  const { xml, uuid, hash, documentType } = generateEInvoiceXML(invoice, lines, company, customer, {
+  const generated = generateEInvoiceXML(invoice, lines, company, customer, {
     ...(ctx.options ?? {}),
+    uuid,
     originalInvoice: ctx.originalInvoice ?? ctx.options?.originalInvoice ?? null,
     lineExtras: ctx.lineExtras ?? ctx.options?.lineExtras,
   });
-  return { ok: true, xml, uuid, hash, documentType };
+  return {
+    ok: true,
+    xml: generated.xml,
+    uuid: generated.uuid,
+    hash: generated.hash,
+    documentType: generated.documentType,
+  };
 }
 
 /** Document-row patch for a provider outcome (attempt counting + backoff). */
@@ -221,6 +237,7 @@ export async function submitEInvoice(args: {
   const docPatch = applyProviderOutcome(result, args.attempts ?? 0, now);
   return {
     ok: true,
+    result,
     providerMessageId: result.providerMessageId,
     xml: built.xml,
     handedOver: result.status !== "failed" && !!result.providerMessageId,
@@ -246,11 +263,23 @@ export async function submitEInvoice(args: {
   };
 }
 
+/** Provider error codes that mean "could not ask", not "the document failed". */
+const TRANSIENT_POLL_CODES = new Set(["TRANSPORT_ERROR", "ACUBE_UNAVAILABLE", "ACUBE_AUTH_FAILED"]);
+
 export async function refreshEInvoiceStatus(args: {
   invoice: Invoice;
   provider: EInvoiceProvider;
   now?: Date;
-}): Promise<{ ok: true; update: EInvoiceUpdate; document: EInvoiceDocumentUpdate } | SubmitErr> {
+  ref?: EInvoiceDocumentRef;
+}): Promise<
+  | {
+      ok: true;
+      update: EInvoiceUpdate;
+      document: EInvoiceDocumentUpdate;
+      result: EInvoiceProviderResult;
+    }
+  | SubmitErr
+> {
   const { invoice, provider } = args;
   const now = args.now ?? new Date();
   const messageId = invoice.einvoiceProviderMessageId;
@@ -262,7 +291,16 @@ export async function refreshEInvoiceStatus(args: {
       message: "This e-invoice has not been submitted to a provider.",
     };
   }
-  const result = await provider.getStatus(messageId);
+  const result = await provider.getStatus(messageId, args.ref);
+  if (result.errorCode && TRANSIENT_POLL_CODES.has(result.errorCode)) {
+    // E1: a failed poll says nothing about the document; keep its status.
+    return {
+      ok: false,
+      status: 502,
+      code: "EINVOICE_PROVIDER_UNAVAILABLE",
+      message: result.detail ?? "The service provider could not be reached.",
+    };
+  }
   const current = (invoice.einvoiceStatus as string) || "not_generated";
   if (!canTransitionEInvoice(current, result.status)) {
     return {
@@ -275,6 +313,7 @@ export async function refreshEInvoiceStatus(args: {
   const reasons = result.reasons && result.reasons.length > 0 ? result.reasons : null;
   return {
     ok: true,
+    result,
     update: { einvoiceStatus: result.status, einvoiceStatusDetail: result.detail ?? null },
     document: {
       status: result.status,
