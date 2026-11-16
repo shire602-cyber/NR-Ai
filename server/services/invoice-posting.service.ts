@@ -66,6 +66,7 @@ import {
 } from "./document-totals.service";
 import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
 import { has, resolve } from "../platform/service-registry";
+import { receivableSettlementPartsSql } from "../reporting/settlement";
 
 // W4-B inventory / COGS hooks (provided by server/services/inventory). Called on the document's
 // transaction so stock and cost of sales commit atomically with the revenue entry.
@@ -328,19 +329,20 @@ export async function lockInvoice(tx: LedgerTx, invoiceId: string, companyId: st
   return row as Invoice;
 }
 
-/** Settlement figures for an invoice in its own currency (fils). */
+/**
+ * Settlement figures for an invoice in its own currency (fils) — the one settlement rule in
+ * server/reporting/settlement.ts (D5c), shared with aging, the dashboard and the invoice list.
+ */
 export async function invoiceSettlement(
   tx: LedgerTx,
   invoiceId: string
 ): Promise<{ paidFils: number; creditedFils: number; appliedFils: number }> {
+  const parts = receivableSettlementPartsSql("si");
   const res = await tx.execute(sql`
-    SELECT
-      (SELECT COALESCE(SUM(amount), 0)::text FROM invoice_payments WHERE invoice_id = ${invoiceId}) AS paid,
-      (SELECT COALESCE(SUM(-total), 0)::text FROM invoices
-         WHERE original_invoice_id = ${invoiceId} AND invoice_type = 'credit_note'
-           AND status NOT IN ('void', 'cancelled', 'draft')) AS credited,
-      (SELECT COALESCE(SUM(amount), 0)::text FROM customer_credit_allocations
-         WHERE invoice_id = ${invoiceId} AND kind = 'apply') AS applied
+    SELECT ${sql.raw(parts.paid)}::text AS paid,
+           ${sql.raw(parts.credited)}::text AS credited,
+           ${sql.raw(parts.applied)}::text AS applied
+      FROM (SELECT ${invoiceId}::uuid AS id) si
   `);
   const row = (((res as { rows?: unknown[] }).rows ?? res) as Array<Record<string, string>>)[0];
   return {

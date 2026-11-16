@@ -232,8 +232,8 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - FX unrealized exposure (`fx-unrealized-exposure`) uses the current FX gains/losses report as an
   as-of snapshot, summing absolute unrealized gains and absolute unrealized losses against a clear
   baseline of zero. The report comes from `computeFxExposure` (`server/services/fx/exposure.ts`),
-  the same function the period-end revaluation posts from: outstanding balances (total less
-  payments dated on/before as-of) of posted foreign-currency invoices and vendor bills plus
+  the same function the period-end revaluation posts from: outstanding balances (the
+  settlement rule below, dated on/before as-of) of posted foreign-currency invoices and vendor bills plus
   GL-linked foreign bank accounts, remeasured at the company's closing rate (spot fallback);
   drafts, voids, credit notes and unposted receipts are excluded. Do not treat it as a historical
   FX movement comparison until FX exposure snapshots are persisted.
@@ -377,11 +377,25 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   or historical cash position comparison. The Dashboard `monthlyBurnRate`/`cashRunway` (months) come
   from `getDashboardStats` in `server/services/dashboard-stats.service.ts`: average expenses of the
   last three completed UAE months from the posted ledger, divided into the GL cash/bank balance.
+- "What is still owed" has ONE rule, `server/reporting/settlement.ts` (D5c), matching what posts
+  to A/R 1040 / A/P 2010: invoice open = max(0, total − invoice_payments − issued credit-note
+  invoices on it − applied customer credits − posted legacy `credit_notes` never consolidated into
+  a credit-note invoice); credit-note documents are never open. Bill open = max(0, total − Σ
+  `bill_payments.amount`: payments, prepayment and debit-note applications, negative reversal
+  rows). Base currency = open × document rate, rounded per document. Credit that reduced the
+  control account without settling a document (unapplied vendor debit notes; credit-note invoices
+  with no original) is the aging `unappliedCredits`, and `netTotal` = documents − unapplied = GL.
+  Aging, dashboard, invoice list `openBalance`, invoice status/detail, customer/supplier
+  statements, portal, reminders/dunning, FX exposure, cash forecast, bill summary, balance
+  summaries, top customers and bank auto-match all build their SQL from it; never re-derive it.
+  Applying a debit note moves no A/P, so statements do not show its application rows as movements.
+  Verify with `tests/db/d5c-settlement-rule.test.ts`.
 - Dashboard stats (`GET /api/companies/:companyId/dashboard/stats`) are SQL-aggregated through
   `server/reporting` and `agedReceivables`/`agedPayables`; never load all journal lines into Node.
   `revenue`/`expenses`/`netProfit` are scoped to the selected period (`preset=month|quarter|ytd|custom`,
-  default this month) with `prior` and `priorYear` comparison blocks; `outstanding` is the remaining
-  balance of sent/partial invoices (total less payments) and equals the GL receivable; AR aging has a
+  default this month) with `prior` and `priorYear` comparison blocks; `outstanding` /
+  `outstandingPayables` are the aging `netTotal` (open documents under the settlement rule below,
+  less unapplied credits) and equal the GL receivable 1040 / payable 2010; AR aging has a
   `current` bucket by due date and AP aging uses approved vendor bills. Cash is cash/bank accounts
   only. VAT and corporate-tax widgets are ledger-based (`vat`, `corporateTax`; the CT figure is
   `computeCtLiability` over fiscal-year-to-date ledger P&L, an estimate and not a filed return).

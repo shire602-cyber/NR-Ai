@@ -1,8 +1,9 @@
 /**
  * Balance fields the invoice list API (GET /api/companies/:companyId/invoices) adds to every
- * invoice. Computed server-side from invoice_payments and issued credit notes with the same
- * rule as the aged-receivables report that backs the dashboard `outstanding` figure
- * (total less payments less issued credits, floored at zero, rounded to fils per document).
+ * invoice. Computed server-side with the one settlement rule (server/reporting/settlement.ts)
+ * that the aged-receivables report and the dashboard `outstanding` figure use: total less
+ * payments, issued credit-note invoices and applied customer credits, floored at zero, rounded
+ * to fils per document.
  */
 import type { Invoice } from "./schema";
 

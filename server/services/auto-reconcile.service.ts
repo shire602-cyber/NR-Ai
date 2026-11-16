@@ -4,6 +4,7 @@ import { pool } from "../db";
 import { has } from "../platform/service-registry";
 import { PAYABLE_BILL_STATES } from "./bill-posting.service";
 import type { BankTransaction, JournalEntry, Invoice, Receipt } from "../../shared/schema";
+import { payableOpenSql, receivableOpenSql } from "../reporting/settlement";
 import {
   applyMatch,
   dbFils,
@@ -250,27 +251,25 @@ async function loadCandidatePool(companyId: string): Promise<CandidatePool> {
     entryMemo.set(entry.id, entry.memo || entry.entryNumber);
   }
 
-  const { rows: paidRows } = await pool.query(
-    `SELECT invoice_id, COALESCE(SUM(amount), 0)::text AS paid FROM invoice_payments
-      WHERE company_id = $1 GROUP BY invoice_id`,
+  // Remaining balance under the one settlement rule (server/reporting/settlement.ts, D5c):
+  // payments, issued credit notes and applied customer credits.
+  const { rows: openRows } = await pool.query(
+    `SELECT i.id, ${receivableOpenSql("i")}::text AS open FROM invoices i WHERE i.company_id = $1`,
     [companyId]
   );
-  const paid = new Map<string, number>(
-    (paidRows as Array<{ invoice_id: string; paid: string }>).map((r) => [
-      r.invoice_id,
-      dbFils(r.paid),
-    ])
+  const open = new Map<string, number>(
+    (openRows as Array<{ id: string; open: string }>).map((r) => [r.id, dbFils(r.open)])
   );
   const openInvoices = invoices
-    .filter((inv) => OPEN_INVOICE_STATUSES.has(inv.status))
-    .map((inv) => ({ ...inv, remainingFils: dbFils(inv.total) - (paid.get(inv.id) ?? 0) }))
+    .filter((inv) => OPEN_INVOICE_STATUSES.has(inv.status) && inv.invoiceType !== "credit_note")
+    .map((inv) => ({ ...inv, remainingFils: open.get(inv.id) ?? 0 }))
     .filter((inv) => inv.remainingFils > 0);
 
   let bills: CandidatePool["bills"] = [];
   if (has("bills.recordPayment")) {
     const { rows } = await pool.query(
       `SELECT id, COALESCE(bill_number, '') AS bill_number, vendor_name, bill_date,
-              (COALESCE(total_amount, 0) - COALESCE(amount_paid, 0))::text AS remaining
+              ${payableOpenSql("vendor_bills")}::text AS remaining
          FROM vendor_bills
         WHERE company_id = $1 AND status = ANY($2::text[])`,
       // Only bills a payment can be recorded against (approved / overdue / partial): a bill

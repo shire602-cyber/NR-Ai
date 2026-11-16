@@ -95,6 +95,7 @@ import { receipts } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
 import { parseReportDate, uaeToday } from "../reporting";
 import { readReceiptImage, saveReceiptImage } from "../services/fileStorage";
+import { payableOpenSql, payableSettledSql } from "../reporting/settlement";
 
 const log = createLogger("bill-pay");
 
@@ -811,23 +812,19 @@ export function registerBillPayRoutes(app: Express) {
       await assertCompanyAccess(req, companyId);
       const today = todayIso();
       const fx = `COALESCE(NULLIF(b.exchange_rate, 0), 1)`;
-      // Payables are remaining balances (total less bill_payments, the same source as
-      // agedPayables / the dashboard outstandingPayables), approved-and-later bills only.
-      const rem = `GREATEST(COALESCE(b.total_amount, 0) - COALESCE(p.amt, 0), 0)`;
+      // Payables are remaining balances under the one settlement rule (server/reporting/
+      // settlement.ts, D5c) that agedPayables / the dashboard outstandingPayables use,
+      // approved-and-later bills only.
+      const rem = payableOpenSql("b");
       const r = await pool.query(
-        `WITH paid AS (
-          SELECT bp.bill_id, SUM(bp.amount) AS amt FROM bill_payments bp
-            JOIN vendor_bills vb ON vb.id = bp.bill_id
-           WHERE vb.company_id = $1 GROUP BY bp.bill_id
-        )
-        SELECT
+        `SELECT
           COUNT(*) FILTER (WHERE b.status IN ('draft','pending'))::int AS pending_count,
           COALESCE(SUM(ROUND(b.total_amount * ${fx} * 100)) FILTER (WHERE b.status IN ('draft','pending')), 0)::bigint AS pending_total,
           COUNT(*) FILTER (WHERE b.status IN ('approved','overdue'))::int AS approved_count,
           COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','overdue')), 0)::bigint AS approved_total,
           COUNT(*) FILTER (WHERE b.status = 'partial')::int AS partial_count,
           COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_total,
-          COALESCE(SUM(ROUND(COALESCE(p.amt, 0) * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_paid,
+          COALESCE(SUM(ROUND(${payableSettledSql("b")} * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_paid,
           COUNT(*) FILTER (WHERE b.status = 'paid')::int AS paid_count,
           COALESCE(SUM(ROUND(b.total_amount * ${fx} * 100)) FILTER (WHERE b.status = 'paid'), 0)::bigint AS paid_total,
           COUNT(*) FILTER (WHERE b.status IN ('approved','partial','overdue') AND b.due_date::date < $2::date AND ${rem} > 0)::int AS overdue_count,
@@ -835,7 +832,6 @@ export function registerBillPayRoutes(app: Express) {
           COUNT(*) FILTER (WHERE b.status IN ('approved','partial','overdue') AND ${rem} > 0)::int AS open_count,
           COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','partial','overdue')), 0)::bigint AS open_total
         FROM vendor_bills b
-        LEFT JOIN paid p ON p.bill_id = b.id
         WHERE b.company_id = $1`,
         [companyId, today]
       );

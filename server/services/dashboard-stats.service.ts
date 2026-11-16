@@ -403,8 +403,9 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     },
     revenueGrowth: pct(current.revenue, previous.revenue),
     expenseGrowth: pct(current.expenses, previous.expenses),
-    outstanding: ar.totals.total,
-    outstandingPayables: ap.totals.total,
+    // Net of unapplied credits so it equals the GL control balance (D5c).
+    outstanding: ar.netTotal,
+    outstandingPayables: ap.netTotal,
     totalInvoices: counts.rows[0].invoices,
     totalEntries: counts.rows[0].entries,
     cashPosition,

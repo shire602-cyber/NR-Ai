@@ -31,6 +31,7 @@ import { registerNotificationEngine } from "./notification-engine.service";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
+import { receivableOpenSql } from "../reporting/settlement";
 
 const log = createLogger("scheduler");
 
@@ -174,13 +175,7 @@ async function eligibleInvoices(companyId: string): Promise<EligibleInvoice[]> {
   const { rows } = await pool.query(
     `SELECT i.id, i.company_id, i.contact_id, i.number,
             ((coalesce(i.due_date, i.date) + interval '4 hours')::date)::text AS due,
-            GREATEST(ROUND(i.total * 100)
-              - coalesce((SELECT ROUND(SUM(p.amount) * 100) FROM invoice_payments p WHERE p.invoice_id = i.id), 0)
-              - coalesce((SELECT ROUND(SUM(-cn.total) * 100) FROM invoices cn
-                           WHERE cn.original_invoice_id = i.id AND cn.invoice_type = 'credit_note'
-                             AND cn.status NOT IN ('void', 'cancelled', 'draft')), 0)
-              - coalesce((SELECT ROUND(SUM(a.amount) * 100) FROM customer_credit_allocations a
-                           WHERE a.invoice_id = i.id AND a.kind = 'apply'), 0), 0)::bigint::text AS open_fils
+            ROUND(${receivableOpenSql("i")} * 100)::bigint::text AS open_fils
        FROM invoices i
        LEFT JOIN customer_contacts c ON c.id = i.contact_id
       WHERE i.company_id = $1

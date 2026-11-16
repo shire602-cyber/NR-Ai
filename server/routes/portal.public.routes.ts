@@ -70,6 +70,7 @@ import {
 } from "../services/document-vault.service";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
+import { receivableSettledSql } from "../reporting/settlement";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
@@ -185,12 +186,7 @@ export async function contactInvoices(
   const { rows } = await pool.query(
     `SELECT i.id, i.number, i.invoice_type, i.date, i.due_date, i.currency, i.subtotal, i.vat_amount,
             i.total, i.status, i.einvoice_status, i.einvoice_uuid, (i.einvoice_xml IS NOT NULL) AS has_xml,
-            (coalesce((SELECT SUM(amount) FROM invoice_payments p WHERE p.invoice_id = i.id), 0)
-             + coalesce((SELECT SUM(-total) FROM invoices cn WHERE cn.original_invoice_id = i.id
-                           AND cn.invoice_type = 'credit_note'
-                           AND cn.status NOT IN ('void', 'cancelled', 'draft')), 0)
-             + coalesce((SELECT SUM(amount) FROM customer_credit_allocations a
-                          WHERE a.invoice_id = i.id AND a.kind = 'apply'), 0))::text AS settled
+            ${receivableSettledSql("i")}::text AS settled
        FROM invoices i
       WHERE i.company_id = $1 AND i.contact_id = $2
         AND i.status IN ('sent', 'posted', 'partial', 'paid') ${extra}

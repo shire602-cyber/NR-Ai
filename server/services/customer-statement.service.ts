@@ -22,6 +22,7 @@ import { pool } from "../db";
 import { DomainError } from "../errors";
 import { has, provide } from "../platform/service-registry";
 import { preparePdfDocument } from "./pdf-fonts";
+import { payableOpenSql, receivableOpenSql } from "../reporting/settlement";
 import type { Company } from "../../shared/schema";
 
 export type StatementKind = "customer" | "supplier";
@@ -260,16 +261,7 @@ export async function buildCustomerStatement(args: {
   const { rows: openDocs }: { rows: OpenDoc[] } = await pool.query(
     `SELECT upper(coalesce(i.currency, 'AED')) AS currency,
             coalesce(${LOCAL("i.due_date")}, ${LOCAL("i.date")})::text AS due,
-            GREATEST(ROUND(i.total * 100)
-              - coalesce((SELECT ROUND(SUM(p.amount) * 100) FROM invoice_payments p
-                           WHERE p.invoice_id = i.id AND ${LOCAL("p.date")} <= $3::date), 0)
-              - coalesce((SELECT ROUND(SUM(-cn.total) * 100) FROM invoices cn
-                           WHERE cn.original_invoice_id = i.id AND cn.invoice_type = 'credit_note'
-                             AND cn.status NOT IN ('void', 'cancelled', 'draft')
-                             AND ${LOCAL("cn.date")} <= $3::date), 0)
-              - coalesce((SELECT ROUND(SUM(a.amount) * 100) FROM customer_credit_allocations a
-                           WHERE a.invoice_id = i.id AND a.kind = 'apply'
-                             AND ${LOCAL("a.date")} <= $3::date), 0), 0)::bigint::text AS open_fils
+            ROUND(${receivableOpenSql("i", { asOf: "$3::date" })} * 100)::bigint::text AS open_fils
        FROM invoices i
       WHERE i.company_id = $1 AND i.contact_id = $2 AND i.invoice_type <> 'credit_note'
         AND i.status IN ('sent', 'posted', 'partial', 'paid') AND ${LOCAL("i.date")} <= $3::date`,
@@ -322,6 +314,12 @@ export async function buildSupplierStatement(args: {
               ROUND(bp.amount * 100)::bigint::text, '0', bp.created_at
          FROM bill_payments bp JOIN vendor_bills b ON b.id = bp.bill_id
         WHERE ${billFilter} AND ${LOCAL("bp.payment_date")} <= $3::date
+          -- A debit note already debits the statement (and A/P) when raised; applying it to a
+          -- bill moves no A/P, so its application rows (and their reversals) are not movements.
+          AND bp.kind <> 'vendor_credit'
+          AND NOT (bp.kind = 'reversal' AND EXISTS (
+                SELECT 1 FROM bill_payments vc
+                 WHERE vc.id = bp.reverses_payment_id AND vc.kind = 'vendor_credit'))
        UNION ALL
        SELECT d.id, ${LOCAL("d.note_date")}::text, NULL, 'debit_note', d.debit_note_number,
               'Debit note', upper(d.currency), ROUND(d.total_amount * 100)::bigint::text, '0', d.created_at
@@ -334,10 +332,7 @@ export async function buildSupplierStatement(args: {
   const { rows: openDocs }: { rows: OpenDoc[] } = await pool.query(
     `SELECT upper(coalesce(b.currency, 'AED')) AS currency,
             coalesce(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
-            GREATEST(ROUND(coalesce(b.total_amount, 0) * 100)
-              - coalesce((SELECT ROUND(SUM(bp.amount) * 100) FROM bill_payments bp
-                           WHERE bp.bill_id = b.id AND ${LOCAL("bp.payment_date")} <= $3::date), 0),
-              0)::bigint::text AS open_fils
+            ROUND(${payableOpenSql("b", { asOf: "$3::date" })} * 100)::bigint::text AS open_fils
        FROM vendor_bills b WHERE ${billFilter} AND ${LOCAL("b.bill_date")} <= $3::date`,
     params
   );

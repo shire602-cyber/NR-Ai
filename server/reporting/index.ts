@@ -31,3 +31,4 @@ export * from "./classify";
 export * from "./statements";
 export * from "./aging";
 export * from "./currency-trial-balance";
+export * from "./settlement";

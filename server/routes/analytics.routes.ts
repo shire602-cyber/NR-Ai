@@ -25,6 +25,8 @@ import {
   fiscalYearStart,
   loadCompany,
   profitAndLoss,
+  receivableOpenBaseFilsSql,
+  receivableStatusSql,
   uaeToday,
 } from "../reporting";
 import { assertReportAccess } from "../reporting/http";
@@ -445,15 +447,14 @@ export function registerAnalyticsRoutes(app: Express) {
       await assertReportAccess(req, companyId);
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
       const { rows } = await pool.query(
-        `WITH paid AS (
-           SELECT invoice_id, SUM(amount) AS amt FROM invoice_payments WHERE company_id = $1 GROUP BY invoice_id
-         )
-         SELECT COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown') AS name,
+        // "paid" = settled under the one settlement rule (D5c): total less the open balance.
+        `SELECT COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown') AS name,
                 COUNT(*)::int AS invoice_count,
                 SUM(ROUND(i.total * COALESCE(NULLIF(i.exchange_rate, 0), 1) * 100))::bigint AS total,
-                SUM(ROUND(LEAST(COALESCE(p.amt, 0), i.total) * COALESCE(NULLIF(i.exchange_rate, 0), 1) * 100))::bigint AS paid
-           FROM invoices i LEFT JOIN paid p ON p.invoice_id = i.id
-          WHERE i.company_id = $1 AND i.status NOT IN ('draft', 'void', 'cancelled')
+                SUM(ROUND(i.total * COALESCE(NULLIF(i.exchange_rate, 0), 1) * 100)
+                    - ${receivableOpenBaseFilsSql("i")})::bigint AS paid
+           FROM invoices i
+          WHERE i.company_id = $1 AND ${receivableStatusSql("i")}
           GROUP BY 1 ORDER BY total DESC, name LIMIT $2`,
         [companyId, limit]
       );

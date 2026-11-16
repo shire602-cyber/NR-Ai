@@ -290,9 +290,13 @@ export async function vendorStatement(
                                          WHEN p.kind = 'prepayment' THEN 'prepayment_applied'
                                          ELSE 'payment' END,
               p.reference, p.id,
-              CASE WHEN p.amount < 0 THEN ROUND(-p.amount * COALESCE(NULLIF(b.exchange_rate,0),1) * 100)::bigint ELSE 0 END,
+              -- Applying a debit note moves no A/P (the note debited A/P when raised), so neither
+              -- the application nor its reversal changes the balance (D5c).
+              CASE WHEN p.amount < 0 AND vc.id IS NULL THEN ROUND(-p.amount * COALESCE(NULLIF(b.exchange_rate,0),1) * 100)::bigint ELSE 0 END,
               CASE WHEN p.amount > 0 AND p.kind <> 'vendor_credit' THEN ROUND(p.amount * COALESCE(NULLIF(b.exchange_rate,0),1) * 100)::bigint ELSE 0 END
          FROM bill_payments p JOIN vendor_bills b ON b.id = p.bill_id
+         LEFT JOIN bill_payments vc ON p.kind = 'reversal' AND vc.id = p.reverses_payment_id
+                                   AND vc.kind = 'vendor_credit'
         WHERE b.company_id = $1 AND b.vendor_id = $2
        UNION ALL
        SELECT n.note_date::date, 'debit_note', n.debit_note_number, n.id,
@@ -334,26 +338,7 @@ export async function vendorStatement(
   };
 }
 
-/** Unapplied debit notes (vendor credits) dated on/before asOf, in AED fils. */
-export async function unappliedVendorCreditsFils(companyId: string, asOf: string): Promise<number> {
-  const r = await pool.query(
-    `SELECT COALESCE(SUM(ROUND((n.total_amount - COALESCE(a.applied, 0)) * COALESCE(NULLIF(n.exchange_rate,0),1) * 100)), 0)::bigint AS fils
-       FROM vendor_debit_notes n
-       LEFT JOIN (
-         SELECT p.source_document_id AS id, SUM(p.amount) AS applied
-           FROM bill_payments p
-          WHERE p.kind = 'vendor_credit' AND ((p.payment_date + interval '4 hours')::date) <= $2::date
-          GROUP BY p.source_document_id
-       ) a ON a.id = n.id
-      WHERE n.company_id = $1 AND n.status <> 'void'
-        AND ((n.note_date + interval '4 hours')::date) <= $2::date`,
-    [companyId, asOf]
-  );
-  return Number(r.rows[0]?.fils ?? 0);
-}
-
 export interface PayablesAging extends AgingReport {
-  unappliedCredits: number;
   vendors: Array<{ vendorId: string | null; name: string; total: number }>;
 }
 
@@ -363,10 +348,8 @@ export interface PayablesAging extends AgingReport {
  * separate line and part of the reconciliation.
  */
 export async function payablesAging(companyId: string, asOf: string): Promise<PayablesAging> {
+  // The kernel aging already nets unapplied debit notes into its reconciliation (D5c).
   const base = await agedPayables({ companyId, asOf });
-  const credits = await unappliedVendorCreditsFils(companyId, asOf);
-  const agingFils = toFils(String(base.totals.total), { rounding: "halfUp" }) - credits;
-  const glFils = toFils(String(base.reconciliation.glBalance), { rounding: "halfUp" });
   const ids = await pool.query(
     `SELECT id, vendor_id FROM vendor_bills WHERE company_id = $1 AND vendor_id IS NOT NULL`,
     [companyId]
@@ -384,15 +367,8 @@ export async function payablesAging(companyId: string, asOf: string): Promise<Pa
   }
   return {
     ...base,
-    unappliedCredits: Number(fromFils(credits)),
     vendors: [...byVendor.values()]
       .map((v) => ({ vendorId: v.vendorId, name: v.name, total: Number(fromFils(v.fils)) }))
       .sort((a, b) => b.total - a.total),
-    reconciliation: {
-      ...base.reconciliation,
-      agingTotal: Number(fromFils(agingFils)),
-      difference: Number(fromFils(glFils - agingFils)),
-      isReconciled: glFils === agingFils,
-    },
   };
 }
