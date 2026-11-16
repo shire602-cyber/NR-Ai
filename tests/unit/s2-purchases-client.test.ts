@@ -6,7 +6,8 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadLocale } from "../../client/src/lib/i18n";
 import {
   billPayTabFromSearch,
   billStatusFilterFromSearch,
@@ -183,6 +184,11 @@ async function renderDialog(props: Record<string, unknown>) {
 }
 
 describe("[R05-19b] ReceiptLinesDialog", () => {
+  // S5 code-splits the namespace catalogs; the dialog reads purchases.* keys.
+  beforeAll(async () => {
+    await loadLocale("en");
+  });
+
   it("splits an unposted receipt into two account lines and PUTs them", async () => {
     const request = vi.fn().mockResolvedValue({ id: "r1" });
     const onSaved = vi.fn();

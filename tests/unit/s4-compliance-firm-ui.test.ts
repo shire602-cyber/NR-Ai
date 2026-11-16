@@ -9,7 +9,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FixItRow } from "../../client/src/pages/dashboard/CompliancePulse";
 import {
   CHECK_ACTIONS,
@@ -17,7 +17,7 @@ import {
   openAuditChecks,
   type AuditReadinessCheck,
 } from "../../client/src/pages/dashboard/auditChecks";
-import { t as catalogs, useI18n } from "../../client/src/lib/i18n";
+import { loadLocale, t as catalogs, useI18n } from "../../client/src/lib/i18n";
 import {
   NR_ONLY_FIRM_PATHS,
   firmPathAllowed,
@@ -40,6 +40,11 @@ const vatCheck: AuditReadinessCheck = {
   explanationKey: "vat_returns.ratio",
   explanationParams: { done: 0, total: 4 },
 };
+
+// S5 code-splits the namespace catalogs; load both locales before reading them.
+beforeAll(async () => {
+  await Promise.all([loadLocale("en"), loadLocale("ar")]);
+});
 
 describe("S4 CompliancePulse maps on check keys (W4-A follow-up)", () => {
   let container: HTMLDivElement;

@@ -30,18 +30,30 @@
       "branches": 48.62,
       "functions": 63.82,
       "lines": 62.86
+    },
+    "unit_2026-11-16_s_integrated": {
+      "statements": 31.42,
+      "branches": 27.1,
+      "functions": 32.03,
+      "lines": 31.84
+    },
+    "db_2026-11-16_s_integrated": {
+      "statements": 62.28,
+      "branches": 50.13,
+      "functions": 65.12,
+      "lines": 64.39
     }
   },
   "thresholds": {
-    "statements": 25,
-    "branches": 25,
-    "functions": 30,
-    "lines": 30
+    "statements": 31,
+    "branches": 27,
+    "functions": 32,
+    "lines": 31
   },
   "db": {
-    "statements": 58,
-    "branches": 46,
-    "functions": 60,
-    "lines": 60
+    "statements": 62,
+    "branches": 50,
+    "functions": 65,
+    "lines": 64
   }
 }
