@@ -1408,7 +1408,7 @@ export default function Budgets() {
               </FormSection>
               <FormSection title={t["forms.budget.monthly"]}>
                 <div className="rounded-lg bg-surface-sunken/60 p-4">
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {MONTH_KEYS.map((key, idx) => (
                       <FormField
                         key={key}

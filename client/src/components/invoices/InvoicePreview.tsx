@@ -70,7 +70,7 @@ function Bi({
   return (
     <span
       className={cn(
-        "flex flex-col leading-tight",
+        "flex flex-col gap-0.5 leading-tight",
         align === "end" ? "items-end text-end" : "items-start text-start",
         className
       )}
@@ -164,10 +164,10 @@ export function InvoicePreview(props: InvoicePreviewProps) {
         </header>
 
         {/* Document meta + bill to */}
-        <div className="grid grid-cols-1 gap-4 border-y border-border py-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 border-y border-border py-4">
           <dl className="space-y-2">
             <div className="flex items-start justify-between gap-3">
-              <dt className="text-muted-foreground">
+              <dt className="shrink-0 whitespace-nowrap text-muted-foreground">
                 <Bi k="forms.preview.invoiceNo" bi={bi} />
               </dt>
               <dd className="font-medium">
@@ -179,7 +179,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
               </dd>
             </div>
             <div className="flex items-start justify-between gap-3">
-              <dt className="text-muted-foreground">
+              <dt className="shrink-0 whitespace-nowrap text-muted-foreground">
                 <Bi k="forms.preview.issueDate" bi={bi} />
               </dt>
               <dd className="font-medium">
@@ -191,7 +191,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
               </dd>
             </div>
             <div className="flex items-start justify-between gap-3">
-              <dt className="text-muted-foreground">
+              <dt className="shrink-0 whitespace-nowrap text-muted-foreground">
                 <Bi k="forms.preview.placeOfSupply" bi={bi} />
               </dt>
               <dd className="text-end font-medium">{placeOfSupply || placeholder}</dd>
@@ -267,7 +267,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
         {/* Totals */}
         <dl className="ms-auto w-full max-w-xs space-y-1.5 border-t border-border pt-3">
           <div className="flex items-start justify-between gap-3">
-            <dt className="text-muted-foreground">
+            <dt className="shrink-0 whitespace-nowrap text-muted-foreground">
               <Bi k="forms.preview.subtotal" bi={bi} />
             </dt>
             <dd>
@@ -275,7 +275,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
             </dd>
           </div>
           <div className="flex items-start justify-between gap-3">
-            <dt className="text-muted-foreground">
+            <dt className="shrink-0 whitespace-nowrap text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Bi k="forms.preview.vatTotal" bi={bi} />
                 <Ltr className="self-start text-caption">{`(${ratesLabel})`}</Ltr>

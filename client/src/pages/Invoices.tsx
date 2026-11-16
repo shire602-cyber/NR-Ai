@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -21,7 +21,6 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { FormActions, FormErrorSummary, FormGrid, FormSection } from "@/components/ui/form-layout";
-import { InvoicePreview } from "@/components/invoices/InvoicePreview";
 import {
   Dialog,
   DialogContent,
@@ -120,6 +119,11 @@ import {
   parseInvoiceStatusFilter,
   type InvoiceStatusFilter,
 } from "@/lib/invoice-filters";
+
+// D5b: the bilingual preview is its own chunk (only loaded when the invoice dialog opens).
+const InvoicePreview = lazy(() =>
+  import("@/components/invoices/InvoicePreview").then((m) => ({ default: m.InvoicePreview }))
+);
 
 // R07-01: each line carries an explicit UAE supply type; the VAT rate follows
 // from it (5% standard, 0% for zero-rated / exempt / out of scope).
@@ -1506,7 +1510,7 @@ export default function Invoices() {
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </div>
-                              <div className="grid grid-cols-2 gap-x-3 gap-y-3 ps-7 sm:grid-cols-[5rem_7rem_minmax(0,1fr)_5rem_minmax(6.5rem,auto)]">
+                              <div className="mobile-keep-cols grid grid-cols-2 gap-x-3 gap-y-3 ps-7 sm:grid-cols-[5rem_7rem_minmax(0,1fr)_5rem_minmax(6.5rem,auto)]">
                                 <FormField
                                   control={form.control}
                                   name={`lines.${index}.quantity`}
@@ -1707,38 +1711,40 @@ export default function Invoices() {
                     </div>
 
                     <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
-                      <InvoicePreview
-                        sellerName={company?.legalName || company?.name}
-                        sellerTrn={company?.trnVatNumber}
-                        sellerAddress={company?.businessAddress}
-                        number={editingInvoice ? form.watch("number") : null}
-                        date={form.watch("date")}
-                        customerName={form.watch("customerName")}
-                        customerTrn={form.watch("customerTrn")}
-                        placeOfSupply={
-                          form.watch("placeOfSupplyEmirate")
-                            ? t[`invoices.emirate.${form.watch("placeOfSupplyEmirate")}`]
-                            : null
-                        }
-                        currency="AED"
-                        lines={watchLines.map((line, i) => ({
-                          description: line.description,
-                          quantity: Number(line.quantity) || 0,
-                          unitPrice: Number(line.unitPrice) || 0,
-                          vatRate: formTotals.lines[i]?.vatRate ?? 0,
-                          lineTotal: formTotals.lines[i]?.lineTotal ?? 0,
-                        }))}
-                        subtotal={subtotal}
-                        vatAmount={vatAmount}
-                        total={total}
-                        ratesLabel={
-                          formTotals.ratesCharged.length
-                            ? formTotals.ratesCharged
-                                .map((r) => `${Math.round(r * 100)}%`)
-                                .join(" / ")
-                            : "0%"
-                        }
-                      />
+                      <Suspense fallback={<Skeleton className="h-96 w-full rounded-xl" />}>
+                        <InvoicePreview
+                          sellerName={company?.legalName || company?.name}
+                          sellerTrn={company?.trnVatNumber}
+                          sellerAddress={company?.businessAddress}
+                          number={editingInvoice ? form.watch("number") : null}
+                          date={form.watch("date")}
+                          customerName={form.watch("customerName")}
+                          customerTrn={form.watch("customerTrn")}
+                          placeOfSupply={
+                            form.watch("placeOfSupplyEmirate")
+                              ? t[`invoices.emirate.${form.watch("placeOfSupplyEmirate")}`]
+                              : null
+                          }
+                          currency="AED"
+                          lines={watchLines.map((line, i) => ({
+                            description: line.description,
+                            quantity: Number(line.quantity) || 0,
+                            unitPrice: Number(line.unitPrice) || 0,
+                            vatRate: formTotals.lines[i]?.vatRate ?? 0,
+                            lineTotal: formTotals.lines[i]?.lineTotal ?? 0,
+                          }))}
+                          subtotal={subtotal}
+                          vatAmount={vatAmount}
+                          total={total}
+                          ratesLabel={
+                            formTotals.ratesCharged.length
+                              ? formTotals.ratesCharged
+                                  .map((r) => `${Math.round(r * 100)}%`)
+                                  .join(" / ")
+                              : "0%"
+                          }
+                        />
+                      </Suspense>
                     </aside>
 
                     <FormActions sticky className="lg:col-span-2">

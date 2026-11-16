@@ -447,8 +447,8 @@
     grid-template-columns: 1fr !important;
   }
 
-  /* Full-width modals on mobile */
-  [role="dialog"] {
+  /* Full-width modals on mobile (sized dialogs, D5b, are sheets and size themselves) */
+  [role="dialog"]:not([data-size]) {
     width: calc(100vw - 2rem) !important;
     max-width: 100% !important;
     max-height: calc(100vh - 2rem) !important;

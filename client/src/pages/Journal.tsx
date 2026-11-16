@@ -519,7 +519,7 @@ export default function Journal() {
                     {fields.map((field, index) => (
                       <li
                         key={field.id}
-                        className="grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] sm:items-start"
+                        className="mobile-keep-cols grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] sm:items-start"
                       >
                         <FormField
                           control={form.control}
@@ -624,7 +624,7 @@ export default function Journal() {
                       </li>
                     ))}
                   </ol>
-                  <div className="grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem]">
+                  <div className="mobile-keep-cols grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem]">
                     <span className="col-span-2 text-muted-foreground sm:col-span-1">
                       {t["forms.preview.total"]}
                     </span>
