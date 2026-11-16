@@ -122,5 +122,6 @@
   "portal.invoiceCountOne": "1 invoice",
   "portal.invoiceCountMany": "{count} invoices",
   "portal.uploadedFiles": "uploaded files",
-  "portal.dueOn": "Due {date}"
+  "portal.dueOn": "Due {date}",
+  "portal.periodEnd": "Period end: {date}"
 }

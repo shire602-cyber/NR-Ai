@@ -118,5 +118,6 @@
   "firm.vatOk": "سليم",
   "firm.clientsManagedOne": "عميل واحد يديره مكتبك",
   "firm.clientsManagedMany": "{count} عملاء يديرهم مكتبك",
-  "firm.vatDue30d": "ضريبة مستحقة خلال 30 يومًا"
+  "firm.vatDue30d": "ضريبة مستحقة خلال 30 يومًا",
+  "firm.emptyColumn": "لا شيء هنا"
 }

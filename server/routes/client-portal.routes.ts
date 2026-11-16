@@ -17,7 +17,14 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
-import { invoices, messages, type Company, type CustomerContact } from "../../shared/schema";
+import {
+  firmClientLinks,
+  firms,
+  invoices,
+  messages,
+  type Company,
+  type CustomerContact,
+} from "../../shared/schema";
 import { portalAccountForUser } from "../services/portal-access.service";
 import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
 import {
@@ -91,7 +98,15 @@ export function registerClientPortalRoutes(app: Express): void {
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { company, contact } = scopeOf(req);
+      // The accounting firm serving this client (active engagement), for the portal header.
+      const [firm] = await db
+        .select({ name: firms.name })
+        .from(firmClientLinks)
+        .innerJoin(firms, eq(firms.id, firmClientLinks.firmId))
+        .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
+        .limit(1);
       res.json({
+        firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
         logoUrl: company.logoUrl ?? null,

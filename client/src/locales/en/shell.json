@@ -97,5 +97,6 @@
   "shell.cmdSectionPackReadiness": "Report pack readiness · {workspace}",
   "shell.cmdSectionAutomationRules": "Report automation rules · {workspace}",
   "shell.cmdSectionCommandCenter": "Automation command center · {workspace}",
-  "shell.cmdSectionPackAutomation": "Report pack automation · {workspace}"
+  "shell.cmdSectionPackAutomation": "Report pack automation · {workspace}",
+  "shell.portalFooterNamed": "{name} — Client Portal"
 }

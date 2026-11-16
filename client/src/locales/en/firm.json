@@ -118,5 +118,6 @@
   "firm.vatOk": "OK",
   "firm.clientsManagedOne": "1 client managed by your firm",
   "firm.clientsManagedMany": "{count} clients managed by your firm",
-  "firm.vatDue30d": "VAT due in 30 days"
+  "firm.vatDue30d": "VAT due in 30 days",
+  "firm.emptyColumn": "Nothing here"
 }

@@ -403,10 +403,10 @@
   "pages.notificationChannels": "قنوات الإشعارات",
   "pages.notificationTypes": "أنواع الإشعارات",
   "pages.november": "نوفمبر",
-  "pages.nrBookkeeperCommandCenter": "مركز قيادة مسك الدفاتر NR",
+  "pages.nrBookkeeperCommandCenter": "مركز قيادة المكتب",
   "pages.nrServiceScope": "نطاق خدمات NR",
   "pages.nrServicesForThisClient": "خدمات NR لهذا العميل",
-  "pages.nraClientPortfolio": "محفظة عملاء NRA",
+  "pages.nraClientPortfolio": "محفظة العملاء",
   "pages.number": "الرقم",
   "pages.ocrDrafts": "مسودات التعرف الضوئي",
   "pages.october": "أكتوبر",
@@ -859,5 +859,7 @@
   "pages.contactsColEmail": "البريد الإلكتروني",
   "pages.contactsColPhone": "الهاتف",
   "pages.contactsColLocation": "الموقع",
-  "pages.contactsColActions": "الإجراءات"
+  "pages.contactsColActions": "الإجراءات",
+  "pages.subscriptionNoRenewal": "بدون تجديد — الباقة المجانية",
+  "pages.subscriptionRenewal": "التجديد"
 }

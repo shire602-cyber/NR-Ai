@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { FileCheck2, Download, ShieldAlert, ShieldCheck } from "lucide-react";
+import { FileCheck2, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,13 +41,6 @@ const COPY = {
     title: "UAE e-invoicing",
     description:
       "Peppol PINT AE documents for the FTA e-invoicing system. Transmission runs through an Accredited Service Provider (ASP).",
-    aspTitle: "Accredited Service Provider",
-    aspNotConnected: "ASP: not connected — contract required",
-    aspSandbox: "ASP: sandbox (test transmissions only)",
-    aspLive: "ASP: connected (production)",
-    aspProvider: "Adapter",
-    aspEnvironment: "Environment",
-    aspNone: "None configured",
     scopeTitle: "Scope and go-live",
     scope: "Scope",
     scopeB2b: "B2B",
@@ -116,13 +109,6 @@ const COPY = {
     title: "الفوترة الإلكترونية في الإمارات",
     description:
       "مستندات Peppol PINT AE لنظام الفوترة الإلكترونية لدى الهيئة الاتحادية للضرائب. يتم الإرسال عبر مزود خدمة معتمد.",
-    aspTitle: "مزود الخدمة المعتمد",
-    aspNotConnected: "مزود الخدمة: غير متصل — يلزم التعاقد",
-    aspSandbox: "مزود الخدمة: بيئة تجريبية (إرسال اختباري فقط)",
-    aspLive: "مزود الخدمة: متصل (إنتاج)",
-    aspProvider: "المحوّل",
-    aspEnvironment: "البيئة",
-    aspNone: "لا يوجد إعداد",
     scopeTitle: "النطاق وموعد التطبيق",
     scope: "النطاق",
     scopeB2b: "بين الشركات",
@@ -292,31 +278,6 @@ function formFromView(view: SettingsView | undefined): FormState {
   };
 }
 
-function AspBadge({ view, s }: { view: SettingsView; s: Copy }) {
-  const status = view.asp.capability.status;
-  if (view.asp.connected && status === "live") {
-    return (
-      <Badge className="gap-1" variant="default" data-testid="asp-status">
-        <ShieldCheck className="h-3.5 w-3.5" />
-        {s.aspLive}
-      </Badge>
-    );
-  }
-  if (view.asp.connected && status === "sandbox") {
-    return (
-      <Badge className="gap-1" variant="secondary" data-testid="asp-status">
-        {s.aspSandbox}
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="gap-1" variant="destructive" data-testid="asp-status">
-      <ShieldAlert className="h-3.5 w-3.5" />
-      {s.aspNotConnected}
-    </Badge>
-  );
-}
-
 function layerText(l: LayerSummary | undefined, s: Copy): string {
   if (!l) return "—";
   if (!l.available) return s.unavailable;
@@ -422,28 +383,6 @@ export default function EInvoicingSettings() {
         <p className="text-muted-foreground">{s.loading}</p>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex flex-wrap items-center gap-3">
-                {s.aspTitle}
-                <AspBadge view={view} s={s} />
-              </CardTitle>
-              <CardDescription>
-                {view.asp.capability.externalAction[locale === "ar" ? "ar" : "en"]}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-              <div>
-                <span className="text-muted-foreground">{s.aspProvider}: </span>
-                {view.asp.provider.name ?? s.aspNone}
-              </div>
-              <div>
-                <span className="text-muted-foreground">{s.aspEnvironment}: </span>
-                {view.asp.provider.environment ?? view.asp.provider.error ?? s.aspNone}
-              </div>
-            </CardContent>
-          </Card>
-
           {/* E1: guided A-Cube connection (five corners, EmaraTax steps, timeline, scope). */}
           {companyId && <AcubeConnectCard companyId={companyId} />}
 

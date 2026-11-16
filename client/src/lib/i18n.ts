@@ -477,7 +477,7 @@ const baseT = {
     // Sidebar group titles & new nav items
     sales: "Sales",
     purchases: "Purchases",
-    nraCenter: "NRA Center",
+    nraCenter: "Practice command centre",
     companyProfile: "Company Profile",
     companySettings: "Company Settings",
     healthDashboard: "Health Dashboard",
@@ -920,7 +920,7 @@ const baseT = {
     // Sidebar group titles & new nav items
     sales: "المبيعات",
     purchases: "المشتريات",
-    nraCenter: "مركز NRA",
+    nraCenter: "مركز قيادة المكتب",
     companyProfile: "ملف الشركة",
     companySettings: "إعدادات الشركة",
     healthDashboard: "لوحة الصحة",

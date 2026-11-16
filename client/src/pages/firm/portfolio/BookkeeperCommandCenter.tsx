@@ -482,7 +482,7 @@ export function BookkeeperCommandCenter({
                   <div className="mt-3 space-y-2 min-h-[132px]">
                     {bucket.items.length === 0 && (
                       <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
-                        <T k="pages.clear" />
+                        <T k="firm.emptyColumn" />
                       </div>
                     )}
                     {bucket.items.map((item) => (
@@ -494,7 +494,7 @@ export function BookkeeperCommandCenter({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
+                            <p dir="auto" className="text-sm font-medium truncate text-start">
                               {item.client.companyName}
                             </p>
                             <p className="text-xs text-muted-foreground">
@@ -561,7 +561,9 @@ export function BookkeeperCommandCenter({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{client.companyName}</p>
+                        <p dir="auto" className="text-sm font-medium truncate text-start">
+                          {client.companyName}
+                        </p>
                         <p className="text-xs text-muted-foreground truncate">
                           {fx(client.nextBestAction)}
                         </p>
@@ -734,7 +736,9 @@ export function BookkeeperCommandCenter({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p dir="auto" className="text-sm font-medium truncate text-start">
+                            {client.companyName}
+                          </p>
                           <p className="text-xs text-muted-foreground truncate">
                             {fx(intervention.title)}
                           </p>
@@ -789,7 +793,9 @@ export function BookkeeperCommandCenter({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p dir="auto" className="text-sm font-medium truncate text-start">
+                            {client.companyName}
+                          </p>
                           <p className="text-xs text-muted-foreground truncate">
                             {fx(intervention.ownerAction)}
                           </p>
@@ -832,7 +838,9 @@ export function BookkeeperCommandCenter({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p dir="auto" className="text-sm font-medium truncate text-start">
+                            {client.companyName}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {client.bookkeeping.overdueInvoiceCount}{" "}
                             {b("overdue invoices", "فواتير متأخرة")}
@@ -984,7 +992,9 @@ export function BookkeeperCommandCenter({
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-sm truncate">{item.companyName}</p>
+                        <p dir="auto" className="font-medium text-sm truncate text-start">
+                          {item.companyName}
+                        </p>
                         <PriorityBadge priority={item.priority} />
                         <span className="text-xs text-muted-foreground">{fx(item.metric)}</span>
                       </div>
@@ -1154,7 +1164,9 @@ export function BookkeeperCommandCenter({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="font-medium text-sm truncate">{client.companyName}</p>
+                          <p dir="auto" className="font-medium text-sm truncate text-start">
+                            {client.companyName}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {fdShort(client.dueDate)} · {fx(formatDays(client.daysTilDue))}
                           </p>
@@ -1195,7 +1207,9 @@ export function BookkeeperCommandCenter({
                 className="w-full rounded-md border px-3 py-2 text-start hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <p dir="auto" className="text-sm font-medium truncate text-start">
+                    {client.companyName}
+                  </p>
                   <PriorityBadge priority={client.priority} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate">
@@ -1222,7 +1236,9 @@ export function BookkeeperCommandCenter({
             {ctClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <p dir="auto" className="text-sm font-medium truncate text-start">
+                    {client.companyName}
+                  </p>
                   <span className="text-xs text-muted-foreground">
                     {fx(formatDays(client.corporateTax.daysTilDue))}
                   </span>
@@ -1251,7 +1267,9 @@ export function BookkeeperCommandCenter({
             {closeClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <p dir="auto" className="text-sm font-medium truncate text-start">
+                    {client.companyName}
+                  </p>
                   <span className="text-xs font-medium">{client.bookkeeping.closeProgress}%</span>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -1284,7 +1302,9 @@ export function BookkeeperCommandCenter({
             {accountingClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <p dir="auto" className="text-sm font-medium truncate text-start">
+                    {client.companyName}
+                  </p>
                   <PriorityBadge priority={client.accounting.status} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate">

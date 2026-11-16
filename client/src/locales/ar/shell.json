@@ -97,5 +97,6 @@
   "shell.cmdSectionPackReadiness": "جاهزية حزمة التقارير · {workspace}",
   "shell.cmdSectionAutomationRules": "قواعد أتمتة التقارير · {workspace}",
   "shell.cmdSectionCommandCenter": "مركز أوامر الأتمتة · {workspace}",
-  "shell.cmdSectionPackAutomation": "أتمتة حزمة التقارير · {workspace}"
+  "shell.cmdSectionPackAutomation": "أتمتة حزمة التقارير · {workspace}",
+  "shell.portalFooterNamed": "{name} — بوابة العميل"
 }

@@ -122,5 +122,6 @@
   "portal.invoiceCountOne": "فاتورة واحدة",
   "portal.invoiceCountMany": "{count} فواتير",
   "portal.uploadedFiles": "ملفات مرفوعة",
-  "portal.dueOn": "مستحق في {date}"
+  "portal.dueOn": "مستحق في {date}",
+  "portal.periodEnd": "نهاية الفترة: {date}"
 }

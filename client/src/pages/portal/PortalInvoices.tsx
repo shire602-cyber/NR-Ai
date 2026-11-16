@@ -2,27 +2,21 @@ import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
 import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
-import { format } from "date-fns";
+import { formatDate } from "@/lib/format-date";
+import { Money } from "@/components/ui/money";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { useTranslation } from "@/lib/i18n";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 
-function formatAed(n: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  paid: "border-success/30 text-success bg-success-subtle",
-  unpaid: "border-info/30 text-info bg-info-subtle",
-  partially_paid: "border-warning/30 text-warning bg-warning-subtle",
-  overdue: "border-destructive/30 text-destructive bg-danger-subtle",
-  credit: "border-border text-muted-foreground",
+const STATUS_TONE: Record<string, StatusTone> = {
+  paid: "success",
+  unpaid: "info",
+  partially_paid: "warning",
+  overdue: "danger",
+  credit: "neutral",
 };
 
 async function downloadPdf(invoiceId: string, invoiceNumber: string) {
@@ -40,6 +34,7 @@ async function downloadPdf(invoiceId: string, invoiceNumber: string) {
 }
 
 export default function PortalInvoices() {
+  const { t, locale } = useTranslation();
   const { data: invoices = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-invoices"],
     queryFn: () => apiRequest("GET", "/api/client-portal/invoices"),
@@ -72,9 +67,11 @@ export default function PortalInvoices() {
                 <thead>
                   <tr className="border-b border-border bg-muted">
                     <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                      Invoice #
+                      <T k="portal.invoiceNumber" />
                     </th>
-                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">Date</th>
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                      <T k="portal.date" />
+                    </th>
                     <th className="text-start px-4 py-3 font-medium text-muted-foreground">
                       <T k="pages.dueDate" />
                     </th>
@@ -92,24 +89,18 @@ export default function PortalInvoices() {
                     <tr key={inv.id} className="hover:bg-muted transition-colors">
                       <td className="px-4 py-3 font-medium text-foreground">{inv.number}</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {inv.date ? format(new Date(inv.date), "MMM d, yyyy") : "—"}
+                        {inv.date ? formatDate(inv.date, locale) : "—"}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {inv.dueDate ? format(new Date(inv.dueDate), "MMM d, yyyy") : "—"}
+                        {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
                       </td>
                       <td className="px-4 py-3 text-end font-semibold text-foreground">
-                        {formatAed(Number(inv.amountDue) || 0)}
+                        <Money amount={Number(inv.amountDue) || 0} currency="AED" />
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          variant="outline"
-                          className={
-                            STATUS_STYLES[inv.paymentStatus] ??
-                            "border-border text-muted-foreground"
-                          }
-                        >
-                          <T k={`portal.payStatus.${inv.paymentStatus}`} />
-                        </Badge>
+                        <StatusBadge tone={STATUS_TONE[inv.paymentStatus] ?? "neutral"}>
+                          {t[`portal.payStatus.${inv.paymentStatus}`] ?? inv.paymentStatus}
+                        </StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-end">
                         <Button

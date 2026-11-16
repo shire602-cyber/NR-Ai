@@ -154,11 +154,13 @@ function UsageMeter({
   used,
   limit,
   icon: Icon,
+  onUpgrade,
 }: {
   label: string;
   used: number;
   limit: number;
   icon: React.ElementType;
+  onUpgrade?: () => void;
 }) {
   const isUnlimited = limit === -1;
   const percentage = isUnlimited ? 0 : Math.min((used / limit) * 100, 100);
@@ -173,12 +175,25 @@ function UsageMeter({
           <Icon className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">{label}</span>
         </div>
-        <span
-          className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
-        >
-          {isUnlimited
-            ? formatMessage(t["pages.subscriptionUsedCount"], { used })
-            : `${used} / ${limit}`}
+        <span className="flex items-center gap-3">
+          <span
+            className={`text-sm tabular-nums ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
+          >
+            {isUnlimited
+              ? formatMessage(t["pages.subscriptionUsedCount"], { used })
+              : `${used} / ${limit}`}
+          </span>
+          {isAtLimit && onUpgrade && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onUpgrade}
+              data-testid="usage-upgrade"
+            >
+              {t["pages.subscriptionUpgrade"]}
+            </Button>
+          )}
         </span>
       </div>
       {!isUnlimited && (
@@ -239,6 +254,8 @@ export default function Subscription() {
   }
 
   const currentPlan = PLANS.find((p) => p.id === tierName) || PLANS[0];
+  const scrollToPlans = () =>
+    document.getElementById("subscription-plans")?.scrollIntoView({ behavior: "smooth" });
 
   return (
     <div className="space-y-6">
@@ -292,10 +309,16 @@ export default function Subscription() {
             {subscription?.currentPeriodEnd && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  <T k="pageLabels.currentPeriodEnds" />
+                  {tierName === "free" ? (
+                    <T k="pages.subscriptionRenewal" />
+                  ) : (
+                    <T k="pageLabels.currentPeriodEnds" />
+                  )}
                 </span>
                 <span className="font-medium">
-                  {formatDisplayDate(subscription.currentPeriodEnd, locale)}
+                  {tierName === "free"
+                    ? t["pages.subscriptionNoRenewal"]
+                    : formatDisplayDate(subscription.currentPeriodEnd, locale)}
                 </span>
               </div>
             )}
@@ -329,24 +352,28 @@ export default function Subscription() {
           </CardHeader>
           <CardContent className="space-y-5">
             <UsageMeter
+              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageInvoices"]}
               used={usage?.invoices?.used ?? 0}
               limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
               icon={FileText}
             />
             <UsageMeter
+              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageReceipts"]}
               used={usage?.receipts?.used ?? 0}
               limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
               icon={Receipt}
             />
             <UsageMeter
+              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageAiCredits"]}
               used={usage?.aiCredits?.used ?? 0}
               limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
               icon={Brain}
             />
             <UsageMeter
+              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageTeamMembers"]}
               used={usage?.users?.used ?? 0}
               limit={usage?.users?.limit ?? currentPlan.limits.users}
@@ -354,6 +381,7 @@ export default function Subscription() {
             />
             {usage?.storage && usage.storage.used != null && (
               <UsageMeter
+                onUpgrade={scrollToPlans}
                 label={t["pages.subscriptionUsageStorage"]}
                 used={usage.storage.used}
                 limit={usage.storage.limit}
@@ -391,7 +419,7 @@ export default function Subscription() {
       </div>
 
       {/* Plan Cards */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div id="subscription-plans" className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 scroll-mt-4">
         {PLANS.map((plan) => {
           const isCurrent = plan.id === tierName;
           const price = billingCycle === "yearly" ? plan.yearlyPrice : plan.monthlyPrice;

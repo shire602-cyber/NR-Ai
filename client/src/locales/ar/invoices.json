@@ -81,5 +81,7 @@
   "invoices.deleteTitle": "حذف الفاتورة {number}؟",
   "invoices.deleteBody": "سيؤدي هذا إلى حذف الفاتورة نهائيًا. لا يمكن التراجع عن ذلك.",
   "invoices.einvoiceShort": "إلكترونية",
-  "invoices.exporting": "جارٍ التصدير…"
+  "invoices.exporting": "جارٍ التصدير…",
+  "invoices.einvoiceBuyerHint": "الفوترة الإلكترونية مفعّلة لهذه الشركة. يحتاج المشتري المسجّل في ضريبة القيمة المضافة إلى الشارع والمدينة والإمارة في بيانات جهة الاتصال قبل إصدار هذه الفاتورة كفاتورة إلكترونية.",
+  "invoices.einvoiceBuyerHintLink": "تحديث جهة الاتصال"
 }

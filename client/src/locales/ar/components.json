@@ -419,5 +419,7 @@
   "components.validation.notMultiple": "يجب أن تكون القيمة من مضاعفات {n}",
   "components.validation.unknownField": "حقل غير معروف",
   "components.validation.serverGeneric": "تعذّر حفظ البيانات. راجع النموذج وحاول مرة أخرى.",
-  "components.validation.serverFields": "تعذّر حفظ البيانات. راجع الحقول التالية: {fields}"
+  "components.validation.serverFields": "تعذّر حفظ البيانات. راجع الحقول التالية: {fields}",
+  "components.notificationPayrollApproved": "تم اعتماد رواتب {period}.",
+  "components.notificationMore": "مزيد من الإجراءات"
 }

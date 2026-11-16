@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { removeToken } from "@/lib/auth";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 const NAV_ITEMS = [
   { labelKey: "shell.portalDashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
@@ -127,7 +127,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             </h1>
           </div>
           <span className="hidden text-caption text-muted-foreground sm:inline">
-            {t["shell.portalFooter"]}
+            {company?.firmName
+              ? formatMessage(t["shell.portalFooterNamed"], { name: company.firmName })
+              : t["shell.clientPortal"]}
           </span>
           <Button
             variant="ghost"

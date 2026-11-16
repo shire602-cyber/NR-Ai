@@ -4,12 +4,32 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { apiRequest } from "@/lib/queryClient";
 
 import { Loader2 } from "lucide-react";
 import { Money } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
+
+const PAY_TONE: Record<string, StatusTone> = {
+  paid: "success",
+  partially_paid: "warning",
+  overdue: "danger",
+  unpaid: "info",
+  credit: "neutral",
+};
+
+function KpiIcon({ tone, children }: { tone: string; children: React.ReactNode }) {
+  return (
+    <span
+      aria-hidden
+      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`}
+    >
+      {children}
+    </span>
+  );
+}
 
 function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) {
   const { t, locale } = useTranslation();
@@ -97,7 +117,9 @@ export default function PortalDashboard() {
                     : formatMessage(t["portal.invoiceCountMany"], { count: inv.outstanding ?? 0 })}
                 </p>
               </div>
-              <AlertCircle className="w-5 h-5 text-warning mt-1" />
+              <KpiIcon tone="bg-warning-subtle text-warning-subtle-foreground">
+                <AlertCircle className="h-5 w-5" />
+              </KpiIcon>
             </div>
           </CardContent>
         </Card>
@@ -118,7 +140,9 @@ export default function PortalDashboard() {
                     : formatMessage(t["portal.invoiceCountMany"], { count: inv.paid ?? 0 })}
                 </p>
               </div>
-              <CheckCircle2 className="w-5 h-5 text-success mt-1" />
+              <KpiIcon tone="bg-success-subtle text-success-subtle-foreground">
+                <CheckCircle2 className="h-5 w-5" />
+              </KpiIcon>
             </div>
           </CardContent>
         </Card>
@@ -135,7 +159,9 @@ export default function PortalDashboard() {
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">{t["portal.uploadedFiles"]}</p>
               </div>
-              <FolderOpen className="w-5 h-5 text-info mt-1" />
+              <KpiIcon tone="bg-info-subtle text-info-subtle-foreground">
+                <FolderOpen className="h-5 w-5" />
+              </KpiIcon>
             </div>
           </CardContent>
         </Card>
@@ -152,11 +178,15 @@ export default function PortalDashboard() {
                 </div>
                 {vatStatus?.dueDate && (
                   <p className="mt-1 text-caption text-muted-foreground">
-                    Period end: {formatDate(vatStatus.periodEnd ?? vatStatus.dueDate, locale)}
+                    {formatMessage(t["portal.periodEnd"], {
+                      date: formatDate(vatStatus.periodEnd ?? vatStatus.dueDate, locale),
+                    })}
                   </p>
                 )}
               </div>
-              <Calendar className="w-5 h-5 text-chart-5 mt-1" />
+              <KpiIcon tone="bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+                <Calendar className="h-5 w-5" />
+              </KpiIcon>
             </div>
           </CardContent>
         </Card>
@@ -186,23 +216,12 @@ export default function PortalDashboard() {
                     </p>
                   </div>
                   <div className="text-end">
-                    <p className="text-sm font-semibold text-foreground">
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
                       <Money amount={Number(inv.amountDue ?? inv.total) || 0} currency="AED" />
                     </p>
-                    <Badge
-                      variant="outline"
-                      className={
-                        inv.status === "paid"
-                          ? "border-success/30 text-success bg-success-subtle"
-                          : inv.status === "sent"
-                            ? "border-info/30 text-info bg-info-subtle"
-                            : inv.status === "partial"
-                              ? "border-warning/30 text-warning bg-warning-subtle"
-                              : "border-border text-muted-foreground"
-                      }
-                    >
-                      {inv.status}
-                    </Badge>
+                    <StatusBadge tone={PAY_TONE[inv.paymentStatus] ?? "neutral"}>
+                      {t[`portal.payStatus.${inv.paymentStatus}`] ?? inv.paymentStatus}
+                    </StatusBadge>
                   </div>
                 </div>
               ))}

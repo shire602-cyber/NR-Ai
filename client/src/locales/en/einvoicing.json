@@ -118,7 +118,7 @@
   "einvoicing.sandbox": "Sandbox",
   "einvoicing.acubeNotConnected": "Not connected",
   "einvoicing.acubeNotConnectedTitle": "A-Cube is not connected on this account",
-  "einvoicing.acubeNotConnectedBody": "E-invoices are generated and validated here, but nothing is sent until an A-Cube account is connected. Contact Muhasib support to connect it.",
+  "einvoicing.acubeNotConnectedBody": "E-invoices are generated and validated here, but nothing is sent until an A-Cube account is connected. Request the connection and our team will set it up with you.",
   "einvoicing.leStatus_none": "Not linked yet",
   "einvoicing.leStatus_reserved": "Waiting for EmaraTax",
   "einvoicing.leStatus_pending": "Linking",
@@ -169,7 +169,7 @@
   "einvoicing.lastSync": "Last synced",
   "einvoicing.goLive": "Your go-live date",
   "einvoicing.goLiveUnset": "Choose your turnover band below",
-  "einvoicing.accreditation": "MoF accreditation no.",
+  "einvoicing.accreditation": "A-Cube accreditation no.",
   "einvoicing.registerLabel": "Official register",
   "einvoicing.registerLink": "View on the Ministry of Finance register",
   "einvoicing.timelineTitle": "Mandate timeline",
@@ -185,5 +185,12 @@
   "einvoicing.scopeB2c": "Sales to individuals (B2C) are not in scope yet: they are booked as usual without e-invoicing.",
   "einvoicing.scopeCreditNotes": "Credit notes are e-invoices in their own right: sent and reported like invoices.",
   "einvoicing.scopeVoid": "A sent e-invoice cannot be cancelled; correct it with a credit note.",
-  "einvoicing.delivery_validated_short": "Not sent"
+  "einvoicing.delivery_validated_short": "Not sent",
+  "einvoicing.requestConnection": "Request connection",
+  "einvoicing.requestConnectionSubject": "Request A-Cube e-invoicing connection",
+  "einvoicing.headerTitle": "E-invoice",
+  "einvoicing.headerDetails": "Details",
+  "einvoicing.headerFix": "Fix",
+  "einvoicing.headerIssueOne": "{field} is needed before this e-invoice can be sent.",
+  "einvoicing.headerIssueMany": "{field} and {count} more items are needed before this e-invoice can be sent."
 }
