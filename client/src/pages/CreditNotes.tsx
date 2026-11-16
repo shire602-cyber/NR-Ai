@@ -7,7 +7,6 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,7 +23,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -34,8 +32,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/badge";
+import { DataTableCard } from "@/components/ui/data-table";
+import { MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { Link } from "wouter";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -45,12 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -58,17 +54,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  Plus,
-  CalendarIcon,
-  Trash2,
-  Download,
-  MoreHorizontal,
-  FileText,
-  Loader2,
-} from "lucide-react";
+import { Plus, CalendarIcon, Trash2, Download, FileText, Loader2, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EmptyState } from "@/components/ui/empty-state";
 
 const creditNoteLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -304,19 +291,6 @@ export default function CreditNotes() {
     }
   };
 
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "bg-muted text-foreground ";
-      case "issued":
-        return "bg-success-subtle text-success ";
-      case "void":
-        return "bg-danger-subtle text-destructive ";
-      default:
-        return "bg-muted text-foreground ";
-    }
-  };
-
   const watchLines = form.watch("lines");
   const subtotal = watchLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const vatAmount = watchLines.reduce(
@@ -351,495 +325,487 @@ export default function CreditNotes() {
         eyebrow="Sales"
         title={t.creditNotes}
         description={(t as any).creditNotesSubtitle ?? "View credit notes created from invoices"}
+        actions={
+          <Button asChild title={t["screens.creditNoteFromInvoiceHint"]}>
+            <Link href="/invoices">
+              <Plus aria-hidden />
+              <T k="pages.createFromInvoice" />
+            </Link>
+          </Button>
+        }
       />
 
-      <div className="flex items-center justify-end flex-wrap gap-4">
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) resetForm();
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button disabled title="Create credit notes from the original invoice actions.">
-              <Plus className="w-4 h-4 mr-2" />
-              <T k="pages.createFromInvoice" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {editingCreditNote ? "Edit Credit Note" : "New Credit Note"}
-              </DialogTitle>
-              <DialogDescription>
-                {editingCreditNote
-                  ? "Update credit note details"
-                  : "Create a new credit note linked to an invoice"}
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.creditNoteNumber" />
-                        </FormLabel>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingCreditNote ? t["screens.editCreditNote"] : t["screens.newCreditNote"]}
+            </DialogTitle>
+            <DialogDescription>
+              {editingCreditNote
+                ? "Update credit note details"
+                : "Create a new credit note linked to an invoice"}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="number"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.creditNoteNumber" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="invoiceId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.relatedInvoice" />
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
                         <FormControl>
-                          <Input {...field} className="font-mono" />
+                          <SelectTrigger>
+                            <SelectValue placeholder={t["screens.selectInvoiceOptional"]} />
+                          </SelectTrigger>
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="invoiceId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.relatedInvoice" />
-                        </FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <SelectContent>
+                          {invoices.map((inv: Invoice) => (
+                            <SelectItem key={inv.id} value={inv.id}>
+                              {inv.number} - {inv.customerName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="customerName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.customerName" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerTrn"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.customerTrn" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder={t["screens.optional"]} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t.date}</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select invoice (optional)" />
-                            </SelectTrigger>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-start font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="h-4 w-4" />
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>
+                                  <T k="pages.pickADate" />
+                                </span>
+                              )}
+                            </Button>
                           </FormControl>
-                          <SelectContent>
-                            {invoices.map((inv: Invoice) => (
-                              <SelectItem key={inv.id} value={inv.id}>
-                                {inv.number} - {inv.customerName}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="customerName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.customerName" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerTrn"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.customerTrn" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Optional" className="font-mono" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? (
-                                  format(field.value, "PPP")
-                                ) : (
-                                  <span>
-                                    <T k="pages.pickADate" />
-                                  </span>
-                                )}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="reason"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.reason" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Reason for credit note" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="restock"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3">
-                        <div className="space-y-1">
-                          <FormLabel>
-                            <T k="pages.creditNoteRestock" />
-                          </FormLabel>
-                          <p className="text-xs text-muted-foreground">
-                            <T k="pages.creditNoteRestockHint" />
-                          </p>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value !== false}
-                            onCheckedChange={field.onChange}
-                            data-testid="switch-credit-note-restock"
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
                           />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium">
-                      <T k="pages.lineItems" />
-                    </h3>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
-                      }
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      <T k="pages.addLine" />
-                    </Button>
-                  </div>
-
-                  {fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
-                    >
-                      <div className="col-span-4">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.description`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Input {...field} placeholder="Description" />
-                              </FormControl>
-                            </FormItem>
-                          )}
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="reason"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.reason" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder={t["screens.creditNoteReason"]} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="restock"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3">
+                      <div className="space-y-1">
+                        <FormLabel>
+                          <T k="pages.creditNoteRestock" />
+                        </FormLabel>
+                        <p className="text-xs text-muted-foreground">
+                          <T k="pages.creditNoteRestockHint" />
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value !== false}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-credit-note-restock"
                         />
-                      </div>
-                      <div className="col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.quantity`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Qty"
-                                  className="font-mono"
-                                  value={field.value ?? ""}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                  }
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.unitPrice`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Price"
-                                  className="font-mono"
-                                  value={field.value ?? ""}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                  }
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.vatRate`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Select
-                                  value={String(field.value * 100)}
-                                  onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
-                                >
-                                  <SelectTrigger className="font-mono">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="0">0%</SelectItem>
-                                    <SelectItem value="5">5%</SelectItem>
-                                    <SelectItem value="10">10%</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-1">
-                        <div className="h-10 flex items-center justify-end font-mono text-sm">
-                          {formatCurrency(
-                            (watchLines[index]?.quantity || 0) *
-                              (watchLines[index]?.unitPrice || 0) *
-                              (1 + (watchLines[index]?.vatRate || 0)),
-                            "AED",
-                            locale
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-span-1 flex items-center justify-center">
-                        {fields.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => remove(index)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-                <div className="border-t pt-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      <T k="pages.subtotal" />
-                    </span>
-                    <span className="font-mono font-medium">
-                      {formatCurrency(subtotal, "AED", locale)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT</span>
-                    <span className="font-mono font-medium">
-                      {formatCurrency(vatAmount, "AED", locale)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>
-                      <T k="pages.total2" />
-                    </span>
-                    <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">
+                    <T k="pages.lineItems" />
+                  </h3>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setDialogOpen(false)}
-                    className="flex-1"
+                    size="sm"
+                    onClick={() =>
+                      append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
+                    }
                   >
-                    <T k="pages.cancel" />
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={createMutation.isPending || editMutation.isPending}
-                    className="flex-1"
-                  >
-                    {createMutation.isPending || editMutation.isPending ? "Saving..." : "Save"}
+                    <Plus className="w-4 h-4" />
+                    <T k="pages.addLine" />
                   </Button>
                 </div>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      </div>
 
-      {isLoading ? (
-        <Skeleton className="h-96" />
-      ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="font-semibold">
-                    <T k="pages.number" />
-                  </TableHead>
-                  <TableHead className="font-semibold">
-                    <T k="pages.customer" />
-                  </TableHead>
-                  <TableHead className="font-semibold">Invoice #</TableHead>
-                  <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="font-semibold text-right">
-                    <T k="pages.total2" />
-                  </TableHead>
-                  <TableHead className="font-semibold text-center">
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead className="font-semibold text-center">
-                    <T k="pages.actions" />
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {creditNotes && creditNotes.length > 0 ? (
-                  creditNotes.map((creditNote) => (
-                    <TableRow key={creditNote.id}>
-                      <TableCell className="font-mono font-medium">{creditNote.number}</TableCell>
-                      <TableCell>{creditNote.customerName}</TableCell>
-                      <TableCell className="font-mono text-muted-foreground">
-                        {creditNote.invoiceNumber || "-"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatDate(creditNote.date, locale)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(creditNote.total, creditNote.currency || "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge className={cn("capitalize", getStatusBadgeColor(creditNote.status))}>
-                          {creditNote.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {creditNote.status === "draft" && (
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  lifecycleMutation.mutate({ id: creditNote.id, action: "issue" })
-                                }
-                                data-testid={`button-issue-credit-note-${creditNote.id}`}
-                              >
-                                <FileText className="w-4 h-4 mr-2" />
-                                {t["invoices.issueCreditNote"]}
-                              </DropdownMenuItem>
-                            )}
-                            {creditNote.status === "issued" && (
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  lifecycleMutation.mutate({ id: creditNote.id, action: "void" })
-                                }
-                                data-testid={`button-void-credit-note-${creditNote.id}`}
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                {t["invoices.voidCreditNote"]}
-                              </DropdownMenuItem>
-                            )}
-                            {creditNote.status === "draft" && (
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  lifecycleMutation.mutate({ id: creditNote.id, action: "delete" })
-                                }
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                <T k="pages.delete" />
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() =>
-                                window.open(`/api/credit-notes/${creditNote.id}/pdf`, "_blank")
-                              }
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              <T k="pages.downloadPdf" />
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-4">
-                      <EmptyState
-                        icon={FileText}
-                        title={(t as any).noCreditNotesYet ?? "No credit notes yet"}
-                        description={
-                          (t as any).creditNotesEmptyDesc ??
-                          "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically."
-                        }
-                        action={{
-                          label: (t as any).newCreditNote ?? "New Credit Note",
-                          onClick: () => setDialogOpen(true),
-                        }}
-                        testId="empty-credit-notes"
+                {fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
+                  >
+                    <div className="col-span-4">
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.description`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Input {...field} placeholder={t.description} />
+                            </FormControl>
+                          </FormItem>
+                        )}
                       />
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
+                    </div>
+                    <div className="col-span-2">
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.quantity`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder={t["screens.qty"]}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.unitPrice`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder={t["screens.price"]}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.vatRate`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Select
+                                value={String(field.value * 100)}
+                                onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="0">0%</SelectItem>
+                                  <SelectItem value="5">5%</SelectItem>
+                                  <SelectItem value="10">10%</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <div className="h-10 flex items-center justify-end text-sm">
+                        {formatCurrency(
+                          (watchLines[index]?.quantity || 0) *
+                            (watchLines[index]?.unitPrice || 0) *
+                            (1 + (watchLines[index]?.vatRate || 0)),
+                          "AED",
+                          locale
+                        )}
+                      </div>
+                    </div>
+                    <div className="col-span-1 flex items-center justify-center">
+                      {fields.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => remove(index)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t pt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    <T k="pages.subtotal" />
+                  </span>
+                  <span className="font-medium">{formatCurrency(subtotal, "AED", locale)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">VAT</span>
+                  <span className="font-medium">{formatCurrency(vatAmount, "AED", locale)}</span>
+                </div>
+                <div className="flex justify-between text-lg font-semibold pt-2 border-t">
+                  <span>
+                    <T k="pages.total2" />
+                  </span>
+                  <span>{formatCurrency(total, "AED", locale)}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                  className="flex-1"
+                >
+                  <T k="pages.cancel" />
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createMutation.isPending || editMutation.isPending}
+                  className="flex-1"
+                >
+                  {createMutation.isPending || editMutation.isPending ? t.loading : t.save}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <DataTableCard
+        status={isLoading ? "loading" : creditNotes && creditNotes.length > 0 ? "ready" : "empty"}
+        columnLabels={[t.date, t.total, t.status]}
+        testId="credit-notes-table"
+        empty={{
+          icon: FileText,
+          title: (t as any).noCreditNotesYet ?? "No credit notes yet",
+          description:
+            (t as any).creditNotesEmptyDesc ??
+            "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically.",
+          action: {
+            label: t["pages.createFromInvoice"],
+            href: "/invoices",
+          },
+          testId: "empty-credit-notes",
+        }}
+      >
+        <Table className="row-cards">
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                <T k="pages.number" />
+              </TableHead>
+              <TableHead className="w-full">
+                <T k="pages.customer" />
+              </TableHead>
+              <TableHead>{t["screens.originalInvoice"]}</TableHead>
+              <TableHead>{t.date}</TableHead>
+              <TableHead data-numeric="">
+                <T k="pages.total2" />
+              </TableHead>
+              <TableHead>
+                <T k="pages.status" />
+              </TableHead>
+              <TableHead>
+                <span className="sr-only">{t.actions}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(creditNotes ?? []).map((creditNote) => (
+              <TableRow key={creditNote.id}>
+                <TableCell data-nowrap="" data-cell="meta" className="font-medium">
+                  <span dir="ltr" className="[unicode-bidi:isolate]">
+                    {creditNote.number}
+                  </span>
+                </TableCell>
+                <TableCell data-truncate="" data-cell="title" dir="auto">
+                  {creditNote.customerName}
+                </TableCell>
+                <TableCell data-nowrap="" className="text-muted-foreground">
+                  <span dir="ltr" className="[unicode-bidi:isolate]">
+                    {creditNote.invoiceNumber || "—"}
+                  </span>
+                </TableCell>
+                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                  {formatDate(creditNote.date, locale)}
+                </TableCell>
+                <MoneyCell
+                  amount={Number(creditNote.total)}
+                  currency={creditNote.currency || "AED"}
+                  className="font-medium"
+                  data-cell="amount"
+                />
+                <TableCell data-nowrap="" data-cell="status">
+                  <StatusBadge status={creditNote.status} />
+                </TableCell>
+                <TableCell data-cell="actions">
+                  <RowActions
+                    collapseOnMobile
+                    menu={
+                      <>
+                        {creditNote.status === "draft" && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              lifecycleMutation.mutate({ id: creditNote.id, action: "issue" })
+                            }
+                            data-testid={`button-issue-credit-note-${creditNote.id}`}
+                          >
+                            <FileText aria-hidden />
+                            {t["invoices.issueCreditNote"]}
+                          </DropdownMenuItem>
+                        )}
+                        {creditNote.status === "issued" && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              lifecycleMutation.mutate({ id: creditNote.id, action: "void" })
+                            }
+                            data-testid={`button-void-credit-note-${creditNote.id}`}
+                          >
+                            <Ban aria-hidden />
+                            {t["invoices.voidCreditNote"]}
+                          </DropdownMenuItem>
+                        )}
+                        {creditNote.status === "draft" && (
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() =>
+                              lifecycleMutation.mutate({ id: creditNote.id, action: "delete" })
+                            }
+                          >
+                            <Trash2 aria-hidden />
+                            <T k="pages.delete" />
+                          </DropdownMenuItem>
+                        )}
+                      </>
+                    }
+                  >
+                    <RowActionButton
+                      label={t["pages.downloadPdf"]}
+                      icon={Download}
+                      onClick={() =>
+                        window.open(`/api/credit-notes/${creditNote.id}/pdf`, "_blank")
+                      }
+                    />
+                  </RowActions>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </DataTableCard>
     </div>
   );
 }

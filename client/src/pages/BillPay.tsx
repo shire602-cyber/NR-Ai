@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,12 +30,18 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
+import { DataTableCard } from "@/components/ui/data-table";
+import { StatCard } from "@/components/ui/stat-card";
+import { SectionCard } from "@/components/ui/section-card";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -46,15 +52,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useSearch } from "wouter";
 import { InboundCreditNotesCard } from "@/components/bills/InboundCreditNotesCard";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
@@ -76,7 +76,6 @@ import {
   CalendarIcon,
   Trash2,
   Edit,
-  MoreHorizontal,
   CheckCircle,
   DollarSign,
   Clock,
@@ -84,6 +83,9 @@ import {
   CreditCard,
   BarChart3,
   Receipt,
+  Send,
+  Ban,
+  Search,
 } from "lucide-react";
 
 // ===========================
@@ -324,57 +326,6 @@ type PaymentFormData = z.infer<typeof paymentFormSchema>;
 // Status helpers
 // ===========================
 
-function getStatusBadge(status: string, c: Copy) {
-  switch (status) {
-    case "draft":
-      return <Badge variant="outline">{c.draft}</Badge>;
-    case "rejected":
-      return (
-        <Badge variant="outline" className="bg-danger-subtle text-destructive ">
-          {c.rejectedStatus}
-        </Badge>
-      );
-    case "void":
-      return (
-        <Badge variant="outline" className="text-muted-foreground line-through">
-          {c.voidStatus}
-        </Badge>
-      );
-    case "pending":
-      return (
-        <Badge variant="outline" className="bg-muted text-foreground ">
-          <T k="pages.pending" />
-        </Badge>
-      );
-    case "approved":
-      return (
-        <Badge variant="outline" className="bg-info-subtle text-info ">
-          <T k="pages.approved" />
-        </Badge>
-      );
-    case "partial":
-      return (
-        <Badge variant="outline" className="bg-warning-subtle text-warning ">
-          <T k="pages.partial" />
-        </Badge>
-      );
-    case "paid":
-      return (
-        <Badge variant="outline" className="bg-success-subtle text-success ">
-          {c.paidStatus}
-        </Badge>
-      );
-    case "overdue":
-      return (
-        <Badge variant="outline" className="bg-danger-subtle text-destructive ">
-          <T k="pages.overdue" />
-        </Badge>
-      );
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
-}
-
 // ===========================
 // Main Component
 // ===========================
@@ -388,6 +339,15 @@ const NO_COST_CENTER = "__none__";
 export default function BillPay() {
   const { t, locale } = useTranslation();
   const c: Copy = COPY[locale === "ar" ? "ar" : "en"];
+  const paymentMethodLabel = (method: string) =>
+    (
+      ({
+        bank_transfer: t["pages.bankTransfer"],
+        cash: c.cash,
+        cheque: t["pages.cheque"],
+        credit_card: c.card,
+      }) as Record<string, string>
+    )[method] ?? method.replace(/_/g, " ");
   const { toast } = useToast();
   const { company: _company, companyId } = useDefaultCompany();
 
@@ -892,6 +852,600 @@ export default function BillPay() {
         eyebrow="Purchases"
         title={t.billPay}
         description={(t as any).billPaySubtitle ?? "Manage vendor bills, approvals, and payments"}
+        actions={
+          <Dialog
+            open={billDialogOpen}
+            onOpenChange={(open) => {
+              setBillDialogOpen(open);
+              if (!open) resetBillForm();
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4" />
+                <T k="pages.newBill" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingBill ? t["screens.editBill"] : t["screens.newVendorBill"]}
+                </DialogTitle>
+                <DialogDescription>
+                  {editingBill ? t["screens.billDialogEditDesc"] : t["screens.billDialogNewDesc"]}
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...billForm}>
+                <form onSubmit={billForm.handleSubmit(onBillSubmit)} className="space-y-6">
+                  {/* Vendor Info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={billForm.control}
+                      name="vendor_name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.vendorName" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              dir="auto"
+                              placeholder={t["screens.vendorCompanyName"]}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={billForm.control}
+                      name="vendor_trn"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.vendorTrn" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              dir="ltr"
+                              inputMode="numeric"
+                              placeholder={t["screens.trnOptional"]}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Bill Info */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormField
+                      control={billForm.control}
+                      name="bill_number"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.billNumber" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="e.g. BILL-001" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={billForm.control}
+                      name="bill_date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.billDate" />
+                          </FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-start font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  <CalendarIcon className="h-4 w-4" />
+                                  {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={billForm.control}
+                      name="due_date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.dueDate" />
+                          </FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-start font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  <CalendarIcon className="h-4 w-4" />
+                                  {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Category & Notes */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={billForm.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.category" />
+                          </FormLabel>
+                          <Select value={field.value || ""} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={t["screens.selectCategory"]} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="utilities">
+                                <T k="pages.utilities" />
+                              </SelectItem>
+                              <SelectItem value="rent">Rent</SelectItem>
+                              <SelectItem value="supplies">
+                                <T k="pages.supplies" />
+                              </SelectItem>
+                              <SelectItem value="services">
+                                <T k="pages.professionalServices" />
+                              </SelectItem>
+                              <SelectItem value="equipment">
+                                <T k="pages.equipment" />
+                              </SelectItem>
+                              <SelectItem value="travel">
+                                <T k="pages.travel" />
+                              </SelectItem>
+                              <SelectItem value="insurance">
+                                <T k="pages.insurance" />
+                              </SelectItem>
+                              <SelectItem value="maintenance">
+                                <T k="pages.maintenance" />
+                              </SelectItem>
+                              <SelectItem value="other">
+                                <T k="pages.other" />
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={billForm.control}
+                      name="currency"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.currency" />
+                          </FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="AED">AED</SelectItem>
+                              <SelectItem value="USD">USD</SelectItem>
+                              <SelectItem value="EUR">EUR</SelectItem>
+                              <SelectItem value="GBP">GBP</SelectItem>
+                              <SelectItem value="SAR">SAR</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {watchCurrency !== "AED" && (
+                      <FormField
+                        control={billForm.control}
+                        name="exchange_rate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{c.exchangeRate}</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                inputMode="decimal"
+                                placeholder={c.exchangeRateHint}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                    <FormField
+                      control={billForm.control}
+                      name="place_of_supply"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{c.placeOfSupply}</FormLabel>
+                          <Select value={field.value || ""} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={c.placeOfSupply} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {EMIRATE_CODES.map((e) => (
+                                <SelectItem key={e} value={e}>
+                                  {e.replace(/_/g, " ")}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={billForm.control}
+                      name="reverse_charge"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={(v) => field.onChange(v === true)}
+                            />
+                          </FormControl>
+                          <FormLabel className="font-normal">{c.reverseCharge}</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={billForm.control}
+                      name="is_import"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={(v) => field.onChange(v === true)}
+                            />
+                          </FormControl>
+                          <FormLabel className="font-normal">{c.isImport}</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    {watchIsImport && (
+                      <>
+                        <FormField
+                          control={billForm.control}
+                          name="customs_declaration_no"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{c.customsNo}</FormLabel>
+                              <FormControl>
+                                <Input {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={billForm.control}
+                          name="import_vat_amount"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{c.importVat}</FormLabel>
+                              <FormControl>
+                                <Input {...field} inputMode="decimal" />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Line Items */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">
+                        <T k="pages.lineItems" />
+                      </h3>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          appendLine({
+                            description: "",
+                            quantity: 1,
+                            unit_price: 0,
+                            vat_rate: 5,
+                            vat_supply_type: "standard_rated",
+                            account_id: "",
+                            cost_center_id: "",
+                          })
+                        }
+                      >
+                        <Plus className="w-4 h-4" />
+                        <T k="pages.addLine" />
+                      </Button>
+                    </div>
+
+                    {lineFields.map((field, index) => (
+                      <div
+                        key={field.id}
+                        className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
+                      >
+                        <div className="col-span-3">
+                          <FormField
+                            control={billForm.control}
+                            name={`line_items.${index}.description`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input {...field} placeholder={t.description} />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <FormField
+                            control={billForm.control}
+                            name={`line_items.${index}.quantity`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    type="number"
+                                    step="0.01"
+                                    placeholder={t["screens.qty"]}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <FormField
+                            control={billForm.control}
+                            name={`line_items.${index}.unit_price`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    type="number"
+                                    step="0.01"
+                                    placeholder={t["screens.unitPrice"]}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <FormField
+                            control={billForm.control}
+                            name={`line_items.${index}.vat_supply_type`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                  <FormControl>
+                                    <SelectTrigger aria-label={c.supplyType}>
+                                      <SelectValue placeholder={c.supplyType} />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {SUPPLY_TYPES.map((st) => (
+                                      <SelectItem key={st} value={st}>
+                                        {supplyLabel(c, st)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        {costCenterList.length > 0 && (
+                          <div className="col-span-1">
+                            <FormField
+                              control={billForm.control}
+                              name={`line_items.${index}.cost_center_id`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <Select
+                                    value={field.value || NO_COST_CENTER}
+                                    onValueChange={(v) =>
+                                      field.onChange(v === NO_COST_CENTER ? "" : v)
+                                    }
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger
+                                        aria-label={t["purchases.costCenter"]}
+                                        data-testid={`bill-line-cost-center-${index}`}
+                                      >
+                                        <SelectValue placeholder={t["purchases.costCenter"]} />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value={NO_COST_CENTER}>
+                                        {t["purchases.noCostCenter"]}
+                                      </SelectItem>
+                                      {costCenterList.map((cc) => (
+                                        <SelectItem key={cc.id} value={cc.id}>
+                                          {cc.code} · {cc.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+                        <div className={costCenterList.length > 0 ? "col-span-2" : "col-span-3"}>
+                          <FormField
+                            control={billForm.control}
+                            name={`line_items.${index}.account_id`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <Select value={field.value || ""} onValueChange={field.onChange}>
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder={t["screens.account"]} />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {expenseAccounts.map((acc: any) => (
+                                      <SelectItem key={acc.id} value={acc.id}>
+                                        {acc.nameEn || acc.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-2 flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            {formatCurrency(
+                              (Number(watchLines[index]?.quantity) || 0) *
+                                (Number(watchLines[index]?.unit_price) || 0),
+                              "AED"
+                            )}
+                          </span>
+                          {lineFields.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeLine(index)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Totals */}
+                    <div className="flex justify-end">
+                      <div className="w-64 space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Subtotal:</span>
+                          <span>{formatCurrency(subtotal, "AED")}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">VAT:</span>
+                          <span>{formatCurrency(vatAmount, "AED")}</span>
+                        </div>
+                        <div className="flex justify-between font-semibold border-t pt-1">
+                          <span>Total:</span>
+                          <span>{formatCurrency(totalAmount, "AED")}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <FormField
+                    control={billForm.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.notes" />
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder={t["screens.billNotesPlaceholder"]}
+                            rows={2}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setBillDialogOpen(false);
+                        resetBillForm();
+                      }}
+                    >
+                      <T k="pages.cancel" />
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={createBillMutation.isPending || updateBillMutation.isPending}
+                    >
+                      {createBillMutation.isPending || updateBillMutation.isPending
+                        ? "Saving..."
+                        : editingBill
+                          ? t["screens.updateBill"]
+                          : t["screens.createBill"]}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        }
       />
 
       <Tabs
@@ -901,15 +1455,15 @@ export default function BillPay() {
       >
         <TabsList>
           <TabsTrigger value="bills">
-            <FileText className="w-4 h-4 mr-2" />
+            <FileText className="w-4 h-4" />
             <T k="pages.bills" />
           </TabsTrigger>
           <TabsTrigger value="payments">
-            <CreditCard className="w-4 h-4 mr-2" />
+            <CreditCard className="w-4 h-4" />
             <T k="pages.payments" />
           </TabsTrigger>
           <TabsTrigger value="summary">
-            <BarChart3 className="w-4 h-4 mr-2" />
+            <BarChart3 className="w-4 h-4" />
             <T k="pages.summary" />
           </TabsTrigger>
         </TabsList>
@@ -919,1077 +1473,437 @@ export default function BillPay() {
         {/* ================================== */}
         <TabsContent value="bills" className="space-y-6 mt-0">
           <InboundCreditNotesCard companyId={companyId} />
-          {/* Filters */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-4 flex-wrap">
-                  <Input
-                    placeholder="Search vendor or bill #..."
-                    value={vendorSearch}
-                    onChange={(e) => setVendorSearch(e.target.value)}
-                    className="w-64"
-                  />
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        <T k="pages.allStatuses" />
-                      </SelectItem>
-                      <SelectItem value="open">
-                        <T k="pages.billsOpenUnpaid" />
-                      </SelectItem>
-                      <SelectItem value="pending">
-                        <T k="pages.pending" />
-                      </SelectItem>
-                      <SelectItem value="approved">
-                        <T k="pages.approved" />
-                      </SelectItem>
-                      <SelectItem value="partial">
-                        <T k="pages.partial" />
-                      </SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="overdue">
-                        <T k="pages.overdue" />
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Dialog
-                  open={billDialogOpen}
-                  onOpenChange={(open) => {
-                    setBillDialogOpen(open);
-                    if (!open) resetBillForm();
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="w-4 h-4 mr-2" />
-                      <T k="pages.newBill" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>{editingBill ? "Edit Bill" : "New Vendor Bill"}</DialogTitle>
-                      <DialogDescription>
-                        {editingBill
-                          ? "Update vendor bill details"
-                          : "Create a new vendor bill with line items and VAT calculation"}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <Form {...billForm}>
-                      <form onSubmit={billForm.handleSubmit(onBillSubmit)} className="space-y-6">
-                        {/* Vendor Info */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={billForm.control}
-                            name="vendor_name"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.vendorName" />
-                                </FormLabel>
-                                <FormControl>
-                                  <Input {...field} placeholder="Vendor company name" />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={billForm.control}
-                            name="vendor_trn"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.vendorTrn" />
-                                </FormLabel>
-                                <FormControl>
-                                  <Input
-                                    {...field}
-                                    placeholder="Tax Registration Number (optional)"
-                                    className="font-mono"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
+          {/* Filters (one row, not in a card) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-72">
+              <Search
+                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                placeholder={t["screens.searchVendorOrBill"]}
+                value={vendorSearch}
+                onChange={(e) => setVendorSearch(e.target.value)}
+                className="h-9 ps-9"
+                aria-label={t["screens.searchVendorOrBill"]}
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-9 w-full sm:w-44" aria-label={t.status}>
+                <SelectValue placeholder={t.status} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <T k="pages.allStatuses" />
+                </SelectItem>
+                <SelectItem value="open">
+                  <T k="pages.billsOpenUnpaid" />
+                </SelectItem>
+                <SelectItem value="pending">
+                  <T k="pages.pending" />
+                </SelectItem>
+                <SelectItem value="approved">
+                  <T k="pages.approved" />
+                </SelectItem>
+                <SelectItem value="partial">
+                  <T k="pages.partial" />
+                </SelectItem>
+                <SelectItem value="paid">{c.paidStatus}</SelectItem>
+                <SelectItem value="overdue">
+                  <T k="pages.overdue" />
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-                        {/* Bill Info */}
-                        <div className="grid grid-cols-3 gap-4">
-                          <FormField
-                            control={billForm.control}
-                            name="bill_number"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.billNumber" />
-                                </FormLabel>
-                                <FormControl>
-                                  <Input
-                                    {...field}
-                                    placeholder="e.g. BILL-001"
-                                    className="font-mono"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={billForm.control}
-                            name="bill_date"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.billDate" />
-                                </FormLabel>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <FormControl>
-                                      <Button
-                                        variant="outline"
-                                        className={cn(
-                                          "w-full justify-start text-left font-normal",
-                                          !field.value && "text-muted-foreground"
-                                        )}
-                                      >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {field.value ? format(field.value, "PPP") : "Pick a date"}
-                                      </Button>
-                                    </FormControl>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-auto p-0">
-                                    <Calendar
-                                      mode="single"
-                                      selected={field.value}
-                                      onSelect={field.onChange}
-                                      initialFocus
-                                    />
-                                  </PopoverContent>
-                                </Popover>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={billForm.control}
-                            name="due_date"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.dueDate" />
-                                </FormLabel>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <FormControl>
-                                      <Button
-                                        variant="outline"
-                                        className={cn(
-                                          "w-full justify-start text-left font-normal",
-                                          !field.value && "text-muted-foreground"
-                                        )}
-                                      >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {field.value ? format(field.value, "PPP") : "Pick a date"}
-                                      </Button>
-                                    </FormControl>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-auto p-0">
-                                    <Calendar
-                                      mode="single"
-                                      selected={field.value}
-                                      onSelect={field.onChange}
-                                      initialFocus
-                                    />
-                                  </PopoverContent>
-                                </Popover>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-
-                        {/* Category & Notes */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={billForm.control}
-                            name="category"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.category" />
-                                </FormLabel>
-                                <Select value={field.value || ""} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select category" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="utilities">
-                                      <T k="pages.utilities" />
-                                    </SelectItem>
-                                    <SelectItem value="rent">Rent</SelectItem>
-                                    <SelectItem value="supplies">
-                                      <T k="pages.supplies" />
-                                    </SelectItem>
-                                    <SelectItem value="services">
-                                      <T k="pages.professionalServices" />
-                                    </SelectItem>
-                                    <SelectItem value="equipment">
-                                      <T k="pages.equipment" />
-                                    </SelectItem>
-                                    <SelectItem value="travel">
-                                      <T k="pages.travel" />
-                                    </SelectItem>
-                                    <SelectItem value="insurance">
-                                      <T k="pages.insurance" />
-                                    </SelectItem>
-                                    <SelectItem value="maintenance">
-                                      <T k="pages.maintenance" />
-                                    </SelectItem>
-                                    <SelectItem value="other">
-                                      <T k="pages.other" />
-                                    </SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={billForm.control}
-                            name="currency"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  <T k="pages.currency" />
-                                </FormLabel>
-                                <Select value={field.value} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="AED">AED</SelectItem>
-                                    <SelectItem value="USD">USD</SelectItem>
-                                    <SelectItem value="EUR">EUR</SelectItem>
-                                    <SelectItem value="GBP">GBP</SelectItem>
-                                    <SelectItem value="SAR">SAR</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {watchCurrency !== "AED" && (
-                            <FormField
-                              control={billForm.control}
-                              name="exchange_rate"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{c.exchangeRate}</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      {...field}
-                                      inputMode="decimal"
-                                      placeholder={c.exchangeRateHint}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          )}
-                          <FormField
-                            control={billForm.control}
-                            name="place_of_supply"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{c.placeOfSupply}</FormLabel>
-                                <Select value={field.value || ""} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder={c.placeOfSupply} />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {EMIRATE_CODES.map((e) => (
-                                      <SelectItem key={e} value={e}>
-                                        {e.replace(/_/g, " ")}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={billForm.control}
-                            name="reverse_charge"
-                            render={({ field }) => (
-                              <FormItem className="flex items-center gap-2 space-y-0">
-                                <FormControl>
-                                  <Checkbox
-                                    checked={field.value}
-                                    onCheckedChange={(v) => field.onChange(v === true)}
-                                  />
-                                </FormControl>
-                                <FormLabel className="font-normal">{c.reverseCharge}</FormLabel>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={billForm.control}
-                            name="is_import"
-                            render={({ field }) => (
-                              <FormItem className="flex items-center gap-2 space-y-0">
-                                <FormControl>
-                                  <Checkbox
-                                    checked={field.value}
-                                    onCheckedChange={(v) => field.onChange(v === true)}
-                                  />
-                                </FormControl>
-                                <FormLabel className="font-normal">{c.isImport}</FormLabel>
-                              </FormItem>
-                            )}
-                          />
-                          {watchIsImport && (
+          <DataTableCard
+            status={billsLoading ? "loading" : filteredBills.length === 0 ? "empty" : "ready"}
+            columnLabels={[t["pages.vendor"], t.date, t.amount, t.status]}
+            testId="bills-table"
+            empty={{
+              icon: FileText,
+              title: t["pages.noBillsFound"],
+              description:
+                bills.length === 0 ? t["screens.billsEmptyBody"] : t["screens.billsNoMatchBody"],
+            }}
+          >
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-full">
+                    <T k="pages.vendor" />
+                  </TableHead>
+                  <TableHead>{t["screens.billNumber"]}</TableHead>
+                  <TableHead className="hidden 2xl:table-cell">{t.date}</TableHead>
+                  <TableHead>
+                    <T k="pages.dueDate" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.amount" />
+                  </TableHead>
+                  <TableHead data-numeric="">{t["screens.paid"]}</TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <span className="sr-only">{t.actions}</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredBills.map((bill) => {
+                  const status = bill.display_status ?? bill.status;
+                  const overdueDays =
+                    status === "overdue" && bill.due_date
+                      ? Math.max(
+                          0,
+                          Math.floor((Date.now() - new Date(bill.due_date).getTime()) / 86_400_000)
+                        )
+                      : undefined;
+                  const payable = ["approved", "partial", "overdue"].includes(bill.status);
+                  return (
+                    <TableRow key={bill.id}>
+                      <TableCell
+                        data-truncate=""
+                        data-cell="title"
+                        dir="auto"
+                        className="font-medium"
+                      >
+                        {bill.vendor_name}
+                        <EInvoiceOriginTag origin={bill.origin} />
+                      </TableCell>
+                      <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                        <span dir="ltr" className="[unicode-bidi:isolate]">
+                          {bill.bill_number || "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell
+                        data-nowrap=""
+                        data-cell="meta"
+                        className="hidden text-muted-foreground 2xl:table-cell"
+                      >
+                        {formatDate(bill.bill_date, locale)}
+                      </TableCell>
+                      <TableCell data-nowrap="" className="text-muted-foreground">
+                        {bill.due_date ? formatDate(bill.due_date, locale) : "—"}
+                      </TableCell>
+                      <MoneyCell
+                        amount={Number(bill.total_amount)}
+                        currency={bill.currency || "AED"}
+                        className="font-medium"
+                        data-cell="amount"
+                      />
+                      <MoneyCell
+                        amount={Number(bill.amount_paid)}
+                        currency={bill.currency || "AED"}
+                        className="text-muted-foreground"
+                      />
+                      <TableCell data-nowrap="" data-cell="status">
+                        <StatusBadge status={status} overdueDays={overdueDays} />
+                      </TableCell>
+                      <TableCell data-cell="actions">
+                        <RowActions
+                          collapseOnMobile
+                          menu={
                             <>
-                              <FormField
-                                control={billForm.control}
-                                name="customs_declaration_no"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{c.customsNo}</FormLabel>
-                                    <FormControl>
-                                      <Input {...field} />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={billForm.control}
-                                name="import_vat_amount"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{c.importVat}</FormLabel>
-                                    <FormControl>
-                                      <Input {...field} inputMode="decimal" />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                            </>
-                          )}
-                        </div>
-
-                        {/* Line Items */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-medium">
-                              <T k="pages.lineItems" />
-                            </h3>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                appendLine({
-                                  description: "",
-                                  quantity: 1,
-                                  unit_price: 0,
-                                  vat_rate: 5,
-                                  vat_supply_type: "standard_rated",
-                                  account_id: "",
-                                  cost_center_id: "",
-                                })
-                              }
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              <T k="pages.addLine" />
-                            </Button>
-                          </div>
-
-                          {lineFields.map((field, index) => (
-                            <div
-                              key={field.id}
-                              className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
-                            >
-                              <div className="col-span-3">
-                                <FormField
-                                  control={billForm.control}
-                                  name={`line_items.${index}.description`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormControl>
-                                        <Input {...field} placeholder="Description" />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                              <div className="col-span-1">
-                                <FormField
-                                  control={billForm.control}
-                                  name={`line_items.${index}.quantity`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormControl>
-                                        <Input
-                                          {...field}
-                                          type="number"
-                                          step="0.01"
-                                          placeholder="Qty"
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                              <div className="col-span-2">
-                                <FormField
-                                  control={billForm.control}
-                                  name={`line_items.${index}.unit_price`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormControl>
-                                        <Input
-                                          {...field}
-                                          type="number"
-                                          step="0.01"
-                                          placeholder="Unit Price"
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                              <div className="col-span-1">
-                                <FormField
-                                  control={billForm.control}
-                                  name={`line_items.${index}.vat_supply_type`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <Select value={field.value} onValueChange={field.onChange}>
-                                        <FormControl>
-                                          <SelectTrigger aria-label={c.supplyType}>
-                                            <SelectValue placeholder={c.supplyType} />
-                                          </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                          {SUPPLY_TYPES.map((st) => (
-                                            <SelectItem key={st} value={st}>
-                                              {supplyLabel(c, st)}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                              {costCenterList.length > 0 && (
-                                <div className="col-span-1">
-                                  <FormField
-                                    control={billForm.control}
-                                    name={`line_items.${index}.cost_center_id`}
-                                    render={({ field }) => (
-                                      <FormItem>
-                                        <Select
-                                          value={field.value || NO_COST_CENTER}
-                                          onValueChange={(v) =>
-                                            field.onChange(v === NO_COST_CENTER ? "" : v)
-                                          }
-                                        >
-                                          <FormControl>
-                                            <SelectTrigger
-                                              aria-label={t["purchases.costCenter"]}
-                                              data-testid={`bill-line-cost-center-${index}`}
-                                            >
-                                              <SelectValue
-                                                placeholder={t["purchases.costCenter"]}
-                                              />
-                                            </SelectTrigger>
-                                          </FormControl>
-                                          <SelectContent>
-                                            <SelectItem value={NO_COST_CENTER}>
-                                              {t["purchases.noCostCenter"]}
-                                            </SelectItem>
-                                            {costCenterList.map((cc) => (
-                                              <SelectItem key={cc.id} value={cc.id}>
-                                                {cc.code} · {cc.name}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </FormItem>
-                                    )}
-                                  />
-                                </div>
+                              {(bill.status === "draft" || bill.status === "rejected") && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    billActionMutation.mutate({ id: bill.id, action: "submit" })
+                                  }
+                                >
+                                  <Send aria-hidden />
+                                  {c.submitBill}
+                                </DropdownMenuItem>
                               )}
-                              <div
-                                className={costCenterList.length > 0 ? "col-span-2" : "col-span-3"}
-                              >
-                                <FormField
-                                  control={billForm.control}
-                                  name={`line_items.${index}.account_id`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <Select
-                                        value={field.value || ""}
-                                        onValueChange={field.onChange}
-                                      >
-                                        <FormControl>
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Account" />
-                                          </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                          {expenseAccounts.map((acc: any) => (
-                                            <SelectItem key={acc.id} value={acc.id}>
-                                              {acc.nameEn || acc.name}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                              <div className="col-span-2 flex items-center justify-between">
-                                <span className="text-sm font-medium">
-                                  {formatCurrency(
-                                    (Number(watchLines[index]?.quantity) || 0) *
-                                      (Number(watchLines[index]?.unit_price) || 0),
-                                    "AED"
-                                  )}
-                                </span>
-                                {lineFields.length > 1 && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => removeLine(index)}
-                                    className="text-destructive hover:text-destructive"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-
-                          {/* Totals */}
-                          <div className="flex justify-end">
-                            <div className="w-64 space-y-1 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Subtotal:</span>
-                                <span>{formatCurrency(subtotal, "AED")}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">VAT:</span>
-                                <span>{formatCurrency(vatAmount, "AED")}</span>
-                              </div>
-                              <div className="flex justify-between font-semibold border-t pt-1">
-                                <span>Total:</span>
-                                <span>{formatCurrency(totalAmount, "AED")}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Notes */}
-                        <FormField
-                          control={billForm.control}
-                          name="notes"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>
-                                <T k="pages.notes" />
-                              </FormLabel>
-                              <FormControl>
-                                <Textarea
-                                  {...field}
-                                  placeholder="Optional notes about this bill"
-                                  rows={2}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setBillDialogOpen(false);
-                              resetBillForm();
-                            }}
-                          >
-                            <T k="pages.cancel" />
-                          </Button>
-                          <Button
-                            type="submit"
-                            disabled={createBillMutation.isPending || updateBillMutation.isPending}
-                          >
-                            {createBillMutation.isPending || updateBillMutation.isPending
-                              ? "Saving..."
-                              : editingBill
-                                ? "Update Bill"
-                                : "Create Bill"}
-                          </Button>
-                        </div>
-                      </form>
-                    </Form>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Bills Table */}
-          <Card>
-            <CardContent className="pt-6">
-              {billsLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : filteredBills.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-1">
-                    <T k="pages.noBillsFound" />
-                  </h3>
-                  <p className="text-muted-foreground">
-                    {bills.length === 0
-                      ? "Create your first vendor bill to get started."
-                      : "No bills match your current filters."}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <T k="pages.vendor" />
-                        </TableHead>
-                        <TableHead>Bill #</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>
-                          <T k="pages.dueDate" />
-                        </TableHead>
-                        <TableHead className="text-right">
-                          <T k="pages.amount" />
-                        </TableHead>
-                        <TableHead className="text-right">Paid</TableHead>
-                        <TableHead>
-                          <T k="pages.status" />
-                        </TableHead>
-                        <TableHead className="text-right">
-                          <T k="pages.actions" />
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredBills.map((bill) => {
-                        const _remaining = Number(bill.total_amount) - Number(bill.amount_paid);
-                        return (
-                          <TableRow key={bill.id}>
-                            <TableCell className="font-medium">
-                              {bill.vendor_name}
-                              <EInvoiceOriginTag origin={bill.origin} />
-                            </TableCell>
-                            <TableCell className="font-mono text-sm">
-                              {bill.bill_number || "-"}
-                            </TableCell>
-                            <TableCell>{formatDate(bill.bill_date)}</TableCell>
-                            <TableCell>{bill.due_date ? formatDate(bill.due_date) : "-"}</TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(Number(bill.total_amount), bill.currency || "AED")}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(Number(bill.amount_paid), bill.currency || "AED")}
-                            </TableCell>
-                            <TableCell>
-                              {getStatusBadge(bill.display_status ?? bill.status, c)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
-                                    <MoreHorizontal className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => handleEditBill(bill)}>
-                                    <Edit className="w-4 h-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  {(bill.status === "draft" || bill.status === "rejected") && (
-                                    <DropdownMenuItem
-                                      onClick={() =>
-                                        billActionMutation.mutate({ id: bill.id, action: "submit" })
-                                      }
-                                    >
-                                      <CheckCircle className="w-4 h-4 me-2" />
-                                      {c.submitBill}
-                                    </DropdownMenuItem>
-                                  )}
-                                  {bill.status === "pending" && (
-                                    <DropdownMenuItem
-                                      onClick={() => approveBillMutation.mutate(bill.id)}
-                                    >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
-                                      <T k="pages.approve" />
-                                    </DropdownMenuItem>
-                                  )}
-                                  {bill.status === "pending" && (
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        const reason = window.prompt(c.reasonPrompt);
-                                        if (reason)
-                                          billActionMutation.mutate({
-                                            id: bill.id,
-                                            action: "reject",
-                                            reason,
-                                          });
-                                      }}
-                                    >
-                                      <AlertTriangle className="w-4 h-4 me-2" />
-                                      {c.rejectBill}
-                                    </DropdownMenuItem>
-                                  )}
-                                  {["approved", "partial", "overdue"].includes(bill.status) && (
-                                    <DropdownMenuItem onClick={() => handlePayBill(bill)}>
-                                      <DollarSign className="w-4 h-4 mr-2" />
-                                      <T k="pages.recordPayment" />
-                                    </DropdownMenuItem>
-                                  )}
-                                  {["draft", "pending", "approved", "overdue"].includes(
-                                    bill.status
-                                  ) &&
-                                    Number(bill.amount_paid) === 0 && (
-                                      <DropdownMenuItem
-                                        onClick={() => {
-                                          const reason = window.prompt(c.reasonPrompt);
-                                          if (reason)
-                                            billActionMutation.mutate({
-                                              id: bill.id,
-                                              action: "void",
-                                              reason,
-                                            });
-                                        }}
-                                      >
-                                        <Trash2 className="w-4 h-4 me-2" />
-                                        {c.voidBill}
-                                      </DropdownMenuItem>
-                                    )}
-                                  <DropdownMenuSeparator />
+                              {bill.status === "pending" && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    const reason = window.prompt(c.reasonPrompt);
+                                    if (reason)
+                                      billActionMutation.mutate({
+                                        id: bill.id,
+                                        action: "reject",
+                                        reason,
+                                      });
+                                  }}
+                                >
+                                  <AlertTriangle aria-hidden />
+                                  {c.rejectBill}
+                                </DropdownMenuItem>
+                              )}
+                              {["draft", "pending", "approved", "overdue"].includes(bill.status) &&
+                                Number(bill.amount_paid) === 0 && (
                                   <DropdownMenuItem
-                                    className="text-destructive"
                                     onClick={() => {
-                                      if (confirm("Are you sure you want to delete this bill?")) {
-                                        deleteBillMutation.mutate(bill.id);
-                                      }
+                                      const reason = window.prompt(c.reasonPrompt);
+                                      if (reason)
+                                        billActionMutation.mutate({
+                                          id: bill.id,
+                                          action: "void",
+                                          reason,
+                                        });
                                     }}
                                   >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    <T k="pages.delete" />
+                                    <Ban aria-hidden />
+                                    {c.voidBill}
                                   </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                                )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => {
+                                  if (confirm(t["screens.confirmDeleteBill"])) {
+                                    deleteBillMutation.mutate(bill.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 aria-hidden />
+                                <T k="pages.delete" />
+                              </DropdownMenuItem>
+                            </>
+                          }
+                        >
+                          {bill.status === "pending" && (
+                            <RowActionButton
+                              label={t["pages.approve"]}
+                              icon={CheckCircle}
+                              onClick={() => approveBillMutation.mutate(bill.id)}
+                            />
+                          )}
+                          {payable && (
+                            <RowActionButton
+                              label={t["pages.recordPayment"]}
+                              icon={DollarSign}
+                              onClick={() => handlePayBill(bill)}
+                            />
+                          )}
+                          <RowActionButton
+                            label={t.edit}
+                            icon={Edit}
+                            onClick={() => handleEditBill(bill)}
+                          />
+                        </RowActions>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </DataTableCard>
         </TabsContent>
 
         {/* ================================== */}
         {/* PAYMENTS TAB                       */}
         {/* ================================== */}
-        <TabsContent value="payments" className="space-y-6 mt-0">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pages.paymentHistory" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pages.allPaymentsRecordedAgainstVendorBills" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {paymentsData.length === 0 ? (
-                <div className="text-center py-12">
-                  <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-1">
-                    <T k="pages.noPaymentsYet" />
-                  </h3>
-                  <p className="text-muted-foreground">
-                    <T k="pages.paymentsWillAppearHereWhenYouRecordThemAgainstBi" />
-                  </p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>
-                        <T k="pages.vendor" />
-                      </TableHead>
-                      <TableHead>Bill #</TableHead>
-                      <TableHead className="text-right">
-                        <T k="pages.amount" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pages.method" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pages.reference" />
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paymentsData.map((payment: any) => (
-                      <TableRow key={payment.id}>
-                        <TableCell>{formatDate(payment.payment_date)}</TableCell>
-                        <TableCell className="font-medium">{payment.vendor_name}</TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {payment.bill_number || "-"}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(Number(payment.amount), "AED")}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {(payment.payment_method || "bank_transfer").replace(/_/g, " ")}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {payment.reference || "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="payments" className="space-y-4 mt-0">
+          <div>
+            <h2 className="text-h2 text-foreground">
+              <T k="pages.paymentHistory" />
+            </h2>
+            <p className="mt-1 text-small text-muted-foreground">
+              <T k="pages.allPaymentsRecordedAgainstVendorBills" />
+            </p>
+          </div>
+          <DataTableCard
+            status={paymentsData.length === 0 ? "empty" : "ready"}
+            empty={{
+              icon: Receipt,
+              title: t["pages.noPaymentsYet"],
+              description: t["pages.paymentsWillAppearHereWhenYouRecordThemAgainstBi"],
+            }}
+          >
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t.date}</TableHead>
+                  <TableHead className="w-full">
+                    <T k="pages.vendor" />
+                  </TableHead>
+                  <TableHead>{t["screens.billNumber"]}</TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.amount" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.method" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.reference" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentsData.map((payment: any) => (
+                  <TableRow key={payment.id}>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {formatDate(payment.payment_date, locale)}
+                    </TableCell>
+                    <TableCell
+                      data-truncate=""
+                      data-cell="title"
+                      dir="auto"
+                      className="font-medium"
+                    >
+                      {payment.vendor_name}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      <span dir="ltr" className="[unicode-bidi:isolate]">
+                        {payment.bill_number || "—"}
+                      </span>
+                    </TableCell>
+                    <MoneyCell
+                      amount={Number(payment.amount)}
+                      className="font-medium"
+                      data-cell="amount"
+                    />
+                    <TableCell data-nowrap="" className="text-muted-foreground">
+                      {paymentMethodLabel(payment.payment_method || "bank_transfer")}
+                    </TableCell>
+                    <TableCell data-nowrap="" className="text-muted-foreground">
+                      <span dir="ltr" className="[unicode-bidi:isolate]">
+                        {payment.reference || "—"}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTableCard>
         </TabsContent>
 
         {/* ================================== */}
         {/* SUMMARY TAB                        */}
         {/* ================================== */}
         <TabsContent value="summary" className="space-y-6 mt-0">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pages.pending" />
-                    </p>
-                    <p className="text-2xl font-bold">
-                      {formatCurrency(summary?.pending.total || 0, "AED")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {summary?.pending.count || 0} bills
-                    </p>
-                  </div>
-                  <Clock className="w-8 h-8 text-muted-foreground/70" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pages.approved" />
-                    </p>
-                    <p className="text-2xl font-bold">
-                      {formatCurrency(summary?.approved.total || 0, "AED")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {summary?.approved.count || 0} bills
-                    </p>
-                  </div>
-                  <CheckCircle className="w-8 h-8 text-info" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pages.partiallyPaid" />
-                    </p>
-                    <p className="text-2xl font-bold">
-                      {formatCurrency(summary?.partial.total || 0, "AED")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {summary?.partial.count || 0} bills
-                    </p>
-                  </div>
-                  <DollarSign className="w-8 h-8 text-warning" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Paid</p>
-                    <p className="text-2xl font-bold">
-                      {formatCurrency(summary?.paid.total || 0, "AED")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {summary?.paid.count || 0} bills
-                    </p>
-                  </div>
-                  <CheckCircle className="w-8 h-8 text-success" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pages.overdue" />
-                    </p>
-                    <p className="text-2xl font-bold text-destructive">
-                      {formatCurrency(summary?.overdue.total || 0, "AED")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {summary?.overdue.count || 0} bills
-                    </p>
-                  </div>
-                  <AlertTriangle className="w-8 h-8 text-destructive" />
-                </div>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5 mobile-keep-cols">
+            <StatCard
+              label={t["pages.pending"]}
+              icon={Clock}
+              value={<Money amount={summary?.pending.total || 0} />}
+              hint={formatMessage(t["screens.billsCount"], { count: summary?.pending.count || 0 })}
+              loading={!summary}
+            />
+            <StatCard
+              label={t["pages.approved"]}
+              icon={CheckCircle}
+              value={<Money amount={summary?.approved.total || 0} />}
+              hint={formatMessage(t["screens.billsCount"], { count: summary?.approved.count || 0 })}
+              loading={!summary}
+            />
+            <StatCard
+              label={t["pages.partiallyPaid"]}
+              icon={DollarSign}
+              value={<Money amount={summary?.partial.total || 0} />}
+              hint={formatMessage(t["screens.billsCount"], { count: summary?.partial.count || 0 })}
+              loading={!summary}
+            />
+            <StatCard
+              label={c.paidStatus}
+              icon={CheckCircle}
+              value={<Money amount={summary?.paid.total || 0} />}
+              hint={formatMessage(t["screens.billsCount"], { count: summary?.paid.count || 0 })}
+              loading={!summary}
+            />
+            <StatCard
+              label={t["pages.overdue"]}
+              icon={AlertTriangle}
+              value={
+                <Money
+                  amount={summary?.overdue.total || 0}
+                  className={(summary?.overdue.total || 0) > 0 ? "text-danger" : undefined}
+                />
+              }
+              hint={formatMessage(t["screens.billsCount"], { count: summary?.overdue.count || 0 })}
+              loading={!summary}
+            />
           </div>
 
           {/* Aging Report */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pages.agingReport" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pages.outstandingPayablesByAgeOfDueDate" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {aging ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        <T k="pages.period" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pages.amount" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pages.bills" />
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium">Current (Not Yet Due)</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(aging.current.amount, "AED")}
-                      </TableCell>
-                      <TableCell className="text-right">{aging.current.count}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">1 - 30 Days</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(aging.days_1_30.amount, "AED")}
-                      </TableCell>
-                      <TableCell className="text-right">{aging.days_1_30.count}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">31 - 60 Days</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(aging.days_31_60.amount, "AED")}
-                      </TableCell>
-                      <TableCell className="text-right">{aging.days_31_60.count}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">61 - 90 Days</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(aging.days_61_90.amount, "AED")}
-                      </TableCell>
-                      <TableCell className="text-right">{aging.days_61_90.count}</TableCell>
-                    </TableRow>
-                    <TableRow className="font-semibold">
-                      <TableCell className="text-destructive">90+ Days</TableCell>
-                      <TableCell className="text-right text-destructive">
-                        {formatCurrency(aging.days_90_plus.amount, "AED")}
-                      </TableCell>
-                      <TableCell className="text-right text-destructive">
-                        {aging.days_90_plus.count}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow className="border-t-2 font-bold">
-                      <TableCell>
-                        <T k="pages.totalOutstanding" />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(
-                          aging.current.amount +
-                            aging.days_1_30.amount +
-                            aging.days_31_60.amount +
-                            aging.days_61_90.amount +
-                            aging.days_90_plus.amount,
-                          "AED"
+          <SectionCard
+            title={t["pages.agingReport"]}
+            description={t["pages.outstandingPayablesByAgeOfDueDate"]}
+            flush
+          >
+            {aging ? (
+              <Table className="mobile-fit">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-full">
+                      <T k="pages.period" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.amount" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.bills" />
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(
+                    [
+                      ["screens.agingCurrent", aging.current],
+                      ["screens.aging1to30", aging.days_1_30],
+                      ["screens.aging31to60", aging.days_31_60],
+                      ["screens.aging61to90", aging.days_61_90],
+                      ["screens.aging90plus", aging.days_90_plus],
+                    ] as const
+                  ).map(([key, bucket]) => (
+                    <TableRow key={key}>
+                      <TableCell
+                        className={cn(
+                          "font-medium",
+                          key === "screens.aging90plus" && bucket.amount > 0 && "text-danger"
                         )}
+                      >
+                        {t[key]}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {aging.current.count +
-                          aging.days_1_30.count +
-                          aging.days_31_60.count +
-                          aging.days_61_90.count +
-                          aging.days_90_plus.count}
+                      <MoneyCell
+                        amount={bucket.amount}
+                        className={
+                          key === "screens.aging90plus" && bucket.amount > 0
+                            ? "text-danger"
+                            : undefined
+                        }
+                      />
+                      <TableCell data-numeric="" className="text-muted-foreground">
+                        {bucket.count}
                       </TableCell>
                     </TableRow>
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="space-y-3">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
                   ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell>
+                      <T k="pages.totalOutstanding" />
+                    </TableCell>
+                    <MoneyCell
+                      amount={
+                        aging.current.amount +
+                        aging.days_1_30.amount +
+                        aging.days_31_60.amount +
+                        aging.days_61_90.amount +
+                        aging.days_90_plus.amount
+                      }
+                    />
+                    <TableCell data-numeric="">
+                      {aging.current.count +
+                        aging.days_1_30.count +
+                        aging.days_31_60.count +
+                        aging.days_61_90.count +
+                        aging.days_90_plus.count}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            ) : (
+              <div className="space-y-3 p-5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            )}
+          </SectionCard>
         </TabsContent>
       </Tabs>
 
@@ -2040,7 +1954,12 @@ export default function BillPay() {
                       <T k="pages.amount" />
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} type="number" step="0.01" placeholder="Payment amount" />
+                      <Input
+                        {...field}
+                        type="number"
+                        step="0.01"
+                        placeholder={t["screens.paymentAmount"]}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -2060,11 +1979,11 @@ export default function BillPay() {
                           <Button
                             variant="outline"
                             className={cn(
-                              "w-full justify-start text-left font-normal",
+                              "w-full justify-start text-start font-normal",
                               !field.value && "text-muted-foreground"
                             )}
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            <CalendarIcon className="h-4 w-4" />
                             {field.value ? format(field.value, "PPP") : "Pick a date"}
                           </Button>
                         </FormControl>
@@ -2159,7 +2078,11 @@ export default function BillPay() {
                       <T k="pages.reference" />
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Payment reference (optional)" />
+                      <Input
+                        {...field}
+                        dir="ltr"
+                        placeholder={t["screens.paymentReferenceOptional"]}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -2174,7 +2097,7 @@ export default function BillPay() {
                       <T k="pages.notes" />
                     </FormLabel>
                     <FormControl>
-                      <Textarea {...field} placeholder="Optional notes" rows={2} />
+                      <Textarea {...field} placeholder={t["screens.optionalNotes"]} rows={2} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

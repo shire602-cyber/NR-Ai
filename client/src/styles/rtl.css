@@ -54,9 +54,10 @@
 [dir="rtl"] input[type="tel"],
 [dir="rtl"] input[inputmode="numeric"],
 [dir="rtl"] input[inputmode="decimal"],
-/* Leaf figures only: a container that merely sets tabular figures (the Table primitive,
-   a row of label + amount) must keep the RTL column/flow order (D3b). */
-[dir="rtl"] .tabular-nums:not(table):not(:has(*)) {
+/* D3a+D3b: figures isolate LTR only on leaf elements; table structure (table/thead/tbody/tfoot/tr)
+   and any container that merely sets tabular figures keep the document direction, otherwise
+   every <Table> reversed its columns in Arabic ("13 2026 نوفمبر"). */
+[dir="rtl"] .tabular-nums:not(table):not(thead):not(tbody):not(tfoot):not(tr):not(:has(*)) {
   direction: ltr;
   unicode-bidi: embed;
   text-align: right;

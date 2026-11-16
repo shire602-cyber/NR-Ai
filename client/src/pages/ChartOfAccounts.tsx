@@ -2,17 +2,25 @@ import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency } from "@/lib/format";
 import { apiUrl } from "@/lib/api";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -35,7 +43,6 @@ import {
 import type { Account } from "@shared/schema";
 import {
   ChevronDown,
-  ChevronRight,
   Search,
   Plus,
   Wallet,
@@ -44,7 +51,6 @@ import {
   TrendingUp,
   Receipt,
   BookOpen,
-  ArrowRight,
   Download,
   Upload,
   GitBranch,
@@ -90,8 +96,8 @@ const ACCOUNT_TYPE_CONFIG: Record<
     label: "Equity",
     labelAr: "حقوق الملكية",
     icon: PiggyBank,
-    colorClass: "text-chart-5 ",
-    bgClass: "bg-chart-5/10 ",
+    colorClass: "text-accent",
+    bgClass: "bg-brand-50",
   },
   income: {
     label: "Revenue",
@@ -227,20 +233,20 @@ export default function ChartOfAccounts() {
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Accounting"
         title={t.chartOfAccounts}
         description={t.chartOfAccountsDescription}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             <Button variant="outline" asChild data-testid="button-export-coa-csv">
               <a
                 href={apiUrl(
                   `/api/companies/${selectedCompanyId}/imports/chart-of-accounts/export`
                 )}
               >
-                <Download className="h-4 w-4 me-2" />
+                <Download aria-hidden />
                 <T k="journal.coaExportCsv" />
               </a>
             </Button>
@@ -249,211 +255,189 @@ export default function ChartOfAccounts() {
               data-testid="button-import-coa-csv"
               onClick={() => navigate("/import?kind=chart_of_accounts")}
             >
-              <Upload className="h-4 w-4 me-2" />
+              <Upload aria-hidden />
               <T k="journal.coaImportCsv" />
             </Button>
-            <Button
-              size="default"
-              data-testid="button-add-account"
-              onClick={() => navigate("/journal")}
-            >
-              <Plus className="h-4 w-4 mr-2" />
+            <Button data-testid="button-add-account" onClick={() => navigate("/journal")}>
+              <Plus aria-hidden />
               {t.addAccount}
             </Button>
-          </div>
+          </>
         }
       />
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* Balance summary: one strip, hairline-divided (no tinted per-type cards). */}
+      <Card className="overflow-hidden">
+        <div className="mobile-keep-cols grid grid-cols-2 divide-border md:grid-cols-5 md:divide-x md:rtl:divide-x-reverse">
+          {ACCOUNT_TYPE_ORDER.map((type) => {
+            const config = ACCOUNT_TYPE_CONFIG[type];
+            const total = typeTotals[type] || 0;
+            return (
+              <div key={type} className="px-4 py-3 md:px-5" data-testid={`summary-${type}`}>
+                <p className="text-caption text-muted-foreground">
+                  {locale === "ar" ? config.labelAr : config.label}
+                </p>
+                <Money
+                  amount={Math.abs(total)}
+                  className={cn("mt-1 flex text-h4 font-semibold", total < 0 && "text-negative")}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div className="relative w-full sm:max-w-sm">
+        <Search
+          className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
         <Input
           placeholder={t.searchAccounts}
+          aria-label={t.searchAccounts}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
+          className="h-9 ps-9"
           data-testid="input-search-accounts"
         />
       </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Card key={i}>
-              <CardHeader className="py-4">
-                <Skeleton className="h-6 w-32" />
-              </CardHeader>
-              <CardContent className="py-2">
-                <div className="space-y-2">
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : Object.keys(groupedAccounts).length === 0 ? (
-        <Card className="p-8 text-center">
-          <div className="flex flex-col items-center">
-            <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {searchQuery ? t.noResultsFound : t.noAccountsYet}
-            </h3>
-            <p className="text-muted-foreground">
-              {searchQuery ? t.tryDifferentKeywords : t.addAccountsToStart}
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <AnimatePresence>
-            {ACCOUNT_TYPE_ORDER.map((type) => {
-              const accounts = groupedAccounts[type];
-              if (!accounts || accounts.length === 0) return null;
-
-              const config = ACCOUNT_TYPE_CONFIG[type];
-              const Icon = config.icon;
-              const isExpanded = expandedTypes.has(type);
-
-              return (
-                <motion.div
-                  key={type}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Card className="overflow-hidden">
-                    <Collapsible open={isExpanded} onOpenChange={() => toggleType(type)}>
-                      <CollapsibleTrigger asChild>
-                        <CardHeader
-                          className={`py-4 cursor-pointer hover-elevate ${config.bgClass}`}
-                          data-testid={`button-toggle-${type}`}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(event: React.KeyboardEvent) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              toggleType(type);
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                              <div className={`p-2 rounded-lg ${config.bgClass}`}>
-                                <Icon className={`h-5 w-5 ${config.colorClass}`} />
-                              </div>
-                              <div>
-                                <CardTitle className="text-lg font-semibold">
-                                  {locale === "ar" ? config.labelAr : config.label}
-                                </CardTitle>
-                                <CardDescription>
-                                  {accounts.length} {t.accountsCount}
-                                </CardDescription>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <p className="text-sm text-muted-foreground">{t.total}</p>
-                                <p
-                                  className={`text-lg font-mono font-semibold ${
-                                    typeTotals[type] >= 0 ? "text-foreground" : "text-destructive"
-                                  }`}
-                                >
-                                  {formatCurrency(Math.abs(typeTotals[type]))}
-                                </p>
-                              </div>
-                              {isExpanded ? (
-                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                              )}
-                            </div>
-                          </div>
-                        </CardHeader>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <CardContent className="p-0">
-                          <div className="divide-y">
-                            {accounts.map((item, index) => (
-                              <motion.div
-                                key={item.account.id}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: index * 0.05 }}
-                                className="flex items-center justify-between p-4 hover-elevate cursor-pointer group"
-                                style={
-                                  item.depth > 0
-                                    ? { paddingInlineStart: `${1 + item.depth * 1.5}rem` }
-                                    : undefined
-                                }
-                                onClick={() => handleAccountClick(item.account.id)}
-                                data-testid={`row-account-${item.account.id}`}
-                              >
-                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">
-                                      {locale === "ar" && item.account.nameAr
-                                        ? item.account.nameAr
-                                        : item.account.nameEn}
-                                    </p>
-                                  </div>
-                                  {!item.account.isActive && (
-                                    <Badge variant="secondary" className="shrink-0">
-                                      {t.inactive}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-4">
-                                  <div className="text-right">
-                                    <p
-                                      className={`font-mono font-medium ${
-                                        item.balance >= 0 ? "text-foreground" : "text-destructive"
-                                      }`}
-                                    >
-                                      {formatCurrency(Math.abs(item.balance))}
-                                    </p>
-                                    <div className="flex gap-2 text-xs text-muted-foreground">
-                                      <span>
-                                        {formatMessage(t["pages.coaDebitTotal"], {
-                                          amount: formatCurrency(item.debitTotal, "AED", locale),
-                                        })}
-                                      </span>
-                                      <span>
-                                        {formatMessage(t["pages.coaCreditTotal"], {
-                                          amount: formatCurrency(item.creditTotal, "AED", locale),
-                                        })}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={t["journal.coaSetParent"]}
-                                    title={t["journal.coaSetParent"]}
-                                    data-testid={`button-set-parent-${item.account.id}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openParentDialog(item.account);
-                                    }}
-                                  >
-                                    <GitBranch className="h-4 w-4" />
-                                  </Button>
-                                  <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                              </motion.div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </Card>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      )}
+      <DataTableCard
+        status={
+          isLoading ? "loading" : Object.keys(groupedAccounts).length === 0 ? "empty" : "ready"
+        }
+        columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
+        empty={{
+          icon: BookOpen,
+          title: searchQuery ? t.noResultsFound : t.noAccountsYet,
+          description: searchQuery ? t.tryDifferentKeywords : t.addAccountsToStart,
+        }}
+      >
+        <Table className="row-cards">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t["screens.code"]}</TableHead>
+              <TableHead className="w-full">{t["screens.account"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.debit"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.credit"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.balance"]}</TableHead>
+              <TableHead>
+                <span className="sr-only">{t.actions}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          {ACCOUNT_TYPE_ORDER.map((type) => {
+            const accounts = groupedAccounts[type];
+            if (!accounts || accounts.length === 0) return null;
+            const config = ACCOUNT_TYPE_CONFIG[type];
+            const Icon = config.icon;
+            const isExpanded = expandedTypes.has(type);
+            return (
+              <TableBody key={type}>
+                <TableRow className="bg-surface-sunken/70 hover:bg-surface-sunken">
+                  <TableCell colSpan={6} className="p-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleType(type)}
+                      aria-expanded={isExpanded}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      data-testid={`button-toggle-${type}`}
+                    >
+                      {/* Expand chevrons never mirror (CTO 12). */}
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast",
+                          !isExpanded && "-rotate-90"
+                        )}
+                        aria-hidden
+                      />
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="text-sm font-semibold text-foreground">
+                        {locale === "ar" ? config.labelAr : config.label}
+                      </span>
+                      <span className="text-caption text-muted-foreground">
+                        {accounts.length} {t.accountsCount}
+                      </span>
+                      <Money
+                        amount={Math.abs(typeTotals[type])}
+                        className={cn(
+                          "ms-auto text-sm font-semibold",
+                          typeTotals[type] < 0 && "text-negative"
+                        )}
+                      />
+                    </button>
+                  </TableCell>
+                </TableRow>
+                {isExpanded &&
+                  accounts.map((item) => (
+                    <TableRow
+                      key={item.account.id}
+                      className="group cursor-pointer"
+                      onClick={() => handleAccountClick(item.account.id)}
+                      data-testid={`row-account-${item.account.id}`}
+                    >
+                      <TableCell
+                        data-nowrap=""
+                        data-cell="meta"
+                        className="tabular-nums text-muted-foreground"
+                      >
+                        {item.account.code}
+                      </TableCell>
+                      <TableCell
+                        data-truncate=""
+                        data-cell="title"
+                        style={
+                          item.depth > 0
+                            ? { paddingInlineStart: `${1 + item.depth * 1.25}rem` }
+                            : undefined
+                        }
+                      >
+                        <span dir="auto" className="font-medium">
+                          {locale === "ar" && item.account.nameAr
+                            ? item.account.nameAr
+                            : item.account.nameEn}
+                        </span>
+                        {!item.account.isActive && (
+                          <Badge variant="neutral" className="ms-2">
+                            {t.inactive}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <MoneyCell
+                        amount={item.debitTotal}
+                        showCurrency={false}
+                        className="text-muted-foreground"
+                      />
+                      <MoneyCell
+                        amount={item.creditTotal}
+                        showCurrency={false}
+                        className="text-muted-foreground"
+                      />
+                      <MoneyCell
+                        amount={Math.abs(item.balance)}
+                        className={cn("font-medium", item.balance < 0 && "text-negative")}
+                        data-cell="amount"
+                      />
+                      <TableCell data-cell="actions" className="w-px">
+                        <RowActions>
+                          <RowActionButton
+                            label={t["journal.coaSetParent"]}
+                            icon={GitBranch}
+                            data-testid={`button-set-parent-${item.account.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openParentDialog(item.account);
+                            }}
+                          />
+                        </RowActions>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            );
+          })}
+        </Table>
+      </DataTableCard>
 
       <Dialog open={!!parentFor} onOpenChange={(open) => !open && setParentFor(null)}>
         <DialogContent data-testid="dialog-set-parent">
@@ -497,43 +481,6 @@ export default function ChartOfAccounts() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Card className="mt-6">
-        <CardHeader className="py-4">
-          <CardTitle className="text-lg">{t.balanceSummary}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {ACCOUNT_TYPE_ORDER.map((type) => {
-              const config = ACCOUNT_TYPE_CONFIG[type];
-              const Icon = config.icon;
-              const total = typeTotals[type] || 0;
-
-              return (
-                <div
-                  key={type}
-                  className={`p-4 rounded-lg ${config.bgClass}`}
-                  data-testid={`summary-${type}`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Icon className={`h-4 w-4 ${config.colorClass}`} />
-                    <span className="text-sm font-medium">
-                      {locale === "ar" ? config.labelAr : config.label}
-                    </span>
-                  </div>
-                  <p
-                    className={`font-mono font-semibold text-lg ${
-                      total >= 0 ? "text-foreground" : "text-destructive"
-                    }`}
-                  >
-                    {formatCurrency(Math.abs(total))}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

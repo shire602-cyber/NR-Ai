@@ -19,7 +19,9 @@ describe("D3b design pass: system fixes", () => {
 
   it("RTL: tabular figures no longer force whole tables/containers into LTR", () => {
     const rtl = read("client/src/styles/rtl.css");
-    expect(rtl).toContain('[dir="rtl"] .tabular-nums:not(table):not(:has(*))');
+    expect(rtl).toContain(
+      '[dir="rtl"] .tabular-nums:not(table):not(thead):not(tbody):not(tfoot):not(tr):not(:has(*))'
+    );
     expect(rtl).not.toMatch(/\[dir="rtl"\] \.tabular-nums \{/);
   });
 });

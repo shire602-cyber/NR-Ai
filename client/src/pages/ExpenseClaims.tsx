@@ -20,7 +20,7 @@ import {
   CreditCard,
   Wallet,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -71,12 +71,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getStoredUser } from "@/lib/auth";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -604,9 +610,9 @@ export default function ExpenseClaims() {
           </StatusBadge>
         );
       case "paid":
-        return <StatusBadge tone="accent">{cc.paid}</StatusBadge>;
+        return <StatusBadge tone="success">{cc.paid}</StatusBadge>;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="neutral">{status}</Badge>;
     }
   };
 
@@ -637,10 +643,10 @@ export default function ExpenseClaims() {
     return (
       <EmptyState
         icon={Receipt}
-        title="Set up your company first"
-        description="Expense claims live inside a company workspace. Finish onboarding to start tracking reimbursements."
+        title={t["screens.setUpCompanyFirst"]}
+        description={t["screens.claimsNeedCompany"]}
         action={{
-          label: "Continue setup",
+          label: t["screens.continueSetup"],
           onClick: () => {
             window.location.href = "/onboarding";
           },
@@ -654,6 +660,7 @@ export default function ExpenseClaims() {
 
   const ClaimsTable = ({
     claims,
+    loading = false,
     showActions = true,
     isReview = false,
     emptyTitle,
@@ -661,349 +668,270 @@ export default function ExpenseClaims() {
     emptyAction,
   }: {
     claims: ExpenseClaim[];
+    loading?: boolean;
     showActions?: boolean;
     isReview?: boolean;
     emptyTitle?: string;
     emptyDescription?: string;
     emptyAction?: { label: string; onClick: () => void };
-  }) => {
-    if (claims.length === 0) {
-      return (
-        <EmptyState
-          icon={Receipt}
-          title={emptyTitle ?? (t as any).noExpenseClaimsYet ?? "No expense claims yet"}
-          description={
-            emptyDescription ??
-            (t as any).expenseClaimsEmptyDesc ??
-            "Submit your first reimbursement to get started."
-          }
-          action={
-            emptyAction
-              ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus }
-              : undefined
-          }
-          testId="empty-state-expense-claims"
-        />
-      );
-    }
-    return (
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Claim #</TableHead>
+  }) => (
+    <DataTableCard
+      status={loading ? "loading" : claims.length === 0 ? "empty" : "ready"}
+      columnLabels={[t["pages.title"], t.date, t.amount, t.status]}
+      empty={{
+        icon: Receipt,
+        title: emptyTitle ?? (t as any).noExpenseClaimsYet ?? "No expense claims yet",
+        description:
+          emptyDescription ??
+          (t as any).expenseClaimsEmptyDesc ??
+          "Submit your first reimbursement to get started.",
+        action: emptyAction
+          ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus }
+          : undefined,
+        testId: "empty-state-expense-claims",
+      }}
+    >
+      <Table className="row-cards">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t["screens.claimNumber"]}</TableHead>
+            <TableHead className="w-full">
+              <T k="pages.title" />
+            </TableHead>
+            <TableHead>{t.date || "Date"}</TableHead>
+            <TableHead data-numeric="">{t.amount || "Amount"}</TableHead>
+            <TableHead>{t.status || "Status"}</TableHead>
+            {showActions && (
               <TableHead>
-                <T k="pages.title" />
+                <span className="sr-only">{t.actions || "Actions"}</span>
               </TableHead>
-              <TableHead>{t.date || "Date"}</TableHead>
-              <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
-              <TableHead>{t.status || "Status"}</TableHead>
-              {showActions && (
-                <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
-              )}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {claims.map((claim) => (
+            )}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {claims.map((claim) => {
+            const canEdit = !isReview && claim.status === "draft";
+            const canReview = isReview && claim.status === "submitted";
+            const canPay = claim.status === "approved" && !claim.payroll_run_id;
+            return (
               <TableRow key={claim.id}>
-                <TableCell className="font-mono text-sm text-muted-foreground">
-                  {claim.claim_number}
+                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                  <span dir="ltr" className="[unicode-bidi:isolate]">
+                    {claim.claim_number}
+                  </span>
                 </TableCell>
-                <TableCell className="font-medium">{claim.title}</TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {claim.created_at ? format(new Date(claim.created_at), "MMM dd, yyyy") : "-"}
+                <TableCell data-truncate="" data-cell="title" dir="auto" className="font-medium">
+                  {claim.title}
                 </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatCurrency(
-                    parseFloat(String(claim.total_amount)) || 0,
-                    claim.currency || "AED",
-                    locale
+                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                  {claim.created_at ? formatDate(claim.created_at, locale) : "—"}
+                </TableCell>
+                <MoneyCell
+                  amount={parseFloat(String(claim.total_amount)) || 0}
+                  currency={claim.currency || "AED"}
+                  className="font-medium"
+                  data-cell="amount"
+                />
+                <TableCell data-nowrap="" data-cell="status">
+                  {getStatusBadge(claim.status)}
+                  {claim.status === "approved" && claim.payroll_run_id && (
+                    <span className="ms-2 text-caption text-muted-foreground">
+                      {t["purchases.onPayrollRun"]}
+                    </span>
                   )}
                 </TableCell>
-                <TableCell>{getStatusBadge(claim.status)}</TableCell>
                 {showActions && (
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewClaim(claim)}
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      {!isReview && claim.status === "draft" && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenEditDialog(claim)}
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => submitClaimMutation.mutate(claim.id)}
-                            title="Submit for Review"
-                            className="text-primary hover:text-primary"
-                          >
-                            <Send className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setClaimToDelete(claim.id)}
-                            title="Delete"
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </>
+                  <TableCell data-cell="actions">
+                    <RowActions
+                      collapseOnMobile
+                      menu={
+                        canEdit || canPay ? (
+                          <>
+                            {canEdit && (
+                              <DropdownMenuItem onSelect={() => handleOpenEditDialog(claim)}>
+                                <Edit aria-hidden />
+                                {t.edit}
+                              </DropdownMenuItem>
+                            )}
+                            {canPay && (
+                              <DropdownMenuItem onSelect={() => handleOpenPaymentDialog(claim.id)}>
+                                <CreditCard aria-hidden />
+                                {t["screens.markAsPaid"]}
+                              </DropdownMenuItem>
+                            )}
+                            {canPay && (
+                              <DropdownMenuItem
+                                disabled={payrollMutation.isPending}
+                                onSelect={() =>
+                                  payrollMutation.mutate({
+                                    id: claim.id,
+                                    enabled: !claim.reimburse_via_payroll,
+                                  })
+                                }
+                                aria-pressed={!!claim.reimburse_via_payroll}
+                                data-testid={`claim-payroll-${claim.id}`}
+                              >
+                                <Wallet aria-hidden />
+                                {claim.reimburse_via_payroll
+                                  ? t["purchases.removeFromPayroll"]
+                                  : t["purchases.reimburseViaPayroll"]}
+                              </DropdownMenuItem>
+                            )}
+                            {canEdit && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onSelect={() => setClaimToDelete(claim.id)}
+                                >
+                                  <Trash2 aria-hidden />
+                                  {t.delete}
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </>
+                        ) : undefined
+                      }
+                    >
+                      {canEdit && (
+                        <RowActionButton
+                          label={t["screens.submitForReview"]}
+                          icon={Send}
+                          onClick={() => submitClaimMutation.mutate(claim.id)}
+                        />
                       )}
-                      {isReview && claim.status === "submitted" && (
+                      {canReview && (
                         <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                          <RowActionButton
+                            label={t["pages.approve"]}
+                            icon={CheckCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "approve")}
-                            title="Approve"
-                            className="text-[hsl(var(--chart-5))] hover:text-[hsl(var(--chart-5))]"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                          />
+                          <RowActionButton
+                            label={t["screens.reject"]}
+                            icon={XCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "reject")}
-                            title="Reject"
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </Button>
+                          />
                         </>
                       )}
-                      {claim.status === "approved" && !claim.payroll_run_id && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenPaymentDialog(claim.id)}
-                          title="Mark as Paid"
-                          className="text-[hsl(var(--chart-3))] hover:text-[hsl(var(--chart-3))]"
-                        >
-                          <CreditCard className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {claim.status === "approved" && !claim.payroll_run_id && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={payrollMutation.isPending}
-                          onClick={() =>
-                            payrollMutation.mutate({
-                              id: claim.id,
-                              enabled: !claim.reimburse_via_payroll,
-                            })
-                          }
-                          title={
-                            claim.reimburse_via_payroll
-                              ? t["purchases.removeFromPayroll"]
-                              : t["purchases.reimburseViaPayroll"]
-                          }
-                          aria-pressed={!!claim.reimburse_via_payroll}
-                          data-testid={`claim-payroll-${claim.id}`}
-                        >
-                          <Wallet className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {claim.status === "approved" && claim.payroll_run_id && (
-                        <span className="text-xs text-muted-foreground">
-                          {t["purchases.onPayrollRun"]}
-                        </span>
-                      )}
-                    </div>
+                      <RowActionButton
+                        label={t["screens.viewDetails"]}
+                        icon={Eye}
+                        onClick={() => handleViewClaim(claim)}
+                      />
+                    </RowActions>
                   </TableCell>
                 )}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    );
-  };
+            );
+          })}
+        </TableBody>
+      </Table>
+    </DataTableCard>
+  );
 
   // ─── Render ───────────────────────────────────────────
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Receipt className="w-8 h-8" />
-            <T k="pages.expenseClaims" />
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            <T k="pages.submitTrackAndManageEmployeeExpenseReimbursement" />
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Purchases"
+        title={t["pages.expenseClaims"]}
+        description={t["pages.submitTrackAndManageEmployeeExpenseReimbursement"]}
+        actions={
+          <Button onClick={handleOpenCreateDialog}>
+            <Plus aria-hidden />
+            <T k="pages.newClaim" />
+          </Button>
+        }
+      />
 
-      {/* ─── Summary Cards ─────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.pendingThisMonth" />
-            </CardTitle>
-            <Clock className="w-4 h-4 text-[hsl(var(--chart-1))]" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(pendingTotal, "AED", locale)}</div>
-            <p className="text-xs text-muted-foreground">
-              {summary?.thisMonth?.submitted?.count || 0} claims awaiting review
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.approvedThisMonth" />
-            </CardTitle>
-            <CheckCircle className="w-4 h-4 text-[hsl(var(--chart-5))]" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(approvedTotal, "AED", locale)}</div>
-            <p className="text-xs text-muted-foreground">
-              {summary?.thisMonth?.approved?.count || 0} claims approved
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.paidThisMonth" />
-            </CardTitle>
-            <DollarSign className="w-4 h-4 text-[hsl(var(--chart-3))]" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(paidTotal, "AED", locale)}</div>
-            <p className="text-xs text-muted-foreground">
-              {summary?.thisMonth?.paid?.count || 0} claims paid out
-            </p>
-          </CardContent>
-        </Card>
+      {/* ─── Summary ─────────────────────────────────────── */}
+      <div className="mobile-keep-cols grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <StatCard
+          label={t["pages.pendingThisMonth"]}
+          icon={Clock}
+          value={<Money amount={pendingTotal} />}
+          hint={formatMessage(t["screens.claimsAwaitingReview"], {
+            count: summary?.thisMonth?.submitted?.count || 0,
+          })}
+        />
+        <StatCard
+          label={t["pages.approvedThisMonth"]}
+          icon={CheckCircle}
+          value={<Money amount={approvedTotal} />}
+          hint={formatMessage(t["screens.claimsApproved"], {
+            count: summary?.thisMonth?.approved?.count || 0,
+          })}
+        />
+        <StatCard
+          label={t["pages.paidThisMonth"]}
+          icon={DollarSign}
+          value={<Money amount={paidTotal} />}
+          hint={formatMessage(t["screens.claimsPaidOut"], {
+            count: summary?.thisMonth?.paid?.count || 0,
+          })}
+        />
       </div>
 
       {/* ─── Tabs ──────────────────────────────────────── */}
       <Tabs defaultValue="my-claims" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="my-claims" className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
+          <TabsTrigger value="my-claims">
+            <FileText aria-hidden />
             <T k="pages.myClaims" />
           </TabsTrigger>
-          <TabsTrigger value="review" className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" />
-            Review
+          <TabsTrigger value="review">
+            <CheckCircle aria-hidden />
+            {t["screens.review"]}
             {submittedClaims.length > 0 && (
-              <StatusBadge tone="info" className="ml-1 text-xs px-1.5 py-0">
+              <StatusBadge tone="info" className="ms-1 px-1.5 py-0 text-xs">
                 {submittedClaims.length}
               </StatusBadge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="all-claims" className="flex items-center gap-2">
-            <Receipt className="w-4 h-4" />
+          <TabsTrigger value="all-claims">
+            <Receipt aria-hidden />
             <T k="pages.allClaims" />
           </TabsTrigger>
         </TabsList>
 
-        {/* ─── My Claims Tab ───────────────────────────── */}
-        <TabsContent value="my-claims">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>
-                    <T k="pages.myExpenseClaims" />
-                  </CardTitle>
-                  <CardDescription>
-                    {myClaims.length} claim{myClaims.length !== 1 ? "s" : ""} submitted
-                  </CardDescription>
-                </div>
-                <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  <T k="pages.newClaim" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoadingClaims ? (
-                <TableSkeleton rows={4} columns={6} />
-              ) : (
-                <ClaimsTable
-                  claims={myClaims}
-                  emptyTitle="No claims yet"
-                  emptyDescription="Submit your first reimbursement to get started."
-                  emptyAction={{ label: "New Claim", onClick: handleOpenCreateDialog }}
-                />
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="my-claims" className="space-y-3">
+          <p className="text-small text-muted-foreground">
+            {formatMessage(t["screens.claimsSubmittedCount"], { count: myClaims.length })}
+          </p>
+          <ClaimsTable
+            claims={myClaims}
+            loading={isLoadingClaims}
+            emptyTitle={t["screens.noClaimsYet"]}
+            emptyDescription={t["screens.noClaimsYetBody"]}
+            emptyAction={{ label: t["pages.newClaim"], onClick: handleOpenCreateDialog }}
+          />
         </TabsContent>
 
-        {/* ─── Review Tab ──────────────────────────────── */}
-        <TabsContent value="review">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pages.claimsForReview" />
-              </CardTitle>
-              <CardDescription>
-                {submittedClaims.length} claim{submittedClaims.length !== 1 ? "s" : ""} pending
-                approval
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingClaims ? (
-                <TableSkeleton rows={4} columns={6} />
-              ) : (
-                <ClaimsTable
-                  claims={submittedClaims}
-                  isReview
-                  emptyTitle="Nothing to review"
-                  emptyDescription="There are no expense claims awaiting your approval right now."
-                />
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="review" className="space-y-3">
+          <p className="text-small text-muted-foreground">
+            {formatMessage(t["screens.claimsPendingApproval"], { count: submittedClaims.length })}
+          </p>
+          <ClaimsTable
+            claims={submittedClaims}
+            loading={isLoadingClaims}
+            isReview
+            emptyTitle={t["screens.nothingToReview"]}
+            emptyDescription={t["screens.nothingToReviewBody"]}
+          />
         </TabsContent>
 
-        {/* ─── All Claims Tab ──────────────────────────── */}
-        <TabsContent value="all-claims">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pages.allCompanyClaims" />
-              </CardTitle>
-              <CardDescription>
-                {allClaims.length} total claim{allClaims.length !== 1 ? "s" : ""} across the
-                organization
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingClaims ? (
-                <TableSkeleton rows={6} columns={6} />
-              ) : (
-                <ClaimsTable
-                  claims={allClaims}
-                  emptyTitle="No expense claims"
-                  emptyDescription="No one in this company has filed an expense claim yet."
-                />
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="all-claims" className="space-y-3">
+          <p className="text-small text-muted-foreground">
+            {formatMessage(t["screens.claimsAcrossCompany"], { count: allClaims.length })}
+          </p>
+          <ClaimsTable
+            claims={allClaims}
+            loading={isLoadingClaims}
+            emptyTitle={t["screens.noExpenseClaims"]}
+            emptyDescription={t["screens.noExpenseClaimsBody"]}
+          />
         </TabsContent>
       </Tabs>
 
@@ -1045,7 +973,7 @@ export default function ExpenseClaims() {
                       <FormLabel>{t.description || "Description"}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Optional description of the expense claim"
+                          placeholder={t["screens.claimDescPlaceholder"]}
                           {...field}
                           value={field.value || ""}
                         />
@@ -1079,7 +1007,7 @@ export default function ExpenseClaims() {
                       })
                     }
                   >
-                    <Plus className="w-4 h-4 mr-1" />
+                    <Plus className="w-4 h-4" />
                     <T k="pages.addItem" />
                   </Button>
                 </div>
@@ -1127,7 +1055,7 @@ export default function ExpenseClaims() {
                             <Select onValueChange={field.onChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger>
-                                  <SelectValue placeholder="Select category" />
+                                  <SelectValue placeholder={t["screens.selectCategory"]} />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
@@ -1172,7 +1100,7 @@ export default function ExpenseClaims() {
                           <FormItem>
                             <FormLabel>{t.description || "Description"} *</FormLabel>
                             <FormControl>
-                              <Input placeholder="Describe the expense" {...field} />
+                              <Input placeholder={t["screens.describeExpense"]} {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1200,7 +1128,7 @@ export default function ExpenseClaims() {
                         name={`items.${index}.vat_amount`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>VAT Amount (AED)</FormLabel>
+                            <FormLabel>{t["screens.vatAmountAed"]}</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" min="0" {...field} />
                             </FormControl>
@@ -1270,7 +1198,7 @@ export default function ExpenseClaims() {
 
                 {/* Total */}
                 <div className="flex justify-end">
-                  <div className="text-right">
+                  <div className="text-end">
                     <span className="text-sm text-muted-foreground">Claim Total: </span>
                     <span className="text-lg font-bold">
                       {formatCurrency(calculateItemsTotal(), "AED", locale)}
@@ -1337,9 +1265,7 @@ export default function ExpenseClaims() {
                     <T k="pages.created" />
                   </span>
                   <div className="mt-1">
-                    {viewingClaim.created_at
-                      ? format(new Date(viewingClaim.created_at), "MMM dd, yyyy HH:mm")
-                      : "-"}
+                    {viewingClaim.created_at ? formatDate(viewingClaim.created_at, locale) : "-"}
                   </div>
                 </div>
                 {viewingClaim.submitted_at && (
@@ -1347,9 +1273,7 @@ export default function ExpenseClaims() {
                     <span className="text-sm text-muted-foreground">
                       <T k="pages.submitted" />
                     </span>
-                    <div className="mt-1">
-                      {format(new Date(viewingClaim.submitted_at), "MMM dd, yyyy HH:mm")}
-                    </div>
+                    <div className="mt-1">{formatDate(viewingClaim.submitted_at, locale)}</div>
                   </div>
                 )}
                 {viewingClaim.reviewed_at && (
@@ -1357,17 +1281,13 @@ export default function ExpenseClaims() {
                     <span className="text-sm text-muted-foreground">
                       <T k="pages.reviewed" />
                     </span>
-                    <div className="mt-1">
-                      {format(new Date(viewingClaim.reviewed_at), "MMM dd, yyyy HH:mm")}
-                    </div>
+                    <div className="mt-1">{formatDate(viewingClaim.reviewed_at, locale)}</div>
                   </div>
                 )}
                 {viewingClaim.paid_at && (
                   <div>
-                    <span className="text-sm text-muted-foreground">Paid</span>
-                    <div className="mt-1">
-                      {format(new Date(viewingClaim.paid_at), "MMM dd, yyyy HH:mm")}
-                    </div>
+                    <span className="text-sm text-muted-foreground">{t["screens.paid"]}</span>
+                    <div className="mt-1">{formatDate(viewingClaim.paid_at, locale)}</div>
                   </div>
                 )}
               </div>
@@ -1395,7 +1315,7 @@ export default function ExpenseClaims() {
                   <span className="text-sm text-muted-foreground">
                     <T k="pages.paymentReference" />
                   </span>
-                  <p className="mt-1 font-mono text-sm">{viewingClaim.payment_reference}</p>
+                  <p className="mt-1 text-sm">{viewingClaim.payment_reference}</p>
                 </div>
               )}
 
@@ -1417,17 +1337,15 @@ export default function ExpenseClaims() {
                           <TableHead>
                             <T k="pages.merchant" />
                           </TableHead>
-                          <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
-                          <TableHead className="text-right">VAT</TableHead>
+                          <TableHead className="text-end">{t.amount || "Amount"}</TableHead>
+                          <TableHead className="text-end">{t["screens.vat"]}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {viewingClaim.items.map((item, idx) => (
                           <TableRow key={item.id || idx}>
                             <TableCell className="whitespace-nowrap">
-                              {item.expense_date
-                                ? format(new Date(item.expense_date), "MMM dd, yyyy")
-                                : "-"}
+                              {item.expense_date ? formatDate(item.expense_date, locale) : "-"}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">{item.category}</Badge>
@@ -1436,10 +1354,10 @@ export default function ExpenseClaims() {
                             <TableCell className="text-muted-foreground">
                               {item.merchant_name || "-"}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-end">
                               {formatCurrency(parseFloat(String(item.amount)) || 0, "AED", locale)}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-end">
                               {formatCurrency(
                                 parseFloat(String(item.vat_amount)) || 0,
                                 "AED",
@@ -1479,13 +1397,16 @@ export default function ExpenseClaims() {
                 name="review_notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Review Notes {reviewAction === "reject" ? "*" : ""}</FormLabel>
+                    <FormLabel>
+                      <T k="pages.reviewNotes" />
+                      {reviewAction === "reject" && <span className="ms-0.5 text-danger">*</span>}
+                    </FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder={
                           reviewAction === "approve"
-                            ? "Optional approval notes"
-                            : "Reason for rejection (required)"
+                            ? t["screens.optionalApprovalNotes"]
+                            : t["screens.rejectionReasonRequired"]
                         }
                         {...field}
                       />

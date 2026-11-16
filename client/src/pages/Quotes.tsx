@@ -6,7 +6,6 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,8 +33,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/badge";
+import { DataTableCard } from "@/components/ui/data-table";
+import { MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -45,12 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -58,18 +54,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  Plus,
-  CalendarIcon,
-  Trash2,
-  Download,
-  Edit,
-  FileText,
-  MoreHorizontal,
-  ArrowRightLeft,
-} from "lucide-react";
+import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EmptyState } from "@/components/ui/empty-state";
 
 const quoteLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -290,25 +276,6 @@ export default function Quotes() {
     }
   };
 
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "bg-muted text-foreground ";
-      case "sent":
-        return "bg-info-subtle text-info ";
-      case "accepted":
-        return "bg-success-subtle text-success ";
-      case "rejected":
-        return "bg-danger-subtle text-destructive ";
-      case "expired":
-        return "bg-warning-subtle text-warning ";
-      case "converted":
-        return "bg-chart-5/10 text-chart-5 ";
-      default:
-        return "bg-muted text-foreground ";
-    }
-  };
-
   const watchLines = form.watch("lines");
   const subtotal = watchLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const vatAmount = watchLines.reduce(
@@ -327,507 +294,505 @@ export default function Quotes() {
         eyebrow="Sales"
         title={t.quotes}
         description={(t as any).quotesSubtitle ?? "Create and manage quotes for your customers"}
-      />
-
-      <div className="flex items-center justify-end flex-wrap gap-4">
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) resetForm();
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              <T k="pageLabels.newQuote" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingQuote ? "Edit Quote" : "New Quote"}</DialogTitle>
-              <DialogDescription>
-                {editingQuote
-                  ? "Update quote details"
-                  : "Create a new quote with automatic VAT calculation"}
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pageLabels.quoteNumber" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} className="font-mono" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t.date}</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? (
-                                  format(field.value, "PPP")
-                                ) : (
-                                  <span>
-                                    <T k="pages.pickADate" />
-                                  </span>
-                                )}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="customerName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.customerName" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerTrn"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.customerTrn" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Optional" className="font-mono" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="expiryDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pageLabels.expiryDate" />
-                        </FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? (
-                                  format(field.value, "PPP")
-                                ) : (
-                                  <span>
-                                    <T k="pages.pickADate" />
-                                  </span>
-                                )}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="currency"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pages.currency" />
-                        </FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+        actions={
+          <Dialog
+            open={dialogOpen}
+            onOpenChange={(open) => {
+              setDialogOpen(open);
+              if (!open) resetForm();
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4" />
+                <T k="pageLabels.newQuote" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingQuote ? t["screens.editQuote"] : t["pageLabels.newQuote"]}
+                </DialogTitle>
+                <DialogDescription>
+                  {editingQuote
+                    ? t["screens.quoteDialogEditDesc"]
+                    : t["screens.quoteDialogNewDesc"]}
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="number"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pageLabels.quoteNumber" />
+                          </FormLabel>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select currency" />
-                            </SelectTrigger>
+                            <Input {...field} />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="AED">AED</SelectItem>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="EUR">EUR</SelectItem>
-                            <SelectItem value="GBP">GBP</SelectItem>
-                            <SelectItem value="SAR">SAR</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.notes" />
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          placeholder="Optional notes for the customer"
-                          rows={3}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium">
-                      <T k="pages.lineItems" />
-                    </h3>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
-                      }
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      <T k="pages.addLine" />
-                    </Button>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t.date}</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-start font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  <CalendarIcon className="h-4 w-4" />
+                                  {field.value ? (
+                                    format(field.value, "PPP")
+                                  ) : (
+                                    <span>
+                                      <T k="pages.pickADate" />
+                                    </span>
+                                  )}
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
 
-                  {fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
-                    >
-                      <div className="col-span-4">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.description`}
-                          render={({ field }) => (
-                            <FormItem>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="customerName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.customerName" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="customerTrn"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.customerTrn" />
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder={t["screens.optional"]} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="expiryDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pageLabels.expiryDate" />
+                          </FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
                               <FormControl>
-                                <Input {...field} placeholder="Description" />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.quantity`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Qty"
-                                  className="font-mono"
-                                  value={field.value ?? ""}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                  }
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.unitPrice`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Price"
-                                  className="font-mono"
-                                  value={field.value ?? ""}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                  }
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.vatRate`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Select
-                                  value={String(field.value * 100)}
-                                  onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-start font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
                                 >
-                                  <SelectTrigger className="font-mono">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="0">0%</SelectItem>
-                                    <SelectItem value="5">5%</SelectItem>
-                                    <SelectItem value="10">10%</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                  <CalendarIcon className="h-4 w-4" />
+                                  {field.value ? (
+                                    format(field.value, "PPP")
+                                  ) : (
+                                    <span>
+                                      <T k="pages.pickADate" />
+                                    </span>
+                                  )}
+                                </Button>
                               </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="col-span-1">
-                        <div className="h-10 flex items-center justify-end font-mono text-sm">
-                          {formatCurrency(
-                            (watchLines[index]?.quantity || 0) *
-                              (watchLines[index]?.unitPrice || 0) *
-                              (1 + (watchLines[index]?.vatRate || 0)),
-                            "AED",
-                            locale
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="currency"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <T k="pages.currency" />
+                          </FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={t["screens.selectCurrency"]} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="AED">AED</SelectItem>
+                              <SelectItem value="USD">USD</SelectItem>
+                              <SelectItem value="EUR">EUR</SelectItem>
+                              <SelectItem value="GBP">GBP</SelectItem>
+                              <SelectItem value="SAR">SAR</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.notes" />
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder={t["screens.quoteNotesPlaceholder"]}
+                            rows={3}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">
+                        <T k="pages.lineItems" />
+                      </h3>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
+                        }
+                      >
+                        <Plus className="w-4 h-4" />
+                        <T k="pages.addLine" />
+                      </Button>
+                    </div>
+
+                    {fields.map((field, index) => (
+                      <div
+                        key={field.id}
+                        className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
+                      >
+                        <div className="col-span-4">
+                          <FormField
+                            control={form.control}
+                            name={`lines.${index}.description`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input {...field} placeholder={t.description} />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <FormField
+                            control={form.control}
+                            name={`lines.${index}.quantity`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder={t["screens.qty"]}
+                                    value={field.value ?? ""}
+                                    onChange={(e) =>
+                                      field.onChange(
+                                        e.target.value ? parseFloat(e.target.value) : ""
+                                      )
+                                    }
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <FormField
+                            control={form.control}
+                            name={`lines.${index}.unitPrice`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder={t["screens.price"]}
+                                    value={field.value ?? ""}
+                                    onChange={(e) =>
+                                      field.onChange(
+                                        e.target.value ? parseFloat(e.target.value) : ""
+                                      )
+                                    }
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <FormField
+                            control={form.control}
+                            name={`lines.${index}.vatRate`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Select
+                                    value={String(field.value * 100)}
+                                    onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="0">0%</SelectItem>
+                                      <SelectItem value="5">5%</SelectItem>
+                                      <SelectItem value="10">10%</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <div className="h-10 flex items-center justify-end text-sm">
+                            {formatCurrency(
+                              (watchLines[index]?.quantity || 0) *
+                                (watchLines[index]?.unitPrice || 0) *
+                                (1 + (watchLines[index]?.vatRate || 0)),
+                              "AED",
+                              locale
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-1 flex items-center justify-center">
+                          {fields.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => remove(index)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
                           )}
                         </div>
                       </div>
-                      <div className="col-span-1 flex items-center justify-center">
-                        {fields.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => remove(index)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        )}
-                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t pt-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        <T k="pages.subtotal" />
+                      </span>
+                      <span className="font-medium">{formatCurrency(subtotal, "AED", locale)}</span>
                     </div>
-                  ))}
-                </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">VAT</span>
+                      <span className="font-medium">
+                        {formatCurrency(vatAmount, "AED", locale)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-lg font-semibold pt-2 border-t">
+                      <span>
+                        <T k="pages.total2" />
+                      </span>
+                      <span>{formatCurrency(total, "AED", locale)}</span>
+                    </div>
+                  </div>
 
-                <div className="border-t pt-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      <T k="pages.subtotal" />
-                    </span>
-                    <span className="font-mono font-medium">
-                      {formatCurrency(subtotal, "AED", locale)}
-                    </span>
+                  <div className="flex gap-3 pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setDialogOpen(false)}
+                      className="flex-1"
+                    >
+                      <T k="pages.cancel" />
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={createMutation.isPending || editMutation.isPending}
+                      className="flex-1"
+                    >
+                      {createMutation.isPending || editMutation.isPending ? t.loading : t.save}
+                    </Button>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT</span>
-                    <span className="font-mono font-medium">
-                      {formatCurrency(vatAmount, "AED", locale)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>
-                      <T k="pages.total2" />
-                    </span>
-                    <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
-                  </div>
-                </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDialogOpen(false)}
-                    className="flex-1"
+      <DataTableCard
+        status={isLoading ? "loading" : quotes && quotes.length > 0 ? "ready" : "empty"}
+        columnLabels={[t.date, t.total, t.status]}
+        testId="quotes-table"
+        empty={{
+          icon: FileText,
+          title: (t as any).noQuotesYet ?? "No quotes yet",
+          description:
+            (t as any).quotesEmptyDesc ??
+            "Send a professional quote in minutes — accepted quotes convert to invoices with one click.",
+          action: {
+            label: (t as any).newQuote ?? "New Quote",
+            onClick: () => setDialogOpen(true),
+          },
+          testId: "empty-quotes",
+        }}
+      >
+        <Table className="row-cards">
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                <T k="pages.number" />
+              </TableHead>
+              <TableHead className="w-full">
+                <T k="pages.customer" />
+              </TableHead>
+              <TableHead>{t.date}</TableHead>
+              <TableHead>
+                <T k="pages.expiry" />
+              </TableHead>
+              <TableHead data-numeric="">
+                <T k="pages.total2" />
+              </TableHead>
+              <TableHead>
+                <T k="pages.status" />
+              </TableHead>
+              <TableHead>
+                <span className="sr-only">{t.actions}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(quotes ?? []).map((quote) => (
+              <TableRow key={quote.id}>
+                <TableCell data-nowrap="" data-cell="meta" className="font-medium">
+                  <span dir="ltr" className="[unicode-bidi:isolate]">
+                    {quote.number}
+                  </span>
+                </TableCell>
+                <TableCell data-truncate="" data-cell="title" dir="auto">
+                  {quote.customerName}
+                </TableCell>
+                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                  {formatDate(quote.date, locale)}
+                </TableCell>
+                <TableCell data-nowrap="" className="text-muted-foreground">
+                  {formatDate(quote.expiryDate, locale)}
+                </TableCell>
+                <MoneyCell
+                  amount={Number(quote.total)}
+                  currency={quote.currency}
+                  className="font-medium"
+                  data-cell="amount"
+                />
+                <TableCell data-nowrap="" data-cell="status">
+                  <StatusBadge status={quote.status} />
+                </TableCell>
+                <TableCell data-cell="actions">
+                  <RowActions
+                    collapseOnMobile
+                    menu={
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => convertMutation.mutate(quote.id)}
+                          disabled={quote.status === "converted"}
+                        >
+                          <ArrowRightLeft aria-hidden />
+                          <T k="pageLabels.convertToInvoice" />
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => {
+                            if (window.confirm(t["screens.confirmDeleteQuote"])) {
+                              deleteMutation.mutate(quote.id);
+                            }
+                          }}
+                        >
+                          <Trash2 aria-hidden />
+                          <T k="pages.delete" />
+                        </DropdownMenuItem>
+                      </>
+                    }
                   >
-                    <T k="pages.cancel" />
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={createMutation.isPending || editMutation.isPending}
-                    className="flex-1"
-                  >
-                    {createMutation.isPending || editMutation.isPending ? "Saving..." : "Save"}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {isLoading ? (
-        <Skeleton className="h-96" />
-      ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="font-semibold">
-                    <T k="pages.number" />
-                  </TableHead>
-                  <TableHead className="font-semibold">
-                    <T k="pages.customer" />
-                  </TableHead>
-                  <TableHead className="font-semibold">{t.date}</TableHead>
-                  <TableHead className="font-semibold">
-                    <T k="pages.expiry" />
-                  </TableHead>
-                  <TableHead className="font-semibold text-right">
-                    <T k="pages.total2" />
-                  </TableHead>
-                  <TableHead className="font-semibold text-center">
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead className="font-semibold text-center">
-                    <T k="pages.actions" />
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {quotes && quotes.length > 0 ? (
-                  quotes.map((quote) => (
-                    <TableRow key={quote.id}>
-                      <TableCell className="font-mono font-medium">{quote.number}</TableCell>
-                      <TableCell>{quote.customerName}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatDate(quote.date, locale)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatDate(quote.expiryDate, locale)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(quote.total, quote.currency, locale)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge className={cn("capitalize", getStatusBadgeColor(quote.status))}>
-                          {quote.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditQuote(quote)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => convertMutation.mutate(quote.id)}
-                              disabled={quote.status === "converted"}
-                            >
-                              <ArrowRightLeft className="w-4 h-4 mr-2" />
-                              <T k="pageLabels.convertToInvoice" />
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => window.open(`/api/quotes/${quote.id}/pdf`, "_blank")}
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              <T k="pages.downloadPdf" />
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                if (window.confirm("Are you sure you want to delete this quote?")) {
-                                  deleteMutation.mutate(quote.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              <T k="pages.delete" />
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-4">
-                      <EmptyState
-                        icon={FileText}
-                        title={(t as any).noQuotesYet ?? "No quotes yet"}
-                        description={
-                          (t as any).quotesEmptyDesc ??
-                          "Send a professional quote in minutes — accepted quotes convert to invoices with one click."
-                        }
-                        action={{
-                          label: (t as any).newQuote ?? "New Quote",
-                          onClick: () => setDialogOpen(true),
-                        }}
-                        testId="empty-quotes"
-                      />
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
+                    <RowActionButton
+                      label={t.edit}
+                      icon={Edit}
+                      onClick={() => handleEditQuote(quote)}
+                    />
+                    <RowActionButton
+                      label={t["pages.downloadPdf"]}
+                      icon={Download}
+                      onClick={() => window.open(`/api/quotes/${quote.id}/pdf`, "_blank")}
+                    />
+                  </RowActions>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </DataTableCard>
     </div>
   );
 }

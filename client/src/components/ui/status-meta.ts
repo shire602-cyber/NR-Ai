@@ -18,7 +18,28 @@ export type StatusKind =
   | "submitted"
   | "partial"
   | "cancelled"
-  | "due_soon";
+  | "due_soon"
+  | "accepted"
+  | "expired"
+  | "converted"
+  | "received"
+  | "partially_received"
+  | "closed"
+  | "reconciled"
+  | "unmatched"
+  | "matched"
+  | "suggested"
+  | "reimbursed"
+  | "disposed"
+  | "applied"
+  | "open"
+  | "completed"
+  | "paused"
+  | "issued"
+  | "confirmed"
+  | "unposted"
+  | "ordered"
+  | "billed";
 
 // R18-02: `label` is a translation key (components namespace).
 export const STATUS_MAP: Record<
@@ -40,6 +61,28 @@ export const STATUS_MAP: Record<
   partial: { variant: "warning", label: "components.statusPartial" },
   due_soon: { variant: "warning", label: "components.statusDueSoon" },
   cancelled: { variant: "neutral", label: "components.statusCancelled" },
+  // D3a: sales, purchase, banking, ledger and asset statuses (screens namespace).
+  accepted: { variant: "success", label: "screens.statusAccepted" },
+  expired: { variant: "warning", label: "screens.statusExpired" },
+  converted: { variant: "info", label: "screens.statusConverted" },
+  received: { variant: "success", label: "screens.statusReceived" },
+  partially_received: { variant: "warning", label: "screens.statusPartiallyReceived" },
+  closed: { variant: "neutral", label: "screens.statusClosed" },
+  reconciled: { variant: "success", label: "screens.statusReconciled" },
+  unmatched: { variant: "neutral", label: "screens.statusUnmatched" },
+  matched: { variant: "success", label: "screens.statusMatched" },
+  suggested: { variant: "warning", label: "screens.statusSuggested" },
+  reimbursed: { variant: "success", label: "screens.statusReimbursed" },
+  disposed: { variant: "neutral", label: "screens.statusDisposed" },
+  applied: { variant: "success", label: "screens.statusApplied" },
+  open: { variant: "info", label: "screens.statusOpen" },
+  completed: { variant: "success", label: "screens.statusCompleted" },
+  paused: { variant: "neutral", label: "screens.statusPaused" },
+  issued: { variant: "info", label: "screens.statusIssued" },
+  confirmed: { variant: "info", label: "screens.statusConfirmed" },
+  unposted: { variant: "warning", label: "screens.statusUnposted" },
+  ordered: { variant: "info", label: "screens.statusOrdered" },
+  billed: { variant: "success", label: "screens.statusBilled" },
 };
 
 /** Semantic variant for a document status (green paid/posted, amber needs action, red overdue, blue sent, neutral draft/void). */

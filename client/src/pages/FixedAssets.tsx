@@ -16,8 +16,11 @@ import {
   TrendingDown,
   BarChart3,
   PlayCircle,
+  Search,
+  Download,
+  BookCheck,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -65,11 +68,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -470,13 +480,13 @@ export default function FixedAssets() {
         );
       case "disposed":
         return (
-          <StatusBadge tone="danger">
+          <StatusBadge tone="neutral">
             <T k="pageLabels.disposed" />
           </StatusBadge>
         );
       case "fully_depreciated":
         return (
-          <StatusBadge tone="warning">
+          <StatusBadge tone="neutral">
             <T k="pageLabels.fullyDepreciated" />
           </StatusBadge>
         );
@@ -516,8 +526,8 @@ export default function FixedAssets() {
     return (
       <EmptyState
         icon={Building2}
-        title="No company selected"
-        description="Create or select a company before tracking fixed assets."
+        title={t["screens.noCompanySelected"]}
+        description={t["screens.noCompanyAssetsBody"]}
       />
     );
   }
@@ -526,335 +536,291 @@ export default function FixedAssets() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Building2 className="w-8 h-8" />
-            <T k="pages.fixedAssets" />
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            <T k="pageLabels.manageFixedAssetsDepreciationAndDisposals" />
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <a href={`/api/companies/${companyId}/fixed-assets/register?format=xlsx`}>
-              {fa.exportRegister}
-            </a>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setDepRunDialogOpen(true)}
-            className="flex items-center gap-2"
-          >
-            <PlayCircle className="w-4 h-4" />
-            <T k="pageLabels.runDepreciation" />
-          </Button>
-          <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            <T k="pageLabels.addAsset" />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Accounting"
+        title={t["pages.fixedAssets"]}
+        description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
+        actions={
+          <>
+            <Button variant="outline" asChild>
+              <a href={`/api/companies/${companyId}/fixed-assets/register?format=xlsx`}>
+                <Download aria-hidden />
+                {fa.exportRegister}
+              </a>
+            </Button>
+            <Button variant="outline" onClick={() => setDepRunDialogOpen(true)}>
+              <PlayCircle aria-hidden />
+              <T k="pageLabels.runDepreciation" />
+            </Button>
+            <Button onClick={handleOpenCreateDialog}>
+              <Plus aria-hidden />
+              <T k="pageLabels.addAsset" />
+            </Button>
+          </>
+        }
+      />
 
-      {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                <T k="pages.totalCost" />
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalCost, "AED", locale)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {summary.totalAssets} active asset{summary.totalAssets !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                <T k="pageLabels.accumulatedDepreciation" />
-              </CardTitle>
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalAccumulatedDepreciation, "AED", locale)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {summary.totalCost > 0
-                  ? `${((summary.totalAccumulatedDepreciation / summary.totalCost) * 100).toFixed(1)}% depreciated`
-                  : "0% depreciated"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                <T k="pages.netBookValue" />
-              </CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalNetBookValue, "AED", locale)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                <T k="pageLabels.currentCarryingValue" />
-              </p>
-            </CardContent>
-          </Card>
+        <div className="mobile-keep-cols grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <StatCard
+            label={t["pages.totalCost"]}
+            icon={DollarSign}
+            value={<Money amount={summary.totalCost} />}
+            hint={formatMessage(t["screens.activeAssetsCount"], { count: summary.totalAssets })}
+          />
+          <StatCard
+            label={t["pageLabels.accumulatedDepreciation"]}
+            icon={TrendingDown}
+            value={<Money amount={summary.totalAccumulatedDepreciation} />}
+            hint={formatMessage(t["screens.percentDepreciated"], {
+              pct:
+                summary.totalCost > 0
+                  ? // Isolated LTR "1.7%" so the sign stays after the digits in Arabic.
+                    `\u2066${((summary.totalAccumulatedDepreciation / summary.totalCost) * 100).toFixed(1)}%\u2069`
+                  : "\u20660%\u2069",
+            })}
+          />
+          <StatCard
+            label={t["pages.netBookValue"]}
+            icon={BarChart3}
+            value={<Money amount={summary.totalNetBookValue} />}
+            hint={t["pageLabels.currentCarryingValue"]}
+          />
         </div>
       )}
 
-      {/* Category Breakdown */}
-      {summary && summary.byCategory.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              <T k="pageLabels.assetCategoryBreakdown" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <T k="pages.category" />
-                    </TableHead>
-                    <TableHead className="text-right">
-                      <T k="pageLabels.count" />
-                    </TableHead>
-                    <TableHead className="text-right">
-                      <T k="pages.totalCost" />
-                    </TableHead>
-                    <TableHead className="text-right">
-                      <T k="pageLabels.accumDepreciation" />
-                    </TableHead>
-                    <TableHead className="text-right">
-                      <T k="pages.netBookValue" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.byCategory.map((cat) => (
-                    <TableRow key={cat.category}>
-                      <TableCell className="font-medium">{cat.category}</TableCell>
-                      <TableCell className="text-right">{cat.count}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(cat.totalCost, "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(cat.totalAccumulatedDepreciation, "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(cat.totalNetBookValue, "AED", locale)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Assets Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>
-                <T k="pages.fixedAssets" />
-              </CardTitle>
-              <CardDescription>
-                {assets.length} asset{assets.length !== 1 ? "s" : ""} registered
-              </CardDescription>
-            </div>
-          </div>
-          <div className="mt-4">
+      {/* Assets */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="relative w-full sm:w-80">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
             <Input
-              placeholder="Search assets by name, category, number..."
+              placeholder={t["screens.searchAssets"]}
+              aria-label={t["screens.searchAssets"]}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-sm"
+              className="h-9 ps-9"
             />
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoadingAssets ? (
-            <TableSkeleton rows={5} columns={7} />
-          ) : filteredAssets.length === 0 ? (
-            searchQuery ? (
-              <EmptyState
-                icon={Building2}
-                title="No matching assets"
-                description={`No assets match "${searchQuery}". Try a different keyword or clear the search.`}
-                action={{
-                  label: "Clear search",
-                  onClick: () => setSearchQuery(""),
-                  variant: "outline",
-                }}
-                testId="empty-state-fixed-assets-search"
-              />
-            ) : (
-              <EmptyState
-                icon={Building2}
-                title="No fixed assets yet"
-                description="Track equipment, vehicles, and other depreciable assets to keep your books accurate."
-                action={{ label: "Add Asset", icon: Plus, onClick: handleOpenCreateDialog }}
-                testId="empty-state-fixed-assets"
-              />
-            )
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <T k="pageLabels.assetName" />
-                    </TableHead>
-                    <TableHead>
-                      <T k="pages.category" />
-                    </TableHead>
-                    <TableHead>
-                      <T k="pageLabels.purchaseDate" />
-                    </TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">
-                      <T k="pageLabels.accumDep" />
-                    </TableHead>
-                    <TableHead className="text-right">NBV</TableHead>
-                    <TableHead>
-                      <T k="pages.status" />
-                    </TableHead>
-                    <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAssets.map((asset) => (
-                    <TableRow key={asset.id}>
-                      <TableCell className="font-medium">
-                        <div>
-                          {asset.asset_name}
-                          {asset.asset_name_ar && (
-                            <div className="text-xs text-muted-foreground">
-                              {asset.asset_name_ar}
-                            </div>
-                          )}
-                          {asset.asset_number && (
-                            <div className="text-xs text-muted-foreground">
-                              #{asset.asset_number}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{asset.category}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {asset.purchase_date
-                          ? format(new Date(asset.purchase_date), "MMM dd, yyyy")
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(parseFloat(asset.purchase_cost), "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(
-                          parseFloat(asset.accumulated_depreciation || "0"),
-                          "AED",
-                          locale
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {formatCurrency(parseFloat(asset.net_book_value || "0"), "AED", locale)}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(asset.status)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {asset.status === "active" &&
-                            asset.needs_capitalization_je &&
-                            !asset.capitalization_entry_id &&
-                            cashAccounts[0] && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
+          <p className="text-small text-muted-foreground">
+            {formatMessage(t["screens.assetsRegistered"], { count: assets.length })}
+          </p>
+        </div>
+        <DataTableCard
+          status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
+          columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
+          empty={
+            searchQuery
+              ? {
+                  icon: Building2,
+                  title: t["screens.noMatchingAssets"],
+                  description: t["screens.noMatchingAssetsBody"],
+                  action: {
+                    label: t["screens.clearSearch"],
+                    onClick: () => setSearchQuery(""),
+                    variant: "outline",
+                  },
+                  testId: "empty-state-fixed-assets-search",
+                }
+              : {
+                  icon: Building2,
+                  title: t["screens.noFixedAssets"],
+                  description: t["screens.noFixedAssetsBody"],
+                  action: {
+                    label: t["pageLabels.addAsset"],
+                    icon: Plus,
+                    onClick: handleOpenCreateDialog,
+                  },
+                  testId: "empty-state-fixed-assets",
+                }
+          }
+        >
+          <Table className="row-cards">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-full">
+                  <T k="pageLabels.assetName" />
+                </TableHead>
+                <TableHead>
+                  <T k="pages.category" />
+                </TableHead>
+                <TableHead>
+                  <T k="pageLabels.purchaseDate" />
+                </TableHead>
+                <TableHead data-numeric="">{t["screens.cost"]}</TableHead>
+                <TableHead data-numeric="">
+                  <T k="pageLabels.accumDep" />
+                </TableHead>
+                <TableHead data-numeric="">{t["screens.nbv"]}</TableHead>
+                <TableHead>
+                  <T k="pages.status" />
+                </TableHead>
+                <TableHead>
+                  <span className="sr-only">{t.actions || "Actions"}</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredAssets.map((asset) => {
+                const canCapitalize =
+                  asset.status === "active" &&
+                  asset.needs_capitalization_je &&
+                  !asset.capitalization_entry_id &&
+                  !!cashAccounts[0];
+                return (
+                  <TableRow key={asset.id}>
+                    <TableCell data-truncate="" data-cell="title">
+                      <span dir="auto" className="font-medium">
+                        {locale === "ar" && asset.asset_name_ar
+                          ? asset.asset_name_ar
+                          : asset.asset_name}
+                      </span>
+                      {asset.asset_number && (
+                        <span
+                          dir="ltr"
+                          className="ms-2 hidden text-caption md:inline tabular-nums text-muted-foreground [unicode-bidi:isolate]"
+                        >
+                          {asset.asset_number}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {asset.category}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {asset.purchase_date ? formatDate(asset.purchase_date, locale) : "—"}
+                    </TableCell>
+                    <MoneyCell
+                      amount={parseFloat(asset.purchase_cost)}
+                      className="text-muted-foreground"
+                    />
+                    <MoneyCell
+                      amount={parseFloat(asset.accumulated_depreciation || "0")}
+                      className="text-muted-foreground"
+                    />
+                    <MoneyCell
+                      amount={parseFloat(asset.net_book_value || "0")}
+                      className="font-semibold"
+                      data-cell="amount"
+                    />
+                    <TableCell data-nowrap="" data-cell="status">
+                      {getStatusBadge(asset.status)}
+                    </TableCell>
+                    <TableCell data-cell="actions">
+                      <RowActions
+                        collapseOnMobile
+                        menu={
+                          <>
+                            {canCapitalize && (
+                              <DropdownMenuItem
+                                onSelect={() =>
                                   capitalizeMutation.mutate({
                                     id: asset.id,
                                     paymentAccountId: cashAccounts[0].id,
                                   })
                                 }
-                                title={fa.capitalizeHint}
                                 disabled={capitalizeMutation.isPending}
+                                title={fa.capitalizeHint}
                               >
+                                <BookCheck aria-hidden />
                                 {fa.capitalize}
-                              </Button>
+                              </DropdownMenuItem>
                             )}
-                          {asset.status === "active" && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => depreciateMutation.mutate(asset.id)}
-                                title="Record Depreciation"
-                                disabled={depreciateMutation.isPending}
-                              >
-                                <Calculator className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenEditDialog(asset)}
-                                title="Edit"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDisposeDialog(asset)}
-                                title="Dispose"
-                                className="text-[hsl(var(--chart-4))] hover:text-[hsl(var(--chart-4))]"
-                              >
-                                <Ban className="w-4 h-4" />
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setAssetToDelete(asset.id)}
-                            title="Delete"
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                            {asset.status === "active" && (
+                              <DropdownMenuItem onSelect={() => handleOpenDisposeDialog(asset)}>
+                                <Ban aria-hidden />
+                                {t["screens.dispose"]}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => setAssetToDelete(asset.id)}
+                            >
+                              <Trash2 aria-hidden />
+                              {t.delete}
+                            </DropdownMenuItem>
+                          </>
+                        }
+                      >
+                        {asset.status === "active" && (
+                          <>
+                            <RowActionButton
+                              label={t["screens.recordDepreciation"]}
+                              icon={Calculator}
+                              onClick={() => depreciateMutation.mutate(asset.id)}
+                              disabled={depreciateMutation.isPending}
+                            />
+                            <RowActionButton
+                              label={t.edit}
+                              icon={Edit}
+                              onClick={() => handleOpenEditDialog(asset)}
+                            />
+                          </>
+                        )}
+                      </RowActions>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </DataTableCard>
+      </section>
+
+      {/* Category breakdown */}
+      {summary && summary.byCategory.length > 0 && (
+        <SectionCard title={t["pageLabels.assetCategoryBreakdown"]} flush>
+          <Table className="mobile-fit">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-full">
+                  <T k="pages.category" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pageLabels.count" />
+                </TableHead>
+                <TableHead data-numeric="" className="hidden sm:table-cell">
+                  <T k="pages.totalCost" />
+                </TableHead>
+                <TableHead data-numeric="" className="hidden sm:table-cell">
+                  <T k="pageLabels.accumDepreciation" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pages.netBookValue" />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.byCategory.map((cat) => (
+                <TableRow key={cat.category}>
+                  <TableCell className="font-medium">{cat.category}</TableCell>
+                  <TableCell data-numeric="">{cat.count}</TableCell>
+                  <MoneyCell amount={cat.totalCost} className="hidden sm:table-cell" />
+                  <MoneyCell
+                    amount={cat.totalAccumulatedDepreciation}
+                    className="hidden sm:table-cell"
+                  />
+                  <MoneyCell amount={cat.totalNetBookValue} className="font-medium" />
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </SectionCard>
+      )}
 
       {/* ─── Create/Edit Asset Dialog ──────────────────────── */}
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingAsset ? "Edit Fixed Asset" : "Add Fixed Asset"}</DialogTitle>
+            <DialogTitle>
+              {editingAsset ? t["screens.editFixedAsset"] : t["screens.addFixedAsset"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingAsset ? "Update asset details." : "Register a new fixed asset."}
+              {editingAsset ? t["screens.updateAssetDetails"] : t["screens.registerNewAsset"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -865,7 +831,9 @@ export default function FixedAssets() {
                 name="assetName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Asset Name *</FormLabel>
+                    <FormLabel>
+                      {t["screens.faAssetName"]} <span className="text-danger">*</span>
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Toyota Hilux 2024" {...field} />
                     </FormControl>
@@ -879,7 +847,7 @@ export default function FixedAssets() {
                 name="assetNameAr"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Asset Name (Arabic)</FormLabel>
+                    <FormLabel>{t["screens.faAssetNameArabic"]}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="اسم الأصل"
@@ -915,11 +883,13 @@ export default function FixedAssets() {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faCategory"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
+                            <SelectValue placeholder={t["screens.faSelectCategory"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -942,7 +912,9 @@ export default function FixedAssets() {
                   name="purchaseDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Purchase Date *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faPurchaseDate"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -956,7 +928,9 @@ export default function FixedAssets() {
                   name="purchaseCost"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Purchase Cost (AED) *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faPurchaseCostAed"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -972,7 +946,7 @@ export default function FixedAssets() {
                   name="salvageValue"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Salvage Value (AED)</FormLabel>
+                      <FormLabel>{t["screens.faSalvageValueAed"]}</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -1046,7 +1020,7 @@ export default function FixedAssets() {
                     <Select onValueChange={field.onChange} value={field.value || "straight_line"}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select method" />
+                          <SelectValue placeholder={t["screens.faSelectMethod"]} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -1111,7 +1085,7 @@ export default function FixedAssets() {
                     </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Optional notes about this asset"
+                        placeholder={t["screens.faOptionalNotesAboutThisAsset"]}
                         {...field}
                         value={field.value || ""}
                       />
@@ -1162,7 +1136,9 @@ export default function FixedAssets() {
                 name="disposalDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Disposal Date *</FormLabel>
+                    <FormLabel>
+                      {t["screens.faDisposalDate"]} <span className="text-danger">*</span>
+                    </FormLabel>
                     <FormControl>
                       <Input type="date" {...field} />
                     </FormControl>
@@ -1176,7 +1152,7 @@ export default function FixedAssets() {
                 name="disposalAmount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Disposal Amount (AED)</FormLabel>
+                    <FormLabel>{t["screens.faDisposalAmountAed"]}</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" min="0" {...field} />
                     </FormControl>
@@ -1275,7 +1251,7 @@ export default function FixedAssets() {
                     </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Reason for disposal"
+                        placeholder={t["screens.faReasonForDisposal"]}
                         {...field}
                         value={field.value || ""}
                       />
@@ -1318,14 +1294,16 @@ export default function FixedAssets() {
                   name="month"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Month *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faMonth"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseInt(v))}
                         value={String(field.value)}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select month" />
+                            <SelectValue placeholder={t["screens.faSelectMonth"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -1371,7 +1349,9 @@ export default function FixedAssets() {
                   name="year"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Year *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faYear"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input type="number" min="2000" max="2100" {...field} />
                       </FormControl>

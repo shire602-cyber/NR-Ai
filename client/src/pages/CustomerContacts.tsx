@@ -9,10 +9,7 @@ import {
   Plus,
   Search,
   Loader2,
-  Mail,
-  Phone,
   Building2,
-  MapPin,
   Edit,
   Trash2,
   CheckCircle2,
@@ -20,10 +17,19 @@ import {
   Link2,
   Copy,
   ExternalLink,
+  MoreHorizontal,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { DataTableCard } from "@/components/ui/data-table";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -63,8 +69,6 @@ import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
-import { EmptyState } from "@/components/ui/empty-state";
-import { TableSkeleton } from "@/components/ui/loading-skeletons";
 
 interface ImportResult {
   message: string;
@@ -283,7 +287,7 @@ function ContactForm({
 
 export default function CustomerContacts() {
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -549,30 +553,45 @@ export default function CustomerContacts() {
         testId="text-contacts-title"
         actions={
           <>
-            <Button
-              variant="outline"
-              onClick={downloadTemplate}
-              data-testid="button-download-template"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              <T k="pageLabels.downloadTemplate" />
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setClearAllConfirmation("");
-                setShowClearAllDialog(true);
-              }}
-              disabled={contacts.length === 0}
-              data-testid="button-clear-all-contacts"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              <T k="pageLabels.clearAll" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t["components.rowMoreActions"]}
+                  title={t["components.rowMoreActions"]}
+                  data-testid="button-contacts-more"
+                >
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-48">
+                <DropdownMenuItem
+                  onSelect={downloadTemplate}
+                  data-testid="button-download-template"
+                >
+                  <Download aria-hidden />
+                  <T k="pageLabels.downloadTemplate" />
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => {
+                    setClearAllConfirmation("");
+                    setShowClearAllDialog(true);
+                  }}
+                  disabled={contacts.length === 0}
+                  data-testid="button-clear-all-contacts"
+                >
+                  <Trash2 aria-hidden />
+                  <T k="pageLabels.clearAll" />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-contact">
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4" />
                   <T k="pageLabels.addContact" />
                 </Button>
               </DialogTrigger>
@@ -598,11 +617,11 @@ export default function CustomerContacts() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
-            <Building2 className="w-4 h-4 mr-2" />
+            <Building2 className="w-4 h-4" />
             {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
           </TabsTrigger>
           <TabsTrigger value="import" data-testid="tab-contacts-import">
-            <Upload className="w-4 h-4 mr-2" />
+            <Upload className="w-4 h-4" />
             <T k="pageLabels.importFromExcel" />
           </TabsTrigger>
         </TabsList>
@@ -610,155 +629,218 @@ export default function CustomerContacts() {
         <TabsContent value="list" className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder={t["pages.contactsSearchPlaceholder"]}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-contacts"
               />
             </div>
           </div>
 
-          <Card>
-            <CardContent className="p-0">
-              {isLoading ? (
-                <div className="p-4">
-                  <TableSkeleton rows={6} columns={6} />
+          <DataTableCard
+            status={isLoading ? "loading" : filteredContacts.length === 0 ? "empty" : "ready"}
+            columnLabels={[
+              t["pages.contactsColName"],
+              t["pages.contactsColEmail"],
+              t["pages.contactsColPhone"],
+            ]}
+            empty={{
+              icon: Building2,
+              title: searchTerm ? t["pages.contactsNoMatchTitle"] : t["pages.contactsEmptyTitle"],
+              description: searchTerm
+                ? t["pages.contactsNoMatchBody"]
+                : t["pages.contactsEmptyBody"],
+              action: searchTerm
+                ? undefined
+                : {
+                    label: t["pages.contactsAddContact"],
+                    onClick: () => setShowAddDialog(true),
+                    testId: "button-add-first-contact",
+                  },
+              secondaryAction: searchTerm
+                ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                : {
+                    label: t["pageLabels.importFromExcel"],
+                    onClick: () => setActiveTab("import"),
+                  },
+            }}
+          >
+            {/* Phones: one two-line row per contact (name + TRN, email · city), actions in ⋯. */}
+            <div className="divide-hairline md:hidden" data-testid="mobile-contact-list">
+              {filteredContacts.map((contact) => (
+                <div key={contact.id} className="flex items-start gap-2 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p dir="auto" className="truncate text-sm font-medium text-foreground">
+                        {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
+                      </p>
+                      {contact.trnNumber ? (
+                        <span
+                          dir="ltr"
+                          className="shrink-0 text-caption text-muted-foreground [unicode-bidi:isolate]"
+                        >
+                          {contact.trnNumber}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 truncate text-caption text-muted-foreground">
+                      <span dir="ltr" className="[unicode-bidi:isolate]">
+                        {contact.email || contact.phone}
+                      </span>
+                      {contact.city ? ` · ${contact.city}` : ""}
+                    </p>
+                  </div>
+                  <RowActions
+                    className="-me-2 -mt-1"
+                    menu={
+                      <>
+                        <DropdownMenuItem onSelect={() => setEditContact(contact)}>
+                          <Edit aria-hidden />
+                          {t.edit}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            portalLinkMutation.mutate({
+                              contactId: contact.id,
+                              contactName: contact.name,
+                            })
+                          }
+                        >
+                          <Link2 aria-hidden />
+                          {t["screens.portalLink"]}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() => setContactToDelete(contact)}
+                        >
+                          <Trash2 aria-hidden />
+                          {t.delete}
+                        </DropdownMenuItem>
+                      </>
+                    }
+                  />
                 </div>
-              ) : filteredContacts.length === 0 ? (
-                <EmptyState
-                  icon={Building2}
-                  title={
-                    searchTerm ? t["pages.contactsNoMatchTitle"] : t["pages.contactsEmptyTitle"]
-                  }
-                  description={
-                    searchTerm ? t["pages.contactsNoMatchBody"] : t["pages.contactsEmptyBody"]
-                  }
-                  action={
-                    searchTerm
-                      ? undefined
-                      : {
-                          label: t["pages.contactsAddContact"],
-                          onClick: () => setShowAddDialog(true),
-                          testId: "button-add-first-contact",
-                        }
-                  }
-                  secondaryAction={
-                    searchTerm
-                      ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
-                      : {
-                          label: t["pageLabels.importFromExcel"],
-                          onClick: () => setActiveTab("import"),
-                        }
-                  }
-                />
-              ) : (
-                <VirtualTable<CustomerContact>
-                  rows={filteredContacts}
-                  height={500}
-                  estimateRowHeight={56}
-                  getRowId={(contact) => contact.id}
-                  rowTestId={(contact) => `row-contact-${contact.id}`}
-                  columns={[
-                    {
-                      key: "name",
-                      header: t["pages.contactsColName"],
-                      cell: (contact) => (
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-muted-foreground" />
-                          <span className="font-medium">{contact.name}</span>
-                        </div>
+              ))}
+            </div>
+            <div className="hidden md:block">
+              <VirtualTable<CustomerContact>
+                rows={filteredContacts}
+                height={560}
+                estimateRowHeight={44}
+                getRowId={(contact) => contact.id}
+                rowTestId={(contact) => `row-contact-${contact.id}`}
+                columns={[
+                  {
+                    key: "name",
+                    header: t["pages.contactsColName"],
+                    width: "minmax(0, 1.4fr)",
+                    cell: (contact) => (
+                      <span dir="auto" className="block truncate font-medium text-foreground">
+                        {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "email",
+                    header: t["pages.contactsColEmail"],
+                    width: "minmax(0, 1.4fr)",
+                    cell: (contact) => (
+                      <span
+                        dir="ltr"
+                        className="block truncate text-muted-foreground [unicode-bidi:isolate]"
+                      >
+                        {contact.email}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "phone",
+                    header: t["pages.contactsColPhone"],
+                    cell: (contact) =>
+                      contact.phone ? (
+                        <span
+                          dir="ltr"
+                          className="whitespace-nowrap text-muted-foreground [unicode-bidi:isolate]"
+                        >
+                          {contact.phone}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       ),
-                    },
-                    {
-                      key: "email",
-                      header: t["pages.contactsColEmail"],
-                      cell: (contact) => (
-                        <div className="flex items-center gap-2 truncate">
-                          <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <span className="truncate">{contact.email}</span>
-                        </div>
+                  },
+                  {
+                    key: "trn",
+                    header: t["screens.trn"],
+                    cell: (contact) =>
+                      contact.trnNumber ? (
+                        <span
+                          dir="ltr"
+                          className="whitespace-nowrap tabular-nums [unicode-bidi:isolate]"
+                        >
+                          {contact.trnNumber}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       ),
-                    },
-                    {
-                      key: "phone",
-                      header: t["pages.contactsColPhone"],
-                      cell: (contact) =>
-                        contact.phone ? (
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4 text-muted-foreground" />
-                            {contact.phone}
-                          </div>
-                        ) : null,
-                    },
-                    {
-                      key: "trn",
-                      header: "TRN",
-                      cell: (contact) =>
-                        contact.trnNumber ? (
-                          <Badge variant="outline">{contact.trnNumber}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
-                        ),
-                    },
-                    {
-                      key: "location",
-                      header: t["pages.contactsColLocation"],
-                      cell: (contact) =>
-                        contact.city || contact.country ? (
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-muted-foreground" />
-                            {[contact.city, contact.country].filter(Boolean).join(", ")}
-                          </div>
-                        ) : null,
-                    },
-                    {
-                      key: "actions",
-                      header: t["pages.contactsColActions"],
-                      width: "170px",
-                      cell: (contact) => (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title="Generate Portal Link"
-                            onClick={() =>
-                              portalLinkMutation.mutate({
-                                contactId: contact.id,
-                                contactName: contact.name,
-                              })
-                            }
-                            disabled={portalLinkMutation.isPending}
-                            data-testid={`button-portal-link-${contact.id}`}
-                          >
-                            <Link2 className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setEditContact(contact)}
-                            data-testid={`button-edit-contact-${contact.id}`}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setContactToDelete(contact)}
+                  },
+                  {
+                    key: "location",
+                    header: t["pages.contactsColLocation"],
+                    cell: (contact) =>
+                      contact.city || contact.country ? (
+                        <span className="block truncate text-muted-foreground">
+                          {[contact.city, contact.country].filter(Boolean).join(", ")}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      ),
+                  },
+                  {
+                    key: "actions",
+                    header: <span className="sr-only">{t["pages.contactsColActions"]}</span>,
+                    width: "112px",
+                    cell: (contact) => (
+                      <RowActions
+                        menu={
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => setContactToDelete(contact)}
                             data-testid={`button-delete-contact-${contact.id}`}
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
-              )}
-            </CardContent>
-          </Card>
+                            <Trash2 aria-hidden />
+                            {t.delete}
+                          </DropdownMenuItem>
+                        }
+                      >
+                        <RowActionButton
+                          label={t["screens.portalLink"]}
+                          icon={Link2}
+                          onClick={() =>
+                            portalLinkMutation.mutate({
+                              contactId: contact.id,
+                              contactName: contact.name,
+                            })
+                          }
+                          disabled={portalLinkMutation.isPending}
+                          data-testid={`button-portal-link-${contact.id}`}
+                        />
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => setEditContact(contact)}
+                          data-testid={`button-edit-contact-${contact.id}`}
+                        />
+                      </RowActions>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          </DataTableCard>
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">
@@ -770,10 +852,7 @@ export default function CustomerContacts() {
                     <FileSpreadsheet className="w-5 h-5" />
                     <T k="pageLabels.uploadExcelFile" />
                   </CardTitle>
-                  <CardDescription>
-                    Upload an Excel file (.xlsx) or CSV containing your customer contacts. We'll
-                    automatically map common column names like "Name", "Email", "Phone", "TRN", etc.
-                  </CardDescription>
+                  <CardDescription>{t["screens.contactsImportHelp"]}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div
@@ -802,7 +881,9 @@ export default function CustomerContacts() {
                           <p className="font-medium">
                             <T k="pageLabels.dropYourExcelFileHere" />
                           </p>
-                          <p className="text-sm text-muted-foreground">or click to browse</p>
+                          <p className="text-sm text-muted-foreground">
+                            {t["screens.orClickToBrowse"]}
+                          </p>
                         </div>
                         <input
                           type="file"
@@ -822,36 +903,37 @@ export default function CustomerContacts() {
               {previewData && previewData.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Preview ({previewData.length} contacts)</CardTitle>
-                    <CardDescription>
-                      Review the data before importing. Contacts with matching emails will be
-                      updated.
-                    </CardDescription>
+                    <CardTitle>
+                      {formatMessage(t["screens.contactsPreviewTitle"], {
+                        count: previewData.length,
+                      })}
+                    </CardTitle>
+                    <CardDescription>{t["screens.contactsPreviewHelp"]}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ScrollArea className="h-[300px]">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Name</TableHead>
+                            <TableHead>{t["pages.contactsColName"]}</TableHead>
                             <TableHead>
                               <T k="hr.field.email" />
                             </TableHead>
                             <TableHead>
                               <T k="pages.phone" />
                             </TableHead>
-                            <TableHead>TRN</TableHead>
-                            <TableHead>City</TableHead>
+                            <TableHead>{t["screens.trn"]}</TableHead>
+                            <TableHead>{t["screens.city"]}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {previewData.slice(0, 20).map((row, idx) => (
                             <TableRow key={idx}>
                               <TableCell className={!row.name ? "text-destructive" : ""}>
-                                {row.name || "Missing"}
+                                {row.name || t["screens.missing"]}
                               </TableCell>
                               <TableCell className={!row.email ? "text-destructive" : ""}>
-                                {row.email || "Missing"}
+                                {row.email || t["screens.missing"]}
                               </TableCell>
                               <TableCell>{row.phone || "-"}</TableCell>
                               <TableCell>{row.trnNumber || "-"}</TableCell>
@@ -862,7 +944,9 @@ export default function CustomerContacts() {
                       </Table>
                       {previewData.length > 20 && (
                         <p className="text-center text-sm text-muted-foreground py-2">
-                          ... and {previewData.length - 20} more contacts
+                          {formatMessage(t["screens.andMoreContacts"], {
+                            count: previewData.length - 20,
+                          })}
                         </p>
                       )}
                     </ScrollArea>
@@ -882,13 +966,15 @@ export default function CustomerContacts() {
                       >
                         {importMutation.isPending ? (
                           <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                             <T k="pageLabels.importing" />
                           </>
                         ) : (
                           <>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Import {previewData.length} Contacts
+                            <Upload className="w-4 h-4" />
+                            {formatMessage(t["screens.importContactsCount"], {
+                              count: previewData.length,
+                            })}
                           </>
                         )}
                       </Button>
@@ -906,7 +992,7 @@ export default function CustomerContacts() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="mobile-keep-cols grid grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-success/10 rounded-lg">
                     <p className="text-2xl font-bold text-success">{importResults.created}</p>
                     <p className="text-sm text-muted-foreground">
@@ -931,7 +1017,9 @@ export default function CustomerContacts() {
                   <div className="border border-destructive/50 rounded-lg p-4">
                     <p className="font-medium text-destructive flex items-center gap-2 mb-2">
                       <AlertCircle className="w-4 h-4" />
-                      {importResults.errors.length} Errors
+                      {formatMessage(t["screens.errorsCount"], {
+                        count: importResults.errors.length,
+                      })}
                     </p>
                     <ScrollArea className="h-[100px]">
                       <ul className="text-sm space-y-1">
@@ -1009,7 +1097,7 @@ export default function CustomerContacts() {
               <Input
                 readOnly
                 value={portalLinkDialog.url}
-                className="font-mono text-sm"
+                className="text-sm"
                 data-testid="input-portal-link"
               />
               <Button
@@ -1031,7 +1119,7 @@ export default function CustomerContacts() {
                 onClick={() => window.open(portalLinkDialog.url, "_blank")}
                 data-testid="button-open-portal"
               >
-                <ExternalLink className="w-4 h-4 mr-2" />
+                <ExternalLink className="w-4 h-4" />
                 <T k="pageLabels.openPortal" />
               </Button>
             </div>
@@ -1116,7 +1204,7 @@ export default function CustomerContacts() {
             >
               {clearAllMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   <T k="pageLabels.deleting" />
                 </>
               ) : (

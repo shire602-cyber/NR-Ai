@@ -23,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -71,14 +72,15 @@ import {
   ZoomIn,
   Brain,
   Bot,
-  Zap,
   Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/ReceiptLinesDialog";
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
   Dialog,
   DialogContent,
@@ -288,15 +290,21 @@ function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailPro
 
   if (!hasImage) {
     return (
-      <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center" aria-hidden>
-        <FileText className="w-6 h-6" />
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+        aria-hidden
+      >
+        <FileText className="h-5 w-5" />
       </div>
     );
   }
 
   if (!url) {
     return (
-      <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center" aria-hidden>
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
+        aria-hidden
+      >
         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
       </div>
     );
@@ -306,7 +314,7 @@ function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailPro
     <button
       type="button"
       onClick={() => onPreview(url, receipt.merchant ?? undefined)}
-      className="group relative w-12 h-12 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="group relative h-10 w-10 shrink-0 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={`Preview receipt image for ${receipt.merchant ?? "this receipt"}`}
       data-testid={`receipt-thumbnail-${receipt.id}`}
     >
@@ -1483,7 +1491,7 @@ export default function Receipts() {
             className="w-full sm:w-auto"
             data-testid="button-add-manual-expense"
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4" />
             <T k="pageLabels.addExpenseManually" />
           </Button>
         }
@@ -1507,7 +1515,7 @@ export default function Receipts() {
             className={`
               border-2 border-dashed rounded-lg p-8 text-center transition-all
               ${isDragging ? "border-primary bg-primary/5" : "border-border"}
-              ${processedReceipts.length > 0 ? "border-[hsl(var(--chart-5))] bg-[hsl(var(--chart-5)/0.05)]" : ""}
+              ${processedReceipts.length > 0 ? "border-primary/60 bg-primary/5" : ""}
               hover:border-primary hover:bg-muted/60 cursor-pointer
             `}
             onClick={() => document.getElementById("file-input")?.click()}
@@ -1529,7 +1537,7 @@ export default function Receipts() {
 
             {processedReceipts.length > 0 ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-center gap-2 text-[hsl(var(--chart-5))]">
+                <div className="flex items-center justify-center gap-2 text-primary">
                   <CheckCircle2 className="w-5 h-5" />
                   <span>
                     {formatMessage(t["pages.receiptsImagesLoaded"], {
@@ -1584,17 +1592,17 @@ export default function Receipts() {
               >
                 {isProcessingBulk ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <T k="invoices.processing" />
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <Sparkles className="w-4 h-4" />
                     {errorCount > 0 && pendingCount === 0
-                      ? `Retry Failed OCR (${errorCount})`
+                      ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
                       : errorCount > 0
-                        ? `Process / Retry OCR (${retryableOcrCount})`
-                        : `Process All Receipts (${pendingCount})`}
+                        ? formatMessage(t["screens.processRetryOcr"], { count: retryableOcrCount })
+                        : formatMessage(t["screens.processAllReceipts"], { count: pendingCount })}
                   </>
                 )}
               </Button>
@@ -1608,13 +1616,16 @@ export default function Receipts() {
               >
                 {isSavingAll ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving ({savedCount}/{totalToSave})...
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {formatMessage(t["screens.savingProgress"], {
+                      done: savedCount,
+                      total: totalToSave,
+                    })}
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Save All ({completedCount})
+                    <CheckCircle2 className="w-4 h-4" />
+                    {formatMessage(t["screens.saveAllCount"], { count: completedCount })}
                   </>
                 )}
               </Button>
@@ -1628,12 +1639,12 @@ export default function Receipts() {
               >
                 {isOcrExporting ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <T k="pageLabels.preparing" />
                   </>
                 ) : (
                   <>
-                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    <FileSpreadsheet className="w-4 h-4" />
                     Download Excel ({completedCount})
                   </>
                 )}
@@ -1698,7 +1709,7 @@ export default function Receipts() {
                     <Button
                       variant="destructive"
                       size="icon"
-                      className="absolute -top-2 -right-2 h-6 w-6"
+                      className="absolute -top-2 -end-2 h-6 w-6"
                       onClick={() => removeReceipt(index)}
                       disabled={isProcessingBulk}
                       data-testid={`button-remove-${index}`}
@@ -1741,19 +1752,19 @@ export default function Receipts() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="ml-0 text-foreground sm:ml-2"
+                          className="ms-0 text-foreground sm:ms-2"
                           onClick={() => processReceipt(index)}
                           disabled={isProcessingBulk}
                           data-testid={`button-retry-ocr-${index}`}
                         >
-                          <RefreshCw className="w-3 h-3 mr-1" />
+                          <RefreshCw className="w-3 h-3" />
                           <T k="pageLabels.tryAgain" />
                         </Button>
                       </div>
                     )}
 
                     {receipt.status === "saved" && (
-                      <div className="flex items-center gap-2 text-[hsl(var(--chart-1))]">
+                      <div className="flex items-center gap-2 text-success">
                         <CheckCircle2 className="w-4 h-4" />
                         <span className="text-sm font-medium">
                           <T k="pageLabels.successfullySavedToDatabase" />
@@ -1762,7 +1773,7 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === "save_error" && (
-                      <div className="flex flex-wrap items-center gap-2 text-[hsl(var(--chart-4))]">
+                      <div className="flex flex-wrap items-center gap-2 text-danger">
                         <XCircle className="w-4 h-4" />
                         <span className="text-sm">{receipt.error || "Failed to save"}</span>
                         {receipt.duplicate && receipt.data && (
@@ -1821,7 +1832,7 @@ export default function Receipts() {
                               onChange={(e) =>
                                 updateReceiptData(index, { invoiceNumber: e.target.value })
                               }
-                              className="h-8 font-mono"
+                              className="h-8"
                             />
                           </div>
                         )}
@@ -1929,7 +1940,7 @@ export default function Receipts() {
                               {receipt.data.lineItems.map((item, i) => (
                                 <div key={i} className="flex justify-between px-2 py-1">
                                   <span className="truncate max-w-[60%]">{item.description}</span>
-                                  <span className="text-muted-foreground ml-2">
+                                  <span className="text-muted-foreground ms-2">
                                     {item.quantity > 1 ? `×${item.quantity}  ` : ""}
                                     {item.total.toFixed(2)}
                                   </span>
@@ -1956,7 +1967,7 @@ export default function Receipts() {
                                 }
                                 data-testid={`badge-band-${receipt.data.confidenceBand}-${index}`}
                               >
-                                <Sparkles className="w-2 h-2 mr-1" />
+                                <Sparkles className="w-2 h-2 me-1" />
                                 {
                                   BAND_LABELS[receipt.data.confidenceBand][
                                     locale === "ar" ? "ar" : "en"
@@ -2072,17 +2083,18 @@ export default function Receipts() {
       )}
 
       {/* Recent Receipts */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <CardTitle>
-                <T k="pageLabels.recentExpenses" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pageLabels.previouslyScannedAndSavedExpenses" />
-              </CardDescription>
-            </div>
+      <section className="space-y-4" aria-labelledby="recent-expenses-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="recent-expenses-title" className="text-h2 text-foreground">
+              <T k="pageLabels.recentExpenses" />
+            </h2>
+            <p className="mt-1 text-small text-muted-foreground">
+              <T k="pageLabels.previouslyScannedAndSavedExpenses" />
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -2090,7 +2102,7 @@ export default function Receipts() {
                   disabled={isExporting}
                   data-testid="button-export-expenses"
                 >
-                  <Download className="w-4 h-4 mr-2" />
+                  <Download aria-hidden />
                   {isExporting ? t["pages.receiptsExporting"] : t["pages.receiptsExport"]}
                 </Button>
               </DropdownMenuTrigger>
@@ -2099,178 +2111,170 @@ export default function Receipts() {
                   onClick={handleExportExcel}
                   data-testid="menu-export-expenses-excel"
                 >
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <FileSpreadsheet aria-hidden />
                   {t["pages.receiptsExportExcelFull"]}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleDownloadReceiptsExcel}
                   data-testid="menu-export-expenses-excel-ocr"
                 >
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <FileSpreadsheet aria-hidden />
                   {t["pages.receiptsExportExcelOcr"]}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
                   data-testid="menu-export-expenses-sheets"
                 >
-                  <SiGooglesheets className="w-4 h-4 mr-2" />
+                  <SiGooglesheets aria-hidden />
                   <T k="reportCenter.exportToGoogleSheets" />
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-4 flex-wrap pb-4 border-b">
-            <span className="text-sm font-medium">{t.filterByDate}</span>
-            <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-          </div>
+        </div>
+        <Card className="overflow-hidden">
           {isLoading ? (
-            <CardListSkeleton count={4} />
+            <div className="p-4">
+              <CardListSkeleton count={4} />
+            </div>
           ) : filteredReceipts && filteredReceipts.length > 0 ? (
             <VirtualList
               items={filteredReceipts as any[]}
-              estimateSize={88}
-              height={Math.min(720, Math.max(400, filteredReceipts.length * 88))}
+              estimateSize={64}
+              height={Math.min(720, Math.max(320, filteredReceipts.length * 64))}
               getKey={(receipt) => receipt.id}
-              className="space-y-2"
               renderItem={(receipt: any) => (
                 <div
                   key={receipt.id}
-                  className="flex flex-col gap-3 p-4 border rounded-lg hover-elevate mb-2 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex items-center gap-3 border-b border-border/70 px-4 py-2.5 transition-colors duration-fast hover:bg-muted/50"
                   data-testid={`receipt-${receipt.id}`}
                 >
-                  <div className="flex items-center gap-4">
-                    <ReceiptThumbnail
-                      companyId={companyId}
-                      receipt={receipt}
-                      onPreview={(src, merchant) => setImagePreview({ src, merchant })}
-                    />
-                    <div>
-                      <p className="font-medium">{receipt.merchant || "Unknown Merchant"}</p>
-                      <p className="text-sm text-muted-foreground">{receipt.date}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                    <div className="text-left sm:text-right">
-                      <p className="font-mono font-semibold">
-                        {formatCurrency(receipt.amount || 0, "AED", locale)}
+                  <ReceiptThumbnail
+                    companyId={companyId}
+                    receipt={receipt}
+                    onPreview={(src, merchant) => setImagePreview({ src, merchant })}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p dir="auto" className="truncate text-sm font-medium text-foreground">
+                        {receipt.merchant || t["screens.unknownMerchant"]}
                       </p>
-                      <div className="flex gap-2 mt-1 flex-wrap sm:justify-end">
-                        <Badge variant="outline">
-                          {receipt.category
-                            ? receiptCategoryLabel(t, receipt.category)
-                            : t["pages.receiptsUncategorized"]}
-                        </Badge>
+                      <Money
+                        amount={Number(receipt.amount || 0)}
+                        currency={receipt.currency || "AED"}
+                        className="shrink-0 text-sm font-semibold text-foreground"
+                      />
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-caption text-muted-foreground">
+                        {receipt.date ? formatDate(receipt.date, locale) : "—"}
+                        {" · "}
+                        {receipt.category
+                          ? receiptCategoryLabel(t, receipt.category)
+                          : t["pages.receiptsUncategorized"]}
                         {isInternalClassifierMethod(receipt.classifierMethod) && (
-                          <Badge
-                            variant="secondary"
-                            className="bg-info/10 text-info border-info/30"
+                          <span
+                            className="ms-2 inline-flex items-center gap-1"
                             data-testid={`badge-classifier-internal-${receipt.id}`}
-                            title={`Classified by internal ${receipt.classifierMethod} stage`}
+                            title={t["screens.classifiedInternally"]}
                           >
-                            <Brain className="w-3 h-3 mr-1" />
+                            <Brain className="h-3 w-3" aria-hidden />
                             <T k="pageLabels.internal" />
-                          </Badge>
+                          </span>
                         )}
                         {receipt.classifierMethod === "openai" && (
-                          <Badge
-                            variant="secondary"
-                            className="bg-chart-5/10 text-chart-5 border-chart-5/30"
+                          <span
+                            className="ms-2 inline-flex items-center gap-1"
                             data-testid={`badge-classifier-ai-${receipt.id}`}
-                            title="Classified by OpenAI fallback"
+                            title={t["screens.classifiedByAi"]}
                           >
-                            <Bot className="w-3 h-3 mr-1" />
-                            AI
-                          </Badge>
+                            <Bot className="h-3 w-3" aria-hidden />
+                            {t["screens.aiLabel"]}
+                          </span>
                         )}
-                        {receipt.autoPosted && (
+                      </p>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {receipt.autoPosted ? (
                           <Badge
-                            variant="default"
-                            className="bg-success hover:bg-success"
+                            variant="success"
+                            dot
                             data-testid={`badge-auto-posted-${receipt.id}`}
-                            title="Auto-posted by Receipt Autopilot"
+                            title={t["screens.autoPostedHint"]}
                           >
-                            <Zap className="w-3 h-3 mr-1" />
                             <T k="reportCenter.autoPosted" />
                           </Badge>
-                        )}
-                        {receipt.posted && !receipt.autoPosted && (
-                          <StatusBadge tone="success">
+                        ) : receipt.posted ? (
+                          <Badge variant="success" dot>
                             <T k="hr.status.posted" />
-                          </StatusBadge>
+                          </Badge>
+                        ) : (
+                          <Badge variant="warning" dot>
+                            {t["screens.statusUnposted"]}
+                          </Badge>
                         )}
                       </div>
                     </div>
-                    <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
-                      {!receipt.posted && (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="flex-1 sm:flex-none"
-                          onClick={() => handlePostExpense(receipt)}
-                          data-testid={`button-post-receipt-${receipt.id}`}
-                        >
-                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                          {t["pages.receiptsPost"]}
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex-1 sm:flex-none"
-                        onClick={() => handleEditReceipt(receipt)}
-                        data-testid={`button-edit-receipt-${receipt.id}`}
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        {t.edit}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex-1 sm:flex-none"
-                        onClick={() => setLinesDialog({ mode: "lines", receipt })}
-                        data-testid={`button-lines-receipt-${receipt.id}`}
-                      >
-                        <ListTree className="w-4 h-4 me-2" />
-                        {receipt.posted ? t["purchases.reviseReceipt"] : t["purchases.splitLines"]}
-                      </Button>
-                      {!receipt.posted && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex-1 sm:flex-none"
-                          onClick={() => setLinesDialog({ mode: "split", receipt })}
-                          data-testid={`button-split-receipt-${receipt.id}`}
-                        >
-                          <Split className="w-4 h-4 me-2" />
-                          {t["purchases.splitReceipt"]}
-                        </Button>
-                      )}
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="sm"
-                        className="flex-1 sm:flex-none"
-                        data-testid={`button-proof-receipt-${receipt.id}`}
-                      >
-                        <Link href={evidenceSourceHref("receipt", receipt.id)}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          <T k="reportCenter.proof" />
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex-1 sm:flex-none"
-                        onClick={() => handleDeleteReceipt(receipt)}
-                        disabled={deleteMutation.isPending}
-                        data-testid={`button-delete-receipt-${receipt.id}`}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                    </div>
                   </div>
+                  <RowActions
+                    collapseOnMobile
+                    className="-me-2 shrink-0 md:w-[6.5rem]"
+                    menu={
+                      <>
+                        <DropdownMenuItem
+                          onSelect={() => setLinesDialog({ mode: "lines", receipt })}
+                          data-testid={`button-lines-receipt-${receipt.id}`}
+                        >
+                          <ListTree aria-hidden />
+                          {receipt.posted
+                            ? t["purchases.reviseReceipt"]
+                            : t["purchases.splitLines"]}
+                        </DropdownMenuItem>
+                        {!receipt.posted && (
+                          <DropdownMenuItem
+                            onSelect={() => setLinesDialog({ mode: "split", receipt })}
+                            data-testid={`button-split-receipt-${receipt.id}`}
+                          >
+                            <Split aria-hidden />
+                            {t["purchases.splitReceipt"]}
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem asChild>
+                          <Link
+                            href={evidenceSourceHref("receipt", receipt.id)}
+                            data-testid={`button-proof-receipt-${receipt.id}`}
+                          >
+                            <FileText aria-hidden />
+                            <T k="reportCenter.proof" />
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() => handleDeleteReceipt(receipt)}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-receipt-${receipt.id}`}
+                        >
+                          <Trash2 aria-hidden />
+                          {t.delete}
+                        </DropdownMenuItem>
+                      </>
+                    }
+                  >
+                    {!receipt.posted && (
+                      <RowActionButton
+                        label={t["pages.receiptsPost"]}
+                        icon={CheckCircle2}
+                        onClick={() => handlePostExpense(receipt)}
+                        data-testid={`button-post-receipt-${receipt.id}`}
+                      />
+                    )}
+                    <RowActionButton
+                      label={t.edit}
+                      icon={Edit}
+                      onClick={() => handleEditReceipt(receipt)}
+                      data-testid={`button-edit-receipt-${receipt.id}`}
+                    />
+                  </RowActions>
                 </div>
               )}
             />
@@ -2300,7 +2304,7 @@ export default function Receipts() {
               secondaryAction={
                 dateRange.from || dateRange.to
                   ? {
-                      label: "Clear filter",
+                      label: t["screens.clearFilter"],
                       onClick: () => setDateRange({ from: undefined, to: undefined }),
                     }
                   : undefined
@@ -2308,8 +2312,8 @@ export default function Receipts() {
               testId="empty-state-receipts"
             />
           )}
-        </CardContent>
-      </Card>
+        </Card>
+      </section>
 
       <ReceiptLinesDialog
         open={!!linesDialog}
@@ -2402,7 +2406,6 @@ export default function Receipts() {
                       <Input
                         type="number"
                         step="0.01"
-                        className="font-mono"
                         value={field.value ?? ""}
                         onChange={(e) =>
                           field.onChange(e.target.value ? parseFloat(e.target.value) : "")
@@ -2425,7 +2428,6 @@ export default function Receipts() {
                         {...field}
                         type="number"
                         step="0.01"
-                        className="font-mono"
                         value={field.value ?? ""}
                         onChange={(e) =>
                           field.onChange(e.target.value ? parseFloat(e.target.value) : null)
@@ -2507,7 +2509,7 @@ export default function Receipts() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="w-5 h-5 text-[hsl(var(--chart-4))]" />
+              <XCircle className="w-5 h-5 text-warning" />
               <T k="pageLabels.similarTransactionsFound" />
             </DialogTitle>
             <DialogDescription>
@@ -2520,15 +2522,19 @@ export default function Receipts() {
                 <div key={idx} className="p-3 border rounded-md bg-muted/50">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-medium">{transaction.merchant || "Unknown Merchant"}</p>
-                      <p className="text-sm text-muted-foreground">{transaction.date}</p>
+                      <p dir="auto" className="font-medium">
+                        {transaction.merchant || t["screens.unknownMerchant"]}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {transaction.date ? formatDate(transaction.date, locale) : "—"}
+                      </p>
                       {transaction.category && (
                         <Badge variant="outline" className="mt-1">
                           {transaction.category}
                         </Badge>
                       )}
                     </div>
-                    <p className="font-mono font-semibold">
+                    <p className="font-semibold">
                       {formatCurrency(transaction.amount || 0, "AED", locale)}
                     </p>
                   </div>
@@ -2663,10 +2669,14 @@ export default function Receipts() {
               <div className="p-4 rounded-md bg-muted">
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="font-medium">{postingReceipt.merchant || "Unknown Merchant"}</p>
-                    <p className="text-sm text-muted-foreground">{postingReceipt.date}</p>
+                    <p dir="auto" className="font-medium">
+                      {postingReceipt.merchant || t["screens.unknownMerchant"]}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {postingReceipt.date ? formatDate(postingReceipt.date, locale) : "—"}
+                    </p>
                   </div>
-                  <p className="font-mono font-semibold text-lg">
+                  <p className="font-semibold text-lg">
                     {formatCurrency(
                       (postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0),
                       "AED",
@@ -2764,7 +2774,7 @@ export default function Receipts() {
                     )}
                   </span>
                 </div>
-                <div className="flex justify-between pl-4">
+                <div className="flex justify-between ps-4">
                   <span>
                     Cr.{" "}
                     {accounts?.find((a) => a.id === selectedPaymentAccount)?.nameEn ||

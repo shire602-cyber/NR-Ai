@@ -141,7 +141,8 @@ describe("Mobile launch UX guards", () => {
 
     expect(source).toContain('data-testid="mobile-bank-transaction-list"');
     expect(source).toContain("mobile-button-match");
-    expect(source).toContain("hidden rounded-md border overflow-x-auto md:block");
+    // D3a: desktop table lives in the shared DataTableCard frame.
+    expect(source).toContain('data-testid="bank-transaction-table"');
   });
 
   it("keeps VAT return history exportable on narrow screens", () => {
@@ -157,7 +158,8 @@ describe("Mobile launch UX guards", () => {
 
     expect(source).toContain("flex flex-col gap-4 sm:flex-row");
     expect(source).toContain("grid grid-cols-1 gap-3 sm:grid-cols-2");
-    expect(source).toContain("flex flex-col gap-3 p-4 border rounded-lg");
+    // D3a: saved receipts are one dense row each (thumbnail, merchant/amount, date · category, actions in ⋯).
+    expect(source).toContain("flex items-center gap-3 border-b border-border/70 px-4 py-2.5");
   });
 
   it("keeps report workspaces reachable from mobile navigation", () => {

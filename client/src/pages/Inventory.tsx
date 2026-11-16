@@ -4,12 +4,26 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { format } from "date-fns";
-import { Package, Plus, Edit, Trash2, PackagePlus, AlertTriangle, ArrowDownUp } from "lucide-react";
+import {
+  Package,
+  Plus,
+  Edit,
+  Trash2,
+  PackagePlus,
+  AlertTriangle,
+  ArrowDownUp,
+  Search,
+} from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { DataTableCard } from "@/components/ui/data-table";
+import { MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -56,7 +70,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import type { Product, InventoryMovement } from "@shared/schema";
 import { isValidGtin, RCM_GOODS_TYPES } from "@shared/vat-classification";
 
@@ -322,36 +336,35 @@ export default function Inventory() {
     switch (type) {
       case "purchase":
         return (
-          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+          <Badge variant="outline">
             <T k="pages.purchase" />
           </Badge>
         );
       case "sale":
-        return (
-          <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">
-            Sale
-          </Badge>
-        );
+        return <Badge variant="outline">{t["screens.sale"]}</Badge>;
       case "adjustment":
         return (
-          <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle">
+          <Badge variant="outline">
             <T k="pages.adjustment" />
           </Badge>
         );
       case "return":
         return (
-          <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10">
+          <Badge variant="outline">
             <T k="pages.return" />
           </Badge>
         );
       default:
-        return <Badge variant="secondary">{type}</Badge>;
+        return <Badge variant="outline">{type}</Badge>;
     }
   };
 
   const getProductName = (productId: string): string => {
     const product = productsList.find((p) => p.id === productId);
-    return product?.name || "Unknown Product";
+    return (
+      (locale === "ar" && product?.nameAr ? product.nameAr : product?.name) ||
+      t["screens.unknownProduct"]
+    );
   };
 
   const filteredProducts = productsList.filter((product) => {
@@ -388,33 +401,35 @@ export default function Inventory() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Package className="w-8 h-8" />
-            {(t as any).inventory || "Inventory"}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            <T k="pageLabels.manageYourProductsAndTrackInventoryMovements" />
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Purchases"
+        title={(t as any).inventory || "Inventory"}
+        description={t["pageLabels.manageYourProductsAndTrackInventoryMovements"]}
+        actions={
+          <Button onClick={handleOpenCreateDialog}>
+            <Plus aria-hidden />
+            <T k="pageLabels.addProduct" />
+          </Button>
+        }
+      />
 
       <Tabs defaultValue="products" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="products" className="flex items-center gap-2">
-            <Package className="w-4 h-4" />
-            <T k="pages.products" />
-          </TabsTrigger>
-          <TabsTrigger value="movements" className="flex items-center gap-2">
-            <ArrowDownUp className="w-4 h-4" />
-            {c.movements}
-          </TabsTrigger>
-          <TabsTrigger value="valuation">{c.valuation}</TabsTrigger>
-          <TabsTrigger value="warehouses">{c.warehouses}</TabsTrigger>
-          <TabsTrigger value="stocktake">{c.stocktake}</TabsTrigger>
-          <TabsTrigger value="settings">{c.settings}</TabsTrigger>
-        </TabsList>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+          <TabsList>
+            <TabsTrigger value="products">
+              <Package aria-hidden />
+              <T k="pages.products" />
+            </TabsTrigger>
+            <TabsTrigger value="movements">
+              <ArrowDownUp aria-hidden />
+              {c.movements}
+            </TabsTrigger>
+            <TabsTrigger value="valuation">{c.valuation}</TabsTrigger>
+            <TabsTrigger value="warehouses">{c.warehouses}</TabsTrigger>
+            <TabsTrigger value="stocktake">{c.stocktake}</TabsTrigger>
+            <TabsTrigger value="settings">{c.settings}</TabsTrigger>
+          </TabsList>
+        </div>
 
         <InventoryAccountingTabs
           companyId={companyId}
@@ -424,232 +439,213 @@ export default function Inventory() {
         />
 
         {/* ─── Products Tab ──────────────────────────────── */}
-        <TabsContent value="products">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>
-                    <T k="pages.products" />
-                  </CardTitle>
-                  <CardDescription>
-                    {formatMessage(t["pages.inventoryProductCount"], {
-                      count: productsList.length,
-                    })}
-                  </CardDescription>
-                </div>
-                <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  <T k="pageLabels.addProduct" />
-                </Button>
-              </div>
-              <div className="mt-4">
-                <Input
-                  placeholder="Search products by name or SKU..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="max-w-sm"
-                />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoadingProducts ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
-                </div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery ? t["pages.inventoryNoMatch"] : t["pages.inventoryEmpty"]}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>SKU</TableHead>
-                        <TableHead className="text-right">
-                          <T k="pages.unitPrice" />
-                        </TableHead>
-                        <TableHead className="text-right">
-                          <T k="pages.costPrice" />
-                        </TableHead>
-                        <TableHead className="text-right">
-                          <T k="reportCenter.stock" />
-                        </TableHead>
-                        <TableHead>Unit</TableHead>
-                        <TableHead>
-                          <T k="pages.status" />
-                        </TableHead>
-                        <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredProducts.map((product) => {
-                        const isLowStock = product.currentStock < (product.lowStockThreshold || 0);
-                        return (
-                          <TableRow key={product.id}>
-                            <TableCell className="font-medium">
-                              <div>
-                                {product.name}
-                                {product.nameAr && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {product.nameAr}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {product.sku || "-"}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(product.unitPrice, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(product.costPrice || 0, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                {product.currentStock}
-                                {isLowStock && (
-                                  <Badge
-                                    variant="destructive"
-                                    className="text-xs flex items-center gap-1"
-                                  >
-                                    <AlertTriangle className="w-3 h-3" />
-                                    Low
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>{product.unit}</TableCell>
-                            <TableCell>
-                              {product.isActive ? (
-                                <Badge
-                                  variant="secondary"
-                                  className="bg-success-subtle text-success-subtle-foreground"
-                                >
-                                  <T k="pages.active" />
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary">{t.inactive || "Inactive"}</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleOpenEditDialog(product)}
-                                  title="Edit"
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleOpenAddStockDialog(product)}
-                                  title="Add Stock"
-                                >
-                                  <PackagePlus className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setProductToDelete(product.id)}
-                                  title="Delete"
-                                  className="text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="products" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative w-full sm:w-72">
+              <Search
+                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                placeholder={t["screens.searchProducts"]}
+                aria-label={t["screens.searchProducts"]}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 ps-9"
+              />
+            </div>
+            <p className="text-small text-muted-foreground">
+              {formatMessage(t["pages.inventoryProductCount"], { count: productsList.length })}
+            </p>
+          </div>
+          <DataTableCard
+            status={
+              isLoadingProducts ? "loading" : filteredProducts.length === 0 ? "empty" : "ready"
+            }
+            columnLabels={[t["screens.product"], t["reportCenter.stock"], t.status]}
+            empty={{
+              icon: Package,
+              title: searchQuery ? t["pages.inventoryNoMatch"] : t["pages.inventoryEmpty"],
+              action: searchQuery
+                ? undefined
+                : { label: t["pageLabels.addProduct"], onClick: handleOpenCreateDialog },
+            }}
+          >
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-full">{t["screens.product"]}</TableHead>
+                  <TableHead>{t["screens.sku"]}</TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.unitPrice" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.costPrice" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="reportCenter.stock" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <span className="sr-only">{t.actions || "Actions"}</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProducts.map((product) => {
+                  const isLowStock = product.currentStock < (product.lowStockThreshold || 0);
+                  return (
+                    <TableRow key={product.id}>
+                      <TableCell data-truncate="" data-cell="title">
+                        <span dir="auto" className="font-medium">
+                          {locale === "ar" && product.nameAr ? product.nameAr : product.name}
+                        </span>
+                        {product.nameAr && locale !== "ar" && (
+                          <span dir="rtl" className="ms-2 text-caption text-muted-foreground">
+                            {product.nameAr}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                        <span dir="ltr" className="[unicode-bidi:isolate]">
+                          {product.sku || "—"}
+                        </span>
+                      </TableCell>
+                      <MoneyCell amount={product.unitPrice} className="text-muted-foreground" />
+                      <MoneyCell
+                        amount={product.costPrice || 0}
+                        className="text-muted-foreground"
+                      />
+                      <TableCell data-numeric="" data-cell="amount">
+                        <span className={cn("font-medium", isLowStock && "text-warning")}>
+                          {product.currentStock}
+                        </span>{" "}
+                        <span className="text-caption text-muted-foreground">{product.unit}</span>
+                      </TableCell>
+                      <TableCell data-nowrap="" data-cell="status">
+                        {isLowStock ? (
+                          <Badge variant="warning" dot>
+                            <AlertTriangle className="h-3 w-3" aria-hidden />
+                            {t["screens.lowStock"]}
+                          </Badge>
+                        ) : (
+                          <StatusBadge status={product.isActive ? "active" : "inactive"} />
+                        )}
+                      </TableCell>
+                      <TableCell data-cell="actions">
+                        <RowActions
+                          collapseOnMobile
+                          menu={
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => setProductToDelete(product.id)}
+                            >
+                              <Trash2 aria-hidden />
+                              {t.delete}
+                            </DropdownMenuItem>
+                          }
+                        >
+                          <RowActionButton
+                            label={t["screens.addStock"]}
+                            icon={PackagePlus}
+                            onClick={() => handleOpenAddStockDialog(product)}
+                          />
+                          <RowActionButton
+                            label={t.edit}
+                            icon={Edit}
+                            onClick={() => handleOpenEditDialog(product)}
+                          />
+                        </RowActions>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </DataTableCard>
         </TabsContent>
 
         {/* ─── Movements Tab ─────────────────────────────── */}
-        <TabsContent value="movements">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.inventoryMovements" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pageLabels.historyOfAllInventoryChangesAcrossProducts" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingMovements ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
-                </div>
-              ) : movementsList.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No inventory movements yet. Add stock to a product to get started.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t.date || "Date"}</TableHead>
-                        <TableHead>
-                          <T k="pages.product" />
-                        </TableHead>
-                        <TableHead>{t.type || "Type"}</TableHead>
-                        <TableHead className="text-right">{t.quantity || "Quantity"}</TableHead>
-                        <TableHead className="text-right">
-                          <T k="pages.unitCost" />
-                        </TableHead>
-                        <TableHead>{t.reference || "Reference"}</TableHead>
-                        <TableHead>
-                          <T k="pages.notes" />
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {movementsList.map((movement) => (
-                        <TableRow key={movement.id}>
-                          <TableCell className="whitespace-nowrap">
-                            {movement.createdAt
-                              ? format(new Date(movement.createdAt), "MMM dd, yyyy HH:mm")
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {getProductName(movement.productId)}
-                          </TableCell>
-                          <TableCell>{getMovementTypeBadge(movement.type)}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {movement.type === "sale" ? "-" : "+"}
-                            {Math.abs(movement.quantity)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {movement.unitCost != null
-                              ? formatCurrency(movement.unitCost, "AED", locale)
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {movement.reference || "-"}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                            {movement.notes || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="movements" className="space-y-3">
+          <div>
+            <h2 className="text-h2 text-foreground">
+              <T k="pageLabels.inventoryMovements" />
+            </h2>
+            <p className="mt-1 text-small text-muted-foreground">
+              <T k="pageLabels.historyOfAllInventoryChangesAcrossProducts" />
+            </p>
+          </div>
+          <DataTableCard
+            status={isLoadingMovements ? "loading" : movementsList.length === 0 ? "empty" : "ready"}
+            empty={{
+              icon: ArrowDownUp,
+              title: t["screens.noMovements"],
+              description: t["screens.noMovementsBody"],
+            }}
+          >
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t.date || "Date"}</TableHead>
+                  <TableHead className="w-full">
+                    <T k="pages.product" />
+                  </TableHead>
+                  <TableHead>{t.type || "Type"}</TableHead>
+                  <TableHead data-numeric="">{t.quantity || "Quantity"}</TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.unitCost" />
+                  </TableHead>
+                  <TableHead>{t.reference || "Reference"}</TableHead>
+                  <TableHead>
+                    <T k="pages.notes" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movementsList.map((movement) => (
+                  <TableRow key={movement.id}>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {movement.createdAt ? formatDate(movement.createdAt, locale) : "—"}
+                    </TableCell>
+                    <TableCell
+                      data-truncate=""
+                      data-cell="title"
+                      dir="auto"
+                      className="font-medium"
+                    >
+                      {getProductName(movement.productId)}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="status">
+                      {getMovementTypeBadge(movement.type)}
+                    </TableCell>
+                    <TableCell data-numeric="" data-cell="amount" className="font-medium">
+                      <span dir="ltr">
+                        {movement.type === "sale" ? "−" : "+"}
+                        {Math.abs(movement.quantity)}
+                      </span>
+                    </TableCell>
+                    {movement.unitCost != null ? (
+                      <MoneyCell amount={movement.unitCost} className="text-muted-foreground" />
+                    ) : (
+                      <TableCell data-numeric="" className="text-muted-foreground">
+                        —
+                      </TableCell>
+                    )}
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      <span dir="ltr" className="[unicode-bidi:isolate]">
+                        {movement.reference || "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell data-truncate="" className="text-muted-foreground">
+                      {movement.notes || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTableCard>
         </TabsContent>
       </Tabs>
 
@@ -657,7 +653,9 @@ export default function Inventory() {
       <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
+            <DialogTitle>
+              {editingProduct ? t["screens.editProduct"] : t["pageLabels.addProduct"]}
+            </DialogTitle>
             <DialogDescription>
               {editingProduct ? "Update product details." : "Add a new product to your inventory."}
             </DialogDescription>
@@ -670,9 +668,11 @@ export default function Inventory() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name *</FormLabel>
+                    <FormLabel>
+                      {t["screens.invName"]} <span className="text-danger">*</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="Product name" {...field} />
+                      <Input placeholder={t["screens.inv2ProductName"]} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -684,7 +684,7 @@ export default function Inventory() {
                 name="nameAr"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name (Arabic)</FormLabel>
+                    <FormLabel>{t["screens.inv2NameArabic"]}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="اسم المنتج"
@@ -704,7 +704,7 @@ export default function Inventory() {
                   name="sku"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>SKU</FormLabel>
+                      <FormLabel>{t["screens.invSku"]}</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., PROD-001" {...field} value={field.value || ""} />
                       </FormControl>
@@ -718,11 +718,13 @@ export default function Inventory() {
                   name="unit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Unit *</FormLabel>
+                      <FormLabel>
+                        {t["screens.invUnit"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select unit" />
+                            <SelectValue placeholder={t["screens.inv2SelectUnit"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -747,7 +749,7 @@ export default function Inventory() {
                     <FormLabel>{t.description || "Description"}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Product description (optional)"
+                        placeholder={t["screens.inv2ProductDescriptionOptional"]}
                         {...field}
                         value={field.value || ""}
                       />
@@ -810,7 +812,7 @@ export default function Inventory() {
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select VAT rate" />
+                            <SelectValue placeholder={t["screens.inv2SelectVatRate"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -983,7 +985,7 @@ export default function Inventory() {
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder={t["screens.inv2SelectType"]} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -1049,7 +1051,11 @@ export default function Inventory() {
                       <T k="pages.notes" />
                     </FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
+                      <Textarea
+                        placeholder={t["screens.inv2OptionalNotes"]}
+                        {...field}
+                        value={field.value || ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1389,22 +1395,18 @@ function InventoryAccountingTabs({
               <TableHeader>
                 <TableRow>
                   <TableHead>{c.product}</TableHead>
-                  <TableHead className="text-end">{c.quantity}</TableHead>
-                  <TableHead className="text-end">{c.unitCost}</TableHead>
-                  <TableHead className="text-end">{c.value}</TableHead>
+                  <TableHead data-numeric="">{c.quantity}</TableHead>
+                  <TableHead data-numeric="">{c.unitCost}</TableHead>
+                  <TableHead data-numeric="">{c.value}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(v?.rows ?? []).map((r) => (
                   <TableRow key={r.productId}>
                     <TableCell>{nameOf(r)}</TableCell>
-                    <TableCell className="text-end">{r.quantity}</TableCell>
-                    <TableCell className="text-end">
-                      {formatCurrency(Number(r.unitCost), "AED", locale)}
-                    </TableCell>
-                    <TableCell className="text-end">
-                      {formatCurrency(Number(r.value), "AED", locale)}
-                    </TableCell>
+                    <TableCell data-numeric="">{r.quantity}</TableCell>
+                    <MoneyCell amount={Number(r.unitCost)} />
+                    <MoneyCell amount={Number(r.value)} />
                   </TableRow>
                 ))}
                 {v && (
@@ -1413,25 +1415,19 @@ function InventoryAccountingTabs({
                       <TableCell className="font-semibold">{c.total}</TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-end font-semibold">
-                        {formatCurrency(Number(v.totalValue), "AED", locale)}
-                      </TableCell>
+                      <MoneyCell amount={Number(v.totalValue)} className="font-semibold" />
                     </TableRow>
                     <TableRow>
                       <TableCell>{c.glBalance}</TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-end">
-                        {formatCurrency(Number(v.glBalance), "AED", locale)}
-                      </TableCell>
+                      <MoneyCell amount={Number(v.glBalance)} />
                     </TableRow>
                     <TableRow>
                       <TableCell>{c.difference}</TableCell>
                       <TableCell />
                       <TableCell />
-                      <TableCell className="text-end">
-                        {formatCurrency(Number(v.difference), "AED", locale)}
-                      </TableCell>
+                      <MoneyCell amount={Number(v.difference)} />
                     </TableRow>
                   </>
                 )}
@@ -1450,10 +1446,8 @@ function InventoryAccountingTabs({
                   {(ageing.data?.totals ?? []).map((b) => (
                     <TableRow key={b.label}>
                       <TableCell>{b.label}</TableCell>
-                      <TableCell className="text-end">{b.qty}</TableCell>
-                      <TableCell className="text-end">
-                        {formatCurrency(Number(b.value), "AED", locale)}
-                      </TableCell>
+                      <TableCell data-numeric="">{b.qty}</TableCell>
+                      <MoneyCell amount={Number(b.value)} />
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1475,18 +1469,18 @@ function InventoryAccountingTabs({
                   <TableHeader>
                     <TableRow>
                       <TableHead>{c.product}</TableHead>
-                      <TableHead className="text-end">{c.quantity}</TableHead>
-                      <TableHead className="text-end">{c.reorderPoint}</TableHead>
-                      <TableHead className="text-end">{c.suggested}</TableHead>
+                      <TableHead data-numeric="">{c.quantity}</TableHead>
+                      <TableHead data-numeric="">{c.reorderPoint}</TableHead>
+                      <TableHead data-numeric="">{c.suggested}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(reorder.data ?? []).map((r) => (
                       <TableRow key={r.productId}>
                         <TableCell>{nameOf(r)}</TableCell>
-                        <TableCell className="text-end">{r.currentStock}</TableCell>
-                        <TableCell className="text-end">{r.reorderPoint}</TableCell>
-                        <TableCell className="text-end">{r.suggestedOrderQty}</TableCell>
+                        <TableCell data-numeric="">{r.currentStock}</TableCell>
+                        <TableCell data-numeric="">{r.reorderPoint}</TableCell>
+                        <TableCell data-numeric="">{r.suggestedOrderQty}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1508,7 +1502,7 @@ function InventoryAccountingTabs({
                 <TableRow>
                   <TableHead>{c.code}</TableHead>
                   <TableHead>{c.name}</TableHead>
-                  <TableHead className="text-end">{c.units}</TableHead>
+                  <TableHead data-numeric="">{c.units}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1518,7 +1512,7 @@ function InventoryAccountingTabs({
                       {w.code} {w.is_default && <Badge variant="secondary">{c.defaultWh}</Badge>}
                     </TableCell>
                     <TableCell>{locale === "ar" && w.name_ar ? w.name_ar : w.name}</TableCell>
-                    <TableCell className="text-end">{w.totalUnits}</TableCell>
+                    <TableCell data-numeric="">{w.totalUnits}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

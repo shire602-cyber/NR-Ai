@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,8 +24,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
-import { Plus, Truck } from "lucide-react";
+import { formatDate } from "@/lib/format";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { FileText, Link2, Plus, Truck } from "lucide-react";
 
 // Vendor master (W3-B, R04-16): TRN-validated, deduplicated suppliers with statements and aging.
 
@@ -64,6 +66,12 @@ const COPY = {
     notReconciled: "Difference to GL 2010",
     unappliedCredits: "Unapplied vendor credits",
     close: "Close",
+    emptyBody: "Add your suppliers once; bills link to them by TRN or name.",
+    trnShort: "TRN",
+    termsShort: "Terms",
+    daysValue: "{n} days",
+    noPayables: "Nothing owed to vendors",
+    noPayablesBody: "Approved, unpaid vendor bills appear here by supplier.",
   },
   ar: {
     title: "الموردون",
@@ -98,6 +106,12 @@ const COPY = {
     notReconciled: "الفرق مع حساب 2010",
     unappliedCredits: "أرصدة دائنة غير مطبقة",
     close: "إغلاق",
+    emptyBody: "أضف مورديك مرة واحدة، وتُربط الفواتير بهم بالرقم الضريبي أو الاسم.",
+    trnShort: "الرقم الضريبي",
+    termsShort: "شروط الدفع",
+    daysValue: "{n} يومًا",
+    noPayables: "لا توجد مبالغ مستحقة للموردين",
+    noPayablesBody: "تظهر هنا فواتير الموردين المعتمدة وغير المدفوعة حسب المورد.",
   },
 } as const;
 
@@ -219,97 +233,150 @@ export default function Vendors() {
   );
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
-      <PageHeader title={c.title} description={c.subtitle} />
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="w-4 h-4 me-2" />
-          {c.newVendor}
-        </Button>
-        <Button variant="outline" onClick={() => backfill.mutate()} disabled={backfill.isPending}>
-          {c.linkLegacy}
-        </Button>
-      </div>
-      <Tabs defaultValue="list">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Purchases"
+        title={c.title}
+        description={c.subtitle}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => backfill.mutate()}
+              disabled={backfill.isPending}
+            >
+              <Link2 aria-hidden />
+              {c.linkLegacy}
+            </Button>
+            <Button onClick={() => setOpen(true)}>
+              <Plus aria-hidden />
+              {c.newVendor}
+            </Button>
+          </>
+        }
+      />
+      <Tabs defaultValue="list" className="space-y-4">
         <TabsList>
           <TabsTrigger value="list">{c.list}</TabsTrigger>
           <TabsTrigger value="aging">{c.aging}</TabsTrigger>
         </TabsList>
         <TabsContent value="list">
-          <Card>
-            <CardContent className="pt-6 overflow-x-auto">
-              {vendors.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-                  <Truck className="w-8 h-8" />
-                  {c.noVendors}
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{c.name}</TableHead>
-                      <TableHead>{c.trn}</TableHead>
-                      <TableHead>{c.terms}</TableHead>
-                      <TableHead>{c.currency}</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {vendors.map((v) => (
-                      <TableRow key={v.id}>
-                        <TableCell>{locale === "ar" && v.nameAr ? v.nameAr : v.name}</TableCell>
-                        <TableCell className="font-mono">{v.trn ?? "-"}</TableCell>
-                        <TableCell>{v.paymentTermsDays}</TableCell>
-                        <TableCell>{v.currency}</TableCell>
-                        <TableCell className="text-end">
-                          <Button variant="ghost" size="sm" onClick={() => setStatementFor(v)}>
-                            {c.statement}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="aging">
-          <Card>
-            <CardHeader>
-              <CardTitle>{c.aging}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{c.name}</TableHead>
-                    <TableHead className="text-end">{c.total}</TableHead>
+          <DataTableCard
+            status={vendors.length === 0 ? "empty" : "ready"}
+            empty={{
+              icon: Truck,
+              title: c.noVendors,
+              description: c.emptyBody,
+              action: { label: c.newVendor, onClick: () => setOpen(true) },
+            }}
+          >
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-full">{c.name}</TableHead>
+                  <TableHead>{c.trnShort}</TableHead>
+                  <TableHead>{c.email}</TableHead>
+                  <TableHead data-numeric="">{c.termsShort}</TableHead>
+                  <TableHead>{c.currency}</TableHead>
+                  <TableHead>
+                    <span className="sr-only">{c.statement}</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {vendors.map((v) => (
+                  <TableRow key={v.id}>
+                    <TableCell
+                      data-truncate=""
+                      data-cell="title"
+                      dir="auto"
+                      className="font-medium"
+                    >
+                      {locale === "ar" && v.nameAr ? v.nameAr : v.name}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta">
+                      {v.trn ? (
+                        <span dir="ltr" className="[unicode-bidi:isolate]">
+                          {v.trn}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell data-truncate="" className="text-muted-foreground">
+                      {v.email ? (
+                        <span dir="ltr" className="[unicode-bidi:isolate]">
+                          {v.email}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell data-numeric="" data-cell="meta" className="text-muted-foreground">
+                      {c.daysValue.replace("{n}", String(v.paymentTermsDays))}
+                    </TableCell>
+                    <TableCell data-nowrap="" className="text-muted-foreground">
+                      {v.currency}
+                    </TableCell>
+                    <TableCell data-cell="actions" className="text-end">
+                      <RowActions collapseOnMobile>
+                        <RowActionButton
+                          label={c.statement}
+                          icon={FileText}
+                          onClick={() => setStatementFor(v)}
+                        />
+                      </RowActions>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(aging?.vendors ?? []).map((v) => (
-                    <TableRow key={v.vendorId ?? v.name}>
-                      <TableCell>{v.name}</TableCell>
-                      <TableCell className="text-end">{formatCurrency(v.total, "AED")}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {aging && (
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <div>
-                    {c.unappliedCredits}: {formatCurrency(aging.unappliedCredits, "AED")}
-                  </div>
-                  <div>
-                    {aging.reconciliation.isReconciled
-                      ? c.reconciled
-                      : `${c.notReconciled}: ${formatCurrency(aging.reconciliation.difference, "AED")}`}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTableCard>
+        </TabsContent>
+        <TabsContent value="aging" className="space-y-3">
+          <DataTableCard
+            status={(aging?.vendors ?? []).length === 0 ? "empty" : "ready"}
+            empty={{ icon: Truck, title: c.noPayables, description: c.noPayablesBody }}
+            footer={
+              aging ? (
+                <>
+                  <span>
+                    {c.unappliedCredits}: <Money amount={aging.unappliedCredits} />
+                  </span>
+                  <span
+                    className={aging.reconciliation.isReconciled ? "text-success" : "text-warning"}
+                  >
+                    {aging.reconciliation.isReconciled ? (
+                      c.reconciled
+                    ) : (
+                      <>
+                        {c.notReconciled}: <Money amount={aging.reconciliation.difference} />
+                      </>
+                    )}
+                  </span>
+                </>
+              ) : undefined
+            }
+          >
+            <Table className="mobile-fit">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-full">{c.name}</TableHead>
+                  <TableHead data-numeric="">{c.total}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(aging?.vendors ?? []).map((v) => (
+                  <TableRow key={v.vendorId ?? v.name}>
+                    <TableCell data-truncate="" dir="auto">
+                      {v.name}
+                    </TableCell>
+                    <MoneyCell amount={v.total} />
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTableCard>
         </TabsContent>
       </Tabs>
 
@@ -318,15 +385,15 @@ export default function Vendors() {
           <DialogHeader>
             <DialogTitle>{c.newVendor}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {field("name", c.name)}
             {field("name_ar", c.nameAr, { dir: "rtl" })}
-            {field("trn", c.trn, { inputMode: "numeric", maxLength: "15" })}
-            {field("email", c.email, { type: "email" })}
-            {field("phone", c.phone)}
-            {field("payment_terms_days", c.terms, { inputMode: "numeric" })}
-            {field("currency", c.currency, { maxLength: "3" })}
-            {field("iban", c.iban)}
+            {field("trn", c.trn, { inputMode: "numeric", maxLength: "15", dir: "ltr" })}
+            {field("email", c.email, { type: "email", dir: "ltr" })}
+            {field("phone", c.phone, { dir: "ltr" })}
+            {field("payment_terms_days", c.terms, { inputMode: "numeric", dir: "ltr" })}
+            {field("currency", c.currency, { maxLength: "3", dir: "ltr" })}
+            {field("iban", c.iban, { dir: "ltr" })}
             {field("bank_name", c.bank)}
           </div>
           <DialogFooter>
@@ -344,30 +411,36 @@ export default function Vendors() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {c.statement}: {statementFor?.name}
+              {c.statement}: <span dir="auto">{statementFor?.name}</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <Table density="compact" className="mobile-fit">
               <TableHeader>
                 <TableRow>
                   <TableHead>{c.date}</TableHead>
                   <TableHead>{c.type}</TableHead>
                   <TableHead>{c.reference}</TableHead>
-                  <TableHead className="text-end">{c.charge}</TableHead>
-                  <TableHead className="text-end">{c.credit}</TableHead>
-                  <TableHead className="text-end">{c.balance}</TableHead>
+                  <TableHead data-numeric="">{c.charge}</TableHead>
+                  <TableHead data-numeric="">{c.credit}</TableHead>
+                  <TableHead data-numeric="">{c.balance}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(statement?.lines ?? []).map((l) => (
                   <TableRow key={`${l.type}-${l.documentId}`}>
-                    <TableCell>{l.date}</TableCell>
-                    <TableCell>{l.type.replace(/_/g, " ")}</TableCell>
-                    <TableCell>{l.reference ?? "-"}</TableCell>
-                    <TableCell className="text-end">{formatCurrency(l.charge, "AED")}</TableCell>
-                    <TableCell className="text-end">{formatCurrency(l.credit, "AED")}</TableCell>
-                    <TableCell className="text-end">{formatCurrency(l.balance, "AED")}</TableCell>
+                    <TableCell data-nowrap="">{formatDate(l.date, locale)}</TableCell>
+                    <TableCell data-nowrap="" className="text-muted-foreground">
+                      {l.type.replace(/_/g, " ")}
+                    </TableCell>
+                    <TableCell data-nowrap="">
+                      <span dir="ltr" className="[unicode-bidi:isolate]">
+                        {l.reference ?? "—"}
+                      </span>
+                    </TableCell>
+                    <MoneyCell amount={l.charge} showCurrency={false} />
+                    <MoneyCell amount={l.credit} showCurrency={false} />
+                    <MoneyCell amount={l.balance} showCurrency={false} className="font-medium" />
                   </TableRow>
                 ))}
               </TableBody>
