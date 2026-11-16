@@ -621,13 +621,13 @@ const createClientSchema = z.object({
 const updateClientSchema = createClientSchema.partial();
 
 const assignStaffSchema = z.object({
-  staffUserId: z.string().uuid(),
+  staffUserId: z.string().guid(),
   action: z.enum(["assign", "unassign"]),
   role: z.enum(ASSIGNMENT_ROLES).default("accountant"),
 });
 
 const importPayloadSchema = z.object({
-  rows: z.array(z.record(z.any())).min(1).max(500),
+  rows: z.array(z.record(z.string(), z.any())).min(1).max(500),
 });
 
 export function registerFirmRoutes(app: Express): void {
@@ -2174,7 +2174,7 @@ export function registerFirmRoutes(app: Express): void {
       } else {
         const parsed = importPayloadSchema.safeParse(req.body);
         if (!parsed.success) {
-          return res.status(400).json({ message: "Invalid payload", errors: parsed.error.errors });
+          return res.status(400).json({ message: "Invalid payload", errors: parsed.error.issues });
         }
         rows = parsed.data.rows;
       }

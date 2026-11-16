@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import { Card } from "@/components/ui/card";
@@ -82,7 +82,7 @@ const poLineSchema = z.object({
 });
 
 const purchaseOrderSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   number: z.string().min(1, "PO number is required"),
   vendorName: z.string().min(1, "Vendor name is required"),
   vendorTrn: z.string().optional(),

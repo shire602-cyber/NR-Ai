@@ -84,7 +84,7 @@ import {
   reviewRequest,
 } from "../services/firm/practice.service";
 
-const zId = z.string().uuid();
+const zId = z.string().guid();
 const zShort = (max: number) => z.string().trim().min(1).max(max);
 
 function param(req: Request, name: string): string {
@@ -218,7 +218,7 @@ const filingRecordSchema = z.object({
   periodEnd: zDate,
   filedOn: zDate,
   referenceNumber: zShort(100),
-  checklist: z.record(z.boolean()).optional(),
+  checklist: z.record(z.string(), z.boolean()).optional(),
   notes: z.string().trim().max(2000).optional(),
 });
 const filingPackQuery = z.object({

@@ -2,7 +2,7 @@
 // Part of the shared/schema.ts barrel (R20-09); import from "@shared/schema".
 
 import { boolean, index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema } from "./columns";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
 import { companies } from "./companies";

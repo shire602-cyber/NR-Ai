@@ -11,7 +11,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema } from "./columns";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
 import { users } from "./users";

@@ -304,7 +304,7 @@ export class StructuredOutputError extends Error {
 }
 
 export interface RunStructuredOptions<T> {
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>;
+  schema: z.ZodType<T, unknown>;
   /** Performs one model call. `feedback` describes what was wrong with the previous attempt. */
   call: (feedback?: string) => Promise<unknown>;
   sanity?: (data: T) => ValidationIssue[];
@@ -328,7 +328,7 @@ export async function runStructured<T>(
   let lastError = "Model output was invalid";
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    let parsed: z.SafeParseReturnType<unknown, T>;
+    let parsed: z.ZodSafeParseResult<T>;
     try {
       const raw = await opts.call(feedback);
       parsed = opts.schema.safeParse(extractJsonValue(raw));

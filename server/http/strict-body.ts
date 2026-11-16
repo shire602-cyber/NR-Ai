@@ -55,10 +55,34 @@ function addField(fields: FieldErrors, key: string, message: string): void {
   (fields[key] ??= []).push(message);
 }
 
+/**
+ * The issues of a ZodError as zod 3 reported them. zod 4 runs length checks
+ * (min/max/length) even after the value failed its type check, so `[]` for a
+ * `z.string().min(1)` field yields "Expected string, received array" plus
+ * "Array must contain at least 1 element(s)"; zod 3 stopped at the type error.
+ */
+export function reportedIssues(err: ZodError): ZodError["issues"] {
+  const pathKey = (path: PropertyKey[]) => path.map(String).join("\u0000");
+  const typeFailed = new Set(
+    err.issues.filter((i) => i.code === "invalid_type").map((i) => pathKey(i.path))
+  );
+  return err.issues.filter(
+    (i) => !((i.code === "too_small" || i.code === "too_big") && typeFailed.has(pathKey(i.path)))
+  );
+}
+
+/** zod 3's `error.flatten()` over {@link reportedIssues}. */
+export function flattenIssues(err: ZodError): {
+  formErrors: string[];
+  fieldErrors: Record<string, string[] | undefined>;
+} {
+  return new ZodError(reportedIssues(err)).flatten();
+}
+
 /** Flatten a ZodError into dotted-path field errors ("lines.0.amount"). */
 export function zodFieldErrors(err: ZodError): FieldErrors {
   const fields: FieldErrors = {};
-  for (const issue of err.issues) {
+  for (const issue of reportedIssues(err)) {
     if (issue.code === z.ZodIssueCode.unrecognized_keys) {
       const prefix = issue.path.length ? `${issue.path.join(".")}.` : "";
       for (const key of issue.keys) addField(fields, `${prefix}${key}`, "Unknown field");
@@ -70,7 +94,7 @@ export function zodFieldErrors(err: ZodError): FieldErrors {
 }
 
 export function validationErrorBody(err: ZodError, extra: FieldErrors = {}): ValidationErrorBody {
-  const flat = err.flatten();
+  const flat = flattenIssues(err);
   const fields = zodFieldErrors(err);
   for (const [k, msgs] of Object.entries(extra)) for (const m of msgs) addField(fields, k, m);
   return {
@@ -115,15 +139,19 @@ export function assertNoServerOwned(body: unknown, allow: readonly string[] = []
   }
 }
 
-/** Find the object shape behind optional/effects/pipeline wrappers, if any. */
+/**
+ * Find the object shape behind optional/default/pipe wrappers, if any.
+ * zod 4: refinements stay on the object itself; `.transform()` is
+ * pipe(object, transform) and `z.preprocess()` is pipe(transform, object).
+ */
 export function objectShapeOf(schema: ZodTypeAny): z.ZodRawShape | null {
   let s: ZodTypeAny = schema;
   for (let i = 0; i < 10; i++) {
     if (s instanceof z.ZodObject) return s.shape;
-    if (s instanceof z.ZodEffects) s = s.innerType();
-    else if (s instanceof z.ZodPipeline) s = s._def.in;
-    else if (s instanceof z.ZodOptional || s instanceof z.ZodNullable) s = s.unwrap();
-    else if (s instanceof z.ZodDefault) s = s._def.innerType;
+    if (s instanceof z.ZodPipe)
+      s = (s.def.in instanceof z.ZodTransform ? s.def.out : s.def.in) as ZodTypeAny;
+    else if (s instanceof z.ZodOptional || s instanceof z.ZodNullable) s = s.unwrap() as ZodTypeAny;
+    else if (s instanceof z.ZodDefault) s = s.def.innerType as ZodTypeAny;
     else return null;
   }
   return null;

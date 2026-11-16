@@ -68,19 +68,19 @@ const periodSchema = z.object({
 });
 
 const batchCompanyIdsSchema = z.object({
-  companyIds: z.array(z.string().uuid()).min(1).max(500),
+  companyIds: z.array(z.string().guid()).min(1).max(500),
 });
 
 const assignStaffSchema = z.object({
-  userId: z.string().uuid(),
-  companyId: z.string().uuid(),
+  userId: z.string().guid(),
+  companyId: z.string().guid(),
   role: z.enum(["accountant", "reviewer", "manager", "preparer"]).default("accountant"),
 });
 
 // Path-param schemas. Drizzle parameterizes queries, but invalid UUIDs reach
 // Postgres and surface as 500s with 22P02. Validate at the edge to return 400.
-const uuidParamSchema = z.object({ id: z.string().uuid() });
-const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
+const uuidParamSchema = z.object({ id: z.string().guid() });
+const companyIdParamSchema = z.object({ companyId: z.string().guid() });
 
 // ─── Range helpers ────────────────────────────────────────────────────────────
 

@@ -13,10 +13,9 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
-import { ledgerDate, money } from "./columns";
+import { createInsertSchema, ledgerDate, money } from "./columns";
 import { users } from "./users";
 import { companies } from "./companies";
 import { accounts, journalEntries } from "./ledger";

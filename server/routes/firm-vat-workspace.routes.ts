@@ -50,9 +50,9 @@ import {
 
 const logger = createLogger("firm-vat-workspace-routes");
 
-const uuidParamSchema = z.object({ id: z.string().uuid() });
-const rowParamSchema = z.object({ id: z.string().uuid(), rowId: z.string().uuid() });
-const attachmentParamSchema = z.object({ id: z.string().uuid(), attachmentId: z.string().uuid() });
+const uuidParamSchema = z.object({ id: z.string().guid() });
+const rowParamSchema = z.object({ id: z.string().guid(), rowId: z.string().guid() });
+const attachmentParamSchema = z.object({ id: z.string().guid(), attachmentId: z.string().guid() });
 
 const vatRowSchema = z.object({
   rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES),
@@ -69,18 +69,18 @@ const vatRowSchema = z.object({
   status: z.enum(["draft", "approved", "excluded"]).optional(),
   sourceMethod: z.enum(["manual", "ocr", "import", "generated"]).optional(),
   sourceDocumentType: z.string().trim().max(80).optional().nullable(),
-  sourceDocumentId: z.string().uuid().optional().nullable(),
+  sourceDocumentId: z.string().guid().optional().nullable(),
   notes: z.string().trim().max(4000).optional().nullable(),
   auditReason: z.string().trim().max(2000).optional().nullable(),
   vatOverrideReason: z.string().trim().max(2000).optional().nullable(),
 });
 
 const createWorkpaperSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   periodStart: z.string(),
   periodEnd: z.string(),
   dueDate: z.string().optional().nullable(),
-  reviewerUserId: z.string().uuid().optional().nullable(),
+  reviewerUserId: z.string().guid().optional().nullable(),
   notes: z.string().trim().max(4000).optional().nullable(),
 });
 

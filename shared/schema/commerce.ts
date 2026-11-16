@@ -12,10 +12,9 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
-import { money } from "./columns";
+import { createInsertSchema, money } from "./columns";
 import { users } from "./users";
 import { companies } from "./companies";
 import { accounts, journalEntries } from "./ledger";

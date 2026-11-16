@@ -12,6 +12,7 @@
  *   - dates → "YYYY-MM-DD" string (calendar-validated, range-checked).
  *   - identifiers (TRN, IBAN, Emirates ID, currency, email) → normalised form.
  */
+import "../zod-config";
 import { z } from "zod";
 import { MoneyError, fromFils, toFils, type ToFilsOptions } from "../money";
 
@@ -149,13 +150,19 @@ export const zDate = zDateIn();
 
 /** Payroll/VAT period month, 1..12 (accepts "7"). */
 export const zPeriodMonth = z.coerce
-  .number({ invalid_type_error: "Month must be a number" })
+  .number({
+    error: (iss) =>
+      iss.code === "invalid_type" && iss.input !== undefined ? "Month must be a number" : undefined,
+  })
   .int()
   .min(1)
   .max(12);
 /** Period year, 1990..2100 (accepts "2026"). */
 export const zPeriodYear = z.coerce
-  .number({ invalid_type_error: "Year must be a number" })
+  .number({
+    error: (iss) =>
+      iss.code === "invalid_type" && iss.input !== undefined ? "Year must be a number" : undefined,
+  })
   .int()
   .min(1990)
   .max(2100);
@@ -165,7 +172,7 @@ export const zPeriodYear = z.coerce
 export const zUuid = z
   .string()
   .trim()
-  .uuid("Must be a UUID")
+  .guid("Must be a UUID")
   .transform((s) => s.toLowerCase());
 
 /** UAE Tax Registration Number: exactly 15 digits. */

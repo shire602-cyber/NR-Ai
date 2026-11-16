@@ -4,12 +4,22 @@
 CI) fails on any critical/high advisory whose package is not listed in the table below; it also
 reports listed exceptions that no longer match a live advisory so this file can be pruned.
 
-Last reviewed: 2026-11-15 (council wave 1, W1-A, issue R17-27). Before: 19 production advisories
-(2 critical, 12 high, 5 moderate). After: 1 high (below), 0 critical, 0 moderate.
+Last reviewed: 2026-11-16 (re-audit fix loop F3, issue R17-27). `npm audit --omit=dev`: 0 critical,
+0 high, 0 moderate. There are no accepted exceptions.
 
-| Package | Severity | Advisory                                                                                                         | Why it is accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Exit plan                                                                                                                                                          |
-| ------- | -------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `zod`   | high     | GHSA-mrhx-c7xc-m3w5 (memory exhaustion validating oversized constrained collections; fixed only in zod >= 4.6.6) | The root `zod` is pinned to the latest 3.x (3.25.76). The fix exists only in zod 4, a breaking major: `drizzle-zod@0.7` (the `createInsertSchema` helpers in `shared/schema.ts`), `zod-validation-error@4`, and 46 server/shared/client modules use the zod 3 API (`.parse` error shapes, `z.preprocess`, `.refine` signatures, `ZodError.errors`). Exposure is limited: request bodies are capped at 1 MB (10 MB on upload routes) by the body parser before zod runs, so an attacker cannot submit the very large collections the advisory needs. | Migrate to zod 4 (with `drizzle-zod` >= 0.8 / `drizzle-orm` zod integration) as a dedicated change; the W1-B request-contract layer is the natural point to do it. |
+| Package | Severity | Advisory | Why it is accepted | Exit plan |
+| ------- | -------- | -------- | ------------------ | --------- |
+
+## Resolved exceptions
+
+- `zod` high, GHSA-mrhx-c7xc-m3w5 (memory exhaustion validating oversized constrained
+  collections; fixed only in zod >= 4.6.6). Resolved in F3 by upgrading to `zod` ^4.6.7 with
+  `drizzle-zod` 0.8 and `@hookform/resolvers` 5. Validation keeps the zod 3 accept/reject
+  behaviour and error responses: `shared/zod-config.ts` installs the zod 3 English messages,
+  `shared/schema.ts` builds insert schemas with `z.guid()` for uuid columns and optional
+  custom-type (money/rate) columns as drizzle-zod 0.7 did, `client/src/lib/zod-resolver.ts`
+  keeps the 3.x resolver typing, and `server/http/strict-body.ts` drops the length issue zod 4
+  adds after a type mismatch. Regression: `tests/unit/zod4-upgrade.test.ts`.
 
 ## Fixed in this pass
 

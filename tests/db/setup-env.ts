@@ -61,3 +61,6 @@ for (const key of [
 ]) {
   delete process.env[key];
 }
+
+// zod 3-compatible validation messages, as installed by the server entry (R17-27).
+import "../../shared/zod-config";

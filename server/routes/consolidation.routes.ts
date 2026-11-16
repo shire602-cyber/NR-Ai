@@ -57,7 +57,12 @@ import {
 } from "../services/consolidation";
 
 const zOwnership = z.coerce
-  .number({ invalid_type_error: "ownershipPercent must be a number" })
+  .number({
+    error: (iss) =>
+      iss.code === "invalid_type" && iss.input !== undefined
+        ? "ownershipPercent must be a number"
+        : undefined,
+  })
   .gt(0, "Ownership must be above 0%")
   .max(100, "Ownership cannot exceed 100%");
 

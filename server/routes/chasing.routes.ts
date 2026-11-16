@@ -117,7 +117,7 @@ const bulkSendSchema = z.object({
   method: z.enum(["email", "manual"]).default("email"),
   paymentLink: z.string().url().optional().or(z.literal("")),
   senderName: z.string().min(1).max(200).optional(),
-  invoiceIds: z.array(z.string().uuid()).max(BULK_SEND_MAX).optional(),
+  invoiceIds: z.array(z.string().guid()).max(BULK_SEND_MAX).optional(),
 });
 
 const updateConfigSchema = z.object({
@@ -125,7 +125,7 @@ const updateConfigSchema = z.object({
   chaseFrequencyDays: z.number().int().min(1).max(365).optional(),
   maxLevel: z.number().int().min(1).max(4).optional(),
   preferredMethod: z.enum(["email"]).optional(),
-  doNotChaseContactIds: z.array(z.string().uuid()).optional(),
+  doNotChaseContactIds: z.array(z.string().guid()).optional(),
   defaultLanguage: z.enum(["en", "ar"]).optional(),
 });
 
@@ -216,7 +216,7 @@ export function registerChasingRoutes(app: Express) {
 
       const parse = sendChaseSchema.safeParse(req.body ?? {});
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const body = parse.data;
 
       const company = await storage.getCompany(invoice.companyId);
@@ -341,7 +341,7 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = bulkSendSchema.safeParse(req.body ?? {});
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const body = parse.data;
 
       const company = await storage.getCompany(companyId);
@@ -550,7 +550,7 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = upsertTemplateSchema.safeParse(req.body);
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const body = parse.data;
       const created = await storage.createChaseTemplate({
         companyId,
@@ -576,7 +576,7 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = upsertTemplateSchema.partial().safeParse(req.body);
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       // Storage filters by (id, companyId) — guarantees a caller scoped to
       // company A cannot mutate company B's (or a system-default) template.
       // Missing row could mean: doesn't exist, belongs to another tenant, or
@@ -645,7 +645,7 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = updateConfigSchema.safeParse(req.body);
       if (!parse.success)
-        return res.status(400).json({ message: "Invalid payload", errors: parse.error.errors });
+        return res.status(400).json({ message: "Invalid payload", errors: parse.error.issues });
       const { doNotChaseContactIds, ...rest } = parse.data;
       const updated = await storage.upsertChaseConfig(companyId, {
         ...rest,

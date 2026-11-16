@@ -18,7 +18,7 @@ const envSchema = z.object({
 
   // === Server ===
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default("5000"),
+  PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default(5000),
   FRONTEND_URL: z.string().url().optional(),
   CORS_ORIGIN: z.string().optional(),
   AUTH_COOKIE_SAMESITE: sameSiteSchema,

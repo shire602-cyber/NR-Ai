@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,7 +101,7 @@ const ruleFormSchema = z.object({
   matchField: z.enum(["description", "reference", "amount"]),
   matchType: z.enum(["contains", "exact", "starts_with", "regex"]),
   matchValue: z.string().min(1, "Match value is required"),
-  accountId: z.string().uuid("Choose the GL account this rule posts to"),
+  accountId: z.string().guid("Choose the GL account this rule posts to"),
   vatTreatment: z.enum(["none", "standard", "zero_rated", "exempt"]),
   requireReview: z.boolean().default(false),
   direction: z.enum(["any", "inflow", "outflow"]).default("any"),

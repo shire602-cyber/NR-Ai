@@ -60,8 +60,8 @@ function getClientWhereClause(accessibleIds: string[] | null): SQL {
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
 const createLeadSchema = z.object({
-  userId: z.string().uuid(),
-  companyId: z.string().uuid().optional(),
+  userId: z.string().guid(),
+  companyId: z.string().guid().optional(),
   stage: z.enum(["prospect", "contacted", "interested", "converted", "lost"]).default("prospect"),
   source: z.enum(["saas_signup", "referral", "manual", "website"]).default("manual"),
   notes: z.string().optional(),
@@ -73,7 +73,7 @@ const updateLeadSchema = z.object({
   source: z.enum(["saas_signup", "referral", "manual", "website"]).optional(),
   notes: z.string().nullable().optional(),
   score: z.number().int().min(0).max(100).optional(),
-  companyId: z.string().uuid().nullable().optional(),
+  companyId: z.string().guid().nullable().optional(),
 });
 
 // ─── Route registration ───────────────────────────────────────────────────────
@@ -468,7 +468,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = createLeadSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+        return res.status(400).json({ message: "Validation error", errors: parsed.error.issues });
       }
 
       if (
@@ -501,12 +501,12 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     requireFirmPermission("firm.leads.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      if (!z.string().uuid().safeParse(id).success) {
+      if (!z.string().guid().safeParse(id).success) {
         return res.status(400).json({ message: "Invalid lead id", code: "INVALID_ID" });
       }
       const parsed = updateLeadSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+        return res.status(400).json({ message: "Validation error", errors: parsed.error.issues });
       }
 
       if (
@@ -542,7 +542,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     requireFirmPermission("firm.leads.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      if (!z.string().uuid().safeParse(id).success) {
+      if (!z.string().guid().safeParse(id).success) {
         return res.status(400).json({ message: "Invalid lead id", code: "INVALID_ID" });
       }
       const [deleted] = await db

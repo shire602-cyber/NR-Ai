@@ -23,7 +23,7 @@ export interface JournalEntryWithLines extends JournalEntry {
 
 // AI Categorization Request/Response
 export const categorizationRequestSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   description: z.string().min(1),
   amount: z.number(),
   currency: z.string().default("AED"),

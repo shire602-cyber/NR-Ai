@@ -2,7 +2,7 @@ import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import { Package, Plus, Edit, Trash2, PackagePlus, AlertTriangle, ArrowDownUp } from "lucide-react";

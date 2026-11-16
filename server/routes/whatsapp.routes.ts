@@ -20,9 +20,9 @@ import {
 
 const log = createLogger("whatsapp");
 
-const sessionIdSchema = z.object({ sessionId: z.string().uuid() });
-const jobIdSchema = z.object({ jobId: z.string().uuid() });
-const messageIdSchema = z.object({ messageId: z.string().uuid() });
+const sessionIdSchema = z.object({ sessionId: z.string().guid() });
+const jobIdSchema = z.object({ jobId: z.string().guid() });
+const messageIdSchema = z.object({ messageId: z.string().guid() });
 const messageStatusUpdateSchema = z.object({
   status: z.enum(["sent_unverified", "failed"]),
   errorMessage: z.string().max(1000).optional(),

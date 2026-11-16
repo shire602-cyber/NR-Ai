@@ -12,10 +12,10 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
-import { money } from "./columns";
+import { createInsertSchema, money } from "./columns";
+import { COMPLIANCE_EVENT_TYPES, DOCUMENT_TYPES } from "../schema-values";
 import { users } from "./users";
 import { companies } from "./companies";
 import { invoices } from "./sales";
@@ -156,26 +156,9 @@ export type ChaseConfig = typeof chaseConfigs.$inferSelect;
 // calendar is the source of truth for upcoming UAE deadlines that drive
 // auto-scheduled reminders.
 
-// UAE-specific document types — kept as a const tuple so the Zod enum below
-// stays in lockstep. Free-form types are stored under "other".
-export const DOCUMENT_TYPES = [
-  "trade_license",
-  "emirates_id",
-  "visa_copy",
-  "passport_copy",
-  "bank_statement",
-  "tenancy_contract",
-  "moa_aoa",
-  "vat_certificate",
-  "corporate_tax_certificate",
-  "esr_notification",
-  "esr_report",
-  "audited_financials",
-  "invoice",
-  "receipt",
-  "payslip",
-  "other",
-] as const;
+// DOCUMENT_TYPES and COMPLIANCE_EVENT_TYPES live in shared/schema-values.ts
+// (client-safe, R17-27) and are re-exported through the barrel.
+export { COMPLIANCE_EVENT_TYPES, DOCUMENT_TYPES };
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
 export const CHASE_LEVELS = ["friendly", "follow_up", "urgent", "final"] as const;
@@ -193,18 +176,6 @@ export const REQUIREMENT_STATUSES = [
 ] as const;
 export type RequirementStatus = (typeof REQUIREMENT_STATUSES)[number];
 
-export const COMPLIANCE_EVENT_TYPES = [
-  "trade_license_renewal",
-  "visa_expiry",
-  "emirates_id_expiry",
-  "vat_filing",
-  "corporate_tax_filing",
-  "esr_notification",
-  "esr_report",
-  "tenancy_renewal",
-  "audit_deadline",
-  "other",
-] as const;
 export type ComplianceEventType = (typeof COMPLIANCE_EVENT_TYPES)[number];
 
 // Document requirements: what a client owes the firm per period.

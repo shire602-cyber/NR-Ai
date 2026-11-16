@@ -14,10 +14,9 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
-import { money } from "./columns";
+import { createInsertSchema, money } from "./columns";
 import { companies } from "./companies";
 
 // ===========================

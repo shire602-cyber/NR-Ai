@@ -15,10 +15,9 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
-import { ledgerDate, money, rate } from "./columns";
+import { createInsertSchema, ledgerDate, money, rate } from "./columns";
 import { users } from "./users";
 import { companies } from "./companies";
 

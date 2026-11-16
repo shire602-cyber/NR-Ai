@@ -13,10 +13,9 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { sql } from "drizzle-orm";
-import { money, rate, vatRateType } from "./columns";
+import { createInsertSchema, money, rate, vatRateType } from "./columns";
 import { companies } from "./companies";
 import { journalEntries } from "./ledger";
 import { costCenters } from "./integrations";

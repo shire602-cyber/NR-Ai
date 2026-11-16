@@ -45,7 +45,7 @@ const isoDate = z
 const listQuerySchema = z.object({
   category: z.enum(["all", "security", "ledger", "accounts", "team"]).optional(),
   action: z.string().trim().max(80).optional(),
-  userId: z.string().uuid().optional(),
+  userId: z.string().guid().optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),

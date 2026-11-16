@@ -17,7 +17,7 @@ import { resolveAccessibleClientIds } from "../services/firm-command-center.serv
 
 const logger = createLogger("firm-value-ops-routes");
 
-const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
+const companyIdParamSchema = z.object({ companyId: z.string().guid() });
 
 async function requireAccessibleClient(req: Request, res: Response): Promise<string | null> {
   const parsed = companyIdParamSchema.safeParse(req.params);

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { Link } from "wouter";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
@@ -75,14 +75,14 @@ import { VirtualList } from "@/components/VirtualList";
 const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
 
 const journalLineSchema = z.object({
-  accountId: z.string().uuid("Please select an account"),
+  accountId: z.string().guid("Please select an account"),
   debit: z.coerce.number().min(0).default(0),
   credit: z.coerce.number().min(0).default(0),
 });
 
 const journalSchema = z
   .object({
-    companyId: z.string().uuid(),
+    companyId: z.string().guid(),
     date: z.date(),
     memo: z.string().optional(),
     lines: z.array(journalLineSchema).min(2, "At least two line items are required"),

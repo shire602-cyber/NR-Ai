@@ -64,7 +64,7 @@ export const ROLE_PERMISSIONS: Record<CompanyRole, readonly Permission[]> = {
 };
 
 export const zCompanyRole = z.enum(COMPANY_ROLES, {
-  errorMap: () => ({ message: `Role must be one of: ${COMPANY_ROLES.join(", ")}` }),
+  error: () => `Role must be one of: ${COMPANY_ROLES.join(", ")}`,
 });
 
 export function isCompanyRole(value: unknown): value is CompanyRole {

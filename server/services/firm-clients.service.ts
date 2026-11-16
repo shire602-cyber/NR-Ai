@@ -710,7 +710,7 @@ export function validateImportedClient(
 ): { ok: true; value: ImportedClient } | { ok: false; error: string; field?: string } {
   const result = importedClientSchema.safeParse(mapped);
   if (!result.success) {
-    const issue = result.error.errors[0];
+    const issue = result.error.issues[0];
     const field = issue?.path?.[0];
     return {
       ok: false,

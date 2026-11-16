@@ -26,22 +26,22 @@ const logger = createLogger("firm-comms-routes");
 
 const sendEmailSchema = z
   .object({
-    companyId: z.string().uuid(),
+    companyId: z.string().guid(),
     recipientEmail: z.string().email(),
     subject: z.string().min(1).optional(),
     body: z.string().min(1).optional(),
     templateType: z
       .enum(["vat_reminder", "invoice", "document_request", "payment_confirmation", "custom"])
       .optional(),
-    templateId: z.string().uuid().optional(),
-    invoiceId: z.string().uuid().optional(),
+    templateId: z.string().guid().optional(),
+    invoiceId: z.string().guid().optional(),
   })
   .refine((d) => (d.subject && d.body) || d.templateId, {
     message: "Provide subject+body or a templateId",
   });
 
 const sendWhatsAppSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   recipientPhone: z.string().min(1),
   body: z.string().min(1),
   templateType: z
@@ -50,7 +50,7 @@ const sendWhatsAppSchema = z.object({
 });
 
 const templateSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().guid().optional(),
   name: z.string().min(1),
   channel: z.enum(["whatsapp", "email", "sms"]),
   templateType: z.enum([

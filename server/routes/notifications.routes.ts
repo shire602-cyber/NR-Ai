@@ -87,14 +87,14 @@ export function registerNotificationRoutes(app: Express) {
 
       // Validate input with comprehensive schema
       const validationSchema = z.object({
-        companyId: z.string().uuid().optional(),
+        companyId: z.string().guid().optional(),
         type: z.enum(["deadline", "payment_due", "overdue", "regulatory", "referral", "system"]),
         title: z.string().min(1).max(200),
         message: z.string().min(1).max(2000),
         priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
         actionUrl: z.string().url().optional().nullable(),
         relatedEntityType: z.string().max(50).optional().nullable(),
-        relatedEntityId: z.string().uuid().optional().nullable(),
+        relatedEntityId: z.string().guid().optional().nullable(),
       });
 
       const validated = validationSchema.parse(req.body);

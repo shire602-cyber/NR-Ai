@@ -146,10 +146,11 @@ describe("R17-27: dependency audit exceptions are documented", () => {
   it("every accepted exception names a reason and exit plan", () => {
     const doc = read("docs/security/dependency-exceptions.md");
     const rows = [...doc.matchAll(/^\|\s*`([^`]+)`\s*\|\s*(critical|high)\s*\|(.*)$/gim)];
-    expect(rows.map((r) => r[1])).toEqual(["zod"]);
+    // F3 upgraded zod to 4.x, which cleared the last accepted (zod) exception.
+    expect(rows.map((r) => r[1])).toEqual([]);
     for (const r of rows)
       expect(r[3].split("|").filter((c) => c.trim()).length).toBeGreaterThanOrEqual(3);
-    expect(pkg.dependencies.zod).toMatch(/^\^3\./);
+    expect(pkg.dependencies.zod).toMatch(/^\^4\./);
   });
 });
 

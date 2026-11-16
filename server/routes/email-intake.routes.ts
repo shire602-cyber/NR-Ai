@@ -35,7 +35,7 @@ import {
 const log = createLogger("email-intake-routes");
 
 const createSourceBody = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   senderEmail: z.string().email(),
   label: z.string().max(120).optional(),
   requireDkimPass: z.boolean().optional(),
@@ -46,7 +46,7 @@ const emailTaskBody = z
   .object({
     dueDate: zDate.optional(),
     title: z.string().trim().min(3).max(300).optional(),
-    assigneeUserId: z.string().uuid().nullable().optional(),
+    assigneeUserId: z.string().guid().nullable().optional(),
   })
   .strict();
 
