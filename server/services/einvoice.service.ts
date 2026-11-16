@@ -58,6 +58,19 @@ export function vatCategoryFor(
 // here if the FTA revises the spec.
 export const EINVOICE_CUSTOMIZATION_ID = "urn:peppol:pint:billing-1@ae-1";
 export const EINVOICE_PROFILE_ID = "urn:peppol:bis:billing";
+
+/**
+ * Peppol Electronic Address Scheme for UAE participants (PINT AE). The
+ * participant identifier is the 10-digit TIN, i.e. the first 10 digits of the
+ * 15-digit TRN. Complyance rejects documents without it (AE-PEPPOL-008).
+ */
+export const UAE_PEPPOL_EAS = "0235";
+
+/** 10-digit UAE TIN from a 15-digit TRN, or null when the TRN is not usable. */
+export function uaeTinFromTrn(trn: string | null | undefined): string | null {
+  const digits = String(trn ?? "").replace(/\s+/g, "");
+  return /^[0-9]{15}$/.test(digits) ? digits.slice(0, 10) : null;
+}
 // UBL document type codes (UNCL1001): 380 = commercial invoice, 381 = credit note.
 const INVOICE_TYPE_CODE_INVOICE = "380";
 const INVOICE_TYPE_CODE_CREDIT_NOTE = "381";
@@ -171,6 +184,13 @@ export function generateEInvoiceXML(
 
   const customerName = customer?.name || invoice.customerName || "Cash Customer";
   const customerTrn = customer?.trn || invoice.customerTrn || "";
+  const sellerTin = uaeTinFromTrn(company.trnVatNumber);
+  const buyerTin = uaeTinFromTrn(customerTrn);
+  const endpointXml = (tin: string | null) =>
+    tin
+      ? `
+      <cbc:EndpointID schemeID="${UAE_PEPPOL_EAS}">${tin}</cbc:EndpointID>`
+      : "";
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -187,7 +207,7 @@ export function generateEInvoiceXML(
 
   <!-- Seller (Supplier) -->
   <cac:AccountingSupplierParty>
-    <cac:Party>
+    <cac:Party>${endpointXml(sellerTin)}
       <cac:PartyName>
         <cbc:Name>${escapeXml(company.name)}</cbc:Name>
       </cac:PartyName>
@@ -223,7 +243,7 @@ export function generateEInvoiceXML(
 
   <!-- Buyer (Customer) -->
   <cac:AccountingCustomerParty>
-    <cac:Party>
+    <cac:Party>${endpointXml(buyerTin)}
       <cac:PartyName>
         <cbc:Name>${escapeXml(customerName)}</cbc:Name>
       </cac:PartyName>${

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   generateEInvoiceXML,
+  uaeTinFromTrn,
   validateForEInvoicing,
   vatCategoryFor,
 } from "../../server/services/einvoice.service";
@@ -91,6 +92,28 @@ describe("PINT AE profile + document type", () => {
     expect(xml).toContain("<cbc:TaxCurrencyCode>AED</cbc:TaxCurrencyCode>");
     // 50 USD VAT * 3.67 = 183.50 AED
     expect(xml).toContain('<cbc:TaxAmount currencyID="AED">183.50</cbc:TaxAmount>');
+  });
+
+  it("emits seller and buyer Peppol EndpointID (0235 + 10-digit TIN) first in each Party", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice(), lines, company, {
+      name: "Acme LLC",
+      trn: "100765432100003",
+    });
+    expect(xml).toMatch(
+      /<cac:AccountingSupplierParty>\s*<cac:Party>\s*<cbc:EndpointID schemeID="0235">1001234567<\/cbc:EndpointID>/
+    );
+    expect(xml).toMatch(
+      /<cac:AccountingCustomerParty>\s*<cac:Party>\s*<cbc:EndpointID schemeID="0235">1007654321<\/cbc:EndpointID>/
+    );
+  });
+
+  it("omits the buyer EndpointID when the buyer has no TRN", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice({ customerTrn: null }), lines, company, {
+      name: "Walk-in",
+    });
+    expect((xml.match(/<cbc:EndpointID /g) || []).length).toBe(1);
+    expect(uaeTinFromTrn("100123456700003")).toBe("1001234567");
+    expect(uaeTinFromTrn("12345")).toBeNull();
   });
 
   it("does not add a second tax total for an AED invoice", () => {
