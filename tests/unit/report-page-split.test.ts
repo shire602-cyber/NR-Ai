@@ -69,6 +69,44 @@ describe("Reports page split (R20-09)", () => {
   });
 });
 
+describe("Reports module size (R20-09)", () => {
+  it("[R20-09] no Reports page module exceeds 1,500 lines", () => {
+    const files = ["client/src/pages/Reports.tsx", ...walk("client/src/pages/reports")];
+    const oversized = files
+      .map((file) => ({ file, lines: read(file).split("\n").length }))
+      .filter(({ lines }) => lines > 1500);
+    expect(oversized).toEqual([]);
+  });
+
+  it("[R20-09] useReportsPage composes ordered stage hooks and keeps its return shape", () => {
+    const page = read("client/src/pages/reports/useReportsPage.tsx");
+    expect(page.split("\n").length).toBeLessThan(500);
+    const stages = walk("client/src/pages/reports/hooks").map((file) =>
+      file
+        .split("/")
+        .pop()!
+        .replace(/\.tsx?$/, "")
+    );
+    expect(stages.length).toBeGreaterThanOrEqual(8);
+    for (const stage of stages) {
+      expect(page).toContain(`import { ${stage} } from "./hooks/${stage}";`);
+      expect(page).toMatch(new RegExp(`const \\w+ = ${stage}\\(`));
+    }
+    // Panels read these keys through ReportsPageContext; they must stay on the composed result.
+    const returned = page.slice(page.lastIndexOf("return {"));
+    for (const key of [
+      "comparisonRanges",
+      "visibleComparisonRows",
+      "queueReportDeliverySubscriptionWithHandoffGuard",
+      "handleExportWorkspacePack",
+      "serverGroupConsolidation",
+      "reportViewerGroups",
+    ]) {
+      expect(returned).toContain(`${key},`);
+    }
+  });
+});
+
 describe("catalog restraint (R12-14, R18-10)", () => {
   it("[R12-14] the always-hidden discovery panel and its state are gone", () => {
     const source = walk("client/src/pages/reports").map(read).join("\n");
@@ -87,7 +125,7 @@ describe("catalog restraint (R12-14, R18-10)", () => {
     expect(parts).toContain('data-testid="button-reports-advanced-tools"');
     expect(parts).toContain("/reports/share-pack");
     expect(parts).toContain("/reports/faf?");
-    const shared = read("client/src/pages/reports/shared.tsx");
+    const shared = read("client/src/pages/reports/model/reportWorkspace.ts");
     const order = shared.slice(shared.indexOf("reportViewerCategoryOrder = ["));
     expect(order.indexOf('"Accountant & Taxes"')).toBeLessThan(
       order.indexOf('"Sales & Receivables"')
@@ -189,7 +227,14 @@ describe("budget sign convention (W3-E carry-over)", () => {
 
 describe("group consolidation on Reports (W5-C x W5-A integration)", () => {
   it("[R12-12] consolidated-* metrics read the server consolidation API when a group exists", () => {
-    const page = read("client/src/pages/reports/useReportsPage.tsx");
+    // useReportsPage composes stage hooks (reports/hooks) and the comparison builder (reports/comparisons).
+    const page = [
+      "client/src/pages/reports/useReportsPage.tsx",
+      ...walk("client/src/pages/reports/hooks"),
+      ...walk("client/src/pages/reports/comparisons"),
+    ]
+      .map(read)
+      .join("\n");
     const panel = read("client/src/pages/reports/groupConsolidationQueries.ts");
     const close = read("client/src/pages/reports/tabs/CloseTab.tsx");
     expect(panel).toContain("/api/company-groups/${groupId}/consolidated-statements");
