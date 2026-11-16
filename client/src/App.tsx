@@ -319,7 +319,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               >
                 <BrandMark size="sm" />
               </Link>
-              <div className="min-w-0 md:hidden">
+              <div className="min-w-0 flex-1 md:hidden">
                 <CompanySwitcher variant="compact" />
               </div>
             </div>
