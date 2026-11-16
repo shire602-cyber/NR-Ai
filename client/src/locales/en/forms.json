@@ -204,5 +204,7 @@
   "forms.budget.cat.Miscellaneous": "Miscellaneous",
   "forms.budget.cat.Other": "Other",
   "forms.costCenter.update": "Update cost centre",
-  "forms.settings.complianceNotePrefix": "Tax registration type, filing frequency and other compliance details are on the"
+  "forms.settings.complianceNotePrefix": "Tax registration type, filing frequency and other compliance details are on the",
+  "forms.creditNote.newDesc": "Create a credit note linked to an invoice.",
+  "forms.creditNote.editDesc": "Update the credit note details."
 }

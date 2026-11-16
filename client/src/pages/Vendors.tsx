@@ -5,8 +5,8 @@ import {
   FormActions,
   FormGrid,
   FormSection,
-  useFormGate,
 } from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -469,7 +469,7 @@ export default function Vendors() {
       </Dialog>
 
       <Dialog open={!!statementFor} onOpenChange={(o) => !o && setStatementFor(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               {c.statement}: <span dir="auto">{statementFor?.name}</span>

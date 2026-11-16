@@ -1,5 +1,15 @@
 import { T } from "@/components/layout/T";
-import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  FormTotals,
+  LineAmount,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -467,7 +477,11 @@ export default function PurchaseOrders() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel required>
-                                {name === "date" ? t.date : <T k="pageLabels.expectedDeliveryDate" />}
+                                {name === "date" ? (
+                                  t.date
+                                ) : (
+                                  <T k="pageLabels.expectedDeliveryDate" />
+                                )}
                               </FormLabel>
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -598,7 +612,9 @@ export default function PurchaseOrders() {
                             name={`lines.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.qty"]}
+                                </FormLabel>
                                 <FormControl>
                                   <Input
                                     type="number"
@@ -650,7 +666,9 @@ export default function PurchaseOrders() {
                             name={`lines.${index}.vatRate`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.vat"]}
+                                </FormLabel>
                                 <Select
                                   value={String(field.value * 100)}
                                   onValueChange={(val) => field.onChange(parseFloat(val) / 100)}

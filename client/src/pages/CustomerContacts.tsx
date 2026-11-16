@@ -6,8 +6,8 @@ import {
   FormGrid,
   FormSection,
   formSpanFull,
-  useFormGate,
 } from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";

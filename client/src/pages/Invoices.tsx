@@ -1248,11 +1248,11 @@ export default function Invoices() {
             >
               <DialogContent size="xl" data-testid="dialog-invoice-form">
                 <DialogHeader>
-                  <DialogTitle>{editingInvoice ? t["forms.invoice.editTitle"] : t.newInvoice}</DialogTitle>
+                  <DialogTitle>
+                    {editingInvoice ? t["forms.invoice.editTitle"] : t.newInvoice}
+                  </DialogTitle>
                   <DialogDescription>
-                    {editingInvoice
-                      ? t["forms.invoice.editDesc"]
-                      : t["forms.invoice.newDesc"]}
+                    {editingInvoice ? t["forms.invoice.editDesc"] : t["forms.invoice.newDesc"]}
                   </DialogDescription>
                 </DialogHeader>
                 {/* E1: e-invoice status of an issued invoice (re-checked after each save). */}
@@ -1285,7 +1285,9 @@ export default function Invoices() {
                                     data-testid="input-invoice-number"
                                     readOnly={!editingInvoice}
                                     placeholder={
-                                      editingInvoice ? undefined : t["invoices.numberAssignedOnSave"]
+                                      editingInvoice
+                                        ? undefined
+                                        : t["invoices.numberAssignedOnSave"]
                                     }
                                   />
                                 </FormControl>
@@ -1493,7 +1495,9 @@ export default function Invoices() {
                                   size="icon"
                                   className="shrink-0 text-muted-foreground hover:text-danger"
                                   disabled={fields.length <= 1}
-                                  aria-label={formatMessage(t["forms.removeLine"], { n: index + 1 })}
+                                  aria-label={formatMessage(t["forms.removeLine"], {
+                                    n: index + 1,
+                                  })}
                                   onClick={() => remove(index)}
                                   data-testid={
                                     fields.length > 1 ? `button-remove-line-${index}` : undefined
@@ -1729,7 +1733,9 @@ export default function Invoices() {
                         total={total}
                         ratesLabel={
                           formTotals.ratesCharged.length
-                            ? formTotals.ratesCharged.map((r) => `${Math.round(r * 100)}%`).join(" / ")
+                            ? formTotals.ratesCharged
+                                .map((r) => `${Math.round(r * 100)}%`)
+                                .join(" / ")
                             : "0%"
                         }
                       />
@@ -2399,7 +2405,7 @@ export default function Invoices() {
 
       {/* Similar Invoices Warning Dialog */}
       <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
@@ -2463,7 +2469,7 @@ export default function Invoices() {
 
       {/* Set Recurring Dialog */}
       <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-accent" />
@@ -2608,7 +2614,7 @@ export default function Invoices() {
 
       {/* Add Payment Dialog */}
       <Dialog open={addPaymentDialogOpen} onOpenChange={setAddPaymentDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-success" />
@@ -2742,7 +2748,7 @@ export default function Invoices() {
 
       {/* View Payments Dialog */}
       <Dialog open={viewPaymentsDialogOpen} onOpenChange={setViewPaymentsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
             <DialogDescription>
@@ -2815,7 +2821,7 @@ export default function Invoices() {
 
       {/* Payment Account Selection Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent>
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.selectPaymentAccount" />

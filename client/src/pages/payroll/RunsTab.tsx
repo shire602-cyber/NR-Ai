@@ -5,8 +5,8 @@ import {
   FormActions,
   FormGrid,
   FormSection,
-  useFormGate,
 } from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Calculator,
@@ -445,7 +445,7 @@ export function SifIssuesDialog({
   const { tx } = useHr();
   return (
     <Dialog open={!!issues} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>{tx("hr.sifBlocked")}</DialogTitle>
           <DialogDescription>{tx("hr.sifBlockedHint")}</DialogDescription>
@@ -622,7 +622,7 @@ function RunDetail({
       </CardContent>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>{editing?.employee_name}</DialogTitle>
             <DialogDescription>{tx("hr.itemEditHint")}</DialogDescription>

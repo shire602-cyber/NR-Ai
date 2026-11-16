@@ -204,5 +204,7 @@
   "forms.budget.cat.Miscellaneous": "متفرقات",
   "forms.budget.cat.Other": "أخرى",
   "forms.costCenter.update": "تحديث مركز التكلفة",
-  "forms.settings.complianceNotePrefix": "نوع التسجيل الضريبي وتكرار الإقرار وغيرها من بيانات الامتثال موجودة في صفحة"
+  "forms.settings.complianceNotePrefix": "نوع التسجيل الضريبي وتكرار الإقرار وغيرها من بيانات الامتثال موجودة في صفحة",
+  "forms.creditNote.newDesc": "أنشئ إشعارًا دائنًا مرتبطًا بفاتورة.",
+  "forms.creditNote.editDesc": "حدّث بيانات الإشعار الدائن."
 }

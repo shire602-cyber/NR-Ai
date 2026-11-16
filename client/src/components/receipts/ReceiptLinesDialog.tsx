@@ -20,7 +20,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus } from "lucide-react";
-import { FormActions, FormSection, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormSection,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import {

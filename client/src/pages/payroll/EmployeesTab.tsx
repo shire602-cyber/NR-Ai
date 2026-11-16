@@ -37,8 +37,8 @@ import {
   FormActions,
   FormGrid,
   FormSection,
-  useFormGate,
 } from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
 import { StatusBadge } from "./StatusBadge";
 
@@ -452,7 +452,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
       </Dialog>
 
       <Dialog open={!!terminating} onOpenChange={(o) => !o && setTerminating(null)}>
-        <DialogContent>
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>{tx("hr.terminate")}</DialogTitle>
             <DialogDescription>{tx("hr.terminateHint")}</DialogDescription>

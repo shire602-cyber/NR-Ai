@@ -1130,7 +1130,7 @@ export default function FixedAssets() {
 
       {/* ─── Dispose Dialog ────────────────────────────────── */}
       <Dialog open={disposeDialogOpen} onOpenChange={setDisposeDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.disposeAsset" />
@@ -1289,7 +1289,7 @@ export default function FixedAssets() {
 
       {/* ─── Run Depreciation Dialog ───────────────────────── */}
       <Dialog open={depRunDialogOpen} onOpenChange={setDepRunDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.runMonthlyDepreciation" />

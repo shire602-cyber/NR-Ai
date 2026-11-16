@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
@@ -342,20 +343,19 @@ export default function CreditNotes() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               {editingCreditNote ? t["screens.editCreditNote"] : t["screens.newCreditNote"]}
             </DialogTitle>
             <DialogDescription>
-              {editingCreditNote
-                ? "Update credit note details"
-                : "Create a new credit note linked to an invoice"}
+              {editingCreditNote ? t["forms.creditNote.editDesc"] : t["forms.creditNote.newDesc"]}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+              <FormErrorSummary />
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="number"
@@ -399,7 +399,7 @@ export default function CreditNotes() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="customerName"
@@ -432,7 +432,7 @@ export default function CreditNotes() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="date"
@@ -662,23 +662,18 @@ export default function CreditNotes() {
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                  className="flex-1"
-                >
+              <FormActions sticky>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   <T k="pages.cancel" />
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createMutation.isPending || editMutation.isPending}
-                  className="flex-1"
                 >
-                  {createMutation.isPending || editMutation.isPending ? t.loading : t.save}
+                  {createMutation.isPending || editMutation.isPending ? t["forms.saving"] : t.save}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>

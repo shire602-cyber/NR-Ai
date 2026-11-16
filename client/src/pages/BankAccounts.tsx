@@ -6,8 +6,8 @@ import {
   FormGrid,
   FormSection,
   formSpanFull,
-  useFormGate,
 } from "@/components/ui/form-layout";
+import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -665,7 +665,7 @@ function StatementDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
             {tr("banking.statement.title")} — {account.nameEn}

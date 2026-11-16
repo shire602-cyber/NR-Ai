@@ -1,5 +1,14 @@
 import { T } from "@/components/layout/T";
-import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  FormTotals,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -1144,12 +1153,7 @@ export default function ExpenseClaims() {
                           <FormItem>
                             <FormLabel className={lineLabelClass}>{cc.supplierTrn}</FormLabel>
                             <FormControl>
-                              <Input
-                                ltr
-                                inputMode="numeric"
-                                {...field}
-                                value={field.value || ""}
-                              />
+                              <Input ltr inputMode="numeric" {...field} value={field.value || ""} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1232,7 +1236,7 @@ export default function ExpenseClaims() {
 
       {/* ─── View Claim Dialog ───────────────────────────── */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               <T k="pages.expenseClaimDetails" />
@@ -1381,7 +1385,7 @@ export default function ExpenseClaims() {
 
       {/* ─── Review Dialog ───────────────────────────────── */}
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               {reviewAction === "approve" ? "Approve Claim" : "Reject Claim"}
@@ -1442,7 +1446,7 @@ export default function ExpenseClaims() {
 
       {/* ─── Payment Dialog ──────────────────────────────── */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pages.markAsPaid" />

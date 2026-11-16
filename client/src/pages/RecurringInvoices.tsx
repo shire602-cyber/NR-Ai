@@ -1,5 +1,14 @@
 import { T } from "@/components/layout/T";
-import { FormActions, FormErrorSummary, FormGrid, FormSection, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  LineAmount,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -8,7 +17,15 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from "@/components/ui/form";
 import {
   Dialog,
   DialogContent,
@@ -619,7 +636,9 @@ export default function RecurringInvoices() {
                             name={`lines.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.qty"]}
+                                </FormLabel>
                                 <FormControl>
                                   <Input {...field} type="number" step="0.01" />
                                 </FormControl>
@@ -647,7 +666,9 @@ export default function RecurringInvoices() {
                             name={`lines.${index}.vatRate`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.vat"]}
+                                </FormLabel>
                                 <Select
                                   onValueChange={(val) => field.onChange(parseFloat(val))}
                                   defaultValue={String(field.value)}

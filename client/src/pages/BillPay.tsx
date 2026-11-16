@@ -1,5 +1,15 @@
 import { T } from "@/components/layout/T";
-import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  FormTotals,
+  LineAmount,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -10,7 +20,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from "@/components/ui/form";
 import {
   Dialog,
   DialogContent,
@@ -1079,10 +1097,7 @@ export default function BillPay() {
                     </FormGrid>
                   </FormSection>
 
-                  <FormSection
-                    title={t["forms.section.tax"]}
-                    description={t["forms.bill.taxDesc"]}
-                  >
+                  <FormSection title={t["forms.section.tax"]} description={t["forms.bill.taxDesc"]}>
                     <FormGrid>
                       <FormField
                         control={billForm.control}
@@ -1230,7 +1245,9 @@ export default function BillPay() {
                             name={`line_items.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.qty"]}
+                                </FormLabel>
                                 <FormControl>
                                   <Input {...field} type="number" step="0.01" />
                                 </FormControl>
@@ -1891,7 +1908,7 @@ export default function BillPay() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pages.recordPayment" />

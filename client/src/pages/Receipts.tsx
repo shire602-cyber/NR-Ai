@@ -1,5 +1,11 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { FormActions, FormErrorSummary, FormGrid, FormSection, formSpanFull } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
 import { T } from "@/components/layout/T";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -92,7 +98,15 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from "@/components/ui/form";
 
 interface ExtractedData {
   merchant?: string;
@@ -2362,121 +2376,121 @@ export default function Receipts() {
             <form onSubmit={form.handleSubmit(onEditSubmit)} noValidate className="space-y-6">
               <FormErrorSummary />
               <FormGrid>
-              <FormField
-                control={form.control}
-                name="merchant"
-                render={({ field }) => (
-                  <FormItem className={formSpanFull}>
-                    <FormLabel required>
-                      <T k="pages.merchant" />
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} dir="auto" data-testid="input-edit-merchant" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t.date}</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="date" dir="ltr" data-testid="input-edit-date" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>
-                      <T k="banking.common.amount" />
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={field.value ?? ""}
-                        onChange={(e) =>
-                          field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                        }
-                        data-testid="input-edit-amount"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="vatAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t["screens.vatAmountAed"]}</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="number"
-                        step="0.01"
-                        value={field.value ?? ""}
-                        onChange={(e) =>
-                          field.onChange(e.target.value ? parseFloat(e.target.value) : null)
-                        }
-                        data-testid="input-edit-vat"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.category" />
-                    </FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                <FormField
+                  control={form.control}
+                  name="merchant"
+                  render={({ field }) => (
+                    <FormItem className={formSpanFull}>
+                      <FormLabel required>
+                        <T k="pages.merchant" />
+                      </FormLabel>
                       <FormControl>
-                        <SelectTrigger data-testid="select-edit-category">
-                          <SelectValue placeholder={t["screens.selectCategory"]} />
-                        </SelectTrigger>
+                        <Input {...field} dir="auto" data-testid="input-edit-merchant" />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Office Supplies">
-                          <T k="pageLabels.officeSupplies" />
-                        </SelectItem>
-                        <SelectItem value="Meals & Entertainment">
-                          <T k="pageLabels.mealsEntertainment" />
-                        </SelectItem>
-                        <SelectItem value="Travel">
-                          <T k="pages.travel" />
-                        </SelectItem>
-                        <SelectItem value="Utilities">
-                          <T k="pages.utilities" />
-                        </SelectItem>
-                        <SelectItem value="Marketing">
-                          <T k="pageLabels.marketing" />
-                        </SelectItem>
-                        <SelectItem value="Software">
-                          <T k="pageLabels.software" />
-                        </SelectItem>
-                        <SelectItem value="Other">
-                          <T k="pages.other" />
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t.date}</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="date" dir="ltr" data-testid="input-edit-date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>
+                        <T k="banking.common.amount" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                          }
+                          data-testid="input-edit-amount"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="vatAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["screens.vatAmountAed"]}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          step="0.01"
+                          value={field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                          }
+                          data-testid="input-edit-vat"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.category" />
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-category">
+                            <SelectValue placeholder={t["screens.selectCategory"]} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Office Supplies">
+                            <T k="pageLabels.officeSupplies" />
+                          </SelectItem>
+                          <SelectItem value="Meals & Entertainment">
+                            <T k="pageLabels.mealsEntertainment" />
+                          </SelectItem>
+                          <SelectItem value="Travel">
+                            <T k="pages.travel" />
+                          </SelectItem>
+                          <SelectItem value="Utilities">
+                            <T k="pages.utilities" />
+                          </SelectItem>
+                          <SelectItem value="Marketing">
+                            <T k="pageLabels.marketing" />
+                          </SelectItem>
+                          <SelectItem value="Software">
+                            <T k="pageLabels.software" />
+                          </SelectItem>
+                          <SelectItem value="Other">
+                            <T k="pages.other" />
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </FormGrid>
               <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
@@ -2498,7 +2512,7 @@ export default function Receipts() {
 
       {/* Similar Transactions Warning Dialog */}
       <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
@@ -2567,7 +2581,7 @@ export default function Receipts() {
 
       {/* Create Account Dialog */}
       <Dialog open={createAccountDialogOpen} onOpenChange={setCreateAccountDialogOpen}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.createNewAccount" />
@@ -2647,7 +2661,7 @@ export default function Receipts() {
 
       {/* Post Expense Dialog */}
       <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.postExpenseToJournal" />

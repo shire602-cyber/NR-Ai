@@ -50,9 +50,7 @@ function useBilingual() {
   }, [locale, other]);
   return (key: string) => {
     const primary = catalogs[locale]?.[key as keyof (typeof catalogs)["en"]] as string | undefined;
-    const secondary = catalogs[other]?.[key as keyof (typeof catalogs)["en"]] as
-      | string
-      | undefined;
+    const secondary = catalogs[other]?.[key as keyof (typeof catalogs)["en"]] as string | undefined;
     return { primary: primary ?? "", secondary: secondary ?? "", other };
   };
 }
@@ -173,7 +171,9 @@ export function InvoicePreview(props: InvoicePreviewProps) {
                 <Bi k="forms.preview.invoiceNo" bi={bi} />
               </dt>
               <dd className="font-medium">
-                {number ? <Ltr>{number}</Ltr> : (
+                {number ? (
+                  <Ltr>{number}</Ltr>
+                ) : (
                   <span className="text-muted-foreground">{t["forms.preview.numberOnSave"]}</span>
                 )}
               </dd>
@@ -183,7 +183,11 @@ export function InvoicePreview(props: InvoicePreviewProps) {
                 <Bi k="forms.preview.issueDate" bi={bi} />
               </dt>
               <dd className="font-medium">
-                {date ? <span className="whitespace-nowrap">{formatDate(date, locale)}</span> : placeholder}
+                {date ? (
+                  <span className="whitespace-nowrap">{formatDate(date, locale)}</span>
+                ) : (
+                  placeholder
+                )}
               </dd>
             </div>
             <div className="flex items-start justify-between gap-3">

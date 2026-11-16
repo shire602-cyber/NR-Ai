@@ -1,5 +1,15 @@
 import { T } from "@/components/layout/T";
-import { FormActions, FormErrorSummary, FormGrid, FormSection, FormTotals, LineAmount, LineItem, LineItemList, lineLabelClass } from "@/components/ui/form-layout";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  FormTotals,
+  LineAmount,
+  LineItem,
+  LineItemList,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -508,7 +518,9 @@ export default function Quotes() {
                             name={`lines.${index}.quantity`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.qty"]}
+                                </FormLabel>
                                 <FormControl>
                                   <Input
                                     type="number"
@@ -560,7 +572,9 @@ export default function Quotes() {
                             name={`lines.${index}.vatRate`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
+                                <FormLabel className={lineLabelClass}>
+                                  {t["forms.col.vat"]}
+                                </FormLabel>
                                 <Select
                                   value={String(field.value * 100)}
                                   onValueChange={(val) => field.onChange(parseFloat(val) / 100)}

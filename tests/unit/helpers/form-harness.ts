@@ -81,8 +81,10 @@ export function formHarnessQueryClientMock() {
     apiRequest: vi.fn(apiRequest),
     queryClient: qc,
     ApiError,
-    getQueryFn: () => async ({ queryKey }: { queryKey: readonly unknown[] }) =>
-      lookup(keyToPath(queryKey)),
+    getQueryFn:
+      () =>
+      async ({ queryKey }: { queryKey: readonly unknown[] }) =>
+        lookup(keyToPath(queryKey)),
     apiFetch: vi.fn(async () => new Response("{}")),
   };
 }

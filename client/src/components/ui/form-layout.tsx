@@ -3,6 +3,7 @@ import { useFormContext, type FieldErrors, type FieldValues } from "react-hook-f
 import { AlertCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { focusField, type SummaryItem } from "@/hooks/use-form-gate";
 
 /**
  * D5b form layout (CTO form spec, CTO-CHECKPOINT-D2 "Forms"):
@@ -105,7 +106,7 @@ export function FormActions({
         "flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end",
         sticky &&
           variant === "dialog" &&
-          "sticky bottom-0 z-10 -mx-4 -mb-5 mt-2 border-t border-border bg-card px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-4",
+          "sticky bottom-0 z-10 -mx-4 -mb-5 mt-2 max-sm:!mt-auto border-t border-border bg-card px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-4",
         sticky &&
           variant === "page" &&
           "sticky bottom-0 z-20 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:-mx-6 md:px-6",
@@ -116,12 +117,7 @@ export function FormActions({
   );
 }
 
-export interface SummaryItem {
-  /** DOM id of the field to focus when the item is clicked. */
-  id?: string;
-  label?: React.ReactNode;
-  message: React.ReactNode;
-}
+export type { SummaryItem };
 
 /** Plain error summary for forms that keep their own state (no react-hook-form). */
 export function ErrorSummary({
@@ -178,13 +174,6 @@ export function ErrorSummary({
   );
 }
 
-function focusField(id: string) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.scrollIntoView?.({ block: "center" });
-  (el as HTMLElement).focus?.();
-}
-
 function flattenErrors(errors: FieldErrors<FieldValues>, prefix = ""): Array<[string, string]> {
   const out: Array<[string, string]> = [];
   for (const [key, value] of Object.entries(errors ?? {})) {
@@ -215,7 +204,10 @@ function labelFor(el: HTMLElement | null): string | undefined {
   if (!el) return undefined;
   const id = el.getAttribute("id");
   const label = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
-  const text = (label?.textContent ?? el.getAttribute("aria-label") ?? "").replace(/\*\s*\(.*\)$/, "");
+  const text = (label?.textContent ?? el.getAttribute("aria-label") ?? "").replace(
+    /\*\s*\(.*\)$/,
+    ""
+  );
   return text.replace(/\s*\*$/, "").trim() || undefined;
 }
 
@@ -451,40 +443,6 @@ export function Field({
       )}
     </div>
   );
-}
-
-/**
- * useFormGate — client-side "required" checks for state-based forms. Errors show only after
- * the first submit attempt; `attempt()` returns false and focuses the first invalid control.
- */
-export function useFormGate(
-  checks: Array<{ id: string; label: React.ReactNode; invalid: boolean; message?: React.ReactNode }>
-) {
-  const { t } = useTranslation();
-  const [submitted, setSubmitted] = React.useState(false);
-  const failing = checks.filter((c) => c.invalid);
-  const errorFor = (id: string): React.ReactNode | undefined => {
-    if (!submitted) return undefined;
-    const c = failing.find((x) => x.id === id);
-    return c ? (c.message ?? t["forms.errors.required"]) : undefined;
-  };
-  const summary: SummaryItem[] = submitted
-    ? failing.map((c) => ({
-        id: c.id,
-        label: c.label,
-        message: c.message ?? t["forms.errors.required"],
-      }))
-    : [];
-  const attempt = () => {
-    setSubmitted(true);
-    if (failing.length === 0) return true;
-    const first = failing[0];
-    // after the error state renders
-    requestAnimationFrame(() => focusField(first.id));
-    return false;
-  };
-  const reset = () => setSubmitted(false);
-  return { submitted, errorFor, summary, attempt, reset };
 }
 
 /** Caption-sized label used for fields inside a LineItem figures row. */

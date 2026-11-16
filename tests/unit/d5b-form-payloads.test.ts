@@ -23,6 +23,7 @@ import {
   type,
   unmountPage,
 } from "./helpers/form-harness";
+import { act } from "react";
 import { loadLocale } from "../../client/src/lib/i18n";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -240,9 +241,7 @@ describe("[D5b] quote form payload unchanged", () => {
 
 describe("[D5b] recurring invoice form payload unchanged", () => {
   it("POSTs the same recurring template body", async () => {
-    const { default: RecurringInvoices } = await import(
-      "../../client/src/pages/RecurringInvoices"
-    );
+    const { default: RecurringInvoices } = await import("../../client/src/pages/RecurringInvoices");
     await renderPage(RecurringInvoices);
     await click(buttonByText(/new recurring invoice/i));
     await type(named("customerName"), "Noor Retail Trading");
@@ -503,8 +502,21 @@ describe("[D5b] fixed asset form payload unchanged", () => {
 });
 
 const ACCOUNTS = [
-  { id: "a0000000-0000-4000-8000-000000000102", code: "1020", nameEn: "Bank", type: "asset", subType: "bank", isActive: true },
-  { id: "a0000000-0000-4000-8000-000000000510", code: "5100", nameEn: "Rent", type: "expense", isActive: true },
+  {
+    id: "a0000000-0000-4000-8000-000000000102",
+    code: "1020",
+    nameEn: "Bank",
+    type: "asset",
+    subType: "bank",
+    isActive: true,
+  },
+  {
+    id: "a0000000-0000-4000-8000-000000000510",
+    code: "5100",
+    nameEn: "Rent",
+    type: "expense",
+    isActive: true,
+  },
 ];
 
 describe("[D5b] journal entry form payload unchanged", () => {
@@ -661,6 +673,54 @@ describe("[D5b] company settings forms payload unchanged", () => {
     await type(form.querySelector('[name="websiteUrl"]'), "https://group.synthetic.example");
     await submit(byTestId("button-save-company-profile"));
     expect(body("PATCH", `${C}`)).toStrictEqual(PROFILE_BODY);
+  });
+});
+
+describe("[D5b] validation: summary on submit, inline errors, focus first invalid", () => {
+  it("invoice: empty submit shows the summary, marks the field and sends nothing", async () => {
+    setFixtures({ [`${C}/invoices?limit=50`]: { items: [], nextCursor: null } });
+    const { default: Invoices } = await import("../../client/src/pages/Invoices");
+    await renderPage(Invoices);
+    await click(byTestId("button-create-invoice"));
+    await submit(byTestId("button-submit-invoice"));
+    await flush(5);
+    const summary = byTestId("form-error-summary");
+    expect(summary).not.toBeNull();
+    expect(summary!.getAttribute("role")).toBe("alert");
+    expect(byTestId("input-customer-name")!.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement?.getAttribute("aria-invalid")).toBe("true");
+    expect(apiCalls("POST")).toHaveLength(0);
+    // the live bilingual preview is part of the dialog
+    const preview = byTestId("invoice-preview")!;
+    expect(preview.textContent).toContain("Tax invoice");
+    expect(preview.textContent).toContain("فاتورة ضريبية");
+  });
+
+  it("contact: required fields are summarised, focus moves to the first, nothing is posted", async () => {
+    const { default: CustomerContacts } = await import("../../client/src/pages/CustomerContacts");
+    await renderPage(CustomerContacts);
+    await click(byTestId("button-add-contact"));
+    await submit(byTestId("button-save-contact"));
+    await flush(20);
+    const summary = byTestId("form-error-summary")!;
+    expect(summary.textContent).toMatch(/2 fields/);
+    expect(summary.textContent).toContain("Name");
+    expect(summary.textContent).toContain("Email");
+    expect(byTestId("input-contact-name")!.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(byTestId("input-contact-name"));
+    expect(apiCalls("POST")).toHaveLength(0);
+  });
+
+  it("single-field dialog submits on Enter (form submit), Escape is Radix-owned", async () => {
+    const { RunsTab } = await import("../../client/src/pages/payroll/RunsTab");
+    await renderPage(RunsTab, { companyId: COMPANY_ID });
+    await click(byTestId("button-new-run"));
+    const year = document.getElementById("run-year") as HTMLInputElement;
+    await type(year, "2027");
+    // Enter in a text field submits its form (implicit submission); jsdom needs requestSubmit.
+    await act(async () => year.form!.requestSubmit());
+    await flush(5);
+    expect(body("POST", `${C}/payroll-runs`)).toStrictEqual({ periodMonth: 3, periodYear: 2027 });
   });
 });
 

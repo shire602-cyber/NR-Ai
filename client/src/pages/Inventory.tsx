@@ -973,7 +973,7 @@ export default function Inventory() {
 
       {/* ─── Add Stock Dialog ────────────────────────────── */}
       <Dialog open={addStockDialogOpen} onOpenChange={setAddStockDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.addStock" />
