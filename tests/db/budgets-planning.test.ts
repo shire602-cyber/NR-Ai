@@ -14,7 +14,7 @@ let accountant: Tenant;
 let viewer: Tenant;
 let restore: () => void;
 let planId: string;
-let _salesLineId: string;
+let salesLineId: string;
 let rentLineId: string;
 let salesId: string;
 let rentId: string;
