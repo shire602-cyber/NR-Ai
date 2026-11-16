@@ -13,7 +13,6 @@ import {
   Shield,
   CheckCircle2,
   ArrowRight,
-  Globe,
   Users,
   Building2,
   Briefcase,
@@ -41,15 +40,12 @@ import {
 } from "lucide-react";
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useI18n } from "@/lib/i18n";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 export default function Services() {
   const mounted = useHasMounted();
-  const { locale, setLocale } = useI18n();
+  const { locale } = useI18n();
   const isRTL = locale === "ar";
-
-  const toggleLanguage = () => {
-    setLocale(locale === "en" ? "ar" : "en");
-  };
 
   const t = {
     nav: {
@@ -379,49 +375,12 @@ export default function Services() {
   ];
 
   return (
-    <div
-      className={`min-h-screen bg-background ${isRTL ? "rtl" : "ltr"}`}
-      dir={isRTL ? "rtl" : "ltr"}
+    <MarketingLayout
+      titleKey="marketing.seoServicesTitle"
+      descriptionKey="marketing.seoServicesDescription"
     >
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/80 border-b">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/">
-              <span
-                className="text-xl font-bold text-primary cursor-pointer"
-                data-testid="link-logo"
-              >
-                Muhasib.ai{/* i18n-ignore: brand or sample data */}
-              </span>
-            </Link>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleLanguage}
-                data-testid="button-language-toggle"
-              >
-                <Globe className="w-4 h-4 mr-2" />
-                {t.nav.languageToggle}
-              </Button>
-              <Link href="/login">
-                <Button variant="ghost" size="sm" data-testid="button-login">
-                  {t.nav.login}
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button size="sm" data-testid="button-get-started">
-                  {t.nav.getStarted}
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
-
       {/* Hero Section - Two Column Layout */}
-      <section className="relative overflow-hidden pt-32 pb-20 lg:pb-32 min-h-screen flex items-center">
+      <section className="relative overflow-hidden pt-16 pb-20 lg:pt-24 lg:pb-28 flex items-center">
         <div className="absolute inset-0 dark:dark:dark:" />
         <div
           className="absolute inset-0 bg-grid-white/5 dark:bg-grid-white/5"
@@ -445,19 +404,13 @@ export default function Services() {
                 {t.hero.badge}
               </Badge>
 
-              <h1
-                className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight"
-                data-testid="text-hero-headline"
-              >
-                <span className="text-primary">{t.hero.headline}</span>
+              <h1 className="mk-display mb-6" data-testid="text-hero-headline">
+                <span>{t.hero.headline}</span>
                 <br />
-                <span className="text-foreground">{t.hero.headlineAccent}</span>
+                <span className="mk-accent">{t.hero.headlineAccent}</span>
               </h1>
 
-              <p
-                className="text-xl lg:text-2xl text-muted-foreground mb-8 max-w-2xl leading-relaxed"
-                data-testid="text-hero-subheadline"
-              >
+              <p className="mk-lead mb-8 max-w-2xl" data-testid="text-hero-subheadline">
                 {t.hero.subheadline}
               </p>
 
@@ -596,7 +549,7 @@ export default function Services() {
                   <stat.icon className="w-6 h-6 text-primary opacity-60" />
                 </div>
                 <div
-                  className="text-4xl lg:text-5xl font-bold text-primary mb-1 font-mono"
+                  className="text-xl font-semibold text-foreground mb-1"
                   data-testid={`stat-value-${index}`}
                 >
                   {stat.value}
@@ -626,10 +579,7 @@ export default function Services() {
             >
               {t.services.badge}
             </Badge>
-            <h2
-              className="text-4xl md:text-5xl font-bold mb-4"
-              data-testid="text-services-headline"
-            >
+            <h2 className="mk-h2 mb-4" data-testid="text-services-headline">
               {t.services.headline}
             </h2>
             <p
@@ -689,10 +639,7 @@ export default function Services() {
               <CheckCircle2 className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
               {t.whyChoose.badge}
             </Badge>
-            <h2
-              className="text-4xl md:text-5xl font-bold mb-4"
-              data-testid="text-why-choose-headline"
-            >
+            <h2 className="mk-h2 mb-4" data-testid="text-why-choose-headline">
               {t.whyChoose.headline}
             </h2>
             <p
@@ -739,13 +686,13 @@ export default function Services() {
             style={{ animationDelay: "250ms", animationDuration: "600ms" }}
           >
             <Badge
-              className="mb-4 bg-chart-5/10 text-chart-5 border-chart-5/20 px-4 py-1.5"
+              className="mb-4 bg-success-subtle text-success-subtle-foreground border-transparent px-4 py-1.5"
               data-testid="badge-ai"
             >
               <Brain className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
               {t.ai.badge}
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold mb-4" data-testid="text-ai-headline">
+            <h2 className="mk-h2 mb-4" data-testid="text-ai-headline">
               {t.ai.headline}
             </h2>
             <p
@@ -866,7 +813,7 @@ export default function Services() {
               <Users className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
               {t.clients.badge}
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold mb-4" data-testid="text-clients-headline">
+            <h2 className="mk-h2 mb-4" data-testid="text-clients-headline">
               {t.clients.headline}
             </h2>
             <p
@@ -912,7 +859,7 @@ export default function Services() {
           className={`relative z-10 max-w-4xl mx-auto px-6 lg:px-8 text-center ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
           style={{ animationDelay: "400ms", animationDuration: "600ms" }}
         >
-          <h2 className="text-4xl md:text-5xl font-bold mb-6" data-testid="text-cta-headline">
+          <h2 className="mk-h2 mb-6" data-testid="text-cta-headline">
             {t.cta.headline}
           </h2>
           <p
@@ -963,16 +910,11 @@ export default function Services() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t bg-muted/30">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8 text-center text-sm text-muted-foreground">
-          <p data-testid="text-footer">
-            {locale === "en"
-              ? "© 2025 Muhasib.ai by NR Accounting Services - Licensed Accounting Firm in Dubai, UAE since 2017"
-              : "© 2025 محاسب.ai من NR Accounting Services - شركة محاسبة مرخصة في دبي، الإمارات منذ 2017"}
-          </p>
-        </div>
-      </footer>
-    </div>
+      <p className="sr-only" data-testid="text-footer">
+        {locale === "en"
+          ? "Muhasib.ai accounting services by Najma Al Raeda Accounting LLC, Dubai"
+          : "الخدمات المحاسبية من محاسب بواسطة نجمة الرائدة للمحاسبة ذ.م.م، دبي"}
+      </p>
+    </MarketingLayout>
   );
 }

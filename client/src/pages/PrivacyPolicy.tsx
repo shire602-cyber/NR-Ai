@@ -1,14 +1,9 @@
-import { useEffect } from "react";
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
 
 export default function PrivacyPolicy() {
-  useEffect(() => {
-    document.title = "Privacy Policy | Muhasib.ai";
-  }, []);
-
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="26 April 2026">
+    <LegalLayout slug="privacy" effectiveDate="2026-04-26">
       <p>
         This Privacy Policy describes how Najma Al Raeda Accounting LLC (<strong>"NRA"</strong>,
         <strong>"we"</strong>, <strong>"us"</strong>, or <strong>"our"</strong>) collects, uses, and

@@ -25,7 +25,8 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { ArrowLeft, Briefcase, CheckCircle2, KeyRound } from "lucide-react";
+import { ArrowLeft, CheckCircle2, KeyRound } from "lucide-react";
+import { AuthLayout } from "@/components/auth/AuthLayout";
 import { useTranslation } from "@/lib/i18n";
 
 /** R01-06: a reset signs out every device that was signed in before it. */
@@ -55,7 +56,7 @@ function getTokenFromUrl(): string {
 }
 
 export default function ResetPassword() {
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
@@ -100,8 +101,8 @@ export default function ResetPassword() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Reset failed",
-        description: error?.message || "Please try again or request a new link.",
+        title: t["marketing.resetErrorTitle"],
+        description: error?.message || t["marketing.resetErrorBody"],
       });
     } finally {
       setIsLoading(false);
@@ -109,41 +110,21 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
-        <div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
-          style={{ animationDelay: "1s" }}
-        />
-      </div>
-
-      <div className="absolute top-8 left-8">
-        <Link href="/login">
-          <Button variant="ghost" className="gap-2" data-testid="button-back-login">
-            <ArrowLeft className="w-4 h-4" />
-            <T k="pages.backToSignIn" />
-          </Button>
-        </Link>
-      </div>
-
-      <div className="absolute top-8 right-8">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
-            <Briefcase className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-lg">
-            {/* i18n-ignore: brand or sample data */}Muhasib.ai
-          </span>
-        </Link>
-      </div>
-
-      <Card className="w-full max-w-md">
+    <AuthLayout variant="reset">
+      <Link
+        href="/login"
+        className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+        data-testid="button-back-login"
+      >
+        <ArrowLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
+        <T k="pages.backToSignIn" />
+      </Link>
+      <Card className="w-full">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-semibold">
             <T k="pageLabels.setANewPassword" />
           </CardTitle>
-          <CardDescription>Choose a password of at least 8 characters.</CardDescription>
+          <CardDescription>{t["marketing.resetDescription"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {done ? (
@@ -153,7 +134,7 @@ export default function ResetPassword() {
                 <p className="font-medium text-success-subtle-foreground ">
                   <T k="pageLabels.passwordReset" />
                 </p>
-                <p className="text-success mt-0.5">Redirecting you to sign in…</p>
+                <p className="text-success mt-0.5">{t["marketing.resetRedirecting"]}</p>
                 <p className="text-muted-foreground mt-1" data-testid="text-sessions-revoked">
                   {locale === "ar" ? RESET_COPY.signedOut.ar : RESET_COPY.signedOut.en}
                 </p>
@@ -180,7 +161,7 @@ export default function ResetPassword() {
                           data-testid="input-password"
                         />
                       </FormControl>
-                      <FormDescription>Use at least 8 characters.</FormDescription>
+                      <FormDescription>{t["marketing.resetHint"]}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -213,8 +194,8 @@ export default function ResetPassword() {
                   disabled={isLoading || !token}
                   data-testid="button-reset-password"
                 >
-                  <KeyRound className="w-4 h-4 mr-2" />
-                  {isLoading ? "Resetting…" : "Reset password"}
+                  <KeyRound className="w-4 h-4 me-2" aria-hidden="true" />
+                  {isLoading ? t["marketing.resetSubmitting"] : t["marketing.resetSubmit"]}
                 </Button>
               </form>
             </Form>
@@ -222,13 +203,13 @@ export default function ResetPassword() {
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <div className="text-sm text-muted-foreground text-center">
-            Need a new link?{" "}
+            {t["marketing.resetNeedLink"]}{" "}
             <Link href="/forgot-password" className="text-primary hover:underline font-medium">
               <T k="pageLabels.startOver" />
             </Link>
           </div>
         </CardFooter>
       </Card>
-    </div>
+    </AuthLayout>
   );
 }

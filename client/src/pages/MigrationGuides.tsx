@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { T } from "@/components/layout/T";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 import {
   ArrowRight,
   CheckCircle2,
@@ -10,7 +11,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 
 const migrationPaths = [
   {
@@ -78,51 +78,30 @@ const checklist = [
 
 export default function MigrationGuides() {
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-background/95 backdrop-blur">
-        <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <Link href="/" className="text-lg font-bold">
-            Muhasib.ai{/* i18n-ignore: brand or sample data */}
-          </Link>
-          <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <Link href="/pricing" className="hover:text-foreground">
-              <T k="pages.pricing" />
-            </Link>
-            <Link href="/trust" className="hover:text-foreground">
-              <T k="pageLabels.trust" />
-            </Link>
-            <Link href="/help" className="hover:text-foreground">
-              Help
-            </Link>
-          </nav>
-          <Link href="/register">
-            <Button size="sm">
-              <T k="pageLabels.startFree" />
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <main>
-        <section className="border-b bg-muted/30">
-          <div className="container mx-auto max-w-6xl px-4 py-16">
-            <Badge variant="outline" className="mb-5">
+    <MarketingLayout
+      titleKey="marketing.seoMigrationTitle"
+      descriptionKey="marketing.seoMigrationDescription"
+    >
+      <>
+        <section className="mk-pagehead">
+          <div className="mk-container">
+            <p className="mk-eyebrow">
               <T k="pageLabels.migrationGuides" />
-            </Badge>
-            <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
+            </p>
+            <h1 className="mk-h1">
               Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail.
             </h1>
-            <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
+            <p className="mk-lead">
               Start clean from a go-live date, preserve old records, and validate balances before
               posting live transactions in Muhasib.ai.
             </p>
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-container mk-inner-section">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {[...importedSystems, ...migrationPaths].map((path) => (
-              <Card key={path.title}>
+              <Card key={path.title} className="mk-surface-card">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Upload className="h-5 w-5 text-primary" />
@@ -146,7 +125,7 @@ export default function MigrationGuides() {
           </div>
         </section>
 
-        <section className="border-y bg-muted/30">
+        <section className="mk-section--sunken">
           <div className="container mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-[0.85fr_1.15fr]">
             <div>
               <h2 className="flex items-center gap-2 text-2xl font-semibold">
@@ -169,9 +148,9 @@ export default function MigrationGuides() {
           </div>
         </section>
 
-        <section className="container mx-auto max-w-6xl px-4 py-14">
+        <section className="mk-container mk-inner-section">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
+            <Card className="mk-surface-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
@@ -187,7 +166,7 @@ export default function MigrationGuides() {
                 support files.
               </CardContent>
             </Card>
-            <Card>
+            <Card className="mk-surface-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Landmark className="h-5 w-5 text-primary" />
@@ -205,12 +184,12 @@ export default function MigrationGuides() {
             <Link href="/register">
               <Button>
                 <T k="pageLabels.startMigration" />
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <ArrowRight className="ms-2 h-4 w-4 rtl:-scale-x-100" />
               </Button>
             </Link>
           </div>
         </section>
-      </main>
-    </div>
+      </>
+    </MarketingLayout>
   );
 }

@@ -1,14 +1,9 @@
-import { useEffect } from "react";
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
 
 export default function TermsOfService() {
-  useEffect(() => {
-    document.title = "Terms of Service | Muhasib.ai";
-  }, []);
-
   return (
-    <LegalLayout title="Terms of Service" effectiveDate="26 April 2026">
+    <LegalLayout slug="terms" effectiveDate="2026-04-26">
       <p>
         These Terms of Service (<strong>"Terms"</strong>) govern your access to and use of the
         Muhasib.ai platform (the <strong>"Service"</strong>) operated by Najma Al Raeda Accounting

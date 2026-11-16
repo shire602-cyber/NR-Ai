@@ -220,18 +220,7 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout
-      headline={
-        <>
-          Your books,{" "}
-          <span className="italic" style={{ color: "#C19E50" }}>
-            beautifully
-          </span>{" "}
-          kept.
-        </>
-      }
-      subline="Sign back in to a real-time portrait of your revenue, expenses, and filings — every number where you left it."
-    >
+    <AuthLayout variant="login">
       <div className="w-full max-w-md">
         {verification !== "idle" && (
           <p
