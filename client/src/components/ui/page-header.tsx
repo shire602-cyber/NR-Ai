@@ -38,9 +38,10 @@ interface PageHeaderProps {
 }
 
 /**
- * Editorial page header — emerald eyebrow, Instrument Serif display title,
- * muted description, and a right-aligned actions slot. Use at the top of
- * every workspace page so the app reads as one product.
+ * Page header — D2 design system. Every authenticated screen starts with one:
+ * optional back link, eyebrow (section), title (text-h1), description, and an
+ * actions slot (one primary Button + outline/ghost secondaries). Actions wrap
+ * under the title on narrow screens; logical properties keep it RTL-correct.
  */
 export function PageHeader({
   eyebrow,
@@ -59,42 +60,43 @@ export function PageHeader({
       ? ((t as Record<string, string>)[EYEBROW_KEYS[eyebrow]] ?? eyebrow)
       : eyebrow;
   return (
-    <header className={cn("flex items-end justify-between flex-wrap gap-4", className)}>
-      <div className="flex-1 min-w-0">
+    <header
+      className={cn(
+        "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6",
+        className
+      )}
+    >
+      <div className="min-w-0 flex-1">
         {backHref && (
-          <Link href={backHref}>
-            <span className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-              <ArrowLeft className="w-3.5 h-3.5" />
-              {backLabel ?? "Back"}
-            </span>
+          <Link
+            href={backHref}
+            className="mb-3 inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium text-muted-foreground transition-colors duration-fast hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" aria-hidden />
+            {backLabel ?? t["components.back"]}
           </Link>
         )}
-        {eyebrow && (
-          <div className="mb-2 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-accent">
-            <span aria-hidden className="inline-block w-5 h-px bg-accent/60" />
-            {translatedEyebrow}
-          </div>
-        )}
+        {eyebrow && <div className="eyebrow mb-1.5 text-accent">{translatedEyebrow}</div>}
         <div className="flex items-center gap-3">
           {Icon && (
-            <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-accent/10 ring-1 ring-accent/20 shrink-0">
-              <Icon className="w-5 h-5 text-accent" strokeWidth={1.75} />
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card shadow-xs">
+              <Icon className="h-5 w-5 text-accent" strokeWidth={1.75} aria-hidden />
             </span>
           )}
           <h1
-            className="font-display text-[28px] md:text-[34px] leading-[1.05] tracking-tight text-foreground"
+            className="min-w-0 text-[1.5rem] font-semibold leading-8 tracking-[-0.02em] text-foreground md:text-h1"
             data-testid={testId ?? "text-page-title"}
           >
             {title}
           </h1>
         </div>
         {description && (
-          <p className="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed max-w-2xl">
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             {description}
           </p>
         )}
       </div>
-      {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 sm:justify-end">{actions}</div>}
     </header>
   );
 }

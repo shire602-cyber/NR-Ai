@@ -44,29 +44,25 @@ export function EmptyState({
       data-testid={testId ?? "empty-state"}
       className={cn(
         "flex flex-col items-center justify-center text-center",
-        compact ? "py-8 px-4" : "py-16 px-6",
+        compact ? "py-10 px-4" : "py-16 px-6",
         className
       )}
     >
       {Icon && (
         <div
           className={cn(
-            "relative rounded-xl bg-muted/60 ring-1 ring-border flex items-center justify-center mb-4",
-            compact ? "w-11 h-11" : "w-14 h-14"
+            "mb-4 flex items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-xs",
+            compact ? "h-10 w-10" : "h-12 w-12"
           )}
           aria-hidden="true"
         >
-          <Icon
-            className={cn("text-muted-foreground/70", compact ? "w-5 h-5" : "w-6 h-6")}
-            strokeWidth={1.5}
-          />
-          <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-accent/15 ring-1 ring-accent/30" />
+          <Icon className={compact ? "h-5 w-5" : "h-6 w-6"} strokeWidth={1.5} />
         </div>
       )}
       <h3
         className={cn(
           "font-semibold tracking-tight text-foreground",
-          compact ? "text-[15px]" : "text-[17px]"
+          compact ? "text-sm" : "text-h3"
         )}
       >
         {title}
@@ -74,8 +70,8 @@ export function EmptyState({
       {description && (
         <p
           className={cn(
-            "text-muted-foreground mt-1.5 max-w-md leading-relaxed",
-            compact ? "text-xs" : "text-[13px]"
+            "text-muted-foreground mt-1 max-w-md leading-relaxed",
+            compact ? "text-xs" : "text-small"
           )}
         >
           {description}
@@ -85,7 +81,7 @@ export function EmptyState({
         <div
           className={cn(
             "flex flex-wrap items-center justify-center gap-2",
-            compact ? "mt-4" : "mt-6"
+            compact ? "mt-4" : "mt-5"
           )}
         >
           {action && <EmptyStateButton {...action} />}
@@ -108,7 +104,7 @@ function EmptyStateButton({
 }: EmptyStateAction) {
   const content = (
     <>
-      {Icon && <Icon className="w-4 h-4 mr-2" />}
+      {Icon && <Icon className="w-4 h-4" />}
       {label}
     </>
   );

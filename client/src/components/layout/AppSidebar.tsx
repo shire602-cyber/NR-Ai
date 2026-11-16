@@ -387,7 +387,9 @@ export function AppSidebar() {
       <SidebarMenuItem key={group.key}>
         <SidebarMenuButton
           onClick={() => toggleGroup(group.key)}
-          className={cn(hasActive && "text-sidebar-primary font-medium")}
+          className={cn(
+            hasActive && "font-medium text-sidebar-accent-foreground [&>svg]:text-sidebar-primary"
+          )}
           data-testid={`group-${group.key}`}
         >
           <Icon className="w-4 h-4" />
@@ -395,9 +397,9 @@ export function AppSidebar() {
           <motion.div
             className="ms-auto"
             animate={{ rotate: isExpanded ? 180 : 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.16 }}
           >
-            <ChevronDown className="w-4 h-4 opacity-50" />
+            <ChevronDown className="w-3.5 h-3.5 text-sidebar-muted" />
           </motion.div>
         </SidebarMenuButton>
 
@@ -408,7 +410,7 @@ export function AppSidebar() {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
               style={{ overflow: "hidden" }}
             >
               <SidebarMenuSub
@@ -437,7 +439,7 @@ export function AppSidebar() {
                           <span className="min-w-0 flex-1 overflow-hidden">
                             <span className="block truncate">{label}</span>
                             {description ? (
-                              <span className="block truncate text-[10.5px] font-normal leading-tight text-sidebar-foreground/70">
+                              <span className="block truncate text-[11px] font-normal leading-tight text-sidebar-muted">
                                 {description}
                               </span>
                             ) : null}
@@ -478,25 +480,19 @@ export function AppSidebar() {
   return (
     <Sidebar side={isRTL ? "right" : "left"}>
       <motion.div
-        initial={{ opacity: 0, x: rtlValue(-12, 12) }}
+        initial={{ opacity: 0, x: rtlValue(-6, 6) }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.4 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
       >
-        <SidebarHeader className="px-3 pt-4 pb-3 border-b border-sidebar-border/60 space-y-3">
-          <div className="flex items-center gap-2.5">
-            <div className="relative shrink-0">
-              <BrandMark size="md" />
-              <span
-                aria-hidden
-                className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot"
-              />
-            </div>
+        <SidebarHeader className="px-3 pt-4 pb-3 space-y-3">
+          <div className="flex items-center gap-2.5 px-1">
+            <BrandMark size="md" />
             <div className="min-w-0">
               {/* i18n-ignore: brand name */}
-              <div className="font-semibold text-[13px] tracking-tight text-sidebar-foreground leading-tight">
+              <div className="font-semibold text-[14px] tracking-tight text-sidebar-accent-foreground leading-tight">
                 Muhasib<span className="text-sidebar-primary">.ai</span>
               </div>
-              <div className="text-[10.5px] text-sidebar-foreground/70 uppercase tracking-[0.12em] leading-tight font-medium">
+              <div className="text-[11.5px] text-sidebar-muted leading-tight">
                 {t.smartAccounting ?? "Smart Accounting"}
               </div>
             </div>
@@ -509,7 +505,7 @@ export function AppSidebar() {
         {/* ── Client portal — simplified flat view ── */}
         {userType === "client" && (
           <>
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
               {t["shell.sidebarWorkspace"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -525,21 +521,21 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
               {t["shell.sidebarDocuments"]}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_DOCUMENT_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
               {t.compliance ?? "Compliance"}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
               {t["shell.sidebarInsights"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -563,7 +559,7 @@ export function AppSidebar() {
             userType must never strand the owner with an empty sidebar. */}
         {userType !== "client" && (
           <>
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
               {t["shell.sidebarOverview"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -579,7 +575,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/70 font-semibold">
+            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
               {t["shell.sidebarOperations"]}
             </div>
             <SidebarMenu className="px-1.5 pb-4">{allGroups.map(renderNavGroup)}</SidebarMenu>
@@ -587,29 +583,27 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="px-3 py-3 border-t border-sidebar-border/60 space-y-1.5">
+      <SidebarFooter className="px-2.5 py-2.5 border-t border-sidebar-border space-y-0.5">
         <button
           type="button"
           onClick={toggleLanguage}
           data-testid="button-language-toggle"
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/80 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
+          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/70 transition-colors duration-fast"
         >
-          <Languages className="w-4 h-4 opacity-70" />
+          <Languages className="w-4 h-4 text-sidebar-muted" />
           <span className="text-[13px]" lang={locale === "en" ? "ar" : "en"}>
             {locale === "en" ? "العربية" : "English"}
           </span>
-          <span className="ms-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/70 font-medium">
-            {locale === "en" ? "AR" : "EN"}
-          </span>
+          <span className="ms-auto kbd">{locale === "en" ? "AR" : "EN"}</span>
         </button>
 
         <button
           type="button"
           onClick={handleLogout}
           data-testid="button-logout"
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
+          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground hover:text-danger hover:bg-danger/10 transition-colors duration-fast"
         >
-          <LogOut className="w-4 h-4 opacity-70" />
+          <LogOut className="w-4 h-4 text-sidebar-muted rtl:-scale-x-100" />
           <span className="text-[13px]">{t.logout ?? "Sign out"}</span>
         </button>
       </SidebarFooter>

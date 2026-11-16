@@ -9,6 +9,7 @@ import { Link } from "wouter";
 // ─── Compliance pulse ────────────────────────────────────────────────────────
 
 export function ScoreRing({ score }: { score: number }) {
+  const { t } = useTranslation();
   const animated = useCountUp(score, 1200);
   const r = 26;
   const c = 2 * Math.PI * r;
@@ -22,7 +23,7 @@ export function ScoreRing({ score }: { score: number }) {
     <div
       className="relative w-16 h-16 shrink-0"
       role="img"
-      aria-label={`Audit readiness score ${score} out of 100`}
+      aria-label={t["dashboard.auditScoreAria"].replace("{score}", String(score))}
     >
       <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
         <circle cx={32} cy={32} r={r} fill="none" stroke="hsl(var(--border))" strokeWidth={5} />
@@ -38,7 +39,7 @@ export function ScoreRing({ score }: { score: number }) {
           strokeDashoffset={c - (Math.min(100, Math.max(0, animated)) / 100) * c}
         />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center font-mono font-semibold tabular-nums text-[15px] text-foreground">
+      <div className="absolute inset-0 flex items-center justify-center text-[15px] font-semibold tabular-nums text-foreground">
         {Math.round(animated)}
       </div>
     </div>
@@ -80,20 +81,22 @@ export function FixItRow({ check }: { check: AuditReadinessCheck }) {
     <div className="flex items-center justify-between gap-3 px-5 py-2.5">
       <div className="flex items-center gap-2.5 min-w-0">
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
-        <span className="text-[13px] text-foreground/80 truncate" title={explanation}>
+        <span className="truncate text-[13px] text-foreground" title={explanation}>
           {explanation}
         </span>
       </div>
       {action && (
-        <Link href={action.href}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 text-accent hover:text-accent shrink-0 -me-2"
-          >
-            {catalog[action.ctaKey]} <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
-          </Button>
-        </Link>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-me-2 shrink-0 text-accent hover:text-accent"
+        >
+          <Link href={action.href}>
+            {catalog[action.ctaKey]}
+            <ArrowRight className="rtl:rotate-180" aria-hidden />
+          </Link>
+        </Button>
       )}
     </div>
   );

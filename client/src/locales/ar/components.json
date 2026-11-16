@@ -166,5 +166,14 @@
   "components.statusRejected": "مرفوض",
   "components.statusVoid": "ملغاة",
   "components.statusDraft": "مسودة",
-  "components.statusInactive": "غير نشط"
+  "components.statusInactive": "غير نشط",
+  "components.back": "رجوع",
+  "components.errorStateDescription": "تعذّر تحميل هذه البيانات. تحقّق من اتصالك ثم حاول مرة أخرى.",
+  "components.notificationsUnreadAria": "الإشعارات، {count} غير مقروءة",
+  "components.notificationsMarkRead": "تعليم كمقروء",
+  "components.switcherSwitchedTitle": "تم تبديل الشركة",
+  "components.switcherNowViewing": "تعرض الآن {name}.",
+  "components.switcherUpdated": "تم تحديث الشركة النشطة.",
+  "components.switcherFailedTitle": "تعذّر تبديل الشركة",
+  "components.switcherTryAgain": "يُرجى المحاولة مرة أخرى."
 }

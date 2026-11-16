@@ -49,5 +49,9 @@
   "dashboard.emptyExpensesBody": "صنّف مصروفك الأول لعرض التفصيل.",
   "dashboard.emptyRevenueTitle": "لا توجد بيانات إيرادات بعد",
   "dashboard.emptyRevenueBody": "أصدر فاتورتك الأولى وسيمتلئ مخطط الاتجاه تلقائيًا.",
-  "dashboard.reportsReadyCount": "· {ready}/{total} جاهز"
+  "dashboard.reportsReadyCount": "· {ready}/{total} جاهز",
+  "dashboard.insightMargin": "هامش ربحك {margin}.",
+  "dashboard.insightOutstanding": "لديك {amount} في فواتير مستحقة تحتاج إلى متابعة.",
+  "dashboard.insightOutstandingOnly": "لديك {amount} في فواتير مستحقة.",
+  "dashboard.auditScoreAria": "درجة الجاهزية للتدقيق {score} من 100"
 }

@@ -123,7 +123,7 @@ export function RTLProvider({ children }: RTLProviderProps) {
 let fontLoaded = false;
 
 /**
- * Load the Arabic UI fonts (Cairo + Noto Sans Arabic) the first time RTL is
+ * Load the Arabic UI font (Noto Sans Arabic — pairs with Geist Sans) the first time RTL is
  * activated. Self-hosted via Fontsource and dynamically imported so they add
  * zero weight for English-only users and never hit an external font CDN.
  */
@@ -132,10 +132,6 @@ function loadArabicFont(): void {
   fontLoaded = true;
 
   void Promise.all([
-    import("@fontsource/cairo/400.css"),
-    import("@fontsource/cairo/500.css"),
-    import("@fontsource/cairo/600.css"),
-    import("@fontsource/cairo/700.css"),
     import("@fontsource/noto-sans-arabic/400.css"),
     import("@fontsource/noto-sans-arabic/500.css"),
     import("@fontsource/noto-sans-arabic/600.css"),

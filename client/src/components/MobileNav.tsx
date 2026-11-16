@@ -220,6 +220,11 @@ const moreLinks: MoreLink[] = [
   { label: "Settings", labelKey: "shell.moreSettings", href: "/company-profile" },
 ];
 
+// Translated app destinations lead the sheet; the catalog-driven report
+// shortcuts follow in a collapsible section so the sheet stays scannable.
+const workspaceMoreLinks = moreLinks.filter((link) => link.labelKey);
+const reportMoreLinks = moreLinks.filter((link) => !link.labelKey);
+
 /**
  * Mobile Bottom Navigation Bar
  *
@@ -254,6 +259,22 @@ export function MobileNav() {
     [setLocation]
   );
 
+  const renderMoreLink = (link: MoreLink) => (
+    <button
+      key={link.key ?? link.href}
+      onClick={() => handleMoreLink(link.href)}
+      className={`mobile-nav-more-item ${
+        location === link.href ? "mobile-nav-more-item--active" : ""
+      }`}
+      aria-label={link.description ? `${text(link)}: ${link.description}` : text(link)}
+    >
+      <span className="mobile-nav-more-label">{text(link)}</span>
+      {link.description ? (
+        <span className="mobile-nav-more-description">{link.description}</span>
+      ) : null}
+    </button>
+  );
+
   const isActive = (href: string) => {
     if (href === "#") return moreOpen;
     return location === href || location.startsWith(href + "/") || location.startsWith(href + "?");
@@ -282,23 +303,19 @@ export function MobileNav() {
           className="mobile-nav-more-sheet"
         >
           <div className="mobile-nav-more-handle" />
-          <nav className="mobile-nav-more-grid">
-            {moreLinks.map((link) => (
-              <button
-                key={link.key ?? link.href}
-                onClick={() => handleMoreLink(link.href)}
-                className={`mobile-nav-more-item ${
-                  location === link.href ? "mobile-nav-more-item--active" : ""
-                }`}
-                aria-label={link.description ? `${text(link)}: ${link.description}` : text(link)}
-              >
-                <span className="mobile-nav-more-label">{text(link)}</span>
-                {link.description ? (
-                  <span className="mobile-nav-more-description">{link.description}</span>
-                ) : null}
-              </button>
-            ))}
+          <div className="mobile-nav-more-heading">{t["shell.moreSectionWorkspace"]}</div>
+          <nav className="mobile-nav-more-grid" aria-label={t["shell.moreSectionWorkspace"]}>
+            {workspaceMoreLinks.map((link) => renderMoreLink(link))}
           </nav>
+          <details className="mobile-nav-more-section">
+            <summary className="mobile-nav-more-summary">
+              <span>{t["shell.moreSectionReports"]}</span>
+              <span className="mobile-nav-more-count">{reportMoreLinks.length}</span>
+            </summary>
+            <nav className="mobile-nav-more-list" aria-label={t["shell.moreSectionReports"]}>
+              {reportMoreLinks.map((link) => renderMoreLink(link))}
+            </nav>
+          </details>
         </motion.div>
       )}
 

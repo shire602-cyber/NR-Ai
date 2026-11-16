@@ -166,5 +166,14 @@
   "components.statusRejected": "Rejected",
   "components.statusVoid": "Void",
   "components.statusDraft": "Draft",
-  "components.statusInactive": "Inactive"
+  "components.statusInactive": "Inactive",
+  "components.back": "Back",
+  "components.errorStateDescription": "We couldn't load this data. Check your connection and try again.",
+  "components.notificationsUnreadAria": "Notifications, {count} unread",
+  "components.notificationsMarkRead": "Mark as read",
+  "components.switcherSwitchedTitle": "Company switched",
+  "components.switcherNowViewing": "Now viewing {name}.",
+  "components.switcherUpdated": "Active company updated.",
+  "components.switcherFailedTitle": "Could not switch company",
+  "components.switcherTryAgain": "Please try again."
 }

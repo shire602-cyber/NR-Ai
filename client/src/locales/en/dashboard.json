@@ -49,5 +49,9 @@
   "dashboard.emptyExpensesBody": "Categorize your first expense to see the breakdown.",
   "dashboard.emptyRevenueTitle": "No revenue data yet",
   "dashboard.emptyRevenueBody": "Issue your first invoice and the trend chart fills in automatically.",
-  "dashboard.reportsReadyCount": "· {ready}/{total} ready"
+  "dashboard.reportsReadyCount": "· {ready}/{total} ready",
+  "dashboard.insightMargin": "Your profit margin is {margin}.",
+  "dashboard.insightOutstanding": "You have {amount} in outstanding invoices that need attention.",
+  "dashboard.insightOutstandingOnly": "You have {amount} in outstanding invoices.",
+  "dashboard.auditScoreAria": "Audit readiness score {score} out of 100"
 }

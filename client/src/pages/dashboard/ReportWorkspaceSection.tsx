@@ -14,27 +14,28 @@ import { ReportWorkspacePartE } from "./ReportWorkspaceE";
 import { ReportWorkspacePartF } from "./ReportWorkspaceF";
 
 export function ReportWorkspaceSection({ m }: { m: DashboardModel }) {
-  const { preferredReportWorkspace } = m;
+  const { preferredReportWorkspace, t } = m;
   return (
     <section data-testid="dashboard-report-workspace">
       <SectionHeader
-        eyebrow="Reports"
+        eyebrow={t["shell.navReports"]}
         title={preferredReportWorkspace.navLabel}
         action={
-          <Link href={reportWorkspaceHref(preferredReportWorkspace)}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1 text-accent hover:text-accent -me-2"
-              data-testid="dashboard-open-report-workspace"
-            >
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="-me-2 text-accent hover:text-accent"
+            data-testid="dashboard-open-report-workspace"
+          >
+            <Link href={reportWorkspaceHref(preferredReportWorkspace)}>
               <T k="reportCenter.openWorkspace" />
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Button>
-          </Link>
+              <ArrowRight className="rtl:rotate-180" aria-hidden />
+            </Link>
+          </Button>
         }
       />
-      <Card className="border-card-border overflow-hidden">
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
           <ReportWorkspacePartA m={m} />
           <ReportWorkspacePartB m={m} />

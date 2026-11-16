@@ -64,14 +64,16 @@ export function CompanySwitcher() {
       await switchActiveCompany(companyId);
       const next = companies.find((c) => c.id === companyId);
       toast({
-        title: "Company switched",
-        description: next ? `Now viewing ${next.name}.` : "Active company updated.",
+        title: t["components.switcherSwitchedTitle"],
+        description: next
+          ? t["components.switcherNowViewing"].replace("{name}", next.name)
+          : t["components.switcherUpdated"],
       });
     } catch {
       toast({
         variant: "destructive",
-        title: "Could not switch company",
-        description: "Please try again.",
+        title: t["components.switcherFailedTitle"],
+        description: t["components.switcherTryAgain"],
       });
     }
   };
@@ -82,22 +84,30 @@ export function CompanySwitcher() {
         <Button
           variant="outline"
           size="sm"
-          className="w-full justify-between h-8 text-xs font-medium"
+          className="h-10 w-full justify-between gap-2 px-2 text-[13px] font-medium"
           data-testid="button-company-switcher"
         >
-          <span className="flex items-center gap-1.5 min-w-0">
-            <Building2 className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{active.name}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-[11px] font-semibold text-secondary-foreground"
+            >
+              {active.name.trim().charAt(0).toUpperCase() || <Building2 className="!size-3.5" />}
+            </span>
+            <span className="truncate" dir="auto">
+              {active.name}
+            </span>
           </span>
-          <ChevronsUpDown className="w-3 h-3 text-muted-foreground shrink-0" />
+          <ChevronsUpDown className="!size-3.5 shrink-0 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent
+        align="start"
+        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64"
+      >
         {canReturnToFirm && (
           <>
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              NRA
-            </DropdownMenuLabel>
+            <DropdownMenuLabel>NRA</DropdownMenuLabel>
             <DropdownMenuItem
               onSelect={() => handleReturnToFirm()}
               disabled={!isFirmContext}
@@ -113,9 +123,7 @@ export function CompanySwitcher() {
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {t["components.switcherSwitchCompany"]}
-        </DropdownMenuLabel>
+        <DropdownMenuLabel>{t["components.switcherSwitchCompany"]}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {companies.map((c) => (
           <DropdownMenuItem
