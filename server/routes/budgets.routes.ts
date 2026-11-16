@@ -64,7 +64,7 @@ const annualOf = (months: LineMonths) =>
 
 /** Company id for a plan the caller can access; a foreign or missing plan is a 404. */
 async function accessiblePlan(req: Request, id: string): Promise<BudgetPlanRow> {
-  const userId = (req as any).user.id as string;
+  const userId = req.user!.id as string;
   if (!zUuid.safeParse(id).success)
     throw new DomainError("BUDGET_NOT_FOUND", 404, undefined, "Budget not found");
   const { rows } = await db.query(`SELECT * FROM budget_plans WHERE id = $1`, [id]);
@@ -206,7 +206,7 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         throw new DomainError("ACCESS_DENIED", 403, undefined, "Access denied");
       }
@@ -242,7 +242,7 @@ export function registerBudgetRoutes(app: Express) {
     strictBody(budgetPlanCreateBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         throw new DomainError("ACCESS_DENIED", 403, undefined, "Access denied");
       }
@@ -391,7 +391,7 @@ export function registerBudgetRoutes(app: Express) {
   );
 
   async function accessibleLine(req: Request, id: string) {
-    const userId = (req as any).user.id as string;
+    const userId = req.user!.id as string;
     if (!zUuid.safeParse(id).success) throw new DomainError("BUDGET_LINE_NOT_FOUND", 404);
     const { rows } = await db.query(
       `SELECT bl.*, bp.company_id, bp.status AS plan_status, bp.id AS plan_id
@@ -500,7 +500,7 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await accessiblePlan(req, req.params.id);
-      res.json(await scanBudgetVariance(plan, (req as any).user.id));
+      res.json(await scanBudgetVariance(plan, req.user!.id));
     })
   );
 
@@ -532,7 +532,7 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await accessiblePlan(req, req.params.id);
-      const userId = (req as any).user.id as string;
+      const userId = req.user!.id as string;
       const role = await getCompanyRole(userId, plan.company_id);
       if (!role || !roleHasAnyPermission(role, ["documents.approve"])) {
         throw new DomainError(
@@ -597,7 +597,7 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await accessiblePlan(req, req.params.id);
-      const userId = (req as any).user.id as string;
+      const userId = req.user!.id as string;
       const rootId = plan.parent_budget_id ?? plan.id;
       const next = await db.query(
         `SELECT COALESCE(MAX(version), 0) + 1 AS v FROM budget_plans WHERE id = $1 OR parent_budget_id = $1`,
@@ -642,7 +642,7 @@ export function registerBudgetRoutes(app: Express) {
     strictBody(budgetCopyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await accessiblePlan(req, req.params.id);
-      const userId = (req as any).user.id as string;
+      const userId = req.user!.id as string;
       const b = parsedBody<z.output<typeof budgetCopyBody>>(req);
       const shiftMonths = (b.fiscalYear - plan.fiscal_year) * 12;
       const iso = (v: Date | string) => new Date(v).toISOString().slice(0, 10);

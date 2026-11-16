@@ -34,22 +34,11 @@ import {
   ArrowRight,
   Shield,
   Globe,
-  MessageSquare,
   Sparkles,
   Star,
-  ChevronRight,
   Phone,
   Lock,
-  CreditCard,
-  Users,
-  Brain,
-  BarChart3,
-  Receipt,
-  FileText,
   Calculator,
-  Briefcase,
-  Bot,
-  Gem,
 } from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";

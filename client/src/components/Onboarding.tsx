@@ -231,6 +231,7 @@ export function OnboardingWizard() {
       !tourDismissed &&
       !onOnboardingPage
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-show also records the tour and calls the API (side effects)
       setShowWizard(true);
       setHasAutoShown(true);
       // Showing the tour counts as the user's one tour: record it immediately

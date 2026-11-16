@@ -6,6 +6,8 @@ import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
+import type { Server as HttpServer } from "http";
+import type { Server as IoServer } from "socket.io";
 import express from "express";
 import { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, usesLargeJson } from "./http/body-limits";
 import session from "express-session";
@@ -246,8 +248,8 @@ if (runningAsRoot) {
 }
 
 // ─── Module-level refs for graceful shutdown ─────────────────
-let httpServer: any = null;
-let ioServer: any = null;
+let httpServer: HttpServer | null = null;
+let ioServer: IoServer | null = null;
 
 // ─── Bootstrap application ───────────────────────────────────
 async function bootstrap() {

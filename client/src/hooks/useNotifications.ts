@@ -54,7 +54,9 @@ export function useNotifications(): UseNotificationsReturn {
   useEffect(() => {
     if (!user) return;
 
-    fetchNotifications();
+    // Initial load for the subscription; state is only set after the response resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchNotifications();
 
     const socket = io(API_BASE_URL || window.location.origin, {
       path: "/socket.io",

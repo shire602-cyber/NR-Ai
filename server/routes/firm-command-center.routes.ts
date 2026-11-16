@@ -146,7 +146,7 @@ async function resolveBatchScope(
 export function registerFirmCommandCenterRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
+  router.use(authMiddleware);
   // requireFirmAdmin allows both firm_owner and firm_admin. Specific batch
   // endpoints further narrow down via requireFirmPermission("firm.bulk.run").
   router.use(requireFirmAdmin());
@@ -155,7 +155,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/dashboard",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const skipCache = req.query.skipCache === "true";
       const result = await buildFirmDashboard(userId, firmRole ?? null, { skipCache });
       res.json(result);
@@ -166,7 +166,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/clients/health",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const { by, dir } = rankSchema.parse({
         by: req.query.by ?? "health",
         dir: req.query.dir ?? "desc",
@@ -218,7 +218,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/clients/:companyId/health",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const parsed = companyIdParamSchema.safeParse(req.params);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid companyId" });
@@ -245,10 +245,10 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/alerts",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const filters = alertFilterSchema.parse(req.query);
       const accessible = new Set(
-        await resolveAccessibleClientIds(userId, (req as any).user.firmRole ?? null)
+        await resolveAccessibleClientIds(userId, req.user!.firmRole ?? null)
       );
       // Alerts are keyed per user; drop rows for clients no longer accessible
       // (link revoked, unassigned) so a stale alert never leaks a client name.
@@ -268,7 +268,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     "/alerts/refresh",
     requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const snapshots = await buildClientSnapshots(companyIds);
       const candidates = snapshots.flatMap((s) => generateAlertsForClient(s));
@@ -297,7 +297,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     "/alerts/:id/read",
     requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
@@ -322,7 +322,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     "/alerts/:id/resolve",
     requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
@@ -359,7 +359,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     "/staff/assign",
     requireFirmPermission("firm.staff.manage"),
     asyncHandler(async (req: Request, res: Response) => {
-      const actorId = (req as any).user.id;
+      const actorId = req.user!.id;
       const { userId, companyId, role } = assignStaffSchema.parse(req.body);
       // R15-03: the one assignment service (same rule as /firm/clients/:id/assign-staff).
       await assignStaffToCompany(firmContextOf(res), userId, companyId, role);
@@ -380,7 +380,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/metrics/comparison",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const { granularity } = periodSchema.parse({
         granularity: req.query.granularity ?? "month",
       });
@@ -403,7 +403,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     "/batch/vat-calculate",
     requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;
@@ -510,7 +510,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     "/batch/chase-payments",
     requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;
@@ -598,7 +598,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     // Document chasing is an NR firm-management-only feature.
     requireNrFirm(),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;

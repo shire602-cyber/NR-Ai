@@ -67,7 +67,7 @@ import {
   buildExportFilename,
   receiptToExportRow,
 } from "../services/excel-export.service";
-// @ts-ignore
+// @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 
 const log = createLogger("receipts");
@@ -149,7 +149,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -173,7 +173,7 @@ export function registerReceiptRoutes(app: Express) {
     validate({ body: receiptsExportSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -220,7 +220,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -247,7 +247,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { merchant, amount, date } = req.body ?? {};
 
       // Check if user has access to this company
@@ -286,7 +286,7 @@ export function registerReceiptRoutes(app: Express) {
     strictBody(createReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -469,7 +469,7 @@ export function registerReceiptRoutes(app: Express) {
       let userKeptSuggestion = false;
       if (suggestedCategory && typeof suggestedCategory === "string") {
         try {
-          const gross = (Number(receipt.amount) || 0) + (Number((receipt as any).vatAmount) || 0);
+          const gross = (Number(receipt.amount) || 0) + (Number(receipt.vatAmount) || 0);
           const { wasAccepted, method } = evaluateClassificationFeedback(
             suggestedCategory,
             receipt.category,
@@ -481,7 +481,7 @@ export function registerReceiptRoutes(app: Express) {
             description: receipt.merchant ?? "",
             merchant: receipt.merchant ?? "",
             amount: gross,
-            suggestedAccountId: (receipt as any).accountId ?? null,
+            suggestedAccountId: receipt.accountId ?? null,
             suggestedCategory,
             aiConfidence: Number(classifierConfidence) || 0,
             aiReason:
@@ -494,8 +494,8 @@ export function registerReceiptRoutes(app: Express) {
             companyId,
             classificationRow.id,
             wasAccepted,
-            (receipt as any).accountId ?? null,
-            (receipt as any).supplierTrn ?? null
+            receipt.accountId ?? null,
+            receipt.supplierTrn ?? null
           );
         } catch (err) {
           log.warn(
@@ -514,17 +514,17 @@ export function registerReceiptRoutes(app: Express) {
           receipt: {
             id: receipt.id,
             merchant: receipt.merchant,
-            amount: (receipt as any).amount,
-            vatAmount: (receipt as any).vatAmount,
+            amount: receipt.amount,
+            vatAmount: receipt.vatAmount,
             currency: receipt.currency,
-            date: (receipt as any).date,
+            date: receipt.date,
           },
           userKeptSuggestion,
         });
         if (auto.autoPosted) {
-          (receipt as any).posted = true;
-          (receipt as any).autoPosted = true;
-          (receipt as any).journalEntryId = auto.journalEntryId;
+          receipt.posted = true;
+          receipt.autoPosted = true;
+          receipt.journalEntryId = auto.journalEntryId;
           log.info(
             { receiptId: receipt.id, journalEntryId: auto.journalEntryId },
             "Receipt auto-posted on manual upload"
@@ -561,7 +561,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -682,7 +682,7 @@ export function registerReceiptRoutes(app: Express) {
     strictBody(updateReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<UpdateReceiptBody>(req);
 
       const before = await findReceiptForUser(userId, id);
@@ -733,7 +733,7 @@ export function registerReceiptRoutes(app: Express) {
     strictBody(reviseReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { reason, ...fields } = req.body as ReviseReceiptBody;
 
       const before = await findReceiptForUser(userId, id);
@@ -786,7 +786,7 @@ export function registerReceiptRoutes(app: Express) {
     strictBody(splitReceiptBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { parts } = req.body as SplitReceiptBody;
 
       const source = await findReceiptForUser(userId, id);
@@ -835,7 +835,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       // Remove image file before deleting DB row (best-effort; don't block on failure)
       const existing = await findReceiptForUser(userId, id);
@@ -899,7 +899,7 @@ export function registerReceiptRoutes(app: Express) {
     strictBody(postReceiptVatBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const body = parsedBody<PostReceiptVatBody>(req);
 
       // Get receipt — findReceiptForUser also enforces tenant access.
@@ -953,7 +953,7 @@ export function registerReceiptRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { from, to, category } = req.query as { from?: string; to?: string; category?: string };
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -1187,7 +1187,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -1249,7 +1249,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });

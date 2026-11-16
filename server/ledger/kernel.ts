@@ -361,7 +361,7 @@ async function loadEntry(
   const cond = companyId
     ? and(eq(journalEntries.id, entryId), eq(journalEntries.companyId, companyId))
     : eq(journalEntries.id, entryId);
-  let q = tx.select().from(journalEntries).where(cond);
+  let q = tx.select().from(journalEntries).where(cond).$dynamic();
   if (forUpdate) q = q.for("update");
   const [row]: JournalEntry[] = await q;
   return row ?? null;

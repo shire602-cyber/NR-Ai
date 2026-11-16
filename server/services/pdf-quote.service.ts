@@ -1,4 +1,4 @@
-// @ts-ignore - pdfkit has no type declarations
+// @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
 import { loadCompanyLogo } from "./pdf-logo";

@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -172,7 +172,7 @@ export default function VATAutopilot() {
   const [adjustmentBox, setAdjustmentBox] = useState("");
   const [adjustmentAmount, setAdjustmentAmount] = useState("0");
   const [adjustmentReason, setAdjustmentReason] = useState("");
-  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
+  const [pickedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
 
   const periodsQuery = useQuery<VatPeriodSummary[]>({
     queryKey: ["/api/vat/autopilot/periods", companyId],
@@ -186,19 +186,18 @@ export default function VATAutopilot() {
     queryFn: () => apiRequest("GET", `/api/vat/autopilot/due-dates?companyId=${companyId}`),
   });
 
-  const periods = periodsQuery.data || [];
+  const periods = useMemo(() => periodsQuery.data || [], [periodsQuery.data]);
+  // A pick that is no longer among the loaded periods reads as "no selection".
+  const selectedPeriodKey =
+    pickedPeriodKey &&
+    periodsQuery.data &&
+    !periodsQuery.data.some((p) => periodKey(p) === pickedPeriodKey)
+      ? null
+      : pickedPeriodKey;
   const selectedPeriod = useMemo(
     () => periods.find((p) => periodKey(p) === selectedPeriodKey) || null,
     [periods, selectedPeriodKey]
   );
-
-  useEffect(() => {
-    if (!periodsQuery.data) return;
-    if (!selectedPeriodKey) return;
-    if (!periodsQuery.data.some((p) => periodKey(p) === selectedPeriodKey)) {
-      setSelectedPeriodKey(null);
-    }
-  }, [periodsQuery.data, selectedPeriodKey]);
 
   const calcMutation = useMutation<CalculationResult, Error, VatPeriodSummary>({
     mutationFn: (period) => {

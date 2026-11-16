@@ -61,6 +61,7 @@ import {
 } from "@/lib/vat-workpaper-grid";
 import { format } from "date-fns";
 import { POSTABLE_VAT_CATEGORIES } from "./types";
+import { resolveSelectedId } from "@/lib/selection";
 import type {
   BookkeeperClient,
   BookkeeperDashboard,
@@ -218,7 +219,7 @@ export function VatWorkspaceDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { toast } = useToast();
-  const [selectedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
+  const [pickedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -247,6 +248,7 @@ export function VatWorkspaceDialog({
 
   useEffect(() => {
     if (!open || !client) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
     setPeriodStart(
       inputDate(ops?.vat.periodStart) ||
         format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd")
@@ -264,19 +266,14 @@ export function VatWorkspaceDialog({
     queryFn: () => apiRequest("GET", `/api/firm/vat-workpapers?companyId=${client?.id}`),
     enabled: open && !!client,
   });
-  const workpapers = workpapersQuery.data?.workpapers ?? [];
-
-  useEffect(() => {
-    if (!open) return;
-    if (!selectedWorkpaperId && workpapers.length > 0) setSelectedWorkpaperId(workpapers[0].id);
-    if (
-      selectedWorkpaperId &&
-      workpapers.length > 0 &&
-      !workpapers.some((workpaper) => workpaper.id === selectedWorkpaperId)
-    ) {
-      setSelectedWorkpaperId(workpapers[0].id);
-    }
-  }, [open, selectedWorkpaperId, workpapers]);
+  const workpapers = useMemo(
+    () => workpapersQuery.data?.workpapers ?? [],
+    [workpapersQuery.data?.workpapers]
+  );
+  // Default to the first workpaper whenever nothing (or a stale id) is picked.
+  const selectedWorkpaperId = open
+    ? resolveSelectedId(pickedWorkpaperId, workpapers)
+    : pickedWorkpaperId;
 
   const detailQuery = useQuery<VatWorkpaperDetail>({
     queryKey: ["/api/firm/vat-workpapers/detail", selectedWorkpaperId],

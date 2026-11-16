@@ -1,3 +1,4 @@
+import type { NextFunction, Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -126,7 +127,7 @@ passport.use(
 );
 
 // Serialize user for session
-passport.serializeUser((user: any, done) => {
+passport.serializeUser((user: Express.User, done) => {
   done(null, user.id);
 });
 
@@ -141,7 +142,7 @@ passport.deserializeUser(async (id: string, done) => {
 });
 
 // Session-based authentication middleware
-export const sessionAuthMiddleware = (req: any, res: any, next: any) => {
+export const sessionAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
   if (req.isAuthenticated()) {
     return next();
   }

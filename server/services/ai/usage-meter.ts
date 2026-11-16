@@ -8,6 +8,14 @@
 
 import { createHash } from "crypto";
 import type OpenAI from "openai";
+import type {
+  ChatCompletion,
+  ChatCompletionChunk,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
+} from "openai/resources/chat/completions";
+import type { Pool } from "pg";
+import { errorCode, errorProperty, errorStatus } from "../../errors";
 import { createLogger } from "../../config/logger";
 import { resolveModel, type AiTask } from "./model-router";
 import { createRedactor, isRedactionEnabled, redactMessages } from "./redact";
@@ -80,11 +88,11 @@ export class AiNotConfiguredError extends Error {
 }
 
 /** Body fields for an AI error response: stable code for 503/429. */
-export function aiErrorBody(error: any): { code?: string; usage?: unknown } {
-  if (error?.code === "AI_QUOTA_EXCEEDED") {
-    return { code: "AI_QUOTA_EXCEEDED", usage: error.detail };
+export function aiErrorBody(error: unknown): { code?: string; usage?: unknown } {
+  if (errorCode(error) === "AI_QUOTA_EXCEEDED") {
+    return { code: "AI_QUOTA_EXCEEDED", usage: errorProperty(error, "detail") };
   }
-  if (error?.status === 503) return { code: "AI_NOT_CONFIGURED" };
+  if (errorStatus(error) === 503) return { code: "AI_NOT_CONFIGURED" };
   return {};
 }
 
@@ -123,7 +131,7 @@ export function setUsageStore(next: UsageStore | null): void {
 }
 
 function pgStore(): UsageStore {
-  const getPool = async () => (await import("../../db")).pool as any;
+  const getPool = async (): Promise<Pool> => (await import("../../db")).pool;
   return {
     async insert(e) {
       const pool = await getPool();
@@ -292,10 +300,19 @@ function cacheKey(ctx: AiContext, params: Record<string, unknown>): string {
 
 // ---- metered OpenAI client ----------------------------------------------------
 
+/** Chat params a metered caller passes; `model` defaults to the task's routed model. */
+export type MeteredChatParams = Omit<ChatCompletionCreateParamsNonStreaming, "model"> & {
+  model?: string;
+};
+export type MeteredChatStreamParams = Omit<ChatCompletionCreateParamsStreaming, "model"> & {
+  model?: string;
+};
+
 export interface MeteredOpenAI {
   chat: {
     completions: {
-      create(params: any): Promise<any>;
+      create(params: MeteredChatStreamParams): Promise<AsyncIterable<ChatCompletionChunk>>;
+      create(params: MeteredChatParams): Promise<ChatCompletion>;
     };
   };
 }
@@ -305,72 +322,77 @@ export interface MeteredOpenAI {
  * cached (deterministic low-temperature calls only) and recorded in ai_usage_events.
  */
 export function createMeteredOpenAI(client: OpenAI, ctx: AiContext): MeteredOpenAI {
+  async function create(
+    rawParams: MeteredChatParams | MeteredChatStreamParams
+  ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
+    await assertAiQuota(ctx.companyId);
+
+    const model: string = rawParams.model || resolveModel(ctx.task);
+    let params = { ...rawParams, model };
+    const redactor = isRedactionEnabled() ? createRedactor({ names: ctx.redactNames }) : null;
+    if (redactor && Array.isArray(params.messages)) {
+      params = { ...params, messages: redactMessages(params.messages, redactor) };
+    }
+
+    const promptText = JSON.stringify(params.messages ?? "");
+
+    if (params.stream) {
+      const upstream = await client.chat.completions.create({
+        ...params,
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+      return meterStream(upstream, ctx, model, promptText, redactor);
+    }
+
+    const plainParams = params as ChatCompletionCreateParamsNonStreaming;
+    const cacheable = typeof plainParams.temperature === "number" && plainParams.temperature <= 0.3;
+    const key = cacheable ? cacheKey(ctx, { ...plainParams }) : null;
+    if (key) {
+      const hit = promptCache.get(key);
+      if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value as ChatCompletion;
+    }
+
+    const response = await client.chat.completions.create(plainParams);
+    const inputTokens = response?.usage?.prompt_tokens ?? estimateTokens(promptText);
+    const content = response?.choices?.[0]?.message?.content ?? "";
+    const outputTokens = response?.usage?.completion_tokens ?? estimateTokens(content);
+    await recordAiUsage(ctx, "openai", model, { inputTokens, outputTokens });
+
+    if (redactor && response?.choices) {
+      for (const choice of response.choices) {
+        if (typeof choice?.message?.content === "string") {
+          choice.message.content = redactor.restore(choice.message.content);
+        }
+      }
+    }
+    if (key) {
+      if (promptCache.size >= CACHE_MAX) {
+        const oldest = promptCache.keys().next().value;
+        if (oldest) promptCache.delete(oldest);
+      }
+      promptCache.set(key, { at: Date.now(), value: response });
+    }
+    return response;
+  }
+
   return {
     chat: {
       completions: {
-        async create(rawParams: any): Promise<any> {
-          await assertAiQuota(ctx.companyId);
-
-          const model: string = rawParams.model || resolveModel(ctx.task);
-          let params: any = { ...rawParams, model };
-          const redactor = isRedactionEnabled() ? createRedactor({ names: ctx.redactNames }) : null;
-          if (redactor && Array.isArray(params.messages)) {
-            params = { ...params, messages: redactMessages(params.messages, redactor) };
-          }
-
-          const isStream = Boolean(params.stream);
-          const cacheable =
-            !isStream && typeof params.temperature === "number" && params.temperature <= 0.3;
-          const key = cacheable ? cacheKey(ctx, params) : null;
-          if (key) {
-            const hit = promptCache.get(key);
-            if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
-          }
-
-          const promptText = JSON.stringify(params.messages ?? "");
-
-          if (isStream) {
-            const upstream = (await client.chat.completions.create({
-              ...params,
-              stream_options: { include_usage: true },
-            })) as unknown as AsyncIterable<any>;
-            return meterStream(upstream, ctx, model, promptText, redactor);
-          }
-
-          const response: any = await client.chat.completions.create(params);
-          const inputTokens = response?.usage?.prompt_tokens ?? estimateTokens(promptText);
-          const content = response?.choices?.[0]?.message?.content ?? "";
-          const outputTokens = response?.usage?.completion_tokens ?? estimateTokens(content);
-          await recordAiUsage(ctx, "openai", model, { inputTokens, outputTokens });
-
-          if (redactor && response?.choices) {
-            for (const choice of response.choices) {
-              if (typeof choice?.message?.content === "string") {
-                choice.message.content = redactor.restore(choice.message.content);
-              }
-            }
-          }
-          if (key) {
-            if (promptCache.size >= CACHE_MAX) {
-              const oldest = promptCache.keys().next().value;
-              if (oldest) promptCache.delete(oldest);
-            }
-            promptCache.set(key, { at: Date.now(), value: response });
-          }
-          return response;
-        },
+        // One implementation behind the stream / non-stream overloads.
+        create: create as MeteredOpenAI["chat"]["completions"]["create"],
       },
     },
   };
 }
 
 async function* meterStream(
-  upstream: AsyncIterable<any>,
+  upstream: AsyncIterable<ChatCompletionChunk>,
   ctx: AiContext,
   model: string,
   promptText: string,
   redactor: ReturnType<typeof createRedactor> | null
-): AsyncGenerator<any> {
+): AsyncGenerator<ChatCompletionChunk> {
   let outputChars = 0;
   let usage: { prompt_tokens?: number; completion_tokens?: number } | null = null;
   try {

@@ -1,16 +1,22 @@
-// @ts-ignore - pdfkit has no type declarations
+// @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 import { loadCompanyLogo } from "./pdf-logo";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
-import { bilingual, isArabic, pdfLocale, preparePdfDocument, type PdfLocale } from "./pdf-fonts";
+import {
+  bilingual,
+  isArabic,
+  pdfLocale,
+  preparePdfDocument,
+  type PdfDoc,
+  type PdfLocale,
+} from "./pdf-fonts";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
 const BORDER = "#111111";
 const HEADER_FILL = "#E6E6E6";
-type PdfDoc = any;
 
 export type InvoicePdfTemplate = "standard" | "nra";
 

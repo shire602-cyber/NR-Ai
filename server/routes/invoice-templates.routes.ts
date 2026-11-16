@@ -55,7 +55,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
     requireFeature("invoiceTemplates"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -75,7 +75,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
     requireFeature("invoiceTemplates"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
@@ -100,7 +100,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
     strictBody(createTemplateSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -127,7 +127,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
     strictBody(updateTemplateSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
@@ -153,7 +153,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
     requireFeature("invoiceTemplates"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
@@ -178,7 +178,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
     requireFeature("invoiceTemplates"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {

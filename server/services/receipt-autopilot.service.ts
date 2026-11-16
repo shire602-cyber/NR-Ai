@@ -38,6 +38,7 @@ import {
 import type { Account } from "../../shared/schema";
 import { DEFAULT_CLASSIFIER_CONFIG } from "../../shared/schema";
 import { evaluateAutoPostGate } from "./classification-feedback.util";
+import { errorMessage } from "../errors";
 
 const log = createLogger("receipt-autopilot");
 
@@ -290,9 +291,9 @@ export async function runAutopilot(
       accounts,
       classification,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id },
+      { err: errorMessage(err) || err, receiptId: receipt.id },
       "Auto-post failed before JE creation — leaving receipt for manual review"
     );
     return {
@@ -338,9 +339,9 @@ export async function runAutopilot(
       accountId: expenseAccountId,
       paymentAccountId,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id, journalEntryId },
+      { err: errorMessage(err) || err, receiptId: receipt.id, journalEntryId },
       "Auto-post: JE created but receipt link update failed — manual repair needed"
     );
   }
@@ -355,9 +356,9 @@ export async function runAutopilot(
         `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
         [classification.matchedRuleId, companyId]
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn(
-        { err: err?.message || err, ruleId: classification.matchedRuleId },
+        { err: errorMessage(err) || err, ruleId: classification.matchedRuleId },
         "Auto-post: rule times_applied bump failed — non-fatal"
       );
     }
@@ -407,7 +408,8 @@ export interface ManualReceiptForAutoPost {
   amount: number | string | null;
   vatAmount: number | string | null;
   currency: string | null;
-  date: Date | string;
+  /** Stored receipts may have no date; null falls back to the epoch as before. */
+  date: Date | string | null;
 }
 
 export interface ManualAutoPostResult {
@@ -503,7 +505,7 @@ export async function autoPostManualReceipt(args: {
     date:
       typeof receipt.date === "string"
         ? receipt.date
-        : new Date(receipt.date).toISOString().split("T")[0],
+        : new Date(receipt.date ?? 0).toISOString().split("T")[0],
     category: classification.category,
   };
 
@@ -519,9 +521,9 @@ export async function autoPostManualReceipt(args: {
       accounts,
       classification,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id },
+      { err: errorMessage(err) || err, receiptId: receipt.id },
       "Manual auto-post failed before JE creation - leaving receipt for manual review"
     );
     return skip("post_failed");
@@ -553,9 +555,9 @@ export async function autoPostManualReceipt(args: {
       accountId: expenseAccountId,
       paymentAccountId,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id, journalEntryId },
+      { err: errorMessage(err) || err, receiptId: receipt.id, journalEntryId },
       "Manual auto-post: JE created but receipt link update failed - manual repair needed"
     );
   }
@@ -566,9 +568,9 @@ export async function autoPostManualReceipt(args: {
         `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
         [classification.matchedRuleId, companyId]
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn(
-        { err: err?.message || err, ruleId: classification.matchedRuleId },
+        { err: errorMessage(err) || err, ruleId: classification.matchedRuleId },
         "Manual auto-post: rule times_applied bump failed - non-fatal"
       );
     }

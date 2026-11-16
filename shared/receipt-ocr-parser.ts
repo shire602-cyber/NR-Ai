@@ -252,7 +252,7 @@ function extractMerchant(lines: string[]): string {
 
 function extractSupplierTrn(text: string): { trn: string | null; issue: string | null } {
   const labelled = text.match(
-    /(?:\bTRN\b|tax\s+registration\s+(?:no\.?|number)|\bTIN\b|الرقم الضريبي|رقم التسجيل الضريبي|رقم التسجيل)\s*[:#.\-]?\s*(\d[\d\s-]{8,24}\d)/i
+    /(?:\bTRN\b|tax\s+registration\s+(?:no\.?|number)|\bTIN\b|الرقم الضريبي|رقم التسجيل الضريبي|رقم التسجيل)\s*[:#.-]?\s*(\d[\d\s-]{8,24}\d)/i
   );
   if (!labelled) return { trn: null, issue: null };
   const check = validateUaeTrn(labelled[1]);

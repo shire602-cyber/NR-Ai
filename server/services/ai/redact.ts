@@ -68,6 +68,15 @@ export function createRedactor(opts: { names?: string[] } = {}): Redactor {
   };
 }
 
+function isTextPart(part: unknown): part is { type: "text"; text: string } {
+  return (
+    typeof part === "object" &&
+    part !== null &&
+    (part as { type?: unknown }).type === "text" &&
+    typeof (part as { text?: unknown }).text === "string"
+  );
+}
+
 /** Redact string `content` of chat messages (plain-string and text-part content). */
 export function redactMessages<T extends { content?: unknown }>(
   messages: T[],
@@ -78,10 +87,8 @@ export function redactMessages<T extends { content?: unknown }>(
     if (Array.isArray(m.content)) {
       return {
         ...m,
-        content: m.content.map((part: any) =>
-          part && part.type === "text" && typeof part.text === "string"
-            ? { ...part, text: redactor.redact(part.text) }
-            : part
+        content: m.content.map((part: unknown) =>
+          isTextPart(part) ? { ...part, text: redactor.redact(part.text) } : part
         ),
       };
     }

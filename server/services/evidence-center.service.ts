@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import fs from "node:fs/promises";
 import path from "node:path";
-// @ts-ignore - pdfkit has no type declarations
+// @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 
 import { storage } from "../storage";
@@ -29,7 +29,7 @@ import {
   statusFromScore,
 } from "../../shared/evidence-center";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 interface EvidenceZipEntry {
   path: string;
@@ -70,9 +70,9 @@ function toMoney(value: unknown): number {
   return Math.round(parsed * 100) / 100;
 }
 
-function isoDate(value: Date | string | null | undefined): string | null {
+function isoDate(value: unknown): string | null {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(value as string | number);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
 }
@@ -94,8 +94,8 @@ function currentMonth(now = new Date()) {
   return { start, end };
 }
 
-function inRange(value: Date | string | null | undefined, start: Date, end: Date): boolean {
-  const date = value instanceof Date ? value : value ? new Date(value) : null;
+function inRange(value: unknown, start: Date, end: Date): boolean {
+  const date = value instanceof Date ? value : value ? new Date(value as string | number) : null;
   return !!date && !Number.isNaN(date.getTime()) && date >= start && date <= end;
 }
 
@@ -467,9 +467,9 @@ async function collectEvidenceBundleSources(
   const vatAttachmentsByRow = new Map<string, AnyRecord[]>();
   for (const attachment of (vatWorkpaperDetail?.attachments ?? []) as AnyRecord[]) {
     if (!attachment.rowId) continue;
-    const group = vatAttachmentsByRow.get(attachment.rowId) ?? [];
+    const group = vatAttachmentsByRow.get(attachment.rowId as string) ?? [];
     group.push(attachment);
-    vatAttachmentsByRow.set(attachment.rowId, group);
+    vatAttachmentsByRow.set(attachment.rowId as string, group);
   }
 
   for (const line of proofLines) {
@@ -482,7 +482,7 @@ async function collectEvidenceBundleSources(
           line,
           folder: "attachments/receipts",
           fileName: `receipt-${line.sourceId}.jpg`,
-          uploadReference: receipt.imagePath,
+          uploadReference: receipt.imagePath as string,
           usedPaths,
         });
         if (result.entry) {
@@ -493,7 +493,7 @@ async function collectEvidenceBundleSources(
       }
 
       if (!includedReceiptFile && receipt?.imageData) {
-        const decoded = dataUrlToBuffer(receipt.imageData);
+        const decoded = dataUrlToBuffer(receipt.imageData as string);
         if (decoded) {
           const result = binaryZipEntry({
             line,
@@ -514,7 +514,7 @@ async function collectEvidenceBundleSources(
           line,
           folder: "source-text/receipts",
           fileName: `receipt-${line.sourceId}-ocr.txt`,
-          text: receipt.rawText,
+          text: receipt.rawText as string,
           usedPaths,
           reason:
             "Only OCR/source text is available; upload the original image for stronger refund support.",
@@ -548,8 +548,8 @@ async function collectEvidenceBundleSources(
           const result = await readUploadZipEntry({
             line,
             folder: "attachments/vat-workpapers",
-            fileName: attachment.fileName,
-            uploadReference: attachment.filePath,
+            fileName: attachment.fileName as string | null | undefined,
+            uploadReference: attachment.filePath as string,
             usedPaths,
           });
           if (result.entry) {
@@ -564,7 +564,7 @@ async function collectEvidenceBundleSources(
             line,
             folder: "source-text/vat-workpapers",
             fileName: `${attachment.fileName || "vat-evidence"}-extracted.txt`,
-            text: attachment.extractedText,
+            text: attachment.extractedText as string,
             usedPaths,
             reason:
               "VAT workpaper extracted text is included because the original file is not stored.",
@@ -581,8 +581,10 @@ async function collectEvidenceBundleSources(
           const result = await readUploadZipEntry({
             line,
             folder: "attachments/document-vault",
-            fileName: document.fileName || document.name || `document-${linkedDocumentId}`,
-            uploadReference: document.fileUrl,
+            fileName: (document.fileName ||
+              document.name ||
+              `document-${linkedDocumentId}`) as string,
+            uploadReference: document.fileUrl as string | null | undefined,
             usedPaths,
           });
           if (result.entry) {
@@ -593,7 +595,7 @@ async function collectEvidenceBundleSources(
         } else {
           manifestEntries.push(
             manifestEntry(line, {
-              sourceFile: linkedDocumentId,
+              sourceFile: linkedDocumentId as string,
               zipPath: null,
               included: false,
               reason: "Linked document id was not found in this company's Document Vault.",
@@ -840,10 +842,10 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
   const approvedVatRows = vatRows.filter((row: AnyRecord) => row.status === "approved");
   const draftVatRows = vatRows.filter((row: AnyRecord) => row.status === "draft");
   const inputVatRows = approvedVatRows.filter((row: AnyRecord) =>
-    INPUT_VAT_CATEGORIES.has(row.rowCategory)
+    INPUT_VAT_CATEGORIES.has(row.rowCategory as string)
   );
   const outputVatRows = approvedVatRows.filter((row: AnyRecord) =>
-    OUTPUT_VAT_CATEGORIES.has(row.rowCategory)
+    OUTPUT_VAT_CATEGORIES.has(row.rowCategory as string)
   );
   const vatTotals = (vatWorkpaperDetail?.totals ??
     latestVatWorkpaper?.totalsSnapshot ??
@@ -872,7 +874,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
     (task: AnyRecord) => task.status !== "completed" && task.status !== "cancelled"
   );
   const overdueComplianceTasks = openComplianceTasks.filter(
-    (task: AnyRecord) => new Date(task.dueDate).getTime() < now.getTime()
+    (task: AnyRecord) => new Date(task.dueDate as string | Date).getTime() < now.getTime()
   );
   const bankSummary = bankRows[0] ?? { total: 0, reconciled: 0, unreconciled: 0 };
   const documentCategoryCount = new Map(
@@ -961,16 +963,17 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
   }
 
   for (const requirement of openDocumentRequirements) {
-    const overdue = new Date(requirement.due_date).getTime() < now.getTime();
+    const overdue = new Date(requirement.due_date as string | Date).getTime() < now.getTime();
     missingEvidence.push(
       makeIssue({
         id: `document-requirement:${requirement.id}`,
         severity: overdue ? "critical" : "warning",
         workflowId: "missing_evidence",
         title: `Missing ${String(requirement.document_type).replace(/_/g, " ")}`,
-        detail: requirement.description || `Required document is ${requirement.status}.`,
+        detail: (requirement.description ||
+          `Required document is ${requirement.status}.`) as string,
         sourceType: "document_requirement",
-        sourceId: requirement.id,
+        sourceId: requirement.id as string | null | undefined,
         href: "/document-vault",
         actionLabel: "Request document",
       })
@@ -1053,7 +1056,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           title: `Supplier bill pending: ${bill.bill_number || bill.vendor_name || "bill"}`,
           detail: "Pending supplier bills with VAT should be approved before claiming input VAT.",
           sourceType: "vendor_bill",
-          sourceId: bill.id,
+          sourceId: bill.id as string | null | undefined,
           href: "/bill-pay",
           amount: toMoney(bill.vat_amount),
         })
@@ -1087,7 +1090,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         actionLabel: "Open corporate tax",
       })
     );
-  } else if (!Array.isArray(latestCtReturn.workpaper?.adjustments)) {
+  } else if (!Array.isArray((latestCtReturn.workpaper as AnyRecord | undefined)?.adjustments)) {
     filingRiskScan.push(
       makeIssue({
         id: `ct:no-adjustments:${latestCtReturn.id}`,
@@ -1098,7 +1101,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
           "Confirm disallowable expenses, exempt income, related-party items, and loss relief before filing.",
         href: "/corporate-tax",
         sourceType: "corporate_tax_return",
-        sourceId: latestCtReturn.id,
+        sourceId: latestCtReturn.id as string | null | undefined,
       })
     );
   }
@@ -1127,90 +1130,99 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
         detail: `Due ${isoDate(task.dueDate)?.slice(0, 10) || "date unknown"}.`,
         href: "/compliance-calendar",
         sourceType: "compliance_task",
-        sourceId: task.id,
+        sourceId: task.id as string | null | undefined,
       })
     );
   }
 
   const proofDrilldowns: EvidenceProofLine[] = [
-    ...outputVatRows.slice(0, 8).map((row: AnyRecord) => ({
-      id: `vat-output:${row.id}`,
-      label: "VAT output row",
-      sourceType: "vat_workpaper_row",
-      sourceId: row.id,
-      sourceDocumentId: row.sourceDocumentId ?? null,
-      documentNumber: row.invoiceNumber,
-      date: isoDate(row.documentDate),
-      party: row.counterpartyName,
-      amount: toMoney(row.taxableAmount),
-      vatAmount: toMoney(row.vatAmount),
-      status: row.status,
-      proofStatus: row.sourceDocumentId ? "ready" : "needs_review",
-      documentStatus: row.sourceDocumentId ? "attached" : "needs_review",
-      documentLabel: row.sourceDocumentId ? "Linked source document" : "No source file linked",
-      documentPreview: row.sourceDocumentId
-        ? `Document ${row.sourceDocumentId} linked to this output VAT row.`
-        : "Review whether the generated invoice or source document is linked before filing.",
-      documentHref: row.sourceDocumentId ? "/document-vault" : "/vat-filing",
-      attachmentCount: row.sourceDocumentId ? 1 : 0,
-      href: "/vat-filing",
-    })),
-    ...inputVatRows.slice(0, 8).map((row: AnyRecord) => ({
-      id: `vat-input:${row.id}`,
-      label: "VAT input row",
-      sourceType: "vat_workpaper_row",
-      sourceId: row.id,
-      sourceDocumentId: row.sourceDocumentId ?? null,
-      documentNumber: row.invoiceNumber,
-      date: isoDate(row.documentDate),
-      party: row.counterpartyName,
-      amount: toMoney(row.taxableAmount),
-      vatAmount: toMoney(row.vatAmount),
-      status: row.status,
-      proofStatus: row.sourceDocumentId ? "ready" : "needs_review",
-      documentStatus: row.sourceDocumentId ? "attached" : "missing",
-      documentLabel: row.sourceDocumentId ? "Linked tax invoice" : "Tax invoice not linked",
-      documentPreview: row.sourceDocumentId
-        ? `Document ${row.sourceDocumentId} supports the input VAT claim.`
-        : "Input VAT recovery should have a readable supplier tax invoice or receipt image.",
-      documentHref: row.sourceDocumentId ? "/document-vault" : "/vat-filing",
-      attachmentCount: row.sourceDocumentId ? 1 : 0,
-      href: "/vat-filing",
-    })),
-    ...periodInvoices.slice(0, 6).map((invoice: AnyRecord) => ({
-      id: `invoice:${invoice.id}`,
-      label: "Sales invoice",
-      sourceType: "invoice",
-      sourceId: invoice.id,
-      documentNumber: invoice.number,
-      date: isoDate(invoice.date),
-      party: invoice.customerName,
-      amount: toMoney(invoice.total || invoice.baseCurrencyAmount),
-      vatAmount: toMoney(invoice.vatAmount),
-      status: invoice.status,
-      proofStatus: invoice.status === "draft" ? "needs_review" : "ready",
-      documentStatus: invoice.status === "draft" ? "needs_review" : "generated",
-      documentLabel: invoice.status === "draft" ? "Draft invoice" : "Generated invoice record",
-      documentPreview:
-        invoice.status === "draft"
-          ? "Draft invoices are not issued evidence until finalized."
-          : "Invoice record is available from the sales module.",
-      documentHref: "/invoices",
-      attachmentCount: invoice.status === "draft" ? 0 : 1,
-      href: "/invoices",
-    })),
-    ...periodReceipts.slice(0, 6).map((receipt: AnyRecord) => {
+    ...outputVatRows.slice(0, 8).map(
+      (row: AnyRecord): EvidenceProofLine => ({
+        id: `vat-output:${row.id}`,
+        label: "VAT output row",
+        sourceType: "vat_workpaper_row",
+        sourceId: row.id as string | null | undefined,
+        sourceDocumentId: (row.sourceDocumentId ?? null) as string | null | undefined,
+        documentNumber: row.invoiceNumber as string | null | undefined,
+        date: isoDate(row.documentDate),
+        party: row.counterpartyName as string | null | undefined,
+        amount: toMoney(row.taxableAmount),
+        vatAmount: toMoney(row.vatAmount),
+        status: row.status as string,
+        proofStatus: row.sourceDocumentId ? "ready" : "needs_review",
+        documentStatus: row.sourceDocumentId ? "attached" : "needs_review",
+        documentLabel: row.sourceDocumentId ? "Linked source document" : "No source file linked",
+        documentPreview: row.sourceDocumentId
+          ? `Document ${row.sourceDocumentId} linked to this output VAT row.`
+          : "Review whether the generated invoice or source document is linked before filing.",
+        documentHref: row.sourceDocumentId ? "/document-vault" : "/vat-filing",
+        attachmentCount: row.sourceDocumentId ? 1 : 0,
+        href: "/vat-filing",
+      })
+    ),
+    ...inputVatRows.slice(0, 8).map(
+      (row: AnyRecord): EvidenceProofLine => ({
+        id: `vat-input:${row.id}`,
+        label: "VAT input row",
+        sourceType: "vat_workpaper_row",
+        sourceId: row.id as string | null | undefined,
+        sourceDocumentId: (row.sourceDocumentId ?? null) as string | null | undefined,
+        documentNumber: row.invoiceNumber as string | null | undefined,
+        date: isoDate(row.documentDate),
+        party: row.counterpartyName as string | null | undefined,
+        amount: toMoney(row.taxableAmount),
+        vatAmount: toMoney(row.vatAmount),
+        status: row.status as string,
+        proofStatus: row.sourceDocumentId ? "ready" : "needs_review",
+        documentStatus: row.sourceDocumentId ? "attached" : "missing",
+        documentLabel: row.sourceDocumentId ? "Linked tax invoice" : "Tax invoice not linked",
+        documentPreview: row.sourceDocumentId
+          ? `Document ${row.sourceDocumentId} supports the input VAT claim.`
+          : "Input VAT recovery should have a readable supplier tax invoice or receipt image.",
+        documentHref: row.sourceDocumentId ? "/document-vault" : "/vat-filing",
+        attachmentCount: row.sourceDocumentId ? 1 : 0,
+        href: "/vat-filing",
+      })
+    ),
+    ...periodInvoices.slice(0, 6).map(
+      (invoice: AnyRecord): EvidenceProofLine => ({
+        id: `invoice:${invoice.id}`,
+        label: "Sales invoice",
+        sourceType: "invoice",
+        sourceId: invoice.id as string | null | undefined,
+        documentNumber: invoice.number as string | null | undefined,
+        date: isoDate(invoice.date),
+        party: invoice.customerName as string | null | undefined,
+        amount: toMoney(invoice.total || invoice.baseCurrencyAmount),
+        vatAmount: toMoney(invoice.vatAmount),
+        status: invoice.status as string,
+        proofStatus: invoice.status === "draft" ? "needs_review" : "ready",
+        documentStatus: invoice.status === "draft" ? "needs_review" : "generated",
+        documentLabel: invoice.status === "draft" ? "Draft invoice" : "Generated invoice record",
+        documentPreview:
+          invoice.status === "draft"
+            ? "Draft invoices are not issued evidence until finalized."
+            : "Invoice record is available from the sales module.",
+        documentHref: "/invoices",
+        attachmentCount: invoice.status === "draft" ? 0 : 1,
+        href: "/invoices",
+      })
+    ),
+    ...periodReceipts.slice(0, 6).map((receipt: AnyRecord): EvidenceProofLine => {
       const hasImage = Boolean(receipt.imagePath || receipt.imageData);
       const hasSourceText = Boolean(receipt.rawText);
       return {
         id: `receipt:${receipt.id}`,
         label: "Purchase receipt",
         sourceType: "receipt",
-        sourceId: receipt.id,
-        documentNumber: receipt.invoiceNumber ?? receipt.receiptNumber ?? null,
+        sourceId: receipt.id as string | null | undefined,
+        documentNumber: (receipt.invoiceNumber ?? receipt.receiptNumber ?? null) as
+          | string
+          | null
+          | undefined,
         date: isoDate(receipt.date ?? receipt.createdAt),
-        party: receipt.merchant,
-        amount: toMoney((receipt.amount || 0) + (receipt.vatAmount || 0)),
+        party: receipt.merchant as string | null | undefined,
+        amount: toMoney(((receipt.amount as number) || 0) + ((receipt.vatAmount as number) || 0)),
         vatAmount: toMoney(receipt.vatAmount),
         status: receipt.posted ? "posted" : "unposted",
         proofStatus: hasImage || hasSourceText ? "ready" : "missing",
@@ -1253,15 +1265,16 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
   const timeline: EvidenceTimelineItem[] = [
     ...openComplianceTasks.slice(0, 8).map((task: AnyRecord) => ({
       id: `task:${task.id}`,
-      title: task.title,
+      title: task.title as string,
       dueDate: isoDate(task.dueDate) || new Date().toISOString(),
-      category: task.category,
-      status: task.status,
+      category: task.category as string,
+      status: task.status as string,
       consequence:
         task.category === "vat_filing"
           ? "VAT penalties, blocked refund support, or late payment exposure."
           : "Compliance task can block close, filing, or document readiness.",
-      readinessScore: task.status === "completed" ? 100 : new Date(task.dueDate) < now ? 20 : 70,
+      readinessScore:
+        task.status === "completed" ? 100 : new Date(task.dueDate as string | Date) < now ? 20 : 70,
       href: "/compliance-calendar",
     })),
   ];
@@ -1288,7 +1301,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       title: "Corporate tax filing deadline",
       dueDate: `${ctDueDate}T00:00:00.000Z`,
       category: "corporate_tax",
-      status: latestCtReturn.status,
+      status: latestCtReturn.status as string,
       consequence: "Unreviewed taxable-profit adjustments can create incorrect CT exposure.",
       readinessScore: latestCtReturn.status === "filed" ? 100 : latestCtReturn.workpaper ? 75 : 45,
       href: "/corporate-tax",
@@ -2020,7 +2033,8 @@ function latestLiveCtReturn(ctReturns: AnyRecord[]): AnyRecord | undefined {
     .filter((r) => r.status !== "void" && r.status !== "amended")
     .sort(
       (a, b) =>
-        new Date(b.taxPeriodEnd).getTime() - new Date(a.taxPeriodEnd).getTime() ||
+        new Date(b.taxPeriodEnd as string | Date).getTime() -
+          new Date(a.taxPeriodEnd as string | Date).getTime() ||
         (Number(b.amendmentNumber) || 0) - (Number(a.amendmentNumber) || 0)
     )[0];
 }
@@ -2105,16 +2119,16 @@ export async function buildCtEvidencePack(companyId: string): Promise<CtEvidence
     generatedAt: new Date().toISOString(),
     ctReturn: latest
       ? {
-          id: latest.id,
-          status: latest.status,
+          id: latest.id as string,
+          status: latest.status as string,
           taxPeriodStart: ctIsoDay(latest.taxPeriodStart),
           taxPeriodEnd: periodEnd,
           filingDeadline: ctFilingDeadline(periodEnd),
           taxableIncome: Number(latest.taxableIncome) || 0,
           taxPayable: Number(latest.taxPayable) || 0,
           amendmentNumber: Number(latest.amendmentNumber) || 0,
-          reviewedBy: latest.reviewedBy ?? null,
-          filedAt: latest.filedAt ? new Date(latest.filedAt).toISOString() : null,
+          reviewedBy: (latest.reviewedBy as string | null | undefined) ?? null,
+          filedAt: latest.filedAt ? new Date(latest.filedAt as string | Date).toISOString() : null,
         }
       : null,
     workpaperRowCount: Array.isArray(wp.rows) ? wp.rows.length : 0,
@@ -2136,7 +2150,7 @@ export async function buildCtEvidencePack(companyId: string): Promise<CtEvidence
     deferredTax: wp.deferredTax
       ? {
           net: Number((wp.deferredTax as AnyRecord).net) || 0,
-          itemCount: ((wp.deferredTax as AnyRecord).items ?? []).length,
+          itemCount: (((wp.deferredTax as AnyRecord).items ?? []) as unknown[]).length,
         }
       : null,
     checks,

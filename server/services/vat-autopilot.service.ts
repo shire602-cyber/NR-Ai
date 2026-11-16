@@ -24,6 +24,7 @@ import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
 import type { VatReconciliation } from "../tax/vat-reconciliation";
 import { assertCompanyTrn } from "../tax/vat-returns.service";
 import { EMIRATES } from "../../shared/validators/primitives";
+import type { QueryResultRow } from "pg";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1038,7 +1039,7 @@ export async function listDueDates(
        AND status IN ('draft','ready')`,
     [companyIds]
   );
-  const storedByCompany = new Map<string, any[]>();
+  const storedByCompany = new Map<string, QueryResultRow[]>();
   for (const row of periodRes.rows) {
     const key = String(row.company_id);
     storedByCompany.set(key, [...(storedByCompany.get(key) ?? []), row]);

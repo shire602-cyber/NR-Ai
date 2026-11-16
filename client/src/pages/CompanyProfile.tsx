@@ -149,6 +149,7 @@ export default function CompanyProfile() {
         corporateTaxId: company.corporateTaxId || "",
       });
 
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
       setLogoPreview(companyLogoSrc(company));
     }
   }, [company, form]);

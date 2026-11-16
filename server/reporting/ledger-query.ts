@@ -4,13 +4,14 @@
  * report; conversion back to major units of the company's base currency happens once,
  * at the edge (`aed()`, kept for its historical name).
  */
+import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { baseCurrencyOf } from "../ledger/currency";
 import type { IsoDate } from "./dates";
 
 export interface Queryable {
-  query: (text: string, params?: unknown[]) => Promise<{ rows: any[] }>;
+  query: (text: string, params?: unknown[]) => Promise<{ rows: QueryResultRow[] }>;
 }
 
 /** Journal sources that mark closing / year-end entries. */

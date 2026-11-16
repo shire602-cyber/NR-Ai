@@ -4,6 +4,7 @@
 // Merchant comparison is Arabic-aware (shared normaliser).
 
 import { normalizeMerchantKey } from "../../shared/arabic-text";
+import type { QueryResultRow } from "pg";
 
 export interface ReceiptLike {
   id: string;
@@ -135,12 +136,12 @@ export function checkSimilar(probe: DuplicateProbe, existing: ReceiptLike[]): Re
 
 // ---- database lookups (set-based) -------------------------------------------------
 
-async function query(sql: string, params: unknown[]): Promise<Array<Record<string, any>>> {
+async function query(sql: string, params: unknown[]): Promise<QueryResultRow[]> {
   const { pool } = await import("../db");
-  return (await (pool as any).query(sql, params)).rows;
+  return (await pool.query(sql, params)).rows;
 }
 
-function mapRow(r: Record<string, any>): ReceiptLike {
+function mapRow(r: QueryResultRow): ReceiptLike {
   return {
     id: r.id,
     merchant: r.merchant,

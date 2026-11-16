@@ -29,8 +29,8 @@ const messageStatusUpdateSchema = z.object({
 });
 
 async function resolveCompanyId(req: Request, requestedCompanyId?: string): Promise<string | null> {
-  const userId = (req as any).user?.id as string | undefined;
-  const firmRole = ((req as any).user?.firmRole ?? null) as string | null;
+  const userId = req.user?.id as string | undefined;
+  const firmRole = (req.user?.firmRole ?? null) as string | null;
   if (!userId) return null;
 
   if (requestedCompanyId) {
@@ -85,7 +85,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/log-message",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -125,7 +125,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/messages",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -145,7 +145,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/messages/:messageId/status",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -241,7 +241,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/status",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const companyId = await resolveCompanyId(req, req.query.companyId as string | undefined);
@@ -291,7 +291,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/sessions",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const validated = createBridgeSessionSchema.parse(req.body);
@@ -320,7 +320,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/sessions/:sessionId/heartbeat",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const { sessionId } = sessionIdSchema.parse(req.params);
@@ -346,7 +346,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/jobs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const validated = createBridgeJobSchema.parse(req.body);
@@ -404,7 +404,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/jobs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const companyId = await resolveCompanyId(req, req.query.companyId as string | undefined);
@@ -427,7 +427,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/bridge/jobs/:jobId/status",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
       const { jobId } = jobIdSchema.parse(req.params);
@@ -440,7 +440,7 @@ export function registerWhatsAppRoutes(app: Express) {
           : validated.status === "drafted"
             ? "drafted"
             : "logged");
-      const jobUpdate: any = {
+      const jobUpdate: Partial<typeof whatsappBridgeJobs.$inferInsert> = {
         status: validated.status,
         deliveryStatus: nextDeliveryStatus,
         errorMessage: validated.errorMessage || null,
@@ -487,7 +487,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/save-rules",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -527,7 +527,7 @@ export function registerWhatsAppRoutes(app: Express) {
     "/api/integrations/whatsapp/rules",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }

@@ -14,7 +14,7 @@ export function registerFeedbackRoutes(app: Express) {
     "/api/feedback",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
 
       // Validate input with comprehensive schema
       const validationSchema = z.object({
@@ -52,7 +52,7 @@ export function registerFeedbackRoutes(app: Express) {
     "/api/feedback",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const feedback = await storage.getUserFeedback(userId);
       res.json(feedback);
     })

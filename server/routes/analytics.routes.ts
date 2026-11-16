@@ -98,7 +98,7 @@ export function registerAnalyticsRoutes(app: Express) {
     "/api/analytics/forecasts",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId, period: _period } = req.query;
 
       if (!companyId) {
@@ -199,7 +199,7 @@ export function registerAnalyticsRoutes(app: Express) {
     "/api/analytics/kpis",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { companyId } = req.query;
 
       if (!companyId) {
@@ -300,7 +300,7 @@ export function registerAnalyticsRoutes(app: Express) {
     // companyId is accepted here but only stored after an access check below.
     strictBody(analyticsEventBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const validated = parsedBody<z.output<typeof analyticsEventBody>>(req);
 
       if (validated.companyId && !(await storage.hasCompanyAccess(userId, validated.companyId))) {
@@ -344,7 +344,7 @@ export function registerAnalyticsRoutes(app: Express) {
     "/api/analytics/my-dashboard",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companies = await storage.getAccessibleCompanies(userId, firmRole, false);
       const companyIds = companies.map((c) => c.id);
       const [byCompany, byUser] = await Promise.all([

@@ -79,7 +79,7 @@ interface InvoiceTemplate {
 export default function InvoiceTemplates() {
   const { toast } = useToast();
   const { t } = useTranslation();
-  const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<InvoiceTemplate | null>(null);

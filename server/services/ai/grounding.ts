@@ -9,6 +9,7 @@
 
 import { round2 } from "../financial-statements";
 import type { AgingReport, BalanceSheet, IsoDate, ProfitAndLoss } from "../../reporting";
+import type { QueryResultRow } from "pg";
 
 export interface GroundedFigure {
   id: string;
@@ -31,7 +32,7 @@ export interface GroundingResult {
 
 export interface GroundingDeps {
   /** Document reads that are not ledger figures (company name, receipt counts). */
-  query(sql: string, params: unknown[]): Promise<{ rows: Array<Record<string, any>> }>;
+  query(sql: string, params: unknown[]): Promise<{ rows: QueryResultRow[] }>;
   profitAndLoss(args: { companyId: string; from: IsoDate; to: IsoDate }): Promise<ProfitAndLoss>;
   balanceSheet(args: { companyId: string; asOf: IsoDate }): Promise<BalanceSheet>;
   agedReceivables(args: { companyId: string; asOf: IsoDate }): Promise<AgingReport>;
@@ -41,7 +42,7 @@ async function defaultDeps(): Promise<GroundingDeps> {
   const { pool } = await import("../../db");
   const reporting = await import("../../reporting");
   return {
-    query: (sql, params) => (pool as any).query(sql, params),
+    query: (sql, params) => pool.query(sql, params),
     profitAndLoss: (args) => reporting.profitAndLoss(args),
     balanceSheet: (args) => reporting.balanceSheet(args),
     agedReceivables: (args) => reporting.agedReceivables(args),

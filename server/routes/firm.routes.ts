@@ -62,6 +62,7 @@ import {
   journalLines,
   engagements,
 } from "../../shared/schema";
+import { errorMessage } from "../errors";
 
 const logger = createLogger("firm-routes");
 
@@ -76,7 +77,7 @@ async function seedChartOfAccounts(companyId: string): Promise<void> {
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) return;
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
-  await storage.createBulkAccounts(defaultAccounts as any);
+  await storage.createBulkAccounts(defaultAccounts);
 }
 
 async function getClientStats(companyId: string) {
@@ -633,7 +634,7 @@ export function registerFirmRoutes(app: Express): void {
   const router = Router();
 
   // Scope to /firm prefix so unrelated /api/* paths don't get 403
-  router.use("/firm", authMiddleware as any);
+  router.use("/firm", authMiddleware);
   // Multi-firm practice tools (R15-12): any approved firm; every handler is
   // scoped to the caller's firm through getAccessibleCompanyIds / firm scope.
   router.use("/firm", requireFirmAccess());
@@ -645,11 +646,11 @@ export function registerFirmRoutes(app: Express): void {
   router.get(
     "/firm/clients",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       let clientCompanies: Awaited<ReturnType<typeof storage.getClientCompanies>>;
@@ -744,7 +745,7 @@ export function registerFirmRoutes(app: Express): void {
     requireFirmPermission("firm.clients.create"),
     strictBody(createClientSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const ctx = firmContextOf(res);
       const validated = parsedBody<z.output<typeof createClientSchema>>(req);
       const { serviceScope, ...companyInput } = validated;
@@ -813,7 +814,7 @@ export function registerFirmRoutes(app: Express): void {
     strictBody(updateClientSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const validated = parsedBody<z.output<typeof updateClientSchema>>(req);
       const { serviceScope, ...companyPatch } = validated;
 
@@ -842,7 +843,7 @@ export function registerFirmRoutes(app: Express): void {
 
       const updated =
         Object.keys(companyPatch).length > 0
-          ? await storage.updateCompany(companyId, companyPatch as any)
+          ? await storage.updateCompany(companyId, companyPatch)
           : company;
       const servicePlan =
         serviceScope !== undefined
@@ -878,7 +879,7 @@ export function registerFirmRoutes(app: Express): void {
     strictBody(assignStaffSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const requestingUserId = (req as any).user.id;
+      const requestingUserId = req.user!.id;
       const { staffUserId, action, role } = parsedBody<z.output<typeof assignStaffSchema>>(req);
       const result = await assignStaff(firmContextOf(res), {
         staffUserId,
@@ -914,11 +915,11 @@ export function registerFirmRoutes(app: Express): void {
   router.get(
     "/firm/bookkeeper-dashboard",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       type BookkeeperClientRow = {
@@ -997,7 +998,7 @@ export function registerFirmRoutes(app: Express): void {
         periodEnd: Date;
         dueDate: Date;
         status: string;
-        payableTax: string | null;
+        payableTax: number;
         submittedAt: Date | null;
         updatedAt: Date | null;
       };
@@ -1006,7 +1007,7 @@ export function registerFirmRoutes(app: Express): void {
         taxPeriodStart: Date;
         taxPeriodEnd: Date;
         status: string;
-        taxPayable: string | null;
+        taxPayable: number;
         filedAt: Date | null;
       };
       type InvoiceOpsRow = {
@@ -1728,11 +1729,11 @@ export function registerFirmRoutes(app: Express): void {
   router.get(
     "/firm/health",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       let clientList: {
@@ -1993,11 +1994,11 @@ export function registerFirmRoutes(app: Express): void {
   router.get(
     "/firm/health/deadlines",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
@@ -2078,7 +2079,7 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/clients/:companyId/switch",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
 
       if (!(await canAccessClient(req, res, companyId))) {
         return res.status(403).json({ message: "Access denied to this client" });
@@ -2111,7 +2112,7 @@ export function registerFirmRoutes(app: Express): void {
     requireFirmPermission("firm.clients.archive"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const ctx = firmContextOf(res);
 
       if (!(await canAccessClient(req, res, companyId))) {
@@ -2158,17 +2159,17 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/clients/import",
     requireFirmPermission("firm.clients.create"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const ctx = firmContextOf(res);
 
       // Accept either pre-parsed rows or a base64-encoded file.
-      let rows: Record<string, any>[];
+      let rows: Record<string, unknown>[];
       if (req.body?.fileData) {
         try {
           const buffer = Buffer.from(req.body.fileData, "base64");
-          rows = (await parseSpreadsheet(buffer, req.body.fileName)).rows as Record<string, any>[];
-        } catch (err: any) {
-          return res.status(400).json({ message: `Could not parse file: ${err.message}` });
+          rows = (await parseSpreadsheet(buffer, req.body.fileName)).rows;
+        } catch (err: unknown) {
+          return res.status(400).json({ message: `Could not parse file: ${errorMessage(err)}` });
         }
       } else {
         const parsed = importPayloadSchema.safeParse(req.body);
@@ -2274,11 +2275,11 @@ export function registerFirmRoutes(app: Express): void {
           });
 
           results.created.push({ id: company.id, name: company.name });
-        } catch (err: any) {
+        } catch (err: unknown) {
           results.errors.push({
             row: i + 1,
             name: validated.value.name,
-            error: err.message ?? "Unknown error",
+            error: errorMessage(err) ?? "Unknown error",
           });
         }
       }
@@ -2296,11 +2297,11 @@ export function registerFirmRoutes(app: Express): void {
   router.get(
     "/firm/overview",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       let clientIds: string[];

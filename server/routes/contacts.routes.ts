@@ -7,6 +7,8 @@ import { createLogger } from "../config/logger";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
 import { sanitizePlainText, zEmirate, zText } from "../../shared/validators/primitives";
 import { emitDomainEvent } from "../platform/domain-events";
+import { errorMessage } from "../errors";
+import type { InsertCustomerContact } from "@shared/schema";
 
 const log = createLogger("contacts");
 
@@ -73,7 +75,7 @@ const contactTemplateRows = [
   },
 ];
 
-function pickImportValue(row: Record<string, any>, keys: string[]): string {
+function pickImportValue(row: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = row[key];
     if (value !== undefined && value !== null && String(value).trim() !== "") {
@@ -83,7 +85,7 @@ function pickImportValue(row: Record<string, any>, keys: string[]): string {
   return "";
 }
 
-function mapContactImportRow(row: Record<string, any>): Record<string, string> {
+function mapContactImportRow(row: Record<string, unknown>): Record<string, string> {
   return {
     name: pickImportValue(row, ["Name", "name", "Company Name", "company_name"]),
     email: pickImportValue(row, ["Email", "email", "E-mail"]),
@@ -113,7 +115,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -132,7 +134,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -140,7 +142,7 @@ export function registerContactRoutes(app: Express) {
       }
 
       // Validated + sanitised body, then pin the tenant scope.
-      const contactData: Record<string, any> = {
+      const contactData: InsertCustomerContact = {
         ...contactCreateSchema.parse(req.body ?? {}),
         companyId,
       };
@@ -167,7 +169,7 @@ export function registerContactRoutes(app: Express) {
         }
       }
 
-      const contact = await storage.createCustomerContact(contactData as any);
+      const contact = await storage.createCustomerContact(contactData);
       emitDomainEvent("contact.created", {
         companyId,
         entityId: contact.id,
@@ -184,7 +186,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -211,7 +213,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -243,7 +245,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -263,7 +265,7 @@ export function registerContactRoutes(app: Express) {
         errors: [] as string[],
       };
 
-      const contactsToCreate: any[] = [];
+      const contactsToCreate: InsertCustomerContact[] = [];
 
       for (const contact of contacts) {
         try {
@@ -306,10 +308,10 @@ export function registerContactRoutes(app: Express) {
               isActive: true,
             });
           }
-        } catch (rowError: any) {
+        } catch (rowError: unknown) {
           results.skipped++;
           results.errors.push(
-            `Error processing ${contact.email || "unknown"}: ${rowError.message}`
+            `Error processing ${contact.email || "unknown"}: ${errorMessage(rowError)}`
           );
         }
       }
@@ -319,8 +321,8 @@ export function registerContactRoutes(app: Express) {
         try {
           await storage.createBulkCustomerContacts(contactsToCreate);
           results.created = contactsToCreate.length;
-        } catch (bulkError: any) {
-          results.errors.push(`Bulk insert error: ${bulkError.message}`);
+        } catch (bulkError: unknown) {
+          results.errors.push(`Bulk insert error: ${errorMessage(bulkError)}`);
         }
       }
 
@@ -339,7 +341,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -362,7 +364,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -392,7 +394,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
@@ -414,7 +416,7 @@ export function registerContactRoutes(app: Express) {
           code: "INVALID_TRN",
         });
       }
-      const contact = await storage.updateCustomerContact(id, updateData as any, companyId);
+      const contact = await storage.updateCustomerContact(id, updateData, companyId);
       res.json(contact);
     })
   );
@@ -426,7 +428,7 @@ export function registerContactRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {

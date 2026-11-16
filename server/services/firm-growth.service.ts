@@ -259,7 +259,7 @@ export async function refreshGrowthOpportunities(companyIds: string[]) {
         status: "open",
         dueDate: candidate.dueDate ?? null,
         metadata: candidate.metadata ?? {},
-      } as any)
+      })
       .onConflictDoUpdate({
         target: firmGrowthOpportunities.sourceKey,
         set: {
@@ -271,7 +271,7 @@ export async function refreshGrowthOpportunities(companyIds: string[]) {
           dueDate: candidate.dueDate ?? null,
           metadata: candidate.metadata ?? {},
           updatedAt: new Date(),
-        } as any,
+        },
       });
     generated += 1;
   }
@@ -347,7 +347,7 @@ export async function updateGrowthOpportunity(
     actionType: string;
   }
 ) {
-  const update: Record<string, unknown> = { updatedAt: new Date() };
+  const update: Partial<typeof firmGrowthOpportunities.$inferInsert> = { updatedAt: new Date() };
   if (data.status) update.status = data.status;
   if ("ownerUserId" in data) update.ownerUserId = data.ownerUserId ?? null;
   if ("snoozedUntil" in data) update.snoozedUntil = data.snoozedUntil ?? null;
@@ -356,7 +356,7 @@ export async function updateGrowthOpportunity(
 
   const [updated] = await db
     .update(firmGrowthOpportunities)
-    .set(update as any)
+    .set(update)
     .where(eq(firmGrowthOpportunities.id, opportunityId))
     .returning();
 
@@ -374,7 +374,7 @@ export async function updateGrowthOpportunity(
       ownerUserId: data.ownerUserId,
       snoozedUntil: data.snoozedUntil?.toISOString(),
     },
-  } as any);
+  });
 
   return updated;
 }

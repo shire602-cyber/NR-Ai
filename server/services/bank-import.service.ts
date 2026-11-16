@@ -1,7 +1,7 @@
 import { storage } from "../storage";
 import { db } from "../db";
 import { createLogger } from "../config/logger";
-import { DomainError } from "../errors";
+import { DomainError, errorMessage } from "../errors";
 import { bankImportBatches, type BankTransaction } from "../../shared/schema";
 import { filsToNumber, tryToFils } from "../../shared/money";
 import { parseIsoDate } from "../../shared/validators/primitives";
@@ -133,8 +133,8 @@ export async function importBankStatement(
         isReconciled: false,
       });
       imported++;
-    } catch (err: any) {
-      errors.push(`Row: ${row.description} — ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Row: ${row.description} — ${errorMessage(err)}`);
     }
   }
   const duplicates = plan.skipped.filter((s) => s.reason !== "invalid_row").length;

@@ -178,7 +178,7 @@ function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
   if (typeof value === "string") {
     const trimmed = value.trim();
-    const dmy = trimmed.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    const dmy = trimmed.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
     if (dmy) {
       const [, day, month, year] = dmy;
       return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
@@ -231,7 +231,7 @@ export function mapVatWorkpaperRowToBox(input: {
   if (input.rowCategory === "manual_adjustment") {
     if (!input.vat201Box) throw new ValidationError("Manual adjustment rows require a VAT 201 box");
     if (
-      !ALL_TOTAL_KEYS.includes(input.vat201Box as any) ||
+      !(ALL_TOTAL_KEYS as readonly string[]).includes(input.vat201Box) ||
       DERIVED_TOTAL_KEYS.has(input.vat201Box)
     ) {
       throw new ValidationError("Manual adjustment VAT 201 box is not supported");
@@ -309,7 +309,7 @@ export function calculateVatWorkpaperTotals(
 
     if (amountBox.endsWith("Amount")) {
       const vatBox = amountBox.replace(/Amount$/, "Vat");
-      if (ALL_TOTAL_KEYS.includes(vatBox as any))
+      if ((ALL_TOTAL_KEYS as readonly string[]).includes(vatBox))
         add(totals, vatBox, sign === -1 ? -Math.abs(vatAmount) : vatAmount);
     }
 
@@ -604,7 +604,7 @@ export async function createVatWorkpaper(input: {
       notes: input.notes ?? null,
       createdBy: input.createdBy,
       totalsSnapshot: emptyVat201Totals(),
-    } as any)
+    })
     .returning();
   return created;
 }
@@ -668,7 +668,7 @@ export async function addVatWorkpaperRow(
       reviewedBy: null,
       reviewedAt: null,
       createdBy: actorUserId,
-    } as any)
+    })
     .returning();
 
   await recalculateVatWorkpaper(workpaperId);
@@ -752,7 +752,7 @@ export async function updateVatWorkpaperRow(
 
   const [updated] = await db
     .update(vatWorkpaperRows)
-    .set(update as any)
+    .set(update)
     .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)))
     .returning();
 
@@ -814,7 +814,7 @@ async function getOrCreateGeneralExpense(companyId: string) {
     code: ACCOUNT_CODES.GENERAL_EXPENSE,
     nameEn: "General Expenses",
     type: "expense",
-  } as any);
+  });
 }
 
 /**
@@ -919,7 +919,7 @@ export async function postVatWorkpaperRowToLedger(
 
   await db
     .update(vatWorkpaperRows)
-    .set({ journalEntryId: entry.id, updatedAt: new Date() } as any)
+    .set({ journalEntryId: entry.id, updatedAt: new Date() })
     .where(eq(vatWorkpaperRows.id, rowId));
 
   return { journalEntryId: entry.id };
@@ -948,7 +948,7 @@ export async function scanVatWorkpaperEvidence(
       extractedText: attachment.extractedText ?? null,
       extractionJson: attachment.extractionJson ?? {},
       uploadedBy: actorUserId,
-    } as any)
+    })
     .returning();
 
   return { row, attachment: createdAttachment };
@@ -963,7 +963,7 @@ export async function recalculateVatWorkpaper(workpaperId: string) {
   const totals = calculateVatWorkpaperTotals(rows);
   const [updated] = await db
     .update(vatWorkpapers)
-    .set({ totalsSnapshot: totals, updatedAt: new Date() } as any)
+    .set({ totalsSnapshot: totals, updatedAt: new Date() })
     .where(eq(vatWorkpapers.id, workpaperId))
     .returning();
   return { workpaper: updated, totals };
@@ -1034,10 +1034,7 @@ export async function addVatWorkpaperRowsBulk(
     };
   });
 
-  const created = await db
-    .insert(vatWorkpaperRows)
-    .values(values as any)
-    .returning();
+  const created = await db.insert(vatWorkpaperRows).values(values).returning();
   await recalculateVatWorkpaper(workpaperId);
   return created;
 }
@@ -1405,7 +1402,7 @@ export async function bulkUpdateVatWorkpaperRowStatus(
       reviewedBy: actorUserId,
       reviewedAt: new Date(),
       updatedAt: new Date(),
-    } as any)
+    })
     .where(and(...conditions))
     .returning({ id: vatWorkpaperRows.id });
 
@@ -1660,14 +1657,11 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
   if (vatReturnId) {
     [vatReturn] = await db
       .update(vatReturns)
-      .set(vatReturnPayload as any)
+      .set(vatReturnPayload)
       .where(eq(vatReturns.id, vatReturnId))
       .returning();
   } else {
-    [vatReturn] = await db
-      .insert(vatReturns)
-      .values(vatReturnPayload as any)
-      .returning();
+    [vatReturn] = await db.insert(vatReturns).values(vatReturnPayload).returning();
     vatReturnId = vatReturn.id;
   }
 
@@ -1679,7 +1673,7 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
       generatedVatReturnId: vatReturnId,
       totalsSnapshot: totals,
       updatedAt: new Date(),
-    } as any)
+    })
     .where(eq(vatWorkpapers.id, workpaperId))
     .returning();
 

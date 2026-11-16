@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import type { Subscription } from "@shared/schema";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { storage } from "../storage";
@@ -20,6 +21,11 @@ export interface AuthUser {
   firmRole: "firm_owner" | "firm_admin" | null;
 }
 
+/** Subscription cached on a request: the company's row, or the implicit Free plan. */
+export type RequestSubscription =
+  | Subscription
+  | { companyId: string; planId: string; implicit: true };
+
 /**
  * Extend Express Request to include authenticated user.
  */
@@ -33,7 +39,7 @@ declare global {
       firmRole: string | null;
     }
     interface Request {
-      subscription?: any; // Cached subscription for feature gating
+      subscription?: RequestSubscription; // Cached subscription for feature gating
       /** refresh_sessions.id the access token was issued under (null for legacy tokens). */
       authSessionId?: string | null;
       /** Normalised company_users.role, set by companyRolePolicy on company-scoped routes. */

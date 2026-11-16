@@ -12,7 +12,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { pool } from "../db";
-import { DomainError, AppError } from "../errors";
+import { AppError, DomainError, errorMessage } from "../errors";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { recordAudit } from "../services/audit.service";
@@ -32,7 +32,7 @@ import {
 } from "../services/vat-autopilot.service";
 
 function userId(req: Request): string | undefined {
-  return (req as any).user?.id;
+  return req.user?.id;
 }
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -217,8 +217,8 @@ export function registerVATAutopilotRoutes(app: Express) {
           userId: uid,
         });
         res.status(201).json(adjustment);
-      } catch (err: any) {
-        res.status(400).json({ message: err?.message || "Could not add adjustment" });
+      } catch (err: unknown) {
+        res.status(400).json({ message: errorMessage(err) || "Could not add adjustment" });
       }
     })
   );

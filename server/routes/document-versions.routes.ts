@@ -124,7 +124,7 @@ function diffSnapshots(a: Record<string, unknown>, b: Record<string, unknown>) {
 
 export function registerDocumentVersionRoutes(app: Express) {
   const access = async (req: Request) => {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
     const { companyId, documentType } = req.params;
     if (!(await storage.hasCompanyAccess(userId, companyId))) {
       throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
@@ -201,7 +201,7 @@ export function registerDocumentVersionRoutes(app: Express) {
         documentType: body.documentType,
         documentId: body.documentId,
         changeDescription: body.changeDescription ?? null,
-        changedBy: (req as any).user.id,
+        changedBy: req.user!.id,
         snapshot,
       });
       res.status(201).json(version);

@@ -39,17 +39,13 @@ import {
   AlertTriangle,
   Workflow,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useI18n } from "@/lib/i18n";
 
 export default function Services() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHasMounted();
   const { locale, setLocale } = useI18n();
   const isRTL = locale === "ar";
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const toggleLanguage = () => {
     setLocale(locale === "en" ? "ar" : "en");

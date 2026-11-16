@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   bigint,
   numeric,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1748,7 +1749,7 @@ export const journalEntries = pgTable(
     source: text("source").notNull().default("manual"), // manual | invoice | receipt | payment | reversal | system
     sourceId: uuid("source_id"), // Reference to invoice, receipt, etc.
     // Reversal support: if this entry is a reversal, link to original
-    reversedEntryId: uuid("reversed_entry_id").references((): any => journalEntries.id),
+    reversedEntryId: uuid("reversed_entry_id").references((): AnyPgColumn => journalEntries.id),
     reversalReason: text("reversal_reason"),
     // W2-A ledger kernel (migration 0090). On an ORIGINAL entry, the id of the
     // one reversal that offsets it; set in the same transaction as the reversal.
@@ -1773,7 +1774,7 @@ export const journalEntries = pgTable(
     // Audit trail
     createdBy: uuid("created_by")
       .notNull()
-      .references((): any => users.id),
+      .references((): AnyPgColumn => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     postedBy: uuid("posted_by").references(() => users.id),
     postedAt: timestamp("posted_at"),
@@ -2087,14 +2088,17 @@ export const invoices = pgTable(
     invoiceType: text("invoice_type").notNull().default("invoice"),
     reverseCharge: boolean("reverse_charge").notNull().default(false), // FTA reverse-charge: recipient self-assesses VAT
     originalInvoiceId: uuid("original_invoice_id"),
-    legacyCreditNoteId: uuid("legacy_credit_note_id").references((): any => creditNotes.id, {
-      onDelete: "set null",
-    }),
+    legacyCreditNoteId: uuid("legacy_credit_note_id").references(
+      (): AnyPgColumn => creditNotes.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     isRecurring: boolean("is_recurring").notNull().default(false),
     recurringInterval: text("recurring_interval"), // weekly | monthly | quarterly | yearly
     nextRecurringDate: timestamp("next_recurring_date"),
     recurringEndDate: timestamp("recurring_end_date"),
-    contactId: uuid("contact_id").references((): any => customerContacts.id, {
+    contactId: uuid("contact_id").references((): AnyPgColumn => customerContacts.id, {
       onDelete: "set null",
     }),
     // W3-A (migration 0095): place of supply drives VAT 201 Box 1 emirate
@@ -2161,8 +2165,10 @@ export const invoiceLines = pgTable(
     discountValue: rate("discount_value"),
     discountAmount: money("discount_amount").notNull().default(0), // line discount only
     netAmount: money("net_amount"), // after line + allocated document discount
-    productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
-    costCenterId: uuid("cost_center_id").references((): any => costCenters.id, {
+    productId: uuid("product_id").references((): AnyPgColumn => products.id, {
+      onDelete: "set null",
+    }),
+    costCenterId: uuid("cost_center_id").references((): AnyPgColumn => costCenters.id, {
       onDelete: "set null",
     }),
     quoteLineId: uuid("quote_line_id"),
@@ -2197,7 +2203,7 @@ export const quotes = pgTable(
     number: text("number").notNull(),
     customerName: text("customer_name").notNull(),
     customerTrn: text("customer_trn"),
-    contactId: uuid("contact_id").references((): any => customerContacts.id, {
+    contactId: uuid("contact_id").references((): AnyPgColumn => customerContacts.id, {
       onDelete: "set null",
     }),
     date: timestamp("date").notNull(),

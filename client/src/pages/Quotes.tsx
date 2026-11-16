@@ -6,7 +6,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -112,7 +112,7 @@ interface Quote {
 export default function Quotes() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);

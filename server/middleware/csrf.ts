@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
 import { authCookieBaseOptions } from "../config/cookies";
+import { errorCode, errorMessage } from "../errors";
 
 const log = createLogger("csrf");
 
@@ -77,22 +78,23 @@ function readCookieFromHeader(req: Request, name: string): string | undefined {
 
 function readCsrfIdentifierCookie(req: Request): string | undefined {
   const name = csrfIdentifierCookieName();
-  const parsed = normalizeCookieValue((req as any).cookies?.[name]);
+  const parsed = normalizeCookieValue(req.cookies?.[name]);
   return parsed || readCookieFromHeader(req, name);
 }
 
 export function resolveCsrfIdentifier(req: Request, res?: Response): string {
-  const existingRequestId = normalizeCookieValue((req as any)[csrfClientIdRequestKey]);
+  const slots = req as unknown as Record<symbol, string | undefined>;
+  const existingRequestId = normalizeCookieValue(slots[csrfClientIdRequestKey]);
   if (existingRequestId) return existingRequestId;
 
   const existingCookieId = readCsrfIdentifierCookie(req);
   if (existingCookieId) {
-    (req as any)[csrfClientIdRequestKey] = existingCookieId;
+    slots[csrfClientIdRequestKey] = existingCookieId;
     return existingCookieId;
   }
 
   const generated = randomUUID();
-  (req as any)[csrfClientIdRequestKey] = generated;
+  slots[csrfClientIdRequestKey] = generated;
 
   if (res) {
     res.cookie(csrfIdentifierCookieName(), generated, authCookieBaseOptions());
@@ -127,13 +129,18 @@ export function csrfTokenHandler(req: Request, res: Response): void {
   res.json({ csrfToken: token });
 }
 
-export function csrfErrorHandler(err: any, _req: Request, res: Response, next: NextFunction): void {
+export function csrfErrorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   if (
     err === invalidCsrfTokenError ||
-    err?.code === "EBADCSRFTOKEN" ||
-    err?.code === invalidCsrfTokenError.code
+    errorCode(err) === "EBADCSRFTOKEN" ||
+    errorCode(err) === invalidCsrfTokenError.code
   ) {
-    log.warn({ msg: err?.message }, "CSRF token validation failed");
+    log.warn({ msg: errorMessage(err) }, "CSRF token validation failed");
     res.status(403).json({
       message: "Invalid or missing CSRF token",
       code: "CSRF_INVALID",

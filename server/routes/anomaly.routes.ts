@@ -196,7 +196,7 @@ export function registerAnomalyRoutes(app: Express) {
 
   const resolve = async (req: Request, res: Response, shape: "dismiss" | "resolve") => {
     const { companyId, id } = req.params;
-    const userId = (req as any).user.id as string;
+    const userId = req.user!.id as string;
     await assertReportAccess(req, companyId);
     if (!zUuid.safeParse(id).success)
       throw new DomainError("ANOMALY_NOT_FOUND", 404, undefined, "Anomaly not found");

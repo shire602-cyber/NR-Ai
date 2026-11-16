@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -38,6 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { resolveSelectedId } from "@/lib/selection";
 import {
   evaluateAmountExpression,
   parseVatPasteRows,
@@ -173,7 +174,7 @@ export default function VatWorkpaperPanel({
   onVatReturnGenerated,
 }: VatWorkpaperPanelProps) {
   const { toast } = useToast();
-  const [selectedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
+  const [pickedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState(inputDate(defaultPeriodStart));
   const [periodEnd, setPeriodEnd] = useState(inputDate(defaultPeriodEnd));
   const [pastedRows, setPastedRows] = useState("");
@@ -202,19 +203,12 @@ export default function VatWorkpaperPanel({
     enabled: !!companyId,
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vat-workpapers`),
   });
-  const workpapers = workpapersQuery.data?.workpapers ?? [];
-
-  useEffect(() => {
-    if (!selectedWorkpaperId && workpapers.length > 0) {
-      setSelectedWorkpaperId(workpapers[0].id);
-    } else if (
-      selectedWorkpaperId &&
-      workpapers.length > 0 &&
-      !workpapers.some((workpaper) => workpaper.id === selectedWorkpaperId)
-    ) {
-      setSelectedWorkpaperId(workpapers[0].id);
-    }
-  }, [selectedWorkpaperId, workpapers]);
+  const workpapers = useMemo(
+    () => workpapersQuery.data?.workpapers ?? [],
+    [workpapersQuery.data?.workpapers]
+  );
+  // Default to the first workpaper whenever nothing (or a stale id) is picked.
+  const selectedWorkpaperId = resolveSelectedId(pickedWorkpaperId, workpapers);
 
   const detailQuery = useQuery<VatWorkpaperDetail>({
     queryKey: ["/api/companies", companyId, "vat-workpapers", selectedWorkpaperId],

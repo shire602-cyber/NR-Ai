@@ -200,7 +200,7 @@ export default function DocumentChasing() {
       toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
-  const requirements = requirementsQuery.data ?? [];
+  const requirements = useMemo(() => requirementsQuery.data ?? [], [requirementsQuery.data]);
   const queue = queueQuery.data ?? [];
   const events = eventsQuery.data ?? [];
 

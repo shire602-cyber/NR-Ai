@@ -186,7 +186,7 @@ export function registerCashFlowRoutes(app: Express) {
           body.repeatMonths ?? 0,
           body.occurrences ?? 1,
           body.bankAccountId ?? null,
-          (req as any).user.id,
+          req.user!.id,
         ]
       );
       res.status(201).json(rows[0]);

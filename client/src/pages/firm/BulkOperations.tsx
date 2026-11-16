@@ -91,15 +91,6 @@ interface PeriodCloseStatus {
   readyToClose: boolean;
 }
 
-interface BankImportStatus {
-  companyId: string;
-  companyName: string;
-  lastImportDate: string | null;
-  unreconciledCount: number;
-  totalTransactions: number;
-  matchRate: number;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatAed(n: number) {
@@ -394,7 +385,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
 
 // ─── Tab 2: VAT Filing Queue ──────────────────────────────────────────────────
 
-function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
+function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
   const { toast } = useToast();
   const [queue, setQueue] = useState<VatQueueEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);

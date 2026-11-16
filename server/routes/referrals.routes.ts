@@ -19,7 +19,7 @@ export function registerReferralRoutes(app: Express) {
   router.get(
     "/my-code",
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       let referralCode = await storage.getReferralCodeByUserId(userId);
 
       // Auto-generate referral code if not exists
@@ -47,7 +47,7 @@ export function registerReferralRoutes(app: Express) {
   router.get(
     "/stats",
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const referralCode = await storage.getReferralCodeByUserId(userId);
       const referrals = await storage.getReferralsByReferrerId(userId);
 
@@ -153,7 +153,7 @@ export function registerReferralRoutes(app: Express) {
   router.get(
     "/credits",
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const { rows } = await pq(
         `SELECT id, beneficiary, kind, amount_fils AS "amountFils", percent_off AS "percentOff",
                 currency, status, note, created_at AS "createdAt", applied_at AS "appliedAt"

@@ -17,7 +17,66 @@ import path from "path";
 import { fileURLToPath } from "url";
 import bidiFactory from "bidi-js";
 
-export type PdfDoc = any;
+/** Optional position / layout arguments of pdfkit's `text` (x, y, options or options). */
+type PdfTextArgs = [
+  xOrOptions?: number | Record<string, unknown>,
+  y?: number,
+  options?: Record<string, unknown>,
+];
+
+/**
+ * The slice of a pdfkit document the renderers use. pdfkit ships no type
+ * declarations, so this structural type is the typed boundary; drawing calls
+ * chain like pdfkit's own API. The `__*` slots are set by preparePdfDocument.
+ */
+export interface PdfDoc {
+  x: number;
+  y: number;
+  page: {
+    width: number;
+    height: number;
+    margins: { top: number; bottom: number; left: number; right: number };
+  };
+  bufferedPageRange(): { start: number; count: number };
+  switchToPage(index: number): PdfDoc;
+  _fontSize?: number;
+  _font?: {
+    ascender?: number;
+    font?: { hasGlyphForCodePoint?: (codePoint: number) => boolean };
+  };
+  __arabicReady?: boolean;
+  __bold?: boolean;
+  __rawFont?: PdfDoc["font"];
+  __rawWidth?: PdfDoc["widthOfString"];
+  __rawText?: PdfDoc["text"];
+  registerFont(name: string, src: string): PdfDoc;
+  font(name: string, ...rest: unknown[]): PdfDoc;
+  fontSize(size: number): PdfDoc;
+  text(str: string | number, ...args: PdfTextArgs): PdfDoc;
+  widthOfString(str: string, options?: Record<string, unknown>): number;
+  heightOfString(str: string, options?: { width?: number }): number;
+  addContent(data: string): PdfDoc;
+  addPage(options?: Record<string, unknown>): PdfDoc;
+  moveTo(x: number, y: number): PdfDoc;
+  lineTo(x: number, y: number): PdfDoc;
+  path(d: string): PdfDoc;
+  rect(x: number, y: number, w: number, h: number): PdfDoc;
+  roundedRect(x: number, y: number, w: number, h: number, r?: number): PdfDoc;
+  lineWidth(width: number): PdfDoc;
+  fillColor(color: string, opacity?: number): PdfDoc;
+  strokeColor(color: string, opacity?: number): PdfDoc;
+  fill(color?: string): PdfDoc;
+  stroke(color?: string): PdfDoc;
+  fillAndStroke(fillColor?: string, strokeColor?: string): PdfDoc;
+  lineJoin(style: string): PdfDoc;
+  lineCap(style: string): PdfDoc;
+  save(): PdfDoc;
+  restore(): PdfDoc;
+  rotate(angle: number, options?: Record<string, unknown>): PdfDoc;
+  image(src: string | Buffer, ...args: Array<number | Record<string, unknown>>): PdfDoc;
+  on(event: string, listener: (...args: never[]) => void): PdfDoc;
+  end(): void;
+}
 
 interface BidiEngine {
   getEmbeddingLevels(
@@ -453,7 +512,13 @@ function rawWidth(doc: PdfDoc, str: string): number {
   return (doc.__rawWidth ?? doc.widthOfString).call(doc, str) as number;
 }
 
-function rawText(doc: PdfDoc, str: string, x: number, y: number, opts: object): void {
+function rawText(
+  doc: PdfDoc,
+  str: string,
+  x: number,
+  y: number,
+  opts: Record<string, unknown>
+): void {
   // PDFKit's text pipeline calls this.widthOfString internally; keep it un-patched meanwhile.
   const patched = doc.widthOfString;
   if (doc.__rawWidth) doc.widthOfString = doc.__rawWidth;

@@ -24,6 +24,7 @@ import { strictBody } from "../http/strict-body";
 import { pq } from "../services/connectors/pq";
 import { z } from "zod";
 import { createLogger } from "../config/logger";
+import { errorMessage } from "../errors";
 
 const log = createLogger("billing");
 
@@ -40,7 +41,7 @@ export function registerBillingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -75,7 +76,7 @@ export function registerBillingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -186,7 +187,7 @@ export function registerBillingRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { planId, billingCycle } = req.body;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -229,7 +230,7 @@ export function registerBillingRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -269,9 +270,9 @@ export function registerBillingRoutes(app: Express) {
       let event;
       try {
         event = stripeClient.webhooks.constructEvent(req.body, sig, webhookSecret);
-      } catch (err: any) {
-        log.error({ error: err.message }, "Stripe webhook signature verification failed");
-        return res.status(400).json({ message: `Webhook Error: ${err.message}` });
+      } catch (err: unknown) {
+        log.error({ error: errorMessage(err) }, "Stripe webhook signature verification failed");
+        return res.status(400).json({ message: `Webhook Error: ${errorMessage(err)}` });
       }
 
       await handleWebhookEvent(event);

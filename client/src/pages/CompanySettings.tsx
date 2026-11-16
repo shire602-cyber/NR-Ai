@@ -148,6 +148,7 @@ export default function CompanySettings() {
       dateFormat: (company.dateFormat as FormValues["dateFormat"]) ?? "DD/MM/YYYY",
       locale: (company.locale as FormValues["locale"]) ?? "en",
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
     setLogoPreview(companyLogoSrc(company));
   }, [company, form]);
 

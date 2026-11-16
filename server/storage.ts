@@ -181,7 +181,6 @@ import {
   companyReportDeliverySubscriptions,
   companyReportDeliveryRuns,
   companyReportDeliverySchedulerScans,
-  firmStaffAssignments,
   accounts,
   journalEntries,
   journalLines,
@@ -270,7 +269,7 @@ import {
   canAccessFirmClient,
   type FirmContext,
 } from "./services/firm/scope";
-import { db } from "./db";
+import { db, rowsFromResult } from "./db";
 import {
   eq,
   and,
@@ -371,11 +370,51 @@ export interface SplitReceiptAtomicArgs {
   parts: Array<Partial<InsertReceipt>>;
 }
 
+export type InvoiceSummary = Pick<
+  Invoice,
+  | "id"
+  | "companyId"
+  | "number"
+  | "customerName"
+  | "customerTrn"
+  | "date"
+  | "dueDate"
+  | "paymentTerms"
+  | "currency"
+  | "exchangeRate"
+  | "baseCurrencyAmount"
+  | "subtotal"
+  | "vatAmount"
+  | "total"
+  | "status"
+  | "shareToken"
+  | "shareTokenExpiresAt"
+  | "einvoiceUuid"
+  | "einvoiceStatus"
+  | "reminderCount"
+  | "lastReminderSentAt"
+  | "invoiceType"
+  | "originalInvoiceId"
+  | "legacyCreditNoteId"
+  | "isRecurring"
+  | "recurringInterval"
+  | "nextRecurringDate"
+  | "recurringEndDate"
+  | "contactId"
+  | "createdAt"
+>;
+/** A new user: the register payload, or an already-hashed password (invites, admin). */
+export type NewUserInput = Omit<InsertUser, "password"> & {
+  password?: string;
+  passwordHash?: string;
+};
+export type JournalLineSummary = Pick<JournalLine, "id" | "entryId" | "accountId" | "debit" | "credit">;
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  createUser(user: NewUserInput): Promise<User>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
 
   // Password reset tokens
@@ -567,7 +606,7 @@ export interface IStorage {
   getInvoicesSummaryByCompanyId(
     companyId: string,
     opts?: { limit?: number; offset?: number }
-  ): Promise<Omit<Invoice, "einvoiceXml" | "einvoiceHash">[]>;
+  ): Promise<InvoiceSummary[]>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
   updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
@@ -690,7 +729,7 @@ export interface IStorage {
   ): Promise<TransactionClassification>;
 
   // Journal Lines (for analytics)
-  getJournalLinesByCompanyId(companyId: string): Promise<JournalLine[]>;
+  getJournalLinesByCompanyId(companyId: string): Promise<JournalLineSummary[]>;
 
   // Budgets
   getBudgetsByCompanyId(companyId: string, year: number, month: number): Promise<Budget[]>;
@@ -1236,13 +1275,13 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
-  async createUser(insertUser: InsertUser & { passwordHash?: string }): Promise<User> {
+  async createUser(insertUser: NewUserInput): Promise<User> {
     const [user] = await db
       .insert(users)
       .values({
         ...insertUser,
         email: normalizeEmail(insertUser.email),
-        passwordHash: (insertUser as any).passwordHash || "",
+        passwordHash: insertUser.passwordHash || "",
       })
       .returning();
     return user;
@@ -1351,7 +1390,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(companyUsers, eq(companies.id, companyUsers.companyId))
       .where(and(eq(companyUsers.userId, userId), isNull(companies.deletedAt)));
 
-    return results.map((r: any) => r.companies);
+    return results.map((r) => r.companies);
   }
 
   async createCompany(insertCompany: InsertCompany): Promise<Company> {
@@ -1748,7 +1787,7 @@ export class DatabaseStorage implements IStorage {
     if (accountsData.length === 0) return [];
 
     const expectedCount = accountsData.length;
-    const createdAccounts = await db.transaction(async (tx: any) => {
+    const createdAccounts = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(accounts)
         .values(accountsData)
@@ -1789,7 +1828,7 @@ export class DatabaseStorage implements IStorage {
     const accountsList = await db.select().from(accounts).where(eq(accounts.companyId, companyId));
 
     const results = await Promise.all(
-      accountsList.map(async (account: any) => {
+      accountsList.map(async (account) => {
         let lines = await db
           .select({
             debit: journalLines.debit,
@@ -1802,16 +1841,16 @@ export class DatabaseStorage implements IStorage {
           .where(eq(journalLines.accountId, account.id));
 
         if (dateRange) {
-          lines = lines.filter((line: any) => {
+          lines = lines.filter((line) => {
             const lineDate = new Date(line.date);
             return lineDate >= dateRange.start && lineDate <= dateRange.end;
           });
         }
 
-        const postedLines = lines.filter((l: any) => l.status === "posted");
+        const postedLines = lines.filter((l) => l.status === "posted");
 
-        const debitTotal = postedLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
-        const creditTotal = postedLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
+        const debitTotal = postedLines.reduce((sum, l) => sum + (l.debit || 0), 0);
+        const creditTotal = postedLines.reduce((sum, l) => sum + (l.credit || 0), 0);
 
         let balance = 0;
         if (["asset", "expense"].includes(account.type)) {
@@ -1867,14 +1906,14 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
       .where(eq(journalLines.accountId, accountId));
 
-    const postedLines = allLines.filter((l: any) => l.status === "posted");
-    postedLines.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const postedLines = allLines.filter((l) => l.status === "posted");
+    postedLines.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     let openingBalance = 0;
     if (options?.dateStart) {
-      const priorLines = postedLines.filter((l: any) => new Date(l.date) < options.dateStart!);
-      const priorDebit = priorLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
-      const priorCredit = priorLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
+      const priorLines = postedLines.filter((l) => new Date(l.date) < options.dateStart!);
+      const priorDebit = priorLines.reduce((sum, l) => sum + (l.debit || 0), 0);
+      const priorCredit = priorLines.reduce((sum, l) => sum + (l.credit || 0), 0);
 
       if (["asset", "expense"].includes(account.type)) {
         openingBalance = priorDebit - priorCredit;
@@ -1885,16 +1924,16 @@ export class DatabaseStorage implements IStorage {
 
     let filteredLines = postedLines;
     if (options?.dateStart) {
-      filteredLines = filteredLines.filter((l: any) => new Date(l.date) >= options.dateStart!);
+      filteredLines = filteredLines.filter((l) => new Date(l.date) >= options.dateStart!);
     }
     if (options?.dateEnd) {
-      filteredLines = filteredLines.filter((l: any) => new Date(l.date) <= options.dateEnd!);
+      filteredLines = filteredLines.filter((l) => new Date(l.date) <= options.dateEnd!);
     }
 
     if (options?.search) {
       const searchLower = options.search.toLowerCase();
       filteredLines = filteredLines.filter(
-        (l: any) =>
+        (l) =>
           l.entryNumber?.toLowerCase().includes(searchLower) ||
           l.memo?.toLowerCase().includes(searchLower) ||
           l.lineDescription?.toLowerCase().includes(searchLower)
@@ -1905,7 +1944,7 @@ export class DatabaseStorage implements IStorage {
     let totalDebit = 0;
     let totalCredit = 0;
 
-    const allEntries = filteredLines.map((line: any) => {
+    const allEntries = filteredLines.map((line) => {
       const debit = line.debit || 0;
       const credit = line.credit || 0;
 
@@ -1989,11 +2028,12 @@ export class DatabaseStorage implements IStorage {
           )
         )
       : eq(journalEntries.companyId, companyId);
-    let q: any = db
+    let q = db
       .select()
       .from(journalEntries)
       .where(where)
-      .orderBy(desc(journalEntries.date), desc(journalEntries.id));
+      .orderBy(desc(journalEntries.date), desc(journalEntries.id))
+      .$dynamic();
     if (opts?.limit != null) q = q.limit(opts.limit);
     if (opts?.offset != null) q = q.offset(opts.offset);
     return await q;
@@ -2143,7 +2183,7 @@ export class DatabaseStorage implements IStorage {
   async getInvoicesSummaryByCompanyId(
     companyId: string,
     opts: { limit?: number; offset?: number } = {}
-  ): Promise<Omit<Invoice, "einvoiceXml" | "einvoiceHash">[]> {
+  ): Promise<InvoiceSummary[]> {
     const limit = opts.limit ?? DEFAULT_LIST_LIMIT;
     const offset = opts.offset ?? 0;
     return await db
@@ -3137,7 +3177,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Journal Lines (for analytics)
-  async getJournalLinesByCompanyId(companyId: string): Promise<JournalLine[]> {
+  async getJournalLinesByCompanyId(companyId: string): Promise<JournalLineSummary[]> {
     return await db
       .select({
         id: journalLines.id,
@@ -3862,7 +3902,7 @@ export class DatabaseStorage implements IStorage {
       )
       .where(eq(ecommerceIntegrations.companyId, companyId));
 
-    return results.map((r: any) => r.ecommerceTransactions);
+    return results.map((r) => r.ecommerceTransactions);
   }
 
   async createEcommerceTransaction(
@@ -4517,7 +4557,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(users, eq(companyUsers.userId, users.id))
       .where(eq(companyUsers.companyId, companyId));
 
-    return results.map((r: any) => ({
+    return results.map((r) => ({
       ...r.company_users,
       user: r.users,
     }));
@@ -5176,7 +5216,7 @@ export class DatabaseStorage implements IStorage {
             excludeIds.map((id) => sql`${id}::uuid`),
             sql`, `
           )})`;
-    const result: any = await tx.execute(sql`
+    const result = await tx.execute(sql`
       SELECT id FROM recurring_invoices
       WHERE is_active = true
         AND next_run_date <= now()
@@ -5185,7 +5225,7 @@ export class DatabaseStorage implements IStorage {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     `);
-    const rows = (result.rows ?? result) as Array<{ id: string }>;
+    const rows = rowsFromResult<{ id: string }>(result);
     if (!rows[0]) return undefined;
     const [template] = await tx
       .select()
@@ -5285,13 +5325,13 @@ export class DatabaseStorage implements IStorage {
   }> {
     return await db.transaction(async (tx: typeof db) => {
       // Lock the invoice row. Concurrent payment writers will queue here.
-      const lockResult: any = await tx.execute(sql`
+      const lockResult = await tx.execute(sql`
         SELECT id, company_id, currency, total, status, number, exchange_rate
         FROM invoices
         WHERE id = ${input.invoiceId}
         FOR UPDATE
       `);
-      const lockedRows = (lockResult.rows ?? lockResult) as Array<{
+      const lockedRows = rowsFromResult<{
         id: string;
         company_id: string;
         currency: string;
@@ -5299,20 +5339,20 @@ export class DatabaseStorage implements IStorage {
         status: string;
         number?: string;
         exchange_rate?: number | string | null;
-      }>;
+      }>(lockResult);
       const lockedInvoice = lockedRows[0];
       if (!lockedInvoice) {
-        const e: any = new Error("Invoice not found");
+        const e: Error & { code?: string; details?: unknown } = new Error("Invoice not found");
         e.code = "INVOICE_NOT_FOUND";
         throw e;
       }
       if (lockedInvoice.company_id !== input.companyId) {
-        const e: any = new Error("Invoice does not belong to company");
+        const e: Error & { code?: string; details?: unknown } = new Error("Invoice does not belong to company");
         e.code = "INVOICE_COMPANY_MISMATCH";
         throw e;
       }
       if (isTerminal(lockedInvoice.status)) {
-        const e: any = new Error(`Cannot record payment on ${lockedInvoice.status} invoice`);
+        const e: Error & { code?: string; details?: unknown } = new Error(`Cannot record payment on ${lockedInvoice.status} invoice`);
         e.code = "INVOICE_TERMINAL";
         throw e;
       }
@@ -5326,7 +5366,7 @@ export class DatabaseStorage implements IStorage {
         input.paymentAccountCurrency !== lockedInvoice.currency &&
         !hasPaymentRate
       ) {
-        const e: any = new Error(
+        const e: Error & { code?: string; details?: unknown } = new Error(
           `Payment account currency (${input.paymentAccountCurrency}) does not match invoice currency (${lockedInvoice.currency})`
         );
         e.code = "CURRENCY_MISMATCH";
@@ -5335,7 +5375,7 @@ export class DatabaseStorage implements IStorage {
 
       // Sum existing settlements INSIDE the lock so we see the canonical figure:
       // payments, issued credit notes and applied customer credits (W3-A).
-      const sumResult: any = await tx.execute(sql`
+      const sumResult = await tx.execute(sql`
         SELECT
           (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = ${input.invoiceId}) AS paid,
           (SELECT COALESCE(SUM(-total), 0) FROM invoices
@@ -5344,11 +5384,11 @@ export class DatabaseStorage implements IStorage {
           (SELECT COALESCE(SUM(amount), 0) FROM customer_credit_allocations
              WHERE invoice_id = ${input.invoiceId} AND kind = 'apply') AS applied
       `);
-      const sumRows = (sumResult.rows ?? sumResult) as Array<{
+      const sumRows = rowsFromResult<{
         paid: number | string;
         credited: number | string;
         applied: number | string;
-      }>;
+      }>(sumResult);
 
       // Decimal.js comparison so summing many payments cannot drift past
       // the invoice total via binary-float error and silently overpay.
@@ -5374,7 +5414,7 @@ export class DatabaseStorage implements IStorage {
       // (e.g. 100000 instead of 1000.00) from silently posting a large,
       // unrecoverable liability with a success response.
       if (allocation.customerCredit > 0 && !input.allowCredit) {
-        const e: any = new Error(
+        const e: Error & { code?: string; details?: unknown } = new Error(
           `Payment ${amountD.toFixed(2)} exceeds the outstanding balance ${remainingD.toFixed(2)}. ` +
             `Re-send with allowCredit=true to record the excess as a customer advance.`
         );
@@ -5395,7 +5435,7 @@ export class DatabaseStorage implements IStorage {
           );
         customerCreditAccountId = advanceRows[0]?.id ?? null;
         if (!customerCreditAccountId) {
-          const e: any = new Error(
+          const e: Error & { code?: string; details?: unknown } = new Error(
             `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)} ` +
               `and no customer-advance account (${ACCOUNT_CODES.DEFERRED_REVENUE}) exists to hold the overpayment`
           );
@@ -5424,8 +5464,8 @@ export class DatabaseStorage implements IStorage {
               inArray(accounts.code, [ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS])
             )
           );
-        fxGainAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
-        fxLossAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
+        fxGainAccountId = fxRows.find((a) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
+        fxLossAccountId = fxRows.find((a) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
       }
       // W3-A (R03-22): a payment that settles the invoice in full clears the
       // exact A/R residual on the ledger (foreign invoices: rounding on earlier
@@ -5436,7 +5476,7 @@ export class DatabaseStorage implements IStorage {
       const companyBase = await loadBaseCurrency(input.companyId, tx);
       const isForeignInvoice = isForeignCurrency(lockedInvoice.currency, companyBase);
       if (settlesInFull && isForeignInvoice) {
-        const residual: any = await tx.execute(sql`
+        const residual = await tx.execute(sql`
           WITH docs AS (
             SELECT je.id FROM journal_entries je
              WHERE je.company_id = ${input.companyId} AND je.status = 'posted' AND (
@@ -5454,7 +5494,7 @@ export class DatabaseStorage implements IStorage {
              AND (je.id IN (SELECT id FROM docs)
                   OR (je.source = 'reversal' AND je.source_id IN (SELECT id FROM docs)))
         `);
-        const r = Number(((residual.rows ?? residual) as Array<{ residual: string }>)[0]?.residual);
+        const r = Number(rowsFromResult<{ residual: string }>(residual)[0]?.residual);
         if (Number.isFinite(r) && r > 0) receivableCreditAedOverride = r;
       }
       if (receivableCreditAedOverride !== null && !fxGainAccountId && !fxLossAccountId) {
@@ -5467,8 +5507,8 @@ export class DatabaseStorage implements IStorage {
               inArray(accounts.code, [ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS])
             )
           );
-        fxGainAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
-        fxLossAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
+        fxGainAccountId = fxRows.find((a) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
+        fxLossAccountId = fxRows.find((a) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
       }
       const built = buildPaymentJournalLines({
         receivableCreditAedOverride,
@@ -5484,7 +5524,7 @@ export class DatabaseStorage implements IStorage {
         label: `Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
       if (!built.ok) {
-        const e: any = new Error(built.message);
+        const e: Error & { code?: string; details?: unknown } = new Error(built.message);
         e.code = built.code;
         throw e;
       }
@@ -5544,7 +5584,7 @@ export class DatabaseStorage implements IStorage {
           reference: input.reference,
           notes: input.notes,
           paymentAccountId: input.paymentAccountId,
-          exchangeRate: hasPaymentRate ? String(payRate) : null,
+          exchangeRate: hasPaymentRate ? payRate : null,
           journalEntryId: entry.id,
           createdBy: input.createdBy,
         })
@@ -5610,7 +5650,7 @@ export class DatabaseStorage implements IStorage {
       // Read invoice for company scope
       const [inv] = await tx.select().from(invoices).where(eq(invoices.id, id));
       if (!inv) {
-        const e: any = new Error("Invoice not found");
+        const e: Error & { code?: string; details?: unknown } = new Error("Invoice not found");
         e.code = "INVOICE_NOT_FOUND";
         throw e;
       }
@@ -5622,9 +5662,9 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(journalEntries.companyId, inv.companyId), eq(journalEntries.sourceId, id)));
 
       // Refuse if any are posted — caller must void instead.
-      const posted = associatedEntries.filter((e: any) => e.status === "posted");
+      const posted = associatedEntries.filter((e) => e.status === "posted");
       if (posted.length > 0) {
-        const err: any = new Error(
+        const err: Error & { code?: string; details?: unknown } = new Error(
           "Cannot delete invoice with posted journal entries. Void the invoice instead."
         );
         err.code = "INVOICE_HAS_POSTED_JE";

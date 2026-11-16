@@ -44,7 +44,14 @@ import {
 } from "../services/training-data.service";
 
 import { createHash } from "node:crypto";
-import { DomainError } from "../errors";
+import {
+  DomainError,
+  errorCode,
+  errorMessage,
+  errorProperty,
+  errorStatus,
+  errorStatusCode,
+} from "../errors";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { applyMatch } from "../services/bank-reconciliation.service";
@@ -103,7 +110,9 @@ function createOpenAIClient(): OpenAI | null {
 /** Company the request is about (body, params or query); only used for metering/quota. */
 function resolveRequestCompanyId(req: Request): string | null {
   const candidate =
-    (req.body && typeof req.body === "object" ? (req.body as any).companyId : undefined) ??
+    (req.body && typeof req.body === "object"
+      ? (req.body as { companyId?: unknown }).companyId
+      : undefined) ??
     req.params?.companyId ??
     (typeof req.query?.companyId === "string" ? req.query.companyId : undefined);
   return typeof candidate === "string" && UUID_RE.test(candidate) ? candidate : null;
@@ -133,7 +142,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     if (!openai) throw new AiNotConfiguredError();
     return createMeteredOpenAI(openai, {
       companyId: resolveRequestCompanyId(req),
-      userId: (req as any).user?.id ?? null,
+      userId: req.user?.id ?? null,
       task,
     });
   }
@@ -151,7 +160,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const validated = categorizationRequestSchema.parse(req.body);
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         // Verify company access
         const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
@@ -172,9 +181,9 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
             amount: parseFloat(String(validated.amount)) || 0,
             lineItems: [],
           });
-        } catch (err: any) {
+        } catch (err: unknown) {
           log.warn(
-            { err: err?.message || err },
+            { err: errorMessage(err) || err },
             "Internal classifier failed — falling through to OpenAI"
           );
         }
@@ -267,11 +276,14 @@ Amount: ${validated.amount} ${validated.currency}`,
           confidence: aiResponse.confidence,
           reason: aiResponse.reason,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "AI categorization error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "AI categorization failed", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "AI categorization failed",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -367,10 +379,10 @@ ${DATA_BLOCK_INSTRUCTION}`,
         );
 
         res.json({ transactions: validTransactions, rejected });
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "AI bank statement parsing error");
-        res.status(error?.status || error?.statusCode || 500).json({
-          message: error.message || "Failed to parse bank statement",
+        res.status(errorStatus(error) || errorStatusCode(error) || 500).json({
+          message: errorMessage(error) || "Failed to parse bank statement",
           ...aiErrorBody(error),
         });
       }
@@ -466,11 +478,14 @@ ${DATA_BLOCK_INSTRUCTION}`,
             figures: grounding.figures,
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "AI CFO advice error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Failed to get AI advice", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "Failed to get AI advice",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -488,7 +503,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, transactions } = req.body;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId || !transactions || !Array.isArray(transactions)) {
           return res.status(400).json({ message: "Company ID and transactions array required" });
@@ -525,7 +540,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
             accountName?: string;
           }
         > = {};
-        const remaining: Array<{ originalIndex: number; t: any }> = [];
+        const remaining: Array<{ originalIndex: number; t: (typeof transactions)[number] }> = [];
         for (let i = 0; i < transactions.length; i++) {
           const t = transactions[i];
           try {
@@ -554,9 +569,9 @@ ${DATA_BLOCK_INSTRUCTION}`,
             } else {
               remaining.push({ originalIndex: i, t });
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
             log.warn(
-              { err: err?.message, idx: i },
+              { err: errorMessage(err), idx: i },
               "Internal classifier failed for batch item — falling back to OpenAI"
             );
             remaining.push({ originalIndex: i, t });
@@ -580,7 +595,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
           .join("\n");
 
         // Build the merged response, starting with the internal-classifier hits.
-        const allClassifications: any[] = [];
+        const allClassifications: Array<Record<string, unknown> & { index: number }> = [];
         for (const idxStr of Object.keys(internalResults)) {
           const idx = parseInt(idxStr, 10);
           const r = internalResults[idx];
@@ -685,11 +700,14 @@ ${DATA_BLOCK_INSTRUCTION}`,
         // Sort by original index so the response order matches the input order.
         allClassifications.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
         res.json({ classifications: allClassifications });
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "Batch categorization error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Batch categorization failed", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "Batch categorization failed",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -703,7 +721,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId } = req.body;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId) {
           return res.status(400).json({ message: "Company ID required" });
@@ -858,11 +876,14 @@ ${DATA_BLOCK_INSTRUCTION}`,
         }
 
         res.json(aiResponse);
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "Anomaly detection error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Anomaly detection failed", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "Anomaly detection failed",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -876,7 +897,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
       try {
         const { companyId } = req.params;
         const { resolved } = req.query;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         // Verify company access
         const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -892,10 +913,10 @@ ${DATA_BLOCK_INSTRUCTION}`,
         }
 
         res.json(alerts);
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -909,7 +930,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
       try {
         const { id } = req.params;
         const { note } = req.body;
-        const userId = (req as any).user?.id;
+        const userId = req.user!.id;
 
         // Get alert to verify company access
         const alert = await storage.getAnomalyAlertById(id);
@@ -924,10 +945,10 @@ ${DATA_BLOCK_INSTRUCTION}`,
 
         const resolvedAlert = await storage.resolveAnomalyAlert(id, userId, note);
         res.json(resolvedAlert);
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -941,7 +962,7 @@ ${DATA_BLOCK_INSTRUCTION}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId } = req.body;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId) {
           return res.status(400).json({ message: "Company ID required" });
@@ -1049,11 +1070,11 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
 
         const aiResponse = JSON.parse(completion.choices[0].message.content || "{}");
         res.json(aiResponse);
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "Reconciliation error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Reconciliation failed", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error) || "Reconciliation failed", ...aiErrorBody(error) });
       }
     })
   );
@@ -1065,7 +1086,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { id } = req.params;
-        const userId = (req as any).user?.id;
+        const userId = req.user!.id;
         // Support both matchId (frontend) and matchedId (legacy) parameter names
         const matchId = req.body.matchId || req.body.matchedId;
         const { matchType } = req.body;
@@ -1103,11 +1124,11 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
           req,
         });
         res.json(result.transaction);
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof DomainError) throw error;
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -1120,7 +1141,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId } = req.params;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         // Verify company access
         const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -1130,10 +1151,10 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
 
         const transactions = await storage.getBankTransactionsByCompanyId(companyId);
         res.json(transactions);
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -1148,7 +1169,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     strictBody(manualBankTransactionBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id as string;
+      const userId = req.user!.id as string;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
@@ -1222,7 +1243,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     strictBody(aiStatementImportBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id as string;
+      const userId = req.user!.id as string;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
@@ -1281,7 +1302,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     strictBody(forecastCashflowBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const body = parsedBody<z.infer<typeof forecastCashflowBody>>(req);
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, body.companyId))) {
         return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
@@ -1315,10 +1336,10 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
         // Rows from the pre-0112 fabricated model are regenerated on read.
         const forecasts = await readStoredForecast(companyId);
         res.json(forecasts);
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -1336,7 +1357,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const userId = (req as any).user?.id;
+        const userId = req.user!.id;
         const parsed = classificationFeedbackSchema.safeParse(req.body);
         if (!parsed.success) {
           return res
@@ -1386,10 +1407,10 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
 
         const classification = await storage.getTransactionClassification(classificationId);
         res.json(classification);
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -1459,7 +1480,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     aiLimiter,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const parsed = autopilotProcessSchema.safeParse(req.body);
       if (!parsed.success) {
         return res
@@ -1518,7 +1539,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const parsed = companyIdQuerySchema.safeParse(req.query);
       if (!parsed.success) {
         return res.status(400).json({ message: "companyId is required (uuid)" });
@@ -1537,7 +1558,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const parsed = companyIdQuerySchema.safeParse(req.query);
       if (!parsed.success) {
         return res.status(400).json({ message: "companyId is required (uuid)" });
@@ -1555,7 +1576,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const parsed = classifierConfigPatchSchema.safeParse(req.body);
       if (!parsed.success) {
         return res
@@ -1593,7 +1614,7 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, message } = req.body;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId || !message) {
           return res.status(400).json({ message: "Company ID and message are required" });
@@ -1773,11 +1794,14 @@ Company: ${company.name}`;
           followUpPrompts: followUpPrompts.slice(0, 3),
           timestamp: new Date().toISOString(),
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "NL Gateway error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Failed to process query", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "Failed to process query",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -1810,7 +1834,7 @@ Company: ${company.name}`;
       let validated: z.infer<typeof validationSchema> | undefined;
 
       try {
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         validated = validationSchema.parse(req.body);
 
@@ -1883,18 +1907,19 @@ ${DATA_BLOCK_INSTRUCTION}`;
                 res.write(`data: ${JSON.stringify({ content, done: false })}\n\n`);
               }
             }
-          } catch (streamError: any) {
+          } catch (streamError: unknown) {
             // Error occurred during streaming - headers already sent, must use SSE format
             log.error({ err: streamError }, "/api/ask streaming error");
 
             // Send error as SSE message
-            const errorMessage =
-              streamError.message || "An error occurred while streaming the response";
+            const streamErrorMessage =
+              errorMessage(streamError) || "An error occurred while streaming the response";
             res.write(
               `data: ${JSON.stringify({
                 error: true,
-                code: streamError?.code === "AI_QUOTA_EXCEEDED" ? "AI_QUOTA_EXCEEDED" : undefined,
-                message: errorMessage,
+                code:
+                  errorCode(streamError) === "AI_QUOTA_EXCEEDED" ? "AI_QUOTA_EXCEEDED" : undefined,
+                message: streamErrorMessage,
                 done: true,
               })}\n\n`
             );
@@ -1906,11 +1931,11 @@ ${DATA_BLOCK_INSTRUCTION}`;
                 userId,
                 companyId: validated.companyId || null,
                 prompt: validated.message,
-                response: fullResponse || "Error: " + errorMessage,
+                response: fullResponse || "Error: " + streamErrorMessage,
                 model: validated.model,
                 systemPrompt: `tone:${validated.tone}`,
                 responseTime: Date.now() - startTime,
-                error: errorMessage,
+                error: streamErrorMessage,
               });
             } catch (dbError) {
               log.error({ err: dbError }, "Failed to store error conversation");
@@ -1980,19 +2005,19 @@ ${DATA_BLOCK_INSTRUCTION}`;
             responseTime,
           });
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "/api/ask error");
 
         // Check if headers have already been sent (streaming mode)
         // If headers are committed, we cannot send JSON responses - must use SSE format
         if (isStreaming || res.headersSent) {
           // Headers already committed - send error as SSE message
-          const errorMessage = error.message || "Failed to process request";
+          const sseErrorMessage = errorMessage(error) || "Failed to process request";
           try {
             res.write(
               `data: ${JSON.stringify({
                 error: true,
-                message: errorMessage,
+                message: sseErrorMessage,
                 done: true,
               })}\n\n`
             );
@@ -2005,17 +2030,17 @@ ${DATA_BLOCK_INSTRUCTION}`;
           // Store error conversation if we have partial data
           // Use optional chaining since validated might not exist if error occurred early
           try {
-            const userId = (req as any).user?.id;
+            const userId = req.user!.id;
             if (userId) {
               await storage.createAiConversation({
                 userId,
-                companyId: (validated as any)?.companyId || null,
-                prompt: (validated as any)?.message || "Unknown",
-                response: fullResponse || "Error: " + errorMessage,
-                model: (validated as any)?.model || resolveModel("nl"),
-                systemPrompt: `tone:${(validated as any)?.tone ?? "default"}`,
+                companyId: validated?.companyId || null,
+                prompt: validated?.message || "Unknown",
+                response: fullResponse || "Error: " + sseErrorMessage,
+                model: validated?.model || resolveModel("nl"),
+                systemPrompt: `tone:${validated?.tone ?? "default"}`,
                 responseTime: Date.now() - startTime,
-                error: errorMessage,
+                error: sseErrorMessage,
               });
             }
           } catch (dbError) {
@@ -2034,22 +2059,28 @@ ${DATA_BLOCK_INSTRUCTION}`;
         }
 
         // Quota / not-configured errors carry stable codes.
-        if (error?.code === "AI_QUOTA_EXCEEDED" || error?.status === 503) {
-          return res.status(error.status).json({ message: error.message, ...aiErrorBody(error) });
+        const status = errorStatus(error);
+        if (errorCode(error) === "AI_QUOTA_EXCEEDED" || status === 503) {
+          return res
+            .status(status as number)
+            .json({ message: errorMessage(error), ...aiErrorBody(error) });
         }
 
         // Handle OpenAI API errors
-        if (error.status) {
-          const statusCode = error.status >= 400 && error.status < 600 ? error.status : 500;
+        if (status) {
+          const statusCode = status >= 400 && status < 600 ? status : 500;
           return res.status(statusCode).json({
-            message: error.message || "OpenAI API error",
-            error: error.error?.message || error.message,
+            message: errorMessage(error) || "OpenAI API error",
+            error: errorMessage(errorProperty(error, "error")) || errorMessage(error),
           });
         }
 
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Failed to process request", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "Failed to process request",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -2060,7 +2091,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
         const { companyId } = req.query;
         // Validate and parse limit parameter with fallback, matching pattern used elsewhere
         const limit = parseInt(req.query.limit as string) || 50;
@@ -2078,11 +2109,14 @@ ${DATA_BLOCK_INSTRUCTION}`;
         }
 
         res.json(conversations);
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "/api/ask/history error");
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message || "Failed to fetch history", ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({
+            message: errorMessage(error) || "Failed to fetch history",
+            ...aiErrorBody(error),
+          });
       }
     })
   );
@@ -2094,7 +2128,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, query, type, limit = 10 } = req.query;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId) {
           return res.status(400).json({ message: "Company ID is required" });
@@ -2139,10 +2173,10 @@ ${DATA_BLOCK_INSTRUCTION}`;
             description: `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} Account`,
           }))
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -2153,7 +2187,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, query, limit = 10 } = req.query;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId) {
           return res.status(400).json({ message: "Company ID is required" });
@@ -2203,10 +2237,10 @@ ${DATA_BLOCK_INSTRUCTION}`;
             invoiceCount: c.count,
           }))
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -2217,7 +2251,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, query, limit = 10 } = req.query;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId) {
           return res.status(400).json({ message: "Company ID is required" });
@@ -2273,10 +2307,10 @@ ${DATA_BLOCK_INSTRUCTION}`;
             lastAmount: m.lastAmount,
           }))
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -2287,7 +2321,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, query, type, limit = 10 } = req.query;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId) {
           return res.status(400).json({ message: "Company ID is required" });
@@ -2341,10 +2375,10 @@ ${DATA_BLOCK_INSTRUCTION}`;
             usageCount: d.count,
           }))
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         res
-          .status(error?.status || error?.statusCode || 500)
-          .json({ message: error.message, ...aiErrorBody(error) });
+          .status(errorStatus(error) || errorStatusCode(error) || 500)
+          .json({ message: errorMessage(error), ...aiErrorBody(error) });
       }
     })
   );
@@ -2357,7 +2391,7 @@ ${DATA_BLOCK_INSTRUCTION}`;
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { companyId, context, fieldType, currentValue: _currentValue } = req.body;
-        const userId = (req as any).user.id;
+        const userId = req.user!.id;
 
         if (!companyId || !context || !fieldType) {
           return res
@@ -2406,8 +2440,8 @@ ${DATA_BLOCK_INSTRUCTION}`;
                 });
               }
             }
-          } catch (err: any) {
-            log.warn({ err: err?.message }, "smart-suggest internal classifier failed");
+          } catch (err: unknown) {
+            log.warn({ err: errorMessage(err) }, "smart-suggest internal classifier failed");
           }
 
           // Learn from past categorizations for this merchant
@@ -2524,10 +2558,10 @@ Respond with just the category name, nothing else.`;
         }
 
         res.json({ suggestions });
-      } catch (error: any) {
+      } catch (error: unknown) {
         log.error({ err: error }, "Smart suggest error");
-        res.status(error?.status || error?.statusCode || 500).json({
-          message: error.message || "Failed to generate suggestions",
+        res.status(errorStatus(error) || errorStatusCode(error) || 500).json({
+          message: errorMessage(error) || "Failed to generate suggestions",
           ...aiErrorBody(error),
         });
       }

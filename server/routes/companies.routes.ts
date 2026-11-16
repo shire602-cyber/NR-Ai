@@ -5,7 +5,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { checkCompanyQuota } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
-import { DomainError } from "../errors";
+import { DomainError, errorCode, errorMessage } from "../errors";
 import {
   createCompanyBody,
   updateCompanyBody,
@@ -27,8 +27,19 @@ import { withNrClientVatGroup } from "../services/firm-clients.service";
 
 const log = createLogger("companies");
 
-function isCompanySchemaDriftError(err: any): boolean {
-  return err?.code === "42703" || err?.code === "42P01";
+function isCompanySchemaDriftError(err: unknown): boolean {
+  const code = errorCode(err);
+  return code === "42703" || code === "42P01";
+}
+
+/** Fields node-postgres puts on a DatabaseError. */
+interface PgDriverError {
+  code?: string;
+  constraint?: string;
+  column?: string;
+  detail?: string;
+  table?: string;
+  message?: string;
 }
 
 async function withCompanySchemaRepair<T>(
@@ -37,11 +48,11 @@ async function withCompanySchemaRepair<T>(
 ): Promise<T> {
   try {
     return await operation();
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (!isCompanySchemaDriftError(err)) throw err;
 
     log.error(
-      { ...ctx, pgCode: err?.code, err: err?.message },
+      { ...ctx, pgCode: errorCode(err), err: errorMessage(err) },
       "Company write hit schema drift; running critical schema guard and retrying once"
     );
     await ensureCriticalSchema();
@@ -66,11 +77,12 @@ async function withCompanySchemaRepair<T>(
  * tell it apart from a generic crash.
  */
 export function handleCompanyWriteError(
-  err: any,
+  err: unknown,
   ctx: { route: string; id?: string; userId?: string },
   res: Response
 ): boolean {
-  const code: string | undefined = err?.code;
+  const pgErr = (err ?? {}) as PgDriverError;
+  const code: string | undefined = pgErr.code;
 
   // Always emit a structured log so production can tell apart 23505 from
   // 42703 from a connection drop. Includes the constraint/column the driver
@@ -79,11 +91,11 @@ export function handleCompanyWriteError(
     {
       ...ctx,
       pgCode: code,
-      pgConstraint: err?.constraint,
-      pgColumn: err?.column,
-      pgDetail: err?.detail,
-      pgTable: err?.table,
-      err: err?.message,
+      pgConstraint: pgErr.constraint,
+      pgColumn: pgErr.column,
+      pgDetail: pgErr.detail,
+      pgTable: pgErr.table,
+      err: pgErr.message,
     },
     "Company write failed"
   );
@@ -92,18 +104,18 @@ export function handleCompanyWriteError(
     case "23505": // unique_violation
       res.status(409).json({
         message: "That value is already taken by another tenant. Please pick a different one.",
-        field: err?.constraint?.includes("name") ? "name" : undefined,
+        field: pgErr.constraint?.includes("name") ? "name" : undefined,
       });
       return true;
     case "23502": // not_null_violation
       res.status(400).json({
-        message: `Required field is missing: ${err?.column ?? "unknown"}`,
-        field: err?.column,
+        message: `Required field is missing: ${pgErr.column ?? "unknown"}`,
+        field: pgErr.column,
       });
       return true;
     case "23514": // check_violation
       res.status(400).json({
-        message: `Value rejected by validation rule: ${err?.constraint ?? "check constraint"}`,
+        message: `Value rejected by validation rule: ${pgErr.constraint ?? "check constraint"}`,
       });
       return true;
     case "22001": // string_data_right_truncation (value too long)
@@ -122,7 +134,7 @@ export function handleCompanyWriteError(
       // still hit it after the one-shot repair, return a clear retryable
       // service error instead of leaking a generic 500 to onboarding.
       log.error(
-        { ...ctx, pgCode: code, err: err?.message },
+        { ...ctx, pgCode: code, err: pgErr.message },
         "Schema drift: companies write referenced a missing column/table"
       );
       res.status(503).json({
@@ -152,12 +164,12 @@ async function seedChartOfAccounts(
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
 
   try {
-    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    const createdAccounts = await storage.createBulkAccounts(defaultAccounts);
     log.info({ companyId, count: createdAccounts.length }, "Created chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
-  } catch (error: any) {
-    if (error.message?.includes("PARTIAL_INSERT")) {
-      log.error({ companyId, err: error.message }, "Partial insert detected during COA seed");
+  } catch (error: unknown) {
+    if (errorMessage(error)?.includes("PARTIAL_INSERT")) {
+      log.error({ companyId, err: errorMessage(error) }, "Partial insert detected during COA seed");
       throw new Error(
         "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
@@ -210,11 +222,11 @@ export function registerCompanyRoutes(app: Express) {
     "/api/companies",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companies = await storage.getAccessibleCompanies(
         userId,
         firmRole,
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       res.json(companies.map((company) => withNrClientVatGroup(company)));
     })
@@ -228,7 +240,7 @@ export function registerCompanyRoutes(app: Express) {
     checkCompanyQuota(),
     strictBody(createCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { vatRegistered: _legacyVatRegistered, ...validated } =
         parsedBody<CreateCompanyBody>(req);
 
@@ -237,7 +249,7 @@ export function registerCompanyRoutes(app: Express) {
       if (
         validated.companyType !== undefined &&
         validated.companyType !== "customer" &&
-        (req as any).user?.isAdmin !== true
+        req.user?.isAdmin !== true
       ) {
         throw new DomainError(
           "COMPANY_TYPE_ADMIN_ONLY",
@@ -264,7 +276,7 @@ export function registerCompanyRoutes(app: Express) {
         company = await withCompanySchemaRepair({ route: "POST /api/companies", userId }, () =>
           storage.createCompany(validated as never)
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (handleCompanyWriteError(err, { route: "POST /api/companies", userId }, res)) {
           return;
         }
@@ -290,7 +302,7 @@ export function registerCompanyRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       // Check if user has access to this company (or via firm role)
       const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
@@ -313,7 +325,7 @@ export function registerCompanyRoutes(app: Express) {
    */
   async function updateCompanyHandler(route: string, req: Request, res: Response) {
     const { id } = req.params;
-    const { id: userId, firmRole } = (req as any).user;
+    const { id: userId, firmRole } = req.user!;
 
     const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
     if (!hasAccess) {
@@ -344,7 +356,7 @@ export function registerCompanyRoutes(app: Express) {
     if ("companyType" in updateData) {
       if (updateData.companyType === current.companyType) {
         delete updateData.companyType;
-      } else if ((req as any).user?.isAdmin !== true) {
+      } else if (req.user?.isAdmin !== true) {
         throw new DomainError(
           "COMPANY_TYPE_ADMIN_ONLY",
           403,
@@ -417,7 +429,7 @@ export function registerCompanyRoutes(app: Express) {
           ? { ...withNrClientVatGroup(company), trnVerification: TRN_VERIFICATION }
           : withNrClientVatGroup(company)
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (handleCompanyWriteError(err, { route, id, userId }, res)) {
         return;
       }
@@ -463,7 +475,7 @@ export function registerCompanyRoutes(app: Express) {
     strictBody(z.object({ imageData: z.string().min(1).max(2_000_000) })),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, id))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -513,7 +525,7 @@ export function registerCompanyRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       if (!(await storage.hasCompanyAccess(userId, id, firmRole))) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -534,7 +546,7 @@ export function registerCompanyRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, id);
       if (!hasAccess) {
@@ -566,7 +578,7 @@ export function registerCompanyRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       // Check if user has access to this company (or via firm role)
       const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);

@@ -14,7 +14,6 @@ let accountant: Tenant;
 let viewer: Tenant;
 let restore: () => void;
 let planId: string;
-let salesLineId: string;
 let rentLineId: string;
 let salesId: string;
 let rentId: string;
@@ -84,7 +83,7 @@ describe("R13-10 validation", () => {
     });
     expect(sales.status).toBe(201);
     expect(Number(sales.body.annual_total)).toBe(2200.5);
-    salesLineId = sales.body.id;
+    expect(sales.body.id).toBeTruthy();
     const rent = await a.as.post(lines, { category: "Rent", accountId: rentId, nov: 500 });
     rentLineId = rent.body.id;
     const patch = await a.as.patch(`/api/budget-lines/${rentLineId}`, { nov: "abc" });

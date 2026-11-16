@@ -81,14 +81,14 @@ export function registerFirmCommsRoutes(app: Express): void {
   // NR-only client comms (WhatsApp + email to NR clients). Scoped to
   // /firm/comms so this NR guard never shadows the multi-firm /firm/* routers
   // registered after it.
-  router.use("/firm/comms", authMiddleware as any);
+  router.use("/firm/comms", authMiddleware);
   router.use("/firm/comms", requireFirmRole());
 
   // ─── GET /api/firm/comms/log ──────────────────────────────────────────────
   router.get(
     "/firm/comms/log",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const {
         companyId,
         channel,
@@ -101,7 +101,7 @@ export function registerFirmCommsRoutes(app: Express): void {
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
@@ -160,12 +160,12 @@ export function registerFirmCommsRoutes(app: Express): void {
     "/firm/comms/log/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
@@ -186,13 +186,13 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/send-email",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const validated = sendEmailSchema.parse(req.body);
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
@@ -341,13 +341,13 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/send-whatsapp",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const validated = sendWhatsAppSchema.parse(req.body);
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
@@ -425,7 +425,7 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/templates",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const validated = templateSchema.parse(req.body);
 
       if (validated.id) {
@@ -492,13 +492,13 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/bulk-remind",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const { daysAhead, dryRun } = bulkRemindSchema.parse(req.body);
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ sent: 0, failed: 0, results: [], preview: [] });

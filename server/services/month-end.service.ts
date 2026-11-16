@@ -1,3 +1,4 @@
+import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { postJournal } from "../ledger";
@@ -732,7 +733,7 @@ export async function getCloseHistory(companyId: string): Promise<MonthEndCloseR
      ORDER BY mc.period_end DESC`,
     [companyId]
   );
-  return result.rows.map((row: any) => ({
+  return result.rows.map((row) => ({
     ...formatCloseRecord(row),
     closedByEmail: row.closed_by_email || null,
   }));
@@ -757,7 +758,7 @@ export interface FiscalYearCloseRecord {
   reopenReason: string | null;
 }
 
-function formatYearClose(row: any): FiscalYearCloseRecord {
+function formatYearClose(row: QueryResultRow): FiscalYearCloseRecord {
   return {
     id: row.id,
     companyId: row.company_id,
@@ -1013,7 +1014,7 @@ export async function reopenFiscalYear(
           sourceId: row.closing_entry_id,
           idempotencyKey: `year_end_close:${row.closing_entry_id}:reopen`,
           userId,
-          lines: lines.rows.map((l: any) => ({
+          lines: lines.rows.map((l) => ({
             accountId: l.account_id,
             debit: aed(Number(l.c)),
             credit: aed(Number(l.d)),
@@ -1084,7 +1085,7 @@ function isoOf(v: unknown): string {
   return String(v ?? "").slice(0, 10);
 }
 
-function formatCloseRecord(row: any): MonthEndCloseRecord {
+function formatCloseRecord(row: QueryResultRow): MonthEndCloseRecord {
   return {
     id: row.id,
     companyId: row.company_id,

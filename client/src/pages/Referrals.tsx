@@ -1,8 +1,7 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +20,6 @@ import {
   CheckCircle,
   Clock,
   DollarSign,
-  ArrowRight,
   Sparkles,
 } from "lucide-react";
 import type { ReferralCode, Referral } from "@shared/schema";
@@ -55,7 +53,7 @@ export default function Referrals() {
       setCopied(true);
       toast({ title: "Link copied to clipboard!" });
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
+    } catch {
       toast({ title: "Failed to copy", variant: "destructive" });
     }
   };
@@ -69,7 +67,7 @@ export default function Referrals() {
           text: "Get 20% off your first month with my referral link!",
           url: referralLink,
         });
-      } catch (err) {
+      } catch {
         copyToClipboard();
       }
     } else {

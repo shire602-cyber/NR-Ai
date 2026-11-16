@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,8 @@ function formatAed(n: number) {
 }
 
 function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) {
+  // Captured once per mount so the countdown is stable across re-renders.
+  const [now] = useState(() => Date.now());
   if (!vat)
     return (
       <Badge variant="outline">
@@ -23,7 +26,7 @@ function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) 
       </Badge>
     );
   const due = new Date(vat.dueDate);
-  const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
+  const days = Math.ceil((due.getTime() - now) / 86400000);
   if (vat.status === "filed" || vat.status === "submitted") {
     return (
       <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">

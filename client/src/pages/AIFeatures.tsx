@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
-import { useState, useEffect } from "react";
+import { useState, type ComponentType } from "react";
+import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -77,20 +78,70 @@ type CashFlowForecast = {
   confidenceLevel?: number;
 };
 
+interface FeatureCardProps {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  onClick: () => void;
+  loading: boolean;
+  buttonText: string;
+  color: string;
+}
+
+const FeatureCard = ({
+  icon: Icon,
+  title,
+  description,
+  onClick,
+  loading,
+  buttonText,
+  color,
+}: FeatureCardProps) => (
+  <Card className="hover-elevate active-elevate-2 transition-all duration-300">
+    <CardHeader className="flex flex-row items-center gap-4">
+      <div
+        className={`w-12 h-12 rounded-lg ${color} bg-opacity-15 dark:bg-opacity-25 flex items-center justify-center`}
+      >
+        <Icon className={`w-6 h-6 ${color.replace("bg-", "text-")}`} />
+      </div>
+      <div className="flex-1">
+        <CardTitle className="text-lg">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </div>
+    </CardHeader>
+    <CardContent>
+      <Button
+        onClick={onClick}
+        disabled={loading}
+        className="w-full"
+        data-testid={`button-${title.toLowerCase().replace(/\s+/g, "-")}`}
+      >
+        {loading ? (
+          <>
+            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            <T k="invoices.processing" />
+          </>
+        ) : (
+          <>
+            <Sparkles className="w-4 h-4 mr-2" />
+            {buttonText}
+          </>
+        )}
+      </Button>
+    </CardContent>
+  </Card>
+);
+
 export default function AIFeatures() {
   const [, navigate] = useLocation();
   const { companyId } = useDefaultCompany();
   const { toast } = useToast();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHasMounted();
   const [activeTab, setActiveTab] = useState("overview");
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<AnomalyAlert | null>(null);
   const [resolutionNote, setResolutionNote] = useState("");
   const [categorizationOpen, setCategorizationOpen] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const {
     data: anomalyAlerts,
@@ -209,50 +260,6 @@ export default function AIFeatures() {
         return AlertTriangle;
     }
   };
-
-  const FeatureCard = ({
-    icon: Icon,
-    title,
-    description,
-    onClick,
-    loading,
-    buttonText,
-    color,
-  }: any) => (
-    <Card className="hover-elevate active-elevate-2 transition-all duration-300">
-      <CardHeader className="flex flex-row items-center gap-4">
-        <div
-          className={`w-12 h-12 rounded-lg ${color} bg-opacity-15 dark:bg-opacity-25 flex items-center justify-center`}
-        >
-          <Icon className={`w-6 h-6 ${color.replace("bg-", "text-")}`} />
-        </div>
-        <div className="flex-1">
-          <CardTitle className="text-lg">{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Button
-          onClick={onClick}
-          disabled={loading}
-          className="w-full"
-          data-testid={`button-${title.toLowerCase().replace(/\s+/g, "-")}`}
-        >
-          {loading ? (
-            <>
-              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              <T k="invoices.processing" />
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 mr-2" />
-              {buttonText}
-            </>
-          )}
-        </Button>
-      </CardContent>
-    </Card>
-  );
 
   return (
     <div className="space-y-8">

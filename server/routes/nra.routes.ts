@@ -27,10 +27,10 @@ router.get(
     const accessibleIds = await getAccessibleCompanyIds(
       userId,
       firmRole ?? "",
-      (req as any).user?.isAdmin === true
+      req.user?.isAdmin === true
     );
 
-    let rows;
+    let rows: (typeof companies.$inferSelect)[];
     if (accessibleIds === null) {
       // firm_owner — all companies
       rows = await db.select().from(companies);

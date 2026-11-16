@@ -161,7 +161,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
-      const firmId = (req as any).user.id as string;
+      const firmId = req.user!.id as string;
       const sources = await storage.listClientEmailSourcesByFirm(firmId);
       res.json({
         sources,
@@ -181,7 +181,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     requireFirmRole(),
     validate({ body: createSourceBody }),
     asyncHandler(async (req: Request, res: Response) => {
-      const user = (req as any).user;
+      const user = req.user!;
       const { companyId, senderEmail, label, requireDkimPass } = req.body;
 
       // Ownership: the company must be one the firm can access.
@@ -198,7 +198,7 @@ export function registerEmailIntakeRoutes(app: Express) {
         status: "active",
         requireDkimPass: requireDkimPass ?? true,
         createdBy: user.id,
-      } as any);
+      });
 
       await recordAudit({
         userId: user.id,
@@ -220,7 +220,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     requireFirmRole(),
     validate({ body: updateSourceBody }),
     asyncHandler(async (req: Request, res: Response) => {
-      const firmId = (req as any).user.id as string;
+      const firmId = req.user!.id as string;
       const updated = await storage.updateClientEmailSource(req.params.id, firmId, req.body);
       if (!updated) return res.status(404).json({ message: "Source not found" });
       res.json(updated);
@@ -233,7 +233,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
-      const firmId = (req as any).user.id as string;
+      const firmId = req.user!.id as string;
       const ok = await storage.deleteClientEmailSource(req.params.id, firmId);
       if (!ok) return res.status(404).json({ message: "Source not found" });
       await recordAudit({
@@ -253,7 +253,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
-      const user = (req as any).user;
+      const user = req.user!;
       const allowed = await storage.hasCompanyAccess(user.id, req.params.companyId, user.firmRole);
       if (!allowed)
         return res.status(403).json({ message: "Company not in your firm's client list" });
@@ -276,7 +276,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     requireFirmRole(),
     strictBody(emailTaskBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const user = (req as any).user;
+      const user = req.user!;
       const companyId = await intakeMessageCompany(req.params.messageId);
       if (!companyId) return res.status(404).json({ message: "Message not found" });
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
@@ -310,7 +310,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
-      const user = (req as any).user;
+      const user = req.user!;
       const { companyId } = req.params;
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
       if (!allowed)
@@ -336,7 +336,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
-      const user = (req as any).user;
+      const user = req.user!;
       const { companyId } = req.params;
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
       if (!allowed)
@@ -378,7 +378,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     authMiddleware,
     requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
-      const user = (req as any).user;
+      const user = req.user!;
       if (!isEmailIntakeEnabled()) {
         return res.json({ ran: false, reason: "feature_disabled" });
       }

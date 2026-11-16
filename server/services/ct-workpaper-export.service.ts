@@ -300,7 +300,8 @@ function addComputationSheet(
   // Prefer the persisted bridge (full FDL 47/2022 schedule: add-backs, small
   // business relief, loss carryforward) when the return has been computed;
   // fall back to the simple liability formula for legacy returns.
-  const computation = (ctReturn.workpaper as any)?.computation as
+  const computation = (ctReturn.workpaper as { computation?: unknown } | null | undefined)
+    ?.computation as
     | { bridge?: Array<{ label: string; amount: number }>; taxRate?: number }
     | undefined;
 

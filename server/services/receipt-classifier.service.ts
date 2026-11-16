@@ -25,6 +25,7 @@ import {
   normalizeMerchantKey,
   tokenizeMerchantText,
 } from "../../shared/arabic-text";
+import { errorMessage } from "../errors";
 
 const log = createLogger("receipt-classifier");
 
@@ -575,9 +576,9 @@ export async function classifyReceipt(
   // Fall through to OpenAI.
   try {
     return await callOpenAIFallback(merchant, lineItems, openai, expenseAccountNames, openaiModel);
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.warn(
-      { err: err?.message || err, merchant },
+      { err: errorMessage(err) || err, merchant },
       "OpenAI fallback failed — returning best internal result"
     );
     if (bestInternal) return bestInternal;

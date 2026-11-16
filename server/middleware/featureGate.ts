@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import type { RequestSubscription } from "./auth";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { isStripeConfigured } from "../services/stripe.service";
@@ -151,7 +152,7 @@ export function isFirmBilledCompany(company: { companyType?: string | null } | n
  * firm-billed companies (or no company id): every other company resolves to its
  * row, or to the Free plan when the row is missing.
  */
-async function getRequestSubscription(req: Request): Promise<any | null> {
+async function getRequestSubscription(req: Request): Promise<RequestSubscription | null> {
   if (req.subscription) return req.subscription;
 
   const companyId = req.params.companyId || req.body?.companyId;
@@ -160,7 +161,7 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
   try {
     const company = await storage.getCompany(companyId);
     if (isFirmBilledCompany(company)) return null;
-    const subscription = (await storage.getSubscription(companyId)) || {
+    const subscription: RequestSubscription = (await storage.getSubscription(companyId)) || {
       companyId,
       planId: FREE_PLAN_ID,
       implicit: true,
@@ -170,7 +171,7 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
   } catch (error) {
     // Fail closed: a lookup failure must not unlock paid features.
     log.error({ error, companyId }, "Failed to fetch subscription; treating as Free plan");
-    return { companyId, planId: FREE_PLAN_ID, implicit: true };
+    return { companyId, planId: FREE_PLAN_ID, implicit: true as const };
   }
 }
 
@@ -731,7 +732,7 @@ export function checkCompanyQuota() {
       next();
       return;
     }
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id || user.isAdmin === true || user.firmRole) {
       next();
       return;
@@ -749,7 +750,7 @@ export function checkCompanyQuota() {
       let bestTierIdx = 0;
       for (const c of owned) {
         try {
-          const sub = await storage.getSubscription((c as any).id);
+          const sub = await storage.getSubscription(c.id);
           const idx = TIER_ORDER.indexOf(sub?.planId || "free");
           if (idx > bestTierIdx) bestTierIdx = idx;
         } catch {

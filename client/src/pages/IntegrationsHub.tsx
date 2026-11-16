@@ -220,31 +220,6 @@ export default function IntegrationsHub() {
     },
   });
 
-  // Toggle integration mutation
-  const toggleMutation = useMutation({
-    mutationFn: async ({
-      integrationId,
-      isActive,
-    }: {
-      integrationId: string;
-      isActive: boolean;
-    }) => {
-      return await apiRequest("PATCH", `/api/integrations/ecommerce/${integrationId}/toggle`, {
-        isActive,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/integrations/ecommerce", companyId] });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to update integration",
-      });
-    },
-  });
-
   const getIntegration = (platform: string) => {
     return integrations?.find((i) => i.platform === platform);
   };

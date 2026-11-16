@@ -241,10 +241,12 @@ export default function EvidenceCenter() {
     });
   }, [data]);
 
-  useEffect(() => {
-    if (!data) return;
+  // Reset the recipient to the draft default whenever a new payload arrives.
+  const [recipientSourceData, setRecipientSourceData] = useState<typeof data>(undefined);
+  if (data && recipientSourceData !== data) {
+    setRecipientSourceData(data);
     setRequestRecipient(data.clientRequestDraft.defaultRecipient ?? "");
-  }, [data]);
+  }
 
   const issueActionMutation = useMutation({
     mutationFn: async () => {

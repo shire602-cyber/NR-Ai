@@ -32,6 +32,7 @@ import {
 import { sanityCheckReceipt } from "../services/ai/structured-output";
 import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
+import { errorCode, errorMessage, errorProperty } from "../errors";
 
 const log = createLogger("ocr");
 
@@ -57,7 +58,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     authMiddleware,
     aiLimiter,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -119,11 +120,15 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       if (anthropic || openai) {
         try {
           await assertAiQuota(companyId);
-        } catch (err: any) {
-          if (err?.code === "AI_QUOTA_EXCEEDED") {
+        } catch (err: unknown) {
+          if (errorCode(err) === "AI_QUOTA_EXCEEDED") {
             return res
               .status(429)
-              .json({ message: err.message, code: "AI_QUOTA_EXCEEDED", usage: err.detail });
+              .json({
+                message: errorMessage(err),
+                code: "AI_QUOTA_EXCEEDED",
+                usage: errorProperty(err, "detail"),
+              });
           }
           throw err;
         }
@@ -135,13 +140,16 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       // Helper: post-process AI extraction → run our internal classifier on the
       // merchant. Overrides AI's category if our classifier is more confident
       // (≥ 0.8) — the same threshold as Phase 2's auto-fallback rule.
-      const enrichWithInternalClassifier = async (aiResult: any) => {
+      const enrichWithInternalClassifier = async (aiResult: LooseOcrResult) => {
         try {
-          const merchant = (aiResult?.merchant && String(aiResult.merchant)) || "Unknown Merchant";
+          const merchant =
+            (aiResult?.merchant ? String(aiResult.merchant) : "") || "Unknown Merchant";
           const lineItems = Array.isArray(aiResult?.lineItems)
-            ? aiResult.lineItems.map((li: any) => String(li?.description || ""))
+            ? (aiResult.lineItems as Array<{ description?: unknown } | null>).map((li) => ({
+                description: String(li?.description || ""),
+              }))
             : [];
-          const subtotal = parseFloat(aiResult?.subtotal) || 0;
+          const subtotal = parseFloat(String(aiResult?.subtotal)) || 0;
           const result = await classifyOcrReceipt(companyId, {
             merchant,
             amount: subtotal,
@@ -164,13 +172,17 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
             agreesWithAi:
               result.method === "openai" ? null : result.category === aiResult._aiCategory,
           };
-        } catch (err: any) {
-          log.warn({ err: err?.message || err }, "Internal classifier enrichment failed");
+        } catch (err: unknown) {
+          log.warn({ err: errorMessage(err) || err }, "Internal classifier enrichment failed");
         }
         return aiResult;
       };
 
-      const respondWithResult = async (result: any, rawText: string, ocrSource: string) => {
+      const respondWithResult = async (
+        result: LooseOcrResult,
+        rawText: string,
+        ocrSource: string
+      ) => {
         result._ocrSource = result._ocrSource || ocrSource;
         await enrichWithInternalClassifier(result);
         return res.json(
@@ -193,7 +205,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
             "AI OCR unavailable; used local Tesseract fallback"
           );
           return localResult;
-        } catch (err: any) {
+        } catch (err: unknown) {
           localOcrErrorDetail = summarizeOcrProviderError(err);
           log.error({ err: localOcrErrorDetail, reason }, "Local OCR fallback failed");
           return null;
@@ -238,12 +250,12 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         try {
           const aiResult = await runVisionOCR(imageDataUrl, clients, ocrCtx);
           return respondWithResult(aiResult, sanitizedContent, "ai-vision");
-        } catch (visionError: any) {
-          if (visionError?.code === "AI_QUOTA_EXCEEDED") {
+        } catch (visionError: unknown) {
+          if (errorCode(visionError) === "AI_QUOTA_EXCEEDED") {
             return res.status(429).json({
-              message: visionError.message,
+              message: errorMessage(visionError),
               code: "AI_QUOTA_EXCEEDED",
-              usage: visionError.detail,
+              usage: errorProperty(visionError, "detail"),
             });
           }
           const provider = describeOcrProviders({ anthropic, openai });
@@ -271,12 +283,12 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         try {
           const aiResult = await runTextOCR(sanitizedContent, clients, ocrCtx);
           return respondWithResult(aiResult, sanitizedContent, "ai-text");
-        } catch (textError: any) {
-          if (textError?.code === "AI_QUOTA_EXCEEDED") {
+        } catch (textError: unknown) {
+          if (errorCode(textError) === "AI_QUOTA_EXCEEDED") {
             return res.status(429).json({
-              message: textError.message,
+              message: errorMessage(textError),
               code: "AI_QUOTA_EXCEEDED",
-              usage: textError.detail,
+              usage: errorProperty(textError, "detail"),
             });
           }
           const provider = describeOcrProviders({ anthropic, openai });
@@ -394,8 +406,46 @@ function parseImageDataUrl(imageData: string): { base64: string; mediaType: stri
   return m ? { mediaType: m[1], base64: m[2] } : { mediaType: "image/jpeg", base64: imageData };
 }
 
+/** Classifier note attached to an OCR result by enrichWithInternalClassifier. */
+interface OcrClassifierNote {
+  method: string;
+  confidence: number;
+  reason: string;
+  agreesWithAi: boolean | null;
+}
+
+/**
+ * The loose OCR shape buildResult/enrichment consume: provider (AI) extraction,
+ * deterministic text parsing or local Tesseract output. Field values are not
+ * trusted, so they stay `unknown` and are coerced in buildResult.
+ */
+interface LooseOcrResult {
+  merchant?: unknown;
+  date?: unknown;
+  invoiceNumber?: unknown;
+  subtotal?: unknown;
+  vatAmount?: unknown;
+  vatPercentage?: unknown;
+  total?: unknown;
+  currency?: unknown;
+  category?: unknown;
+  lineItems?: unknown;
+  supplierTrn?: unknown;
+  supplierTrnIssue?: unknown;
+  isTaxInvoice?: unknown;
+  simplifiedInvoice?: unknown;
+  reverseChargeSuggested?: unknown;
+  confidence?: unknown;
+  _issues?: ValidationIssue[];
+  _ocrSource?: string;
+  _provider?: string;
+  _model?: string;
+  _aiCategory?: unknown;
+  _classifier?: OcrClassifierNote;
+}
+
 /** Provider result -> the loose shape buildResult/enrichment consume (+ validation issues). */
-function toAiResult(outcome: Awaited<ReturnType<typeof extractReceipt>>): any {
+function toAiResult(outcome: Awaited<ReturnType<typeof extractReceipt>>): LooseOcrResult {
   return {
     ...outcome.data,
     _issues: outcome.issues,
@@ -409,7 +459,7 @@ async function runVisionOCR(
   imageData: string,
   clients: ExtractionClients,
   ctx: AiContext
-): Promise<any> {
+): Promise<LooseOcrResult> {
   if (!clients.anthropic && !clients.openai) throw new Error("No vision client available");
   const { base64, mediaType } = parseImageDataUrl(imageData);
   return toAiResult(
@@ -421,7 +471,7 @@ async function runTextOCR(
   textContent: string,
   clients: ExtractionClients,
   ctx: AiContext
-): Promise<any> {
+): Promise<LooseOcrResult> {
   if (!clients.anthropic && !clients.openai) throw new Error("No text client available");
   return toAiResult(
     await extractReceipt({ clients, input: { kind: "text", text: textContent }, ctx })
@@ -429,7 +479,7 @@ async function runTextOCR(
 }
 
 function buildResult(
-  aiResult: any,
+  aiResult: LooseOcrResult,
   rawText: string,
   companyId: string,
   messageId: string | null,
@@ -458,15 +508,18 @@ function buildResult(
     vatAmount > 0 ? vatAmount : parseFloat(((derivedSubtotal * vatPercentage) / 100).toFixed(2));
   const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
 
-  const category = validCategories.includes(aiResult.category) ? aiResult.category : "Other";
+  const category =
+    typeof aiResult.category === "string" && validCategories.includes(aiResult.category)
+      ? aiResult.category
+      : "Other";
 
   let parsedDate = new Date().toISOString().split("T")[0];
-  if (aiResult.date && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
+  if (typeof aiResult.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
     parsedDate = aiResult.date;
   }
 
   const lineItems = Array.isArray(aiResult.lineItems)
-    ? aiResult.lineItems.map((item: any) => ({
+    ? (aiResult.lineItems as Array<Record<string, unknown>>).map((item) => ({
         description: String(item.description || "").slice(0, 500),
         quantity: parseNonNegative(item.quantity) || 1,
         unitPrice: parseNonNegative(item.unitPrice),
@@ -482,13 +535,13 @@ function buildResult(
   const issues: ValidationIssue[] = Array.isArray(aiResult._issues) ? [...aiResult._issues] : [];
   const have = new Set(issues.map((i) => i.code));
   const finalIssues = sanityCheckReceipt({
-    merchant: aiResult.merchant,
-    date: aiResult.date ?? null,
+    merchant: aiResult.merchant as string | undefined,
+    date: (aiResult.date as string | null | undefined) ?? null,
     subtotal: derivedSubtotal,
     vatAmount: derivedVat,
     total: derivedTotal,
-    currency: aiResult.currency ?? null,
-    supplierTrn: aiResult.supplierTrn ?? null,
+    currency: (aiResult.currency as string | null | undefined) ?? null,
+    supplierTrn: (aiResult.supplierTrn as string | null | undefined) ?? null,
     vatPercentage,
   });
   for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
@@ -539,7 +592,7 @@ function buildResult(
   };
 }
 
-function parseNonNegative(val: any): number {
+function parseNonNegative(val: unknown): number {
   if (val === null || val === undefined) return 0;
   const n = parseFloat(String(val).replace(/,/g, ""));
   return !isNaN(n) && n >= 0 ? n : 0;

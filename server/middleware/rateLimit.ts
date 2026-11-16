@@ -120,7 +120,8 @@ function companyIdFromRequest(req: Request): string | null {
  * still enforced later by authMiddleware.
  */
 export function rateLimitIdentity(req: Request): RateLimitIdentity {
-  const cached = (req as any)[IDENTITY] as RateLimitIdentity | undefined;
+  const slots = req as unknown as Record<symbol, RateLimitIdentity | undefined>;
+  const cached = slots[IDENTITY];
   if (cached) return cached;
   let identity: RateLimitIdentity | null = null;
   const header = req.headers.authorization;
@@ -149,7 +150,7 @@ export function rateLimitIdentity(req: Request): RateLimitIdentity {
     const ip = clientIp(req);
     identity = { kind: "ip", ip, key: `ip:${ip}` };
   }
-  (req as any)[IDENTITY] = identity;
+  slots[IDENTITY] = identity;
   return identity;
 }
 
@@ -189,12 +190,13 @@ export function buildLimiter(cfg: RouteLimit) {
     validate: false,
     skip: (req) => {
       if (req.path === "/health" || req.path === "/health/live") return true;
-      if (cfg.skipMethods?.includes(req.method as any)) return true;
+      if ((cfg.skipMethods as string[] | undefined)?.includes(req.method)) return true;
       if (cfg.skipIf?.(req)) return true;
       return false;
     },
     handler: (req, res, _next, options) => {
-      const resetTime = (req as any).rateLimit?.resetTime as Date | undefined;
+      const resetTime = (req as Request & { rateLimit?: { resetTime?: Date } }).rateLimit
+        ?.resetTime;
       const retryAfter = resetTime
         ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))
         : Math.ceil((options.windowMs as number) / 1000);

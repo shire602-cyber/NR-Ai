@@ -81,7 +81,7 @@ export function registerInvoiceShareRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
@@ -119,7 +119,7 @@ export function registerInvoiceShareRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
@@ -296,7 +296,7 @@ export function registerInvoiceShareRoutes(app: Express) {
     strictBody(sendEmailBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, invoiceId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const { to, subject, message, language } = parsedBody<z.output<typeof sendEmailBody>>(req);
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -364,7 +364,7 @@ export function registerInvoiceShareRoutes(app: Express) {
     strictBody(sendReminderBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, invoiceId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const { to } = parsedBody<z.output<typeof sendReminderBody>>(req);
 

@@ -2,8 +2,11 @@
 import "dotenv/config";
 
 import { sql } from "drizzle-orm";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { Pool as PgPool } from "pg";
 import * as schema from "@shared/schema";
 import { createLogger } from "./config/logger";
+import { errorCode, errorMessage, errorProperty } from "./errors";
 
 const log = createLogger("db");
 
@@ -33,8 +36,11 @@ const POOL_CONFIG = {
   statement_timeout: envInt("DB_STATEMENT_TIMEOUT_MS", 30_000),
 };
 
-let pool: any;
-let db: any;
+// Both drivers expose the node-postgres Pool / Drizzle API surface the app uses;
+// the Neon objects are typed through it.
+export type AppDatabase = NodePgDatabase<typeof schema>;
+let pool: PgPool;
+let db: AppDatabase;
 let _driver: "neon" | "pg" = "pg";
 
 type QueryRow = Record<string, unknown>;
@@ -45,8 +51,9 @@ if (isNeon) {
   const { drizzle: neonDrizzle } = await import("drizzle-orm/neon-serverless");
   const ws = await import("ws");
   neonConfig.webSocketConstructor = ws.default;
-  pool = new NeonPool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
-  db = neonDrizzle({ client: pool, schema });
+  const neonPool = new NeonPool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
+  pool = neonPool as unknown as PgPool;
+  db = neonDrizzle({ client: neonPool, schema }) as unknown as AppDatabase;
   _driver = "neon";
 } else {
   // Use standard pg driver for Railway/Docker/standard PostgreSQL
@@ -61,7 +68,8 @@ if (isNeon) {
   _driver = "pg";
 }
 
-function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
+/** Rows of a raw `db.execute` result (node-postgres QueryResult or a bare row array). */
+export function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
   if (Array.isArray(result)) {
     return result as T[];
   }
@@ -173,9 +181,15 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
       await migrate(db, { migrationsFolder });
     }
     log.info("Migrations completed successfully");
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err, message: err?.message, code: err?.code, detail: err?.detail, query: err?.query },
+      {
+        err,
+        message: errorMessage(err),
+        code: errorCode(err),
+        detail: errorProperty(err, "detail"),
+        query: errorProperty(err, "query"),
+      },
       "Migration failed"
     );
     throw err;
@@ -1277,8 +1291,8 @@ export async function ensureCriticalSchema(): Promise<void> {
     try {
       await db.execute(step.sql);
       ok++;
-    } catch (err: any) {
-      log.error({ step: step.name, err: err.message }, "Schema guard step failed");
+    } catch (err: unknown) {
+      log.error({ step: step.name, err: errorMessage(err) }, "Schema guard step failed");
       failed++;
     }
   }
@@ -1301,8 +1315,8 @@ export async function pingDb(): Promise<{ ok: boolean; latencyMs: number; error?
   try {
     await db.execute(sql`SELECT 1`);
     return { ok: true, latencyMs: Date.now() - start };
-  } catch (err: any) {
-    return { ok: false, latencyMs: Date.now() - start, error: err?.message || "unknown" };
+  } catch (err: unknown) {
+    return { ok: false, latencyMs: Date.now() - start, error: errorMessage(err) || "unknown" };
   }
 }
 

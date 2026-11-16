@@ -583,14 +583,25 @@ export function useReportsPage() {
     };
   }, [locationSearch]);
 
-  useEffect(() => {
+  // Back to the first ledger page whenever the report, range or company changes.
+  const ledgerDetailPageScope = [
+    activeReportId,
+    dateRange.from,
+    dateRange.to,
+    selectedCompanyId,
+  ] as const;
+  const [seenLedgerDetailPageScope, setSeenLedgerDetailPageScope] = useState(ledgerDetailPageScope);
+  if (ledgerDetailPageScope.some((dep, i) => !Object.is(dep, seenLedgerDetailPageScope[i]))) {
+    setSeenLedgerDetailPageScope(ledgerDetailPageScope);
     setLedgerDetailPage(1);
-  }, [activeReportId, dateRange.from, dateRange.to, selectedCompanyId]);
+  }
 
   useEffect(() => {
     const currentSearch = locationSearch || window.location.search;
     const urlWorkflowSearch = reportWorkflowSearchFromSearch(currentSearch);
     if (urlWorkflowSearch !== null) {
+      // Syncs from the URL and persists to localStorage (external systems).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setReportWorkflowSearch(urlWorkflowSearch);
       setPreferredReportWorkflowSearch(urlWorkflowSearch, personaFilter);
       return;
@@ -609,6 +620,8 @@ export function useReportsPage() {
       setPreferredReportWorkflowGapFilter(nextFilter.persona, urlGapFilter);
     }
 
+    // Syncs from the URL (external system); keeps the same object when unchanged.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReportWorkflowGapFilter((current) => {
       if (current.type === nextFilter.type && current.persona === nextFilter.persona) {
         return current;
@@ -5715,6 +5728,7 @@ export function useReportsPage() {
     fxGainsLosses?.totalUnrealizedLoss,
     invoices,
     inventoryMovements,
+    inventoryValuationReport.activeProductCount,
     inventoryValuationReport.reviewCount,
     inventoryValuationReport.reviewValueAed,
     journalEntries,
@@ -6573,20 +6587,25 @@ export function useReportsPage() {
     enabled: shouldLoadReportDeliveryData,
   });
 
-  useEffect(() => {
-    const preferences = reportDeliveryAutomationPreferencesQuery.data?.preferences;
-    if (!preferences?.length) return;
-
-    setPinnedReportDeliveryAutomationCommands((current) => {
-      const next = { ...current };
-      for (const preference of preferences) {
-        next[preference.persona] = parseReportDeliveryAutomationCommand(
-          preference.preferredDeliveryAutomationCommand
-        );
-      }
-      return next;
-    });
-  }, [reportDeliveryAutomationPreferencesQuery.data?.preferences]);
+  // Merge server-stored pinned commands whenever a new preferences payload arrives.
+  const reportDeliveryAutomationPreferences =
+    reportDeliveryAutomationPreferencesQuery.data?.preferences;
+  const [mergedReportDeliveryAutomationPreferences, setMergedReportDeliveryAutomationPreferences] =
+    useState<typeof reportDeliveryAutomationPreferences>(undefined);
+  if (mergedReportDeliveryAutomationPreferences !== reportDeliveryAutomationPreferences) {
+    setMergedReportDeliveryAutomationPreferences(reportDeliveryAutomationPreferences);
+    if (reportDeliveryAutomationPreferences?.length) {
+      setPinnedReportDeliveryAutomationCommands((current) => {
+        const next = { ...current };
+        for (const preference of reportDeliveryAutomationPreferences) {
+          next[preference.persona] = parseReportDeliveryAutomationCommand(
+            preference.preferredDeliveryAutomationCommand
+          );
+        }
+        return next;
+      });
+    }
+  }
 
   const reportDeliveryRunsQuery = useQuery<{
     runs: ReportDeliveryRunSummary[];
