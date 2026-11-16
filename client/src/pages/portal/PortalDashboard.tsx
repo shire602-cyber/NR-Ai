@@ -117,7 +117,7 @@ export default function PortalDashboard() {
                     : formatMessage(t["portal.invoiceCountMany"], { count: inv.outstanding ?? 0 })}
                 </p>
               </div>
-              <KpiIcon tone="bg-warning-subtle text-warning-subtle-foreground">
+              <KpiIcon tone="bg-muted text-muted-foreground">
                 <AlertCircle className="h-5 w-5" />
               </KpiIcon>
             </div>
@@ -140,7 +140,7 @@ export default function PortalDashboard() {
                     : formatMessage(t["portal.invoiceCountMany"], { count: inv.paid ?? 0 })}
                 </p>
               </div>
-              <KpiIcon tone="bg-success-subtle text-success-subtle-foreground">
+              <KpiIcon tone="bg-muted text-muted-foreground">
                 <CheckCircle2 className="h-5 w-5" />
               </KpiIcon>
             </div>
@@ -159,7 +159,7 @@ export default function PortalDashboard() {
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">{t["portal.uploadedFiles"]}</p>
               </div>
-              <KpiIcon tone="bg-info-subtle text-info-subtle-foreground">
+              <KpiIcon tone="bg-muted text-muted-foreground">
                 <FolderOpen className="h-5 w-5" />
               </KpiIcon>
             </div>
@@ -184,7 +184,7 @@ export default function PortalDashboard() {
                   </p>
                 )}
               </div>
-              <KpiIcon tone="bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+              <KpiIcon tone="bg-muted text-muted-foreground">
                 <Calendar className="h-5 w-5" />
               </KpiIcon>
             </div>

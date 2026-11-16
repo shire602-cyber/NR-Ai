@@ -26,5 +26,9 @@
   "statements.exportFailed": "فشل التصدير",
   "statements.pageTitle": "القوائم المالية",
   "statements.pageDesc": "أنشئ قائمة الأرباح والخسائر والميزانية العمومية وقائمة التدفقات النقدية",
-  "statements.colCode": "الرمز"
+  "statements.colCode": "الرمز",
+  "statements.operatingExpenses": "مصروفات التشغيل",
+  "statements.tabShortPl": "الأرباح",
+  "statements.tabShortBs": "الميزانية",
+  "statements.tabShortCf": "التدفق"
 }

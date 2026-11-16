@@ -57,8 +57,9 @@ export function CompanySwitcher({
     // Nothing to switch between: the compact top bar still shows which company this is.
     return variant === "compact" ? (
       <span
-        className="min-w-0 truncate text-sm font-semibold text-foreground"
+        className="block min-w-0 truncate text-sm font-semibold text-foreground"
         dir="auto"
+        title={active.name}
         data-testid="text-active-company"
       >
         {active.name}
@@ -103,11 +104,12 @@ export function CompanySwitcher({
     <Button
       variant="ghost"
       size="sm"
-      className="h-9 min-w-0 max-w-full justify-start gap-1 px-1.5 text-sm font-semibold text-foreground"
+      className="h-9 w-full min-w-0 max-w-full justify-start gap-1 overflow-hidden px-1.5 text-sm font-semibold text-foreground"
       aria-label={`${t["components.switcherSwitchCompany"]}: ${active.name}`}
+      title={active.name}
       data-testid="button-company-switcher-compact"
     >
-      <span className="truncate" dir="auto">
+      <span className="min-w-0 truncate text-start" dir="auto">
         {active.name}
       </span>
       <ChevronsUpDown className="!size-3.5 shrink-0 text-muted-foreground" aria-hidden />

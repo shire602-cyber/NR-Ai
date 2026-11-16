@@ -2,10 +2,19 @@ import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
 import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { RowActionButton, RowActions } from "@/components/ui/row-actions";
+import { MiddleTruncate } from "@/components/ui/middle-truncate";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format-date";
-import { Money } from "@/components/ui/money";
+import { MoneyCell } from "@/components/ui/money";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useTranslation } from "@/lib/i18n";
 import { getAuthHeaders } from "@/lib/auth";
@@ -62,62 +71,70 @@ export default function PortalInvoices() {
               <T k="pageLabels.noInvoicesFound" />
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted">
-                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                      <T k="portal.invoiceNumber" />
-                    </th>
-                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                      <T k="portal.date" />
-                    </th>
-                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                      <T k="pages.dueDate" />
-                    </th>
-                    <th className="text-end px-4 py-3 font-medium text-muted-foreground">
-                      <T k="portal.amountDue" />
-                    </th>
-                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                      <T k="pages.status" />
-                    </th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {invoices.map((inv: any) => (
-                    <tr key={inv.id} className="hover:bg-muted transition-colors">
-                      <td className="px-4 py-3 font-medium text-foreground">{inv.number}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {inv.date ? formatDate(inv.date, locale) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-end font-semibold text-foreground">
-                        <Money amount={Number(inv.amountDue) || 0} currency="AED" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge tone={STATUS_TONE[inv.paymentStatus] ?? "neutral"}>
-                          {t[`portal.payStatus.${inv.paymentStatus}`] ?? inv.paymentStatus}
-                        </StatusBadge>
-                      </td>
-                      <td className="px-4 py-3 text-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-info hover:text-info hover:bg-info-subtle"
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <T k="portal.invoiceNumber" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="portal.date" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.dueDate" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="portal.amountDue" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <span className="sr-only">{t.actions}</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoices.map((inv: any) => (
+                  <TableRow key={inv.id}>
+                    <TableCell data-cell="title" className="font-medium text-foreground">
+                      <MiddleTruncate text={String(inv.number ?? "")} />
+                    </TableCell>
+                    <TableCell
+                      data-nowrap=""
+                      data-cell="meta"
+                      data-keep=""
+                      className="text-muted-foreground"
+                    >
+                      {inv.date ? formatDate(inv.date, locale) : "—"}
+                    </TableCell>
+                    <TableCell data-nowrap="" className="text-muted-foreground">
+                      {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
+                    </TableCell>
+                    <MoneyCell
+                      amount={Number(inv.amountDue) || 0}
+                      currency="AED"
+                      className="font-semibold text-foreground"
+                      data-cell="amount"
+                    />
+                    <TableCell data-nowrap="" data-cell="status">
+                      <StatusBadge tone={STATUS_TONE[inv.paymentStatus] ?? "neutral"}>
+                        {t[`portal.payStatus.${inv.paymentStatus}`] ?? inv.paymentStatus}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell data-cell="actions">
+                      <RowActions collapseOnMobile>
+                        <RowActionButton
+                          label="PDF"
+                          icon={FileDown}
                           onClick={() => downloadPdf(inv.id, inv.number)}
-                        >
-                          <FileDown className="w-3.5 h-3.5 me-1.5" />
-                          PDF
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        />
+                      </RowActions>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

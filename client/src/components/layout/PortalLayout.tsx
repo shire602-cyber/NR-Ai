@@ -120,7 +120,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="md:hidden">{companyMark}</div>
             <h1 className="truncate text-body font-semibold text-foreground">
-              <span className="md:hidden" dir="auto">
+              <span className="block truncate md:hidden" dir="auto">
                 {companyName}
               </span>
               <span className="hidden md:inline">{title}</span>

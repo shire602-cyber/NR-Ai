@@ -94,6 +94,7 @@ export interface BudgetVsActualRow {
   lineId: string;
   accountId: string;
   accountName: string;
+  accountNameAr?: string | null;
   accountType: string | null;
   budgeted: number;
   actual: number;

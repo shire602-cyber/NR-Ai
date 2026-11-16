@@ -1,3 +1,4 @@
+import { operatingExpenseLinesOf } from "./financialStatementsLayout";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
@@ -119,11 +120,11 @@ interface CashFlowData {
 }
 
 /** Prior-year comparative under a summary figure. */
-function PriorYear({ value, locale }: { value: number | undefined; locale: string }) {
+function PriorYear({ value }: { value: number | undefined; locale?: string }) {
   if (value === undefined) return null;
   return (
     <p className="text-xs text-muted-foreground tabular-nums mt-1">
-      <T k="statements.priorYear" />: {formatCurrency(value, "AED", locale)}
+      <T k="statements.priorYear" />: <Money amount={value} currency="AED" />
     </p>
   );
 }
@@ -264,6 +265,9 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
   const handleGenerate = () => {
     setQueryDates({ startDate, endDate });
   };
+  const operatingExpenseLines = data
+    ? operatingExpenseLinesOf(data.breakdown.expenses, data.statement?.sections.costOfSales.lines)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -362,12 +366,37 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* R11-11: operating revenue, cost of sales and gross profit; other
-                  income (FX gains, interest) is shown separately. */}
+              {/* N5: revenue rows, total revenue, then cost of sales and gross profit, then
+                  expenses. Cost-of-sales accounts are shown once (not again under expenses). */}
               <BreakdownTable
                 items={data.statement?.sections.revenue.lines ?? data.breakdown.revenue}
                 locale={locale}
               />
+              {data.statement && data.statement.otherIncome !== 0 && (
+                <>
+                  <SubtotalRow
+                    label="statements.otherIncome"
+                    amount={data.statement.otherIncome}
+                    locale={locale}
+                  />
+                  <BreakdownTable
+                    items={data.statement.sections.otherIncome.lines}
+                    locale={locale}
+                  />
+                </>
+              )}
+              <Separator className="my-2" />
+              <div
+                className="flex justify-between items-center font-bold py-2"
+                data-testid="pl-total-revenue"
+              >
+                <span>
+                  <T k="pages.totalRevenue" />
+                </span>
+                <span className="tabular-nums">
+                  <Money amount={data.revenue} currency={"AED"} />
+                </span>
+              </div>
               {data.statement && data.statement.costOfSales !== 0 && (
                 <>
                   <SubtotalRow
@@ -388,28 +417,6 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
                   locale={locale}
                 />
               )}
-              {data.statement && data.statement.otherIncome !== 0 && (
-                <>
-                  <SubtotalRow
-                    label="statements.otherIncome"
-                    amount={data.statement.otherIncome}
-                    locale={locale}
-                  />
-                  <BreakdownTable
-                    items={data.statement.sections.otherIncome.lines}
-                    locale={locale}
-                  />
-                </>
-              )}
-              <Separator className="my-2" />
-              <div className="flex justify-between items-center font-bold py-2">
-                <span>
-                  <T k="pages.totalRevenue" />
-                </span>
-                <span className="tabular-nums">
-                  <Money amount={data.revenue} currency={"AED"} />
-                </span>
-              </div>
             </CardContent>
           </Card>
 
@@ -421,14 +428,19 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <BreakdownTable items={data.breakdown.expenses} locale={locale} />
+              <BreakdownTable items={operatingExpenseLines} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
                 <span>
-                  <T k="pages.totalExpenses" />
+                  <T k={data.statement ? "statements.operatingExpenses" : "pages.totalExpenses"} />
                 </span>
                 <span className="tabular-nums">
-                  <Money amount={data.expenses} currency={"AED"} />
+                  <Money
+                    amount={
+                      data.statement ? data.expenses - data.statement.costOfSales : data.expenses
+                    }
+                    currency={"AED"}
+                  />
                 </span>
               </div>
             </CardContent>
@@ -1026,16 +1038,25 @@ export default function FinancialStatements() {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
           <TabsTrigger value="profit-loss" className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            <T k="pageLabels.profitAndLoss" />
+            <BarChart3 className="hidden h-4 w-4 sm:block" />
+            <span className="sm:hidden">{t["statements.tabShortPl"]}</span>
+            <span className="hidden sm:inline">
+              <T k="pageLabels.profitAndLoss" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="balance-sheet" className="flex items-center gap-2">
-            <Scale className="h-4 w-4" />
-            <T k="pages.balanceSheet" />
+            <Scale className="hidden h-4 w-4 sm:block" />
+            <span className="sm:hidden">{t["statements.tabShortBs"]}</span>
+            <span className="hidden sm:inline">
+              <T k="pages.balanceSheet" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="cash-flow" className="flex items-center gap-2">
-            <Banknote className="h-4 w-4" />
-            <T k="pages.cashFlow" />
+            <Banknote className="hidden h-4 w-4 sm:block" />
+            <span className="sm:hidden">{t["statements.tabShortCf"]}</span>
+            <span className="hidden sm:inline">
+              <T k="pages.cashFlow" />
+            </span>
           </TabsTrigger>
         </TabsList>
 

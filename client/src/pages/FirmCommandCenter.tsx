@@ -1,3 +1,4 @@
+import type * as React from "react";
 /**
  * Phase 6: Firm-Wide Command Center
  *
@@ -5,6 +6,7 @@
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
 import { T } from "@/components/layout/T";
+import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useMemo, useState } from "react";
@@ -140,15 +142,6 @@ interface ComparisonResponse {
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-function formatAed(n: number): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
 function ratingColor(rating: ClientHealthRow["rating"]): string {
   switch (rating) {
     case "excellent":
@@ -185,7 +178,7 @@ function MetricCard({
   trend,
 }: {
   title: string;
-  value: string;
+  value: React.ReactNode;
   subtitle?: string;
   icon: typeof TrendingUp;
   trend?: { value: number; label: string };
@@ -198,7 +191,7 @@ function MetricCard({
         <Icon className="w-4 h-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-lg font-bold tabular-nums sm:text-2xl">{value}</div>
         {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
         {trend && (
           <div
@@ -444,7 +437,7 @@ export default function FirmCommandCenter() {
       />
 
       {/* Metrics row */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="mobile-keep-cols grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
         <MetricCard
           title={t["firmCommandCenter.totalClients"]}
           value={summary ? `${summary.totalClients}` : "—"}
@@ -457,12 +450,12 @@ export default function FirmCommandCenter() {
         />
         <MetricCard
           title={t["pages.outstandingAr"]}
-          value={summary ? formatAed(summary.totalOutstandingAr) : "—"}
+          value={summary ? <Money amount={summary.totalOutstandingAr} currency="AED" /> : "—"}
           icon={DollarSign}
         />
         <MetricCard
           title={t["firmCommandCenter.vatLiability"]}
-          value={summary ? formatAed(summary.totalVatLiability) : "—"}
+          value={summary ? <Money amount={summary.totalVatLiability} currency="AED" /> : "—"}
           subtitle={t["firmCommandCenter.acrossUnfiledReturns"]}
           icon={Calculator}
         />
@@ -662,8 +655,12 @@ export default function FirmCommandCenter() {
                           />
                         </Badge>
                       </TableCell>
-                      <TableCell data-numeric>{formatAed(c.revenue)}</TableCell>
-                      <TableCell data-numeric>{formatAed(c.overdueBalance)}</TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={c.revenue} currency="AED" />
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={c.overdueBalance} currency="AED" />
+                      </TableCell>
                       <TableCell>
                         {c.factors.vatOverdue ? (
                           <Badge variant="danger">

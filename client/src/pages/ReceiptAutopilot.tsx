@@ -52,20 +52,6 @@ interface ModelStats {
   };
 }
 
-const METHOD_LABELS: Record<ClassifierMethod, string> = {
-  rule: "Company Rules",
-  keyword: "UAE Keywords",
-  statistical: "Statistical (Naive Bayes)",
-  openai: "OpenAI Fallback",
-};
-
-const METHOD_DESCRIPTIONS: Record<ClassifierMethod, string> = {
-  rule: "Exact + fuzzy merchant patterns from your accepted history.",
-  keyword: "Built-in patterns covering DEWA, Etisalat, Careem, Emirates, …",
-  statistical: "Naive Bayes trained on your accepted classifications.",
-  openai: "Used when internal confidence falls below threshold.",
-};
-
 export default function ReceiptAutopilot() {
   const { t } = useTranslation();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
@@ -175,19 +161,17 @@ export default function ReceiptAutopilot() {
           {statsQuery.isError && (
             <Alert className="mt-4" variant="destructive" data-testid="alert-stats-error">
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                Could not load classifier stats:{" "}
-                {(statsQuery.error as any)?.message || "Please try again."}
-              </AlertDescription>
+              <AlertDescription>{t["pages.autopilotStatsError"]}</AlertDescription>
             </Alert>
           )}
           {stats?.belowThreshold && (
             <Alert className="mt-4" variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Internal classifier accuracy ({accuracyPct}%) is below the {thresholdPct}% threshold
-                — this company has been automatically switched to OpenAI-only mode. Restore hybrid
-                mode below once you have more training data.
+                {formatMessage(t["pages.autopilotBelowThreshold"], {
+                  accuracy: accuracyPct,
+                  threshold: thresholdPct,
+                })}
               </AlertDescription>
             </Alert>
           )}
@@ -220,7 +204,7 @@ export default function ReceiptAutopilot() {
                 <Card key={m.method} className="border-muted">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      {METHOD_LABELS[m.method]}
+                      {t[`pages.autopilotMethod_${m.method}`]}
                       {m.method === "openai" && (
                         <Badge variant="outline" className="text-xs">
                           <T k="pageLabels.fallback" />
@@ -228,7 +212,7 @@ export default function ReceiptAutopilot() {
                       )}
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      {METHOD_DESCRIPTIONS[m.method]}
+                      {t[`pages.autopilotMethodHint_${m.method}`]}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -240,7 +224,9 @@ export default function ReceiptAutopilot() {
                         {Math.round(m.accuracy * 100)}%
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {m.accepted + m.rejected} judged
+                        {formatMessage(t["pages.autopilotJudged"], {
+                          count: m.accepted + m.rejected,
+                        })}
                       </span>
                     </div>
                     <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
@@ -253,7 +239,7 @@ export default function ReceiptAutopilot() {
                         {m.rejected}
                       </span>
                       <span className="flex items-center gap-1 ml-auto">
-                        Total {m.totalPredictions}
+                        {formatMessage(t["pages.autopilotTotal"], { count: m.totalPredictions })}
                       </span>
                     </div>
                   </CardContent>

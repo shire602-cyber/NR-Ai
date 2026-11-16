@@ -5,12 +5,12 @@
  * link. "Details" opens the full status sheet (checklist, history, resubmit).
  */
 import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { fieldLabelKey } from "./einvoice-meta";
+import { errorKey, fieldLabelKey, rejectionSummary } from "./einvoice-meta";
 import { useEInvoiceStatus } from "./use-einvoice";
 
 /** Form control to focus for a validation issue field, or null when the fix is elsewhere. */
@@ -52,6 +52,13 @@ export function EInvoiceHeaderStrip({
           }
         )
       : null;
+  const rejection = rejectionSummary(view.rejection);
+  const rejectionText = rejection
+    ? rejection.message ||
+      (errorKey(rejection.errorCode)
+        ? t[errorKey(rejection.errorCode) as string]
+        : t["einvoicing.err_unknown"])
+    : null;
   const target = first ? focusTargetFor(first.field) : null;
 
   const fix = () => {
@@ -72,7 +79,11 @@ export function EInvoiceHeaderStrip({
         <span className="text-small font-medium text-foreground">
           {t["einvoicing.headerTitle"]}
         </span>
-        <EInvoiceTrackBadges delivery={delivery.status} reporting={reporting.status} />
+        <EInvoiceTrackBadges
+          delivery={delivery.status}
+          reporting={reporting.status}
+          showReportingLabel
+        />
         {reportMeta && (
           <span
             className={
@@ -96,6 +107,44 @@ export function EInvoiceHeaderStrip({
           {t["einvoicing.headerDetails"]}
         </Button>
       </div>
+      {rejection && (
+        <div
+          className="flex items-center gap-3 rounded-lg border border-danger/40 bg-danger-subtle p-3"
+          role="alert"
+          data-testid="einvoice-header-rejection"
+        >
+          <XCircle aria-hidden className="h-4 w-4 shrink-0 text-danger" />
+          <p className="min-w-0 flex-1 truncate text-small text-danger-subtle-foreground">
+            <span className="font-medium">
+              {view.tracks.delivery.status === "rejected"
+                ? t["einvoicing.headerRejected"]
+                : t["einvoicing.headerDeliveryFailed"]}
+              {": "}
+            </span>
+            <span dir="auto" title={rejectionText ?? undefined}>
+              {rejectionText}
+            </span>
+            {(rejection.field || rejection.rule) && (
+              <span className="text-caption text-muted-foreground">
+                {" ("}
+                <span dir="ltr" className="[unicode-bidi:isolate]">
+                  {rejection.field ?? rejection.rule}
+                </span>
+                {")"}
+              </span>
+            )}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen(true)}
+            data-testid="einvoice-header-resubmit"
+          >
+            {t["einvoicing.resubmit"]}
+          </Button>
+        </div>
+      )}
       {first && (
         <div
           className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning-subtle p-3"

@@ -436,8 +436,13 @@ export function BudgetVsActualWidget({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.lineId}>
-                  <td className="truncate border-t border-border py-2 pe-2" title={r.accountName}>
-                    <span dir="auto">{r.accountName}</span>
+                  <td
+                    className="truncate border-t border-border py-2 pe-2"
+                    title={locale === "ar" && r.accountNameAr ? r.accountNameAr : r.accountName}
+                  >
+                    <span dir="auto">
+                      {locale === "ar" && r.accountNameAr ? r.accountNameAr : r.accountName}
+                    </span>
                   </td>
                   <td className="border-t border-border py-2 text-end text-muted-foreground">
                     <Money amount={r.budgeted} showCurrency={false} />

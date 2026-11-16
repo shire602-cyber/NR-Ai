@@ -108,7 +108,7 @@ const TableCell = React.forwardRef<
       /* data-nowrap: dates, document numbers, IDs, statuses never wrap. */
       "[&[data-nowrap]]:whitespace-nowrap",
       /* data-truncate: the flexible name column, one line, ellipsis. */
-      "[&[data-truncate]]:max-w-[280px] [&[data-truncate]]:truncate",
+      "[&[data-truncate]]:max-w-[280px] [&[data-truncate]]:truncate [&[data-truncate]]:[unicode-bidi:plaintext]",
       "[&:has([role=checkbox])]:pe-0",
       className
     )}

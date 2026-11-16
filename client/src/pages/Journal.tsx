@@ -1049,10 +1049,13 @@ function JournalLinesTable({
           {lines.map((line, idx) => (
             <TableRow key={idx}>
               <TableCell data-truncate="" className="max-w-none">
-                <span className="me-2 inline-block tabular-nums text-muted-foreground">
+                <span
+                  dir="ltr"
+                  className="me-2 inline-block tabular-nums text-muted-foreground [unicode-bidi:isolate]"
+                >
                   {line.account?.code}
                 </span>
-                <span dir="auto">
+                <span dir="auto" className="[unicode-bidi:isolate]">
                   {locale === "ar" && line.account?.nameAr
                     ? line.account.nameAr
                     : line.account?.nameEn}

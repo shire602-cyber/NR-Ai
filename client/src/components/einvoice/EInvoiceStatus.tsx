@@ -65,11 +65,14 @@ export function EInvoiceTrackBadges({
   reporting,
   className,
   testId,
+  showReportingLabel = false,
 }: {
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
   className?: string;
   testId?: string;
+  /** Spell the FTA reporting state out ("FTA: Pending") instead of the icon-only mark. */
+  showReportingLabel?: boolean;
 }) {
   const { t } = useTranslation();
   // The list cell is narrow: "Validated, not sent" reads "Not sent" there.
@@ -94,14 +97,27 @@ export function EInvoiceTrackBadges({
         <StatusBadge
           tone={REPORTING_TONE[reporting]}
           title={`${t["einvoicing.trackReporting"]}: ${reportingText}`}
-          className="px-1.5"
+          className={showReportingLabel ? undefined : "px-1.5"}
+          data-testid={showReportingLabel ? "einvoice-fta-chip" : undefined}
         >
           {/* Compact: an FTA mark coloured by the reporting state; the text is for screen readers
-              and the tooltip, so the list row keeps its height. */}
+              and the tooltip, so the list row keeps its height. The header strip spells it out. */}
           <Landmark aria-hidden className="h-3 w-3" />
-          <span className="sr-only">
-            {t["einvoicing.trackReporting"]}: {reportingText}
-          </span>
+          {showReportingLabel ? (
+            <span>
+              {
+                t[
+                  reporting === "pending" && (delivery === "draft" || delivery === "validated")
+                    ? "einvoicing.ftaChip_not_sent"
+                    : `einvoicing.ftaChip_${reporting}`
+                ]
+              }
+            </span>
+          ) : (
+            <span className="sr-only">
+              {t["einvoicing.trackReporting"]}: {reportingText}
+            </span>
+          )}
         </StatusBadge>
       )}
     </span>
