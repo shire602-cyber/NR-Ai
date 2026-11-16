@@ -134,6 +134,9 @@ const invoiceLineSchema = z.object({
   vatSupplyType: z.enum(SUPPLY_TYPE_OPTIONS).default("standard_rated"),
   // R03-07: line discount in percent (0 = none). Sent as discountType/discountValue.
   discountPercent: z.coerce.number().min(0).max(100).default(0),
+  // S8 (R07-15): profit-margin scheme (second-hand goods, standard-rated lines only).
+  marginScheme: z.boolean().default(false),
+  marginPurchaseCost: z.coerce.number().min(0).default(0),
 });
 
 const EMPTY_LINE = {
@@ -143,6 +146,8 @@ const EMPTY_LINE = {
   vatRate: 0.05,
   vatSupplyType: "standard_rated" as SupplyTypeOption,
   discountPercent: 0,
+  marginScheme: false,
+  marginPurchaseCost: 0,
 };
 
 // S1 (W5-E): form totals come from the pure, tested client/src/lib/invoice-totals.ts, which
@@ -644,6 +649,8 @@ export default function Invoices() {
                 vatSupplyType?: string | null;
                 discountType?: string | null;
                 discountValue?: number | null;
+                marginScheme?: boolean | null;
+                marginPurchaseCost?: number | string | null;
               }) => ({
                 description: l.description,
                 quantity: Number(l.quantity),
@@ -657,6 +664,8 @@ export default function Invoices() {
                     ? "standard_rated"
                     : "zero_rated",
                 discountPercent: l.discountType === "percent" ? Number(l.discountValue) || 0 : 0,
+                marginScheme: !!l.marginScheme,
+                marginPurchaseCost: Number(l.marginPurchaseCost) || 0,
               })
             )
           : [{ ...EMPTY_LINE }],
@@ -702,6 +711,12 @@ export default function Invoices() {
           vatSupplyType: line.vatSupplyType,
           ...(Number(line.discountPercent) > 0
             ? { discountType: "percent", discountValue: Number(line.discountPercent) }
+            : {}),
+          ...(line.marginScheme && line.vatSupplyType === "standard_rated"
+            ? {
+                marginScheme: true,
+                marginPurchaseCost: Math.round(Number(line.marginPurchaseCost) * 100) / 100,
+              }
             : {}),
         })),
       };
@@ -1348,6 +1363,9 @@ export default function Invoices() {
                                           `lines.${index}.vatRate`,
                                           lineVatRate(val as SupplyTypeOption, standardRate)
                                         );
+                                        if (val !== "standard_rated") {
+                                          form.setValue(`lines.${index}.marginScheme`, false);
+                                        }
                                       }}
                                     >
                                       <SelectTrigger
@@ -1422,6 +1440,60 @@ export default function Invoices() {
                               </Button>
                             )}
                           </div>
+                          {(watchLines[index]?.vatSupplyType ?? "standard_rated") ===
+                            "standard_rated" && (
+                            <div className="col-span-12 flex flex-wrap items-center gap-3">
+                              <FormField
+                                control={form.control}
+                                name={`lines.${index}.marginScheme`}
+                                render={({ field }) => (
+                                  <FormItem className="flex items-center gap-2 space-y-0">
+                                    <FormControl>
+                                      <Switch
+                                        checked={!!field.value}
+                                        onCheckedChange={field.onChange}
+                                        aria-label={t["invoices.marginScheme"]}
+                                        data-testid={`switch-line-margin-${index}`}
+                                      />
+                                    </FormControl>
+                                    <span className="text-sm">{t["invoices.marginScheme"]}</span>
+                                  </FormItem>
+                                )}
+                              />
+                              {watchLines[index]?.marginScheme && (
+                                <>
+                                  <FormField
+                                    control={form.control}
+                                    name={`lines.${index}.marginPurchaseCost`}
+                                    render={({ field }) => (
+                                      <FormItem className="w-40">
+                                        <FormControl>
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            min={0}
+                                            placeholder={t["invoices.marginPurchaseCost"]}
+                                            aria-label={t["invoices.marginPurchaseCost"]}
+                                            className="font-mono"
+                                            value={field.value ?? ""}
+                                            onChange={(e) =>
+                                              field.onChange(
+                                                e.target.value ? parseFloat(e.target.value) : 0
+                                              )
+                                            }
+                                            data-testid={`input-line-margin-cost-${index}`}
+                                          />
+                                        </FormControl>
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <span className="text-xs text-muted-foreground">
+                                    {t["invoices.marginSchemeHint"]}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

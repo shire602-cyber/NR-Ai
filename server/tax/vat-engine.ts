@@ -388,7 +388,7 @@ async function computeSingle(
   for (const c of contributions) addDelta(filed, c.boxes);
   const boxesFils = deriveTotals(currency.converted ? filed : boxes);
 
-  return {
+  const result: VatComputation = {
     engineVersion: VAT_ENGINE_VERSION,
     companyId,
     company,
@@ -410,11 +410,24 @@ async function computeSingle(
     reconciliation,
     group: null,
   };
+  ledgerByDate.set(result, gl.byCategoryDate);
+  return result;
 }
+
+/** Internal: each single computation's VAT GL balances by (category, date), for group FX (S8). */
+const ledgerByDate = new WeakMap<VatComputation, LedgerVat["byCategoryDate"]>();
 
 // ─── Filing currency (S1, W5-C follow-up) ────────────────────────────────
 
 const VAT_FILING_CURRENCY = "AED";
+
+async function resolveToAed(): Promise<FxToVatFilingCurrency> {
+  if (!has("fx.toVatFilingCurrency")) {
+    const fx = await import("../services/fx");
+    fx.registerFxServices();
+  }
+  return resolve<FxToVatFilingCurrency>("fx.toVatFilingCurrency");
+}
 
 /**
  * Convert every contribution's box deltas from the functional currency into AED at the document
@@ -435,14 +448,7 @@ async function convertToFilingCurrency(
     rates: [],
   };
   if (company.baseCurrency === VAT_FILING_CURRENCY || contributions.length === 0) return out;
-  let toAed: FxToVatFilingCurrency;
-  if (has("fx.toVatFilingCurrency")) {
-    toAed = resolve<FxToVatFilingCurrency>("fx.toVatFilingCurrency");
-  } else {
-    const fx = await import("../services/fx");
-    fx.registerFxServices();
-    toAed = resolve<FxToVatFilingCurrency>("fx.toVatFilingCurrency");
-  }
+  const toAed = await resolveToAed();
   const rates = new Map<string, string>();
   const missing = new Set<string>();
   for (const c of contributions) {
@@ -1125,13 +1131,12 @@ async function collectLedger(
   from: string,
   to: string,
   vatAccounts: VatAccount[]
-): Promise<{
-  byCategory: Map<ReconCategory, { output: number; input: number }>;
-  manual: ManualJournal[];
-}> {
+): Promise<LedgerVat> {
   const byCategory = new Map<ReconCategory, { output: number; input: number }>();
+  const byCategoryDate: LedgerVat["byCategoryDate"] = [];
+  const dated = new Map<string, LedgerVat["byCategoryDate"][number]>();
   const manual = new Map<string, ManualJournal>();
-  if (vatAccounts.length === 0) return { byCategory, manual: [] };
+  if (vatAccounts.length === 0) return { byCategory, byCategoryDate, manual: [] };
   const typeOf = new Map(vatAccounts.map((a) => [a.id, a.vatType]));
   const lines = await ledgerLines(companyId, {
     from,
@@ -1172,6 +1177,11 @@ async function collectLedger(
     agg.output += out;
     agg.input += inp;
     byCategory.set(cat, agg);
+    const dkey = `${cat}|${l.entryId}`;
+    const d = dated.get(dkey) ?? { category: cat, date: l.date, output: 0, input: 0 };
+    d.output += out;
+    d.input += inp;
+    dated.set(dkey, d);
     if (!DOC_SOURCES.has(source)) {
       const m = manual.get(l.entryId) ?? {
         entryId: l.entryId,
@@ -1187,10 +1197,20 @@ async function collectLedger(
       manual.set(l.entryId, m);
     }
   }
+  for (const d of dated.values()) if (d.output !== 0 || d.input !== 0) byCategoryDate.push(d);
   return {
     byCategory,
+    byCategoryDate,
     manual: [...manual.values()].filter((m) => m.outputFils !== 0 || m.inputFils !== 0),
   };
+}
+
+interface LedgerVat {
+  byCategory: Map<ReconCategory, { output: number; input: number }>;
+  /** Same balances split per journal entry (with its date), so a non-AED member converts each
+   * entry at its date exactly as its document contribution is converted (S8). */
+  byCategoryDate: Array<{ category: ReconCategory; date: string; output: number; input: number }>;
+  manual: ManualJournal[];
 }
 
 // ─── VAT groups ──────────────────────────────────────────────────────────
@@ -1262,13 +1282,17 @@ async function computeGroup(
     excluded.intraGroup.push(...p.excluded.intraGroup);
     for (const [k, v] of Object.entries(p.counts)) counts[k] = (counts[k] ?? 0) + v;
   }
+  // S8: member boxes are filed in AED, so a non-AED member's VAT GL balances are converted to
+  // AED the same way (fx.toVatFilingCurrency at the entry date) before the group reconciliation.
+  const ledgers: Array<Map<ReconCategory, { output: number; input: number }>> = [];
+  for (const p of parts) ledgers.push(await groupMemberLedgerInAed(p, issues));
   if (!input.allowIncomplete && issues.length > 0) throwBlocking(issues);
   const boxesFils = deriveTotals(boxes);
   const recon = parts.map((p) => p.reconciliation);
   const reconciliation = buildReconciliation({
     boxes: boxesFils,
     contributions,
-    ledgerByCategory: mergeLedger(recon),
+    ledgerByCategory: mergeLedgerMaps(ledgers),
     hasVatAccounts: recon.some((r) => r.hasVatAccounts),
   });
   return {
@@ -1292,16 +1316,59 @@ async function computeGroup(
   };
 }
 
-function mergeLedger(
-  recons: VatReconciliation[]
+/** A member's VAT GL balances by category, in its functional currency (AED members) or AED. */
+async function groupMemberLedgerInAed(
+  part: VatComputation,
+  issues: VatIssue[]
+): Promise<Map<ReconCategory, { output: number; input: number }>> {
+  const m = new Map<ReconCategory, { output: number; input: number }>();
+  if (part.company.baseCurrency === VAT_FILING_CURRENCY) {
+    for (const row of part.reconciliation.byCategory) {
+      m.set(row.category, { output: row.ledgerOutputFils, input: row.ledgerInputFils });
+    }
+    return m;
+  }
+  const toAed = await resolveToAed();
+  const missing = new Set<string>();
+  for (const row of ledgerByDate.get(part) ?? []) {
+    if (missing.has(row.date)) continue;
+    try {
+      const output = row.output ? (await toAed(part.companyId, row.output, row.date)).fils : 0;
+      const input = row.input ? (await toAed(part.companyId, row.input, row.date)).fils : 0;
+      const agg = m.get(row.category) ?? { output: 0, input: 0 };
+      agg.output += output;
+      agg.input += input;
+      m.set(row.category, agg);
+    } catch (err) {
+      if (err instanceof DomainError && err.code === "NO_EXCHANGE_RATE") {
+        missing.add(row.date);
+        if (!issues.some((i) => i.code === "NO_EXCHANGE_RATE" && i.documentId === part.companyId)) {
+          issues.push({
+            code: "NO_EXCHANGE_RATE",
+            message: `No ${part.company.baseCurrency}→AED rate on or before ${row.date} for VAT group member ${part.company.name}: its VAT ledger cannot be reconciled in AED`,
+            documentType: "vat_group_member",
+            documentId: part.companyId,
+            reference: part.company.name,
+          });
+        }
+        continue;
+      }
+      throw err;
+    }
+  }
+  return m;
+}
+
+function mergeLedgerMaps(
+  maps: Array<Map<ReconCategory, { output: number; input: number }>>
 ): Map<ReconCategory, { output: number; input: number }> {
   const m = new Map<ReconCategory, { output: number; input: number }>();
-  for (const r of recons) {
-    for (const row of r.byCategory) {
-      const agg = m.get(row.category) ?? { output: 0, input: 0 };
-      agg.output += row.ledgerOutputFils;
-      agg.input += row.ledgerInputFils;
-      m.set(row.category, agg);
+  for (const map of maps) {
+    for (const [category, row] of map) {
+      const agg = m.get(category) ?? { output: 0, input: 0 };
+      agg.output += row.output;
+      agg.input += row.input;
+      m.set(category, agg);
     }
   }
   return m;

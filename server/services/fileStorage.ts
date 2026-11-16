@@ -339,6 +339,43 @@ export async function deleteObject(
   }
 }
 
+/**
+ * S8: like `deleteObject`, but a backend failure throws so a caller can retry it later (the
+ * object-deletion queue). A missing object is success; an invalid reference is ignored (nothing
+ * under the allowed prefixes can exist for it).
+ */
+export async function deleteObjectOrThrow(
+  ref: string,
+  prefixes: readonly string[] = OBJECT_PREFIXES
+): Promise<void> {
+  if (VERCEL_BLOB_URL.test(ref)) {
+    const { del } = await loadVercelBlob();
+    await del(ref, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    return;
+  }
+  let key: string;
+  try {
+    key = assertSafeKey(ref, prefixes);
+  } catch {
+    return;
+  }
+  if (adapterOverride) {
+    await adapterOverride.del(key);
+    return;
+  }
+  const s3 = getS3();
+  if (s3) {
+    // S3 DeleteObject is idempotent: a missing key is a 204, so any error is a real failure.
+    await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key }));
+    return;
+  }
+  try {
+    await fs.unlink(path.join(projectRoot, "uploads", key));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
 // ── Receipts (thin wrappers over the object store) ──────────────────────────────
 
 const RECEIPT_PREFIXES = [receiptsPrefix] as const;

@@ -1164,6 +1164,27 @@ export const companyReportDeliveryArtifacts = pgTable(
 
 export type CompanyReportDeliveryArtifact = typeof companyReportDeliveryArtifacts.$inferSelect;
 
+// S8: object-storage deletions queued by a trigger when an artifact row with a storage_key is
+// deleted (directly or by cascade); drained with retries by the storage.objectDeletionSweep job.
+export const objectStorageDeletions = pgTable(
+  "object_storage_deletions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    storageKey: text("storage_key").notNull(),
+    source: text("source").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    dueIdx: index("idx_object_storage_deletions_due").on(table.status, table.nextAttemptAt),
+  })
+);
+
 // ===========================
 // Firm Staff Assignments
 // ===========================

@@ -11,7 +11,11 @@
  *
  * Only standard-rated lines charge VAT (at the jurisdiction's standard rate: 5% UAE, 15% KSA);
  * zero-rated, exempt, out-of-scope and reverse-charge lines charge 0%.
- * tests/unit/invoice-totals.test.ts checks it against the server engine.
+ *
+ * Profit-margin scheme lines (S8, R07-15; second-hand goods, standard-rated only): the price is
+ * VAT-inclusive and VAT is the tax fraction of the margin over the purchase cost, rounded per
+ * line: VAT = halfUp(max(0, price − cost) × r / (1 + r)), net = price − VAT.
+ * tests/unit/s1-sales-tax.test.ts checks it against the server engine.
  */
 
 export type InvoiceFormSupplyType =
@@ -28,6 +32,10 @@ export interface InvoiceFormLine {
   vatSupplyType?: InvoiceFormSupplyType | string | null;
   /** Line discount in percent, 0..100. */
   discountPercent?: number | string | null;
+  /** Profit-margin scheme line (second-hand goods): price includes VAT on the margin only. */
+  marginScheme?: boolean | null;
+  /** Purchase cost of the whole line, major units (margin-scheme lines). */
+  marginPurchaseCost?: number | string | null;
 }
 
 export interface InvoiceFormLineTotals {
@@ -38,6 +46,8 @@ export interface InvoiceFormLineTotals {
   vatRate: number;
   /** net + line VAT, major units (row display). */
   lineTotal: number;
+  /** Margin-scheme lines: VAT-exclusive margin in fils (VAT 201 Box 1); null otherwise. */
+  marginFils: number | null;
 }
 
 export interface InvoiceFormTotals {
@@ -87,6 +97,21 @@ export function computeInvoiceFormLine(
   const discountFils = Math.min(grossFils, halfUp((grossFils * pct) / 100));
   const netFils = grossFils - discountFils;
   const vatRate = lineVatRate(line.vatSupplyType, standardRate);
+  if (line.marginScheme && vatRate > 0) {
+    const priceFils = grossFils - discountFils;
+    const costFils = halfUp(Math.abs(num(line.marginPurchaseCost)) * 100);
+    const margin = Math.max(0, priceFils - costFils);
+    const marginVat = halfUp((margin * vatRate) / (1 + vatRate));
+    return {
+      grossFils,
+      discountFils,
+      netFils: priceFils - marginVat,
+      vatFils: marginVat,
+      vatRate,
+      lineTotal: priceFils / 100,
+      marginFils: margin - marginVat,
+    };
+  }
   const vatFils = halfUp(netFils * vatRate);
   return {
     grossFils,
@@ -95,6 +120,7 @@ export function computeInvoiceFormLine(
     vatFils,
     vatRate,
     lineTotal: (netFils + vatFils) / 100,
+    marginFils: null,
   };
 }
 
@@ -105,7 +131,11 @@ export function computeInvoiceFormTotals(
 ): InvoiceFormTotals {
   const out = (lines ?? []).map((l) => computeInvoiceFormLine(l, standardRate));
   const subtotalFils = out.reduce((s, l) => s + l.netFils, 0);
-  const vatExact = out.reduce((s, l) => s + l.netFils * l.vatRate, 0);
+  // Margin lines carry their per-line rounded VAT; other lines are rounded once below.
+  const vatExact = out.reduce(
+    (s, l) => s + (l.marginFils !== null ? l.vatFils : l.netFils * l.vatRate),
+    0
+  );
   const vatFils = halfUp(vatExact);
   const totalFils = subtotalFils + vatFils;
   const ratesCharged = [...new Set(out.filter((l) => l.netFils > 0).map((l) => l.vatRate))].sort(
