@@ -98,6 +98,25 @@ function reportTabSource(tab: string): string {
 }
 
 /**
+ * Reads `t["ns.key"]` / `translateNow("ns.key")` call sites as their English catalog copy so the
+ * copy assertions below stay meaningful after strings move into the locale catalogs.
+ */
+function inlineCatalogCopy(src: string): string {
+  const copy: Record<string, string> = {};
+  const dir = join(process.cwd(), "client/src/locales/en");
+  for (const name of readdirSync(dir)) {
+    if (name.endsWith(".json"))
+      Object.assign(
+        copy,
+        JSON.parse(readFileSync(join(dir, name), "utf8")) as Record<string, string>
+      );
+  }
+  return src.replace(/(?:\bt\[|translateNow\()"([A-Za-z0-9_.]+)"[\])]/g, (m, key: string) =>
+    copy[key] !== undefined ? JSON.stringify(copy[key]) : m
+  );
+}
+
+/**
  * R20-09: the Reports page is a thin shell over client/src/pages/reports feature modules,
  * and its UI copy lives in the reportCenter i18n catalog (R18-02). Source assertions read the
  * whole page: shell + modules, with catalog keys read as their English copy.
@@ -122,7 +141,7 @@ function readReportsPageSource(): string {
   // (a T node that is an element's only child reads as `>Copy<`, as before the split).
   return files
     .map((file) =>
-      read(file)
+      inlineCatalogCopy(read(file))
         .replace(/>\s*<T k="(reportCenter\.[A-Za-z0-9]+)" \/>\s*</g, (m, key: string) =>
           catalog[key] ? `>${catalog[key]}<` : m
         )
@@ -156,7 +175,7 @@ describe("report discoverability", () => {
   });
 
   const catalogSource = read("client/src/lib/reportCatalog.ts");
-  const commandSource = read("client/src/components/CommandPalette.tsx");
+  const commandSource = inlineCatalogCopy(read("client/src/components/CommandPalette.tsx"));
   const dashboardSource = readDashboardSource(process.cwd(), true);
   const reportLaunchPickerSource = read("client/src/components/reports/ReportLaunchPicker.tsx");
   const mobileNavSource = read("client/src/components/MobileNav.tsx");

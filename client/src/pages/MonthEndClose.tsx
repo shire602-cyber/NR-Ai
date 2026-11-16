@@ -500,10 +500,10 @@ export default function MonthEndClose() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4 flex-wrap">
-            <span className="text-sm font-medium">Period:</span>
+            <span className="text-sm font-medium">{t["monthEnd.periodLabel"]}</span>
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Month" />
+                <SelectValue placeholder={t["hr.month"]} />
               </SelectTrigger>
               <SelectContent>
                 {months.map((m) => (
@@ -515,7 +515,7 @@ export default function MonthEndClose() {
             </Select>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger className="w-[120px]">
-                <SelectValue placeholder="Year" />
+                <SelectValue placeholder={t["hr.year"]} />
               </SelectTrigger>
               <SelectContent>
                 {years.map((y) => (
@@ -547,13 +547,19 @@ export default function MonthEndClose() {
                 <T k="pageLabels.closeChecklist" />
               </CardTitle>
               <CardDescription>
-                {completedCount}/{totalCount} items complete for {formatPeriodLabel(period)}
+                {formatMessage(t["monthEnd.itemsCompleteFor"], {
+                  done: completedCount,
+                  total: totalCount,
+                  period: formatPeriodLabel(period),
+                })}
               </CardDescription>
             </div>
             <Badge variant={completedCount === totalCount ? "default" : "secondary"}>
               {completedCount === totalCount
-                ? "All Clear"
-                : `${totalCount - completedCount} remaining`}
+                ? t["pages.allClear"]
+                : formatMessage(t["monthEnd.remainingCount"], {
+                    count: totalCount - completedCount,
+                  })}
             </Badge>
           </div>
         </CardHeader>
@@ -656,7 +662,7 @@ export default function MonthEndClose() {
               ) : (
                 <Sparkles className="h-4 w-4 me-2" />
               )}
-              Run Validation
+              {t["monthEnd.runValidation"]}
             </Button>
           </div>
         </CardHeader>
@@ -677,7 +683,9 @@ export default function MonthEndClose() {
                 )}
                 <div className="space-y-1">
                   <p className="font-medium text-sm">
-                    {validationMutation.data.ready ? "Ready to Close" : "Not Ready"}
+                    {validationMutation.data.ready
+                      ? t["monthEnd.readyToClose"]
+                      : t["monthEnd.notReady"]}
                   </p>
                   <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-sans">
                     {validationMutation.data.summary}
@@ -694,7 +702,7 @@ export default function MonthEndClose() {
             </div>
           ) : (
             <p className="text-muted-foreground text-sm text-center py-6">
-              Click "Run Validation" to get an AI-powered readiness assessment.
+              {t["monthEnd.runValidationHint"]}
             </p>
           )}
         </CardContent>

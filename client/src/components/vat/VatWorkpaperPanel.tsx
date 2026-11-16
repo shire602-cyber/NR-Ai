@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -174,6 +175,7 @@ export default function VatWorkpaperPanel({
   defaultEmirate,
   onVatReturnGenerated,
 }: VatWorkpaperPanelProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [pickedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState(inputDate(defaultPeriodStart));
@@ -547,7 +549,9 @@ export default function VatWorkpaperPanel({
               data-testid="button-pull-vat-workpaper-from-books"
             >
               <BookOpen className="w-4 h-4 me-2" />
-              {pullFromBooksMutation.isPending ? "Pulling..." : "Pull from books"}
+              {pullFromBooksMutation.isPending
+                ? t["components.vatWorkpaperPulling"]
+                : t["components.vatWorkpaperPull"]}
             </Button>
             <Button
               variant="outline"
@@ -614,7 +618,11 @@ export default function VatWorkpaperPanel({
               <Select value={selectedWorkpaperId ?? ""} onValueChange={setSelectedWorkpaperId}>
                 <SelectTrigger data-testid="select-vat-workpaper">
                   <SelectValue
-                    placeholder={workpapers.length ? "Select workpaper" : "No workpaper"}
+                    placeholder={
+                      workpapers.length
+                        ? t["components.vatWorkpaperSelect"]
+                        : t["components.vatWorkpaperNone"]
+                    }
                   />
                 </SelectTrigger>
                 <SelectContent>
@@ -645,7 +653,7 @@ export default function VatWorkpaperPanel({
                 })
               }
               disabled={!selectedWorkpaperId}
-              title="Refresh workpaper"
+              title={t["components.vatWorkpaperRefresh"]}
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -768,7 +776,7 @@ export default function VatWorkpaperPanel({
                   <TableCell>
                     <Input
                       className="h-8 min-w-52"
-                      placeholder="Customer or vendor"
+                      placeholder={t["components.vatWorkpaperCounterparty"]}
                       value={rowForm.counterpartyName}
                       onChange={(event) =>
                         setRowForm((form) => ({ ...form, counterpartyName: event.target.value }))
@@ -881,8 +889,7 @@ export default function VatWorkpaperPanel({
                       colSpan={10}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
-                      No rows yet. Create a workpaper, add the first row, paste from Excel, or pull
-                      issued invoices and posted receipts from books.
+                      <T k="components.vatWorkpaperEmpty" />
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -945,7 +952,7 @@ export default function VatWorkpaperPanel({
                             className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             disabled={deleteRowMutation.isPending}
                             aria-label={`Remove VAT row ${row.invoiceNumber || row.id}`}
-                            title="Remove VAT row"
+                            title={t["components.vatWorkpaperRemoveRow"]}
                             onClick={() => {
                               const label = row.invoiceNumber
                                 ? `VAT row ${row.invoiceNumber}`

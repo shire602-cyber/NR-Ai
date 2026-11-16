@@ -119,5 +119,22 @@
   "firm.clientsManagedOne": "عميل واحد يديره مكتبك",
   "firm.clientsManagedMany": "{count} عملاء يديرهم مكتبك",
   "firm.vatDue30d": "ضريبة مستحقة خلال 30 يومًا",
-  "firm.emptyColumn": "لا شيء هنا"
+  "firm.emptyColumn": "لا شيء هنا",
+  "firm.staffManagementTitle": "إدارة الموظفين",
+  "firm.staffManagementDescription": "أدر تعيينات موظفي NRA عبر شركات العملاء",
+  "firm.eyebrowFirm": "المكتب",
+  "firm.staffSearchPlaceholder": "ابحث عن موظف بالاسم أو البريد الإلكتروني...",
+  "firm.valueOpsNoPriorityClient": "لا يوجد عميل ذو أولوية",
+  "firm.valueOpsNoTrn": "لا يوجد رقم ضريبي",
+  "firm.valueOpsAuditPack": "حزمة الدفاع عن التدقيق",
+  "firm.valueOpsCfoPack": "حزمة المدير المالي الشهرية",
+  "firm.valueOpsNoReturn": "لا يوجد إقرار",
+  "firm.valueOpsTitle": "عمليات القيمة",
+  "firm.valueOpsDescription": "قائمة انتظار شاملة لـ NRA تضم النقد والامتثال والإقفال والمراجعة وتقارير العملاء.",
+  "firm.valueOpsCashAtRisk": "النقد المعرّض للخطر",
+  "firm.valueOpsPenaltyRiskClients": "عملاء معرّضون لغرامات",
+  "firm.valueOpsReviewerQueue": "قائمة المراجعة",
+  "firm.valueOpsServiceAr": "ذمم خدمات NRA المدينة",
+  "firm.valueOpsScoreDefense": "الدفاع",
+  "firm.revenueOpportunitiesRefreshed": "تم تحديث فرص الإيرادات"
 }

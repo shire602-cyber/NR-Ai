@@ -140,7 +140,7 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="John Doe"
+                      placeholder={t["components.authNamePlaceholder"]}
                       disabled={isLoading}
                       data-testid="input-name"
                     />

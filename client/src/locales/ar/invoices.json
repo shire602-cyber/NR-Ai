@@ -87,5 +87,8 @@
   "invoices.overdueDays": "متأخر {days} يومًا",
   "invoices.overdueDay": "متأخر يوم واحد",
   "invoices.einvoiceBuyerHint": "الفوترة الإلكترونية مفعّلة لهذه الشركة. يحتاج المشتري المسجّل في ضريبة القيمة المضافة إلى الشارع والمدينة والإمارة في بيانات جهة الاتصال قبل إصدار هذه الفاتورة كفاتورة إلكترونية.",
-  "invoices.einvoiceBuyerHintLink": "تحديث جهة الاتصال"
+  "invoices.einvoiceBuyerHintLink": "تحديث جهة الاتصال",
+  "invoices.recurringManageRecurringInvoiceTemplates": "ادارة قوالب الفواتير المتكررة",
+  "invoices.recurringNextRunDate": "التشغيل التالي",
+  "invoices.recurringDeleteConfirm": "سيؤدي هذا إلى حذف جدول الفاتورة المتكررة نهائياً. لا يمكن التراجع عن هذا الإجراء."
 }

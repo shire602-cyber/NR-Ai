@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -48,23 +49,28 @@ import type { ReminderSetting, ReminderLog } from "@shared/schema";
 const REMINDER_TYPES = [
   {
     value: "invoice_overdue",
-    label: "Invoice Overdue",
-    description: "Send when invoice is past due date",
+    label: "pages.remindersTypeInvoiceOverdue",
+    description: "pages.remindersTypeInvoiceOverdueDesc",
   },
   {
     value: "invoice_due_soon",
-    label: "Invoice Due Soon",
-    description: "Send before invoice due date",
+    label: "pages.remindersTypeInvoiceDueSoon",
+    description: "pages.remindersTypeInvoiceDueSoonDesc",
   },
-  { value: "vat_deadline", label: "VAT Deadline", description: "Remind about upcoming VAT filing" },
+  {
+    value: "vat_deadline",
+    label: "pages.remindersTypeVatDeadline",
+    description: "pages.remindersTypeVatDeadlineDesc",
+  },
   {
     value: "payment_followup",
-    label: "Payment Follow-up",
-    description: "Follow up on unpaid invoices",
+    label: "pages.remindersTypePaymentFollowup",
+    description: "pages.remindersTypePaymentFollowupDesc",
   },
 ];
 
 export default function Reminders() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId, isLoading: companyLoading } = useDefaultCompany();
@@ -124,7 +130,7 @@ export default function Reminders() {
         queryKey: ["/api/companies", selectedCompanyId, "reminder-settings"],
       });
       setShowCreateDialog(false);
-      toast({ title: "Reminder setting created" });
+      toast({ title: t["pages.remindersCreated"] });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error?.message, variant: "destructive" });
@@ -138,7 +144,7 @@ export default function Reminders() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "reminder-settings"],
       });
-      toast({ title: "Reminder setting updated" });
+      toast({ title: t["pages.remindersUpdated"] });
     },
   });
 
@@ -255,9 +261,9 @@ export default function Reminders() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Operations"
-        title="Payment Reminders"
-        description="Configure automated reminders for invoices and deadlines"
+        eyebrow={t["pages.eyebrowOperations"]}
+        title={t["pages.remindersTitle"]}
+        description={t["pages.remindersDescription"]}
         actions={
           <div className="flex gap-2">
             <Button
@@ -304,14 +310,14 @@ export default function Reminders() {
                 onValueChange={(value) => setNewSetting({ ...newSetting, reminderType: value })}
               >
                 <SelectTrigger data-testid="select-reminder-type">
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder={t["screens.inv2SelectType"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {REMINDER_TYPES.map((type) => (
                     <SelectItem key={type.value} value={type.value}>
                       <div>
-                        <div className="font-medium">{type.label}</div>
-                        <div className="text-xs text-muted-foreground">{type.description}</div>
+                        <div className="font-medium">{t[type.label]}</div>
+                        <div className="text-xs text-muted-foreground">{t[type.description]}</div>
                       </div>
                     </SelectItem>
                   ))}
@@ -524,12 +530,14 @@ export default function Reminders() {
                       <div className="flex items-center justify-between">
                         <div>
                           <CardTitle className="flex items-center gap-2">
-                            {typeInfo?.label || setting.reminderType}
+                            {typeInfo ? t[typeInfo.label] : setting.reminderType}
                             <Badge variant={setting.isEnabled ? "default" : "secondary"}>
                               {setting.isEnabled ? "Active" : "Disabled"}
                             </Badge>
                           </CardTitle>
-                          <CardDescription>{typeInfo?.description}</CardDescription>
+                          <CardDescription>
+                            {typeInfo ? t[typeInfo.description] : null}
+                          </CardDescription>
                         </div>
                         <Switch
                           checked={setting.isEnabled}

@@ -679,8 +679,7 @@ export default function SetupPanel() {
               <T k="reportCenter.workspaces" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-focused report coverage for owners, solo entrepreneurs, freelancers, and
-              accountants.
+              <T k="reportCenter.setupCoverageHint" />
             </p>
           </div>
           <Badge variant="outline">{visibleWorkspaceSummaries.length} roles</Badge>

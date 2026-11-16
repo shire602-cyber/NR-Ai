@@ -733,8 +733,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           isQueueing
             ? "Queueing"
             : requiresHandoffAcknowledgement
-              ? "Acknowledge handoff for"
-              : "Queue"
+              ? t["components.paletteAcknowledgeHandoffFor"]
+              : t["components.paletteQueue"]
         } ${subscription.title}`,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
@@ -864,10 +864,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           id: `report-queue-suite-delivery-${suite.id}`,
           label: `${
             isQueueing
-              ? "Queueing delivery for"
+              ? t["components.paletteQueueingDeliveryFor"]
               : requiresHandoffAcknowledgement
-                ? "Acknowledge handoff for"
-                : "Queue delivery for"
+                ? t["components.paletteAcknowledgeHandoffFor"]
+                : t["components.paletteQueueDeliveryFor"]
           } ${suite.title}`,
           group: "Reports",
           icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,

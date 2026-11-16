@@ -61,7 +61,7 @@ export default function Notifications() {
     mutationFn: () => apiRequest("POST", "/api/notifications/read-all"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      toast({ title: "All notifications marked as read" });
+      toast({ title: t["pages.notificationsAllRead"] });
     },
   });
 
@@ -69,7 +69,7 @@ export default function Notifications() {
     mutationFn: (id: string) => apiRequest("PATCH", `/api/notifications/${id}/dismiss`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      toast({ title: "Notification dismissed" });
+      toast({ title: t["pages.notificationDismissed"] });
     },
   });
 

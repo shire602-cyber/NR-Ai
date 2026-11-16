@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { reportSectionHref } from "@/lib/reportCatalog";
 import { FileText, Sparkles, ArrowRight, Clock, BarChart3 } from "lucide-react";
@@ -7,6 +8,7 @@ import { T } from "@/components/layout/T";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
+  const { t } = useTranslation();
   const {
     preferredReportWorkspace,
     dashboardReportWorkspaces,
@@ -24,8 +26,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
               <T k="pageLabels.reportingMode" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-              Switch the daily report workspace for owner, solo entrepreneur, freelancer, or
-              accountant workflows.
+              <T k="dashboard.workspaceSwitchHint" />
             </p>
           </div>
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-3xl">
@@ -168,8 +169,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
               <T k="reportCenter.reportSuites" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-              Role-based bundles that connect reports, comparisons, saved views, packs, and
-              autopilots for this workspace.
+              <T k="dashboard.workspaceSuitesHint" />
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "report-suites")}>
@@ -216,7 +216,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                     <T k="reportCenter.delivery" />
                   </div>
                   <div className="mt-1 truncate font-medium text-foreground">
-                    {suite.deliverySubscription?.channel ?? "Open setup"}
+                    {suite.deliverySubscription?.channel ?? t["dashboard.workspaceOpenSetup"]}
                   </div>
                 </div>
               </div>

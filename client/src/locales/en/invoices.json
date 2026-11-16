@@ -87,5 +87,8 @@
   "invoices.overdueDays": "Overdue {days} days",
   "invoices.overdueDay": "Overdue 1 day",
   "invoices.einvoiceBuyerHint": "E-invoicing is on for this company. A VAT-registered buyer needs a street, city and emirate on the contact before this invoice can be issued as an e-invoice.",
-  "invoices.einvoiceBuyerHintLink": "Update the contact"
+  "invoices.einvoiceBuyerHintLink": "Update the contact",
+  "invoices.recurringManageRecurringInvoiceTemplates": "Manage recurring invoice templates",
+  "invoices.recurringNextRunDate": "Next Run Date",
+  "invoices.recurringDeleteConfirm": "This will permanently delete this recurring invoice schedule. This action cannot be undone."
 }

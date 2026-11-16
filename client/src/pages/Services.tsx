@@ -39,29 +39,30 @@ import {
   Workflow,
 } from "lucide-react";
 import { useHasMounted } from "@/hooks/use-has-mounted";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 export default function Services() {
   const mounted = useHasMounted();
   const { locale } = useI18n();
+  const { t: tr } = useTranslation();
 
   const t = {
     nav: {
       languageToggle: locale === "en" ? "العربية" : "EN",
       login: locale === "en" ? "Login" : "تسجيل الدخول",
-      getStarted: locale === "en" ? "Start Free" : "ابدأ مجاناً",
+      getStarted: tr["marketing.servicesStartFree"],
     },
     hero: {
       badge: locale === "en" ? "Dubai-Based Accounting Firm" : "شركة محاسبة مقرها دبي",
       headline: locale === "en" ? "Accounting & Tax Services" : "خدمات المحاسبة والضرائب",
-      headlineAccent: locale === "en" ? "Backed by Experts" : "مدعوم من الخبراء",
+      headlineAccent: tr["marketing.servicesBackedByExperts"],
       subheadline:
         locale === "en"
           ? "Operating in Dubai since 2017 — combining human expertise with AI automation for modern UAE businesses."
           : "نعمل في دبي منذ 2017 — نجمع بين الخبرة البشرية والأتمتة الذكية للشركات الإماراتية الحديثة.",
-      ctaPrimary: locale === "en" ? "Book a Free Consultation" : "احجز استشارة مجانية",
-      ctaSecondary: locale === "en" ? "Get Started" : "ابدأ الآن",
+      ctaPrimary: tr["marketing.servicesBookAFreeConsultation"],
+      ctaSecondary: tr["marketing.servicesGetStarted"],
       licensed:
         locale === "en" ? "Licensed & Registered in Dubai, UAE" : "مرخص ومسجل في دبي، الإمارات",
     },
@@ -69,27 +70,21 @@ export default function Services() {
       clients: locale === "en" ? "VAT Workflows" : "سير عمل ضريبة القيمة المضافة",
       yearsExp: locale === "en" ? "CT Schedules" : "جداول ضريبة الشركات",
       accuracy: locale === "en" ? "CSV Bank Imports" : "استيراد كشوف البنك CSV",
-      satisfaction: locale === "en" ? "Guided Support" : "دعم موجه",
+      satisfaction: tr["marketing.servicesGuidedSupport"],
     },
     services: {
-      badge: locale === "en" ? "Our Services" : "خدماتنا",
-      headline: locale === "en" ? "Featured Core Services" : "الخدمات الأساسية المميزة",
-      subheadline:
-        locale === "en"
-          ? "Comprehensive accounting and tax solutions tailored for UAE businesses"
-          : "حلول محاسبية وضريبية شاملة مصممة للشركات الإماراتية",
+      badge: tr["marketing.servicesOurServices"],
+      headline: tr["marketing.servicesFeaturedCoreServices"],
+      subheadline: tr["marketing.servicesComprehensiveAccountingAndTaxSolutionsTailored"],
     },
     whyChoose: {
-      badge: locale === "en" ? "Why Choose Us" : "لماذا تختارنا",
-      headline: locale === "en" ? "Your Trusted Partner" : "شريكك الموثوق",
-      subheadline:
-        locale === "en"
-          ? "Experience the difference with our proven track record and modern approach"
-          : "اختبر الفرق مع سجلنا المثبت ونهجنا الحديث",
+      badge: tr["marketing.servicesWhyChooseUs"],
+      headline: tr["marketing.servicesYourTrustedPartner"],
+      subheadline: tr["marketing.servicesExperienceTheDifferenceWithOurProven"],
     },
     clients: {
-      badge: locale === "en" ? "Who We Serve" : "من نخدم",
-      headline: locale === "en" ? "Client Types We Serve" : "أنواع العملاء الذين نخدمهم",
+      badge: tr["marketing.servicesWhoWeServe"],
+      headline: tr["marketing.servicesClientTypesWeServe"],
       subheadline:
         locale === "en"
           ? "From freelancers to enterprises, we support businesses of all sizes"
@@ -97,13 +92,13 @@ export default function Services() {
     },
     ai: {
       badge: locale === "en" ? "AI Capabilities" : "قدرات الذكاء الاصطناعي",
-      headline: locale === "en" ? "Powered by AI" : "مدعوم بالذكاء الاصطناعي",
+      headline: tr["marketing.servicesPoweredByAi"],
       subheadline:
         locale === "en"
           ? "Cutting-edge artificial intelligence that transforms your bookkeeping experience"
           : "ذكاء اصطناعي متطور يحول تجربة مسك الدفاتر الخاصة بك",
-      currentBadge: locale === "en" ? "Available Now" : "متوفر الآن",
-      futureBadge: locale === "en" ? "Coming Soon" : "قريباً",
+      currentBadge: tr["marketing.servicesAvailableNow"],
+      futureBadge: tr["marketing.servicesComingSoon"],
     },
     cta: {
       headline:
@@ -114,11 +109,11 @@ export default function Services() {
         locale === "en"
           ? "Get expert guidance from our Dubai-based accounting team. We'll help you navigate UAE tax regulations with confidence."
           : "احصل على إرشادات خبراء من فريق المحاسبة لدينا في دبي. سنساعدك على التنقل في اللوائح الضريبية الإماراتية بثقة.",
-      primary: locale === "en" ? "Book a Free Consultation" : "احجز استشارة مجانية",
-      secondary: locale === "en" ? "Talk to an Expert" : "تحدث مع خبير",
-      freeConsult: locale === "en" ? "Free initial consultation" : "استشارة أولية مجانية",
+      primary: tr["marketing.servicesBookAFreeConsultation"],
+      secondary: tr["marketing.servicesTalkToAnExpert"],
+      freeConsult: tr["marketing.servicesFreeInitialConsultation"],
       response: locale === "en" ? "Response within 24 hours" : "رد خلال 24 ساعة",
-      noCommitment: locale === "en" ? "No commitment required" : "لا التزام مطلوب",
+      noCommitment: tr["marketing.servicesNoCommitmentRequired"],
     },
   };
 
@@ -134,7 +129,7 @@ export default function Services() {
     },
     {
       icon: Building2,
-      title: locale === "en" ? "Corporate Tax Registration" : "تسجيل ضريبة الشركات",
+      title: tr["marketing.servicesCorporateTaxRegistration"],
       description:
         locale === "en"
           ? "UAE Corporate Tax registration and compliance setup for businesses over AED 375,000."
@@ -152,7 +147,7 @@ export default function Services() {
     },
     {
       icon: FileCheck,
-      title: locale === "en" ? "Corporate Tax Deregistration" : "إلغاء تسجيل ضريبة الشركات",
+      title: tr["marketing.servicesCorporateTaxDeregistration"],
       description:
         locale === "en"
           ? "Complete corporate tax deregistration for business closures or restructuring."
@@ -189,7 +184,7 @@ export default function Services() {
     },
     {
       icon: BarChart3,
-      title: locale === "en" ? "Financial Statement Preparation" : "إعداد القوائم المالية",
+      title: tr["marketing.servicesFinancialStatementPreparation"],
       description:
         locale === "en"
           ? "Professional P&L statements, balance sheets, and cash flow reports."
@@ -234,7 +229,7 @@ export default function Services() {
     },
     {
       icon: Languages,
-      title: locale === "en" ? "Bilingual Support" : "دعم ثنائي اللغة",
+      title: tr["marketing.servicesBilingualSupport"],
       description:
         locale === "en"
           ? "Full support in English and Arabic for seamless communication."
@@ -246,8 +241,8 @@ export default function Services() {
     { icon: Briefcase, title: locale === "en" ? "Freelancers" : "المستقلين" },
     { icon: Store, title: locale === "en" ? "SMEs" : "الشركات الصغيرة والمتوسطة" },
     { icon: Store, title: locale === "en" ? "E-commerce" : "التجارة الإلكترونية" },
-    { icon: Building2, title: locale === "en" ? "Holding Companies" : "الشركات القابضة" },
-    { icon: Home, title: locale === "en" ? "Real Estate" : "العقارات" },
+    { icon: Building2, title: tr["marketing.servicesHoldingCompanies"] },
+    { icon: Home, title: tr["marketing.servicesRealEstate"] },
     { icon: Rocket, title: locale === "en" ? "Startups" : "الشركات الناشئة" },
   ];
 
@@ -264,7 +259,7 @@ export default function Services() {
     },
     {
       icon: Brain,
-      title: locale === "en" ? "Smart Expense Categorization" : "تصنيف المصروفات الذكي",
+      title: tr["marketing.servicesSmartExpenseCategorization"],
       description:
         locale === "en"
           ? "AI-assisted categorisation prompts help your team review expenses against the chart of accounts."
@@ -274,7 +269,7 @@ export default function Services() {
     },
     {
       icon: Zap,
-      title: locale === "en" ? "Bulk Receipt Processing" : "معالجة الإيصالات بالجملة",
+      title: tr["marketing.servicesBulkReceiptProcessing"],
       description:
         locale === "en"
           ? "Upload multiple receipts at once. Our AI processes them in parallel for maximum efficiency."
@@ -284,7 +279,7 @@ export default function Services() {
     },
     {
       icon: FileSearch,
-      title: locale === "en" ? "Intelligent Data Extraction" : "استخراج البيانات الذكي",
+      title: tr["marketing.servicesIntelligentDataExtraction"],
       description:
         locale === "en"
           ? "Automatically extract and validate TRN numbers, invoice details, and payment terms."
@@ -307,7 +302,7 @@ export default function Services() {
     },
     {
       icon: LineChart,
-      title: locale === "en" ? "Predictive Analytics" : "التحليلات التنبؤية",
+      title: tr["marketing.servicesPredictiveAnalytics"],
       description:
         locale === "en"
           ? "AI-powered forecasting for revenue, expenses, and cash flow based on historical patterns."
@@ -317,7 +312,7 @@ export default function Services() {
     },
     {
       icon: AlertTriangle,
-      title: locale === "en" ? "Anomaly Detection" : "كشف الشذوذ",
+      title: tr["marketing.servicesAnomalyDetection"],
       description:
         locale === "en"
           ? "Automatically flag unusual transactions, duplicate payments, and potential fraud."
@@ -327,7 +322,7 @@ export default function Services() {
     },
     {
       icon: Mic,
-      title: locale === "en" ? "Voice Commands" : "الأوامر الصوتية",
+      title: tr["marketing.servicesVoiceCommands"],
       description:
         locale === "en"
           ? "Create invoices, log expenses, and query reports using natural voice commands in English or Arabic."
@@ -337,7 +332,7 @@ export default function Services() {
     },
     {
       icon: Target,
-      title: locale === "en" ? "Smart Tax Optimization" : "تحسين الضرائب الذكي",
+      title: tr["marketing.servicesSmartTaxOptimization"],
       description:
         locale === "en"
           ? "AI-assisted tax review prompts that help accountants spot planning and documentation gaps."
@@ -347,7 +342,7 @@ export default function Services() {
     },
     {
       icon: Workflow,
-      title: locale === "en" ? "Automated Workflows" : "سير العمل الآلي",
+      title: tr["marketing.servicesAutomatedWorkflows"],
       description:
         locale === "en"
           ? "Set up automated rules for recurring transactions, approvals, and reminders."

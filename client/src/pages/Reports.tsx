@@ -5,6 +5,7 @@
  */
 import { lazy, Suspense } from "react";
 import { ReportsPageContext } from "./reports/context";
+import { useCatalogRevision, useTranslation } from "@/lib/i18n";
 import { useReportsPage } from "./reports/useReportsPage";
 import { ReportPanelFallback } from "./reports/ReportPanelFallback";
 import ReportsHeader from "./reports/panels/ReportsHeader";
@@ -17,7 +18,15 @@ const SetupPanel = lazy(() => import("./reports/panels/SetupPanel"));
 const ComparisonsPanel = lazy(() => import("./reports/panels/ComparisonsPanel"));
 const ReportsPanel = lazy(() => import("./reports/panels/ReportsPanel"));
 
+// The report models are memoised and translate through `translateNow`, so the page remounts when
+// the locale or the loaded catalogs change.
 export default function Reports() {
+  const { locale } = useTranslation();
+  const revision = useCatalogRevision();
+  return <ReportsPage key={`${locale}:${revision}`} />;
+}
+
+function ReportsPage() {
   const state = useReportsPage();
   const workspace = state.activeReportWorkspaceTab;
   return (

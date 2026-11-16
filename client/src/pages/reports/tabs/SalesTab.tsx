@@ -1,6 +1,7 @@
 // Reports > sales tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { AlertTriangle, BarChart3, FileText, TrendingDown } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function SalesTab() {
+  const { t } = useTranslation();
   const {
     agingReportLoading,
     customerRevenue,
@@ -141,7 +143,7 @@ export default function SalesTab() {
             <div>
               <CardTitle>A/R Aging</CardTitle>
               <CardDescription>
-                Open customer invoices aged from due date, net of recorded payments.
+                <T k="reportCenter.salesAgingHint" />
               </CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">
@@ -250,7 +252,7 @@ export default function SalesTab() {
             <div>
               <CardTitle>Sales by product/service</CardTitle>
               <CardDescription>
-                Line-item sales mix, AED value, VAT, and service concentration.
+                <T k="reportCenter.salesProductHint" />
               </CardDescription>
             </div>
             <Badge
@@ -259,7 +261,7 @@ export default function SalesTab() {
             >
               {productServiceSalesRows.length
                 ? `${productServiceTopShare.toFixed(1)}% top share`
-                : "No line items"}
+                : t["reportCenter.noLineItems"]}
             </Badge>
           </div>
         </CardHeader>
@@ -500,7 +502,7 @@ export default function SalesTab() {
           <CardDescription>
             {dateRange.from && dateRange.to
               ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-              : "All invoice dates"}
+              : t["reportCenter.allInvoiceDates"]}
           </CardDescription>
         </CardHeader>
         <CardContent>

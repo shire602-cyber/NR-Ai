@@ -18,7 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { describeCashForecastText, renderDescriptor } from "@shared/server-copy";
 
 export default function PlanningTab() {
@@ -99,7 +99,9 @@ export default function PlanningTab() {
                   <Money amount={planningReport.variance} currency={"AED"} />
                 </div>
                 <Badge variant={planningReport.variance >= 0 ? "success" : "warning"} dot>
-                  {planningReport.variance >= 0 ? "Under budget" : "Over budget"}
+                  {planningReport.variance >= 0
+                    ? t["reportCenter.underBudget"]
+                    : t["reportCenter.overBudget"]}
                 </Badge>
               </div>
             )}
@@ -125,9 +127,9 @@ export default function PlanningTab() {
                 </div>
                 <Badge
                   variant={
-                    planningReport.cashWarning === "On track"
+                    planningReport.cashWarning === translateNow("onTrack")
                       ? "success"
-                      : planningReport.cashWarning === "Low cash warning"
+                      : planningReport.cashWarning === translateNow("reportCenter.cashRiskLow")
                         ? "warning"
                         : "danger"
                   }

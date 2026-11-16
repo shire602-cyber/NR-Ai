@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { ArrowRight, Check, Minus, Plus, Mail, Zap, Crown, Rocket, Building2 } from "lucide-react";
 import { Fragment, useState } from "react";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 // ── Pricing Data ───────────────────────────────────────────────────────
@@ -277,14 +277,15 @@ const featureMatrix: FeatureCategory[] = [
 
 export default function Pricing() {
   const { locale } = useI18n();
+  const { t: tr } = useTranslation();
   const [isYearly, setIsYearly] = useState(false);
 
   // ── Translations ────────────────────────────────────────────────────
 
   const t = {
     header: {
-      title: locale === "en" ? "Simple pricing that grows with you" : "أسعار بسيطة تنمو معك",
-      billingLabel: locale === "en" ? "Billing period" : "فترة الفوترة",
+      title: tr["marketing.pricingSimplePricingThatGrowsWithYou"],
+      billingLabel: tr["marketing.pricingBillingPeriod"],
       subtitle:
         locale === "en"
           ? "Start on the free plan and move up when you need more companies, users or payroll."
@@ -298,30 +299,28 @@ export default function Pricing() {
     tiers: {
       free: {
         name: locale === "en" ? "Free" : "مجاني",
-        description: locale === "en" ? "For freelancers getting started" : "للمستقلين المبتدئين",
-        cta: locale === "en" ? "Get Started Free" : "ابدأ مجاناً",
+        description: tr["marketing.pricingForFreelancersGettingStarted"],
+        cta: tr["marketing.pricingGetStartedFree"],
       },
       starter: {
         name: locale === "en" ? "Starter" : "المبتدئ",
-        description:
-          locale === "en" ? "For small businesses scaling up" : "للشركات الصغيرة في مرحلة النمو",
+        description: tr["marketing.pricingForSmallBusinessesScalingUp"],
         cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
       },
       professional: {
         name: locale === "en" ? "Professional" : "الاحترافي",
-        description:
-          locale === "en" ? "For growing companies with teams" : "للشركات المتنامية مع فرق عمل",
+        description: tr["marketing.pricingForGrowingCompaniesWithTeams"],
         cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
       },
       enterprise: {
         name: locale === "en" ? "Enterprise" : "المؤسسات",
-        description: locale === "en" ? "For large organizations" : "للمؤسسات الكبرى",
-        cta: locale === "en" ? "Contact Sales" : "تواصل مع المبيعات",
+        description: tr["marketing.pricingForLargeOrganizations"],
+        cta: tr["marketing.pricingContactSales"],
       },
     },
     badges: {
       recommended: locale === "en" ? "Recommended" : "موصى به",
-      mostPopular: locale === "en" ? "Best for growing teams" : "الأنسب للفرق المتنامية",
+      mostPopular: tr["marketing.pricingBestForGrowingTeams"],
     },
     limits: {
       companies: locale === "en" ? "company" : "شركة",
@@ -449,11 +448,11 @@ export default function Pricing() {
       },
     },
     comparison: {
-      title: locale === "en" ? "Complete Feature Comparison" : "مقارنة الميزات الكاملة",
-      subtitle: locale === "en" ? "Every feature across every plan" : "كل ميزة في كل خطة",
+      title: tr["marketing.pricingCompleteFeatureComparison"],
+      subtitle: tr["marketing.pricingEveryFeatureAcrossEveryPlan"],
     },
     featureCategories: {
-      coreAccounting: locale === "en" ? "Core Accounting" : "المحاسبة الأساسية",
+      coreAccounting: tr["marketing.pricingCoreAccounting"],
       aiIntelligence: locale === "en" ? "AI & Intelligence" : "الذكاء الاصطناعي",
       hrPayroll: locale === "en" ? "HR & Payroll" : "الموارد البشرية والرواتب",
       uaeCompliance: locale === "en" ? "UAE Compliance" : "الامتثال الإماراتي",
@@ -462,48 +461,44 @@ export default function Pricing() {
     },
     featureNames: {
       invoicing: locale === "en" ? "Invoicing" : "الفواتير",
-      receiptScanning: locale === "en" ? "Receipt Scanning" : "مسح الإيصالات",
-      bankReconciliation: locale === "en" ? "Bank Reconciliation" : "التسوية البنكية",
+      receiptScanning: tr["marketing.pricingReceiptScanning"],
+      bankReconciliation: tr["marketing.pricingBankReconciliation"],
       vatFiling: locale === "en" ? "VAT Filing" : "تقديم ضريبة القيمة المضافة",
-      recurringInvoices: locale === "en" ? "Recurring Invoices" : "الفواتير المتكررة",
-      billPay: locale === "en" ? "Bill Pay" : "دفع الفواتير",
-      inventoryManagement: locale === "en" ? "Inventory Management" : "إدارة المخزون",
+      recurringInvoices: tr["marketing.pricingRecurringInvoices"],
+      billPay: tr["marketing.pricingBillPay"],
+      inventoryManagement: tr["marketing.pricingInventoryManagement"],
       monthEndClose: locale === "en" ? "Month-End Close" : "إقفال نهاية الشهر",
       fixedAssets: locale === "en" ? "Fixed Assets & Depreciation" : "الأصول الثابتة والإهلاك",
       budgeting: locale === "en" ? "Budgeting & Variance" : "الميزانيات والتحليل",
-      expenseClaims: locale === "en" ? "Expense Claims" : "مطالبات المصروفات",
-      basicAICategorization: locale === "en" ? "Basic AI Categorization" : "تصنيف ذكي أساسي",
+      expenseClaims: tr["marketing.pricingExpenseClaims"],
+      basicAICategorization: tr["marketing.pricingBasicAiCategorization"],
       aiOCR: locale === "en" ? "AI OCR Scanning" : "مسح OCR بالذكاء الاصطناعي",
       autonomousGL: locale === "en" ? "Autonomous GL (Auto-posting)" : "قيود تلقائية",
       aiCFO: locale === "en" ? "AI CFO & Financial Advisor" : "مستشار مالي ذكي",
       aiAnomalyDetection: locale === "en" ? "AI Anomaly Detection" : "كشف الحالات الشاذة",
       aiCashFlowForecast: locale === "en" ? "AI Cash Flow Forecast" : "توقعات التدفق النقدي",
-      smartReconciliation: locale === "en" ? "Smart Reconciliation" : "التسوية الذكية",
-      priorityAI: locale === "en" ? "Priority AI Processing" : "أولوية معالجة الذكاء الاصطناعي",
+      smartReconciliation: tr["marketing.pricingSmartReconciliation"],
+      priorityAI: tr["marketing.pricingPriorityAiProcessing"],
       payrollWPS: locale === "en" ? "Payroll & WPS" : "الرواتب وحماية الأجور",
       vatFilingCompliance: locale === "en" ? "VAT Filing (5%)" : "ضريبة القيمة المضافة (5%)",
       corporateTax: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
       eInvoicing: locale === "en" ? "E-Invoicing (PINT AE)" : "الفوترة الإلكترونية (PINT AE)",
-      clientPortal: locale === "en" ? "Client Portal" : "بوابة العميل",
+      clientPortal: tr["marketing.pricingClientPortal"],
       multiCompany: locale === "en" ? "Multi-Company" : "شركات متعددة",
-      dedicatedManager: locale === "en" ? "Dedicated Account Manager" : "مدير حساب مخصص",
-      customIntegrations: locale === "en" ? "Custom Integrations" : "تكاملات مخصصة",
-      slaGuarantee: locale === "en" ? "Enterprise Support Terms" : "شروط دعم المؤسسات",
-      advancedAnalytics: locale === "en" ? "Advanced Analytics" : "تحليلات متقدمة",
+      dedicatedManager: tr["marketing.pricingDedicatedAccountManager"],
+      customIntegrations: tr["marketing.pricingCustomIntegrations"],
+      slaGuarantee: tr["marketing.pricingEnterpriseSupportTerms"],
+      advancedAnalytics: tr["marketing.pricingAdvancedAnalytics"],
       multiBranch: locale === "en" ? "Multi-Branch Support" : "دعم متعدد الفروع",
       apiAccess: locale === "en" ? "API Access" : "وصول API",
-      webhooks: locale === "en" ? "Signed Webhooks" : "خطافات ويب موقّعة",
+      webhooks: tr["marketing.pricingSignedWebhooks"],
       multiCurrency: locale === "en" ? "Multi-Currency Documents" : "مستندات متعددة العملات",
-      onlinePayments:
-        locale === "en" ? "Online Invoice Payment Links" : "روابط دفع الفواتير عبر الإنترنت",
-      bulkOps: locale === "en" ? "Bulk Operations" : "العمليات المجمّعة",
+      onlinePayments: tr["marketing.pricingOnlineInvoicePaymentLinks"],
+      bulkOps: tr["marketing.pricingBulkOperations"],
     },
     faq: {
-      title: locale === "en" ? "Frequently Asked Questions" : "الأسئلة الشائعة",
-      subtitle:
-        locale === "en"
-          ? "Everything you need to know about our pricing"
-          : "كل ما تحتاج معرفته عن أسعارنا",
+      title: tr["marketing.pricingFrequentlyAskedQuestions"],
+      subtitle: tr["marketing.pricingEverythingYouNeedToKnowAbout"],
       questions: [
         {
           q: locale === "en" ? "Can I switch plans anytime?" : "هل يمكنني تغيير الخطة في أي وقت؟",
@@ -541,8 +536,8 @@ export default function Pricing() {
         locale === "en"
           ? "Set up your company in minutes, or talk to us about migration and the plan that fits."
           : "أعدّ شركتك في دقائق، أو تحدث إلينا عن نقل بياناتك والخطة المناسبة لك.",
-      startFree: locale === "en" ? "Start Free" : "ابدأ مجاناً",
-      bookDemo: locale === "en" ? "Talk to us" : "تحدث إلينا",
+      startFree: tr["marketing.pricingStartFree"],
+      bookDemo: tr["marketing.pricingTalkToUs"],
       guarantee:
         locale === "en"
           ? "Free plan available · 14-day trial on your first paid plan · Prices in AED"
@@ -576,7 +571,7 @@ export default function Pricing() {
     ) : (
       <span className="mk-ptable__no">
         <Minus aria-hidden="true" />
-        <span className="sr-only">{locale === "en" ? "Not included" : "غير مشمول"}</span>
+        <span className="sr-only">{tr["marketing.pricingNotIncluded"]}</span>
       </span>
     );
 
@@ -590,7 +585,7 @@ export default function Pricing() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="mk-pagehead" style={{ borderBlockEnd: 0, textAlign: "center" }}>
         <div className="mk-container">
-          <p className="mk-eyebrow">{locale === "en" ? "Pricing in AED" : "الأسعار بالدرهم"}</p>
+          <p className="mk-eyebrow">{tr["marketing.pricingPricingInAed"]}</p>
           <h1 className="mk-h1" style={{ marginInline: "auto", maxInlineSize: "18ch" }}>
             {t.header.title}
           </h1>

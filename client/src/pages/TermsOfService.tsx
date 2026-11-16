@@ -12,6 +12,7 @@ export default function TermsOfService() {
       </p>
 
       <h2>1. Eligibility</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         You must be at least 18 years old and authorised to bind your business to these Terms. The
         Service is intended for use by businesses and accounting professionals operating in or with
@@ -20,6 +21,7 @@ export default function TermsOfService() {
 
       <h2>2. Accounts and Security</h2>
       <ul>
+        {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
         <li>
           You are responsible for maintaining the confidentiality of your account credentials.
         </li>
@@ -59,6 +61,7 @@ export default function TermsOfService() {
       </p>
 
       <h2>6. Tax and Accounting Disclaimer</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         Muhasib.ai provides software tools to assist with bookkeeping, VAT computation, and FTA
         filings. While the Service is designed to comply with FTA rules, the accuracy of any return
@@ -82,6 +85,7 @@ export default function TermsOfService() {
       </p>
 
       <h2>9. Termination</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         We may suspend or terminate your account if you breach these Terms, fail to pay fees, or
         misuse the Service. Upon termination, you may export your data for a reasonable period
@@ -97,6 +101,7 @@ export default function TermsOfService() {
       </p>
 
       <h2>11. Indemnification</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         You agree to indemnify and hold NRA harmless from any claims arising out of your use of the
         Service in violation of these Terms or applicable law, including claims by third parties
@@ -104,12 +109,14 @@ export default function TermsOfService() {
       </p>
 
       <h2>12. Governing Law and Dispute Resolution</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         These Terms are governed by the laws of the United Arab Emirates. Any dispute will be
         submitted to the exclusive jurisdiction of the courts of the Emirate of Dubai.
       </p>
 
       <h2>13. Changes to These Terms</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         We may update these Terms from time to time. Material changes will be communicated through
         the Service or by email. Continued use of the Service after changes take effect constitutes

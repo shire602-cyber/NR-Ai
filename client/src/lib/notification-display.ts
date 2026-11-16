@@ -98,8 +98,6 @@ export function localizeNotification(
   }
   return {
     title,
-    message: localizeAmounts(
-      renderDescriptor(copy.messageKey, messageParams, n.message, t).trim()
-    ),
+    message: localizeAmounts(renderDescriptor(copy.messageKey, messageParams, n.message, t).trim()),
   };
 }

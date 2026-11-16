@@ -1,6 +1,7 @@
 // Report status metadata, persona filters, report viewer categories, workspace tabs and hrefs.
 // Split from shared.tsx (R20-09); shared.tsx re-exports this module.
 import type { BadgeProps } from "@/components/ui/badge";
+import { translateNow } from "@/lib/i18n";
 import { Briefcase, ClipboardCheck, type LucideIcon, Users } from "lucide-react";
 import type {
   ReportAutomationTriggerSeverity,
@@ -320,7 +321,7 @@ export const reportDeliveryRunStatusFilters: Array<{
   id: ReportDeliveryRunStatusFilter;
   label: string;
 }> = [
-  { id: "all", label: "All runs" },
+  { id: "all", label: translateNow("reportCenter.allRuns") },
   { id: "queued", label: "Queued" },
   { id: "sent", label: "Sent" },
   { id: "failed", label: "Failed" },

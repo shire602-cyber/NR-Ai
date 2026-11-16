@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
@@ -56,6 +57,7 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -158,7 +160,10 @@ export default function PortalDocuments() {
                       {CATEGORY_LABELS[doc.category] ?? doc.category}
                     </Badge>
                     {doc.uploadedBy && (
-                      <CheckCircle2 className="w-4 h-4 text-success" aria-label="Received by NRA" />
+                      <CheckCircle2
+                        className="w-4 h-4 text-success"
+                        aria-label={t["portal.docReceivedByNra"]}
+                      />
                     )}
                   </div>
                 </div>

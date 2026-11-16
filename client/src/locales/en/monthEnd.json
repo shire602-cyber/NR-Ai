@@ -30,5 +30,12 @@
   "monthEnd.postClosingEntry": "Post a year-end closing entry to retained earnings",
   "monthEnd.lockTypeSoft": "Soft",
   "monthEnd.lockTypeHard": "Hard",
-  "monthEnd.error": "Something went wrong"
+  "monthEnd.error": "Something went wrong",
+  "monthEnd.readyToClose": "Ready to Close",
+  "monthEnd.notReady": "Not Ready",
+  "monthEnd.periodLabel": "Period:",
+  "monthEnd.itemsCompleteFor": "{done}/{total} items complete for {period}",
+  "monthEnd.remainingCount": "{count} remaining",
+  "monthEnd.runValidation": "Run Validation",
+  "monthEnd.runValidationHint": "Click \"Run Validation\" to get an AI-powered readiness assessment."
 }

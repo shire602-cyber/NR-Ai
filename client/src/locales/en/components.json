@@ -421,5 +421,18 @@
   "components.validation.serverGeneric": "The data could not be saved. Check the form and try again.",
   "components.validation.serverFields": "The data could not be saved. Check these fields: {fields}",
   "components.notificationPayrollApproved": "Payroll for {period} was approved.",
-  "components.notificationMore": "More actions"
+  "components.notificationMore": "More actions",
+  "components.paletteAcknowledgeHandoffFor": "Acknowledge handoff for",
+  "components.paletteQueueingDeliveryFor": "Queueing delivery for",
+  "components.paletteQueueDeliveryFor": "Queue delivery for",
+  "components.paletteQueue": "Queue",
+  "components.authNamePlaceholder": "John Doe",
+  "components.vatWorkpaperEmpty": "No rows yet. Create a workpaper, add the first row, paste from Excel, or pull issued invoices and posted receipts from books.",
+  "components.vatWorkpaperPulling": "Pulling...",
+  "components.vatWorkpaperPull": "Pull from books",
+  "components.vatWorkpaperSelect": "Select workpaper",
+  "components.vatWorkpaperNone": "No workpaper",
+  "components.vatWorkpaperRefresh": "Refresh workpaper",
+  "components.vatWorkpaperCounterparty": "Customer or vendor",
+  "components.vatWorkpaperRemoveRow": "Remove VAT row"
 }

@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -166,6 +167,7 @@ const RECON_OVERRIDE_PROMPT =
   "The return does not agree with the VAT control accounts. Give a reason to mark it ready anyway (recorded in the audit log). / الإقرار غير مطابق لحسابات الضريبة. اذكر سبب المتابعة.";
 
 export default function VATAutopilot() {
+  const { t } = useTranslation();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
@@ -297,7 +299,7 @@ export default function VATAutopilot() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
-      toast({ title: "Status updated" });
+      toast({ title: t["compliance.autopilotStatusUpdated"] });
     },
     onError: (err: Error, vars) => {
       // W4-E (R12-03): an unexplained VAT-to-GL difference needs an audited override reason.
@@ -342,11 +344,11 @@ export default function VATAutopilot() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
-        title="VAT Autopilot"
-        description="Auto-calculate the UAE FTA VAT 201 for any filing period — review, adjust, and hand off to filing."
+        eyebrow={t["pages.eyebrowCompliance"]}
+        title={t["pageLabels.vatAutopilot"]}
+        description={t["compliance.autopilotDescription"]}
         backHref="/vat-filing"
-        backLabel="Back to VAT filing"
+        backLabel={t["compliance.autopilotBackToFiling"]}
         actions={
           <Button
             onClick={() => selectedPeriod && calcMutation.mutate(selectedPeriod)}
@@ -358,7 +360,9 @@ export default function VATAutopilot() {
             ) : (
               <RefreshCw className="h-4 w-4 me-2" />
             )}
-            {selectedPeriod ? "Calculate selected period" : "Choose period first"}
+            {selectedPeriod
+              ? t["pageLabels.calculateSelectedPeriod"]
+              : t["compliance.autopilotChoosePeriodFirst"]}
           </Button>
         }
       />
@@ -369,8 +373,7 @@ export default function VATAutopilot() {
             <T k="pageLabels.filingPeriod" />
           </CardTitle>
           <CardDescription>
-            Choose the VAT return period first. The calculation will only use transactions inside
-            that selected period.
+            <T k="compliance.autopilotChoosePeriodHint" />
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -384,7 +387,7 @@ export default function VATAutopilot() {
               disabled={periodsQuery.isLoading || periods.length === 0 || calcMutation.isPending}
             >
               <SelectTrigger id="vat-filing-period" data-testid="select-vat-filing-period">
-                <SelectValue placeholder="Select a VAT filing period" />
+                <SelectValue placeholder={t["compliance.autopilotSelectPeriod"]} />
               </SelectTrigger>
               <SelectContent>
                 {periods.map((period) => (
@@ -469,18 +472,22 @@ export default function VATAutopilot() {
               <div className="space-y-2 rounded-md border p-4">
                 <h3 className="font-medium">Output VAT (sales)</h3>
                 <BoxRow
-                  label="Standard rated supplies"
+                  label={t["compliance.autopilotStandardRated"]}
                   amount={visibleCalc.boxes.standardRatedSales}
                   vat={visibleCalc.boxes.standardRatedVat}
                 />
                 <BoxRow
-                  label="Zero rated supplies"
+                  label={t["compliance.autopilotZeroRated"]}
                   amount={visibleCalc.boxes.zeroRatedSales}
                   vat={0}
                 />
-                <BoxRow label="Exempt supplies" amount={visibleCalc.boxes.exemptSales} vat={0} />
                 <BoxRow
-                  label="Reverse charge (output)"
+                  label={t["compliance.autopilotExempt"]}
+                  amount={visibleCalc.boxes.exemptSales}
+                  vat={0}
+                />
+                <BoxRow
+                  label={t["compliance.autopilotReverseOutput"]}
                   amount={visibleCalc.boxes.reverseChargeAmount}
                   vat={visibleCalc.boxes.reverseChargeVat}
                 />
@@ -494,12 +501,12 @@ export default function VATAutopilot() {
               <div className="space-y-2 rounded-md border p-4">
                 <h3 className="font-medium">Input VAT (purchases)</h3>
                 <BoxRow
-                  label="Standard expenses"
+                  label={t["compliance.autopilotStandardExpenses"]}
                   amount={visibleCalc.boxes.totalExpenses}
                   vat={visibleCalc.boxes.inputVatRecoverable}
                 />
                 <BoxRow
-                  label="Reverse charge (input)"
+                  label={t["compliance.autopilotReverseInput"]}
                   amount={visibleCalc.boxes.reverseChargeAmount}
                   vat={visibleCalc.boxes.reverseChargeVatRecoverable}
                 />
@@ -625,7 +632,7 @@ export default function VATAutopilot() {
                   <TableHead>
                     <T k="hr.period" />
                   </TableHead>
-                  <TableHead>Due</TableHead>
+                  <TableHead>{t["compliance.autopilotColDue"]}</TableHead>
                   <TableHead>
                     <T k="banking.common.status" />
                   </TableHead>
@@ -635,7 +642,7 @@ export default function VATAutopilot() {
                   <TableHead data-numeric>
                     <T k="pageLabels.inputVat" />
                   </TableHead>
-                  <TableHead data-numeric>Net</TableHead>
+                  <TableHead data-numeric>{t["compliance.autopilotColNet"]}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -657,7 +664,9 @@ export default function VATAutopilot() {
                           disabled={calcMutation.isPending}
                           data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
                         >
-                          {isSelected ? "Selected" : "Select"}
+                          {isSelected
+                            ? t["compliance.autopilotSelected"]
+                            : t["compliance.autopilotSelect"]}
                         </Button>
                       </TableCell>
                       <TableCell>
@@ -702,7 +711,7 @@ export default function VATAutopilot() {
       {/* Active-company deadlines */}
       <Card>
         <CardHeader>
-          <CardTitle>This company’s VAT deadlines</CardTitle>
+          <CardTitle>{t["compliance.autopilotDeadlinesTitle"]}</CardTitle>
           <CardDescription>VAT 201 due dates for the active company file.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -777,8 +786,7 @@ export default function VATAutopilot() {
               <T k="pageLabels.manualAdjustment" />
             </DialogTitle>
             <DialogDescription>
-              Adjustments are appended to the audit trail and applied on top of auto-calculated
-              boxes.
+              <T k="compliance.autopilotAdjustHint" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -786,7 +794,7 @@ export default function VATAutopilot() {
               <Label>Box</Label>
               <Select value={adjustmentBox} onValueChange={setAdjustmentBox}>
                 <SelectTrigger data-testid="select-adjustment-box">
-                  <SelectValue placeholder="Select a box" />
+                  <SelectValue placeholder={t["compliance.autopilotSelectBox"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="box1aAbuDhabiAmount">
@@ -843,13 +851,13 @@ export default function VATAutopilot() {
                     Box 9 — Standard expenses (amount)
                   </SelectItem>
                   <SelectItem value="box9ExpensesVat">
-                    Box 9 — Standard expenses input VAT
+                    <T k="compliance.autopilotBox9" />
                   </SelectItem>
                   <SelectItem value="box10ReverseChargeAmount">
                     Box 10 — Reverse-charge expenses (amount)
                   </SelectItem>
                   <SelectItem value="box10ReverseChargeVat">
-                    Box 10 — Reverse-charge input VAT
+                    <T k="compliance.autopilotBox10" />
                   </SelectItem>
                 </SelectContent>
               </Select>

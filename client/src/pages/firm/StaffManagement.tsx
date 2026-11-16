@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -44,6 +45,7 @@ interface ClientWithStats extends Company {
 }
 
 export default function StaffManagement() {
+  const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [expandedStaff, setExpandedStaff] = useState<Set<string>>(new Set());
@@ -151,9 +153,9 @@ export default function StaffManagement() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Staff Management"
-        description="Manage NRA staff assignments across client companies"
+        eyebrow={t["firm.eyebrowFirm"]}
+        title={t["firm.staffManagementTitle"]}
+        description={t["firm.staffManagementDescription"]}
         actions={
           pendingChanges.size > 0 && (
             <div className="flex items-center gap-3">
@@ -164,7 +166,7 @@ export default function StaffManagement() {
                 <T k="pages.discard" />
               </Button>
               <Button size="sm" onClick={saveChanges} disabled={saving}>
-                {saving ? "Saving..." : "Save Changes"}
+                {saving ? t["pages.notificationPrefsSaving"] : t["pages.saveChanges"]}
               </Button>
             </div>
           )
@@ -175,7 +177,7 @@ export default function StaffManagement() {
       <div className="relative w-full sm:max-w-sm">
         <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Search staff by name or email..."
+          placeholder={t["firm.staffSearchPlaceholder"]}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="ps-9"

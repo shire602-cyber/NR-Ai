@@ -76,7 +76,7 @@ export default function ReportsHeader() {
             <Button asChild variant="outline" data-testid="button-report-proof-trail">
               <Link href={evidenceSectionHref("proof-drilldown")}>
                 <FileText className="w-4 h-4 me-2" />
-                {(t as any).viewProof ?? "View proof"}
+                {(t as any).viewProof}
               </Link>
             </Button>
             <DropdownMenu>
@@ -139,7 +139,7 @@ export default function ReportsHeader() {
 
           <div className="grid items-start gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
             <div className="space-y-1.5">
-              <Label>{(t as any).reportCenter ?? "Report Center"}</Label>
+              <Label>{(t as any).reportCenter}</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -164,9 +164,7 @@ export default function ReportsHeader() {
                   className="w-72"
                   data-testid="menu-report-viewer"
                 >
-                  <DropdownMenuLabel>
-                    {(t as any).reportCenter ?? "Report Center"}
-                  </DropdownMenuLabel>
+                  <DropdownMenuLabel>{(t as any).reportCenter}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {reportViewerGroups.map((group) => (
                     <DropdownMenuSub key={group.category}>
@@ -223,7 +221,11 @@ export default function ReportsHeader() {
                 {personaFilterLabel}
               </Badge>
             </div>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label={t["reportCenter.roleFocusAria"]}
+            >
               {personaFilters.map((filter) => (
                 <Button
                   key={filter.id}

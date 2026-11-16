@@ -56,7 +56,7 @@ interface NewsFeedStatus {
 }
 
 export default function UAENewsFeed() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const [selectedCategory, setSelectedCategory] = useState("all");
 
   const {
@@ -103,11 +103,7 @@ export default function UAENewsFeed() {
       <PageHeader
         eyebrow="Insights"
         title={locale === "ar" ? "أخبار الضرائب والاقتصاد الإماراتي" : "UAE Tax & Finance News"}
-        description={
-          locale === "ar"
-            ? "آخر التحديثات من الهيئة الاتحادية للضرائب والمصادر الموثوقة"
-            : "Latest updates from FTA and trusted sources"
-        }
+        description={t["pages.uaeNewsLatestUpdatesFromFtaAndTrusted"]}
         actions={
           <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-news">
             <RefreshCw className="w-4 h-4 mr-2" />
@@ -143,7 +139,7 @@ export default function UAENewsFeed() {
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <Newspaper className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>{locale === "ar" ? "لا توجد أخبار حالياً" : "No news available"}</p>
+                <p>{t["pages.uaeNewsNoNewsAvailable"]}</p>
                 {feedStatus?.status === "requires_external" && (
                   <p className="mt-2 text-xs" data-testid="news-feed-not-configured">
                     {locale === "ar"
@@ -212,7 +208,7 @@ export default function UAENewsFeed() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Globe className="w-4 h-4" />
-                {locale === "ar" ? "مصادر الأخبار" : "News Sources"}
+                {t["pages.uaeNewsNewsSources"]}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -234,9 +230,7 @@ export default function UAENewsFeed() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">
-                {locale === "ar" ? "روابط مفيدة" : "Useful Links"}
-              </CardTitle>
+              <CardTitle className="text-sm">{t["pages.uaeNewsUsefulLinks"]}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -246,7 +240,7 @@ export default function UAENewsFeed() {
                   onClick={() => window.open("https://tax.gov.ae", "_blank")}
                 >
                   <Building2 className="w-4 h-4 mr-2" />
-                  {locale === "ar" ? "الهيئة الاتحادية للضرائب" : "Federal Tax Authority"}
+                  {t["pages.uaeNewsFederalTaxAuthority"]}
                 </Button>
                 <Button
                   variant="outline"
@@ -254,7 +248,7 @@ export default function UAENewsFeed() {
                   onClick={() => window.open("https://mof.gov.ae", "_blank")}
                 >
                   <Scale className="w-4 h-4 mr-2" />
-                  {locale === "ar" ? "وزارة المالية" : "Ministry of Finance"}
+                  {t["pages.uaeNewsMinistryOfFinance"]}
                 </Button>
                 <Button
                   variant="outline"
@@ -270,9 +264,7 @@ export default function UAENewsFeed() {
 
           <Card className="bg-primary/5 border-primary/20">
             <CardHeader>
-              <CardTitle className="text-sm">
-                {locale === "ar" ? "نصيحة اليوم" : "Tip of the Day"}
-              </CardTitle>
+              <CardTitle className="text-sm">{t["pages.uaeNewsTipOfTheDay"]}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">

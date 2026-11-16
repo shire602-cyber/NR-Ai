@@ -1,6 +1,7 @@
 // Excel / Google Sheets export handlers and workspace panel layout helpers.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { ReportWorkspaceTab, reportsWorkspaceHref } from "../shared";
+import { translateNow } from "@/lib/i18n";
 import {
   exportToExcel,
   exportToGoogleSheets,
@@ -165,7 +166,10 @@ export function useReportsExports({
       toast({ title: "Export successful", description: "Profit & Loss exported to Excel" });
     } else if (activeTab === "bs" && balanceSheet) {
       exportToExcel([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
-      toast({ title: "Export successful", description: "Balance Sheet exported to Excel" });
+      toast({
+        title: "Export successful",
+        description: translateNow("reportCenter.exportedBalanceSheet"),
+      });
     } else if (activeTab === "vat" && vatSummary) {
       exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
       toast({ title: "Export successful", description: "VAT Summary exported to Excel" });
@@ -180,7 +184,10 @@ export function useReportsExports({
       });
     } else if (activeTab === "trial" && trialBalance) {
       exportToExcel([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
-      toast({ title: "Export successful", description: "Trial Balance exported to Excel" });
+      toast({
+        title: "Export successful",
+        description: translateNow("reportCenter.exportedTrialBalance"),
+      });
     } else if (activeTab === "sales") {
       if (selectedReportId === "ar-aging") {
         exportToExcel(receivableAgingExportSheets, `ar_aging${dateRangeStr}`);
@@ -190,7 +197,10 @@ export function useReportsExports({
           prepareInvoiceStatusForExport(invoiceStatusReport),
           `invoice_status${dateRangeStr}`
         );
-        toast({ title: "Export successful", description: "Invoice Status exported to Excel" });
+        toast({
+          title: "Export successful",
+          description: translateNow("reportCenter.exportedInvoiceStatus"),
+        });
       }
     } else if (activeTab === "balances") {
       if (selectedReportId === "ap-aging") {
@@ -201,23 +211,35 @@ export function useReportsExports({
           prepareBalanceSummaryReportsForExport(balanceReport),
           `balance_reports${dateRangeStr}`
         );
-        toast({ title: "Export successful", description: "Balance reports exported to Excel" });
+        toast({
+          title: "Export successful",
+          description: translateNow("reportCenter.exportedBalanceReports"),
+        });
       }
     } else if (activeTab === "expenses") {
       exportToExcel(
         prepareExpenseReportsForExport(expenseReport),
         `expense_reports${dateRangeStr}`
       );
-      toast({ title: "Export successful", description: "Expense reports exported to Excel" });
+      toast({
+        title: "Export successful",
+        description: translateNow("reportCenter.exportedExpenseReports"),
+      });
     } else if (activeTab === "payroll") {
       exportToExcel(
         preparePayrollReportsForExport(payrollReport),
         `payroll_reports${dateRangeStr}`
       );
-      toast({ title: "Export successful", description: "Payroll reports exported to Excel" });
+      toast({
+        title: "Export successful",
+        description: translateNow("reportCenter.exportedPayrollReports"),
+      });
     } else if (activeTab === "ledger") {
       exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
-      toast({ title: "Export successful", description: "General Ledger exported to Excel" });
+      toast({
+        title: "Export successful",
+        description: translateNow("reportCenter.exportedGeneralLedger"),
+      });
     } else if (activeTab === "close") {
       exportToExcel(
         [
@@ -236,7 +258,10 @@ export function useReportsExports({
         preparePlanningReportsForExport(planningReport),
         `planning_reports${dateRangeStr}`
       );
-      toast({ title: "Export successful", description: "Planning reports exported to Excel" });
+      toast({
+        title: "Export successful",
+        description: translateNow("reportCenter.exportedPlanningReports"),
+      });
     }
   };
   const handleExportGoogleSheets = async () => {
@@ -284,6 +309,7 @@ export function useReportsExports({
         selectedReportId === "ar-aging"
           ? receivableAgingExportSheets
           : prepareInvoiceStatusForExport(invoiceStatusReport),
+        // i18n-ignore: export file name, not UI copy
         `${selectedReportId === "ar-aging" ? "A/R Aging" : "Invoice Status"}${dateRangeStr}`,
         selectedCompanyId
       );
@@ -292,6 +318,7 @@ export function useReportsExports({
         selectedReportId === "ap-aging"
           ? payableAgingExportSheets
           : prepareBalanceSummaryReportsForExport(balanceReport),
+        // i18n-ignore: export file name, not UI copy
         `${selectedReportId === "ap-aging" ? "A/P Aging" : "Balance Reports"}${dateRangeStr}`,
         selectedCompanyId
       );

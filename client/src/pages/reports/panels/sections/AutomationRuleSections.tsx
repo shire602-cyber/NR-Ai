@@ -1,6 +1,7 @@
 // Reports > automation: trigger rules, automation queues, coverage, command center and rules.
 // Split out of AutomationPanel.tsx (R20-09); state comes from useReportsPage via context.
 import { ArrowRight } from "lucide-react";
+import { translateNow } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -459,7 +460,7 @@ export function AutomationRuleSections() {
                     value: reportAutomationCommandCenter.reviewRuleCount,
                   },
                   {
-                    label: "Setup needed",
+                    label: translateNow("reportCenter.setupNeeded"),
                     value: reportAutomationCommandCenter.setupRuleCount,
                   },
                   {

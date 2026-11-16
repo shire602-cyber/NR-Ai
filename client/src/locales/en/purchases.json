@@ -48,5 +48,6 @@
   "purchases.receiptLinesRequired": "Add at least one line",
   "purchases.receiptPartsRequired": "A split needs at least two receipts",
   "purchases.receiptPartsTotalMismatch": "The parts must add up to the receipt amount",
-  "purchases.receiptReasonRequired": "Enter the reason for the revision"
+  "purchases.receiptReasonRequired": "Enter the reason for the revision",
+  "purchases.poUpgradeDescription": "Create and track purchase orders to your vendors. Manage procurement workflows and match POs to invoices."
 }

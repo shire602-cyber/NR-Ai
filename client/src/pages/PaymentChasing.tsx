@@ -291,7 +291,7 @@ export default function PaymentChasing() {
     onSuccess: (data: any) => {
       toast({
         title: "Reminder ready",
-        description: "Review the message, then send it by email or copy it into your workflow.",
+        description: t["pages.chasingPreviewDescription"],
       });
       setPreviewBody(data.message);
       // Use the language we requested — server may fall back to default but the
@@ -305,7 +305,7 @@ export default function PaymentChasing() {
     onError: (e: any) =>
       toast({
         title: "Could not send",
-        description: e?.message ?? "Unknown error",
+        description: e?.message ?? t["pages.chasingUnknownError"],
         variant: "destructive",
       }),
   });
@@ -319,7 +319,7 @@ export default function PaymentChasing() {
     onSuccess: (data) => {
       const failed = data.failed ?? 0;
       toast({
-        title: failed > 0 ? "Bulk send completed with errors" : "Bulk reminders queued",
+        title: failed > 0 ? t["pages.chasingBulkErrors"] : t["pages.chasingBulkQueued"],
         description: `Sent ${data.sent} • Skipped ${data.skipped} • Failed ${failed}`,
         variant: failed > 0 ? "destructive" : "default",
       });
@@ -345,7 +345,7 @@ export default function PaymentChasing() {
     mutationFn: (patch: Partial<ChaseConfig> & { doNotChaseContactIds?: string[] }) =>
       apiRequest("PATCH", `/api/chasing/config/${companyId}`, patch),
     onSuccess: () => {
-      toast({ title: "Settings saved" });
+      toast({ title: t["hr.settingsSaved"] });
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/config", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
     },
@@ -370,14 +370,14 @@ export default function PaymentChasing() {
       });
     },
     onSuccess: () => {
-      toast({ title: "Template saved" });
+      toast({ title: t["pages.chasingTemplateSaved"] });
       setEditingTemplate(null);
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/templates", companyId] });
     },
     onError: (e: any) =>
       toast({
         title: "Could not save template",
-        description: e?.message ?? "Unknown error",
+        description: e?.message ?? t["pages.chasingUnknownError"],
         variant: "destructive",
       }),
   });
@@ -628,7 +628,11 @@ export default function PaymentChasing() {
                               })
                             }
                             data-testid={`button-dnc-${row.invoice.number}`}
-                            title={row.invoice.doNotChase ? "Resume chasing" : "Do not chase"}
+                            title={
+                              row.invoice.doNotChase
+                                ? t["pages.chasingResume"]
+                                : t["pages.chasingDoNotChase"]
+                            }
                           >
                             <Ban className="h-4 w-4" />
                           </Button>
@@ -670,7 +674,9 @@ export default function PaymentChasing() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     Could not load chase queue:{" "}
-                    {queueQuery.error instanceof Error ? queueQuery.error.message : "Unknown error"}
+                    {queueQuery.error instanceof Error
+                      ? queueQuery.error.message
+                      : t["pages.chasingUnknownError"]}
                   </AlertDescription>
                 </Alert>
               )}
@@ -756,7 +762,7 @@ export default function PaymentChasing() {
                     Could not load history:{" "}
                     {historyQuery.error instanceof Error
                       ? historyQuery.error.message
-                      : "Unknown error"}
+                      : t["pages.chasingUnknownError"]}
                   </AlertDescription>
                 </Alert>
               )}
@@ -839,7 +845,9 @@ export default function PaymentChasing() {
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 Could not load effectiveness metrics:{" "}
-                {effQuery.error instanceof Error ? effQuery.error.message : "Unknown error"}
+                {effQuery.error instanceof Error
+                  ? effQuery.error.message
+                  : t["pages.chasingUnknownError"]}
               </AlertDescription>
             </Alert>
           )}
@@ -965,7 +973,7 @@ export default function PaymentChasing() {
                     Could not load templates:{" "}
                     {templatesQuery.error instanceof Error
                       ? templatesQuery.error.message
-                      : "Unknown error"}
+                      : t["pages.chasingUnknownError"]}
                   </AlertDescription>
                 </Alert>
               )}
@@ -973,7 +981,7 @@ export default function PaymentChasing() {
                 !templatesQuery.isError &&
                 (templatesQuery.data?.length ?? 0) === 0 && (
                   <div className="text-muted-foreground text-sm py-8 text-center">
-                    No templates available — defaults will be created on first send.
+                    <T k="pages.chasingNoTemplates" />
                   </div>
                 )}
               {!templatesQuery.isLoading &&
@@ -1032,7 +1040,7 @@ export default function PaymentChasing() {
                 <T k="pageLabels.chaseConfiguration" />
               </CardTitle>
               <CardDescription>
-                Controls how aggressively the autopilot chases overdue invoices
+                <T k="pages.chasingConfigDescription" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -1044,7 +1052,7 @@ export default function PaymentChasing() {
                     Could not load settings:{" "}
                     {configQuery.error instanceof Error
                       ? configQuery.error.message
-                      : "Unknown error"}
+                      : t["pages.chasingUnknownError"]}
                   </AlertDescription>
                 </Alert>
               )}
@@ -1147,7 +1155,7 @@ export default function PaymentChasing() {
               <T k="pageLabels.reminderReady" />
             </DialogTitle>
             <DialogDescription>
-              Review the message, then send it by email or copy it into your workflow.
+              <T k="pages.chasingPreviewDescription" />
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -1160,8 +1168,7 @@ export default function PaymentChasing() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Delivery is not automatic from this screen. Copy the message or send it through your
-              configured email process.
+              <T k="pages.chasingNotAutomatic" />
             </AlertDescription>
           </Alert>
           <DialogFooter>
@@ -1174,7 +1181,7 @@ export default function PaymentChasing() {
                     throw new Error("Clipboard API unavailable");
                   }
                   await navigator.clipboard.writeText(previewBody);
-                  toast({ title: "Copied to clipboard" });
+                  toast({ title: t["pages.chasingCopied"] });
                 } catch (err) {
                   toast({
                     title: "Could not copy",
@@ -1207,7 +1214,7 @@ export default function PaymentChasing() {
                 Could not load timeline:{" "}
                 {invoiceHistoryQuery.error instanceof Error
                   ? invoiceHistoryQuery.error.message
-                  : "Unknown error"}
+                  : t["pages.chasingUnknownError"]}
               </AlertDescription>
             </Alert>
           )}
@@ -1316,7 +1323,9 @@ export default function PaymentChasing() {
               disabled={saveTemplate.isPending || !editingTemplate?.body?.trim()}
               data-testid="button-save-template"
             >
-              {saveTemplate.isPending ? "Saving…" : "Save template"}
+              {saveTemplate.isPending
+                ? t["pages.chasingSavingEllipsis"]
+                : t["pages.chasingSaveTemplate"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1328,7 +1337,7 @@ export default function PaymentChasing() {
           <AlertDialogHeader>
             <AlertDialogTitle>Send {queue.length} chase reminders?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will record a chase against each invoice and bump its escalation level.
+              <T k="pages.chasingBulkConfirm" />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

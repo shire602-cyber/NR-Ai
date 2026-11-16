@@ -149,8 +149,7 @@ export function ReportWorkspacePartB({ m }: { m: DashboardModel }) {
               <T k="reportCenter.savedReportViews" />
             </div>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-              Preset views with date range, comparison period, basis, currency, dimension, export
-              format, and automation trigger for this workspace.
+              <T k="dashboard.workspaceViewsHint" />
             </p>
           </div>
           <Link href={reportSectionHref(preferredReportWorkspace, "saved-views")}>

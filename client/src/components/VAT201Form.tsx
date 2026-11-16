@@ -721,6 +721,7 @@ export default function VAT201Form({
       <div className="text-xs text-muted-foreground text-center p-4 border-t">
         <p>www.tax.gov.ae | @uaetax</p>
         <p className="mt-1">Federal Authority | هيئة اتحادية</p>
+        {/* i18n-ignore: bilingual FTA VAT 201 form footer; the Arabic text follows in the same paragraph */}
         <p className="mt-2">
           This is a system generated document and does not need to be signed. The Taxpayer is solely
           responsible for the usage of this document.

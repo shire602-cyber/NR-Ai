@@ -1,5 +1,6 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Target, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,7 @@ export function RevenueGrowthPanel({
 }: {
   onOpenClient: (companyId: string) => void;
 }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { b, fx } = useFirmText();
   const { data, isLoading } = useQuery<GrowthDashboard>({
@@ -26,7 +28,7 @@ export function RevenueGrowthPanel({
     mutationFn: () => apiRequest("POST", "/api/firm/growth-opportunities/refresh"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/growth-opportunities"] });
-      toast({ title: "Revenue opportunities refreshed" });
+      toast({ title: t["firm.revenueOpportunitiesRefreshed"] });
     },
     onError: (e: any) =>
       toast({

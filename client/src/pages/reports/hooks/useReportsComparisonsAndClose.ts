@@ -1,5 +1,6 @@
 // Period comparisons, comparison presets, general ledger, audit trail, month-end close and planning reports.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
+import { translateNow } from "@/lib/i18n";
 import {
   AccountActivityRow,
   AuditTrailSummaryRow,
@@ -674,10 +675,10 @@ export function useReportsComparisonsAndClose({
     const cashMovement = projectedEndingBalance - currentBalance;
     const cashWarning =
       lowestProjection && lowestProjection.projectedBalance < 0
-        ? "Negative cash risk"
+        ? translateNow("reportCenter.cashRiskNegative")
         : lowestProjection && lowestProjection.projectedBalance < 10000
-          ? "Low cash warning"
-          : "On track";
+          ? translateNow("reportCenter.cashRiskLow")
+          : translateNow("onTrack");
 
     return {
       budget: varianceReport?.budget ?? null,

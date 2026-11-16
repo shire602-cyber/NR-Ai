@@ -120,6 +120,7 @@ export default function PrivacyPolicy() {
       </p>
 
       <h2>8. International Transfers</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         Your data is primarily hosted in data centres located within the UAE or jurisdictions
         providing an adequate level of protection. Where transfers outside the UAE are necessary, we
@@ -127,6 +128,7 @@ export default function PrivacyPolicy() {
       </p>
 
       <h2>9. Children</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         The Service is intended for businesses and is not directed to individuals under 18. We do
         not knowingly collect personal data from children.

@@ -183,7 +183,7 @@ const COPY = {
 const FINANCE_ROLES: CompanyRole[] = ["admin", "accountant", "bookkeeper", "approver"];
 
 export default function TeamManagement() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const tr = (b: Bilingual) => (locale === "ar" ? b.ar : b.en);
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -355,12 +355,8 @@ export default function TeamManagement() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Settings"
-        title={locale === "ar" ? "إدارة الفريق" : "Team Management"}
-        description={
-          locale === "ar"
-            ? "إدارة أعضاء الفريق والصلاحيات"
-            : "Manage team members and their access permissions"
-        }
+        title={t["pages.teamTeamManagement"]}
+        description={t["pages.teamManageTeamMembersAndTheirAccess"]}
         actions={
           <>
             <Button
@@ -374,7 +370,7 @@ export default function TeamManagement() {
             {canManage && (
               <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-invite-member">
                 <UserPlus className="w-4 h-4 me-2" />
-                {locale === "ar" ? "دعوة عضو" : "Invite Member"}
+                {t["pages.teamInviteMember"]}
               </Button>
             )}
           </>
@@ -392,7 +388,7 @@ export default function TeamManagement() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === "ar" ? "إجمالي الأعضاء" : "Total Members"}
+              {t["pages.teamTotalMembers"]}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -433,12 +429,8 @@ export default function TeamManagement() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{locale === "ar" ? "أعضاء الفريق" : "Team Members"}</CardTitle>
-          <CardDescription>
-            {locale === "ar"
-              ? "جميع الأعضاء الذين لديهم حق الوصول إلى هذه الشركة"
-              : "All members who have access to this company"}
-          </CardDescription>
+          <CardTitle>{t["pages.teamTeamMembers"]}</CardTitle>
+          <CardDescription>{t["pages.teamAllMembersWhoHaveAccessTo"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingTeam ? (
@@ -491,14 +483,14 @@ export default function TeamManagement() {
                         <RowActions>
                           <RowActionButton
                             icon={Edit}
-                            label={locale === "ar" ? "تعديل الدور" : "Edit role"}
+                            label={t["pages.teamEditRole"]}
                             onClick={() => handleEditMember(member)}
                             disabled={ownerLocked}
                             data-testid={`button-edit-${member.id}`}
                           />
                           <RowActionButton
                             icon={Trash2}
-                            label={locale === "ar" ? "إزالة العضو" : "Remove member"}
+                            label={t["pages.teamRemoveMember"]}
                             onClick={() => setMemberToRemove(member)}
                             disabled={ownerLocked}
                             className="hover:text-destructive"
@@ -577,16 +569,12 @@ export default function TeamManagement() {
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "دعوة عضو جديد" : "Invite Team Member"}</DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "أرسل دعوة للانضمام إلى فريقك"
-                : "Send an invitation to join your team"}
-            </DialogDescription>
+            <DialogTitle>{t["pages.teamInviteTeamMember"]}</DialogTitle>
+            <DialogDescription>{t["pages.teamSendAnInvitationToJoinYour"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "البريد الإلكتروني" : "Email Address"}</Label>
+              <Label>{t["pages.teamEmailAddress"]}</Label>
               <Input
                 type="email"
                 value={inviteEmail}
@@ -630,7 +618,7 @@ export default function TeamManagement() {
             >
               {inviteMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               <Mail className="w-4 h-4 me-2" />
-              {locale === "ar" ? "إرسال الدعوة" : "Send Invite"}
+              {t["pages.teamSendInvite"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -655,18 +643,18 @@ export default function TeamManagement() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "تعديل الدور" : "Edit Role"}</DialogTitle>
+            <DialogTitle>{t["pages.teamEditRole2"]}</DialogTitle>
             <DialogDescription>
               {selectedMember && (
                 <span>
-                  {locale === "ar" ? "تغيير دور" : "Change role for"} {selectedMember.user.name}
+                  {t["pages.teamChangeRoleFor"]} {selectedMember.user.name}
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الدور الجديد" : "New Role"}</Label>
+              <Label>{t["pages.teamNewRole"]}</Label>
               <Select value={newRole} onValueChange={(v) => setNewRole(v as CompanyRole)}>
                 <SelectTrigger data-testid="select-new-role">
                   <SelectValue />
@@ -694,7 +682,7 @@ export default function TeamManagement() {
               data-testid="button-confirm-update"
             >
               {updateRoleMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-              {locale === "ar" ? "تحديث" : "Update Role"}
+              {t["pages.teamUpdateRole"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -703,12 +691,8 @@ export default function TeamManagement() {
       <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "مصفوفة الصلاحيات" : "Permissions Matrix"}</DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "الصلاحيات المتاحة لكل دور"
-                : "Available permissions for each role"}
-            </DialogDescription>
+            <DialogTitle>{t["pages.teamPermissionsMatrix"]}</DialogTitle>
+            <DialogDescription>{t["pages.teamAvailablePermissionsForEachRole"]}</DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
             <Table>

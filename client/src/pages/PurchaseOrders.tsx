@@ -379,7 +379,7 @@ export default function PurchaseOrders() {
         <UpgradePrompt
           feature="purchaseOrders"
           requiredTier={getRequiredTier("purchaseOrders")}
-          description="Create and track purchase orders to your vendors. Manage procurement workflows and match POs to invoices."
+          description={t["purchases.poUpgradeDescription"]}
         />
       </div>
     );
@@ -390,9 +390,7 @@ export default function PurchaseOrders() {
       <PageHeader
         eyebrow="Purchases"
         title={t.purchaseOrders}
-        description={
-          (t as any).purchaseOrdersSubtitle ?? "Create and manage purchase orders for your vendors"
-        }
+        description={(t as any).purchaseOrdersSubtitle}
         actions={
           <Dialog
             open={dialogOpen}

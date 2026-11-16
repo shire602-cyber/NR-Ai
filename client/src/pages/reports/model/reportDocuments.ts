@@ -1,6 +1,7 @@
 // Document amount/date-range helpers, depreciation schedule, consolidation and status variants.
 // Split from shared.tsx (R20-09); shared.tsx re-exports this module.
 import type { BadgeProps } from "@/components/ui/badge";
+import { translateNow } from "@/lib/i18n";
 import type { DateRange } from "@/components/DateRangeFilter";
 import { format } from "date-fns";
 import type {
@@ -443,9 +444,9 @@ export function buildConsolidatedStatementsReport(
         status,
         statusLabel:
           status === "failed"
-            ? "Missing data"
+            ? translateNow("reportCenter.statusMissingData")
             : status === "unbalanced"
-              ? "Balance review"
+              ? translateNow("reportCenter.statusBalanceReview")
               : status === "multi_currency"
                 ? "FX review"
                 : "Included",
@@ -524,7 +525,7 @@ export function buildConsolidatedStatementsReport(
       reviewCount > 0
         ? singleEntityOnly
           ? "Single entity roll-up"
-          : "Review before delivery"
+          : translateNow("reportCenter.statusReviewBeforeDelivery")
         : "Ready for pack",
   };
 }

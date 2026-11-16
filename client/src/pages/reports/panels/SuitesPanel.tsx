@@ -1,6 +1,7 @@
 // Reports > suites workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { ArrowRight, BarChart3, FileText, Send, Sparkles } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { T } from "@/components/layout/T";
 import { useReportsPageContext } from "../context";
 
 export default function SuitesPanel() {
+  const { t } = useTranslation();
   const {
     isReportDeliveryHandoffAcknowledged,
     personaScopeDescription,
@@ -35,8 +37,7 @@ export default function SuitesPanel() {
               <T k="reportCenter.reportSuites" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-based bundles that combine reports, comparisons, saved views, packs, and
-              automations into the business workflows users open most.
+              <T k="reportCenter.suitesIntro" />
             </p>
           </div>
           <Badge variant="info" dot>
@@ -61,7 +62,7 @@ export default function SuitesPanel() {
             const suiteQueueLabel = isQueueingThisSuiteDelivery
               ? "Queueing"
               : suiteRequiresHandoffAcknowledgement
-                ? "Acknowledge handoff"
+                ? t["components.launchAcknowledgeHandoff"]
                 : isSuiteDeliveryPaused
                   ? "Paused"
                   : "Queue delivery";
@@ -167,7 +168,7 @@ export default function SuitesPanel() {
                         className="w-fit"
                       >
                         {suiteRequiresHandoffAcknowledgement
-                          ? "Handoff review"
+                          ? t["reportCenter.handoffReview"]
                           : (suiteDeliverySubscription?.status ?? "Catalog")}
                       </Badge>
                     </div>
@@ -421,7 +422,7 @@ export default function SuitesPanel() {
               <T k="reportCenter.reportPackTemplates" />
             </h2>
             <p className="text-sm text-muted-foreground">
-              Ready-made packs for recurring owner, freelancer, and accountant decisions.
+              <T k="reportCenter.packsIntro" />
             </p>
           </div>
           <Badge variant="outline">{visibleReportPackTemplates.length} templates</Badge>

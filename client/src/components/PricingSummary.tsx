@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { Check, Zap, Crown, Rocket, Building2, ArrowRight, Star } from "lucide-react";
 import { useState } from "react";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
 
@@ -20,6 +20,7 @@ import { StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
  */
 export function PricingSummary() {
   const { locale } = useI18n();
+  const { t: tr } = useTranslation();
   const [isYearly, setIsYearly] = useState(false);
   const isRTL = locale === "ar";
 
@@ -29,9 +30,9 @@ export function PricingSummary() {
     save20: locale === "en" ? "Save 20%" : "وفّر 20%",
     perMonth: locale === "en" ? "/mo" : "/ شهريًا",
     free: locale === "en" ? "Free" : "مجاني",
-    viewAll: locale === "en" ? "View Full Pricing" : "عرض جميع الأسعار",
+    viewAll: tr["marketing.pricingSummaryViewFullPricing"],
     recommended: locale === "en" ? "Recommended" : "موصى به",
-    mostPopular: locale === "en" ? "Most Popular" : "الأكثر شعبية",
+    mostPopular: tr["marketing.pricingSummaryMostPopular"],
   };
 
   const plans = [
@@ -45,7 +46,7 @@ export function PricingSummary() {
         locale === "en"
           ? ["1 company, 1 user", "50 invoices/mo", "Basic AI categorization", "VAT filing"]
           : ["شركة واحدة، مستخدم واحد", "50 فاتورة/شهر", "تصنيف ذكي أساسي", "ضريبة القيمة المضافة"],
-      cta: locale === "en" ? "Get Started Free" : "ابدأ مجاناً",
+      cta: tr["marketing.pricingSummaryGetStartedFree"],
       variant: "outline" as const,
       highlight: false,
       badge: null,
@@ -114,7 +115,7 @@ export function PricingSummary() {
               "Custom integrations & API",
             ]
           : ["كل شيء غير محدود", "أولوية معالجة ذكية", "مدير حساب مخصص", "تكاملات مخصصة و API"],
-      cta: locale === "en" ? "Contact Sales" : "تواصل مع المبيعات",
+      cta: tr["marketing.pricingSummaryContactSales"],
       variant: "outline" as const,
       highlight: false,
       badge: null,

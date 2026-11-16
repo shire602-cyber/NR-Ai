@@ -360,9 +360,9 @@ export default function ReconciliationRules() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        eyebrow="Accounting"
-        title="Reconciliation Rules"
-        description="Define rules to automatically match and categorize bank transactions."
+        eyebrow={t["banking.rulesEyebrow"]}
+        title={t["banking.rulesTitle"]}
+        description={t["banking.rulesDescription"]}
         actions={
           <>
             <Button
@@ -375,7 +375,7 @@ export default function ReconciliationRules() {
               ) : (
                 <Zap className="mr-2 h-4 w-4" />
               )}
-              Run Auto-Match
+              {t["banking.rulesRunAutoMatch"]}
             </Button>
             <Button onClick={openCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
@@ -415,10 +415,7 @@ export default function ReconciliationRules() {
           <CardTitle>
             <T k="reportCenter.rules" />
           </CardTitle>
-          <CardDescription>
-            Rules are evaluated in priority order (lowest number first). The first matching rule
-            wins.
-          </CardDescription>
+          <CardDescription>{t["banking.rulesEvaluationOrder"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -519,7 +516,9 @@ export default function ReconciliationRules() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{editingRule ? "Edit Rule" : "Create Rule"}</DialogTitle>
+            <DialogTitle>
+              {editingRule ? t["banking.rulesEditRule"] : t["banking.rulesCreateRule"]}
+            </DialogTitle>
             <DialogDescription>
               {editingRule
                 ? "Update this reconciliation rule."
@@ -572,7 +571,7 @@ export default function ReconciliationRules() {
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select field" />
+                            <SelectValue placeholder={t["banking.rulesSelectField"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -603,7 +602,7 @@ export default function ReconciliationRules() {
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
+                            <SelectValue placeholder={t["screens.inv2SelectType"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -759,7 +758,7 @@ export default function ReconciliationRules() {
                   <FormItem>
                     <FormLabel>Memo (optional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="Internal note for this rule" {...field} />
+                      <Input placeholder={t["banking.rulesNotePlaceholder"]} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -797,7 +796,7 @@ export default function ReconciliationRules() {
                   {(createMutation.isPending || updateMutation.isPending) && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  {editingRule ? "Update Rule" : "Create Rule"}
+                  {editingRule ? t["banking.rulesUpdateRule"] : t["banking.rulesCreateRule"]}
                 </Button>
               </div>
             </form>

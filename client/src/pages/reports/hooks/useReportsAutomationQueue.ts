@@ -1,5 +1,6 @@
 // Automation work queue, automation starters and trigger rules.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
+import { translateNow } from "@/lib/i18n";
 import {
   AlertTriangle,
   BarChart3,
@@ -90,7 +91,8 @@ export function useReportsAutomationQueue({
     const corporateTaxPayable = corporateTaxEstimate?.taxPayable ?? 0;
     const closeReviewCount = ledgerReport.reviewEntries + (trialBalanceSummary.isBalanced ? 0 : 1);
     const planningRiskCount =
-      (planningReport.cashWarning === "On track" ? 0 : 1) + planningReport.overBudgetLines;
+      (planningReport.cashWarning === translateNow("onTrack") ? 0 : 1) +
+      planningReport.overBudgetLines;
 
     return [
       {
@@ -123,7 +125,9 @@ export function useReportsAutomationQueue({
         id: "inventory-risk",
         title: "Inventory valuation",
         signal:
-          inventoryValuationReport.reviewCount > 0 ? "Stock review items" : "Inventory valued",
+          inventoryValuationReport.reviewCount > 0
+            ? translateNow("reportCenter.signalStockReview")
+            : "Inventory valued",
         detail:
           inventoryValuationReport.reviewCount > 0
             ? `${inventoryValuationReport.reviewCount} products need stock, reorder, or costing review.`
@@ -140,7 +144,9 @@ export function useReportsAutomationQueue({
         id: "inventory-movement-review",
         title: "Inventory movement",
         signal:
-          inventoryMovementReport.movementCount > 0 ? "Stock movement posted" : "No stock movement",
+          inventoryMovementReport.movementCount > 0
+            ? translateNow("reportCenter.signalStockMovement")
+            : "No stock movement",
         detail:
           inventoryMovementReport.reorderSignalCount > 0
             ? `${inventoryMovementReport.reorderSignalCount} products need reorder or negative-stock review after recent movement.`
@@ -157,7 +163,9 @@ export function useReportsAutomationQueue({
         id: "fixed-asset-review",
         title: "Fixed asset register",
         signal:
-          fixedAssetRegisterReport.reviewCount > 0 ? "Asset review items" : "Asset register ready",
+          fixedAssetRegisterReport.reviewCount > 0
+            ? translateNow("reportCenter.signalAssetReview")
+            : "Asset register ready",
         detail:
           fixedAssetRegisterReport.capitalizationReviewCount > 0
             ? `${fixedAssetRegisterReport.capitalizationReviewCount} assets need capitalization journal review.`
@@ -175,7 +183,7 @@ export function useReportsAutomationQueue({
         title: "Depreciation schedule",
         signal:
           depreciationScheduleReport.reviewCount > 0
-            ? "Depreciation setup review"
+            ? translateNow("reportCenter.signalDepreciationSetup")
             : "Depreciation ready",
         detail:
           depreciationScheduleReport.reviewCount > 0
@@ -203,7 +211,10 @@ export function useReportsAutomationQueue({
       {
         id: "expense-claims-review",
         title: "Expense claims",
-        signal: expenseClaimReport.reviewCount > 0 ? "Claim queue open" : "Expense claims clear",
+        signal:
+          expenseClaimReport.reviewCount > 0
+            ? translateNow("reportCenter.signalClaimQueueOpen")
+            : "Expense claims clear",
         detail:
           expenseClaimReport.submittedCount > 0
             ? `${expenseClaimReport.submittedCount} submitted claims need approval.`
@@ -223,7 +234,7 @@ export function useReportsAutomationQueue({
         title: "Payroll and WPS",
         signal:
           payrollReport.approvalQueueCount > 0 || payrollReport.wpsMissingCount > 0
-            ? "Payroll action needed"
+            ? translateNow("reportCenter.signalPayrollAction")
             : "Payroll ready",
         detail:
           payrollReport.approvalQueueCount > 0
@@ -270,7 +281,10 @@ export function useReportsAutomationQueue({
       {
         id: "corporate-tax",
         title: "Corporate tax estimate",
-        signal: corporateTaxPayable > 0.005 ? "Tax payable" : "No current tax due",
+        signal:
+          corporateTaxPayable > 0.005
+            ? translateNow("reportCenter.signalTaxPayable")
+            : "No current tax due",
         detail: "Review the Corporate Tax estimate and update the workpaper before draft filing.",
         count: corporateTaxPayable > 0.005 ? 1 : 0,
         amount: Math.max(0, corporateTaxPayable),
@@ -324,7 +338,7 @@ export function useReportsAutomationQueue({
         title: "Management roll-up",
         signal:
           consolidatedStatementsReport.reviewCount > 0
-            ? "Consolidation review"
+            ? translateNow("reportCenter.signalConsolidationReview")
             : "Multi-entity roll-up ready",
         detail:
           consolidatedStatementsReport.reviewCount > 0

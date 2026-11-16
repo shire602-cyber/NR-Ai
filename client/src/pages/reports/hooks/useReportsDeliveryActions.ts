@@ -1,6 +1,7 @@
 // Report delivery mutations: save settings, queue (with handoff guard) and retry runs.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { SaveReportDeliverySubscriptionSettingsInput } from "../shared";
+import { translateNow } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
 import { useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -63,8 +64,8 @@ export function useReportsDeliveryActions({
       toast({
         title: onlyToggledEnabled
           ? result?.subscription?.enabled
-            ? "Report delivery enabled"
-            : "Report delivery paused"
+            ? translateNow("reportCenter.deliveryEnabledToast")
+            : translateNow("reportCenter.deliveryPausedToast")
           : "Report delivery settings saved",
         description: `${subscriptionTitle} now uses company delivery settings.`,
       });
@@ -131,7 +132,7 @@ export function useReportsDeliveryActions({
         toast({
           title: "Handoff gaps acknowledged",
           description: `${
-            subscription?.title ?? "This report delivery"
+            subscription?.title ?? translateNow("reportCenter.thisReportDelivery")
           } has review gaps in the accountant handoff. Click queue again to send with those gaps acknowledged.`,
         });
         return;

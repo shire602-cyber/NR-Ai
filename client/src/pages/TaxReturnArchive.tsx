@@ -77,7 +77,7 @@ const RETURN_TYPES = [
 ];
 
 export default function TaxReturnArchive() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
@@ -216,16 +216,12 @@ export default function TaxReturnArchive() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
-        title={locale === "ar" ? "أرشيف الإقرارات الضريبية" : "Tax Return Archive"}
-        description={
-          locale === "ar"
-            ? "عرض جميع الإقرارات الضريبية المقدمة للهيئة الاتحادية للضرائب"
-            : "View all tax returns filed with the Federal Tax Authority"
-        }
+        title={t["compliance.taxArchiveTaxReturnArchive"]}
+        description={t["compliance.taxArchiveViewAllTaxReturnsFiledWith"]}
         actions={
           <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
             <Plus className="w-4 h-4 me-2" />
-            {locale === "ar" ? "إضافة إقرار" : "Add Return"}
+            {t["compliance.taxArchiveAddReturn"]}
           </Button>
         }
       />
@@ -234,7 +230,7 @@ export default function TaxReturnArchive() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي الإقرارات" : "Total Returns"}
+              {t["compliance.taxArchiveTotalReturns"]}
             </CardTitle>
             <FileText className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
@@ -258,7 +254,7 @@ export default function TaxReturnArchive() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "ضريبة الشركات" : "Corporate Tax"}
+              {t["compliance.taxArchiveCorporateTax"]}
             </CardTitle>
             <Building2 className="w-4 h-4 text-chart-5" />
           </CardHeader>
@@ -270,7 +266,7 @@ export default function TaxReturnArchive() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي الضرائب المدفوعة" : "Total Tax Paid"}
+              {t["compliance.taxArchiveTotalTaxPaid"]}
             </CardTitle>
             <CheckCircle2 className="w-4 h-4 text-success" />
           </CardHeader>
@@ -302,12 +298,10 @@ export default function TaxReturnArchive() {
             <div className="flex gap-2">
               <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="w-[180px]" data-testid="select-type-filter">
-                  <SelectValue placeholder={locale === "ar" ? "نوع الإقرار" : "Return Type"} />
+                  <SelectValue placeholder={t["compliance.taxArchiveReturnType"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">
-                    {locale === "ar" ? "جميع الأنواع" : "All Types"}
-                  </SelectItem>
+                  <SelectItem value="all">{t["compliance.taxArchiveAllTypes"]}</SelectItem>
                   {RETURN_TYPES.map((type) => (
                     <SelectItem key={type.value} value={type.value}>
                       {locale === "ar" ? type.labelAr : type.labelEn}
@@ -320,9 +314,7 @@ export default function TaxReturnArchive() {
                   <SelectValue placeholder={locale === "ar" ? "السنة" : "Year"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">
-                    {locale === "ar" ? "جميع السنوات" : "All Years"}
-                  </SelectItem>
+                  <SelectItem value="all">{t["compliance.taxArchiveAllYears"]}</SelectItem>
                   {years.map((year) => (
                     <SelectItem key={year} value={year.toString()}>
                       {year}
@@ -337,9 +329,9 @@ export default function TaxReturnArchive() {
           {filteredReturns.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد إقرارات ضريبية" : "No tax returns found"}</p>
+              <p>{t["compliance.taxArchiveNoTaxReturnsFound"]}</p>
               <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
-                {locale === "ar" ? "إضافة أول إقرار" : "Add your first return"}
+                {t["compliance.taxArchiveAddYourFirstReturn"]}
               </Button>
             </div>
           ) : (
@@ -349,7 +341,7 @@ export default function TaxReturnArchive() {
                   <TableRow>
                     <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
                     <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
-                    <TableHead>{locale === "ar" ? "تاريخ التقديم" : "Filing Date"}</TableHead>
+                    <TableHead>{t["compliance.taxArchiveFilingDate"]}</TableHead>
                     <TableHead>{locale === "ar" ? "رقم المرجع" : "Reference No."}</TableHead>
                     <TableHead data-numeric>{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
                     <TableHead>{locale === "ar" ? "حالة الدفع" : "Payment"}</TableHead>
@@ -456,17 +448,15 @@ export default function TaxReturnArchive() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "إضافة إقرار ضريبي" : "Add Tax Return"}</DialogTitle>
+            <DialogTitle>{t["compliance.taxArchiveAddTaxReturn"]}</DialogTitle>
             <DialogDescription>
-              {locale === "ar"
-                ? "سجل إقراراً ضريبياً تم تقديمه للهيئة الاتحادية للضرائب"
-                : "Record a tax return filed with the Federal Tax Authority"}
+              {t["compliance.taxArchiveRecordATaxReturnFiledWith"]}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "نوع الإقرار" : "Return Type"} *</Label>
+                <Label>{t["compliance.taxArchiveReturnType"]} *</Label>
                 <Select
                   value={newReturn.returnType}
                   onValueChange={(val) => setNewReturn({ ...newReturn, returnType: val })}
@@ -484,7 +474,7 @@ export default function TaxReturnArchive() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تسمية الفترة" : "Period Label"} *</Label>
+                <Label>{t["compliance.taxArchivePeriodLabel"]} *</Label>
                 <Input
                   value={newReturn.periodLabel}
                   onChange={(e) => setNewReturn({ ...newReturn, periodLabel: e.target.value })}
@@ -496,7 +486,7 @@ export default function TaxReturnArchive() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "بداية الفترة" : "Period Start"} *</Label>
+                <Label>{t["compliance.taxArchivePeriodStart"]} *</Label>
                 <Input
                   type="date"
                   value={newReturn.periodStart}
@@ -505,7 +495,7 @@ export default function TaxReturnArchive() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "نهاية الفترة" : "Period End"} *</Label>
+                <Label>{t["compliance.taxArchivePeriodEnd"]} *</Label>
                 <Input
                   type="date"
                   value={newReturn.periodEnd}
@@ -517,7 +507,7 @@ export default function TaxReturnArchive() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ التقديم" : "Filing Date"} *</Label>
+                <Label>{t["compliance.taxArchiveFilingDate"]} *</Label>
                 <Input
                   type="date"
                   value={newReturn.filingDate}
@@ -540,7 +530,7 @@ export default function TaxReturnArchive() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "مبلغ الضريبة" : "Tax Amount"}</Label>
+                <Label>{t["compliance.taxArchiveTaxAmount"]}</Label>
                 <Input
                   type="number"
                   value={newReturn.taxAmount}
@@ -553,7 +543,7 @@ export default function TaxReturnArchive() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "حالة الدفع" : "Payment Status"}</Label>
+                <Label>{t["compliance.taxArchivePaymentStatus"]}</Label>
                 <Select
                   value={newReturn.paymentStatus}
                   onValueChange={(val) => setNewReturn({ ...newReturn, paymentStatus: val })}

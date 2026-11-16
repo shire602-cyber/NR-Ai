@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -56,6 +57,7 @@ interface NotificationPrefs {
 }
 
 export default function NotificationPreferences() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [pushActive, setPushActive] = useState(false);
   const [typePrefsDraft, setTypePrefs] = useState<Record<string, ChannelPrefs> | null>(null);
@@ -158,8 +160,8 @@ export default function NotificationPreferences() {
       <div className="space-y-6">
         <PageHeader
           eyebrow="Settings"
-          title="Notification Preferences"
-          description="Manage how and when you receive notifications"
+          title={t["pages.notificationPrefsTitle"]}
+          description={t["pages.notificationPrefsDescription"]}
         />
         <Skeleton className="h-96" />
       </div>
@@ -170,8 +172,8 @@ export default function NotificationPreferences() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Settings"
-        title="Notification Preferences"
-        description="Manage how and when you receive notifications"
+        title={t["pages.notificationPrefsTitle"]}
+        description={t["pages.notificationPrefsDescription"]}
       />
 
       <Form {...form}>
@@ -440,7 +442,9 @@ export default function NotificationPreferences() {
 
           <div className="flex justify-end">
             <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : "Save Preferences"}
+              {updateMutation.isPending
+                ? t["pages.notificationPrefsSaving"]
+                : t["pages.notificationPrefsSave"]}
             </Button>
           </div>
         </form>
