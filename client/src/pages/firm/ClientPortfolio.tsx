@@ -211,7 +211,7 @@ export default function ClientPortfolio() {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
-      toast({ title: "Client created successfully" });
+      toast({ title: t["clientPortfolio.clientCreatedSuccessfully"] });
       setAddOpen(false);
       setForm(emptyForm);
     },
@@ -964,7 +964,9 @@ export default function ClientPortfolio() {
                           {ops && <PriorityBadge priority={ops.priority} />}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {ops?.nextBestAction ?? client.industry ?? "Open profile for details"}
+                          {ops?.nextBestAction ??
+                            client.industry ??
+                            t["clientPortfolio.openProfileForDetails"]}
                         </p>
                       </div>
                     </TableCell>
@@ -996,7 +998,7 @@ export default function ClientPortfolio() {
                         ? `${ops.bookkeeping.closeProgress}% close`
                         : !ops && client.lastReceiptDate
                           ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
-                          : "Not scoped"}
+                          : t["pages.notScoped"]}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -1060,9 +1062,7 @@ export default function ClientPortfolio() {
             <DialogTitle>
               <T k="pages.addNewClient" />
             </DialogTitle>
-            <DialogDescription>
-              Create a new client company. A UAE chart of accounts will be seeded automatically.
-            </DialogDescription>
+            <DialogDescription>{t["clientPortfolio.createANewClientCompany"]}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-1.5">
@@ -1071,7 +1071,7 @@ export default function ClientPortfolio() {
                 id="name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Al Majid Trading LLC"
+                placeholder={t["clientPortfolio.alMajidTradingLlc"]}
               />
             </div>
             <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
@@ -1080,7 +1080,7 @@ export default function ClientPortfolio() {
                   <T k="pages.nrServicesForThisClient" />
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Choose only the services NRA is contracted to deliver for this client.
+                  {t["clientPortfolio.chooseOnlyTheServicesNra"]}
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1169,7 +1169,7 @@ export default function ClientPortfolio() {
                   onValueChange={(v) => setForm((f) => ({ ...f, legalStructure: v }))}
                 >
                   <SelectTrigger id="legalStructure">
-                    <SelectValue placeholder="Select..." />
+                    <SelectValue placeholder={t["clientPortfolio.select"]} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="LLC">LLC</SelectItem>
@@ -1286,7 +1286,7 @@ export default function ClientPortfolio() {
                 id="industry"
                 value={form.industry}
                 onChange={(e) => setForm((f) => ({ ...f, industry: e.target.value }))}
-                placeholder="Trading, Construction, Retail..."
+                placeholder={t["clientPortfolio.tradingConstructionRetail"]}
               />
             </div>
             <div className="grid gap-1.5">
@@ -1333,7 +1333,7 @@ export default function ClientPortfolio() {
                 id="businessAddress"
                 value={form.businessAddress}
                 onChange={(e) => setForm((f) => ({ ...f, businessAddress: e.target.value }))}
-                placeholder="Office 301, Business Bay, Dubai"
+                placeholder={t["clientPortfolio.office301BusinessBayDubai"]}
               />
             </div>
           </div>
@@ -1346,7 +1346,7 @@ export default function ClientPortfolio() {
               disabled={!form.name.trim() || createMutation.isPending}
               data-testid="button-create-client"
             >
-              {createMutation.isPending ? "Creating..." : "Create Client"}
+              {createMutation.isPending ? "Creating..." : t["clientPortfolio.createClient"]}
             </Button>
           </DialogFooter>
         </DialogContent>

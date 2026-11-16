@@ -61,7 +61,7 @@ function FilingRow({
         </Link>
         <div className="text-caption text-muted-foreground">
           {nextDue
-            ? `${t.nextDue ?? "Next due"} ${formatDate(nextDue, m.locale)}`
+            ? `${t.nextDue ?? t["dashboardPlanning.nextDue"]} ${formatDate(nextDue, m.locale)}`
             : (t.noReturnFiledYet ?? "No return filed yet")}
         </div>
       </div>
@@ -83,7 +83,7 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
   return (
     <Card className="flex h-full flex-col" data-testid="dashboard-filing-pulse">
       <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
-        <CardTitle>{tt.filingPulse ?? "Filing pulse"}</CardTitle>
+        <CardTitle>{tt.filingPulse ?? t["dashboardPlanning.filingPulse"]}</CardTitle>
         <Link
           href="/compliance-calendar"
           className="inline-flex items-center gap-1 text-small font-medium text-accent hover:underline"
@@ -97,7 +97,7 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
           <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
           <div className="min-w-0">
             <div className="text-small font-medium text-foreground">
-              {tt.auditReadiness ?? "Audit readiness"}
+              {tt.auditReadiness ?? t["dashboardPlanning.auditReadiness"]}
             </div>
             <div className="text-caption text-muted-foreground">
               {issues === 0
@@ -113,22 +113,22 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
             status={compliance.vatStatus?.filingStatus}
             nextDue={compliance.vatStatus?.nextDue}
             href="/vat-filing"
-            linkLabel={tt.openVatWorkspace ?? "Open VAT workspace"}
+            linkLabel={tt.openVatWorkspace ?? t["dashboardPlanning.openVatWorkspace"]}
           />
           <FilingRow
             m={m}
-            label={tt.corporateTaxLabel ?? "Corporate tax"}
+            label={tt.corporateTaxLabel ?? t["marketing.demoTabCt"]}
             status={compliance.corporateTaxStatus?.status}
             nextDue={compliance.corporateTaxStatus?.nextDue}
             href="/corporate-tax"
-            linkLabel={tt.openTaxWorkpaper ?? "Open tax workpaper"}
+            linkLabel={tt.openTaxWorkpaper ?? t["dashboardPlanning.openTaxWorkpaper"]}
           />
         </div>
         {checks.length > 0 && (
           <details className="group border-t border-border pt-2">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md py-1.5 text-small font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
               <span>
-                {tt.raiseYourScore ?? "Raise your score"}{" "}
+                {tt.raiseYourScore ?? t["dashboardPlanning.raiseYourScore"]}{" "}
                 <span className="font-normal text-muted-foreground">({checks.length})</span>
               </span>
               <ChevronDown

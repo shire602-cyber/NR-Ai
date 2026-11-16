@@ -96,7 +96,11 @@ const STRINGS = {
     currentRate: "Current rate",
     gainLoss: "Gain / loss",
     noExposure: "No open foreign-currency exposures for the selected as-of date.",
-    kinds: { invoice: "Invoice", bill: "Bill", bank: "Bank account" } as Record<string, string>,
+    kinds: {
+      invoice: "Invoice",
+      bill: "Bill",
+      bank: "Bank account" /* i18n-ignore: English half of the bilingual s object, Arabic below */,
+    } as Record<string, string>,
     converterTitle: "Currency Converter",
     converterDesc: "Convert amounts using your company's rates (system rates as fallback)",
     from: "From",

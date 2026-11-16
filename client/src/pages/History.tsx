@@ -1,4 +1,11 @@
 import { T } from "@/components/layout/T";
+import { dateFnsOptions } from "@/lib/date-locale";
+import {
+  activityActionLabel,
+  activityDescription,
+  activityEntityLabel,
+} from "@/lib/activity-log-labels";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -42,6 +49,7 @@ import { apiUrl } from "@/lib/api";
 import type { ActivityLog } from "@shared/schema";
 
 export default function History() {
+  const { t, locale } = useTranslation();
   const { companyId } = useDefaultCompany();
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
@@ -126,9 +134,9 @@ export default function History() {
           </Badge>
         );
       case "view":
-        return <Badge variant="secondary">View</Badge>;
+        return <Badge variant="secondary">{t["hr.view"]}</Badge>;
       default:
-        return <Badge variant="outline">{action}</Badge>;
+        return <Badge variant="outline">{activityActionLabel(t, action)}</Badge>;
     }
   };
 
@@ -154,9 +162,9 @@ export default function History() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Workspace"
-        title="Activity History"
+        title={t["history.activityHistory"]}
         testId="text-history-title"
-        description="Track all changes made to your financial records"
+        description={t["history.trackAllChangesMadeTo"]}
       />
 
       <Card>
@@ -166,7 +174,7 @@ export default function History() {
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search activities..."
+                  placeholder={t["activityLogs.searchActivities"]}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -177,7 +185,7 @@ export default function History() {
             <div className="flex items-center gap-2">
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-32" data-testid="select-filter-action">
-                  <SelectValue placeholder="Action" />
+                  <SelectValue placeholder={t["components.vwColAction"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -192,12 +200,12 @@ export default function History() {
                   <SelectItem value="delete">
                     <T k="pages.delete" />
                   </SelectItem>
-                  <SelectItem value="view">View</SelectItem>
+                  <SelectItem value="view">{t["hr.view"]}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={entityFilter} onValueChange={setEntityFilter}>
                 <SelectTrigger className="w-36" data-testid="select-filter-entity">
-                  <SelectValue placeholder="Entity Type" />
+                  <SelectValue placeholder={t["activityLogs.entityType"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -220,7 +228,9 @@ export default function History() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{filteredLogs.length} entries</Badge>
+              <Badge variant="secondary">
+                {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
+              </Badge>
             </div>
           </div>
         </CardHeader>
@@ -232,10 +242,7 @@ export default function History() {
                 <h3 className="text-lg font-medium mb-2">
                   <T k="pageLabels.noActivityYet" />
                 </h3>
-                <p className="text-muted-foreground">
-                  Activity will appear here as you create invoices, journal entries, and other
-                  records.
-                </p>
+                <p className="text-muted-foreground">{t["history.activityWillAppearHereAs"]}</p>
               </div>
             ) : (
               <Table>
@@ -248,7 +255,7 @@ export default function History() {
                     <TableHead>
                       <T k="pages.action" />
                     </TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t["consolidation.kind"]}</TableHead>
                     <TableHead>
                       <T k="pages.dateTime" />
                     </TableHead>
@@ -263,7 +270,7 @@ export default function History() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <p className="font-medium">{log.description}</p>
+                        <p className="font-medium">{activityDescription(t, log, locale)}</p>
                         {log.metadata && (
                           <p className="text-xs text-muted-foreground mt-1">
                             {(() => {
@@ -281,17 +288,23 @@ export default function History() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {getEntityIcon(log.entityType)}
-                          <span className="capitalize">{log.entityType.replace("_", " ")}</span>
+                          <span className="capitalize">
+                            {activityEntityLabel(t, log.entityType)}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>
                         {log.createdAt ? (
                           <div>
                             <p className="text-sm">
-                              {format(new Date(log.createdAt), "MMM d, yyyy")}
+                              {format(
+                                new Date(log.createdAt),
+                                "MMM d, yyyy",
+                                dateFnsOptions(locale)
+                              )}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {format(new Date(log.createdAt), "h:mm a")}
+                              {format(new Date(log.createdAt), "h:mm a", dateFnsOptions(locale))}
                             </p>
                           </div>
                         ) : (

@@ -1388,7 +1388,9 @@ export default function ExpenseClaims() {
         <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>
-              {reviewAction === "approve" ? "Approve Claim" : "Reject Claim"}
+              {reviewAction === "approve"
+                ? t["expenseClaims.approveClaim"]
+                : t["expenseClaims.rejectClaim"]}
             </DialogTitle>
             <DialogDescription>
               {reviewAction === "approve"
@@ -1507,7 +1509,7 @@ export default function ExpenseClaims() {
                   {t.cancel || "Cancel"}
                 </Button>
                 <Button type="submit" disabled={markPaidMutation.isPending}>
-                  {markPaidMutation.isPending ? t.loading || "Loading..." : "Mark as Paid"}
+                  {markPaidMutation.isPending ? t.loading || "Loading..." : t["pages.markAsPaid"]}
                 </Button>
               </DialogFooter>
             </form>
@@ -1527,7 +1529,7 @@ export default function ExpenseClaims() {
               <T k="pages.deleteExpenseClaim" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this expense claim. This action cannot be undone.
+              {t["expenseClaims.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

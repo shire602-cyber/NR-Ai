@@ -676,7 +676,7 @@ export default function EInvoicingSettings() {
             {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
             {view ? (
               <span className="ms-2 font-mono text-xs" dir="ltr">
-                {s.endpoint}: {view.inbound.endpoint}
+                {s.endpoint}: <span translate="no">{view.inbound.endpoint}</span>
               </span>
             ) : null}
           </CardDescription>

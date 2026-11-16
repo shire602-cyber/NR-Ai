@@ -15,6 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
+import { dateFnsOptions } from "@/lib/date-locale";
 import {
   Wallet,
   Plus,
@@ -852,11 +853,19 @@ export default function Budgets() {
                               {budget.fiscal_year}
                               {" · "}
                               {budget.start_date
-                                ? format(new Date(budget.start_date), "MMM yyyy")
+                                ? format(
+                                    new Date(budget.start_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
                                 : "-"}
                               {" - "}
                               {budget.end_date
-                                ? format(new Date(budget.end_date), "MMM yyyy")
+                                ? format(
+                                    new Date(budget.end_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
                                 : "-"}
                             </p>
                             {getStatusBadge(budget.status)}
@@ -897,11 +906,19 @@ export default function Budgets() {
                             <TableCell>{budget.fiscal_year}</TableCell>
                             <TableCell className="whitespace-nowrap">
                               {budget.start_date
-                                ? format(new Date(budget.start_date), "MMM yyyy")
+                                ? format(
+                                    new Date(budget.start_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
                                 : "-"}
                               {" - "}
                               {budget.end_date
-                                ? format(new Date(budget.end_date), "MMM yyyy")
+                                ? format(
+                                    new Date(budget.end_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
                                 : "-"}
                             </TableCell>
                             <TableCell>{getStatusBadge(budget.status)}</TableCell>
@@ -1036,7 +1053,7 @@ export default function Budgets() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
-                                title="Delete"
+                                title={t["hr.delete"]}
                                 className="text-muted-foreground hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1086,8 +1103,7 @@ export default function Budgets() {
                   </div>
                 ) : !varianceData || varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No variance data available. Add budget lines with account links to compare
-                    against actuals.
+                    {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1513,8 +1529,7 @@ export default function Budgets() {
               <T k="pages.deleteBudgetPlan" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this budget plan and all its lines. This action cannot be
-              undone.
+              {t["budgets.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1548,7 +1563,7 @@ export default function Budgets() {
               <T k="pages.deleteBudgetLine" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this budget line. This action cannot be undone.
+              {t["budgets.thisWillPermanentlyDeleteThis2"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

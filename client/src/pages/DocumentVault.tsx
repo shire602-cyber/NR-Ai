@@ -124,6 +124,7 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function DocumentVault() {
+  const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -304,16 +305,16 @@ export default function DocumentVault() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Operations"
-        title={locale === "ar" ? "خزنة المستندات" : "Document Vault"}
+        title={locale === "ar" ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
         description={
           locale === "ar"
             ? "قم بتخزين وإدارة مستنداتك المهمة مع تنبيهات انتهاء الصلاحية"
-            : "Store and manage your important documents with expiry alerts"
+            : t["documentVault.storeAndManageYourImportant"]
         }
         actions={
           <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
             <Plus className="w-4 h-4 mr-2" />
-            {locale === "ar" ? "رفع مستند" : "Upload Document"}
+            {locale === "ar" ? "رفع مستند" : t["pages.uploadDocument"]}
           </Button>
         }
       />
@@ -322,7 +323,7 @@ export default function DocumentVault() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي المستندات" : "Total Documents"}
+              {locale === "ar" ? "إجمالي المستندات" : t["pages.totalDocuments"]}
             </CardTitle>
             <FolderOpen className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
@@ -334,7 +335,7 @@ export default function DocumentVault() {
         <Card className={expiringDocs.length > 0 ? "border-warning" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "تنتهي قريباً" : "Expiring Soon"}
+              {locale === "ar" ? "تنتهي قريباً" : t["pages.expiringSoon"]}
             </CardTitle>
             <Clock className="w-4 h-4 text-warning" />
           </CardHeader>
@@ -356,7 +357,7 @@ export default function DocumentVault() {
           <CardContent>
             <div className="text-2xl font-bold text-destructive">{expiredDocs.length}</div>
             <p className="text-xs text-muted-foreground">
-              {locale === "ar" ? "تحتاج إلى تجديد" : "Need renewal"}
+              {locale === "ar" ? "تحتاج إلى تجديد" : t["documentVault.needRenewal"]}
             </p>
           </CardContent>
         </Card>
@@ -379,16 +380,18 @@ export default function DocumentVault() {
               <SelectTrigger
                 className="w-[200px]"
                 data-testid="select-category-filter"
-                aria-label="Filter by category"
+                aria-label={t["adminDocuments.filterByCategory"]}
               >
                 <Filter className="w-4 h-4 mr-2" />
                 <SelectValue
-                  placeholder={locale === "ar" ? "تصفية حسب الفئة" : "Filter by category"}
+                  placeholder={
+                    locale === "ar" ? "تصفية حسب الفئة" : t["adminDocuments.filterByCategory"]
+                  }
                 />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">
-                  {locale === "ar" ? "جميع الفئات" : "All Categories"}
+                  {locale === "ar" ? "جميع الفئات" : t["pages.allCategories"]}
                 </SelectItem>
                 {DOCUMENT_CATEGORIES.map((cat) => (
                   <SelectItem key={cat.value} value={cat.value}>
@@ -403,9 +406,9 @@ export default function DocumentVault() {
           {filteredDocuments.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد مستندات" : "No documents found"}</p>
+              <p>{locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsFound"]}</p>
               <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                {locale === "ar" ? "رفع أول مستند" : "Upload your first document"}
+                {locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"]}
               </Button>
             </div>
           ) : (
@@ -413,11 +416,17 @@ export default function DocumentVault() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{locale === "ar" ? "اسم المستند" : "Document Name"}</TableHead>
+                    <TableHead>
+                      {locale === "ar" ? "اسم المستند" : t["pages.documentName"]}
+                    </TableHead>
                     <TableHead>{locale === "ar" ? "الفئة" : "Category"}</TableHead>
-                    <TableHead>{locale === "ar" ? "تاريخ الانتهاء" : "Expiry Date"}</TableHead>
+                    <TableHead>
+                      {locale === "ar" ? "تاريخ الانتهاء" : t["pageLabels.expiryDate"]}
+                    </TableHead>
                     <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
-                    <TableHead>{locale === "ar" ? "تاريخ الرفع" : "Upload Date"}</TableHead>
+                    <TableHead>
+                      {locale === "ar" ? "تاريخ الرفع" : t["documentVault.uploadDate"]}
+                    </TableHead>
                     <TableHead className="text-right">
                       {locale === "ar" ? "إجراءات" : "Actions"}
                     </TableHead>
@@ -490,7 +499,7 @@ export default function DocumentVault() {
                             </Badge>
                           ) : (
                             <Badge variant="outline">
-                              {locale === "ar" ? "بدون انتهاء" : "No Expiry"}
+                              {locale === "ar" ? "بدون انتهاء" : t["documentVault.noExpiry"]}
                             </Badge>
                           )}
                         </TableCell>
@@ -547,11 +556,13 @@ export default function DocumentVault() {
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "رفع مستند جديد" : "Upload New Document"}</DialogTitle>
+            <DialogTitle>
+              {locale === "ar" ? "رفع مستند جديد" : t["documentVault.uploadNewDocument"]}
+            </DialogTitle>
             <DialogDescription>
               {locale === "ar"
                 ? "ارفع مستنداً مهماً مثل الرخصة التجارية أو العقود"
-                : "Upload an important document like trade license or contracts"}
+                : t["documentVault.uploadAnImportantDocumentLike"]}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -563,7 +574,7 @@ export default function DocumentVault() {
                 <Input
                   value={newDocument.name}
                   onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
-                  placeholder="Trade License 2025"
+                  placeholder={t["documentVault.tradeLicense2025"]}
                   data-testid="input-document-name"
                 />
               </div>
@@ -587,7 +598,7 @@ export default function DocumentVault() {
               >
                 <SelectTrigger
                   data-testid="select-document-category"
-                  aria-label="Document category"
+                  aria-label={t["documentVault.documentCategory"]}
                 >
                   <SelectValue />
                 </SelectTrigger>

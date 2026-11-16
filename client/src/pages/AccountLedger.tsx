@@ -396,7 +396,7 @@ export default function AccountLedger() {
               {ledger?.account.code ? " · " : null}
               {typeLabel}
               {" · "}
-              {locale === "ar" ? "دفتر الأستاذ" : "General Ledger"}
+              {locale === "ar" ? "دفتر الأستاذ" : t["accountLedger.generalLedger"]}
             </>
           )
         }
@@ -451,25 +451,25 @@ export default function AccountLedger() {
 
       <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
-          label={locale === "ar" ? "الرصيد الافتتاحي" : "Opening Balance"}
+          label={locale === "ar" ? "الرصيد الافتتاحي" : t["accountLedger.openingBalance"]}
           loading={isLoading}
           value={<Money amount={ledger?.openingBalance ?? 0} />}
           testId="text-opening-balance"
         />
         <StatCard
-          label={locale === "ar" ? "إجمالي المدين" : "Total Debit"}
+          label={locale === "ar" ? "إجمالي المدين" : t["accountLedger.totalDebit"]}
           loading={isLoading}
           value={<Money amount={ledger?.totalDebit ?? 0} />}
           testId="text-total-debit"
         />
         <StatCard
-          label={locale === "ar" ? "إجمالي الدائن" : "Total Credit"}
+          label={locale === "ar" ? "إجمالي الدائن" : t["accountLedger.totalCredit"]}
           loading={isLoading}
           value={<Money amount={ledger?.totalCredit ?? 0} />}
           testId="text-total-credit"
         />
         <StatCard
-          label={locale === "ar" ? "الرصيد الختامي" : "Closing Balance"}
+          label={locale === "ar" ? "الرصيد الختامي" : t["accountLedger.closingBalance"]}
           loading={isLoading}
           value={
             <Money
@@ -605,7 +605,7 @@ export default function AccountLedger() {
                 <TableCell data-cell="actions" className="w-px">
                   <RowActions collapseOnMobile>
                     <RowActionButton
-                      label={locale === "ar" ? "عكس القيد" : "Reverse entry"}
+                      label={locale === "ar" ? "عكس القيد" : t["journal.confirmReverse"]}
                       icon={RotateCcw}
                       className="md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:focus-visible:opacity-100"
                       onClick={() => handleReverseEntry(entry)}
@@ -623,7 +623,7 @@ export default function AccountLedger() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {locale === "ar" ? "عكس القيد المحاسبي" : "Reverse Journal Entry"}
+              {locale === "ar" ? "عكس القيد المحاسبي" : t["accountLedger.reverseJournalEntry"]}
             </DialogTitle>
             <DialogDescription>
               {locale === "ar"
@@ -637,7 +637,7 @@ export default function AccountLedger() {
               <div className="p-4 bg-muted rounded-lg space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">
-                    {locale === "ar" ? "رقم القيد" : "Entry Number"}
+                    {locale === "ar" ? "رقم القيد" : t["accountLedger.entryNumber"]}
                   </span>
                   <span>{selectedEntry.entryNumber}</span>
                 </div>
@@ -695,7 +695,7 @@ export default function AccountLedger() {
               ) : (
                 <>
                   <RotateCcw className="h-4 w-4" />
-                  {locale === "ar" ? "تأكيد العكس" : "Confirm Reversal"}
+                  {locale === "ar" ? "تأكيد العكس" : t["accountLedger.confirmReversal"]}
                 </>
               )}
             </Button>

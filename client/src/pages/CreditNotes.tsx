@@ -315,7 +315,7 @@ export default function CreditNotes() {
         <UpgradePrompt
           feature="creditNotes"
           requiredTier={getRequiredTier("creditNotes")}
-          description="Issue credit notes against invoices, manage refunds, and maintain accurate accounting records."
+          description={t["creditNotes.issueCreditNotesAgainstInvoices"]}
         />
       </div>
     );
@@ -326,7 +326,7 @@ export default function CreditNotes() {
       <PageHeader
         eyebrow="Sales"
         title={t.creditNotes}
-        description={(t as any).creditNotesSubtitle ?? "View credit notes created from invoices"}
+        description={(t as any).creditNotesSubtitle ?? t["creditNotes.viewCreditNotesCreatedFrom"]}
         actions={
           <Button asChild title={t["screens.creditNoteFromInvoiceHint"]}>
             <Link href="/invoices">

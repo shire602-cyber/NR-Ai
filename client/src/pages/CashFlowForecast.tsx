@@ -1,4 +1,6 @@
 import { T } from "@/components/layout/T";
+import { format } from "date-fns";
+import { dateFnsOptions } from "@/lib/date-locale";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -121,6 +123,7 @@ interface MonthlyCashHistory {
 }
 
 export default function CashFlowForecast() {
+  const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   /** Server sentence -> reader's language via stable message keys (en text is the fallback). */
   const serverText = (text: string, d: CopyDescriptor | null | undefined) => {
@@ -507,7 +510,7 @@ export default function CashFlowForecast() {
             </div>
           ) : (
             <p className="text-muted-foreground text-center py-8">
-              No projection data available. Add journal entries and invoices to generate forecasts.
+              {t["cashFlowForecast.noProjectionDataAvailableAdd"]}
             </p>
           )}
         </CardContent>
@@ -790,12 +793,9 @@ export default function CashFlowForecast() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
-            Cash Flow History (Last 6 Months)
+            {t["cashFlowForecast.historyTitle"]}
           </CardTitle>
-          <CardDescription>
-            Monthly income and expense totals from posted journal entries (accrual basis, not bank
-            movement)
-          </CardDescription>
+          <CardDescription>{t["cashFlowForecast.historyDescription"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingHistory ? (
@@ -827,7 +827,13 @@ export default function CashFlowForecast() {
                   {history.map((h) => (
                     <TableRow key={`${h.year}-${h.monthNum}`}>
                       <TableCell className="font-medium">
-                        {h.month} {h.year}
+                        {(() => {
+                          const d = new Date(`${h.month} 1, ${h.year}`);
+                          return Number.isNaN(d.getTime())
+                            ? h.month
+                            : format(d, "MMMM", dateFnsOptions(locale));
+                        })()}{" "}
+                        {h.year}
                       </TableCell>
                       <TableCell data-numeric>
                         <Money amount={h.totalInflows} currency={"AED"} />
@@ -851,7 +857,7 @@ export default function CashFlowForecast() {
             </div>
           ) : (
             <p className="text-muted-foreground text-center py-8">
-              No historical data available yet. Post journal entries to build cash flow history.
+              {t["cashFlowForecast.noHistoricalDataAvailableYet"]}
             </p>
           )}
         </CardContent>

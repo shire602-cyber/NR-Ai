@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -79,23 +80,24 @@ interface Document {
 }
 
 const DOCUMENT_CATEGORIES = [
-  { value: "invoice", labelEn: "Invoice" },
-  { value: "bill", labelEn: "Bill/Expense" },
-  { value: "receipt", labelEn: "Receipt" },
-  { value: "quote", labelEn: "Quote/Quotation" },
-  { value: "purchase_order", labelEn: "Purchase Order" },
-  { value: "trade_license", labelEn: "Trade License" },
-  { value: "contract", labelEn: "Contract" },
-  { value: "tax_certificate", labelEn: "Tax Certificate" },
-  { value: "audit_report", labelEn: "Audit Report" },
-  { value: "bank_statement", labelEn: "Bank Statement" },
-  { value: "insurance", labelEn: "Insurance" },
-  { value: "visa", labelEn: "Visa/Emirates ID" },
-  { value: "vat_return", labelEn: "VAT Return" },
-  { value: "other", labelEn: "Other" },
+  { value: "invoice", labelKey: "invoices.publicInvoice" },
+  { value: "bill", labelKey: "adminDocuments.cat.bill" },
+  { value: "receipt", labelKey: "pages.receipt" },
+  { value: "quote", labelKey: "adminDocuments.cat.quote" },
+  { value: "purchase_order", labelKey: "adminDocuments.purchaseOrder" },
+  { value: "trade_license", labelKey: "adminDocuments.tradeLicense" },
+  { value: "contract", labelKey: "adminDocuments.cat.contract" },
+  { value: "tax_certificate", labelKey: "adminDocuments.taxCertificate" },
+  { value: "audit_report", labelKey: "adminDocuments.auditReport" },
+  { value: "bank_statement", labelKey: "adminDocuments.bankStatement" },
+  { value: "insurance", labelKey: "forms.budget.cat.Insurance" },
+  { value: "visa", labelKey: "adminDocuments.cat.visa" },
+  { value: "vat_return", labelKey: "adminDocuments.cat.vat_return" },
+  { value: "other", labelKey: "forms.claim.cat.Other" },
 ];
 
 export default function AdminDocuments() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -230,7 +232,7 @@ export default function AdminDocuments() {
 
   const getCategoryLabel = (category: string) => {
     const cat = DOCUMENT_CATEGORIES.find((c) => c.value === category);
-    return cat?.labelEn || category;
+    return cat ? t[cat.labelKey] : category;
   };
 
   const filteredDocuments =
@@ -264,9 +266,9 @@ export default function AdminDocuments() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Client Document Management"
+        title={t["adminDocuments.clientDocumentManagement"]}
         testId="text-admin-documents-title"
-        description="Upload and manage invoices, bills, and documents for your clients"
+        description={t["adminDocuments.uploadAndManageInvoicesBills"]}
         actions={
           <Button
             onClick={() => setUploadDialogOpen(true)}
@@ -292,7 +294,7 @@ export default function AdminDocuments() {
         <CardContent>
           <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
             <SelectTrigger className="w-full md:w-[400px]" data-testid="select-client-company">
-              <SelectValue placeholder="Select a client company..." />
+              <SelectValue placeholder={t["adminDocuments.selectAClientCompany"]} />
             </SelectTrigger>
             <SelectContent>
               {companies?.map((company) => (
@@ -379,7 +381,7 @@ export default function AdminDocuments() {
                 <div className="relative flex-1">
                   <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
-                    placeholder="Search documents..."
+                    placeholder={t["adminDocuments.searchDocuments"]}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="ps-10"
@@ -389,7 +391,7 @@ export default function AdminDocuments() {
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                   <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
                     <Filter className="w-4 h-4 me-2" />
-                    <SelectValue placeholder="Filter by category" />
+                    <SelectValue placeholder={t["adminDocuments.filterByCategory"]} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">
@@ -397,7 +399,7 @@ export default function AdminDocuments() {
                     </SelectItem>
                     {DOCUMENT_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
-                        {cat.labelEn}
+                        {t[cat.labelKey]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -573,7 +575,7 @@ export default function AdminDocuments() {
                   <SelectContent>
                     {DOCUMENT_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
-                        {cat.labelEn}
+                        {t[cat.labelKey]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -587,7 +589,7 @@ export default function AdminDocuments() {
               </Label>
               <Textarea
                 id="description"
-                placeholder="Brief description of this document..."
+                placeholder={t["adminDocuments.briefDescriptionOfThisDocument"]}
                 value={newDocument.description}
                 onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
                 rows={2}

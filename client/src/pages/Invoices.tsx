@@ -595,7 +595,7 @@ export default function Invoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
-      toast({ title: "Recurring settings saved" });
+      toast({ title: t["invoices.recurringSettingsSaved"] });
       setRecurringDialogOpen(false);
       setInvoiceForRecurring(null);
     },
@@ -1041,7 +1041,11 @@ export default function Invoices() {
 
   const handleExportExcel = () => {
     if (!filteredInvoices.length) {
-      toast({ variant: "destructive", title: "No data", description: "No invoices to export" });
+      toast({
+        variant: "destructive",
+        title: "No data",
+        description: t["invoices.noInvoicesToExport"],
+      });
       return;
     }
 
@@ -1064,7 +1068,11 @@ export default function Invoices() {
 
   const handleExportGoogleSheets = async () => {
     if (!selectedCompanyId || !filteredInvoices.length) {
-      toast({ variant: "destructive", title: "No data", description: "No invoices to export" });
+      toast({
+        variant: "destructive",
+        title: "No data",
+        description: t["invoices.noInvoicesToExport"],
+      });
       return;
     }
 
@@ -1128,7 +1136,7 @@ export default function Invoices() {
       <PageHeader
         eyebrow="Sales"
         title={t.invoices}
-        description={(t as any).manageInvoices ?? "Manage invoices and customize their appearance"}
+        description={(t as any).manageInvoices ?? t["invoices.manageInvoicesAndCustomizeTheir"]}
         actions={
           <>
             <DropdownMenu>
@@ -1265,7 +1273,7 @@ export default function Invoices() {
           </TabsTrigger>
           <TabsTrigger value="branding" data-testid="tab-branding">
             <Palette className="w-4 h-4" />
-            {(t as any).invoiceBranding ?? "Invoice Branding"}
+            {(t as any).invoiceBranding ?? t["invoices.invoiceBranding"]}
           </TabsTrigger>
         </TabsList>
 
@@ -2191,7 +2199,7 @@ export default function Invoices() {
                                 icon={FileText}
                                 title={
                                   dateRange.from || dateRange.to
-                                    ? "No invoices in this date range"
+                                    ? t["invoices.noInvoicesInThisDate"]
                                     : ((t as any).noInvoicesYet ?? "No invoices yet")
                                 }
                                 description={
@@ -2485,7 +2493,7 @@ export default function Invoices() {
                             </FormLabel>
                             <FormControl>
                               <Textarea
-                                placeholder="Thank you for your business"
+                                placeholder={t["pageLabels.thankYouForYourBusiness"]}
                                 className="resize-none"
                                 rows={3}
                                 {...field}
@@ -2510,7 +2518,9 @@ export default function Invoices() {
                       data-testid="button-save-branding"
                     >
                       <Save className="w-4 h-4" />
-                      {updateBrandingMutation.isPending ? "Saving..." : "Save Settings"}
+                      {updateBrandingMutation.isPending
+                        ? "Saving..."
+                        : t["pageLabels.saveSettings"]}
                     </Button>
                   </div>
                 </form>
@@ -2528,9 +2538,7 @@ export default function Invoices() {
               <XCircle className="w-5 h-5 text-warning" />
               <T k="pageLabels.similarInvoicesFound" />
             </DialogTitle>
-            <DialogDescription>
-              We found similar invoices that might be duplicates. Review them before proceeding.
-            </DialogDescription>
+            <DialogDescription>{t["invoices.weFoundSimilarInvoicesThat"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -2647,7 +2655,9 @@ export default function Invoices() {
                         className="w-full justify-start text-start font-normal"
                       >
                         <CalendarIcon className="h-4 w-4" />
-                        {recurringNextDate ? format(recurringNextDate, "PPP") : "Pick a date"}
+                        {recurringNextDate
+                          ? format(recurringNextDate, "PPP")
+                          : t["pages.pickADate"]}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -2670,7 +2680,9 @@ export default function Invoices() {
                         className="w-full justify-start text-start font-normal"
                       >
                         <CalendarIcon className="h-4 w-4" />
-                        {recurringEndDate ? format(recurringEndDate, "PPP") : "No end date"}
+                        {recurringEndDate
+                          ? format(recurringEndDate, "PPP")
+                          : t["forms.recurring.indefinite"]}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -2793,7 +2805,7 @@ export default function Invoices() {
               {paymentAccounts.length > 0 ? (
                 <Select value={paymentAccountForAdd} onValueChange={setPaymentAccountForAdd}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select account..." />
+                    <SelectValue placeholder={t["bankReconciliation.selectAccount"]} />
                   </SelectTrigger>
                   <SelectContent>
                     {paymentAccounts.map((acc) => (
@@ -2825,7 +2837,7 @@ export default function Invoices() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Notes (optional)</label>
               <Input
-                placeholder="Additional notes"
+                placeholder={t["invoices.additionalNotes"]}
                 value={paymentNotes}
                 onChange={(e) => setPaymentNotes(e.target.value)}
               />
@@ -2857,7 +2869,7 @@ export default function Invoices() {
               disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd}
               className="flex-1"
             >
-              {addPaymentMutation.isPending ? "Recording..." : "Record Payment"}
+              {addPaymentMutation.isPending ? "Recording..." : t["pages.recordPayment"]}
             </Button>
           </div>
         </DialogContent>
@@ -2980,10 +2992,7 @@ export default function Invoices() {
               <div className="space-y-4">
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    You need to create at least one bank or cash account before marking invoices as
-                    paid.
-                  </AlertDescription>
+                  <AlertDescription>{t["invoices.youNeedToCreateAt"]}</AlertDescription>
                 </Alert>
                 <Button
                   variant="outline"

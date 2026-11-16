@@ -1,5 +1,6 @@
 // Reports > home workspace panel.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
+import { useTranslation } from "@/lib/i18n";
 import { ArrowRight, BarChart3, FileText, Search, Send, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { reportStatusMeta } from "../shared";
 import { useReportsPageContext } from "../context";
 
 export default function HomePanel() {
+  const { t } = useTranslation();
   const {
     activeReportWorkspaceTab,
     automationQueueCount,
@@ -94,7 +96,7 @@ export default function HomePanel() {
                     <Input
                       value={reportWorkflowSearch}
                       onChange={(event) => updateReportWorkflowSearch(event.target.value)}
-                      placeholder="Search reports, packs, comparisons, automations"
+                      placeholder={t["homePanel.searchReportsPacksComparisonsAutomations"]}
                       className="ps-9"
                       data-testid="input-report-home-search"
                     />
@@ -167,7 +169,7 @@ export default function HomePanel() {
                     dot
                     className="w-fit"
                   >
-                    {reportHomeAutomationOperation?.status ?? "No role selected"}
+                    {reportHomeAutomationOperation?.status ?? t["homePanel.noRoleSelected"]}
                   </Badge>
                 </div>
               </CardHeader>

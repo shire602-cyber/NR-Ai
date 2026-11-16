@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,7 @@ interface Conversation {
 }
 
 export default function AIChat() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -414,7 +416,7 @@ export default function AIChat() {
                       id="system-prompt"
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="Enter custom system prompt..."
+                      placeholder={t["aiChat.enterCustomSystemPrompt"]}
                       rows={3}
                       className="mt-2"
                     />
@@ -503,7 +505,7 @@ export default function AIChat() {
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask a question..."
+                  placeholder={t["aiChat.askAQuestion"]}
                   rows={2}
                   className="resize-none"
                   disabled={isPending}

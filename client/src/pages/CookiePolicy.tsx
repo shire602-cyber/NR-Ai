@@ -1,7 +1,9 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { LegalLayout } from "@/components/LegalLayout";
 
 export default function CookiePolicy() {
+  const { t } = useTranslation();
   return (
     <LegalLayout slug="cookies" effectiveDate="2026-04-26">
       <p>
@@ -35,10 +37,7 @@ export default function CookiePolicy() {
       <h3>
         <T k="pageLabels.functional" />
       </h3>
-      <p>
-        These remember choices you make to provide a more personalised experience, such as your
-        default company, dashboard layout, and notification preferences.
-      </p>
+      <p>{t["cookiePolicy.theseRememberChoicesYouMake"]}</p>
 
       <h3>
         <T k="pages.analytics" />
@@ -52,10 +51,7 @@ export default function CookiePolicy() {
       <h3>
         <T k="pageLabels.marketing" />
       </h3>
-      <p>
-        We do not currently set marketing or advertising cookies. If this changes, we will update
-        this policy and request your consent where required.
-      </p>
+      <p>{t["cookiePolicy.weDoNotCurrentlySet"]}</p>
 
       <h2>3. Third-Party Cookies</h2>
       <p>

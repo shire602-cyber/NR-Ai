@@ -92,7 +92,7 @@ export default function Companies() {
       <PageHeader
         eyebrow="Workspace"
         title={t.companies}
-        description="Manage your companies and switch between them"
+        description={t["companies.manageYourCompaniesAndSwitch"]}
         actions={
           <Button onClick={() => setDialogOpen(true)} data-testid="button-create-company">
             <Plus className="w-4 h-4 mr-2" />
@@ -104,9 +104,7 @@ export default function Companies() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t.createCompany}</DialogTitle>
-            <DialogDescription>
-              Create a new company. A Chart of Accounts will be automatically created.
-            </DialogDescription>
+            <DialogDescription>{t["companies.createANewCompanyA"]}</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -117,7 +115,11 @@ export default function Companies() {
                   <FormItem>
                     <FormLabel>{t.companyName}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Acme Corp" data-testid="input-company-name" />
+                      <Input
+                        {...field}
+                        placeholder={t["companies.acmeCorp"]}
+                        data-testid="input-company-name"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

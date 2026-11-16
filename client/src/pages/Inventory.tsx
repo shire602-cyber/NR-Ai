@@ -981,7 +981,7 @@ export default function Inventory() {
             <DialogDescription>
               {stockProduct
                 ? `Record inventory movement for "${stockProduct.name}"`
-                : "Record inventory movement"}
+                : t["inventory.recordInventoryMovement"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -1082,7 +1082,9 @@ export default function Inventory() {
                   {t.cancel || "Cancel"}
                 </Button>
                 <Button type="submit" disabled={addMovementMutation.isPending}>
-                  {addMovementMutation.isPending ? t.loading || "Loading..." : "Record Movement"}
+                  {addMovementMutation.isPending
+                    ? t.loading || "Loading..."
+                    : t["inventory.recordMovement"]}
                 </Button>
               </div>
             </form>
@@ -1102,8 +1104,7 @@ export default function Inventory() {
               <T k="pageLabels.deleteProduct" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this product from inventory. This action cannot be
-              undone.
+              {t["inventory.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

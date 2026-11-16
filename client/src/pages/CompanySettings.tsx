@@ -71,24 +71,24 @@ const VAT_RATE_OPTIONS = [
 ];
 
 const EMIRATE_OPTIONS = [
-  { value: "abu_dhabi", label: "Abu Dhabi" },
+  { value: "abu_dhabi", label: "Abu Dhabi" }, // i18n-ignore: English fallback, translated by optionLabel
   { value: "dubai", label: "Dubai" },
   { value: "sharjah", label: "Sharjah" },
   { value: "ajman", label: "Ajman" },
-  { value: "umm_al_quwain", label: "Umm Al Quwain" },
-  { value: "ras_al_khaimah", label: "Ras Al Khaimah" },
+  { value: "umm_al_quwain", label: "Umm Al Quwain" }, // i18n-ignore: English fallback, translated by optionLabel
+  { value: "ras_al_khaimah", label: "Ras Al Khaimah" }, // i18n-ignore: English fallback, translated by optionLabel
   { value: "fujairah", label: "Fujairah" },
 ];
 
 const COUNTRY_OPTIONS = [
-  { value: "AE", label: "United Arab Emirates" },
-  { value: "SA", label: "Saudi Arabia" },
+  { value: "AE", label: "United Arab Emirates" }, // i18n-ignore: English fallback, translated by optionLabel
+  { value: "SA", label: "Saudi Arabia" }, // i18n-ignore: English fallback, translated by optionLabel
   { value: "QA", label: "Qatar" },
   { value: "KW", label: "Kuwait" },
   { value: "BH", label: "Bahrain" },
   { value: "OM", label: "Oman" },
-  { value: "GB", label: "United Kingdom" },
-  { value: "US", label: "United States" },
+  { value: "GB", label: "United Kingdom" }, // i18n-ignore: English fallback, translated by optionLabel
+  { value: "US", label: "United States" }, // i18n-ignore: English fallback, translated by optionLabel
   { value: "IN", label: "India" },
 ];
 
@@ -280,7 +280,7 @@ export default function CompanySettings() {
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Acme Trading"
+                          placeholder={t["companySettings.acmeTrading"]}
                           data-testid="input-company-name"
                         />
                       </FormControl>
@@ -301,7 +301,7 @@ export default function CompanySettings() {
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Acme Trading L.L.C"
+                          placeholder={t["companySettings.acmeTradingLLC"]}
                           data-testid="input-legal-name"
                         />
                       </FormControl>
@@ -348,7 +348,7 @@ export default function CompanySettings() {
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Retail, Construction, Software…"
+                          placeholder={t["companySettings.retailConstructionSoftware"]}
                           data-testid="input-industry"
                         />
                       </FormControl>
@@ -573,7 +573,7 @@ export default function CompanySettings() {
                       <Input
                         {...field}
                         value={field.value ?? ""}
-                        placeholder="Office 101, Building 7, Sheikh Zayed Rd"
+                        placeholder={t["companySettings.office101Building7Sheikh"]}
                         data-testid="input-address-street"
                       />
                     </FormControl>
@@ -593,7 +593,7 @@ export default function CompanySettings() {
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Dubai"
+                          placeholder={t["forms.contact.cityPlaceholder"]}
                           data-testid="input-address-city"
                         />
                       </FormControl>

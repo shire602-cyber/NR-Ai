@@ -63,13 +63,13 @@ export function DashboardHero({ m }: { m: DashboardModel }) {
           <Button asChild variant="outline" data-testid="button-quick-receipt">
             <Link href="/receipts">
               <Receipt aria-hidden />
-              {(t as any).scanReceipt ?? "Scan Receipt"}
+              {(t as any).scanReceipt ?? t["dashboard.quickScanReceipt"]}
             </Link>
           </Button>
           <Button asChild className="flex-1 sm:flex-none" data-testid="button-quick-invoice">
             <Link href="/invoices?new=1">
               <FileText aria-hidden />
-              {(t as any).newInvoice ?? "New Invoice"}
+              {(t as any).newInvoice ?? t["dashboardHero.newInvoice"]}
             </Link>
           </Button>
           <DropdownMenu>

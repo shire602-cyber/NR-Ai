@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -112,6 +113,7 @@ function levelBadgeColor(level: string) {
 }
 
 export default function DocumentChasing() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const [showAddRequirement, setShowAddRequirement] = useState(false);
@@ -188,7 +190,7 @@ export default function DocumentChasing() {
         status: "received",
       }),
     onSuccess: () => {
-      toast({ title: "Marked received" });
+      toast({ title: t["documentChasing.markedReceived"] });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "document-requirements"],
       });
@@ -270,8 +272,8 @@ export default function DocumentChasing() {
     <div className="space-y-6" data-testid="page-document-chasing">
       <PageHeader
         eyebrow="Compliance"
-        title="Document Chasing Autopilot"
-        description="Track missing UAE compliance documents, escalate chase reminders, and keep deadlines visible."
+        title={t["documentChasing.documentChasingAutopilot"]}
+        description={t["documentChasing.trackMissingUaeComplianceDocuments"]}
         actions={
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -281,7 +283,7 @@ export default function DocumentChasing() {
                 data-testid="btn-bulk-send"
               >
                 <Send className="w-4 h-4 me-2" />
-                Send all ({queue.length})
+                {formatMessage(t["documentChasing.sendAllCount"], { count: queue.length })}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -311,24 +313,24 @@ export default function DocumentChasing() {
       {/* Top stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard
-          title="Missing Documents"
+          title={t["pages.missingDocuments"]}
           value={stats.total}
           icon={<FileText className="w-5 h-5 text-info" />}
         />
         <StatCard
-          title="Overdue"
+          title={t["components.statusOverdue"]}
           value={stats.overdue}
           icon={<AlertTriangle className="w-5 h-5 text-destructive" />}
           tone={stats.overdue > 0 ? "danger" : "normal"}
         />
         <StatCard
-          title="Due in 14 days"
+          title={t["documentChasing.dueIn14Days"]}
           value={stats.dueSoon}
           icon={<CalendarDays className="w-5 h-5 text-warning" />}
           tone={stats.dueSoon > 0 ? "warning" : "normal"}
         />
         <StatCard
-          title="Response Rate"
+          title={t["documentChasing.responseRate"]}
           value={
             effectivenessQuery.data
               ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
@@ -343,7 +345,9 @@ export default function DocumentChasing() {
           <TabsTrigger value="missing">
             <T k="pages.missing" />
           </TabsTrigger>
-          <TabsTrigger value="queue">Chase queue ({queue.length})</TabsTrigger>
+          <TabsTrigger value="queue">
+            {formatMessage(t["documentChasing.chaseQueueCount"], { count: queue.length })}
+          </TabsTrigger>
           <TabsTrigger value="calendar">
             <T k="pages.complianceCalendar" />
           </TabsTrigger>
@@ -373,7 +377,7 @@ export default function DocumentChasing() {
                 <Skeleton className="h-24 w-full" />
               ) : missingDocs.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
-                  Nothing missing — all caught up.
+                  {t["documentChasing.nothingMissingAllCaughtUp"]}
                 </div>
               ) : (
                 <div className="divide-y">
@@ -425,9 +429,7 @@ export default function DocumentChasing() {
               <CardTitle>
                 <T k="pages.chaseQueue" />
               </CardTitle>
-              <CardDescription>
-                Auto-built from due dates and recent send history. Preview a message before sending.
-              </CardDescription>
+              <CardDescription>{t["documentChasing.autoBuiltFromDueDates"]}</CardDescription>
             </CardHeader>
             <CardContent>
               {queueQuery.isLoading ? (
@@ -558,13 +560,16 @@ export default function DocumentChasing() {
                 <Skeleton className="h-24 w-full" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Metric label="Total chased" value={effectivenessQuery.data?.totalChased ?? 0} />
                   <Metric
-                    label="Total received"
+                    label={t["documentChasing.totalChased"]}
+                    value={effectivenessQuery.data?.totalChased ?? 0}
+                  />
+                  <Metric
+                    label={t["documentChasing.totalReceived"]}
                     value={effectivenessQuery.data?.totalReceived ?? 0}
                   />
                   <Metric
-                    label="Response rate"
+                    label={t["documentChasing.responseRate2"]}
                     value={
                       effectivenessQuery.data
                         ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
@@ -572,7 +577,7 @@ export default function DocumentChasing() {
                     }
                   />
                   <Metric
-                    label="Avg time to upload"
+                    label={t["documentChasing.avgTimeToUpload"]}
                     value={
                       effectivenessQuery.data?.avgDaysToUpload != null
                         ? `${effectivenessQuery.data.avgDaysToUpload.toFixed(1)} days`
@@ -593,9 +598,7 @@ export default function DocumentChasing() {
             <DialogTitle>
               <T k="pages.previewChaseMessage" />
             </DialogTitle>
-            <DialogDescription>
-              Edit the message if you like. Sending opens WhatsApp and records the chase.
-            </DialogDescription>
+            <DialogDescription>{t["documentChasing.editTheMessageIfYou"]}</DialogDescription>
           </DialogHeader>
           {previewItem && (
             <PreviewBody
@@ -701,6 +704,7 @@ function PreviewBody(props: {
 }
 
 function AddRequirementDialog(props: { open: boolean; onClose: () => void; companyId: string }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [form, setForm] = useState({
     documentType: "trade_license",
@@ -720,7 +724,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
         recurringIntervalDays: data.isRecurring ? data.recurringIntervalDays : null,
       }),
     onSuccess: () => {
-      toast({ title: "Requirement added" });
+      toast({ title: t["documentChasing.requirementAdded"] });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", props.companyId, "document-requirements"],
       });
@@ -771,7 +775,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
               id="docDescription"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Q1 2026 bank statement"
+              placeholder={t["documentChasing.q12026BankStatement"]}
             />
           </div>
           <div>
@@ -809,7 +813,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                     }))
                   }
                   className="w-32"
-                  aria-label="Recurring interval in days"
+                  aria-label={t["documentChasing.recurringIntervalInDays"]}
                 />
                 <span className="text-sm text-muted-foreground">days</span>
               </>
@@ -837,6 +841,7 @@ function AddComplianceEventDialog(props: {
   onClose: () => void;
   companyId: string;
 }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [form, setForm] = useState({
     eventType: "trade_license_renewal",
@@ -853,7 +858,7 @@ function AddComplianceEventDialog(props: {
         reminderDays: [30, 14, 7, 0],
       }),
     onSuccess: () => {
-      toast({ title: "Deadline added" });
+      toast({ title: t["documentChasing.deadlineAdded"] });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", props.companyId, "compliance-calendar"],
       });
@@ -903,7 +908,7 @@ function AddComplianceEventDialog(props: {
               id="eventDescription"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Trade licence renewal at Dubai Economy"
+              placeholder={t["documentChasing.tradeLicenceRenewalAtDubai"]}
             />
           </div>
           <div>

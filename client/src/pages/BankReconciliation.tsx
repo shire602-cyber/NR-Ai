@@ -1374,7 +1374,7 @@ export default function BankReconciliation() {
               </Label>
               <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
                 <SelectTrigger data-testid="select-import-bank-account">
-                  <SelectValue placeholder="Select account..." />
+                  <SelectValue placeholder={t["bankReconciliation.selectAccount"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {bankAccounts?.map((acct) => (
@@ -1636,8 +1636,7 @@ export default function BankReconciliation() {
                     <span>PDF — text extraction with OCR fallback</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Live bank feeds are not required. Upload a statement, review suggestions, then
-                    post matches.
+                    {t["bankReconciliation.liveBankFeedsAreNot"]}
                   </p>
                 </div>
                 <Button

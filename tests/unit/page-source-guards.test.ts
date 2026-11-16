@@ -219,7 +219,7 @@ describe("Mobile launch UX guards", () => {
   describe("Bank import launch UX", () => {
     it("keeps a sample CSV path for buyers without live bank feeds", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
-      expect(source).toContain("Live bank feeds are not required");
+      expect(source).toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
       expect(source).toContain("Arabic/English generic");
       expect(source).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
       expect(source).toContain("Amount + Dr/Cr type columns are supported");
