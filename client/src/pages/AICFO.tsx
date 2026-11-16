@@ -256,7 +256,9 @@ export default function AICFO() {
               <Brain className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">AI CFO & Financial Advisor</h1>
+              <h1 className="text-3xl font-bold">
+                <T k="pagesAL.aICFOAndFinancialAdvisor" />
+              </h1>
               <p className="text-muted-foreground mt-1">
                 Ask questions about your financial data and get AI-generated guidance.
               </p>
@@ -282,7 +284,9 @@ export default function AICFO() {
           </TabsTrigger>
           <TabsTrigger value="insights" className="gap-2">
             <Zap className="w-4 h-4" />
-            <span className="hidden sm:inline">Insights</span>
+            <span className="hidden sm:inline">
+              <T k="shell.sidebarInsights" />
+            </span>
           </TabsTrigger>
           <TabsTrigger value="chat" className="gap-2">
             <Brain className="w-4 h-4" />
@@ -384,7 +388,9 @@ export default function AICFO() {
               className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? "border-success/30 " : "border-destructive/30 "}`}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="reportCenter.netProfit" />
+                </CardTitle>
                 <Target
                   className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
                 />
@@ -420,7 +426,7 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-warning " />
-                Outstanding Invoices
+                <T k="pagesAL.outstandingInvoices" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -437,7 +443,7 @@ export default function AICFO() {
                       cash flow.
                     </p>
                     <Button variant="outline" size="sm" className="w-fit">
-                      View Outstanding Invoices
+                      <T k="pagesAL.viewOutstandingInvoices" />
                     </Button>
                   </>
                 ) : (
@@ -454,7 +460,9 @@ export default function AICFO() {
         <TabsContent value="analytics" className="space-y-6">
           <Card className="hover-elevate">
             <CardHeader>
-              <CardTitle className="text-base">Revenue vs Expenses Trend</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pagesAL.revenueVsExpensesTrend" />
+              </CardTitle>
               <CardDescription>Last 6 months performance</CardDescription>
             </CardHeader>
             <CardContent>
@@ -500,9 +508,11 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <PieChart className="w-4 h-4" />
-                Expense Breakdown
+                <T k="pagesAL.expenseBreakdown" />
               </CardTitle>
-              <CardDescription>Top expense categories from posted journal entries</CardDescription>
+              <CardDescription>
+                <T k="pagesAL.topExpenseCategoriesFromPostedJournalEntries" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {breakdownLoading ? (
@@ -547,10 +557,10 @@ export default function AICFO() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Brain className="w-4 h-4 text-primary" />
-                  AI-Generated Recommendations
+                  <T k="pagesAL.aIGeneratedRecommendations" />
                 </CardTitle>
                 <CardDescription>
-                  Based on your live financial data. Generated on demand.
+                  <T k="pagesAL.basedOnYourLiveFinancialDataGeneratedOnDemand" />
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -590,10 +600,10 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
-                Chat with Your AI CFO
+                <T k="pagesAL.chatWithYourAICFO" />
               </CardTitle>
               <CardDescription>
-                Ask questions about your finances and get personalized advice
+                <T k="pagesAL.askQuestionsAboutYourFinancesAndGetPersonalizedAdvice" />
               </CardDescription>
             </CardHeader>
 
@@ -605,7 +615,9 @@ export default function AICFO() {
                     <div className="p-4 rounded-full bg-primary/10 mb-4">
                       <Bot className="w-8 h-8 text-primary" />
                     </div>
-                    <h3 className="font-semibold mb-2">Start a conversation</h3>
+                    <h3 className="font-semibold mb-2">
+                      <T k="pagesAL.startAConversation" />
+                    </h3>
                     <p className="text-sm text-muted-foreground mb-6 max-w-xs">
                       Ask me anything about your finances. I'll provide data-backed insights and
                       recommendations.
@@ -666,7 +678,9 @@ export default function AICFO() {
                           <Loader2 className="w-4 h-4 animate-spin text-primary" />
                         </div>
                         <div className="bg-muted rounded-lg p-3">
-                          <p className="text-sm text-muted-foreground">AI is thinking...</p>
+                          <p className="text-sm text-muted-foreground">
+                            <T k="pagesAL.aIIsThinking" />
+                          </p>
                         </div>
                       </div>
                     )}

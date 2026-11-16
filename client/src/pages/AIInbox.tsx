@@ -331,7 +331,7 @@ export default function AIInbox() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-muted-foreground text-center">
-              Please create a company first to use the AI Inbox.
+              <T k="pagesAL.pleaseCreateACompanyFirstToUseTheAIInbox" />
             </p>
           </CardContent>
         </Card>
@@ -358,7 +358,9 @@ export default function AIInbox() {
             <Brain className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Inbox</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              <T k="pagesAL.aIInbox" />
+            </h1>
             <p className="text-muted-foreground text-sm">
               Autonomous GL Engine — AI categorizes and posts bank transactions
             </p>
@@ -381,7 +383,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <BarChart3 className="h-3 w-3" />
-                Total Processed
+                <T k="pagesAL.totalProcessed" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -414,7 +416,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Clock className="h-3 w-3 text-warning" />
-                Pending Review
+                <T k="pagesAL.pendingReview" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -425,7 +427,7 @@ export default function AIInbox() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <BookOpen className="h-3 w-3" />
-                Active Rules
+                <T k="pagesAL.activeRules" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -449,7 +451,7 @@ export default function AIInbox() {
           </TabsTrigger>
           <TabsTrigger value="autoposted" className="gap-1">
             <Zap className="h-4 w-4" />
-            Auto-Posted
+            <T k="pagesAL.autoPosted" />
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1">
             <ArrowUpDown className="h-4 w-4" />
@@ -507,11 +509,15 @@ export default function AIInbox() {
                         <TableHead className="text-right">
                           <T k="pages.amount" />
                         </TableHead>
-                        <TableHead>Suggested Account</TableHead>
+                        <TableHead>
+                          <T k="pagesAL.suggestedAccount" />
+                        </TableHead>
                         <TableHead>
                           <T k="pages.confidence" />
                         </TableHead>
-                        <TableHead>AI Reason</TableHead>
+                        <TableHead>
+                          <T k="pagesAL.aIReason" />
+                        </TableHead>
                         <TableHead className="text-right">
                           <T k="pages.actions" />
                         </TableHead>
@@ -543,7 +549,9 @@ export default function AIInbox() {
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-sm text-muted-foreground">No suggestion</span>
+                                <span className="text-sm text-muted-foreground">
+                                  <T k="pagesAL.noSuggestion" />
+                                </span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -617,7 +625,9 @@ export default function AIInbox() {
               <CardContent className="pt-6">
                 <div className="text-center py-12 space-y-4">
                   <Zap className="h-12 w-12 text-muted-foreground mx-auto" />
-                  <h3 className="text-lg font-semibold">No Auto-Posted Items</h3>
+                  <h3 className="text-lg font-semibold">
+                    <T k="pagesAL.noAutoPostedItems" />
+                  </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     High-confidence transactions will be automatically posted here when scanned.
                   </p>
@@ -644,7 +654,9 @@ export default function AIInbox() {
                         <TableHead>
                           <T k="pages.confidence" />
                         </TableHead>
-                        <TableHead>Journal Entry</TableHead>
+                        <TableHead>
+                          <T k="pagesAL.journalEntry" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -714,7 +726,9 @@ export default function AIInbox() {
               <CardContent className="pt-6">
                 <div className="text-center py-12 space-y-4">
                   <ArrowUpDown className="h-12 w-12 text-muted-foreground mx-auto" />
-                  <h3 className="text-lg font-semibold">No History</h3>
+                  <h3 className="text-lg font-semibold">
+                    <T k="pagesAL.noHistory" />
+                  </h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     Transaction history will appear here after items are processed.
                   </p>
@@ -814,7 +828,9 @@ export default function AIInbox() {
       <Dialog open={correctDialogOpen} onOpenChange={setCorrectDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Correct Account Assignment</DialogTitle>
+            <DialogTitle>
+              <T k="pagesAL.correctAccountAssignment" />
+            </DialogTitle>
             <DialogDescription>
               Choose the correct account for this transaction. This will create a new rule so
               similar transactions are categorized correctly in the future.
@@ -835,7 +851,9 @@ export default function AIInbox() {
                 )}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Select Account</label>
+                <label className="text-sm font-medium">
+                  <T k="pagesAL.selectAccount" />
+                </label>
                 <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose an account..." />

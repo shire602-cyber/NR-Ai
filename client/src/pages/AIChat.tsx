@@ -348,7 +348,9 @@ export default function AIChat() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle>AI Assistant</CardTitle>
+                <CardTitle>
+                  <T k="pagesAL.aIAssistant" />
+                </CardTitle>
                 <Badge variant="outline" className="ml-2">
                   {model}
                 </Badge>
@@ -365,7 +367,7 @@ export default function AIChat() {
               </div>
             </div>
             <CardDescription>
-              Ask questions about your accounting and financial management
+              <T k="pagesAL.askQuestionsAboutYourAccountingAndFinancialManagement" />
             </CardDescription>
           </CardHeader>
 
@@ -374,7 +376,9 @@ export default function AIChat() {
             <div className="border-b p-4 bg-muted/50 animate-slide-down">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="model">Model</Label>
+                  <Label htmlFor="model">
+                    <T k="pagesAL.model" />
+                  </Label>
                   <Select value={model} onValueChange={(v: any) => setModel(v)}>
                     <SelectTrigger className="w-48">
                       <SelectValue />
@@ -386,11 +390,15 @@ export default function AIChat() {
                   </Select>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="streaming">Streaming Response</Label>
+                  <Label htmlFor="streaming">
+                    <T k="pagesAL.streamingResponse" />
+                  </Label>
                   <Switch id="streaming" checked={streaming} onCheckedChange={setStreaming} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="custom-prompt">Custom System Prompt</Label>
+                  <Label htmlFor="custom-prompt">
+                    <T k="pagesAL.customSystemPrompt" />
+                  </Label>
                   <Switch
                     id="custom-prompt"
                     checked={useCustomSystemPrompt}
@@ -399,7 +407,9 @@ export default function AIChat() {
                 </div>
                 {useCustomSystemPrompt && (
                   <div>
-                    <Label htmlFor="system-prompt">System Prompt</Label>
+                    <Label htmlFor="system-prompt">
+                      <T k="pagesAL.systemPrompt" />
+                    </Label>
                     <Textarea
                       id="system-prompt"
                       value={systemPrompt}
@@ -420,7 +430,9 @@ export default function AIChat() {
               {messages.length === 0 && (
                 <div className="text-center py-12 text-muted-foreground animate-fade-in">
                   <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Start a conversation by asking a question</p>
+                  <p>
+                    <T k="pagesAL.startAConversationByAskingAQuestion" />
+                  </p>
                 </div>
               )}
               {messages.map((message) => (
@@ -449,7 +461,7 @@ export default function AIChat() {
                     {message.error && (
                       <div className="flex items-center gap-2 mb-2 text-destructive text-sm font-medium">
                         <X className="h-4 w-4" />
-                        Error occurred
+                        <T k="pagesAL.errorOccurred" />
                       </div>
                     )}
                     <div className="whitespace-pre-wrap break-words">
@@ -457,7 +469,7 @@ export default function AIChat() {
                         (message.streaming && (
                           <span className="inline-flex items-center gap-1">
                             <Loader2 className="h-3 w-3 animate-spin" />
-                            Thinking...
+                            <T k="pagesAL.thinking" />
                           </span>
                         ))}
                     </div>
@@ -544,7 +556,9 @@ export default function AIChat() {
                 history.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>No conversation history</p>
+                    <p>
+                      <T k="pagesAL.noConversationHistory" />
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-2">

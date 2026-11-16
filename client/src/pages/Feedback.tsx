@@ -111,7 +111,7 @@ export default function Feedback() {
         return (
           <Badge className="bg-success">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Resolved
+            <T k="pagesAL.resolved" />
           </Badge>
         );
       case "in_progress":
@@ -165,19 +165,25 @@ export default function Feedback() {
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <History className="w-4 h-4 mr-2" />
-            My Feedback
+            <T k="pagesAL.myFeedback" />
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="submit" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Share Your Feedback</CardTitle>
-              <CardDescription>Your feedback helps us build a better product</CardDescription>
+              <CardTitle>
+                <T k="pagesAL.shareYourFeedback" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pagesAL.yourFeedbackHelpsUsBuildABetterProduct" />
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label>Feedback Type</Label>
+                <Label>
+                  <T k="pagesAL.feedbackType" />
+                </Label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {FEEDBACK_TYPES.map((type) => {
                     const Icon = type.icon;
@@ -276,7 +282,9 @@ export default function Feedback() {
 
               <div className="flex items-center justify-between p-4 rounded-lg border">
                 <div>
-                  <Label>Allow us to contact you</Label>
+                  <Label>
+                    <T k="pagesAL.allowUsToContactYou" />
+                  </Label>
                   <p className="text-sm text-muted-foreground">
                     We may reach out for more details or to notify you of resolution
                   </p>
@@ -325,11 +333,15 @@ export default function Feedback() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <MessageSquare className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No feedback submitted</h3>
+                <h3 className="text-lg font-medium">
+                  <T k="pagesAL.noFeedbackSubmitted" />
+                </h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  Your submitted feedback will appear here
+                  <T k="pagesAL.yourSubmittedFeedbackWillAppearHere" />
                 </p>
-                <Button onClick={() => setActiveTab("submit")}>Submit Your First Feedback</Button>
+                <Button onClick={() => setActiveTab("submit")}>
+                  <T k="pagesAL.submitYourFirstFeedback" />
+                </Button>
               </CardContent>
             </Card>
           ) : (

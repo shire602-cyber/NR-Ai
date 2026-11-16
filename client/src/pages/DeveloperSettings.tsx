@@ -158,7 +158,7 @@ export default function DeveloperSettings() {
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
-            Webhooks
+            <T k="pagesAL.webhooks" />
           </TabsTrigger>
         </TabsList>
 
@@ -266,7 +266,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle><T k="pages.apiKeys" /></CardTitle>
+            <CardTitle>
+              <T k="pages.apiKeys" />
+            </CardTitle>
             <CardDescription>
               Create and manage API keys for programmatic access to Muhasib.ai.
             </CardDescription>
@@ -280,15 +282,17 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            Create Key
+            <T k="pagesAL.createKey" />
           </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center"><T k="pages.loading" /></p>
+            <p className="text-muted-foreground py-8 text-center">
+              <T k="pages.loading" />
+            </p>
           ) : !apiKeys?.length ? (
             <p className="text-muted-foreground py-8 text-center">
-              No API keys created yet. Create one to get started.
+              <T k="pagesAL.noAPIKeysCreatedYetCreateOneToGetStarted" />
             </p>
           ) : (
             <Table>
@@ -296,10 +300,18 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Key</TableHead>
-                  <TableHead><T k="pages.scopes" /></TableHead>
-                  <TableHead>Last Used</TableHead>
-                  <TableHead><T k="pages.status" /></TableHead>
-                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
+                  <TableHead>
+                    <T k="pages.scopes" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pagesAL.lastUsed" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -346,8 +358,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create API Key</DialogTitle>
-            <DialogDescription>Generate a new API key for programmatic access.</DialogDescription>
+            <DialogTitle>
+              <T k="pagesAL.createAPIKey" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pagesAL.generateANewAPIKeyForProgrammaticAccess" />
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -360,7 +376,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label><T k="pages.scopes" /></Label>
+              <Label>
+                <T k="pages.scopes" />
+              </Label>
               <div className="flex flex-col gap-2">
                 {API_KEY_SCOPES.map((scope) => (
                   <div key={scope} className="flex items-center gap-2">
@@ -369,7 +387,11 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       checked={newKeyScopes.includes(scope)}
                       onCheckedChange={() => handleScopeToggle(scope)}
                     />
-                    <Label htmlFor={`scope-${scope}`} className="font-mono text-xs font-normal" dir="ltr">
+                    <Label
+                      htmlFor={`scope-${scope}`}
+                      className="font-mono text-xs font-normal"
+                      dir="ltr"
+                    >
                       {scope}
                     </Label>
                   </div>
@@ -409,20 +431,18 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>API Key Created</DialogTitle>
+            <DialogTitle>
+              <T k="pagesAL.aPIKeyCreated" />
+            </DialogTitle>
             <DialogDescription>
-              Copy this key now. You will not be able to see it again.
+              <T k="pagesAL.copyThisKeyNowYouWillNotBeAbleToSeeItAgain" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
               <Input readOnly value={createdKey || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopy}>
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -447,19 +467,23 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke API Key?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pagesAL.revokeAPIKey" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. Any applications using this key will immediately lose
               access.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Revoke Key
+              <T k="pagesAL.revokeKey" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -598,19 +622,23 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Webhook Endpoints</CardTitle>
+            <CardTitle>
+              <T k="pagesAL.webhookEndpoints" />
+            </CardTitle>
             <CardDescription>
               Receive real-time notifications when events happen in your account.
             </CardDescription>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            Add Endpoint
+            <T k="pagesAL.addEndpoint" />
           </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center"><T k="pages.loading" /></p>
+            <p className="text-muted-foreground py-8 text-center">
+              <T k="pages.loading" />
+            </p>
           ) : !webhooks?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               No webhook endpoints configured. Add one to start receiving events.
@@ -620,11 +648,21 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>URL</TableHead>
-                  <TableHead><T k="pages.events" /></TableHead>
-                  <TableHead><T k="pages.status" /></TableHead>
-                  <TableHead>Failures</TableHead>
-                  <TableHead>Last Triggered</TableHead>
-                  <TableHead className="text-right"><T k="pages.actions" /></TableHead>
+                  <TableHead>
+                    <T k="pages.events" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pagesAL.failures" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pagesAL.lastTriggered" />
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -710,14 +748,18 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add Webhook Endpoint</DialogTitle>
+            <DialogTitle>
+              <T k="pagesAL.addWebhookEndpoint" />
+            </DialogTitle>
             <DialogDescription>
               We will send POST requests to this URL when selected events occur.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="webhook-url">Endpoint URL</Label>
+              <Label htmlFor="webhook-url">
+                <T k="pagesAL.endpointURL" />
+              </Label>
               <Input
                 id="webhook-url"
                 placeholder="https://example.com/webhook"
@@ -726,7 +768,9 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label><T k="pages.events" /></Label>
+              <Label>
+                <T k="pages.events" />
+              </Label>
               <div className="grid grid-cols-2 gap-2">
                 {WEBHOOK_EVENTS.map((event) => (
                   <div key={event} className="flex items-center gap-2">
@@ -775,7 +819,9 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Webhook Secret Created</DialogTitle>
+            <DialogTitle>
+              <T k="pagesAL.webhookSecretCreated" />
+            </DialogTitle>
             <DialogDescription>
               Copy this signing secret now. You will not be able to see it again. Use it to verify
               webhook signatures.
@@ -785,11 +831,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
             <div className="flex items-center gap-2">
               <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopySecret}>
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -818,21 +860,31 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       >
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Recent Deliveries</DialogTitle>
+            <DialogTitle>
+              <T k="pagesAL.recentDeliveries" />
+            </DialogTitle>
             <DialogDescription>
               Last 100 webhook delivery attempts for this endpoint.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             {!deliveries?.length ? (
-              <p className="text-muted-foreground text-center py-4">No deliveries recorded yet.</p>
+              <p className="text-muted-foreground text-center py-4">
+                <T k="pagesAL.noDeliveriesRecordedYet" />
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead><T k="pages.status" /></TableHead>
-                    <TableHead>Response</TableHead>
+                    <TableHead>
+                      <T k="pagesAL.event" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pagesAL.response" />
+                    </TableHead>
                     <TableHead>Time</TableHead>
                     <TableHead />
                   </TableRow>
@@ -849,7 +901,9 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                             {delivery.status ?? "delivered"}
                           </Badge>
                         ) : (
-                          <Badge variant={delivery.status === "retrying" ? "outline" : "destructive"}>
+                          <Badge
+                            variant={delivery.status === "retrying" ? "outline" : "destructive"}
+                          >
                             {delivery.status ?? "failed"}
                           </Badge>
                         )}
@@ -895,19 +949,23 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Webhook Endpoint?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pagesAL.deleteWebhookEndpoint" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete this endpoint and all delivery history. Events will no
               longer be sent to this URL.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><T k="pages.cancel" /></AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete Endpoint
+              <T k="pagesAL.deleteEndpoint" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

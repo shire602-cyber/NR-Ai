@@ -111,6 +111,7 @@ import { ScoreRing, FilingStatusBadge, FixItRow } from "./dashboard/CompliancePu
 import { openAuditChecks } from "./dashboard/auditChecks";
 import { QuickAction, SectionHeader } from "./dashboard/Layout";
 import { EmptyState } from "./dashboard/EmptyState";
+import { T } from "@/components/layout/T";
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -1984,10 +1985,10 @@ function CustomerDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold tracking-tight text-[15px]">
-                        Financial Insights
+                        <T k="pagesAL.financialInsights" />
                       </h3>
                       <Badge variant="info" dot>
-                        Real-time
+                        <T k="pagesAL.realTime" />
                       </Badge>
                     </div>
                     <p className="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed text-pretty">
@@ -2026,7 +2027,8 @@ function CustomerDashboard() {
                         variant="ghost"
                         className="mt-3 -ms-3 gap-1.5 text-accent hover:text-accent"
                       >
-                        Talk to AI CFO <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.talkToAICFO" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                   </div>
@@ -2047,7 +2049,7 @@ function CustomerDashboard() {
         >
           <span className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-foreground">
             <FileText className="h-4 w-4 text-accent" strokeWidth={1.75} />
-            Reports workspace
+            <T k="pagesAL.reportsWorkspace" />
             <span className="font-normal text-muted-foreground">
               · {preferredReportQuickAccess.readyReports}/
               {preferredReportQuickAccess.reports.length} ready
@@ -2071,7 +2073,8 @@ function CustomerDashboard() {
                   className="gap-1 text-accent hover:text-accent -me-2"
                   data-testid="dashboard-open-report-workspace"
                 >
-                  Open workspace <ArrowRight className="w-3.5 h-3.5" />
+                  <T k="reportCenter.openWorkspace" />
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
             }
@@ -2085,7 +2088,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Reporting mode
+                      <T k="pagesAL.reportingMode" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
                       Switch the daily report workspace for owner, solo entrepreneur, freelancer, or
@@ -2138,7 +2141,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Role setup path
+                      <T k="pagesAL.roleSetupPath" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
                       Follow the workspace path from first report review to scheduled automation for{" "}
@@ -2147,7 +2150,8 @@ function CustomerDashboard() {
                   </div>
                   <Link href={reportSectionHref(preferredReportWorkspace, "role-setup")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open setup path <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openSetupPath" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -2199,7 +2203,8 @@ function CustomerDashboard() {
                   </div>
                   <Link href={reportSectionHref(preferredReportWorkspace, "workflow-finder")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open workflow finder <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openWorkflowFinder" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -2235,7 +2240,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Report suites
+                      <T k="reportCenter.reportSuites" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
                       Role-based bundles that connect reports, comparisons, saved views, packs, and
@@ -2244,7 +2249,8 @@ function CustomerDashboard() {
                   </div>
                   <Link href={reportSectionHref(preferredReportWorkspace, "report-suites")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open suites <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="reportCenter.openSuites" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -2277,13 +2283,17 @@ function CustomerDashboard() {
                       </p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-md bg-muted/30 p-2">
-                          <div className="text-muted-foreground">Trigger rules</div>
+                          <div className="text-muted-foreground">
+                            <T k="reportCenter.triggerRules" />
+                          </div>
                           <div className="mt-1 font-mono font-semibold text-foreground">
                             {suite.triggerRules.length}
                           </div>
                         </div>
                         <div className="rounded-md bg-muted/30 p-2">
-                          <div className="text-muted-foreground">Delivery</div>
+                          <div className="text-muted-foreground">
+                            <T k="reportCenter.delivery" />
+                          </div>
                           <div className="mt-1 truncate font-medium text-foreground">
                             {suite.deliverySubscription?.channel ?? "Open setup"}
                           </div>
@@ -2303,7 +2313,7 @@ function CustomerDashboard() {
                         <Link href={suite.comparisonHref}>
                           <Button variant="outline" size="sm" className="w-full justify-start">
                             <BarChart3 className="w-3.5 h-3.5" />
-                            Compare
+                            <T k="reportCenter.compare" />
                           </Button>
                         </Link>
                         <Link href={suite.packHref}>
@@ -2319,7 +2329,7 @@ function CustomerDashboard() {
                             className="w-full justify-start text-accent hover:text-accent"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
-                            Autopilot
+                            <T k="reportCenter.autopilot" />
                           </Button>
                         </Link>
                         <Link href={suite.deliveryHref}>
@@ -2329,7 +2339,7 @@ function CustomerDashboard() {
                             className="w-full justify-start text-accent hover:text-accent"
                           >
                             <Clock className="w-3.5 h-3.5" />
-                            Delivery
+                            <T k="reportCenter.delivery" />
                           </Button>
                         </Link>
                       </div>
@@ -2345,7 +2355,7 @@ function CustomerDashboard() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Quick access reports
+                        <T k="reportCenter.quickAccessReports" />
                       </div>
                       <Badge variant="info" dot>
                         {preferredReportQuickAccess.readyReports}/
@@ -2363,24 +2373,25 @@ function CustomerDashboard() {
                     <Link href={preferredReportQuickAccess.comparisonHref}>
                       <Button variant="outline" size="sm">
                         <BarChart3 className="w-3.5 h-3.5" />
-                        Comparison
+                        <T k="reportCenter.comparison" />
                       </Button>
                     </Link>
                     <Link href={preferredReportQuickAccess.automationHref}>
                       <Button variant="outline" size="sm">
                         <Sparkles className="w-3.5 h-3.5" />
-                        Autopilot
+                        <T k="reportCenter.autopilot" />
                       </Button>
                     </Link>
                     <Link href={preferredReportQuickAccess.deliveryHref}>
                       <Button variant="outline" size="sm">
                         <Clock className="w-3.5 h-3.5" />
-                        Delivery
+                        <T k="reportCenter.delivery" />
                       </Button>
                     </Link>
                     <Link href={preferredReportQuickAccess.href}>
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Open board <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openBoard" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                   </div>
@@ -2418,7 +2429,7 @@ function CustomerDashboard() {
                               className="h-7 px-2"
                               data-testid={`dashboard-report-quick-access-automation-${report.id}`}
                             >
-                              Automate
+                              <T k="reportCenter.automate" />
                             </Button>
                           </Link>
                           {comparisonHref ? (
@@ -2429,7 +2440,7 @@ function CustomerDashboard() {
                                 className="h-7 px-2"
                                 data-testid={`dashboard-report-quick-access-comparison-${report.id}`}
                               >
-                                Compare
+                                <T k="reportCenter.compare" />
                               </Button>
                             </Link>
                           ) : null}
@@ -2441,7 +2452,7 @@ function CustomerDashboard() {
                                 className="h-7 px-2"
                                 data-testid={`dashboard-report-quick-access-delivery-${report.id}`}
                               >
-                                Schedule
+                                <T k="reportCenter.schedule" />
                               </Button>
                             </Link>
                           ) : null}
@@ -2457,7 +2468,7 @@ function CustomerDashboard() {
                     data-testid="dashboard-report-quick-access-more"
                   >
                     <div className="text-[11px] font-semibold uppercase text-muted-foreground">
-                      More reports
+                      <T k="reportCenter.moreReports" />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {preferredReportQuickAccess.additionalReports.map(({ report, href }) => (
@@ -2478,7 +2489,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Saved report views
+                      <T k="reportCenter.savedReportViews" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
                       Preset views with date range, comparison period, basis, currency, dimension,
@@ -2487,7 +2498,8 @@ function CustomerDashboard() {
                   </div>
                   <Link href={reportSectionHref(preferredReportWorkspace, "saved-views")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open saved views <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openSavedViews" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -2513,7 +2525,7 @@ function CustomerDashboard() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Link href={view.reportHref}>
                           <Button variant="outline" size="sm">
-                            Open report
+                            <T k="reportCenter.openReport" />
                           </Button>
                         </Link>
                         <Link href={view.comparisonHref}>
@@ -2522,7 +2534,7 @@ function CustomerDashboard() {
                             size="sm"
                             className="text-accent hover:text-accent"
                           >
-                            Comparison
+                            <T k="reportCenter.comparison" />
                           </Button>
                         </Link>
                         <Link href={view.workflowHref}>
@@ -2532,7 +2544,7 @@ function CustomerDashboard() {
                             className="text-accent hover:text-accent"
                             data-testid={`dashboard-report-saved-view-automation-${view.id}`}
                           >
-                            Automation
+                            <T k="reportCenter.automation" />
                           </Button>
                         </Link>
                       </div>
@@ -2548,7 +2560,7 @@ function CustomerDashboard() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Automation health
+                        <T k="reportCenter.automationHealth" />
                       </div>
                       <Badge variant={reportAutomationHealth.variant} dot>
                         {reportAutomationHealth.label}
@@ -2596,7 +2608,7 @@ function CustomerDashboard() {
                     </div>
                     <div className="rounded-md border border-border/70 p-3">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Lanes
+                        <T k="reportCenter.lanes" />
                       </div>
                       <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
                         {preferredReportPackReadiness.syncedAutomationLanes}
@@ -2604,7 +2616,7 @@ function CustomerDashboard() {
                     </div>
                     <div className="rounded-md border border-border/70 p-3">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Review
+                        <T k="pages.review" />
                       </div>
                       <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
                         {reportAutomationHealth.reviewSignals}
@@ -2621,7 +2633,7 @@ function CustomerDashboard() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Automation impact
+                          <T k="reportCenter.automationImpact" />
                         </div>
                         <Badge
                           variant={
@@ -2644,7 +2656,7 @@ function CustomerDashboard() {
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
                       <div className="rounded-md bg-muted/30 p-3">
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Hours saved
+                          <T k="reportCenter.hoursSaved" />
                         </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {preferredReportAutomationImpact.estimate.estimatedMonthlyHoursSaved}
@@ -2652,7 +2664,7 @@ function CustomerDashboard() {
                       </div>
                       <div className="rounded-md bg-muted/30 p-3">
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Items handled
+                          <T k="pagesAL.itemsHandled" />
                         </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {preferredReportAutomationImpact.estimate.estimatedAutomatedItemCount}
@@ -2660,7 +2672,7 @@ function CustomerDashboard() {
                       </div>
                       <div className="rounded-md bg-muted/30 p-3">
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Coverage
+                          <T k="reportCenter.coverage" />
                         </div>
                         <div className="mt-1 font-mono text-lg font-semibold">
                           {preferredReportAutomationImpact.estimate.coverageScore}%
@@ -2668,7 +2680,7 @@ function CustomerDashboard() {
                       </div>
                       <div className="rounded-md bg-muted/30 p-3">
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Watched
+                          <T k="pagesAL.watched" />
                         </div>
                         <div className="mt-1 truncate font-mono text-sm font-semibold">
                           {formatCurrency(
@@ -2688,7 +2700,8 @@ function CustomerDashboard() {
                       href={reportSectionHref(preferredReportWorkspace, "automation-operations")}
                     >
                       <Button variant="outline" size="sm">
-                        Open operations <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openOperations" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                     <Link
@@ -2698,34 +2711,40 @@ function CustomerDashboard() {
                       )}
                     >
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Open automation center <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openAutomationCenter" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                     <Link href={preferredReportAutomationImpact.href}>
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Open automation impact <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openAutomationImpact" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                     <Link href={reportSectionHref(preferredReportWorkspace, "automation-starters")}>
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Open automation starters <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openAutomationStarters" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                     <Link
                       href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}
                     >
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Open delivery subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openDeliverySubscriptions" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                     <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Open automation rules <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.openAutomationRules" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                     <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
                       <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                        Review automation health <ArrowRight className="w-3.5 h-3.5" />
+                        <T k="pagesAL.reviewAutomationHealth" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
                   </div>
@@ -2739,7 +2758,7 @@ function CustomerDashboard() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Next automation action
+                          <T k="pagesAL.nextAutomationAction" />
                         </div>
                         <Badge variant={preferredAutomationNextAction.badgeVariant} dot>
                           {preferredAutomationNextAction.badge}
@@ -2749,7 +2768,7 @@ function CustomerDashboard() {
                             variant="outline"
                             data-testid={`dashboard-next-automation-command-${preferredAutomationNextAction.command}`}
                           >
-                            Pinned command
+                            <T k="pagesAL.pinnedCommand" />
                           </Badge>
                         ) : null}
                       </div>
@@ -2805,13 +2824,16 @@ function CustomerDashboard() {
                                 className="h-7 shrink-0 px-2 text-accent hover:text-accent"
                                 data-testid="dashboard-report-delivery-run-open"
                               >
-                                Open delivery <ArrowRight className="w-3.5 h-3.5" />
+                                <T k="reportCenter.openDelivery" />
+                                <ArrowRight className="w-3.5 h-3.5" />
                               </Button>
                             </Link>
                           </div>
                           <div className="mt-3 grid gap-2 sm:grid-cols-3">
                             <div className="rounded-md bg-background/70 p-2">
-                              <div className="text-muted-foreground">Scheduled</div>
+                              <div className="text-muted-foreground">
+                                <T k="pagesAL.scheduled" />
+                              </div>
                               <div
                                 className="mt-1 font-medium text-foreground"
                                 data-testid="dashboard-report-delivery-run-scheduled"
@@ -2823,7 +2845,9 @@ function CustomerDashboard() {
                               </div>
                             </div>
                             <div className="rounded-md bg-background/70 p-2">
-                              <div className="text-muted-foreground">Reports</div>
+                              <div className="text-muted-foreground">
+                                <T k="reportCenter.reports" />
+                              </div>
                               <div
                                 className="mt-1 font-mono font-semibold text-foreground"
                                 data-testid="dashboard-report-delivery-run-report-count"
@@ -2833,7 +2857,9 @@ function CustomerDashboard() {
                               </div>
                             </div>
                             <div className="rounded-md bg-background/70 p-2">
-                              <div className="text-muted-foreground">Channel</div>
+                              <div className="text-muted-foreground">
+                                <T k="reportCenter.channel" />
+                              </div>
                               <div
                                 className="mt-1 font-medium text-foreground"
                                 data-testid="dashboard-report-delivery-run-channel"
@@ -2861,7 +2887,7 @@ function CustomerDashboard() {
                               className="mt-2 text-muted-foreground"
                               data-testid="dashboard-report-delivery-run-retried-from"
                             >
-                              Requeued from a failed delivery run.
+                              <T k="reportCenter.requeuedFromAFailedDeliveryRun" />
                             </p>
                           ) : null}
                         </div>
@@ -2934,7 +2960,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Trigger rules
+                      <T k="reportCenter.triggerRules" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Thresholds that turn {preferredReportWorkspace.navLabel} report movement into
@@ -2947,7 +2973,8 @@ function CustomerDashboard() {
                       size="sm"
                       className="gap-1 text-accent hover:text-accent"
                     >
-                      Open trigger rules <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openTriggerRules" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -2999,7 +3026,8 @@ function CustomerDashboard() {
                             size="sm"
                             className="text-accent hover:text-accent"
                           >
-                            View rule <ArrowRight className="w-3.5 h-3.5" />
+                            <T k="pagesAL.viewRule" />
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
                         </Link>
                       </div>
@@ -3015,7 +3043,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Delivery subscriptions
+                      <T k="reportCenter.deliverySubscriptions" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Scheduled packs for {preferredReportWorkspace.navLabel} with recipients,
@@ -3030,7 +3058,8 @@ function CustomerDashboard() {
                       size="sm"
                       className="gap-1 text-accent hover:text-accent"
                     >
-                      Open subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openSubscriptions" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -3055,13 +3084,17 @@ function CustomerDashboard() {
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-md bg-muted/30 p-2">
-                          <div className="text-muted-foreground">Ready reports</div>
+                          <div className="text-muted-foreground">
+                            <T k="reportCenter.readyReports" />
+                          </div>
                           <div className="mt-1 font-mono font-semibold text-foreground">
                             {subscription.readyReports}/{subscription.reports.length}
                           </div>
                         </div>
                         <div className="rounded-md bg-muted/30 p-2">
-                          <div className="text-muted-foreground">Trigger rules</div>
+                          <div className="text-muted-foreground">
+                            <T k="reportCenter.triggerRules" />
+                          </div>
                           <div className="mt-1 font-mono font-semibold text-foreground">
                             {subscription.triggerRules.length}
                           </div>
@@ -3073,7 +3106,7 @@ function CustomerDashboard() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Link href={subscription.href}>
                           <Button variant="outline" size="sm">
-                            Open subscription
+                            <T k="reportCenter.openSubscription" />
                           </Button>
                         </Link>
                         <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
@@ -3082,7 +3115,8 @@ function CustomerDashboard() {
                             size="sm"
                             className="text-accent hover:text-accent"
                           >
-                            Review pack <ArrowRight className="w-3.5 h-3.5" />
+                            <T k="pagesAL.reviewPack" />
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
                         </Link>
                       </div>
@@ -3098,7 +3132,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Business questions
+                      <T k="pagesAL.businessQuestions" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Start with practical questions for {preferredReportWorkspace.navLabel}, then
@@ -3111,7 +3145,8 @@ function CustomerDashboard() {
                       size="sm"
                       className="gap-1 text-accent hover:text-accent"
                     >
-                      Open decision shortcuts <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openDecisionShortcuts" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -3138,7 +3173,7 @@ function CustomerDashboard() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Link href={shortcut.primaryReportHref}>
                           <Button variant="outline" size="sm">
-                            Open report
+                            <T k="reportCenter.openReport" />
                           </Button>
                         </Link>
                         <Link href={shortcut.workflowHref}>
@@ -3147,7 +3182,7 @@ function CustomerDashboard() {
                             size="sm"
                             data-testid={`dashboard-report-decision-shortcut-automation-${shortcut.id}`}
                           >
-                            Automate
+                            <T k="reportCenter.automate" />
                           </Button>
                         </Link>
                         <Link href={shortcut.href}>
@@ -3156,7 +3191,8 @@ function CustomerDashboard() {
                             size="sm"
                             className="text-accent hover:text-accent"
                           >
-                            View shortcut <ArrowRight className="w-3.5 h-3.5" />
+                            <T k="pagesAL.viewShortcut" />
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
                         </Link>
                       </div>
@@ -3172,7 +3208,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Comparison presets
+                      <T k="reportCenter.comparisonPresets" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Current-vs-prior review paths for {preferredReportWorkspace.navLabel}, with
@@ -3185,7 +3221,8 @@ function CustomerDashboard() {
                       size="sm"
                       className="gap-1 text-accent hover:text-accent"
                     >
-                      Open comparison center <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openComparisonCenter" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -3213,7 +3250,7 @@ function CustomerDashboard() {
                         </div>
                         <Link href={preset.href}>
                           <Button variant="outline" size="sm" className="shrink-0">
-                            Open comparison
+                            <T k="reportCenter.openComparison" />
                             <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
                         </Link>
@@ -3232,7 +3269,7 @@ function CustomerDashboard() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Workspace focus
+                        <T k="pagesAL.workspaceFocus" />
                       </div>
                       <p className="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">
                         {preferredReportWorkspace.focus}
@@ -3248,7 +3285,7 @@ function CustomerDashboard() {
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="min-w-0">
                             <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                              Saved reporting context
+                              <T k="reportCenter.savedReportingContext" />
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Badge variant="info" data-testid="dashboard-report-role-context">
@@ -3264,14 +3301,18 @@ function CustomerDashboard() {
                                   </span>
                                 </Badge>
                               ) : (
-                                <Badge variant="outline">No saved search</Badge>
+                                <Badge variant="outline">
+                                  <T k="reportCenter.noSavedSearch" />
+                                </Badge>
                               )}
                               {preferredReportWorkflowGapLabel ? (
                                 <Badge variant="outline" data-testid="dashboard-report-gap-context">
                                   Gap: {preferredReportWorkflowGapLabel}
                                 </Badge>
                               ) : (
-                                <Badge variant="outline">No gap filter</Badge>
+                                <Badge variant="outline">
+                                  <T k="reportCenter.noGapFilter" />
+                                </Badge>
                               )}
                             </div>
                           </div>
@@ -3283,7 +3324,7 @@ function CustomerDashboard() {
                                   variant="outline"
                                   data-testid="button-open-dashboard-report-context-link"
                                 >
-                                  Open shared view
+                                  <T k="reportCenter.openSharedView" />
                                   <ArrowRight className="h-3.5 w-3.5" />
                                 </Button>
                               </Link>
@@ -3295,7 +3336,7 @@ function CustomerDashboard() {
                                 data-testid="button-clear-dashboard-report-context"
                               >
                                 <X className="h-3.5 w-3.5" />
-                                Clear saved filters
+                                <T k="pagesAL.clearSavedFilters" />
                               </Button>
                             </div>
                           ) : null}
@@ -3338,13 +3379,15 @@ function CustomerDashboard() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                          Comparison snapshot
+                          <T k="pagesAL.comparisonSnapshot" />
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          Current vs prior month for this workspace.
+                          <T k="pagesAL.currentVsPriorMonthForThisWorkspace" />
                         </div>
                       </div>
-                      <Badge variant="outline">Current vs prior</Badge>
+                      <Badge variant="outline">
+                        <T k="pagesAL.currentVsPrior" />
+                      </Badge>
                     </div>
                     <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       {dashboardComparisonRows.map((row) => (
@@ -3362,7 +3405,8 @@ function CustomerDashboard() {
                             <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                               <span>Prior {formatCurrency(row.previous, "AED", locale)}</span>
                               <span className="inline-flex items-center gap-1 text-accent">
-                                Open <ArrowUpRight className="w-3 h-3" />
+                                <T k="firm.statusOpen" />
+                                <ArrowUpRight className="w-3 h-3" />
                               </span>
                             </div>
                           </div>
@@ -3374,7 +3418,7 @@ function CustomerDashboard() {
 
                 <div className="p-5">
                   <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Automation lanes
+                    <T k="pagesAL.automationLanes" />
                   </div>
                   <div className="mt-3 divide-y divide-border/50">
                     {preferredReportWorkspace.automations.map((playbook) => (
@@ -3412,7 +3456,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Report pack readiness
+                      <T k="reportCenter.reportPackReadiness" />
                     </div>
                     <div className="mt-2 text-2xl font-mono font-semibold tabular-nums text-foreground">
                       {preferredReportPackReadiness.readinessPercent}%
@@ -3429,7 +3473,7 @@ function CustomerDashboard() {
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
                     <div className="rounded-md border border-border/70 p-3">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Cadence
+                        <T k="reportCenter.cadence" />
                       </div>
                       <div className="mt-1 text-xs leading-relaxed text-foreground">
                         {preferredReportWorkspace.packSchedule.cadence}
@@ -3437,7 +3481,7 @@ function CustomerDashboard() {
                     </div>
                     <div className="rounded-md border border-border/70 p-3">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Delivery
+                        <T k="reportCenter.delivery" />
                       </div>
                       <div className="mt-1 text-xs leading-relaxed text-foreground">
                         {preferredReportWorkspace.packSchedule.delivery}
@@ -3445,7 +3489,7 @@ function CustomerDashboard() {
                     </div>
                     <div className="rounded-md border border-border/70 p-3">
                       <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Automations
+                        <T k="reportCenter.automations" />
                       </div>
                       <div className="mt-1 text-xs leading-relaxed text-foreground">
                         {preferredReportPackReadiness.automationLanes} lanes ·{" "}
@@ -3484,17 +3528,19 @@ function CustomerDashboard() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link href={reportSectionHref(preferredReportWorkspace, "pack-readiness")}>
                     <Button variant="outline" size="sm">
-                      Review pack readiness
+                      <T k="pagesAL.reviewPackReadiness" />
                     </Button>
                   </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open automation rules <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openAutomationRules" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open pack automation <ArrowRight className="w-3.5 h-3.5" />
+                      <T k="pagesAL.openPackAutomation" />
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -3507,7 +3553,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Automation starters
+                      <T k="reportCenter.automationStarters" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Launch setup checklists for the workflows that fit{" "}
@@ -3575,7 +3621,7 @@ function CustomerDashboard() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Ready-made report packs
+                      <T k="pagesAL.readyMadeReportPacks" />
                     </div>
                     <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Start from recurring packs tailored to {preferredReportWorkspace.navLabel}.
@@ -3608,7 +3654,7 @@ function CustomerDashboard() {
                         </div>
                         <Link href={template.href}>
                           <Button variant="outline" size="sm" className="shrink-0">
-                            Open template
+                            <T k="reportCenter.openTemplate" />
                             <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
                         </Link>
@@ -3867,7 +3913,8 @@ function CustomerDashboard() {
                   size="sm"
                   className="gap-1 text-accent hover:text-accent -me-2"
                 >
-                  View all <ArrowRight className="w-3.5 h-3.5" />
+                  <T k="pagesAL.viewAll2" />
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
             </CardHeader>
@@ -3924,7 +3971,7 @@ function CustomerDashboard() {
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
               <CardTitle className="flex items-center gap-2 text-[13px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
                 <Clock className="w-3.5 h-3.5" />
-                Recent activity
+                <T k="pagesAL.recentActivity" />
               </CardTitle>
               <Link href="/journal">
                 <Button
@@ -3932,7 +3979,8 @@ function CustomerDashboard() {
                   size="sm"
                   className="gap-1 text-accent hover:text-accent -me-2"
                 >
-                  View all <ArrowRight className="w-3.5 h-3.5" />
+                  <T k="pagesAL.viewAll2" />
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
             </CardHeader>

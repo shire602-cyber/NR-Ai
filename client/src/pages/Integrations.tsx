@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { IntegrationSync } from "@shared/schema";
+import { T } from "@/components/layout/T";
 
 interface IntegrationStatus {
   connected: boolean;
@@ -103,7 +104,9 @@ export default function Integrations() {
     records: locale === "en" ? "records" : "سجلات",
     availableIntegrations: locale === "en" ? "Available Integrations" : "التكاملات المتاحة",
     upcomingIntegrations:
-      locale === "en" ? "Accounting systems (CSV import today)" : "أنظمة المحاسبة (الاستيراد عبر CSV متاح الآن)",
+      locale === "en"
+        ? "Accounting systems (CSV import today)"
+        : "أنظمة المحاسبة (الاستيراد عبر CSV متاح الآن)",
     googleSheetsDesc:
       locale === "en"
         ? "Export invoices, expenses, and reports to Google Sheets for easy sharing and analysis"
@@ -249,7 +252,9 @@ export default function Integrations() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Google Sheets</CardTitle>
+                  <CardTitle className="text-lg">
+                    <T k="pagesAL.googleSheets" />
+                  </CardTitle>
                   <Badge
                     variant={integrationStatus?.googleSheets?.connected ? "default" : "secondary"}
                     className={integrationStatus?.googleSheets?.connected ? "bg-success" : ""}
@@ -467,7 +472,9 @@ export default function Integrations() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">QuickBooks</CardTitle>
+                  <CardTitle className="text-base">
+                    <T k="pagesAL.quickBooks" />
+                  </CardTitle>
                   <Badge variant="outline">{t.comingSoon}</Badge>
                 </div>
                 <CardDescription className="mt-1 text-sm">{t.quickbooksDesc}</CardDescription>

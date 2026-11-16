@@ -332,10 +332,12 @@ export default function AccountLedger() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
         <BookOpen className="h-16 w-16 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Account Not Found</h2>
+        <h2 className="text-xl font-semibold mb-2">
+          <T k="pagesAL.accountNotFound" />
+        </h2>
         <Button onClick={() => navigate("/chart-of-accounts")} variant="outline">
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Chart of Accounts
+          <T k="pagesAL.backToChartOfAccounts" />
         </Button>
       </div>
     );

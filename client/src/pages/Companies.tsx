@@ -35,6 +35,7 @@ import { useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Building2, CheckCircle2 } from "lucide-react";
 import type { Company } from "@shared/schema";
+import { T } from "@/components/layout/T";
 
 const companySchema = z.object({
   name: z.string().min(2, "Company name must be at least 2 characters"),
@@ -225,9 +226,11 @@ export default function Companies() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Building2 className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No companies yet</h3>
+            <h3 className="text-lg font-medium mb-2">
+              <T k="pagesAL.noCompaniesYet" />
+            </h3>
             <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">
-              Create your first company to get started with bookkeeping
+              <T k="pagesAL.createYourFirstCompanyToGetStartedWithBookkeeping" />
             </p>
             <Button onClick={() => setDialogOpen(true)} data-testid="button-create-first-company">
               <Plus className="w-4 h-4 mr-2" />

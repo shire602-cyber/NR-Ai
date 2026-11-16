@@ -209,7 +209,11 @@ function prepareCashFlowExport(data: CashFlowData): ExportData[] {
 
 function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: string }) {
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground py-2">No entries found.</p>;
+    return (
+      <p className="text-sm text-muted-foreground py-2">
+        <T k="pagesAL.noEntriesFound" />
+      </p>
+    );
   }
   return (
     <Table>
@@ -779,7 +783,9 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
       {error && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-destructive">Failed to load cash flow statement.</p>
+            <p className="text-destructive">
+              <T k="pagesAL.failedToLoadCashFlowStatement" />
+            </p>
           </CardContent>
         </Card>
       )}
@@ -832,7 +838,9 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Operating</CardDescription>
+                <CardDescription>
+                  <T k="pagesAL.operating" />
+                </CardDescription>
                 <CardTitle
                   className={`text-xl ${data.operating.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -842,7 +850,9 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Investing</CardDescription>
+                <CardDescription>
+                  <T k="pagesAL.investing" />
+                </CardDescription>
                 <CardTitle
                   className={`text-xl ${data.investing.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -852,7 +862,9 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Financing</CardDescription>
+                <CardDescription>
+                  <T k="pagesAL.financing" />
+                </CardDescription>
                 <CardTitle
                   className={`text-xl ${data.financing.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -862,7 +874,9 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             </Card>
             <Card className="border-2">
               <CardHeader className="pb-2">
-                <CardDescription>Net Cash Change</CardDescription>
+                <CardDescription>
+                  <T k="pagesAL.netCashChange" />
+                </CardDescription>
                 <CardTitle
                   className={`text-xl flex items-center gap-2 ${data.netCashChange >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -876,14 +890,20 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           {/* Operating Activities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Operating Activities</CardTitle>
-              <CardDescription>Cash from day-to-day business operations</CardDescription>
+              <CardTitle className="text-lg">
+                <T k="pagesAL.operatingActivities" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pagesAL.cashFromDayToDayBusinessOperations" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.operating.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Net Operating Cash Flow</span>
+                <span>
+                  <T k="pagesAL.netOperatingCashFlow" />
+                </span>
                 <span className="font-mono">
                   {formatCurrency(data.operating.total, "AED", locale)}
                 </span>
@@ -894,20 +914,24 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           {/* Investing Activities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Investing Activities</CardTitle>
+              <CardTitle className="text-lg">
+                <T k="pagesAL.investingActivities" />
+              </CardTitle>
               <CardDescription>Cash from buying/selling long-term assets</CardDescription>
             </CardHeader>
             <CardContent>
               {data.investing.breakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
-                  No investing activities in this period.
+                  <T k="pagesAL.noInvestingActivitiesInThisPeriod" />
                 </p>
               ) : (
                 <BreakdownTable items={data.investing.breakdown} locale={locale} />
               )}
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Net Investing Cash Flow</span>
+                <span>
+                  <T k="pagesAL.netInvestingCashFlow" />
+                </span>
                 <span className="font-mono">
                   {formatCurrency(data.investing.total, "AED", locale)}
                 </span>
@@ -918,20 +942,26 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           {/* Financing Activities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Financing Activities</CardTitle>
-              <CardDescription>Cash from debt, equity, and dividends</CardDescription>
+              <CardTitle className="text-lg">
+                <T k="pagesAL.financingActivities" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pagesAL.cashFromDebtEquityAndDividends" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {data.financing.breakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
-                  No financing activities in this period.
+                  <T k="pagesAL.noFinancingActivitiesInThisPeriod" />
                 </p>
               ) : (
                 <BreakdownTable items={data.financing.breakdown} locale={locale} />
               )}
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Net Financing Cash Flow</span>
+                <span>
+                  <T k="pagesAL.netFinancingCashFlow" />
+                </span>
                 <span className="font-mono">
                   {formatCurrency(data.financing.total, "AED", locale)}
                 </span>
@@ -995,7 +1025,7 @@ export default function FinancialStatements() {
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profit-loss" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
-            Profit & Loss
+            <T k="pagesAL.profitAndLoss" />
           </TabsTrigger>
           <TabsTrigger value="balance-sheet" className="flex items-center gap-2">
             <Scale className="h-4 w-4" />

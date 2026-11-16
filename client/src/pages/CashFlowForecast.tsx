@@ -223,7 +223,7 @@ export default function CashFlowForecast() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-muted-foreground text-center">
-              Please create a company first to use cash flow forecasting.
+              <T k="pagesAL.pleaseCreateACompanyFirstToUseCashFlowForecasting" />
             </p>
           </CardContent>
         </Card>
@@ -258,7 +258,9 @@ export default function CashFlowForecast() {
     }
     if (lower.includes("positive") || lower.includes("improve")) {
       return (
-        <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">Positive</Badge>
+        <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">
+          <T k="pagesAL.positive" />
+        </Badge>
       );
     }
     return (
@@ -355,7 +357,7 @@ export default function CashFlowForecast() {
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
                 <Wallet className="h-4 w-4" />
-                Current Balance
+                <T k="pagesAL.currentBalance" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -435,7 +437,7 @@ export default function CashFlowForecast() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Calendar className="h-5 w-5 text-primary" />
-            Weekly Projections
+            <T k="pagesAL.weeklyProjections" />
           </CardTitle>
           <CardDescription>
             Projected cash inflows and outflows for the next {forecastDays} days
@@ -457,9 +459,15 @@ export default function CashFlowForecast() {
                     <TableHead>
                       <T k="pages.period" />
                     </TableHead>
-                    <TableHead className="text-right">Expected In</TableHead>
-                    <TableHead className="text-right">Expected Out</TableHead>
-                    <TableHead className="text-right">Projected Balance</TableHead>
+                    <TableHead className="text-right">
+                      <T k="pagesAL.expectedIn" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pagesAL.expectedOut" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pagesAL.projectedBalance2" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -794,10 +802,18 @@ export default function CashFlowForecast() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead className="text-right">Total Inflows</TableHead>
-                    <TableHead className="text-right">Total Outflows</TableHead>
-                    <TableHead className="text-right">Net Cash Flow</TableHead>
+                    <TableHead>
+                      <T k="hr.month" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pagesAL.totalInflows" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pagesAL.totalOutflows" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pagesAL.netCashFlow" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

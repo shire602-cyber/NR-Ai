@@ -472,7 +472,9 @@ export default function CorporateTax() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">No company found. Please set up your company first.</p>
+        <p className="text-muted-foreground">
+          <T k="pagesAL.noCompanyFoundPleaseSetUpYourCompanyFirst" />
+        </p>
       </div>
     );
   }
@@ -528,10 +530,12 @@ export default function CorporateTax() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
-                <Plus className="w-4 h-4 mr-2" /> Revenue row
+                <Plus className="w-4 h-4 mr-2" />
+                <T k="pagesAL.revenueRow" />
               </Button>
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("expense")}>
-                <Plus className="w-4 h-4 mr-2" /> Expense row
+                <Plus className="w-4 h-4 mr-2" />
+                <T k="pagesAL.expenseRow" />
               </Button>
               <Button
                 type="button"
@@ -674,7 +678,7 @@ export default function CorporateTax() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
-            Tax Calculator
+            <T k="pagesAL.taxCalculator" />
           </CardTitle>
           <CardDescription>
             Calculate corporate tax from your journal entries for a given period
@@ -712,11 +716,13 @@ export default function CorporateTax() {
             >
               {calculateMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Calculating...
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <T k="pagesAL.calculating" />
                 </>
               ) : (
                 <>
-                  <Calculator className="w-4 h-4 mr-2" /> Calculate
+                  <Calculator className="w-4 h-4 mr-2" />
+                  <T k="hr.calculate" />
                 </>
               )}
             </Button>
@@ -728,7 +734,7 @@ export default function CorporateTax() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    Income Summary
+                    <T k="pagesAL.incomeSummary" />
                   </h3>
                   <div className="flex justify-between">
                     <span>
@@ -747,7 +753,9 @@ export default function CorporateTax() {
                     </span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
-                    <span className="font-semibold">Gross Profit</span>
+                    <span className="font-semibold">
+                      <T k="pagesAL.grossProfit" />
+                    </span>
                     <span className="font-semibold">
                       {formatCurrency(
                         adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
@@ -760,7 +768,7 @@ export default function CorporateTax() {
 
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    Tax Calculation
+                    <T k="pagesAL.taxCalculation" />
                   </h3>
                   <div className="flex justify-between items-center">
                     <span>
@@ -841,7 +849,8 @@ export default function CorporateTax() {
                 >
                   {saveDraftMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <T k="pagesAL.saving" />
                     </>
                   ) : (
                     "Save as Draft"
@@ -858,8 +867,12 @@ export default function CorporateTax() {
       {/* Returns Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Tax Returns</CardTitle>
-          <CardDescription>Saved corporate tax returns and their filing status</CardDescription>
+          <CardTitle>
+            <T k="pagesAL.taxReturns" />
+          </CardTitle>
+          <CardDescription>
+            <T k="pagesAL.savedCorporateTaxReturnsAndTheirFilingStatus" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm">
@@ -878,8 +891,12 @@ export default function CorporateTax() {
           ) : !taxReturns || taxReturns.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No corporate tax returns yet.</p>
-              <p className="text-sm">Use the calculator above to generate your first return.</p>
+              <p>
+                <T k="pagesAL.noCorporateTaxReturnsYet" />
+              </p>
+              <p className="text-sm">
+                <T k="pagesAL.useTheCalculatorAboveToGenerateYourFirstReturn" />
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -1087,7 +1104,9 @@ export default function CorporateTax() {
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Corporate Tax Return Details</DialogTitle>
+            <DialogTitle>
+              <T k="pagesAL.corporateTaxReturnDetails" />
+            </DialogTitle>
             <DialogDescription>
               {viewReturn && (
                 <>

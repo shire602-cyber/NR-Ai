@@ -235,15 +235,19 @@ export default function JournalEntryDetail() {
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Journal Entry Not Found</h1>
+          <h1 className="text-2xl font-bold">
+            <T k="pagesAL.journalEntryNotFound" />
+          </h1>
         </div>
         <Card>
           <CardContent className="py-12 text-center">
             <XCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">The requested journal entry could not be found.</p>
+            <p className="text-muted-foreground">
+              <T k="pagesAL.theRequestedJournalEntryCouldNotBeFound" />
+            </p>
             <Link href="/journal">
               <Button className="mt-4" data-testid="button-return-to-journal">
-                Return to Journal
+                <T k="pagesAL.returnToJournal" />
               </Button>
             </Link>
           </CardContent>
@@ -368,7 +372,7 @@ export default function JournalEntryDetail() {
           )}
           <Link href="/journal">
             <Button variant="outline" data-testid="button-view-all-entries">
-              View All Entries
+              <T k="pagesAL.viewAllEntries" />
             </Button>
           </Link>
         </div>
@@ -377,7 +381,9 @@ export default function JournalEntryDetail() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Debits</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pagesAL.totalDebits" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success" data-testid="text-total-debits">
@@ -388,7 +394,9 @@ export default function JournalEntryDetail() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Credits</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="pagesAL.totalCredits" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-info" data-testid="text-total-credits">
@@ -399,7 +407,9 @@ export default function JournalEntryDetail() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Balance</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="portal.balance" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div
@@ -432,14 +442,18 @@ export default function JournalEntryDetail() {
           <CardTitle className="text-lg">
             <T k="pages.lineItems" />
           </CardTitle>
-          <CardDescription>Double-entry transaction details</CardDescription>
+          <CardDescription>
+            <T k="pagesAL.doubleEntryTransactionDetails" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[100px]">Code</TableHead>
-                <TableHead>Account Name</TableHead>
+                <TableHead>
+                  <T k="pagesAL.accountName" />
+                </TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Debit (AED)</TableHead>
                 <TableHead className="text-right">Credit (AED)</TableHead>
@@ -540,7 +554,9 @@ export default function JournalEntryDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Entry Details</CardTitle>
+          <CardTitle className="text-lg">
+            <T k="pagesAL.entryDetails" />
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

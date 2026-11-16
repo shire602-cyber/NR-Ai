@@ -241,9 +241,11 @@ export default function CompanySettings() {
               <div className="flex items-center gap-3">
                 <Building2 className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Company Identity</CardTitle>
+                  <CardTitle>
+                    <T k="pagesAL.companyIdentity" />
+                  </CardTitle>
                   <CardDescription>
-                    Names, registration, and logo shown on invoices.
+                    <T k="pagesAL.namesRegistrationAndLogoShownOnInvoices" />
                   </CardDescription>
                 </div>
               </div>
@@ -274,7 +276,9 @@ export default function CompanySettings() {
                   name="legalName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Legal Name</FormLabel>
+                      <FormLabel>
+                        <T k="pagesAL.legalName" />
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -283,7 +287,9 @@ export default function CompanySettings() {
                           data-testid="input-legal-name"
                         />
                       </FormControl>
-                      <FormDescription>Registered name. Used on tax invoices.</FormDescription>
+                      <FormDescription>
+                        <T k="pagesAL.registeredNameUsedOnTaxInvoices" />
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -354,7 +360,7 @@ export default function CompanySettings() {
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background hover:bg-accent cursor-pointer text-sm"
                     >
                       <Upload className="w-4 h-4" />
-                      Choose image
+                      <T k="pagesAL.chooseImage" />
                     </label>
                     <input
                       id="logo-upload"
@@ -377,9 +383,11 @@ export default function CompanySettings() {
               <div className="flex items-center gap-3">
                 <Globe className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Localization & Finance</CardTitle>
+                  <CardTitle>
+                    <T k="pagesAL.localizationAndFinance" />
+                  </CardTitle>
                   <CardDescription>
-                    Currency, fiscal year, VAT, language, and date format.
+                    <T k="pagesAL.currencyFiscalYearVATLanguageAndDateFormat" />
                   </CardDescription>
                 </div>
               </div>
@@ -416,7 +424,9 @@ export default function CompanySettings() {
                   name="fiscalYearStartMonth"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Financial Year Starts</FormLabel>
+                      <FormLabel>
+                        <T k="pagesAL.financialYearStarts" />
+                      </FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseInt(v, 10))}
                         value={String(field.value ?? 1)}
@@ -444,7 +454,9 @@ export default function CompanySettings() {
                   name="defaultVatRate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Default VAT Rate</FormLabel>
+                      <FormLabel>
+                        <T k="pagesAL.defaultVATRate" />
+                      </FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseFloat(v))}
                         value={String(field.value ?? 0.05)}
@@ -462,7 +474,9 @@ export default function CompanySettings() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription>Applied to new invoice lines by default.</FormDescription>
+                      <FormDescription>
+                        <T k="pagesAL.appliedToNewInvoiceLinesByDefault" />
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -473,7 +487,9 @@ export default function CompanySettings() {
                   name="dateFormat"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date Format</FormLabel>
+                      <FormLabel>
+                        <T k="pagesAL.dateFormat" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "DD/MM/YYYY"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-date-format">
@@ -508,11 +524,15 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="en">English</SelectItem>
+                          <SelectItem value="en">
+                            <T k="pagesAL.english" />
+                          </SelectItem>
                           <SelectItem value="ar">العربية (Arabic)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>Used for invoice templates and the UI.</FormDescription>
+                      <FormDescription>
+                        <T k="pagesAL.usedForInvoiceTemplatesAndTheUI" />
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -527,8 +547,12 @@ export default function CompanySettings() {
               <div className="flex items-center gap-3">
                 <MapPin className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Address & Contact</CardTitle>
-                  <CardDescription>Used on invoices, statements, and tax filings.</CardDescription>
+                  <CardTitle>
+                    <T k="pagesAL.addressAndContact" />
+                  </CardTitle>
+                  <CardDescription>
+                    <T k="pagesAL.usedOnInvoicesStatementsAndTaxFilings" />
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -538,7 +562,9 @@ export default function CompanySettings() {
                 name="addressStreet"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Street Address</FormLabel>
+                    <FormLabel>
+                      <T k="pagesAL.streetAddress" />
+                    </FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -602,7 +628,9 @@ export default function CompanySettings() {
                   name="addressCountry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Country</FormLabel>
+                      <FormLabel>
+                        <T k="pagesAL.country" />
+                      </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "AE"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-address-country">
@@ -705,7 +733,7 @@ export default function CompanySettings() {
                 Need to update tax registration type, filing frequency, or other compliance fields?
                 Visit the{" "}
                 <a href="/company-profile" className="text-primary underline">
-                  Company Profile
+                  <T k="pagesAL.companyProfile" />
                 </a>{" "}
                 page.
               </div>
