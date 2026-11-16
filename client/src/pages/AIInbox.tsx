@@ -570,7 +570,10 @@ export default function AIInbox() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span className="text-xs text-muted-foreground line-clamp-2 max-w-[200px]">
+                              <span
+                                className="text-xs text-muted-foreground line-clamp-3 max-w-[260px]"
+                                title={item.ai_reason ?? undefined}
+                              >
                                 {item.ai_reason || "N/A"}
                               </span>
                             </TableCell>
@@ -583,6 +586,7 @@ export default function AIInbox() {
                                   onClick={() => acceptMutation.mutate(item.id)}
                                   disabled={acceptMutation.isPending || !item.suggested_account_id}
                                   title={t["pages.accept"]}
+                                  aria-label={t["pages.accept"]}
                                 >
                                   <Check className="h-4 w-4" />
                                 </Button>
@@ -593,6 +597,7 @@ export default function AIInbox() {
                                   onClick={() => rejectMutation.mutate(item.id)}
                                   disabled={rejectMutation.isPending}
                                   title={t["compliance.closeRejectReopen"]}
+                                  aria-label={t["compliance.closeRejectReopen"]}
                                 >
                                   <X className="h-4 w-4" />
                                 </Button>
@@ -602,6 +607,7 @@ export default function AIInbox() {
                                   className="h-8 w-8 p-0 text-info hover:text-info hover:bg-info-subtle"
                                   onClick={() => openCorrectDialog(item)}
                                   title={t["aiInbox.correct"]}
+                                  aria-label={t["aiInbox.correct"]}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>

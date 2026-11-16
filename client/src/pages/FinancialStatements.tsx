@@ -120,7 +120,7 @@ interface CashFlowData {
 }
 
 /** Prior-year comparative under a summary figure. */
-function PriorYear({ value, locale }: { value: number | undefined; locale: string }) {
+function PriorYear({ value }: { value: number | undefined; locale?: string }) {
   if (value === undefined) return null;
   return (
     <p className="text-xs text-muted-foreground tabular-nums mt-1">
