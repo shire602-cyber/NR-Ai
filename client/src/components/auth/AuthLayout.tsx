@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { ArrowLeft, Languages, Landmark, ShieldCheck } from "lucide-react";
@@ -85,14 +86,12 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
 
         <div className="mk-auth__form">
           <header className="mk-auth__top">
-            <Link
-              href="/"
-              className="mk-btn mk-btn--ghost mk-btn--sm mk-auth__back"
-              data-testid="button-back-home"
-            >
-              <ArrowLeft className="mk-flip" aria-hidden="true" />
-              {t["marketing.backToHome"]}
-            </Link>
+            <Button asChild variant="ghost" size="sm" className="mk-auth__back">
+              <Link href="/" data-testid="button-back-home">
+                <ArrowLeft className="mk-flip" aria-hidden="true" />
+                {t["marketing.backToHome"]}
+              </Link>
+            </Button>
             <MarketingBrand className="mk-auth__brand" testId="link-auth-logo" />
             <div className="mk-header__actions" style={{ marginInlineStart: 0 }}>
               <LocaleToggle />

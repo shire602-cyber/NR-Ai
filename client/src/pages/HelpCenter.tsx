@@ -13,45 +13,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 const guides = [
-  {
-    icon: BookOpen,
-    title: "Set up your company",
-    text: "Add trade license details, TRN, emirate, fiscal year, currency, and the UAE chart of accounts.",
-  },
-  {
-    icon: Receipt,
-    title: "Create VAT-ready invoices",
-    text: "Create invoices, credit notes, payment records, and downloadable PDFs with clear VAT totals.",
-  },
-  {
-    icon: FileSpreadsheet,
-    title: "Import receipts and contacts",
-    text: "Upload receipts, export to Excel, and import customers from .xlsx or CSV templates.",
-  },
-  {
-    icon: Banknote,
-    title: "Reconcile bank statements",
-    text: "Import CSV/PDF statements, review suggested matches, and create entries for unmatched transactions.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Migrate from mazeed or Wafeq",
-    text: "Use a go-live date, preserve source exports, import contacts and bank statements, and validate opening balances before live posting.",
-  },
+  { icon: BookOpen, n: 1 },
+  { icon: Receipt, n: 2 },
+  { icon: FileSpreadsheet, n: 3 },
+  { icon: Banknote, n: 4 },
+  { icon: ShieldCheck, n: 5 },
 ];
 
-const slaItems = [
-  "Launch onboarding support for setup, migration, VAT workflow questions, and first-month close.",
-  "Migration review covers mazeed, Wafeq, Zoho Books, and Excel export packs before live use.",
-  "Email support for free and starter users; priority onboarding support for professional and enterprise users.",
-  "Enterprise support terms, response windows, and uptime commitments are confirmed during activation.",
-  "Critical accounting workflow issues are triaged ahead of feature requests during launch.",
-];
+const SLA_ITEMS = [1, 2, 3, 4, 5];
 
 export default function HelpCenter() {
+  const { t } = useTranslation();
   return (
     <MarketingLayout
       titleKey="marketing.seoHelpTitle"
@@ -66,27 +42,23 @@ export default function HelpCenter() {
             <h1 className="mk-h1">
               <T k="pageLabels.launchSupportForUAEAccountingTeamsMovingFast" />
             </h1>
-            <p className="mk-lead">
-              Practical setup guides for invoices, VAT workflows, bank reconciliation, imports, and
-              month-end routines. During launch, paid plans are activated with guided onboarding.
-            </p>
+            <p className="mk-lead">{t["marketing.helpLead"]}</p>
           </div>
         </section>
 
         <section className="mk-container mk-inner-section">
           <div className="grid gap-4 md:grid-cols-2">
-            {guides.map((guide) => {
-              const Icon = guide.icon;
+            {guides.map(({ icon: Icon, n }) => {
               return (
-                <Card key={guide.title} className="mk-surface-card">
+                <Card key={n} className="mk-surface-card">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-3 text-lg">
-                      <Icon className="h-5 w-5 text-primary" />
-                      {guide.title}
+                      <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
+                      {t[`marketing.helpGuide${n}Title`]}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="text-sm leading-6 text-muted-foreground">
-                    {guide.text}
+                    {t[`marketing.helpGuide${n}Body`]}
                   </CardContent>
                 </Card>
               );
@@ -98,19 +70,19 @@ export default function HelpCenter() {
           <div className="mk-container mk-inner-section grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
             <div>
               <h2 className="flex items-center gap-2 text-2xl font-semibold">
-                <LifeBuoy className="h-6 w-6 text-primary" />
+                <LifeBuoy className="h-6 w-6 text-accent" aria-hidden="true" />
                 <T k="pageLabels.supportAndSLAPosture" />
               </h2>
-              <p className="mt-3 text-muted-foreground">
-                We keep launch promises specific. Formal SLA terms are not implied for every plan;
-                they are confirmed for enterprise customers during setup.
-              </p>
+              <p className="mt-3 text-muted-foreground">{t["marketing.helpSlaBody"]}</p>
             </div>
             <div className="grid gap-3">
-              {slaItems.map((item) => (
-                <div key={item} className="flex gap-3 rounded-lg border bg-background p-4 text-sm">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                  <span className="text-muted-foreground">{item}</span>
+              {SLA_ITEMS.map((n) => (
+                <div key={n} className="flex gap-3 rounded-xl border bg-card p-4 text-sm">
+                  <ShieldCheck
+                    className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                    aria-hidden="true"
+                  />
+                  <span className="text-muted-foreground">{t[`marketing.helpSla${n}`]}</span>
                 </div>
               ))}
             </div>
@@ -122,7 +94,7 @@ export default function HelpCenter() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-xl font-semibold">
-                  <HelpCircle className="h-5 w-5 text-primary" />
+                  <HelpCircle className="h-5 w-5 text-accent" aria-hidden="true" />
                   <T k="pageLabels.needHelpChoosingTheRightPath" />
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -130,18 +102,18 @@ export default function HelpCenter() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <a href="mailto:support@muhasib.ai?subject=Migration%20review">
-                  <Button>
-                    <Mail className="me-2 h-4 w-4" />
+                <Button asChild>
+                  <a href="mailto:support@muhasib.ai?subject=Migration%20review">
+                    <Mail aria-hidden="true" />
                     <T k="pageLabels.requestReview" />
-                  </Button>
-                </a>
-                <Link href="/migration-guides">
-                  <Button variant="outline">
+                  </a>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/migration-guides">
                     <T k="pageLabels.migrationGuides" />
-                    <ArrowRight className="ms-2 h-4 w-4 rtl:-scale-x-100" />
-                  </Button>
-                </Link>
+                    <ArrowRight className="rtl:-scale-x-100" aria-hidden="true" />
+                  </Link>
+                </Button>
               </div>
             </div>
           </div>

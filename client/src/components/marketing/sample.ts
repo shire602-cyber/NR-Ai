@@ -6,9 +6,14 @@
 export const SAMPLE = {
   revenue: 364000,
   receivables: 48310,
+  payables: 21740,
   cash: 212480.5,
   vatPayable: 11100,
-  cashSeries: [148200, 161900, 170400, 157800, 188600, 212480.5],
+  /** Monthly totals, Jan–Jun 2026. Q2 revenue = pl.income; Q2 expenses = costOfSales + operating. */
+  trends: {
+    revenue: [96400, 101200, 108900, 112000, 121500, 130500],
+    expenses: [84300, 86900, 88700, 90100, 93250, 96500],
+  },
   invoices: [
     { number: "INV-1042", customer: "Al Noor Retail FZCO", total: 19425, status: "paid" },
     { number: "INV-1043", customer: "Dhow Logistics LLC", total: 9660, status: "sent" },
@@ -27,8 +32,3 @@ export const SAMPLE = {
   payroll: { employees: 14, net: 186450 },
   pl: { income: 364000, costOfSales: 151200, operating: 128650 },
 } as const;
-
-/** AED amounts always render with Latin digits, two decimals and left-to-right. */
-export function money(value: number) {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}

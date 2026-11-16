@@ -40,6 +40,11 @@ async function setLocale(locale: "en" | "ar") {
 }
 
 const PAGES = {
+  HelpCenter: () => import("../../client/src/pages/HelpCenter"),
+  TrustSecurity: () => import("../../client/src/pages/TrustSecurity"),
+  MigrationGuides: () => import("../../client/src/pages/MigrationGuides"),
+  DemoWorkspace: () => import("../../client/src/pages/DemoWorkspace"),
+  Services: () => import("../../client/src/pages/Services"),
   MuhasibLanding: () => import("../../client/src/pages/MuhasibLanding"),
   Pricing: () => import("../../client/src/pages/Pricing"),
   ForgotPassword: () => import("../../client/src/pages/ForgotPassword"),
@@ -135,24 +140,74 @@ describe("D1 public site", () => {
     expect(container.textContent).toContain(t.ar["marketing.legalEnglishOnly"]);
   });
 
-  it("[D1] the theme toggle switches dark mode and the public site hands the theme back on exit", async () => {
+  it("[D1b] public pages use the app's one theme system (light / dark / system)", async () => {
     await render("MuhasibLanding");
     const html = document.documentElement;
     expect(html.classList.contains("dark")).toBe(false);
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[data-testid="button-theme-toggle"]'
-    );
-    act(() => toggle?.click());
+    const choose = async (option: "light" | "dark" | "system") => {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-testid="button-theme-toggle"]'
+      );
+      expect(trigger, "the shared ThemeToggle is in the marketing header").not.toBeNull();
+      await act(async () => {
+        trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      });
+      const item = document.querySelector<HTMLElement>(`[data-testid="theme-option-${option}"]`);
+      expect(item, `menu offers ${option}`).not.toBeNull();
+      await act(async () => item!.click());
+    };
+    await choose("dark");
     expect(html.classList.contains("dark")).toBe(true);
     expect(window.localStorage.getItem("muhasib-theme")).toBe("dark");
-    act(() => toggle?.click());
-    expect(html.classList.contains("dark")).toBe(false);
-    expect(window.localStorage.getItem("muhasib-theme")).toBe("light");
-    act(() => toggle?.click());
+    await choose("system");
+    expect(window.localStorage.getItem("muhasib-theme")).toBe("system");
+    await choose("dark");
     act(() => root.unmount());
     root = createRoot(container);
-    // Leaving the public site never forces dark mode onto the signed-in app.
+    // One system: leaving the public site keeps the visitor's choice for the app too.
+    expect(html.classList.contains("dark")).toBe(true);
+    const { useTheme } = await import("../../client/src/lib/theme");
+    expect(typeof useTheme).toBe("function");
+    await act(async () => {
+      const { setThemePreference } = await import("../../client/src/lib/theme");
+      setThemePreference("light");
+    });
     expect(html.classList.contains("dark")).toBe(false);
+  });
+
+  it("[D1b] help, trust, migration, demo and services render without English body copy in Arabic", async () => {
+    await setLocale("ar");
+    for (const page of [
+      "HelpCenter",
+      "TrustSecurity",
+      "MigrationGuides",
+      "DemoWorkspace",
+      "Services",
+    ] as const) {
+      act(() => root.unmount());
+      root = createRoot(container);
+      await render(page);
+      expect(arabicModeEnglishLines(), page).toEqual([]);
+    }
+  });
+
+  it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
+    await render("MuhasibLanding");
+    const preview = container.querySelector("figure.mk-app");
+    expect(preview).not.toBeNull();
+    const { t } = await import("../../client/src/lib/i18n");
+    const labels = [...preview!.querySelectorAll(".mk-kpi__label")].map((el) => el.textContent);
+    expect(labels).toEqual([
+      t.en["marketing.previewKpiCash"],
+      t.en["marketing.previewKpiReceivables"],
+      t.en["marketing.previewKpiPayables"],
+      t.en["marketing.previewKpiVat"],
+    ]);
+    // Amounts come from the shared Money component (".money"), not a marketing formatter.
+    expect(preview!.querySelectorAll(".mk-kpi__value .money").length).toBe(4);
+    expect(preview!.querySelector(".mk-kpi__value .money")?.textContent).toContain("212,480.50");
+    // No certification-style badge anywhere on the landing page.
+    expect(container.textContent).not.toMatch(/UAE Tax Ready/i);
   });
 
   it("[D1] pricing keeps the plan matrix and drops unbacked promises", async () => {

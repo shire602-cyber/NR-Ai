@@ -175,5 +175,7 @@
   "components.switcherNowViewing": "Now viewing {name}.",
   "components.switcherUpdated": "Active company updated.",
   "components.switcherFailedTitle": "Could not switch company",
-  "components.switcherTryAgain": "Please try again."
+  "components.switcherTryAgain": "Please try again.",
+  "components.authPasswordHint": "Use at least 8 characters.",
+  "components.authTrnHelp": "Your 15-digit FTA Tax Registration Number. You can add this later from the company profile."
 }

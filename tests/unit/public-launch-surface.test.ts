@@ -13,8 +13,13 @@ function readRepoFile(path: string): string {
 }
 
 // S6a: page copy moved into the en catalogs; text assertions accept source or catalog copy.
+// D1b: the public pages' body copy lives in the marketing catalog (en + ar).
 function readRepoFileWithCatalog(path: string): string {
-  return readRepoFile(path) + "\n" + readRepoFile("client/src/locales/en/pageLabels.json");
+  return [
+    readRepoFile(path),
+    readRepoFile("client/src/locales/en/pageLabels.json"),
+    readRepoFile("client/src/locales/en/marketing.json"),
+  ].join("\n");
 }
 
 const publicLaunchFiles = [
@@ -34,6 +39,9 @@ const publicLaunchFiles = [
   "client/src/pages/HelpCenter.tsx",
   "client/src/pages/MigrationGuides.tsx",
   "client/src/pages/DemoWorkspace.tsx",
+  // D1b: public page copy (landing, help, trust, migration, demo) is catalog-driven.
+  "client/src/locales/en/marketing.json",
+  "client/src/locales/ar/marketing.json",
 ];
 
 const bannedLaunchClaims = [

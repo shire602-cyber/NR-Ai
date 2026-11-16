@@ -1,3 +1,7 @@
+// zod 3-compatible validation messages for forms (R17-27). Installed by the app root
+// (and by the public pages' providers) rather than main.tsx, so the landing page does
+// not download zod before its first paint (D1b).
+import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
 import { Switch, Route, useLocation, Link } from "wouter";

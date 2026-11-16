@@ -183,7 +183,7 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
                       data-testid="input-password"
                     />
                   </FormControl>
-                  <FormDescription>Use at least 8 characters.</FormDescription>
+                  <FormDescription>{t["components.authPasswordHint"]}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -209,10 +209,7 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
                       data-testid="input-trn"
                     />
                   </FormControl>
-                  <FormDescription>
-                    Your 15-digit FTA Tax Registration Number. You can add this later from the
-                    company profile.
-                  </FormDescription>
+                  <FormDescription>{t["components.authTrnHelp"]}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

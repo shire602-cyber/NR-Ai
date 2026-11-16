@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { ArrowRight, Check, Minus, Plus, Mail, Zap, Crown, Rocket, Building2 } from "lucide-react";
@@ -18,7 +19,6 @@ interface PricingTier {
   badgeVariant?: "default" | "secondary" | "outline";
   ctaVariant: "outline" | "default";
   highlight: boolean;
-  gradient: string;
   iconColor: string;
 }
 
@@ -32,7 +32,6 @@ const tiers: PricingTier[] = [
     users: "1",
     ctaVariant: "outline",
     highlight: false,
-    gradient: "from-slate-500/10 to-slate-600/5",
     iconColor: "text-muted-foreground",
   },
   {
@@ -44,7 +43,6 @@ const tiers: PricingTier[] = [
     users: "3",
     ctaVariant: "default",
     highlight: false,
-    gradient: "from-blue-500/10 to-blue-600/5",
     iconColor: "text-info",
   },
   {
@@ -58,7 +56,6 @@ const tiers: PricingTier[] = [
     badgeVariant: "default",
     ctaVariant: "default",
     highlight: true,
-    gradient: "from-emerald-500/10 to-emerald-600/5",
     iconColor: "text-success",
   },
   {
@@ -70,7 +67,6 @@ const tiers: PricingTier[] = [
     users: "unlimited",
     ctaVariant: "outline",
     highlight: false,
-    gradient: "from-purple-500/10 to-purple-600/5",
     iconColor: "text-chart-5",
   },
 ];
@@ -654,23 +650,22 @@ export default function Pricing() {
                     : " "}
                 </p>
                 {tier.id === "enterprise" ? (
-                  <a
-                    href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20Enterprise"
-                    className="mk-btn mk-btn--secondary"
-                    data-testid={`button-plan-${tier.id}`}
-                  >
-                    {tierT.cta}
-                    <ArrowRight className="mk-flip" aria-hidden="true" />
-                  </a>
+                  <Button asChild variant="outline" size="lg">
+                    <a
+                      href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20Enterprise"
+                      data-testid={`button-plan-${tier.id}`}
+                    >
+                      {tierT.cta}
+                      <ArrowRight className="mk-flip" aria-hidden="true" />
+                    </a>
+                  </Button>
                 ) : (
-                  <Link
-                    href="/register"
-                    className={`mk-btn ${tier.highlight ? "mk-btn--primary" : "mk-btn--secondary"}`}
-                    data-testid={`button-plan-${tier.id}`}
-                  >
-                    {tierT.cta}
-                    <ArrowRight className="mk-flip" aria-hidden="true" />
-                  </Link>
+                  <Button asChild variant={tier.highlight ? "default" : "outline"} size="lg">
+                    <Link href="/register" data-testid={`button-plan-${tier.id}`}>
+                      {tierT.cta}
+                      <ArrowRight className="mk-flip" aria-hidden="true" />
+                    </Link>
+                  </Button>
                 )}
                 {"header" in tierFeatures && (
                   <p className="mk-tier__inherit">{(tierFeatures as { header: string }).header}</p>
@@ -795,17 +790,18 @@ export default function Pricing() {
             <h2 className="mk-h2">{t.footerCta.title}</h2>
             <p className="mk-lead">{t.footerCta.subtitle}</p>
             <div className="mk-hero__ctas">
-              <Link href="/register" className="mk-btn mk-btn--primary mk-btn--lg">
-                {t.footerCta.startFree}
-                <ArrowRight className="mk-flip" aria-hidden="true" />
-              </Link>
-              <a
-                href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request"
-                className="mk-btn mk-btn--secondary mk-btn--lg"
-              >
-                <Mail aria-hidden="true" />
-                {t.footerCta.bookDemo}
-              </a>
+              <Button asChild size="xl">
+                <Link href="/register">
+                  {t.footerCta.startFree}
+                  <ArrowRight className="mk-flip" aria-hidden="true" />
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="xl">
+                <a href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request">
+                  <Mail aria-hidden="true" />
+                  {t.footerCta.bookDemo}
+                </a>
+              </Button>
             </div>
           </div>
         </div>

@@ -1,83 +1,80 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   Muhasib.ai public site (D1)
+   Muhasib.ai public site (D1, aligned with the D2 design system in D1b)
    Scoped to .mk-root so the public pages never leak styles into the app.
 
-   Tokens: brand / neutral / semantic colour, type scale, spacing (4/8px),
-   radii, elevation and motion. Light is the default; html.dark (set by
-   public/theme-init.js before first paint, and by the header toggle) switches
-   to the dark set. Every text/background pair below meets WCAG AA.
+   One system: every value below is an ALIAS of the shared tokens in
+   client/src/index.css (light on :root, dark on .dark). Nothing here redefines
+   --primary, --background, --border, --radius or any other shared variable;
+   the theme comes from client/src/lib/theme.ts + public/theme-init.js, the
+   same light / dark / system preference the signed-in app uses.
    Layout uses logical properties only, so RTL needs no overrides.
    ─────────────────────────────────────────────────────────────────────────── */
 
 .mk-root {
-  /* Brand */
-  --brand: #0f6b4a; /* emerald, 6.3:1 on white */
-  --brand-strong: #0a5439;
-  --brand-subtle: #e8f3ed;
-  --brand-subtle-ink: #0a5439;
-  --on-brand: #ffffff;
-  --accent-gold: #9a7a32; /* small details only, 4.5:1 on canvas */
+  /* Brand (emerald only). --brand is for text, links and icons; filled
+     actions use the shared primary (ui/Button). */
+  --brand: hsl(var(--brand-700));
+  --brand-strong: hsl(var(--brand-800));
+  --brand-fill: hsl(var(--primary));
+  --on-brand: hsl(var(--primary-foreground));
+  --brand-subtle: hsl(var(--brand-50));
+  --brand-subtle-ink: hsl(var(--brand-800));
 
   /* Neutral */
-  --canvas: #fafaf7;
-  --canvas-sunken: #f3f3ee;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --ink: #0e1621;
-  --ink-2: #47505d; /* body copy, 8:1 */
-  --ink-3: #636b77; /* captions, 5.3:1 */
-  --hairline: rgb(14 22 33 / 0.09);
-  --hairline-strong: rgb(14 22 33 / 0.16);
-  --band: #0c121b; /* the dark "for firms" band in both themes */
-  --band-ink: #eef1f5;
-  --band-ink-2: #a8b0bc;
-  --band-hairline: rgb(255 255 255 / 0.09);
+  --canvas: hsl(var(--background));
+  --canvas-sunken: hsl(var(--surface-sunken));
+  --surface: hsl(var(--card));
+  --surface-raised: hsl(var(--popover));
+  --ink: hsl(var(--foreground));
+  --ink-2: hsl(var(--neutral-600));
+  --ink-3: hsl(var(--muted-foreground));
+  --hairline: hsl(var(--border));
+  --hairline-strong: hsl(var(--border-strong));
+  /* The dark "for firms" band and the auth brand panel, in both themes. */
+  --band: hsl(var(--neutral-900));
+  --band-surface: hsl(var(--neutral-850));
+  --band-ink: hsl(var(--neutral-50));
+  --band-ink-2: hsl(var(--neutral-300));
+  --band-ink-3: hsl(var(--neutral-400));
+  --band-brand: hsl(var(--brand-300));
+  --band-hairline: hsl(var(--neutral-0) / 0.1);
 
-  /* Semantic */
-  --success: #11704c;
-  --success-subtle: #e6f3ec;
-  --warning: #8a5a00;
-  --warning-subtle: #fbf1dc;
-  --danger: #b42318;
-  --danger-subtle: #fdecea;
-  --info: #1d4ed8;
-  --info-subtle: #e9effd;
+  /* Semantic (text on the matching -subtle surface, as the app's badges) */
+  --success: hsl(var(--success-subtle-foreground));
+  --success-subtle: hsl(var(--success-subtle));
+  --warning: hsl(var(--warning-subtle-foreground));
+  --warning-subtle: hsl(var(--warning-subtle));
+  --danger: hsl(var(--danger-subtle-foreground));
+  --danger-subtle: hsl(var(--danger-subtle));
+  --info: hsl(var(--info-subtle-foreground));
+  --info-subtle: hsl(var(--info-subtle));
 
-  /* Type */
-  --font-ui: var(--font-sans, "Geist Sans", system-ui, sans-serif);
-  --font-head: var(--font-display, "Instrument Serif", Georgia, serif);
-  --font-num: var(--font-mono, "Geist Mono", ui-monospace, monospace);
-  --text-display: clamp(2.75rem, 1.55rem + 4.6vw, 5.25rem);
-  --text-h1: clamp(2.5rem, 1.6rem + 3.2vw, 4rem);
-  --text-h2: clamp(2rem, 1.45rem + 2.1vw, 3.25rem);
-  --text-h3: 1.25rem;
-  --text-lead: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+  /* Type: Geist Sans for everything (display = the same family, semibold and
+     tight); amounts are tabular sans, never mono. */
+  --font-ui: var(--font-sans);
+  --font-head: var(--font-display);
+  --font-num: var(--font-sans);
+  --text-display: clamp(2.5rem, 1.75rem + 2.6vw, 4rem); /* 40 → 64px */
+  --text-h1: clamp(2.25rem, 1.8rem + 1.6vw, 3rem);
+  --text-h2: clamp(1.75rem, 1.4rem + 1.3vw, 2.5rem);
+  --text-h3: 1.125rem;
+  --text-lead: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
   --text-body: 1rem;
   --text-small: 0.875rem;
   --text-micro: 0.75rem;
 
-  /* Space, shape, depth, motion */
+  /* Space, shape, depth, motion: the shared scale */
   --gutter: clamp(1rem, 0.6rem + 1.8vw, 2rem);
-  --section: clamp(4.5rem, 3rem + 6vw, 8.5rem);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --shadow-1: 0 1px 2px rgb(14 22 33 / 0.05), 0 0 0 1px var(--hairline);
-  --shadow-2:
-    0 1px 2px rgb(14 22 33 / 0.04), 0 8px 24px -12px rgb(14 22 33 / 0.14), 0 0 0 1px var(--hairline);
-  --shadow-3:
-    0 2px 4px rgb(14 22 33 / 0.04), 0 30px 80px -32px rgb(14 22 33 / 0.32),
-    0 0 0 1px var(--hairline);
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-  --dur: 180ms;
-
-  /* App primitives (ui/Button, Input, Card) used on public pages follow the
-     public brand: emerald primary instead of the app's ink primary. */
-  --primary: 159 75% 24%;
-  --primary-foreground: 0 0% 100%;
-  --ring: 159 75% 24%;
-  --primary-border: hsl(159 75% 20%);
+  --section: clamp(4rem, 3rem + 5vw, 7.5rem);
+  --radius-sm: calc(var(--radius) - 2px); /* 6px controls */
+  --radius-md: var(--radius); /* 8px */
+  --radius-lg: calc(var(--radius) + 4px); /* 12px cards */
+  --radius-xl: calc(var(--radius) + 8px); /* 16px large panels */
+  --shadow-1: var(--card-shadow), 0 0 0 1px var(--hairline);
+  --shadow-2: var(--shadow-sm), 0 0 0 1px var(--hairline);
+  --shadow-3: var(--shadow-xl), 0 0 0 1px var(--hairline);
+  --ease: var(--ease-out);
+  --dur: var(--duration-base);
 
   background: var(--canvas);
   color: var(--ink);
@@ -92,52 +89,27 @@
 }
 
 .dark .mk-root {
-  --primary: 156 52% 52%;
-  --primary-foreground: 158 80% 8%;
-  --ring: 156 52% 52%;
-  --primary-border: hsl(156 52% 58%);
-  --brand: #45c592;
-  --brand-strong: #6fd6ab;
-  --brand-subtle: rgb(69 197 146 / 0.12);
-  --brand-subtle-ink: #8fe0bd;
-  --on-brand: #04261a;
-  --accent-gold: #d6b56a;
-
-  --canvas: #0a0f16;
-  --canvas-sunken: #0d131c;
-  --surface: #111821;
-  --surface-raised: #151d28;
-  --ink: #eef1f5;
-  --ink-2: #b3bbc6;
-  --ink-3: #8d96a3;
-  --hairline: rgb(255 255 255 / 0.08);
-  --hairline-strong: rgb(255 255 255 / 0.15);
-  --band: #070b11;
-
-  --success: #4fcf98;
-  --success-subtle: rgb(79 207 152 / 0.12);
-  --warning: #f0b555;
-  --warning-subtle: rgb(240 181 85 / 0.12);
-  --danger: #f2877d;
-  --danger-subtle: rgb(242 135 125 / 0.12);
-  --info: #8fb0ff;
-  --info-subtle: rgb(143 176 255 / 0.12);
-
-  --shadow-1: 0 0 0 1px var(--hairline);
-  --shadow-2: 0 0 0 1px var(--hairline), 0 12px 32px -16px rgb(0 0 0 / 0.6);
-  --shadow-3: 0 0 0 1px var(--hairline-strong), 0 40px 100px -40px rgb(0 0 0 / 0.8);
+  --brand: hsl(var(--brand-400));
+  --brand-strong: hsl(var(--brand-300));
+  --brand-subtle: hsl(var(--brand-400) / 0.12);
+  --brand-subtle-ink: hsl(var(--brand-300));
+  --ink-2: hsl(var(--neutral-300));
+  --band: hsl(var(--sidebar));
+  --band-surface: hsl(var(--neutral-900));
 }
 
-/* Arabic: a calm Naskh for headlines, the app's Arabic UI stack for text.
-   Arabic is never letter-spaced or upper-cased. */
+/* Arabic (CTO RTL stack): Latin and digits stay Geist, Arabic is Noto Sans
+   Arabic. Body line-height 1.6, headings 600, never letter-spaced or
+   upper-cased. */
 [dir="rtl"] .mk-root {
-  --font-head: "Noto Naskh Arabic", "Cairo", "Noto Sans Arabic", serif;
-  --font-ui: "Cairo", "Noto Sans Arabic", system-ui, sans-serif;
-  line-height: 1.75;
+  --font-ui: "Geist Sans", var(--font-arabic);
+  --font-head: "Geist Sans", var(--font-arabic);
+  --font-num: "Geist Sans", var(--font-arabic);
+  line-height: 1.6;
 }
 
 .mk-root *:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -153,7 +125,7 @@
   font-feature-settings: "tnum" 1;
   direction: ltr;
   unicode-bidi: isolate;
-  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
@@ -184,7 +156,7 @@
   gap: 0.625rem;
   font-size: var(--text-micro);
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--brand);
 }
@@ -203,22 +175,23 @@
 .mk-h1,
 .mk-h2 {
   font-family: var(--font-head);
-  font-weight: 400;
-  letter-spacing: -0.02em;
+  font-weight: 600;
+  letter-spacing: -0.03em;
   color: var(--ink);
   text-wrap: balance;
 }
 .mk-display {
   font-size: var(--text-display);
-  line-height: 1;
+  line-height: 1.05;
 }
 .mk-h1 {
   font-size: var(--text-h1);
-  line-height: 1.05;
+  line-height: 1.1;
 }
 .mk-h2 {
   font-size: var(--text-h2);
-  line-height: 1.08;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
 }
 [dir="rtl"] .mk-display,
 [dir="rtl"] .mk-h1,
@@ -228,20 +201,16 @@
   line-height: 1.35;
 }
 [dir="rtl"] .mk-display {
-  font-size: calc(var(--text-display) * 0.78);
+  font-size: calc(var(--text-display) * 0.82);
 }
 [dir="rtl"] .mk-h1 {
-  font-size: calc(var(--text-h1) * 0.82);
+  font-size: calc(var(--text-h1) * 0.88);
 }
 [dir="rtl"] .mk-h2 {
-  font-size: calc(var(--text-h2) * 0.82);
+  font-size: calc(var(--text-h2) * 0.88);
 }
 .mk-accent {
-  font-style: italic;
   color: var(--brand);
-}
-[dir="rtl"] .mk-accent {
-  font-style: normal;
 }
 .mk-h3 {
   font-size: var(--text-h3);
@@ -268,73 +237,7 @@
   color: var(--ink-3);
 }
 
-/* ── Buttons ────────────────────────────────────────────────────────────── */
-.mk-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-block-size: 2.75rem;
-  padding-inline: 1.25rem;
-  border-radius: 999px;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition:
-    background-color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease),
-    transform var(--dur) var(--ease);
-}
-.mk-btn:active {
-  transform: translateY(1px);
-}
-.mk-btn--sm {
-  min-block-size: 2.25rem;
-  padding-inline: 0.95rem;
-  font-size: var(--text-small);
-}
-.mk-btn--lg {
-  min-block-size: 3.125rem;
-  padding-inline: 1.6rem;
-  font-size: 1rem;
-}
-.mk-btn--primary {
-  background: var(--brand);
-  color: var(--on-brand);
-}
-.mk-btn--primary:hover {
-  background: var(--brand-strong);
-}
-.mk-btn--secondary {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--hairline-strong);
-}
-.mk-btn--secondary:hover {
-  border-color: var(--ink-3);
-}
-.mk-btn--ghost {
-  background: transparent;
-  color: var(--ink-2);
-}
-.mk-btn--ghost:hover {
-  color: var(--ink);
-  background: var(--canvas-sunken);
-}
-.mk-btn--icon {
-  inline-size: 2.5rem;
-  min-block-size: 2.5rem;
-  padding: 0;
-}
-.mk-btn svg {
-  inline-size: 1rem;
-  block-size: 1rem;
-  flex: none;
-}
+/* ── Buttons: ui/Button (shared sizes sm 32 · default 36 · lg 40 · xl 48) ── */
 [dir="rtl"] .mk-flip {
   transform: scaleX(-1);
 }
@@ -390,7 +293,7 @@
 }
 .mk-nav a {
   padding: 0.5rem 0.75rem;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-small);
   font-weight: 500;
   color: var(--ink-2);
@@ -445,20 +348,6 @@
   padding-block: clamp(3.5rem, 2rem + 6vw, 7rem) 0;
   isolation: isolate;
 }
-.mk-hero::before {
-  /* a faint ledger grid behind the headline */
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image:
-    linear-gradient(to right, var(--hairline) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--hairline) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
-  opacity: 0.55;
-}
 .mk-hero__copy {
   max-inline-size: 52rem;
   margin-inline: auto;
@@ -484,16 +373,6 @@
 .mk-hero__visual {
   margin-block-start: clamp(3rem, 2rem + 4vw, 5rem);
   position: relative;
-}
-.mk-hero__visual::after {
-  /* fade the bottom of the preview into the next section */
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  inset-block-end: -1px;
-  block-size: 18%;
-  background: linear-gradient(to bottom, transparent, var(--canvas));
-  pointer-events: none;
 }
 
 .mk-facts {
@@ -577,41 +456,70 @@
   min-block-size: 440px;
 }
 .mk-app__side {
-  background: #0e1320;
-  color: #c9d0da;
+  background: hsl(var(--sidebar));
+  color: hsl(var(--sidebar-foreground));
+  border-inline-end: 1px solid hsl(var(--sidebar-border));
   padding: 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.dark .mk-app__side {
-  background: #080c12;
+.mk-app__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 14px;
+  font-weight: 600;
+  font-size: 13px;
+  color: hsl(var(--foreground));
+}
+.mk-app__group {
+  padding: 12px 8px 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: hsl(var(--sidebar-muted-foreground));
+}
+.mk-app__company > svg {
+  margin-inline-start: auto;
+  inline-size: 12px;
+  block-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.mk-app__company > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mk-app__company {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px 16px;
-  color: #fff;
-  font-weight: 600;
-  font-size: 12.5px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--border));
+  color: hsl(var(--foreground));
+  font-weight: 500;
+  font-size: 12px;
 }
 .mk-app__company > span:first-child {
   display: grid;
   place-items: center;
-  inline-size: 24px;
-  block-size: 24px;
-  border-radius: 6px;
-  background: #1b8a5f;
-  font-size: 11px;
+  flex: none;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  font-size: 10px;
 }
 .mk-app__nav {
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 7px 8px;
-  border-radius: 7px;
-  color: #aeb7c3;
+  border-radius: var(--radius-sm);
+  color: hsl(var(--sidebar-foreground));
 }
 .mk-app__nav svg {
   inline-size: 14px;
@@ -619,16 +527,9 @@
   opacity: 0.85;
 }
 .mk-app__nav[data-active="true"] {
-  background: rgb(255 255 255 / 0.07);
-  color: #fff;
-}
-.mk-app__nav[data-active="true"]::after {
-  content: "";
-  margin-inline-start: auto;
-  inline-size: 5px;
-  block-size: 5px;
-  border-radius: 50%;
-  background: #45c592;
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
+  font-weight: 500;
 }
 .mk-app__main {
   padding: 20px 22px 24px;
@@ -636,17 +537,18 @@
   min-inline-size: 0;
 }
 .mk-app__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
   margin-block-end: 16px;
 }
 .mk-app__title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+}
+.mk-app__period {
+  margin-block-start: 2px;
+  font-size: 11px;
+  color: var(--ink-3);
 }
 .mk-app__pill {
   font-size: 11px;
@@ -663,7 +565,7 @@
 }
 .mk-kpi {
   background: var(--surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   padding: 12px 14px;
   min-inline-size: 0;
@@ -678,14 +580,10 @@
 .mk-kpi__value {
   margin-block: 4px 2px;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--ink);
   white-space: nowrap;
-}
-.mk-kpi__value small {
-  font-size: 10px;
-  color: var(--ink-3);
-  margin-inline-end: 3px;
 }
 .mk-kpi__delta {
   font-size: 10.5px;
@@ -693,12 +591,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.mk-kpi__delta[data-tone="good"] {
-  color: var(--success);
-}
-.mk-kpi__delta[data-tone="warn"] {
-  color: var(--warning);
 }
 .mk-app__grid {
   display: grid;
@@ -708,7 +600,7 @@
 }
 .mk-panel {
   background: var(--surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   padding: 14px;
   min-inline-size: 0;
@@ -727,6 +619,34 @@
   inline-size: 100%;
   block-size: 132px;
   margin-block-start: 8px;
+}
+.mk-chart__expenses {
+  stroke: hsl(var(--neutral-400));
+}
+.dark .mk-chart__expenses {
+  stroke: hsl(var(--neutral-500));
+}
+.mk-legend {
+  display: flex;
+  gap: 12px;
+  margin-block-start: 8px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.mk-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mk-legend span::before {
+  content: "";
+  inline-size: 10px;
+  block-size: 2px;
+  border-radius: 1px;
+  background: hsl(var(--chart-1));
+}
+.mk-legend span[data-series="expenses"]::before {
+  background: hsl(var(--neutral-400));
 }
 .mk-chart__months {
   display: flex;
@@ -1033,7 +953,7 @@
   color: var(--ink);
 }
 .mk-doc__title-ar {
-  font-family: "Noto Naskh Arabic", "Cairo", serif;
+  font-family: var(--font-arabic);
   font-weight: 600;
   color: var(--brand);
   font-size: 14px;
@@ -1087,7 +1007,7 @@
     grid-template-columns: 1fr auto;
   }
   .mk-line__date,
-  .mk-line .mk-badge {
+  .mk-line .mk-status {
     display: none;
   }
 }
@@ -1175,17 +1095,13 @@
   color: var(--band-ink);
   --ink: var(--band-ink);
   --ink-2: var(--band-ink-2);
-  --ink-3: #8a94a2;
+  --ink-3: var(--band-ink-3);
   --hairline: var(--band-hairline);
-  --brand: #4fcf98;
-  --brand-subtle: rgb(79 207 152 / 0.12);
-  --on-brand: #04261a;
-  --surface: #121a25;
-  --canvas-sunken: #0f1620;
-  --hairline-strong: rgb(255 255 255 / 0.16);
-}
-.mk-band .mk-btn--secondary {
-  background: transparent;
+  --brand: var(--band-brand);
+  --brand-subtle: hsl(var(--brand-400) / 0.12);
+  --surface: var(--band-surface);
+  --canvas-sunken: var(--band-surface);
+  --hairline-strong: hsl(var(--neutral-0) / 0.16);
 }
 .mk-firms {
   display: grid;
@@ -1275,7 +1191,7 @@
 .mk-plan[data-featured="true"] {
   box-shadow:
     0 0 0 2px var(--brand),
-    0 18px 40px -24px rgb(14 22 33 / 0.3);
+    var(--shadow-md);
 }
 .mk-plan__tag {
   position: absolute;
@@ -1361,8 +1277,7 @@
   text-align: center;
   padding: clamp(2.5rem, 1.5rem + 5vw, 5.5rem) var(--gutter);
   border-radius: var(--radius-xl);
-  background:
-    radial-gradient(ellipse 60% 80% at 50% 0%, var(--brand-subtle), transparent 70%), var(--surface);
+  background: var(--surface);
   box-shadow: var(--shadow-2);
 }
 .mk-cta .mk-lead {
@@ -1607,49 +1522,25 @@
   color: var(--band-ink);
   isolation: isolate;
 }
-.mk-auth__panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 80% 70% at 30% 40%, #000 20%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 30% 40%, #000 20%, transparent 75%);
-}
-.mk-auth__panel::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inline-size: 36rem;
-  block-size: 36rem;
-  inset-block-end: -18rem;
-  inset-inline-start: -10rem;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgb(69 197 146 / 0.18), transparent 65%);
-}
 @media (min-width: 1024px) {
   .mk-auth__panel {
     display: flex;
   }
 }
 .mk-auth__panel .mk-brand {
-  color: #fff;
+  color: var(--band-ink);
 }
-.mk-auth__panel .mk-brand__dot {
-  color: #4fcf98;
-}
+.mk-auth__panel .mk-brand__dot,
 .mk-auth__panel .mk-eyebrow {
-  color: #4fcf98;
+  color: var(--band-brand);
 }
 .mk-auth__headline {
   font-family: var(--font-head);
-  font-size: clamp(2.75rem, 1.5rem + 2.6vw, 4rem);
-  line-height: 1.04;
-  letter-spacing: -0.02em;
-  color: #fff;
+  font-size: clamp(2.25rem, 1.5rem + 1.8vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--band-ink);
   margin-block-start: 1.25rem;
   text-wrap: balance;
 }
@@ -1657,17 +1548,15 @@
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.35;
-  font-size: clamp(2.25rem, 1.25rem + 2vw, 3.25rem);
+  font-size: clamp(2rem, 1.25rem + 1.6vw, 2.75rem);
 }
 .mk-auth__headline em {
-  color: #4fcf98;
-}
-[dir="rtl"] .mk-auth__headline em {
   font-style: normal;
+  color: var(--band-brand);
 }
 .mk-auth__sub {
   margin-block-start: 1.25rem;
-  color: #a8b0bc;
+  color: var(--band-ink-2);
   max-inline-size: 28rem;
 }
 .mk-auth__points {
@@ -1688,9 +1577,9 @@
   inline-size: 2.25rem;
   block-size: 2.25rem;
   border-radius: var(--radius-md);
-  background: rgb(255 255 255 / 0.06);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
-  color: #4fcf98;
+  background: hsl(var(--neutral-0) / 0.06);
+  box-shadow: inset 0 0 0 1px var(--band-hairline);
+  color: var(--band-brand);
 }
 .mk-auth__points svg {
   inline-size: 1rem;
@@ -1698,16 +1587,16 @@
 }
 .mk-auth__points strong {
   font-size: var(--text-small);
-  color: #eef1f5;
+  color: var(--band-ink);
   font-weight: 600;
 }
 .mk-auth__points p {
   font-size: 0.8125rem;
-  color: #a8b0bc;
+  color: var(--band-ink-2);
 }
 .mk-auth__panel-foot {
   font-size: var(--text-micro);
-  color: #8a94a2;
+  color: var(--band-ink-3);
 }
 .mk-auth__form {
   display: flex;
@@ -1820,7 +1709,7 @@
 .mk-tier[data-featured="true"] {
   box-shadow:
     0 0 0 2px var(--brand),
-    0 24px 48px -28px rgb(14 22 33 / 0.35);
+    var(--shadow-md);
 }
 .mk-tier__top {
   display: flex;
@@ -1968,10 +1857,28 @@
   inset-block-start: -0.7rem;
   inset-inline-start: 1.25rem;
   inset-inline-end: auto;
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--on-brand);
   box-shadow: 0 0 0 3px var(--canvas);
 }
 .mk-tier > .mk-small:first-of-type {
   min-block-size: 2.6em;
+}
+
+/* /demo: the "your own books" call-out on a brand tint (no hard-coded colours). */
+.mk-demo-cta {
+  background: var(--brand-subtle);
+  color: var(--brand-subtle-ink);
+  box-shadow: inset 0 0 0 1px hsl(var(--brand-700) / 0.12);
+}
+
+/* Outline button on the dark band: same component, band surface tokens. */
+.mk-band .mk-on-band {
+  background: transparent;
+  color: var(--band-ink);
+  border-color: hsl(var(--neutral-0) / 0.2);
+}
+.mk-band .mk-on-band:hover {
+  background: hsl(var(--neutral-0) / 0.08);
+  border-color: hsl(var(--neutral-0) / 0.3);
 }

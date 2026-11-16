@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
   ArrowRight,
@@ -27,6 +28,7 @@ import {
   VatPreview,
 } from "@/components/marketing/ProductPreview";
 import { SAMPLE } from "@/components/marketing/sample";
+import { StatusBadge as Status } from "@/components/ui/status-badge";
 
 // Muhasib.ai public landing page (D1). Every capability on this page exists in
 // the product today; anything that needs an outside party (FTA submission,
@@ -123,21 +125,17 @@ function Hero() {
           </h1>
           <p className="mk-lead mk-rise mk-rise--3">{t["marketing.heroBody"]}</p>
           <div className="mk-hero__ctas mk-rise mk-rise--3">
-            <Link
-              href="/register"
-              className="mk-btn mk-btn--primary mk-btn--lg"
-              data-testid="button-hero-start"
-            >
-              {t["marketing.startFree"]}
-              <ArrowRight className="mk-flip" aria-hidden="true" />
-            </Link>
-            <Link
-              href="/demo"
-              className="mk-btn mk-btn--secondary mk-btn--lg"
-              data-testid="button-hero-demo"
-            >
-              {t["marketing.heroSecondary"]}
-            </Link>
+            <Button asChild size="xl">
+              <Link href="/register" data-testid="button-hero-start">
+                {t["marketing.startFree"]}
+                <ArrowRight className="mk-flip" aria-hidden="true" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="xl">
+              <Link href="/demo" data-testid="button-hero-demo">
+                {t["marketing.heroSecondary"]}
+              </Link>
+            </Button>
           </div>
           <p className="mk-hero__note mk-rise mk-rise--3">{t["marketing.heroNote"]}</p>
         </div>
@@ -267,9 +265,9 @@ function Product() {
           >
             <div className="mk-payroll__top">
               <span className="mk-panel__title">{t["marketing.payrollRun"]}</span>
-              <span className="mk-badge" data-tone="success">
+              <Status tone="success" className="mk-status">
                 {t["marketing.payrollApproved"]}
-              </span>
+              </Status>
             </div>
             <div className="mk-payroll__stats">
               <div className="mk-stat">
@@ -286,9 +284,9 @@ function Product() {
             <div className="mk-file">
               <FileSpreadsheet aria-hidden="true" />
               <span className="mk-num">{"WPS_202606.SIF"}</span>
-              <span className="mk-badge" data-tone="success">
+              <Status tone="success" className="mk-status">
                 {t["marketing.payrollSif"]}
-              </span>
+              </Status>
             </div>
           </FeatureCard>
 
@@ -350,10 +348,12 @@ function Firms() {
             {t["marketing.firmsBody"]}
           </p>
           <div style={{ marginBlockStart: "2rem" }}>
-            <Link href="/services" className="mk-btn mk-btn--secondary">
-              {t["marketing.firmsCta"]}
-              <ArrowRight className="mk-flip" aria-hidden="true" />
-            </Link>
+            <Button asChild variant="outline" size="lg" className="mk-on-band">
+              <Link href="/services">
+                {t["marketing.firmsCta"]}
+                <ArrowRight className="mk-flip" aria-hidden="true" />
+              </Link>
+            </Button>
           </div>
         </div>
         <ul className="mk-firms__list">
@@ -431,14 +431,12 @@ function PricingTeaser() {
           ))}
         </div>
         <div className="mk-plans__foot">
-          <Link
-            href="/pricing"
-            className="mk-btn mk-btn--secondary"
-            data-testid="link-compare-plans"
-          >
-            {t["marketing.pricingCompare"]}
-            <ArrowRight className="mk-flip" aria-hidden="true" />
-          </Link>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/pricing" data-testid="link-compare-plans">
+              {t["marketing.pricingCompare"]}
+              <ArrowRight className="mk-flip" aria-hidden="true" />
+            </Link>
+          </Button>
         </div>
       </div>
     </section>
@@ -495,13 +493,15 @@ function FinalCta() {
           </h2>
           <p className="mk-lead">{t["marketing.ctaBody"]}</p>
           <div className="mk-hero__ctas">
-            <Link href="/register" className="mk-btn mk-btn--primary mk-btn--lg">
-              {t["marketing.startFree"]}
-              <ArrowRight className="mk-flip" aria-hidden="true" />
-            </Link>
-            <Link href="/demo" className="mk-btn mk-btn--secondary mk-btn--lg">
-              {t["marketing.heroSecondary"]}
-            </Link>
+            <Button asChild size="xl">
+              <Link href="/register">
+                {t["marketing.startFree"]}
+                <ArrowRight className="mk-flip" aria-hidden="true" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="xl">
+              <Link href="/demo">{t["marketing.heroSecondary"]}</Link>
+            </Button>
           </div>
         </div>
       </div>

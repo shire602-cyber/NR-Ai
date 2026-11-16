@@ -1,6 +1,7 @@
 import {
   BarChart3,
   CheckCircle2,
+  ChevronsUpDown,
   FileSpreadsheet,
   FileText,
   Landmark,
@@ -9,18 +10,18 @@ import {
   Users,
 } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
-import { SAMPLE, money } from "./sample";
+import { BrandMark } from "@/components/BrandMark";
+import { buttonVariants } from "@/components/ui/button";
+import { Money } from "@/components/ui/money";
+import { StatusBadge as Status, type StatusTone } from "@/components/ui/status-badge";
+import { SAMPLE } from "./sample";
 
+/** Sample amounts go through the shared Money component (one formatter for the whole product). */
 export function Amount({ value, currency = true }: { value: number; currency?: boolean }) {
-  return (
-    <span className="mk-num">
-      {currency ? "AED " : ""}
-      {value < 0 ? `(${money(Math.abs(value))})` : money(value)}
-    </span>
-  );
+  return <Money amount={value} showCurrency={currency} />;
 }
 
-const STATUS_TONE: Record<string, string> = {
+const STATUS_TONE: Record<string, StatusTone> = {
   paid: "success",
   sent: "info",
   draft: "neutral",
@@ -28,87 +29,107 @@ const STATUS_TONE: Record<string, string> = {
   review: "warning",
 };
 
+/** The app's StatusBadge with the sample statuses' locale labels. */
 export function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation();
   const key = `marketing.status${status[0].toUpperCase()}${status.slice(1)}`;
   return (
-    <span className="mk-badge" data-tone={STATUS_TONE[status] ?? "neutral"}>
+    <Status tone={STATUS_TONE[status] ?? "neutral"} className="mk-status">
       {t[key]}
-    </span>
+    </Status>
   );
 }
 
-function CashChart() {
-  const { locale } = useTranslation();
-  const values = SAMPLE.cashSeries;
+/**
+ * Revenue vs expenses, drawn like the dashboard's trends chart after the CTO
+ * review: straight segments (no overshoot), 1.5px strokes, a faint area under
+ * revenue, dashed horizontal gridlines only, revenue in brand and expenses neutral.
+ */
+function TrendsChart() {
+  const { t, locale } = useTranslation();
+  const { revenue, expenses } = SAMPLE.trends;
   const width = 320;
   const height = 120;
-  const min = Math.min(...values) * 0.9;
-  const max = Math.max(...values) * 1.04;
-  const points = values.map((v, i) => [
-    (i / (values.length - 1)) * width,
-    height - ((v - min) / (max - min)) * height,
-  ]);
-  const line = points
-    .map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`)
-    .join(" ");
-  const area = `${line} L${width} ${height} L0 ${height} Z`;
+  const max = Math.max(...revenue, ...expenses) * 1.08;
+  const min = Math.min(...revenue, ...expenses) * 0.82;
+  const toPoints = (values: readonly number[]) =>
+    values.map((v, i) => [
+      (i / (values.length - 1)) * width,
+      height - ((v - min) / (max - min)) * height,
+    ]);
+  const path = (points: number[][]) =>
+    points.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const revenueLine = path(toPoints(revenue));
+  const expensesLine = path(toPoints(expenses));
   const months = Array.from({ length: 6 }, (_, i) =>
-    new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", { month: "short" }).format(
-      new Date(Date.UTC(2026, i, 15))
-    )
+    new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", {
+      month: "short",
+      numberingSystem: "latn",
+    }).format(new Date(Date.UTC(2026, i, 15)))
   );
-  const [lastX, lastY] = points[points.length - 1];
   return (
-    <div dir="ltr">
-      <svg
-        className="mk-chart"
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient id="mk-cash-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="var(--brand)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line
-            key={f}
-            x1="0"
-            x2={width}
-            y1={height * f}
-            y2={height * f}
-            stroke="var(--hairline)"
-            strokeWidth="1"
+    <div>
+      <div className="mk-legend">
+        <span data-series="revenue">{t["marketing.previewSeriesRevenue"]}</span>
+        <span data-series="expenses">{t["marketing.previewSeriesExpenses"]}</span>
+      </div>
+      <div dir="ltr">
+        <svg
+          className="mk-chart"
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line
+              key={f}
+              x1="0"
+              x2={width}
+              y1={height * f}
+              y2={height * f}
+              stroke="hsl(var(--border))"
+              strokeWidth="1"
+              strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          <path
+            d={`${revenueLine} L${width} ${height} L0 ${height} Z`}
+            fill="hsl(var(--chart-1))"
+            fillOpacity="0.08"
+          />
+          <path
+            d={expensesLine}
+            fill="none"
+            className="mk-chart__expenses"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
           />
-        ))}
-        <path d={area} fill="url(#mk-cash-fill)" />
-        <path
-          d={line}
-          fill="none"
-          stroke="var(--brand)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        <circle cx={lastX} cy={lastY} r="3.5" fill="var(--brand)" />
-      </svg>
-      <div className="mk-chart__months">
-        {months.map((m) => (
-          <span key={m}>{m}</span>
-        ))}
+          <path
+            d={revenueLine}
+            fill="none"
+            stroke="hsl(var(--chart-1))"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div className="mk-chart__months">
+          {months.map((m) => (
+            <span key={m}>{m}</span>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
 /**
- * A faithful miniature of the signed-in app: the midnight sidebar, the
- * dashboard KPI tiles, the cash chart and the recent invoices list.
+ * A faithful miniature of the signed-in app as it looks after the D2 design
+ * pass: the light sidebar (app sidebar tokens), the "Overview" header with the
+ * period summary, the Cash / Receivables / Payables / VAT strip with neutral
+ * figures, the trends chart and the recent invoices list. Sample data only.
  */
 export function ProductPreview() {
   const { t } = useTranslation();
@@ -122,23 +143,21 @@ export function ProductPreview() {
     { icon: BarChart3, key: "marketing.previewNavReports" },
   ];
   const kpis = [
-    {
-      key: "marketing.previewKpiRevenue",
-      value: SAMPLE.revenue,
-      delta: "marketing.previewKpiRevenueDelta",
-      tone: "good",
-    },
+    { key: "marketing.previewKpiCash", value: SAMPLE.cash, sub: "marketing.previewKpiCashDelta" },
     {
       key: "marketing.previewKpiReceivables",
       value: SAMPLE.receivables,
-      delta: "marketing.previewKpiReceivablesDelta",
-      tone: "warn",
+      sub: "marketing.previewKpiReceivablesDelta",
     },
-    { key: "marketing.previewKpiCash", value: SAMPLE.cash, delta: "marketing.previewKpiCashDelta" },
+    {
+      key: "marketing.previewKpiPayables",
+      value: SAMPLE.payables,
+      sub: "marketing.previewKpiPayablesDelta",
+    },
     {
       key: "marketing.previewKpiVat",
       value: SAMPLE.vatPayable,
-      delta: "marketing.previewKpiVatDelta",
+      sub: "marketing.previewKpiVatDelta",
     },
   ];
   return (
@@ -151,10 +170,19 @@ export function ProductPreview() {
       </div>
       <div className="mk-app__body">
         <div className="mk-app__side" aria-hidden="true">
-          <div className="mk-app__company">
-            <span>{"PT"}</span>
-            <span translate="no">{"Pearl Trading LLC"}</span>
+          <div className="mk-app__brand">
+            <BrandMark size="sm" />
+            <span translate="no" lang="en" dir="ltr">
+              {"Muhasib"}
+              <span className="mk-brand__dot">{".ai"}</span>
+            </span>
           </div>
+          <div className="mk-app__company">
+            <span>{"P"}</span>
+            <span translate="no">{"Pearl Trading LLC"}</span>
+            <ChevronsUpDown />
+          </div>
+          <div className="mk-app__group">{t["marketing.previewNavGroup"]}</div>
           {nav.map(({ icon: Icon, key, active }) => (
             <div key={key} className="mk-app__nav" data-active={active ? "true" : undefined}>
               <Icon />
@@ -165,19 +193,16 @@ export function ProductPreview() {
         <div className="mk-app__main">
           <div className="mk-app__head">
             <div className="mk-app__title">{t["marketing.previewGreeting"]}</div>
-            <span className="mk-app__pill">{t["marketing.previewPeriod"]}</span>
+            <div className="mk-app__period">{t["marketing.previewPeriod"]}</div>
           </div>
           <div className="mk-kpis">
             {kpis.map((kpi) => (
               <div key={kpi.key} className="mk-kpi">
                 <div className="mk-kpi__label">{t[kpi.key]}</div>
-                <div className="mk-kpi__value mk-num">
-                  <small>{"AED"}</small>
-                  {money(kpi.value)}
+                <div className="mk-kpi__value">
+                  <Amount value={kpi.value} />
                 </div>
-                <div className="mk-kpi__delta" data-tone={kpi.tone}>
-                  {t[kpi.delta]}
-                </div>
+                <div className="mk-kpi__delta">{t[kpi.sub]}</div>
               </div>
             ))}
           </div>
@@ -185,7 +210,7 @@ export function ProductPreview() {
             <div className="mk-panel">
               <div className="mk-panel__title">{t["marketing.previewChartTitle"]}</div>
               <div className="mk-panel__sub">{t["marketing.previewChartSub"]}</div>
-              <CashChart />
+              <TrendsChart />
             </div>
             <div className="mk-panel">
               <div className="mk-panel__title" style={{ marginBlockEnd: 6 }}>
@@ -297,7 +322,7 @@ export function VatPreview() {
           <span>{t["marketing.vatReconciled"]}</span>
           <span>{t["marketing.vatDifference"]}</span>
         </div>
-        <span className="mk-btn mk-btn--secondary mk-btn--sm" aria-hidden="true">
+        <span className={buttonVariants({ variant: "outline", size: "sm" })} aria-hidden="true">
           <FileSpreadsheet />
           {t["marketing.vatExport"]}
         </span>

@@ -1,36 +1,13 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Languages, Menu, Moon, Sun, X } from "lucide-react";
+import { Languages, Menu, X } from "lucide-react";
 import { SkipLink } from "@/components/SkipLink";
+import { BrandMark } from "@/components/BrandMark";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
-import { useMarketingPage, useMarketingTheme } from "./hooks";
+import { useMarketingPage } from "./hooks";
 import "./marketing.css";
-
-/** The Muhasib.ai mark: the letter meem (م) on the brand emerald, as vectors. */
-export function MarketingMark({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <rect width="32" height="32" rx="8" fill="#0F6B4A" />
-      <rect
-        x="0.5"
-        y="0.5"
-        width="31"
-        height="31"
-        rx="7.5"
-        fill="none"
-        stroke="#fff"
-        strokeOpacity="0.12"
-      />
-      {/* The letter meem (م) as in the app's BrandMark, outlined from Cairo Bold so
-          the mark never depends on an Arabic font being loaded. */}
-      <path
-        fill="#fff"
-        fillRule="evenodd"
-        d="M10.83 24.5Q10.65 23.4 10.5 22.36Q10.34 21.32 10.34 20.53Q10.34 18.94 10.96 17.77Q11.38 16.98 12.08 16.41Q11.95 15.71 11.86 14.83Q11.77 13.94 11.77 12.94Q11.77 11.94 11.86 11Q11.95 10.05 12.1 9.28Q12.24 8.52 12.36 8.05Q12.89 7.85 13.93 7.67Q14.97 7.5 16.17 7.5Q17.5 7.5 18.45 7.75Q19.39 8.01 20.02 8.48Q20.64 8.95 21 9.59Q21.37 10.23 21.51 11.03Q21.66 11.82 21.66 12.72L21.66 17.73L15.34 17.73Q15.01 17.73 14.62 17.82Q14.24 17.92 13.88 18.19Q13.52 18.47 13.3 19.03Q13.07 19.59 13.07 20.53Q13.07 21.26 13.21 22.24Q13.34 23.22 13.52 24.5ZM14.66 15.41Q14.99 15.37 15.34 15.37L18.95 15.37L18.95 12.7Q18.95 11.64 18.71 11.02Q18.48 10.39 17.88 10.13Q17.27 9.86 16.13 9.86Q15.44 9.86 14.73 9.95Q14.62 10.66 14.56 11.41Q14.5 12.21 14.5 12.9Q14.5 13.66 14.56 14.41Q14.6 14.96 14.66 15.41Z"
-      />
-    </svg>
-  );
-}
 
 export function MarketingBrand({
   className = "",
@@ -41,7 +18,7 @@ export function MarketingBrand({
 }) {
   return (
     <Link href="/" className={`mk-brand ${className}`} data-testid={testId}>
-      <MarketingMark />
+      <BrandMark size="sm" />
       <span translate="no" lang="en" dir="ltr">
         {"Muhasib"}
         <span className="mk-brand__dot">{".ai"}</span>
@@ -56,34 +33,22 @@ export function LocaleToggle({ testId }: { testId?: string }) {
   const { t } = useTranslation();
   const target = locale === "ar" ? "en" : "ar";
   return (
-    <button
+    <Button
       type="button"
-      className="mk-btn mk-btn--ghost mk-btn--sm"
+      variant="ghost"
+      size="sm"
+      className="text-muted-foreground hover:text-foreground"
       onClick={() => setLocale(target)}
       title={t["marketing.switchLanguage"]}
       data-testid={testId}
     >
       <Languages aria-hidden="true" />
       <span lang={target}>{target === "ar" ? "العربية" : "English"}</span>
-    </button>
+    </Button>
   );
 }
 
-export function ThemeToggle() {
-  const { isDark, toggle } = useMarketingTheme();
-  const { t } = useTranslation();
-  return (
-    <button
-      type="button"
-      className="mk-btn mk-btn--ghost mk-btn--icon"
-      onClick={toggle}
-      aria-label={isDark ? t["marketing.themeToLight"] : t["marketing.themeToDark"]}
-      data-testid="button-theme-toggle"
-    >
-      {isDark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-    </button>
-  );
-}
+export { ThemeToggle };
 
 type NavItem = { href: string; key: string; anchor?: boolean };
 
@@ -162,23 +127,21 @@ export function MarketingHeader() {
             <LocaleToggle testId="button-language-toggle" />
           </span>
           <ThemeToggle />
-          <Link
-            href="/login"
-            className="mk-btn mk-btn--ghost mk-btn--sm mk-header__desktop-only"
-            data-testid="button-login"
-          >
-            {t["marketing.signIn"]}
-          </Link>
-          <Link
-            href="/register"
-            className="mk-btn mk-btn--primary mk-btn--sm"
-            data-testid="button-get-started"
-          >
-            {t["marketing.startFree"]}
-          </Link>
-          <button
+          <Button asChild variant="ghost" size="sm" className="mk-header__desktop-only">
+            <Link href="/login" data-testid="button-login">
+              {t["marketing.signIn"]}
+            </Link>
+          </Button>
+          <Button asChild size="sm">
+            <Link href="/register" data-testid="button-get-started">
+              {t["marketing.startFree"]}
+            </Link>
+          </Button>
+          <Button
             type="button"
-            className="mk-btn mk-btn--ghost mk-btn--icon mk-header__mobile-only"
+            variant="ghost"
+            size="icon"
+            className="mk-header__mobile-only"
             aria-expanded={open}
             aria-controls={menuId}
             aria-label={open ? t["marketing.closeMenu"] : t["marketing.openMenu"]}
@@ -186,7 +149,7 @@ export function MarketingHeader() {
             data-testid="button-mobile-menu"
           >
             {open ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
-          </button>
+          </Button>
         </div>
       </div>
       {open && (
@@ -196,12 +159,12 @@ export function MarketingHeader() {
               <NavLink key={item.key} item={item} className="mk-mobile-menu__link" />
             ))}
             <div className="mk-mobile-menu__ctas">
-              <Link href="/login" className="mk-btn mk-btn--secondary">
-                {t["marketing.signIn"]}
-              </Link>
-              <Link href="/register" className="mk-btn mk-btn--primary">
-                {t["marketing.startFree"]}
-              </Link>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/login">{t["marketing.signIn"]}</Link>
+              </Button>
+              <Button asChild size="lg">
+                <Link href="/register">{t["marketing.startFree"]}</Link>
+              </Button>
             </div>
             <div style={{ marginBlockStart: "0.75rem" }}>
               <LocaleToggle />
