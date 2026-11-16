@@ -87,5 +87,20 @@
   "dashboard.colSelected": "الفترة المحددة",
   "dashboard.colPrior": "الفترة السابقة",
   "dashboard.colPriorYear": "الفترة نفسها من العام الماضي",
-  "dashboard.periodComparisonNote": "التغيير معروض مقابل كل عمود مقارنة. الأرقام من دفتر الأستاذ المرحّل."
+  "dashboard.periodComparisonNote": "التغيير معروض مقابل كل عمود مقارنة. الأرقام من دفتر الأستاذ المرحّل.",
+  "dashboard.modelNetProfit": "صافي الربح",
+  "dashboard.modelThisQuarter": "هذا الربع",
+  "dashboard.modelYearToDate": "منذ بداية السنة",
+  "dashboard.modelCustomPeriod": "فترة مخصصة",
+  "dashboard.periodPickValidDates": "اختر تاريخ بداية ونهاية صحيحين",
+  "dashboard.workspaceSwitchHint": "بدّل مساحة عمل التقارير اليومية بين مسارات المالك ورائد الأعمال الفردي والمستقل والمحاسب.",
+  "dashboard.workspaceSuitesHint": "حزم حسب الدور تربط التقارير والمقارنات والعروض المحفوظة والحزم والطيارات الآلية لمساحة العمل هذه.",
+  "dashboard.workspaceOpenSetup": "فتح الإعداد",
+  "dashboard.workspaceViewsHint": "عروض جاهزة بنطاق التاريخ وفترة المقارنة والأساس والعملة والبُعد وصيغة التصدير ومشغّل الأتمتة لمساحة العمل هذه.",
+  "dashboard.workspaceHealthHint": "يجمع جاهزية الحزم ومسارات الأتمتة وحركة الفترة الحالية مقابل السابقة لمساحة العمل المحددة.",
+  "dashboard.workspaceSyncingCatalog": "جارٍ مزامنة الفهرس",
+  "dashboard.modelNeedsAcknowledgement": "يحتاج إلى إقرار",
+  "dashboard.modelRecoverFailedDelivery": "استعادة عملية التسليم الفاشلة",
+  "dashboard.modelReviewHandoffGaps": "مراجعة فجوات التسليم",
+  "dashboard.modelThisReportDelivery": "عملية تسليم هذا التقرير"
 }

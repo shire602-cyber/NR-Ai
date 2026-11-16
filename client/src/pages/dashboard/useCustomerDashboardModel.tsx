@@ -945,7 +945,7 @@ export function useCustomerDashboardModel() {
         rows: [
           {
             label: "Shared context",
-            value: priorityGap ? "Needs acknowledgement" : "Ready",
+            value: priorityGap ? t["dashboard.modelNeedsAcknowledgement"] : "Ready",
             status: priorityGap ? "review" : "ready",
             detail: `${subscription.readyReports}/${subscription.reports.length} reports and ${subscription.triggerRules.length} guardrails tracked from Dashboard.`,
             href: reportWorkflowContextHref({
@@ -964,9 +964,9 @@ export function useCustomerDashboardModel() {
           {
             label: "Next action",
             value: failedRun
-              ? "Recover failed delivery"
+              ? t["dashboard.modelRecoverFailedDelivery"]
               : priorityGap
-                ? "Review handoff gaps"
+                ? t["dashboard.modelReviewHandoffGaps"]
                 : "Queue from Dashboard",
             status: priorityGap ? "review" : "ready",
             detail: priorityGap
@@ -979,6 +979,7 @@ export function useCustomerDashboardModel() {
       return handoffs;
     }, {});
   }, [
+    t,
     dashboardPersonaDeliveryRuns,
     preferredReportDeliverySubscriptions,
     preferredReportWorkspace.persona,
@@ -1145,7 +1146,9 @@ export function useCustomerDashboardModel() {
           ? `Retry the latest failed ${preferredReportWorkspace.navLabel.toLowerCase()} report delivery from Dashboard.`
           : `Pinned recovery command for ${preferredReportWorkspace.navLabel.toLowerCase()} opens failed deliveries and guardrails before the next pack goes out.`,
         href: reportSectionHref(preferredReportWorkspace, "delivery-subscriptions"),
-        cta: dashboardLatestFailedDeliveryRun ? "Retry delivery" : "Open recovery",
+        cta: dashboardLatestFailedDeliveryRun
+          ? t["components.launchRetryDelivery"]
+          : "Open recovery",
         badge: "Pinned recovery",
         badgeVariant: "warning",
         command: dashboardPinnedDeliveryAutomationCommand,
@@ -1199,6 +1202,7 @@ export function useCustomerDashboardModel() {
       command: dashboardPinnedDeliveryAutomationCommand,
     };
   }, [
+    t,
     dashboardComparisonRows,
     dashboardLatestFailedDeliveryRun,
     dashboardPinnedDeliveryAutomationCommand,
@@ -1281,7 +1285,7 @@ export function useCustomerDashboardModel() {
       toast({
         title: "Handoff gaps acknowledged",
         description: `${
-          subscription?.title ?? "This report delivery"
+          subscription?.title ?? t["dashboard.modelThisReportDelivery"]
         } has ${reportWorkflowGapFilterLabels[
           handoff.priorityGap
         ].toLowerCase()}. Click queue again to send with those gaps acknowledged.`,
@@ -1313,18 +1317,12 @@ export function useCustomerDashboardModel() {
   const heroPeriodLabel =
     !stats || stats.period.preset === "month"
       ? ((t as any).netProfitThisMonth ?? "Net Profit · This Month")
-      : `${locale === "ar" ? "صافي الربح" : "Net Profit"} · ${
+      : `${t["dashboard.modelNetProfit"]} · ${
           stats.period.preset === "quarter"
-            ? locale === "ar"
-              ? "هذا الربع"
-              : "This quarter"
+            ? t["dashboard.modelThisQuarter"]
             : stats.period.preset === "ytd"
-              ? locale === "ar"
-                ? "منذ بداية السنة"
-                : "Year to date"
-              : locale === "ar"
-                ? "فترة مخصصة"
-                : "Custom period"
+              ? t["dashboard.modelYearToDate"]
+              : t["dashboard.modelCustomPeriod"]
         }`;
   const animatedProfit = useCountUp(statsLoading ? 0 : profit);
 

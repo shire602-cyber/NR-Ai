@@ -104,9 +104,9 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
         <SelectTrigger
           className="col-span-2 h-9 w-full sm:w-[160px]"
           data-testid="select-date-preset"
-          aria-label={tt.dateRange ?? "Date range"}
+          aria-label={tt.dateRange}
         >
-          <SelectValue placeholder={tt.dateRange ?? "Date range"} />
+          <SelectValue placeholder={tt.dateRange} />
         </SelectTrigger>
         <SelectContent>
           {presetRanges.map((range) => (
@@ -126,11 +126,11 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
               !dateRange.from && "text-muted-foreground"
             )}
             data-testid="button-date-from"
-            aria-label={tt.startDate ?? "Start date"}
+            aria-label={tt.startDate}
           >
             <CalendarIcon className="h-4 w-4 shrink-0" aria-hidden />
             <span className="truncate">
-              {dateRange.from ? formatDate(dateRange.from, locale) : (tt.startDate ?? "Start date")}
+              {dateRange.from ? formatDate(dateRange.from, locale) : tt.startDate}
             </span>
           </Button>
         </PopoverTrigger>
@@ -158,11 +158,11 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
               !dateRange.to && "text-muted-foreground"
             )}
             data-testid="button-date-to"
-            aria-label={tt.endDate ?? "End date"}
+            aria-label={tt.endDate}
           >
             <CalendarIcon className="h-4 w-4 shrink-0" aria-hidden />
             <span className="truncate">
-              {dateRange.to ? formatDate(dateRange.to, locale) : (tt.endDate ?? "End date")}
+              {dateRange.to ? formatDate(dateRange.to, locale) : tt.endDate}
             </span>
           </Button>
         </PopoverTrigger>

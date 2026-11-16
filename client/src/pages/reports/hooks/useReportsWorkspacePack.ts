@@ -1,5 +1,6 @@
 // Workspace report-pack workbook builder covering every live report (buildWorkspaceReportPack).
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
+import { translateNow } from "@/lib/i18n";
 import {
   type ExportData,
   prepareAgingReportsForExport,
@@ -325,7 +326,7 @@ export function useReportsWorkspacePack({
       (rule) => rule.openWorkItemCount > 0
     ).length;
     const packSetupAutomationRules = packAutomationRules.filter(
-      (rule) => rule.status === "Setup needed"
+      (rule) => rule.status === translateNow("reportCenter.setupNeeded")
     ).length;
     const packRuleOpenWorkItemCount = packAutomationRules.reduce(
       (sum, rule) => sum + rule.openWorkItemCount,
@@ -405,7 +406,9 @@ export function useReportsWorkspacePack({
         status: reportStatusMeta[report.status].label,
         comparison: report.comparison,
         automation: report.automation,
-        delivery: workbookReportIds.has(report.id) ? "Included in workbook" : "Open workflow",
+        delivery: workbookReportIds.has(report.id)
+          ? translateNow("reportCenter.includedInWorkbook")
+          : "Open workflow",
         workflow: reportPersonaHref(report, workspace.persona) ?? reportWorkspaceHref(workspace),
       })),
     };
@@ -422,17 +425,17 @@ export function useReportsWorkspacePack({
         { field: "Persona", value: workspace.persona, workflow: operationsWorkflow },
         {
           field: "Operations status",
-          value: packOperations?.status ?? "Not available",
+          value: packOperations?.status ?? translateNow("firm.notAvailable"),
           workflow: operationsWorkflow,
         },
         {
           field: "Next action",
-          value: packOperations?.nextAction.label ?? "Not available",
+          value: packOperations?.nextAction.label ?? translateNow("firm.notAvailable"),
           workflow: packOperations?.nextAction.href ?? operationsWorkflow,
         },
         {
           field: "Next action detail",
-          value: packOperations?.nextAction.detail ?? "Not available",
+          value: packOperations?.nextAction.detail ?? translateNow("firm.notAvailable"),
           workflow: packOperations?.nextAction.href ?? operationsWorkflow,
         },
         {
@@ -441,7 +444,7 @@ export function useReportsWorkspacePack({
             ? `${packOperations.automationScore}/100`
             : packReadiness
               ? `${packReadiness.automationHealth.score}/100`
-              : "Not available",
+              : translateNow("firm.notAvailable"),
           workflow: operationsWorkflow,
         },
         {
@@ -464,7 +467,7 @@ export function useReportsWorkspacePack({
             ? `${packOperations.readyDeliveryCount}/${packOperations.deliverySubscriptionCount}`
             : `${
                 packDeliverySubscriptions.filter(
-                  (subscription) => subscription.status === "Ready to send"
+                  (subscription) => subscription.status === translateNow("reportCenter.readyToSend")
                 ).length
               }/${packDeliverySubscriptions.length}`,
           workflow: deliveryWorkflow,
@@ -521,7 +524,7 @@ export function useReportsWorkspacePack({
         {
           workspace: workspace.title,
           persona: workspace.persona,
-          status: packOperations?.status ?? "Not available",
+          status: packOperations?.status ?? translateNow("firm.notAvailable"),
           priorityGap: packPriorityGapLabel,
           reportsReady: packOperations
             ? `${packOperations.readyReportCount}/${packOperations.reportCount}`
@@ -533,14 +536,14 @@ export function useReportsWorkspacePack({
             ? `${packOperations.readyDeliveryCount}/${packOperations.deliverySubscriptionCount}`
             : `${
                 packDeliverySubscriptions.filter(
-                  (subscription) => subscription.status === "Ready to send"
+                  (subscription) => subscription.status === translateNow("reportCenter.readyToSend")
                 ).length
               }/${packDeliverySubscriptions.length}`,
           amountAtRisk: `AED ${(packOperations?.amountAtRisk ?? packRuleAmountAtRisk).toFixed(2)}`,
           sharedContext: packSharedContextHref,
           gapWorkflow: packGapHref,
-          nextAction: packOperations?.nextAction.label ?? "Not available",
-          nextActionDetail: packOperations?.nextAction.detail ?? "Not available",
+          nextAction: packOperations?.nextAction.label ?? translateNow("firm.notAvailable"),
+          nextActionDetail: packOperations?.nextAction.detail ?? translateNow("firm.notAvailable"),
           nextActionWorkflow: packOperations?.nextAction.href ?? operationsWorkflow,
         },
       ],
@@ -560,15 +563,18 @@ export function useReportsWorkspacePack({
         { metric: "Prior period", value: comparisonPreviousLabel },
         {
           metric: "Pack status",
-          value: openPackSignals.length > 0 ? "Review before send" : "Ready to send",
+          value:
+            openPackSignals.length > 0
+              ? translateNow("reportCenter.reviewBeforeSend")
+              : translateNow("reportCenter.readyToSend"),
         },
         {
           metric: "Operations status",
-          value: packOperations?.status ?? "Not available",
+          value: packOperations?.status ?? translateNow("firm.notAvailable"),
         },
         {
           metric: "Operations next action",
-          value: packOperations?.nextAction.label ?? "Not available",
+          value: packOperations?.nextAction.label ?? translateNow("firm.notAvailable"),
         },
         { metric: "Workspace reports", value: workspace.reports.length },
         { metric: "Ready reports", value: workspace.readyReports },
@@ -580,12 +586,15 @@ export function useReportsWorkspacePack({
         { metric: "Pack templates", value: packTemplates.length },
         { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
         { metric: "Roadmap prerequisites", value: packRoadmap?.prerequisiteCount ?? 0 },
-        { metric: "Roadmap status", value: packRoadmap?.roadmapStatus ?? "Not available" },
+        {
+          metric: "Roadmap status",
+          value: packRoadmap?.roadmapStatus ?? translateNow("firm.notAvailable"),
+        },
         {
           metric: "Top roadmap priority",
           value: packRoadmap?.topPriorityReport
             ? `${packRoadmap.topPriorityReport.name} (${packRoadmap.topPriorityScore})`
-            : "Not available",
+            : translateNow("firm.notAvailable"),
         },
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
@@ -601,7 +610,7 @@ export function useReportsWorkspacePack({
           metric: "Automation health",
           value: packReadiness
             ? `${packReadiness.automationHealth.score}/100 - ${packReadiness.automationHealth.label}`
-            : "Not available",
+            : translateNow("firm.notAvailable"),
         },
         {
           metric: "Automation health review signals",
@@ -611,7 +620,7 @@ export function useReportsWorkspacePack({
           metric: "Automation health trend",
           value: packHealthTrend
             ? `${packHealthTrend.label} (${packHealthTrend.detail})`
-            : "Not available",
+            : translateNow("firm.notAvailable"),
         },
         { metric: "Open automation signals", value: openPackSignals.length },
         { metric: "Open work items", value: openPackWorkItemCount },
@@ -897,7 +906,7 @@ export function useReportsWorkspacePack({
         { metric: "Report bundle coverage", value: packRuleReportBundleCount },
         {
           metric: "Pack delivery status",
-          value: packReadiness?.status ?? "Not available",
+          value: packReadiness?.status ?? translateNow("firm.notAvailable"),
         },
         {
           metric: "Pack checks needing review",
@@ -1093,7 +1102,7 @@ export function useReportsWorkspacePack({
           typeof item.amount === "number"
             ? `${item.currency ?? "AED"} ${item.amount.toFixed(2)}`
             : "",
-        status: item.count > 0 ? "Review before send" : "Clear",
+        status: item.count > 0 ? translateNow("reportCenter.reviewBeforeSend") : "Clear",
         workflow:
           item.href ?? (item.tab ? reportsHref({ tab: item.tab, persona: workspace.persona }) : ""),
       })),

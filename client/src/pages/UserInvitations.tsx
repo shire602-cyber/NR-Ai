@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -62,6 +63,7 @@ const SSO_LABELS = {
 };
 
 export default function UserInvitations() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -96,7 +98,7 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation sent successfully" });
+      toast({ title: t["portal.inviteSent"] });
       setInviteDialogOpen(false);
     },
     onError: (error: any) => {
@@ -114,7 +116,7 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation revoked" });
+      toast({ title: t["portal.inviteRevoked"] });
     },
     onError: (error: any) => {
       toast({
@@ -131,7 +133,7 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation resent successfully" });
+      toast({ title: t["portal.inviteResent"] });
     },
     onError: (error: any) => {
       toast({
@@ -148,7 +150,7 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation deleted" });
+      toast({ title: t["portal.inviteDeleted"] });
     },
     onError: (error: any) => {
       toast({
@@ -214,7 +216,7 @@ export default function UserInvitations() {
   const copyInviteLink = (token: string) => {
     const link = `${window.location.origin}/register?invite=${token}`;
     navigator.clipboard.writeText(link);
-    toast({ title: "Invitation link copied to clipboard" });
+    toast({ title: t["portal.inviteLinkCopied"] });
   };
 
   if (isLoading) {
@@ -231,10 +233,10 @@ export default function UserInvitations() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
-        title="User Invitations"
+        eyebrow={t["pages.eyebrowAdmin"]}
+        title={t["portal.inviteTitle"]}
         testId="text-invitations-title"
-        description="Invite clients to access their portal"
+        description={t["portal.inviteSubtitle"]}
         actions={
           <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-send-invite">
             <Mail className="w-4 h-4 me-2" />
@@ -266,7 +268,7 @@ export default function UserInvitations() {
               <T k="pageLabels.sendClientInvitation" />
             </DialogTitle>
             <DialogDescription>
-              Invite a new user to access the client portal. They will receive a link to register.
+              <T k="portal.inviteDescription" />
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSendInvitation} className="space-y-4">
@@ -288,7 +290,7 @@ export default function UserInvitations() {
                 onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}
               >
                 <SelectTrigger data-testid="select-invite-company">
-                  <SelectValue placeholder="Select a client company" />
+                  <SelectValue placeholder={t["portal.inviteSelectCompany"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">
@@ -309,7 +311,7 @@ export default function UserInvitations() {
               <Label htmlFor="userType">User Type *</Label>
               <Select name="userType" defaultValue="client">
                 <SelectTrigger data-testid="select-invite-usertype">
-                  <SelectValue placeholder="Select user type" />
+                  <SelectValue placeholder={t["portal.inviteSelectUserType"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="client">Client (NR-managed portal access)</SelectItem>
@@ -327,7 +329,7 @@ export default function UserInvitations() {
               </Label>
               <Select name="role" defaultValue="client">
                 <SelectTrigger data-testid="select-invite-role">
-                  <SelectValue placeholder="Select access level" />
+                  <SelectValue placeholder={t["portal.inviteSelectAccess"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="client">Standard (view their company only)</SelectItem>
@@ -345,7 +347,9 @@ export default function UserInvitations() {
                 data-testid="button-submit-invite"
               >
                 <Send className="w-4 h-4 me-2" />
-                {createInvitationMutation.isPending ? "Sending..." : "Send Invitation"}
+                {createInvitationMutation.isPending
+                  ? t["portal.inviteSending"]
+                  : t["pageLabels.sendInvitation"]}
               </Button>
             </DialogFooter>
           </form>
@@ -392,7 +396,7 @@ export default function UserInvitations() {
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by email..."
+                  placeholder={t["portal.inviteSearchPlaceholder"]}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="ps-10"
@@ -401,7 +405,7 @@ export default function UserInvitations() {
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-40" data-testid="select-filter-status">
-                  <SelectValue placeholder="Filter by status" />
+                  <SelectValue placeholder={t["portal.inviteFilterStatus"]} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -553,8 +557,8 @@ export default function UserInvitations() {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {searchTerm || statusFilter !== "all"
-                        ? "No invitations match your filters"
-                        : "No invitations sent yet"}
+                        ? t["portal.inviteNoMatches"]
+                        : t["portal.inviteNoneYet"]}
                     </TableCell>
                   </TableRow>
                 )}

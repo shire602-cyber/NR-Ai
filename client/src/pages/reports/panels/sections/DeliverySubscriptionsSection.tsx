@@ -34,7 +34,7 @@ import {
   triggerSeverityMeta,
 } from "../../shared";
 import { useReportsPageContext } from "../../context";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { localizeDeliverySubscriptionTitle } from "@/lib/notification-display";
 
 export function DeliverySubscriptionsSection() {
@@ -91,7 +91,7 @@ export function DeliverySubscriptionsSection() {
           <Badge
             variant={
               visibleReportDeliverySubscriptions.some(
-                (subscription) => subscription.status !== "Ready to send"
+                (subscription) => subscription.status !== translateNow("reportCenter.readyToSend")
               )
                 ? "warning"
                 : "success"
@@ -505,7 +505,9 @@ export function DeliverySubscriptionsSection() {
                     </div>
                     <Badge variant="outline">{run.workspaceLabel}</Badge>
                   </div>
-                  <div className="mt-2 font-medium text-foreground">{subscriptionTitle(run.subscriptionTitle)}</div>
+                  <div className="mt-2 font-medium text-foreground">
+                    {subscriptionTitle(run.subscriptionTitle)}
+                  </div>
                   <div className="mt-1 text-muted-foreground">
                     Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
                     {run.readyReportCount}/{run.reportCount} reports - {run.channel}

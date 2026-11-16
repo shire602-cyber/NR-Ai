@@ -1138,6 +1138,21 @@ export function formatMessage(template: string, values: Record<string, string | 
   );
 }
 
+/**
+ * Translate a catalog key outside React (model/helper code that cannot call hooks). Reads the
+ * current locale from the store; callers that memoise the result must remount when the locale or
+ * catalogs change (see the Reports page shell, which keys on `useCatalogRevision`).
+ */
+export function translateNow(key: string): string {
+  const { locale } = useI18n.getState();
+  return t[locale][key] ?? t.en[key] ?? key;
+}
+
+/** Bumps whenever namespace catalogs finish loading; use as a React `key` to refresh memoised copy. */
+export function useCatalogRevision(): number {
+  return useCatalogVersion((s) => s.version);
+}
+
 export function useTranslation() {
   const { locale } = useI18n();
   // Subscribing re-renders the caller once a lazily loaded catalog lands.

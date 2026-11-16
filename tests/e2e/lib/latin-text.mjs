@@ -20,6 +20,7 @@ export const BRAND_ALLOWLIST = [
   "NR",
   "NRA",
   "Stripe",
+  "Resend",
   "Shopify",
   "Google",
   "Google Sheets",

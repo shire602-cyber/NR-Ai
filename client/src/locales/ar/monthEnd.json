@@ -30,5 +30,12 @@
   "monthEnd.postClosingEntry": "ترحيل قيد إقفال نهاية السنة إلى الأرباح المحتجزة",
   "monthEnd.lockTypeSoft": "مرن",
   "monthEnd.lockTypeHard": "صارم",
-  "monthEnd.error": "حدث خطأ ما"
+  "monthEnd.error": "حدث خطأ ما",
+  "monthEnd.readyToClose": "جاهز للإقفال",
+  "monthEnd.notReady": "غير جاهز",
+  "monthEnd.periodLabel": "الفترة:",
+  "monthEnd.itemsCompleteFor": "اكتمل {done}/{total} من البنود لفترة {period}",
+  "monthEnd.remainingCount": "{count} متبقٍ",
+  "monthEnd.runValidation": "تشغيل التحقق",
+  "monthEnd.runValidationHint": "اضغط على \"تشغيل التحقق\" للحصول على تقييم جاهزية مدعوم بالذكاء الاصطناعي."
 }

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import {
   DASHBOARD_PRESETS,
@@ -16,6 +17,7 @@ interface PeriodSelectorProps {
 }
 
 export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps) {
+  const { t } = useTranslation();
   const ar = locale === "ar";
   return (
     <div
@@ -68,7 +70,7 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
           />
           {!isCompleteChoice(choice) && (
             <span className="text-xs text-muted-foreground">
-              {ar ? "اختر تاريخ بداية ونهاية صحيحين" : "Pick a valid start and end date"}
+              {t["dashboard.periodPickValidDates"]}
             </span>
           )}
         </div>

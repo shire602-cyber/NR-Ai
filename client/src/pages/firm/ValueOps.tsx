@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -298,6 +299,7 @@ function MetricCard({
 }
 
 export default function ValueOps() {
+  const { t } = useTranslation();
   const [location, navigate] = useLocation();
   const [selectedPack, setSelectedPack] = useState<{
     companyId: string;
@@ -364,9 +366,9 @@ export default function ValueOps() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Value Ops"
-        description="NRA-wide cash, compliance, close, review, and client reporting queue."
+        eyebrow={t["firm.firmLabel"]}
+        title={t["firm.valueOpsTitle"]}
+        description={t["firm.valueOpsDescription"]}
         actions={
           <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
             <Gauge className="me-2 h-4 w-4" />
@@ -377,22 +379,22 @@ export default function ValueOps() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Cash at risk"
+          title={t["firm.valueOpsCashAtRisk"]}
           value={formatAed(data.summary.cashAtRisk)}
           icon={Banknote}
         />
         <MetricCard
-          title="Penalty-risk clients"
+          title={t["firm.valueOpsPenaltyRiskClients"]}
           value={`${data.summary.penaltyRiskClients}`}
           icon={AlertTriangle}
         />
         <MetricCard
-          title="Reviewer queue"
+          title={t["firm.valueOpsReviewerQueue"]}
           value={`${data.summary.reviewerQueueItems}`}
           icon={Bot}
         />
         <MetricCard
-          title="NRA service AR"
+          title={t["firm.valueOpsServiceAr"]}
           value={formatAed(data.summary.nraServiceAr)}
           icon={BriefcaseBusiness}
         />
@@ -433,7 +435,7 @@ export default function ValueOps() {
                       <span>{formatAed(opportunity.impactAed)}</span>
                     </div>
                     <div className="min-h-5 truncate text-xs text-muted-foreground">
-                      {opportunity.topClient ?? "No priority client"}
+                      {opportunity.topClient ?? t["firm.valueOpsNoPriorityClient"]}
                     </div>
                   </CardContent>
                 </Card>
@@ -619,17 +621,28 @@ export default function ValueOps() {
                       <TableCell>
                         <div className="font-medium">{client.companyName}</div>
                         <div className="text-xs text-muted-foreground">
-                          {client.trn ?? "No TRN"}
+                          {client.trn ?? t["firm.valueOpsNoTrn"]}
                         </div>
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Defense" value={client.scores.auditDefense} inverse />
+                        <ScoreBar
+                          label={t["firm.valueOpsScoreDefense"]}
+                          value={client.scores.auditDefense}
+                          inverse
+                        />
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Readiness" value={client.scores.closeReadiness} inverse />
+                        <ScoreBar
+                          label={t["components.srv.firm.label.readiness"]}
+                          value={client.scores.closeReadiness}
+                          inverse
+                        />
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Compliance" value={client.scores.complianceRisk} />
+                        <ScoreBar
+                          label={t["pageLabels.compliance"]}
+                          value={client.scores.complianceRisk}
+                        />
                       </TableCell>
                       <TableCell data-numeric>{formatAed(client.money.overdueAr)}</TableCell>
                       <TableCell data-numeric>{client.workload.reviewerQueueItems}</TableCell>
@@ -677,7 +690,9 @@ export default function ValueOps() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              {selectedPack?.type === "audit" ? "Audit Defense Pack" : "Monthly CFO Pack"}
+              {selectedPack?.type === "audit"
+                ? t["firm.valueOpsAuditPack"]
+                : t["firm.valueOpsCfoPack"]}
               {selectedClient ? ` · ${selectedClient.companyName}` : ""}
             </DialogTitle>
           </DialogHeader>
@@ -695,6 +710,7 @@ export default function ValueOps() {
 }
 
 function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boolean }) {
+  const { t } = useTranslation();
   if (loading)
     return (
       <div className="py-10 text-center text-muted-foreground">
@@ -715,7 +731,7 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
           <div className="text-xs text-muted-foreground">
             <T k="pages.vatStatus" />
           </div>
-          <div className="font-medium">{pack.vatReturn?.status ?? "No return"}</div>
+          <div className="font-medium">{pack.vatReturn?.status ?? t["firm.valueOpsNoReturn"]}</div>
         </div>
         <div className="rounded-md border p-3">
           <div className="text-xs text-muted-foreground">

@@ -1,6 +1,7 @@
 // Report packs, roadmap, product-depth coverage, automation rules/operations/impact and accountant handoff previews.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import type { BadgeProps } from "@/components/ui/badge";
+import { translateNow } from "@/lib/i18n";
 import type { ReportCatalogDiscovery } from "@/lib/reportCatalogApi";
 import {
   type ReportCatalogItem,
@@ -106,7 +107,10 @@ export function useReportsAutomationOverview({
         openSignalCount: openSignals.length,
         openWorkItemCount,
         amountAtRisk,
-        status: openSignals.length > 0 ? "Review before send" : "Ready to send",
+        status:
+          openSignals.length > 0
+            ? translateNow("reportCenter.reviewBeforeSend")
+            : translateNow("reportCenter.readyToSend"),
       };
     });
   }, [automationQueue, workspaceSummaries]);
@@ -142,7 +146,7 @@ export function useReportsAutomationOverview({
         openWorkItemCount,
         amountAtRisk,
         topSignals: automatedSignals.slice(0, 4),
-        status: openSignals.length > 0 ? "Needs review" : "Ready",
+        status: openSignals.length > 0 ? translateNow("reportCenter.needsReview") : "Ready",
       };
     });
   }, [automationQueue, workspaceSummaries]);
@@ -192,7 +196,10 @@ export function useReportsAutomationOverview({
         plannedReportCount: workspace.plannedReports.length,
         prerequisiteCount: workspace.plannedReports.filter((report) => report.roadmapPrerequisites)
           .length,
-        roadmapStatus: workspace.plannedReports.length > 0 ? "Roadmap gaps" : "Coverage complete",
+        roadmapStatus:
+          workspace.plannedReports.length > 0
+            ? translateNow("reportCenter.roadmapGaps")
+            : "Coverage complete",
         nextWorkflow:
           nextReports.length > 0
             ? (reportPersonaHref(nextReports[0], workspace.persona) ??
@@ -390,7 +397,10 @@ export function useReportsAutomationOverview({
         checks,
         reviewCount,
         automationHealth,
-        status: reviewCount > 0 ? "Review before send" : "Ready to send",
+        status:
+          reviewCount > 0
+            ? translateNow("reportCenter.reviewBeforeSend")
+            : translateNow("reportCenter.readyToSend"),
       };
     });
   }, [comparisonRows, personaReportRecommendations, reportPackAutomationQueue]);
@@ -461,7 +471,7 @@ export function useReportsAutomationOverview({
             ? "Review before auto-send"
             : liveReportCount === linkedReports.length
               ? "Ready to auto-send"
-              : "Setup needed";
+              : translateNow("reportCenter.setupNeeded");
 
         return {
           id: `${workspace.persona}-${playbook.id}`,
@@ -494,7 +504,7 @@ export function useReportsAutomationOverview({
     );
   }, [personaFilter, reportAutomationRules]);
   const reportAutomationRuleReviewCount = visibleReportAutomationRules.filter(
-    (rule) => rule.openWorkItemCount > 0 || rule.status === "Setup needed"
+    (rule) => rule.openWorkItemCount > 0 || rule.status === translateNow("reportCenter.setupNeeded")
   ).length;
   const reportAutomationCommandCenter = useMemo(() => {
     const readyRuleCount = visibleReportAutomationRules.filter(
@@ -504,7 +514,7 @@ export function useReportsAutomationOverview({
       (rule) => rule.openWorkItemCount > 0
     ).length;
     const setupRuleCount = visibleReportAutomationRules.filter(
-      (rule) => rule.status === "Setup needed"
+      (rule) => rule.status === translateNow("reportCenter.setupNeeded")
     ).length;
     const openWorkItemCount = visibleReportAutomationRules.reduce(
       (sum, rule) => sum + rule.openWorkItemCount,
@@ -532,7 +542,10 @@ export function useReportsAutomationOverview({
       (item) => item.reviewCount > 0
     ).length;
     const topReviewRules = visibleReportAutomationRules
-      .filter((rule) => rule.openWorkItemCount > 0 || rule.status === "Setup needed")
+      .filter(
+        (rule) =>
+          rule.openWorkItemCount > 0 || rule.status === translateNow("reportCenter.setupNeeded")
+      )
       .sort(
         (a, b) =>
           b.openWorkItemCount - a.openWorkItemCount ||
@@ -579,13 +592,13 @@ export function useReportsAutomationOverview({
         (subscription) => !subscription.enabled
       ).length;
       const setupDeliveryCount = deliverySubscriptions.filter(
-        (subscription) => subscription.status === "Setup needed"
+        (subscription) => subscription.status === translateNow("reportCenter.setupNeeded")
       ).length;
       const readyDeliveryCount = deliverySubscriptions.filter(
-        (subscription) => subscription.status === "Ready to send"
+        (subscription) => subscription.status === translateNow("reportCenter.readyToSend")
       ).length;
       const reviewDeliveryCount = deliverySubscriptions.filter(
-        (subscription) => subscription.status === "Review before send"
+        (subscription) => subscription.status === translateNow("reportCenter.reviewBeforeSend")
       ).length;
       const readyRuleCount = automationRules.filter(
         (rule) => rule.status === "Ready to auto-send"
@@ -660,9 +673,9 @@ export function useReportsAutomationOverview({
 
       const status =
         failedRunCount > 0
-          ? "Delivery recovery"
+          ? translateNow("reportCenter.deliveryRecovery")
           : deliveryIssueCount > 0 || openWorkItemCount > 0 || comparisonWarnings > 0
-            ? "Needs review"
+            ? translateNow("reportCenter.needsReview")
             : "Ready to automate";
 
       return {
@@ -688,7 +701,7 @@ export function useReportsAutomationOverview({
         statusVariant:
           status === "Ready to automate"
             ? ("success" as const)
-            : status === "Delivery recovery"
+            : status === translateNow("reportCenter.deliveryRecovery")
               ? ("destructive" as const)
               : ("warning" as const),
       };

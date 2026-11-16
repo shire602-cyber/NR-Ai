@@ -493,7 +493,7 @@ export function AppSidebar() {
                 Muhasib<span className="text-sidebar-primary">.ai</span>
               </div>
               <div className="text-[11.5px] text-sidebar-muted leading-tight">
-                {t.smartAccounting ?? "Smart Accounting"}
+                {t.smartAccounting}
               </div>
             </div>
           </div>
@@ -604,7 +604,7 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground hover:text-danger hover:bg-danger/10 transition-colors duration-fast"
         >
           <LogOut className="w-4 h-4 text-sidebar-muted rtl:-scale-x-100" />
-          <span className="text-[13px]">{t.logout ?? "Sign out"}</span>
+          <span className="text-[13px]">{t.logout}</span>
         </button>
       </SidebarFooter>
     </Sidebar>

@@ -238,7 +238,7 @@ export default function PayrollTab() {
         <CardHeader>
           <CardTitle>WPS / SIF readiness</CardTitle>
           <CardDescription>
-            Generated SIF files and approved payroll runs ready for UAE WPS processing.
+            <T k="reportCenter.payrollWpsHint" />
           </CardDescription>
         </CardHeader>
         <CardContent>

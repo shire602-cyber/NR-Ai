@@ -1369,7 +1369,11 @@ export default function Receipts() {
 
   const handleExportExcel = () => {
     if (!filteredReceipts.length) {
-      toast({ variant: "destructive", title: "No data", description: "No expenses to export" });
+      toast({
+        variant: "destructive",
+        title: t["pages.receiptsNoData"],
+        description: t["pages.receiptsNoExpensesExport"],
+      });
       return;
     }
 
@@ -1387,7 +1391,11 @@ export default function Receipts() {
 
   const handleExportGoogleSheets = async () => {
     if (!companyId || !filteredReceipts.length) {
-      toast({ variant: "destructive", title: "No data", description: "No expenses to export" });
+      toast({
+        variant: "destructive",
+        title: t["pages.receiptsNoData"],
+        description: t["pages.receiptsNoExpensesExport"],
+      });
       return;
     }
 
@@ -1462,7 +1470,11 @@ export default function Receipts() {
   // in-flight scans and historical data.
   const handleDownloadReceiptsExcel = async () => {
     if (!companyId || !filteredReceipts.length) {
-      toast({ variant: "destructive", title: "No data", description: "No expenses to export" });
+      toast({
+        variant: "destructive",
+        title: t["pages.receiptsNoData"],
+        description: t["pages.receiptsNoExpensesExport"],
+      });
       return;
     }
     setIsExporting(true);
@@ -1490,9 +1502,7 @@ export default function Receipts() {
       <PageHeader
         eyebrow="Purchases"
         title={t.receiptScanner}
-        description={
-          (t as any).receiptScannerSubtitle ?? "Upload receipts for AI extraction or enter manually"
-        }
+        description={(t as any).receiptScannerSubtitle}
         actions={
           <Button
             onClick={() => setManualExpenseDialogOpen(true)}
@@ -1702,7 +1712,7 @@ export default function Receipts() {
                         setImagePreview({ src: receipt.preview, merchant: receipt.data?.merchant })
                       }
                       className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      aria-label="Preview source image"
+                      aria-label={t["pages.receiptsPreviewSource"]}
                       data-testid={`ocr-thumbnail-${index}`}
                     >
                       <img
@@ -1896,7 +1906,7 @@ export default function Receipts() {
                             onValueChange={(value) => updateReceiptData(index, { category: value })}
                           >
                             <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
-                              <SelectValue placeholder="Category" />
+                              <SelectValue placeholder={t["forms.claim.category"]} />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Office Supplies">
@@ -2345,7 +2355,7 @@ export default function Receipts() {
             <DialogDescription>
               {imagePreview?.merchant
                 ? `Original scanned image for ${imagePreview.merchant}`
-                : "Original scanned image"}
+                : t["pages.receiptsOriginalImage"]}
             </DialogDescription>
           </DialogHeader>
           {imagePreview && (
@@ -2519,7 +2529,7 @@ export default function Receipts() {
               <T k="pageLabels.similarTransactionsFound" />
             </DialogTitle>
             <DialogDescription>
-              We found similar transactions that might be duplicates. Review them before proceeding.
+              <T k="pages.receiptsDuplicateWarning" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -2652,7 +2662,9 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-create-account-submit"
               >
-                {createAccountMutation.isPending ? "Creating..." : "Create Account"}
+                {createAccountMutation.isPending
+                  ? t["pages.receiptsCreating"]
+                  : t["pages.receiptsCreateAccount"]}
               </Button>
             </div>
           </div>
@@ -2711,7 +2723,7 @@ export default function Receipts() {
               </div>
               <Select value={selectedExpenseAccount} onValueChange={setSelectedExpenseAccount}>
                 <SelectTrigger id="expense-account" data-testid="select-expense-account">
-                  <SelectValue placeholder="Select expense account" />
+                  <SelectValue placeholder={t["pages.receiptsSelectExpenseAccount"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts
@@ -2746,7 +2758,7 @@ export default function Receipts() {
               </div>
               <Select value={selectedPaymentAccount} onValueChange={setSelectedPaymentAccount}>
                 <SelectTrigger id="payment-account" data-testid="select-payment-account">
-                  <SelectValue placeholder="Select payment account" />
+                  <SelectValue placeholder={t["pages.receiptsSelectPaymentAccount"]} />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts
@@ -2818,7 +2830,9 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-submit-post-expense"
               >
-                {postExpenseMutation.isPending ? "Posting..." : "Post to Journal"}
+                {postExpenseMutation.isPending
+                  ? t["pages.receiptsPosting"]
+                  : t["pages.receiptsPostToJournal"]}
               </Button>
             </div>
           </div>

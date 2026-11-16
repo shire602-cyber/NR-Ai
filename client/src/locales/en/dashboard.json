@@ -87,5 +87,20 @@
   "dashboard.colSelected": "Selected period",
   "dashboard.colPrior": "Prior period",
   "dashboard.colPriorYear": "Same period last year",
-  "dashboard.periodComparisonNote": "Change is shown against each comparison column. Figures come from the posted ledger."
+  "dashboard.periodComparisonNote": "Change is shown against each comparison column. Figures come from the posted ledger.",
+  "dashboard.modelNetProfit": "Net Profit",
+  "dashboard.modelThisQuarter": "This quarter",
+  "dashboard.modelYearToDate": "Year to date",
+  "dashboard.modelCustomPeriod": "Custom period",
+  "dashboard.periodPickValidDates": "Pick a valid start and end date",
+  "dashboard.workspaceSwitchHint": "Switch the daily report workspace for owner, solo entrepreneur, freelancer, or accountant workflows.",
+  "dashboard.workspaceSuitesHint": "Role-based bundles that connect reports, comparisons, saved views, packs, and autopilots for this workspace.",
+  "dashboard.workspaceOpenSetup": "Open setup",
+  "dashboard.workspaceViewsHint": "Preset views with date range, comparison period, basis, currency, dimension, export format, and automation trigger for this workspace.",
+  "dashboard.workspaceHealthHint": "Blends pack readiness, automation lanes, and current-vs-prior movement for the selected workspace.",
+  "dashboard.workspaceSyncingCatalog": "Syncing catalog",
+  "dashboard.modelNeedsAcknowledgement": "Needs acknowledgement",
+  "dashboard.modelRecoverFailedDelivery": "Recover failed delivery",
+  "dashboard.modelReviewHandoffGaps": "Review handoff gaps",
+  "dashboard.modelThisReportDelivery": "This report delivery"
 }

@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { dateFnsOptions } from "@/lib/date-locale";
 import { useMemo, useState } from "react";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -345,16 +346,12 @@ export default function TaskCenter() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
-        title={locale === "ar" ? "مركز المهام" : "Task Center"}
-        description={
-          locale === "ar"
-            ? "إدارة مهام الامتثال والتذكيرات"
-            : "Manage compliance tasks and reminders"
-        }
+        title={t["pages.taskCenterTaskCenter"]}
+        description={t["pages.taskCenterManageComplianceTasksAndReminders"]}
         actions={
           <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
             <Plus className="w-4 h-4 me-2" />
-            {locale === "ar" ? "مهمة جديدة" : "New Task"}
+            {t["pages.taskCenterNewTask"]}
           </Button>
         }
       />
@@ -362,9 +359,7 @@ export default function TaskCenter() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي المهام" : "Total Tasks"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{t["pages.taskCenterTotalTasks"]}</CardTitle>
             <ListTodo className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -441,9 +436,7 @@ export default function TaskCenter() {
                   <SelectValue placeholder={locale === "ar" ? "الفئة" : "Category"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">
-                    {locale === "ar" ? "جميع الفئات" : "All Categories"}
-                  </SelectItem>
+                  <SelectItem value="all">{t["pages.taskCenterAllCategories"]}</SelectItem>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {locale === "ar" ? cat.labelAr : cat.labelEn}
@@ -458,9 +451,9 @@ export default function TaskCenter() {
           {filteredTasks.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد مهام" : "No tasks found"}</p>
+              <p>{t["pages.taskCenterNoTasksFound"]}</p>
               <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
-                {locale === "ar" ? "إنشاء أول مهمة" : "Create your first task"}
+                {t["pages.taskCenterCreateYourFirstTask"]}
               </Button>
             </div>
           ) : (
@@ -529,7 +522,7 @@ export default function TaskCenter() {
                       <div className="text-end">
                         <div className="flex items-center gap-1 text-sm">
                           <Calendar className="w-3 h-3" />
-                          {format(parseISO(task.dueDate), "MMM d, yyyy")}
+                          {format(parseISO(task.dueDate), "MMM d, yyyy", dateFnsOptions(locale))}
                         </div>
                         {task.status !== "completed" && (
                           <Badge
@@ -597,11 +590,9 @@ export default function TaskCenter() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "مهمة جديدة" : "New Task"}</DialogTitle>
+            <DialogTitle>{t["pages.taskCenterNewTask"]}</DialogTitle>
             <DialogDescription>
-              {locale === "ar"
-                ? "إنشاء مهمة امتثال جديدة مع تذكير"
-                : "Create a new compliance task with reminder"}
+              {t["pages.taskCenterCreateANewComplianceTaskWith"]}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
@@ -611,7 +602,7 @@ export default function TaskCenter() {
                 <Input
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  placeholder="File Q1 VAT Return"
+                  placeholder={t["pages.taskCenterTitlePlaceholder"]}
                   data-testid="input-task-title"
                 />
               </div>
@@ -678,7 +669,7 @@ export default function TaskCenter() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ الاستحقاق" : "Due Date"} *</Label>
+                <Label>{t["pages.taskCenterDueDate"]} *</Label>
                 <Input
                   type="date"
                   value={newTask.dueDate}
@@ -687,7 +678,7 @@ export default function TaskCenter() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ التذكير" : "Reminder Date"}</Label>
+                <Label>{t["pages.taskCenterReminderDate"]}</Label>
                 <Input
                   type="date"
                   value={newTask.reminderDate}

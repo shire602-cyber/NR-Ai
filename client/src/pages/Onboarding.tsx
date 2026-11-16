@@ -84,26 +84,26 @@ const UAE_BANKS = [
 ];
 
 const UAE_EMIRATES = [
-  { value: "abu_dhabi", label: "Abu Dhabi" },
-  { value: "dubai", label: "Dubai" },
-  { value: "sharjah", label: "Sharjah" },
-  { value: "ajman", label: "Ajman" },
-  { value: "umm_al_quwain", label: "Umm Al Quwain" },
-  { value: "ras_al_khaimah", label: "Ras Al Khaimah" },
-  { value: "fujairah", label: "Fujairah" },
+  { value: "abu_dhabi", label: "invoices.emirate.abu_dhabi" },
+  { value: "dubai", label: "invoices.emirate.dubai" },
+  { value: "sharjah", label: "invoices.emirate.sharjah" },
+  { value: "ajman", label: "invoices.emirate.ajman" },
+  { value: "umm_al_quwain", label: "invoices.emirate.umm_al_quwain" },
+  { value: "ras_al_khaimah", label: "invoices.emirate.ras_al_khaimah" },
+  { value: "fujairah", label: "invoices.emirate.fujairah" },
 ];
 
 type Step = "welcome" | "company" | "accounts" | "bank" | "first-doc" | "complete";
 
 const STEPS: Step[] = ["welcome", "company", "accounts", "bank", "first-doc", "complete"];
 
-const STEP_LABELS: Record<Step, string> = {
-  welcome: "Welcome",
-  company: "Company Details",
-  accounts: "Chart of Accounts",
-  bank: "Bank Account",
-  "first-doc": "First Document",
-  complete: "Complete",
+const STEP_LABEL_KEYS: Record<Step, string> = {
+  welcome: "onboarding.stepLabelWelcome",
+  company: "onboarding.companyDetailsTitle",
+  accounts: "onboarding.step.accounts.title",
+  bank: "pageLabels.bankAccount",
+  "first-doc": "onboarding.stepLabelFirstDocument",
+  complete: "onboarding.stepLabelComplete",
 };
 
 function stepIndex(step: Step): number {
@@ -125,6 +125,7 @@ export default function Onboarding() {
 }
 
 function CustomerOnboarding() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -472,9 +473,12 @@ function CustomerOnboarding() {
         <div className="px-6 pt-6 max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-muted-foreground">
-              Step {stepIndex(currentStep) + 1} of {STEPS.length}
+              {formatMessage(t["onboarding.stepBadge"], {
+                current: stepIndex(currentStep) + 1,
+                total: STEPS.length,
+              })}
             </span>
-            <span className="text-sm text-muted-foreground">{STEP_LABELS[currentStep]}</span>
+            <span className="text-sm text-muted-foreground">{t[STEP_LABEL_KEYS[currentStep]]}</span>
           </div>
           <Progress value={progressPercent} className="h-1.5" />
           <div className="flex justify-between mt-2">
@@ -615,12 +619,11 @@ function WelcomeStep({
         </Badge>
         <h1 className="font-display text-[34px] md:text-[40px] leading-[1.05] tracking-tight">
           {companyName
-            ? `Hello, ${companyName}.`
+            ? formatMessage(tr["onboarding.helloCompany"], { name: companyName })
             : (tr.booksReadyTitle ?? "Books ready in 90 seconds.")}
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Your company name is all we need — the UAE chart of accounts, VAT setup, and invoicing are
-          configured automatically.
+          <T k="onboarding.expressIntro" />
         </p>
       </div>
 
@@ -628,7 +631,7 @@ function WelcomeStep({
       <Card className="max-w-md mx-auto text-left border-accent/30 shadow-lg">
         <CardContent className="p-5 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="express-name">{tr.companyNameLabel ?? "Company name"}</Label>
+            <Label htmlFor="express-name">{tr.companyNameLabel}</Label>
             <Input
               id="express-name"
               value={name}
@@ -651,7 +654,7 @@ function WelcomeStep({
                 <SelectContent>
                   {UAE_EMIRATES.map((e) => (
                     <SelectItem key={e.value} value={e.value}>
-                      {e.label}
+                      {t[e.label]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -688,18 +691,16 @@ function WelcomeStep({
           >
             {expressSaving ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />{" "}
-                {tr.settingUpBooks ?? "Setting up your books…"}
+                <RefreshCw className="w-4 h-4 animate-spin" /> {tr.settingUpBooks}
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4" /> {tr.setUpMyBooks ?? "Set up my books now"}
+                <Sparkles className="w-4 h-4" /> {tr.setUpMyBooks}
               </>
             )}
           </Button>
           <p className="text-[11.5px] text-muted-foreground text-center leading-relaxed">
-            Seeds a UAE-standard chart of accounts with VAT input/output accounts. You can add bank
-            details and your TRN any time in Settings.
+            <T k="onboarding.expressSeedNote" />
           </p>
         </CardContent>
       </Card>
@@ -711,7 +712,7 @@ function WelcomeStep({
           className="gap-2 text-muted-foreground hover:text-foreground"
           data-testid="onboarding-start"
         >
-          Prefer the guided tour? Take the 3-minute setup
+          <T k="onboarding.guidedTourPrompt" />
           <ArrowRight className="w-4 h-4" />
         </Button>
 
@@ -719,15 +720,19 @@ function WelcomeStep({
           {[
             {
               icon: Building2,
-              title: "Company Profile",
-              desc: "Add your TRN and business details",
+              title: t["onboarding.cardCompanyProfile"],
+              desc: t["onboarding.cardCompanyProfileDesc"],
             },
             {
               icon: BookOpen,
-              title: "Chart of Accounts",
-              desc: "UAE-standard accounts pre-configured",
+              title: t["onboarding.step.accounts.title"],
+              desc: t["onboarding.cardAccountsDesc"],
             },
-            { icon: Landmark, title: "Bank Account", desc: "Connect for easy reconciliation" },
+            {
+              icon: Landmark,
+              title: t["pageLabels.bankAccount"],
+              desc: t["onboarding.bankCardDesc"],
+            },
           ].map(({ icon: Icon, title, desc }) => (
             <Card key={title} className="border border-border/50">
               <CardContent className="p-4 space-y-2">
@@ -776,12 +781,13 @@ function CompanyStep({
   onRetry: () => void;
   saving: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-6">
       <StepHeader
         icon={Building2}
-        title="Company Details"
-        description="Add your official business information for UAE compliance."
+        title={t["onboarding.companyDetailsTitle"]}
+        description={t["onboarding.companyDetailsDescription"]}
       />
 
       {saveError && (
@@ -805,7 +811,7 @@ function CompanyStep({
               className="gap-2"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
-              {saving ? "Retrying…" : "Try again"}
+              {saving ? t["onboarding.retrying"] : t["einvoicing.retry"]}
             </Button>
           </div>
         </div>
@@ -820,7 +826,7 @@ function CompanyStep({
             <Input
               value={form.name}
               onChange={(e) => onChange({ name: e.target.value })}
-              placeholder="Acme Trading LLC"
+              placeholder={t["onboarding.companyNamePlaceholder"]}
               aria-invalid={!!fieldErrors.name}
               data-testid="onboarding-company-name"
             />
@@ -841,7 +847,7 @@ function CompanyStep({
               <SelectContent>
                 {UAE_EMIRATES.map((e) => (
                   <SelectItem key={e.value} value={e.value}>
-                    {e.label}
+                    {t[e.label]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -852,7 +858,7 @@ function CompanyStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>
-              TRN — Tax Registration Number
+              <T k="onboarding.trnLabel" />
               <span className="text-muted-foreground ml-1 text-xs">(optional, 15 digits)</span>
             </Label>
             <Input
@@ -891,7 +897,7 @@ function CompanyStep({
           <Input
             value={form.businessAddress}
             onChange={(e) => onChange({ businessAddress: e.target.value })}
-            placeholder="Office 401, Business Bay, Dubai, UAE"
+            placeholder={t["onboarding.addressPlaceholder"]}
             data-testid="onboarding-address"
           />
         </div>
@@ -929,7 +935,12 @@ function CompanyStep({
         </div>
       </div>
 
-      <StepNav onBack={onBack} onNext={onNext} nextLabel="Save & Continue" loading={saving} />
+      <StepNav
+        onBack={onBack}
+        onNext={onNext}
+        nextLabel={t["onboarding.saveContinue"]}
+        loading={saving}
+      />
     </div>
   );
 }
@@ -947,6 +958,7 @@ function AccountsStep({
   onNext: () => void;
   onBack: () => void;
 }) {
+  const { t } = useTranslation();
   const categories = [
     { label: "Assets", description: "Cash, receivables, inventory, fixed assets" },
     { label: "Liabilities", description: "Payables, VAT payable, loans" },
@@ -960,8 +972,8 @@ function AccountsStep({
     <div className="space-y-6">
       <StepHeader
         icon={BookOpen}
-        title="Chart of Accounts"
-        description="Your UAE-standard chart of accounts has been pre-configured and is ready to use."
+        title={t["onboarding.step.accounts.title"]}
+        description={t["onboarding.accountsReadyDescription"]}
       />
 
       <Card className="border-success/30 bg-success-subtle ">
@@ -1003,7 +1015,7 @@ function AccountsStep({
 
       {companyId && <GuidedSetupExtras companyId={companyId} />}
 
-      <StepNav onBack={onBack} onNext={onNext} nextLabel="Looks good, continue" />
+      <StepNav onBack={onBack} onNext={onNext} nextLabel={t["onboarding.looksGoodContinue"]} />
     </div>
   );
 }
@@ -1132,13 +1144,14 @@ function BankStep({
   onBack: () => void;
   saving: boolean;
 }) {
+  const { t } = useTranslation();
   if (existingAccounts.length > 0) {
     return (
       <div className="space-y-6">
         <StepHeader
           icon={Landmark}
-          title="Bank Account"
-          description="Your bank account is already connected for reconciliation."
+          title={t["pageLabels.bankAccount"]}
+          description={t["onboarding.bankConnectedDescription"]}
         />
         <Card className="border-success/30 bg-success-subtle ">
           <CardContent className="p-4 space-y-2">
@@ -1160,8 +1173,8 @@ function BankStep({
     <div className="space-y-6">
       <StepHeader
         icon={Landmark}
-        title="Bank Account"
-        description="Add your bank account to enable statement import and reconciliation."
+        title={t["pageLabels.bankAccount"]}
+        description={t["onboarding.bankAddDescription"]}
       />
 
       <div className="space-y-4">
@@ -1173,7 +1186,7 @@ function BankStep({
             <Input
               value={form.nameEn}
               onChange={(e) => onChange({ nameEn: e.target.value })}
-              placeholder="Emirates NBD Current"
+              placeholder={t["onboarding.bankNamePlaceholder"]}
               data-testid="onboarding-bank-name"
             />
           </div>
@@ -1181,7 +1194,7 @@ function BankStep({
             <Label>Bank</Label>
             <Select value={form.bankName} onValueChange={(v) => onChange({ bankName: v })}>
               <SelectTrigger data-testid="onboarding-bank-select">
-                <SelectValue placeholder="Select bank" />
+                <SelectValue placeholder={t["onboarding.selectBank"]} />
               </SelectTrigger>
               <SelectContent>
                 {UAE_BANKS.map((b) => (
@@ -1241,7 +1254,7 @@ function BankStep({
           className="flex-1 gap-2"
           data-testid="onboarding-save-bank"
         >
-          {saving ? "Saving…" : "Save & Continue"}
+          {saving ? "Saving…" : t["onboarding.saveContinue"]}
           <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
@@ -1260,6 +1273,7 @@ function FirstDocStep({
   onBack: () => void;
   completing: boolean;
 }) {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
 
   const options = [
@@ -1288,8 +1302,8 @@ function FirstDocStep({
     <div className="space-y-6">
       <StepHeader
         icon={FileText}
-        title="Create Your First Document"
-        description="Kick off your bookkeeping by creating an invoice or uploading an expense receipt."
+        title={t["onboarding.firstDocTitle"]}
+        description={t["onboarding.firstDocDescription"]}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1335,6 +1349,7 @@ function FirstDocStep({
 // ─── Step: Complete ─────────────────────────────────────────────────────────
 
 function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(
     () => getPreferredReportPersona() ?? "owner"
@@ -1381,7 +1396,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
     { icon: FileText, label: "Invoices", href: "/invoices" },
     { icon: Receipt, label: "Receipts", href: "/receipts" },
-    { icon: BookOpen, label: "Chart of Accounts", href: "/chart-of-accounts" },
+    { icon: BookOpen, label: t["onboarding.step.accounts.title"], href: "/chart-of-accounts" },
     { icon: Users, label: "Contacts", href: "/contacts" },
   ];
 

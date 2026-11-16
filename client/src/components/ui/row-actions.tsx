@@ -16,7 +16,7 @@ import { useTranslation } from "@/lib/i18n";
  * one ⋯ menu. Icons are muted (never coloured); destructive items live in the menu.
  *
  *   <RowActions menu={<><DropdownMenuItem …/>…</>}>
- *     <RowActionButton label="Edit" icon={Pencil} onClick={…} />
+ *     <RowActionButton label={t.edit} icon={Pencil} onClick={…} />
  *   </RowActions>
  */
 type RowActionButtonElement = React.ReactElement<{

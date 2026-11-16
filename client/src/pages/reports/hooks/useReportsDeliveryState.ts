@@ -1,5 +1,6 @@
 // Report delivery plans, runs, scheduler health, subscriptions, run timeline and recovery summary.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
+import { translateNow } from "@/lib/i18n";
 import {
   PersonaFilter,
   ReportDeliveryAutomationPreferenceResponse,
@@ -209,12 +210,12 @@ export function useReportsDeliveryState({
       const status = !enabled
         ? "Paused"
         : openWorkItemCount > 0
-          ? "Review before send"
+          ? translateNow("reportCenter.reviewBeforeSend")
           : (deliveryPlan?.status ?? "ready") === "setup"
-            ? "Setup needed"
+            ? translateNow("reportCenter.setupNeeded")
             : readyCount === reports.length
-              ? "Ready to send"
-              : "Setup needed";
+              ? translateNow("reportCenter.readyToSend")
+              : translateNow("reportCenter.setupNeeded");
 
       return [
         {
@@ -269,9 +270,9 @@ export function useReportsDeliveryState({
             decisionShortcut?.href ?? reportDeliverySubscriptionHref(subscription),
           status,
           statusVariant:
-            status === "Ready to send"
+            status === translateNow("reportCenter.readyToSend")
               ? ("success" as const)
-              : status === "Review before send"
+              : status === translateNow("reportCenter.reviewBeforeSend")
                 ? ("warning" as const)
                 : ("neutral" as const),
         },
@@ -445,7 +446,7 @@ export function useReportsDeliveryState({
       );
     const retryableSubscriptionCount = new Set(failedRuns.map((run) => run.subscriptionId)).size;
     const reviewSubscriptions = visibleReportDeliverySubscriptions.filter(
-      (subscription) => subscription.status !== "Ready to send"
+      (subscription) => subscription.status !== translateNow("reportCenter.readyToSend")
     );
     const latestFailedRun = failedRuns[0] ?? null;
     const firstReviewSubscription = reviewSubscriptions[0] ?? null;
@@ -488,11 +489,12 @@ export function useReportsDeliveryState({
     const nextAction = reportDeliveryRecoverySummary.nextAction;
     const reviewSubscription =
       visibleReportDeliverySubscriptions.find(
-        (subscription) => subscription.status !== "Ready to send"
+        (subscription) => subscription.status !== translateNow("reportCenter.readyToSend")
       ) ?? null;
     const queueSubscription =
       visibleReportDeliverySubscriptions.find(
-        (subscription) => subscription.enabled && subscription.status === "Ready to send"
+        (subscription) =>
+          subscription.enabled && subscription.status === translateNow("reportCenter.readyToSend")
       ) ??
       visibleReportDeliverySubscriptions.find((subscription) => subscription.enabled) ??
       null;

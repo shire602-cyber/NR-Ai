@@ -81,8 +81,8 @@ export default function VatTab() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   {(vatSummary?.netVATPayable ?? 0) >= 0
-                    ? "Amount to be paid to the Federal Tax Authority"
-                    : "Amount to be refunded by the Federal Tax Authority"}
+                    ? t["reportCenter.vatPayableToFta"]
+                    : t["reportCenter.vatRefundFromFta"]}
                 </p>
               </div>
             </div>

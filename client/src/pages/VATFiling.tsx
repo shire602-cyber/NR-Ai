@@ -836,25 +836,25 @@ export default function VATFiling() {
             : "Prepare VAT 201 totals, review the worksheet evidence, and export filing support for the official channel."
         }
         backHref="/reports"
-        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
+        backLabel={t["compliance.vatFilingBackToReports"]}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline" size="sm" data-testid="button-vat-refund-support">
               <Link href={evidenceSectionHref("refund-pack-export")}>
                 <FileText className="w-4 h-4 me-2" />
-                {locale === "ar" ? "حزمة دعم الاسترداد" : "Refund support"}
+                {t["compliance.vatFilingRefundSupport"]}
               </Link>
             </Button>
             {canGenerateVatReturn ? (
               <Button onClick={handleCreateReturn} data-testid="button-create-return">
                 <Calculator className="w-4 h-4 me-2" />
-                {locale === "ar" ? "إنشاء مسودة رسمية" : "New VAT draft"}
+                {t["compliance.vatFilingNewVatDraft"]}
               </Button>
             ) : (
               <Button asChild data-testid="button-add-trn-header">
                 <Link href="/company-profile">
                   <AlertTriangle className="w-4 h-4 me-2" />
-                  {locale === "ar" ? "إضافة رقم التسجيل" : "Add TRN"}
+                  {t["compliance.vatFilingAddTrn"]}
                 </Link>
               </Button>
             )}
@@ -869,9 +869,7 @@ export default function VATFiling() {
               <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium text-warning-subtle-foreground ">
-                  {locale === "ar"
-                    ? "رقم التسجيل الضريبي غير مكتمل"
-                    : "Tax Registration Number Missing"}
+                  {t["compliance.vatFilingTaxRegistrationNumberMissing"]}
                 </p>
                 <p className="text-sm text-warning ">
                   {locale === "ar"
@@ -880,7 +878,7 @@ export default function VATFiling() {
                 </p>
                 <Button asChild size="sm" className="mt-3">
                   <Link href="/company-profile" data-testid="link-add-trn-warning">
-                    {locale === "ar" ? "فتح إعدادات الشركة" : "Open Company Profile"}
+                    {t["compliance.vatFilingOpenCompanyProfile"]}
                   </Link>
                 </Button>
               </div>
@@ -896,7 +894,7 @@ export default function VATFiling() {
           <div className="p-6 lg:p-7">
             <div className="flex items-center gap-2 text-caption font-semibold text-accent">
               <span aria-hidden className="inline-block h-px w-5 bg-accent/60" />
-              {locale === "ar" ? "فترة التقديم الحالية" : "Current filing period"}
+              {t["compliance.vatFilingCurrentFilingPeriod"]}
             </div>
             <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
@@ -912,9 +910,7 @@ export default function VATFiling() {
                   ? locale === "ar"
                     ? "استرداد ضريبي مستحق"
                     : "VAT refund due"
-                  : locale === "ar"
-                    ? "صافي ضريبة القيمة المضافة المستحقة"
-                    : "Net VAT payable"}
+                  : t["compliance.vatFilingNetVatPayable"]}
               </p>
               <p
                 className={`mt-1 text-display font-semibold leading-none tracking-tight tabular-nums ${
@@ -928,20 +924,18 @@ export default function VATFiling() {
               >
                 {currentFiling.hasReturn
                   ? formatCurrency(Math.abs(currentFiling.net))
-                  : locale === "ar"
-                    ? "لم تُحتسب بعد"
-                    : "Not yet calculated"}
+                  : t["compliance.vatFilingNotYetCalculated"]}
               </p>
               {currentFiling.hasReturn && (
                 <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-small text-muted-foreground tabular-nums">
                   <span>
-                    {locale === "ar" ? "المخرجات" : "Output VAT"}:{" "}
+                    {t["compliance.vatFilingOutputVat"]}:{" "}
                     <span className="font-medium text-foreground">
                       <Money amount={currentFiling.output} />
                     </span>
                   </span>
                   <span>
-                    {locale === "ar" ? "المدخلات" : "Input VAT"}:{" "}
+                    {t["compliance.vatFilingInputVat"]}:{" "}
                     <span className="font-medium text-foreground">
                       <Money amount={currentFiling.input} />
                     </span>
@@ -958,7 +952,7 @@ export default function VATFiling() {
                     data-testid="button-hero-view-return"
                   >
                     <Eye className="me-2 h-4 w-4" />
-                    {locale === "ar" ? "عرض الإقرار" : "Review return"}
+                    {t["compliance.vatFilingReviewReturn"]}
                   </Button>
                   {(currentFiling.status === "draft" ||
                     currentFiling.status === "pending_review") && (
@@ -975,19 +969,19 @@ export default function VATFiling() {
               ) : canGenerateVatReturn ? (
                 <Button onClick={handleCreateReturn} data-testid="button-hero-generate">
                   <Calculator className="me-2 h-4 w-4" />
-                  {locale === "ar" ? "احتساب الإقرار" : "Generate return"}
+                  {t["compliance.vatFilingGenerateReturn"]}
                 </Button>
               ) : (
                 <Button asChild>
                   <Link href="/company-profile">
                     <AlertTriangle className="me-2 h-4 w-4" />
-                    {locale === "ar" ? "إضافة رقم التسجيل" : "Add TRN"}
+                    {t["compliance.vatFilingAddTrn"]}
                   </Link>
                 </Button>
               )}
               <Button asChild variant="ghost" size="sm" data-testid="button-vat-proof-trail">
                 <Link href={evidenceSectionHref("proof-drilldown")}>
-                  {locale === "ar" ? "عرض الأدلة" : "View proof"}
+                  {t["compliance.vatFilingViewProof"]}
                 </Link>
               </Button>
             </div>
@@ -996,7 +990,7 @@ export default function VATFiling() {
           {/* Right: due-date countdown */}
           <div className="flex flex-col justify-center gap-1 border-t border-card-border bg-muted/30 p-6 lg:border-s lg:border-t-0 lg:p-7">
             <p className="text-caption font-semibold text-muted-foreground">
-              {locale === "ar" ? "آخر موعد للتقديم" : "Filing deadline"}
+              {t["compliance.vatFilingFilingDeadline"]}
             </p>
             <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
               {format(currentFiling.dueDate, "d MMMM yyyy", dfOpts)}
@@ -1015,9 +1009,7 @@ export default function VATFiling() {
                     ? `متأخر بـ ${Math.abs(d)} يوم`
                     : `Overdue by ${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"}`
                   : d === 0
-                    ? locale === "ar"
-                      ? "مستحق اليوم"
-                      : "Due today"
+                    ? t["compliance.vatFilingDueToday"]
                     : locale === "ar"
                       ? `باقٍ ${d} يوم`
                       : `Due in ${d} day${d === 1 ? "" : "s"}`;
@@ -1122,9 +1114,7 @@ export default function VATFiling() {
                   {
                     label:
                       stats.totalPayable >= 0
-                        ? locale === "ar"
-                          ? "إجمالي المستحق"
-                          : "Total payable"
+                        ? t["compliance.vatFilingTotalPayable"]
                         : locale === "ar"
                           ? "إجمالي الاسترداد"
                           : "Total refundable",
@@ -1149,9 +1139,7 @@ export default function VATFiling() {
             <CardHeader>
               <CardTitle>{locale === "ar" ? "سجل الإقرارات" : "VAT Returns History"}</CardTitle>
               <CardDescription>
-                {locale === "ar"
-                  ? "جميع إقرارات ضريبة القيمة المضافة المسجلة"
-                  : "All your VAT return submissions and drafts"}
+                {t["compliance.vatFilingAllYourVatReturnSubmissionsAnd"]}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1272,16 +1260,10 @@ export default function VATFiling() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
-                          <TableHead>{locale === "ar" ? "تاريخ الاستحقاق" : "Due Date"}</TableHead>
-                          <TableHead data-numeric>
-                            {locale === "ar" ? "ضريبة المخرجات" : "Output Tax"}
-                          </TableHead>
-                          <TableHead data-numeric>
-                            {locale === "ar" ? "ضريبة المدخلات" : "Input Tax"}
-                          </TableHead>
-                          <TableHead data-numeric>
-                            {locale === "ar" ? "صافي الضريبة" : "Net Tax"}
-                          </TableHead>
+                          <TableHead>{t["compliance.vatFilingDueDate"]}</TableHead>
+                          <TableHead data-numeric>{t["compliance.vatFilingOutputTax"]}</TableHead>
+                          <TableHead data-numeric>{t["compliance.vatFilingInputTax"]}</TableHead>
+                          <TableHead data-numeric>{t["compliance.vatFilingNetTax"]}</TableHead>
                           <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
                           <TableHead data-numeric>
                             {locale === "ar" ? "الإجراءات" : "Actions"}
@@ -1345,7 +1327,7 @@ export default function VATFiling() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => handleExportPDF(vatReturn)}
-                                  title="Download PDF"
+                                  title={t["compliance.vatFilingDownloadPdf"]}
                                   data-testid={`button-export-pdf-${vatReturn.id}`}
                                 >
                                   <Download className="w-4 h-4" />
@@ -1354,7 +1336,7 @@ export default function VATFiling() {
                                   size="sm"
                                   variant="outline"
                                   onClick={() => void handleExportExcel(vatReturn)}
-                                  title="Download Excel workbook"
+                                  title={t["compliance.vatFilingDownloadExcel"]}
                                   data-testid={`button-export-vat201-excel-${vatReturn.id}`}
                                 >
                                   XLSX
@@ -1397,9 +1379,7 @@ export default function VATFiling() {
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {locale === "ar" ? "إنشاء مسودة ضريبية رسمية" : "Create official VAT draft"}
-            </DialogTitle>
+            <DialogTitle>{t["compliance.vatFilingCreateOfficialVatDraft"]}</DialogTitle>
             <DialogDescription>
               {locale === "ar"
                 ? "حدد الفترة الضريبية لإنشاء المسودة من السجلات"
@@ -1409,7 +1389,7 @@ export default function VATFiling() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "من تاريخ" : "Period Start"}</Label>
+                <Label>{t["compliance.vatFilingPeriodStart"]}</Label>
                 <Input
                   type="date"
                   value={newPeriodStart}
@@ -1418,7 +1398,7 @@ export default function VATFiling() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "إلى تاريخ" : "Period End"}</Label>
+                <Label>{t["compliance.vatFilingPeriodEnd"]}</Label>
                 <Input
                   type="date"
                   value={newPeriodEnd}
@@ -1456,7 +1436,7 @@ export default function VATFiling() {
               data-testid="button-confirm-generate"
             >
               {generateMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-              {locale === "ar" ? "إنشاء المسودة" : "Create draft"}
+              {t["compliance.vatFilingCreateDraft"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1513,7 +1493,7 @@ export default function VATFiling() {
             </Button>
             <Button onClick={() => selectedReturn && handleExportPDF(selectedReturn)}>
               <Download className="w-4 h-4 me-2" />
-              {locale === "ar" ? "تحميل PDF" : "Download PDF"}
+              {t["compliance.vatFilingDownloadPdf"]}
             </Button>
             <Button
               variant="secondary"
@@ -1584,12 +1564,12 @@ export default function VATFiling() {
               disabled={updateMutation.isPending}
             >
               {updateMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-              {locale === "ar" ? "حفظ المسودة" : "Save Draft"}
+              {t["compliance.vatFilingSaveDraft"]}
             </Button>
             <Button onClick={handleSubmitReturn} disabled={submitMutation.isPending}>
               {submitMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               <Send className="w-4 h-4 me-2" />
-              {locale === "ar" ? "تقديم للمراجعة" : "Submit for Filing"}
+              {t["compliance.vatFilingSubmitForFiling"]}
             </Button>
           </DialogFooter>
         </DialogContent>

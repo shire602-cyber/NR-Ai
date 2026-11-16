@@ -1,5 +1,6 @@
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +67,7 @@ const METHOD_DESCRIPTIONS: Record<ClassifierMethod, string> = {
 };
 
 export default function ReceiptAutopilot() {
+  const { t } = useTranslation();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
   const mounted = useHasMounted();
@@ -133,8 +135,7 @@ export default function ReceiptAutopilot() {
                 <T k="pageLabels.receiptAutopilot" />
               </h1>
               <p className="text-muted-foreground">
-                Internal classifier with OpenAI fallback. The system learns your accepted
-                classifications and automatically posts high-confidence receipts to the GL.
+                <T k="pages.receiptAutopilotIntro" />
               </p>
             </div>
           </div>
@@ -152,7 +153,7 @@ export default function ReceiptAutopilot() {
               <T k="pageLabels.aiAccuracy" />
             </CardTitle>
             <CardDescription>
-              Overall acceptance rate across all classifier methods. Threshold: {thresholdPct}%.
+              {formatMessage(t["pages.receiptAutopilotAccuracyHint"], { threshold: thresholdPct })}
             </CardDescription>
           </div>
           <div className="text-right">
@@ -160,7 +161,12 @@ export default function ReceiptAutopilot() {
               {accuracyPct}%
             </div>
             <div className="text-xs text-muted-foreground">
-              {stats ? `${stats.totalAccepted} accepted / ${stats.totalRejected} rejected` : "—"}
+              {stats
+                ? formatMessage(t["pages.receiptAutopilotAcceptedRejected"], {
+                    accepted: stats.totalAccepted,
+                    rejected: stats.totalRejected,
+                  })
+                : "—"}
             </div>
           </div>
         </CardHeader>
@@ -202,7 +208,7 @@ export default function ReceiptAutopilot() {
               className="mt-6 text-center text-sm text-muted-foreground py-8 border rounded-lg"
               data-testid="stats-empty"
             >
-              No receipts classified yet. Upload receipts to start training the model.
+              <T k="pages.receiptAutopilotEmpty" />
             </div>
           )}
 
@@ -268,9 +274,7 @@ export default function ReceiptAutopilot() {
               <CardTitle>
                 <T k="pageLabels.autopilotSettings" />
               </CardTitle>
-              <CardDescription>
-                Hybrid mode runs the internal classifier first; OpenAI is used only as a fallback.
-              </CardDescription>
+              <CardDescription>{t["pages.receiptAutopilotHybridHint"]}</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -280,8 +284,7 @@ export default function ReceiptAutopilot() {
                   <T k="pageLabels.autoPostHighConfidenceReceipts" />
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  When enabled, receipts matching a rule with ≥5 acceptances and confidence at or
-                  above your auto-post threshold are posted to the GL without user review.
+                  {t["pages.receiptAutopilotAutopostHint"]}
                 </p>
               </div>
               <Switch
@@ -299,8 +302,7 @@ export default function ReceiptAutopilot() {
                   <T k="pageLabels.autoPostConfidenceThreshold" />
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Minimum classification confidence before a receipt may post without review
-                  (80–99%). Below it, receipts wait in the review queue.
+                  {t["pages.receiptAutopilotThresholdHint"]}
                 </p>
               </div>
               <select
@@ -322,10 +324,10 @@ export default function ReceiptAutopilot() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="hybrid-toggle" className="text-base font-semibold">
-                  Hybrid mode (recommended)
+                  {t["pages.receiptAutopilotHybridLabel"]}
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Off → bypass the internal classifier and use OpenAI for every receipt.
+                  {t["pages.receiptAutopilotHybridOffHint"]}
                 </p>
               </div>
               <Switch

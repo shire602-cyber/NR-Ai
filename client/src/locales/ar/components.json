@@ -419,5 +419,18 @@
   "components.validation.notMultiple": "يجب أن تكون القيمة من مضاعفات {n}",
   "components.validation.unknownField": "حقل غير معروف",
   "components.validation.serverGeneric": "تعذّر حفظ البيانات. راجع النموذج وحاول مرة أخرى.",
-  "components.validation.serverFields": "تعذّر حفظ البيانات. راجع الحقول التالية: {fields}"
+  "components.validation.serverFields": "تعذّر حفظ البيانات. راجع الحقول التالية: {fields}",
+  "components.paletteAcknowledgeHandoffFor": "تأكيد التسليم بشأن",
+  "components.paletteQueueingDeliveryFor": "جارٍ جدولة التسليم لـ",
+  "components.paletteQueueDeliveryFor": "جدولة التسليم لـ",
+  "components.paletteQueue": "جدولة",
+  "components.authNamePlaceholder": "محمد أحمد",
+  "components.vatWorkpaperEmpty": "لا توجد صفوف بعد. أنشئ ورقة عمل، أو أضف الصف الأول، أو الصق من إكسل، أو اسحب الفواتير الصادرة والإيصالات المرحّلة من الدفاتر.",
+  "components.vatWorkpaperPulling": "جارٍ السحب...",
+  "components.vatWorkpaperPull": "سحب من الدفاتر",
+  "components.vatWorkpaperSelect": "اختر ورقة العمل",
+  "components.vatWorkpaperNone": "لا توجد ورقة عمل",
+  "components.vatWorkpaperRefresh": "تحديث ورقة العمل",
+  "components.vatWorkpaperCounterparty": "العميل أو المورد",
+  "components.vatWorkpaperRemoveRow": "إزالة صف الضريبة"
 }

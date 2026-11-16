@@ -48,5 +48,6 @@
   "purchases.receiptLinesRequired": "أضف بنداً واحداً على الأقل",
   "purchases.receiptPartsRequired": "يتطلب التقسيم إيصالين على الأقل",
   "purchases.receiptPartsTotalMismatch": "يجب أن يساوي مجموع الأجزاء مبلغ الإيصال",
-  "purchases.receiptReasonRequired": "أدخل سبب التعديل"
+  "purchases.receiptReasonRequired": "أدخل سبب التعديل",
+  "purchases.poUpgradeDescription": "أنشئ أوامر الشراء الموجهة إلى مورديك وتابعها. أدر مسارات المشتريات وطابق أوامر الشراء مع الفواتير."
 }

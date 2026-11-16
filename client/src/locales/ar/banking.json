@@ -121,5 +121,15 @@
   "banking.rules.ranResult": "تم ترحيل {posted}، و{review} بانتظار المراجعة، وفشل {errors}، من أصل {total} حركة مفتوحة.",
   "banking.emptyTransactionsTitle": "لا توجد معاملات بنكية",
   "banking.emptyTransactionsDescription": "استورد كشف حساب بنكي (CSV أو PDF) لبدء مطابقة المعاملات مع قيود اليومية.",
-  "banking.importStatementAction": "استيراد كشف حساب بنكي"
+  "banking.importStatementAction": "استيراد كشف حساب بنكي",
+  "banking.rulesEditRule": "تعديل القاعدة",
+  "banking.rulesCreateRule": "إنشاء قاعدة",
+  "banking.rulesUpdateRule": "تحديث القاعدة",
+  "banking.rulesTitle": "قواعد المطابقة البنكية",
+  "banking.rulesDescription": "حدّد قواعد لمطابقة المعاملات البنكية وتصنيفها تلقائياً.",
+  "banking.rulesEyebrow": "المحاسبة",
+  "banking.rulesSelectField": "اختر الحقل",
+  "banking.rulesNotePlaceholder": "ملاحظة داخلية لهذه القاعدة",
+  "banking.rulesRunAutoMatch": "تشغيل المطابقة التلقائية",
+  "banking.rulesEvaluationOrder": "تُقيَّم القواعد بحسب الأولوية (الرقم الأدنى أولاً). وتُطبَّق أول قاعدة مطابقة."
 }

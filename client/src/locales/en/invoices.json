@@ -81,5 +81,8 @@
   "invoices.deleteTitle": "Delete invoice {number}?",
   "invoices.deleteBody": "This permanently deletes the invoice. This cannot be undone.",
   "invoices.einvoiceShort": "E-invoice",
-  "invoices.exporting": "Exporting…"
+  "invoices.exporting": "Exporting…",
+  "invoices.recurringManageRecurringInvoiceTemplates": "Manage recurring invoice templates",
+  "invoices.recurringNextRunDate": "Next Run Date",
+  "invoices.recurringDeleteConfirm": "This will permanently delete this recurring invoice schedule. This action cannot be undone."
 }

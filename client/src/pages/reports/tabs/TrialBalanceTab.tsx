@@ -49,7 +49,9 @@ export default function TrialBalanceTab() {
                   />
                 </div>
                 <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                  {trialBalanceSummary.isBalanced ? "Balanced" : "Needs review"}
+                  {trialBalanceSummary.isBalanced
+                    ? t["consolidation.balanced"]
+                    : t["reportCenter.needsReview"]}
                 </Badge>
               </div>
             )}
@@ -105,12 +107,14 @@ export default function TrialBalanceTab() {
               <CardDescription>
                 {dateRange.from && dateRange.to
                   ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "Posted account balances through today"}
+                  : t["reportCenter.trialBalanceThroughToday"]}
               </CardDescription>
             </div>
             {!trialBalanceLoading && (
               <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                {trialBalanceSummary.isBalanced ? "Ready for close" : "Difference flagged"}
+                {trialBalanceSummary.isBalanced
+                  ? t["reportCenter.readyForClose"]
+                  : t["reportCenter.differenceFlagged"]}
               </Badge>
             )}
           </div>

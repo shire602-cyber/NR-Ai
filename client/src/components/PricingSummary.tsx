@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { Check, Zap, Crown, Rocket, Building2, ArrowRight, Star } from "lucide-react";
 import { useState } from "react";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
 
@@ -19,6 +19,7 @@ import { StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
  */
 export function PricingSummary() {
   const { locale } = useI18n();
+  const { t: tr } = useTranslation();
   const [isYearly, setIsYearly] = useState(false);
   const isRTL = locale === "ar";
 
@@ -28,9 +29,9 @@ export function PricingSummary() {
     save20: locale === "en" ? "Save 20%" : "وفّر 20%",
     perMonth: locale === "en" ? "/mo" : "/شهر",
     free: locale === "en" ? "Free" : "مجاني",
-    viewAll: locale === "en" ? "View Full Pricing" : "عرض جميع الأسعار",
+    viewAll: tr["marketing.pricingSummaryViewFullPricing"],
     recommended: locale === "en" ? "Recommended" : "موصى به",
-    mostPopular: locale === "en" ? "Most Popular" : "الأكثر شعبية",
+    mostPopular: tr["marketing.pricingSummaryMostPopular"],
   };
 
   const plans = [
@@ -44,7 +45,7 @@ export function PricingSummary() {
         locale === "en"
           ? ["1 company, 1 user", "50 invoices/mo", "Basic AI categorization", "VAT filing"]
           : ["شركة واحدة، مستخدم واحد", "50 فاتورة/شهر", "تصنيف ذكي أساسي", "ضريبة القيمة المضافة"],
-      cta: locale === "en" ? "Get Started Free" : "ابدأ مجاناً",
+      cta: tr["marketing.pricingSummaryGetStartedFree"],
       variant: "outline" as const,
       highlight: false,
       badge: null,
@@ -113,7 +114,7 @@ export function PricingSummary() {
               "Custom integrations & API",
             ]
           : ["كل شيء غير محدود", "أولوية معالجة ذكية", "مدير حساب مخصص", "تكاملات مخصصة و API"],
-      cta: locale === "en" ? "Contact Sales" : "تواصل مع المبيعات",
+      cta: tr["marketing.pricingSummaryContactSales"],
       variant: "outline" as const,
       highlight: false,
       badge: null,
@@ -177,9 +178,7 @@ export function PricingSummary() {
                   }`}
                 >
                   {/* Top accent bar */}
-                  <div
-                    className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`}
-                  />
+                  <div className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`} />
 
                   <CardHeader className="pb-3">
                     {/* Badge */}
@@ -235,9 +234,7 @@ export function PricingSummary() {
                         <li key={idx} className="flex items-start gap-2 text-sm">
                           <Check
                             className={`h-4 w-4 mt-0.5 shrink-0 ${
-                              plan.highlight
-                                ? "text-success "
-                                : "text-muted-foreground"
+                              plan.highlight ? "text-success " : "text-muted-foreground"
                             }`}
                           />
                           <span>{item}</span>
@@ -276,10 +273,7 @@ export function PricingSummary() {
       {/* View all link */}
       <div className="text-center mt-8">
         <Link href="/pricing">
-          <Button
-            variant="ghost"
-            className="text-success hover:text-success "
-          >
+          <Button variant="ghost" className="text-success hover:text-success ">
             {t.viewAll}
             <ArrowRight className="h-4 w-4 ms-1" />
           </Button>

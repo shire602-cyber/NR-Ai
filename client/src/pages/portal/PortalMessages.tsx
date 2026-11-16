@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
@@ -11,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 export default function PortalMessages() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [subject, setSubject] = useState("");
@@ -60,12 +62,12 @@ export default function PortalMessages() {
             <T k="pageLabels.newMessage" />
           </p>
           <Input
-            placeholder="Subject (optional)"
+            placeholder={t["portal.messageSubjectOptional"]}
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
           />
           <Textarea
-            placeholder="Write your message..."
+            placeholder={t["portal.messageWritePlaceholder"]}
             rows={4}
             value={content}
             onChange={(e) => setContent(e.target.value)}

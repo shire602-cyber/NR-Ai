@@ -118,5 +118,22 @@
   "firm.vatOk": "OK",
   "firm.clientsManagedOne": "1 client managed by your firm",
   "firm.clientsManagedMany": "{count} clients managed by your firm",
-  "firm.vatDue30d": "VAT due in 30 days"
+  "firm.vatDue30d": "VAT due in 30 days",
+  "firm.staffManagementTitle": "Staff Management",
+  "firm.staffManagementDescription": "Manage NRA staff assignments across client companies",
+  "firm.eyebrowFirm": "Firm",
+  "firm.staffSearchPlaceholder": "Search staff by name or email...",
+  "firm.valueOpsNoPriorityClient": "No priority client",
+  "firm.valueOpsNoTrn": "No TRN",
+  "firm.valueOpsAuditPack": "Audit Defense Pack",
+  "firm.valueOpsCfoPack": "Monthly CFO Pack",
+  "firm.valueOpsNoReturn": "No return",
+  "firm.valueOpsTitle": "Value Ops",
+  "firm.valueOpsDescription": "NRA-wide cash, compliance, close, review, and client reporting queue.",
+  "firm.valueOpsCashAtRisk": "Cash at risk",
+  "firm.valueOpsPenaltyRiskClients": "Penalty-risk clients",
+  "firm.valueOpsReviewerQueue": "Reviewer queue",
+  "firm.valueOpsServiceAr": "NRA service AR",
+  "firm.valueOpsScoreDefense": "Defense",
+  "firm.revenueOpportunitiesRefreshed": "Revenue opportunities refreshed"
 }

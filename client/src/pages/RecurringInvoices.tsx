@@ -340,9 +340,7 @@ export default function RecurringInvoices() {
       <PageHeader
         eyebrow="Sales"
         title={(t as any).recurringInvoices || "Recurring Invoices"}
-        description={
-          locale === "ar" ? "ادارة قوالب الفواتير المتكررة" : "Manage recurring invoice templates"
-        }
+        description={t["invoices.recurringManageRecurringInvoiceTemplates"]}
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -751,7 +749,7 @@ export default function RecurringInvoices() {
             <TableRow>
               <TableHead className="w-full">{t.customerName || "Customer"}</TableHead>
               <TableHead>{locale === "ar" ? "التكرار" : "Frequency"}</TableHead>
-              <TableHead>{locale === "ar" ? "التشغيل التالي" : "Next Run Date"}</TableHead>
+              <TableHead>{t["invoices.recurringNextRunDate"]}</TableHead>
               <TableHead data-numeric="">{t["screens.perRun"]}</TableHead>
               <TableHead data-numeric="">{locale === "ar" ? "تم التوليد" : "Generated"}</TableHead>
               <TableHead>{t.status || "Status"}</TableHead>
@@ -838,8 +836,7 @@ export default function RecurringInvoices() {
               <T k="pages.deleteRecurringInvoice" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this recurring invoice schedule. This action cannot be
-              undone.
+              <T k="invoices.recurringDeleteConfirm" />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -81,5 +81,8 @@
   "invoices.deleteTitle": "حذف الفاتورة {number}؟",
   "invoices.deleteBody": "سيؤدي هذا إلى حذف الفاتورة نهائيًا. لا يمكن التراجع عن ذلك.",
   "invoices.einvoiceShort": "إلكترونية",
-  "invoices.exporting": "جارٍ التصدير…"
+  "invoices.exporting": "جارٍ التصدير…",
+  "invoices.recurringManageRecurringInvoiceTemplates": "ادارة قوالب الفواتير المتكررة",
+  "invoices.recurringNextRunDate": "التشغيل التالي",
+  "invoices.recurringDeleteConfirm": "سيؤدي هذا إلى حذف جدول الفاتورة المتكررة نهائياً. لا يمكن التراجع عن هذا الإجراء."
 }

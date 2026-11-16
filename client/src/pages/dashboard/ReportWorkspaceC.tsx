@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import { reportSectionHref } from "@/lib/reportCatalog";
@@ -12,6 +13,7 @@ import {
 } from "./workspaceHelpers";
 
 export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
+  const { t } = useTranslation();
   const {
     locale,
     selectedCompanyId,
@@ -49,9 +51,9 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 data-testid="dashboard-report-catalog-sync"
               >
                 {reportCatalogDiscoveryQuery.isLoading
-                  ? "Syncing catalog"
+                  ? t["dashboard.workspaceSyncingCatalog"]
                   : reportCatalogDiscoveryQuery.isError
-                    ? "Local catalog"
+                    ? t["components.launchLocalCatalog"]
                     : `${preferredReportPackReadiness.syncedReadyReports} synced reports`}
               </Badge>
               <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
@@ -68,8 +70,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
               <span className="text-xs text-muted-foreground">/ 100</span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Blends pack readiness, automation lanes, and current-vs-prior movement for the
-              selected workspace.
+              <T k="dashboard.workspaceHealthHint" />
             </p>
           </div>
 
@@ -376,7 +377,7 @@ export function ReportWorkspacePartC({ m }: { m: DashboardModel }) {
                 {queueDashboardReportDeliverySubscription.isPending
                   ? "Queueing"
                   : preferredAutomationQueueRequiresHandoffAcknowledgement
-                    ? "Acknowledge handoff"
+                    ? t["components.launchAcknowledgeHandoff"]
                     : preferredAutomationNextAction.cta}
                 <ArrowRight className="w-3.5 h-3.5" />
               </Button>

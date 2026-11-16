@@ -54,6 +54,9 @@ async function pricingGates(): Promise<Array<{ gate: string; tiers: Record<strin
       return [];
     }
   };
+  // The Pricing copy lives in the lazily loaded marketing catalog; load it before rendering.
+  const { loadLocale } = await import("../../client/src/lib/i18n");
+  await loadLocale("en");
   const { default: Pricing } = await import("../../client/src/pages/Pricing");
   const container = document.createElement("div");
   document.body.appendChild(container);

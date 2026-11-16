@@ -304,7 +304,7 @@ export default function Quotes() {
       <PageHeader
         eyebrow="Sales"
         title={t.quotes}
-        description={(t as any).quotesSubtitle ?? "Create and manage quotes for your customers"}
+        description={(t as any).quotesSubtitle}
         actions={
           <Dialog
             open={dialogOpen}

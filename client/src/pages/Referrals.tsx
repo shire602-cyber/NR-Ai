@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ interface ReferralStats {
 }
 
 export default function Referrals() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
 
@@ -115,9 +117,9 @@ export default function Referrals() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Workspace"
-        title="Referral Program"
-        description="Invite friends and earn rewards when they sign up"
+        eyebrow={t["pages.eyebrowWorkspace"]}
+        title={t["pageLabels.referralProgram"]}
+        description={t["pages.referralsDescription"]}
       />
 
       {isLoading ? (
@@ -207,8 +209,10 @@ export default function Referrals() {
                 </CardTitle>
               </div>
               <CardDescription>
-                Share this link with friends. They get {referralCode?.refereeRewardValue || 20}%
-                off, you get AED {referralCode?.referrerRewardValue || 50} credit!
+                {formatMessage(t["pages.referralsShareHint"], {
+                  discount: referralCode?.refereeRewardValue || 20,
+                  credit: referralCode?.referrerRewardValue || 50,
+                })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -229,7 +233,7 @@ export default function Referrals() {
                     data-testid="button-copy-link"
                   >
                     <Copy className="w-4 h-4 mr-2" />
-                    {copied ? "Copied!" : "Copy"}
+                    {copied ? t["pages.referralsCopied"] : t["pages.referralsCopy"]}
                   </Button>
                   <Button onClick={shareReferral} data-testid="button-share-link">
                     <Share2 className="w-4 h-4 mr-2" />
@@ -296,8 +300,10 @@ export default function Referrals() {
                         <T k="pageLabels.bothGetRewarded" />
                       </h4>
                       <p className="text-sm text-muted-foreground">
-                        They get {referralCode?.refereeRewardValue || 20}% off, you get AED{" "}
-                        {referralCode?.referrerRewardValue || 50} credit
+                        {formatMessage(t["pages.referralsBothGet"], {
+                          discount: referralCode?.refereeRewardValue || 20,
+                          credit: referralCode?.referrerRewardValue || 50,
+                        })}
                       </p>
                     </div>
                   </div>
@@ -359,7 +365,7 @@ export default function Referrals() {
               <div className="space-y-6">
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">5 Referrals - Bronze</span>
+                    <span className="text-sm font-medium">{t["pages.referralsTierBronze"]}</span>
                     <span className="text-sm text-muted-foreground">
                       {Math.min(stats?.successfulReferrals || 0, 5)}/5
                     </span>
@@ -368,7 +374,7 @@ export default function Referrals() {
                 </div>
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">10 Referrals - Silver</span>
+                    <span className="text-sm font-medium">{t["pages.referralsTierSilver"]}</span>
                     <span className="text-sm text-muted-foreground">
                       {Math.min(stats?.successfulReferrals || 0, 10)}/10
                     </span>
@@ -377,7 +383,7 @@ export default function Referrals() {
                 </div>
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">25 Referrals - Gold</span>
+                    <span className="text-sm font-medium">{t["pages.referralsTierGold"]}</span>
                     <span className="text-sm text-muted-foreground">
                       {Math.min(stats?.successfulReferrals || 0, 25)}/25
                     </span>

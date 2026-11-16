@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { useTranslation } from "@/lib/i18n";
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -90,6 +91,7 @@ function getStatusColor(status: string): string {
 }
 
 export default function PublicInvoiceView() {
+  const { t } = useTranslation();
   const { token } = useParams<{ token: string }>();
 
   const { data, isLoading, error } = useQuery<PublicInvoiceData>({
@@ -164,7 +166,7 @@ export default function PublicInvoiceView() {
               <AlertCircle className="w-16 h-16 text-destructive mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
-              {isExpired ? "Link Expired" : "Invoice Not Found"}
+              {isExpired ? t["portal.invoiceLinkExpired"] : t["portal.invoiceNotFound"]}
             </h2>
             <p className="text-muted-foreground">
               {isExpired

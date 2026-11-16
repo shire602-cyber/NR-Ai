@@ -121,5 +121,15 @@
   "banking.rules.ranResult": "{posted} posted, {review} waiting for review, {errors} failed, out of {total} open lines.",
   "banking.emptyTransactionsTitle": "No bank transactions",
   "banking.emptyTransactionsDescription": "Import a bank statement (CSV or PDF) to start matching transactions to journal entries.",
-  "banking.importStatementAction": "Import bank statement"
+  "banking.importStatementAction": "Import bank statement",
+  "banking.rulesEditRule": "Edit Rule",
+  "banking.rulesCreateRule": "Create Rule",
+  "banking.rulesUpdateRule": "Update Rule",
+  "banking.rulesTitle": "Reconciliation Rules",
+  "banking.rulesDescription": "Define rules to automatically match and categorize bank transactions.",
+  "banking.rulesEyebrow": "Accounting",
+  "banking.rulesSelectField": "Select field",
+  "banking.rulesNotePlaceholder": "Internal note for this rule",
+  "banking.rulesRunAutoMatch": "Run Auto-Match",
+  "banking.rulesEvaluationOrder": "Rules are evaluated in priority order (lowest number first). The first matching rule wins."
 }
