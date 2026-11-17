@@ -192,6 +192,22 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   override. `/reports/pl` keeps `totalRevenue` = total income (revenue + other income) for existing
   metrics; the split (revenue vs other income such as 4090 FX gain, cost of sales, gross profit) is
   in `sections` and on the canonical `/reports/profit-loss`.
+- IFRS presentation (A3, `server/reporting/ifrs-adjustments.ts`): the P&L shows profit before tax
+  and income tax (5200 / sub_type `income_tax`, IAS 1.82(d)) below other items, then other
+  comprehensive income (revaluation-reserve movements other than transfers to retained earnings)
+  and total comprehensive income. The balance sheet keeps the revaluation reserve (3050) apart from
+  capital, shows the allowance for doubtful debts (1045) as a contra asset, and splits the gratuity
+  provision (2036, non-current) into a current portion for known leavers (termination date within
+  12 months). The indirect cash flow reads entries that touch non-current assets per entry: their
+  P&L lines are non-cash adjustments (depreciation, impairment, disposal gain/loss), equity lines
+  are non-cash transactions (revaluation), the rest is the investing flow (purchases / disposal
+  proceeds); FX revaluation of cash is `fxEffect` (IAS 7.28), apart from the three activities.
+  Aging adds `fxRevaluation` (revaluation carried on 1040 / 2010 at the date) as a reconciling item
+  and, for receivables, `allowanceForDoubtfulDebts` / `netCarryingAmount`. A bad-debt write-off
+  (`POST …/invoices/:id/write-off`) is an `invoice_payments` row with method `write_off` posted
+  Dr 5120 (or 1045) / Cr 1040, so the one settlement rule closes the invoice; VAT bad-debt relief
+  requires it and is limited to the written-off amount; a later receipt reinstates it first.
+  Verify with `tests/db/a3-ifrs-statements.test.ts`.
 - Inventory review items/share/value (`inventory-review-items`, `inventory-review-share`,
   `inventory-review-value`) are current inventory-valuation queue signals for active products that
   are low stock, negative stock, or missing cost, compared against a clear baseline of zero. The

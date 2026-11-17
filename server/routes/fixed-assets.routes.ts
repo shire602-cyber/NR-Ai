@@ -46,12 +46,14 @@ import {
   IMPORT_COLUMNS,
   REGISTER_COLUMNS,
   assetRegister,
+  assetSurplusFils,
   capitalizeAsset,
   depreciateInTx,
   disposeAsset,
   impairAsset,
   loadAsset,
   parseCsv,
+  projectFrom,
   recordEvent,
   revalueAsset,
   runDepreciation,
@@ -451,7 +453,24 @@ export function registerFixedAssetRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       await assetForRequest(req);
       const r = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [req.params.id]);
-      res.json(r.rows[0]);
+      const row = r.rows[0];
+      // A3 (H5): register figures that tie to the GL cost and accumulated depreciation and
+      // impairment accounts after a revaluation / impairment, plus the surplus still in equity.
+      const surplus = await withLedgerTx((tx) =>
+        assetSurplusFils(tx, { id: row.id, company_id: row.company_id })
+      );
+      const fils = (v: unknown) => toFils(String(v ?? 0), { rounding: "halfUp" });
+      const disposed = row.status === "disposed";
+      res.json({
+        ...row,
+        gross_carrying_amount: disposed
+          ? "0.00"
+          : fromFils(fils(row.purchase_cost) + fils(row.revaluation_surplus)),
+        accumulated_depreciation_and_impairment: disposed
+          ? "0.00"
+          : fromFils(fils(row.accumulated_depreciation) + fils(row.impairment_loss)),
+        revaluation_reserve: fromFils(surplus),
+      });
     })
   );
 
@@ -485,7 +504,24 @@ export function registerFixedAssetRoutes(app: Express) {
         const life = a.useful_life_years ?? 0;
         const [y, m] = a.purchase_iso.split("-").map(Number);
         const endY = y + life + 1;
-        const book = scheduleTo({ ...c, revaluationFils: 0, impairmentFils: 0 }, endY, m);
+        // A3 (H5): the book schedule is what was posted, then a projection from the current
+        // carrying amount (after revaluation / impairment) over the remaining life.
+        const posted = await pool.query(
+          `SELECT period_year AS year, period_month AS month, ROUND(amount * 100)::bigint AS f
+             FROM depreciation_schedules WHERE asset_id = $1 ORDER BY period_year, period_month`,
+          [a.id]
+        );
+        const postedMonths = (posted.rows as Array<{ year: number; month: number; f: string }>).map(
+          (p) => ({ year: Number(p.year), month: Number(p.month), amountFils: Number(p.f) })
+        );
+        const last = postedMonths[postedMonths.length - 1] ?? null;
+        const projected = a.status === "active" ? projectFrom(c, last) : [];
+        const book = {
+          months: [
+            ...postedMonths.map((p) => ({ ...p, posted: true })),
+            ...projected.map((p) => ({ ...p, posted: false })),
+          ],
+        };
         const tax = scheduleTo(
           {
             ...c,

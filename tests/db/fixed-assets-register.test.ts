@@ -229,7 +229,10 @@ describe("W4-B fixed assets", () => {
       amount: 2000,
     });
     expect(imp.status, imp.text).toBe(201);
-    expect(await bal(t, "5150")).toBe(200_000);
+    // A3 (H4): the asset holds a 3,000 surplus, so the 2,000 impairment is a revaluation decrease
+    // charged to the surplus (IAS 36.60-61), not to profit or loss (5150 was 2,000 before).
+    expect(await bal(t, "5150")).toBe(0);
+    expect(await bal(t, "3050")).toBe(-100_000);
     const events = await t.as.get(`/api/fixed-assets/${truck.body.id}/events`);
     expect(events.body.map((e: { event_type: string }) => e.event_type)).toEqual([
       "capitalized",

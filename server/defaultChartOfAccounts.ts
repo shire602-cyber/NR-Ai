@@ -237,9 +237,11 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     code: "2036",
     nameEn: "End-of-Service Gratuity Provision",
     nameAr: "مخصص مكافأة نهاية الخدمة",
-    description: "Accrued end-of-service gratuity liability",
+    // A3 (H10): a long-term employee benefit (IAS 1.69, IAS 19.153); the balance sheet shows
+    // the provision of known leavers as the current portion.
+    description: "Accrued end-of-service gratuity liability (non-current; known leavers current)",
     type: "liability",
-    subType: "current_liability",
+    subType: "long_term_liability",
     isVatAccount: false,
     vatType: null,
     isSystemAccount: true,

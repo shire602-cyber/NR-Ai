@@ -48,7 +48,10 @@ import {
 } from "../../shared/validators/invoices";
 import {
   applyCustomerCreditSchema,
+  doubtfulDebtAllowanceSchema,
   invoicePaymentSchema,
+  invoiceWriteOffReinstateSchema,
+  invoiceWriteOffSchema,
   refundCustomerCreditSchema,
 } from "../../shared/validators/payments";
 import { fromFils, mulRate, toFils } from "../../shared/money";
@@ -76,10 +79,14 @@ import {
 } from "../services/invoice-posting.service";
 import {
   applyCustomerCredit,
+  getDoubtfulDebtAllowance,
   listCustomerCredits,
   recordInvoicePayment,
   refundCustomerCredit,
   registerInvoicePaymentService,
+  reinstateWriteOffs,
+  setDoubtfulDebtAllowance,
+  writeOffInvoice,
 } from "../services/invoice-payment.service";
 import {
   generateDeliveryNotePDF,
@@ -932,6 +939,138 @@ export function registerInvoiceRoutes(app: Express) {
         totalPaid: result.totalPaid,
         status: result.invoice.status,
       });
+    })
+  );
+
+  // ── Bad-debt write-off and allowance for doubtful debts (A3: H1, M5) ─────
+  app.post(
+    "/api/companies/:companyId/invoices/:invoiceId/write-off",
+    authMiddleware,
+    requireCustomer,
+    strictBody(invoiceWriteOffSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, invoiceId } = req.params;
+      const userId = userOf(req);
+      await assertCompanyAccess(req, companyId);
+      const body = validated<z.output<typeof invoiceWriteOffSchema>>(req);
+      const invoice = await storage.getInvoice(invoiceId, companyId);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      await assertPeriodNotLocked(companyId, toDate(body.date));
+      assertNotFutureDate(toDate(body.date));
+      const result = await writeOffInvoice({
+        companyId,
+        invoiceId,
+        date: body.date,
+        amountFils: body.amount ?? null,
+        against: body.against ?? "expense",
+        reason: body.reason,
+        userId,
+      });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "invoice.write_off",
+        entityType: "invoice",
+        entityId: invoiceId,
+        before: { status: invoice.status },
+        after: { status: result.invoice?.status },
+        req,
+        extra: {
+          writeOffId: result.writeOff.id,
+          amount: result.amount,
+          journalEntryId: result.journalEntryId,
+          reason: body.reason,
+        },
+      });
+      res.status(201).json(result);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/invoices/:invoiceId/write-off/reinstate",
+    authMiddleware,
+    requireCustomer,
+    strictBody(invoiceWriteOffReinstateSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, invoiceId } = req.params;
+      const userId = userOf(req);
+      await assertCompanyAccess(req, companyId);
+      const body = validated<z.output<typeof invoiceWriteOffReinstateSchema>>(req);
+      const invoice = await storage.getInvoice(invoiceId, companyId);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      await assertPeriodNotLocked(companyId, toDate(body.date));
+      const result = await reinstateWriteOffs({
+        companyId,
+        invoiceId,
+        date: body.date,
+        reason: body.reason,
+        userId,
+      });
+      if (result.reinstatedFils === 0) {
+        throw new DomainError("NO_WRITE_OFF", 409, undefined, "This invoice has no write-off.");
+      }
+      await recordAudit({
+        userId,
+        companyId,
+        action: "invoice.write_off_reinstate",
+        entityType: "invoice",
+        entityId: invoiceId,
+        before: { status: invoice.status },
+        after: { status: result.invoice?.status },
+        req,
+        extra: { amount: Number(fromFils(result.reinstatedFils)), reason: body.reason },
+      });
+      res.json({
+        reinstated: Number(fromFils(result.reinstatedFils)),
+        status: result.invoice?.status ?? invoice.status,
+      });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/receivables/allowance",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const asOf =
+        typeof req.query.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.asOf)
+          ? req.query.asOf
+          : null;
+      res.json(await getDoubtfulDebtAllowance(companyId, asOf));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/receivables/allowance",
+    authMiddleware,
+    requireCustomer,
+    strictBody(doubtfulDebtAllowanceSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = userOf(req);
+      await assertCompanyAccess(req, companyId);
+      const body = validated<z.output<typeof doubtfulDebtAllowanceSchema>>(req);
+      await assertPeriodNotLocked(companyId, toDate(body.date));
+      assertNotFutureDate(toDate(body.date));
+      const result = await setDoubtfulDebtAllowance({
+        companyId,
+        date: body.date,
+        targetFils: body.targetBalance,
+        memo: body.memo ?? null,
+        userId,
+      });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "receivables.allowance",
+        entityType: "account",
+        entityId: result.journalEntryId,
+        after: result,
+        req,
+      });
+      res.status(201).json(result);
     })
   );
 

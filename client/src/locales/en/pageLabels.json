@@ -497,6 +497,7 @@
   "pageLabels.netCashFlow": "Net Cash Flow",
   "pageLabels.netCashPosition": "Net Cash Position",
   "pageLabels.netFinancingCashFlow": "Net Financing Cash Flow",
+  "pageLabels.fxEffectOnCash": "Effect of exchange-rate changes on cash",
   "pageLabels.netIncome": "Net income",
   "pageLabels.netInvestingCashFlow": "Net Investing Cash Flow",
   "pageLabels.netOperatingCashFlow": "Net Operating Cash Flow",

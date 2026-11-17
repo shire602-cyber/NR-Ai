@@ -151,6 +151,10 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/invoices/*/credit-note", "ledger.post"),
   r("POST", "companies/*/invoices/*/debit-note", "ledger.post"),
   r("POST", "companies/*/invoices/*/payments", "ledger.post"),
+  // A3 (H1, M5): bad-debt write-off / reinstatement and the doubtful-debt allowance post to GL.
+  r("POST", "companies/*/invoices/*/write-off", "ledger.post"),
+  r("POST", "companies/*/invoices/*/write-off/reinstate", "ledger.post"),
+  r("POST", "companies/*/receivables/allowance", "ledger.post"),
   r("POST", "companies/*/customer-credits/*/apply", "ledger.post"),
   r("POST", "companies/*/customer-credits/*/refund", "ledger.post"),
   r("POST", "companies/*/debit-notes/*/apply", "ledger.post"),

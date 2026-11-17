@@ -372,7 +372,8 @@ async function loadTaxDues(companyId: string, today: IsoDate, to: IsoDate) {
     const pl = await profitAndLoss({ companyId, from: ytdFrom, to: today });
     const ct = computeCtLiability({
       totalRevenue: Math.max(0, pl.totalIncome),
-      totalExpenses: Math.max(0, pl.totalExpenses),
+      // Profit before tax: a posted CT provision is not deducted from its own base (A3 H3).
+      totalExpenses: Math.max(0, pl.totalExpenses - (pl.incomeTaxExpense ?? 0)),
       totalDeductions: 0,
       exemptionThreshold: UAE_CT_EXEMPTION_THRESHOLD,
       taxRate: 0.09,

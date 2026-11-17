@@ -113,6 +113,8 @@ interface CashFlowData {
   operating: { total: number; breakdown: AccountBreakdown[] };
   investing: { total: number; breakdown: AccountBreakdown[] };
   financing: { total: number; breakdown: AccountBreakdown[] };
+  /** A3 (C5): effect of exchange-rate changes on cash (IAS 7.28). */
+  fxEffect?: { total: number; breakdown: AccountBreakdown[] };
   netCashChange: number;
   openingCash?: number;
   closingCash?: number;
@@ -181,6 +183,10 @@ function prepareCashFlowExport(data: CashFlowData): ExportData[] {
         { metric: "Net operating cash flow", amount: data.operating.total.toFixed(2) },
         { metric: "Net investing cash flow", amount: data.investing.total.toFixed(2) },
         { metric: "Net financing cash flow", amount: data.financing.total.toFixed(2) },
+        {
+          metric: "Effect of exchange-rate changes on cash",
+          amount: (data.fxEffect?.total ?? 0).toFixed(2),
+        },
         { metric: "Net cash change", amount: data.netCashChange.toFixed(2) },
         { metric: "Closing cash", amount: data.closingCash ?? "" },
       ],
@@ -982,6 +988,22 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               </div>
             </CardContent>
           </Card>
+
+          {/* A3 (C5): effect of exchange-rate changes on cash, apart from the three activities */}
+          {data.fxEffect && data.fxEffect.total !== 0 ? (
+            <Card data-testid="cash-flow-fx-effect">
+              <CardContent className="pt-6">
+                <div className="flex justify-between items-center font-bold">
+                  <span>
+                    <T k="pageLabels.fxEffectOnCash" />
+                  </span>
+                  <span className="tabular-nums">
+                    <Money amount={data.fxEffect.total} currency={"AED"} />
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </>
       )}
     </div>

@@ -338,6 +338,8 @@ export const CT_TAG_ACCOUNT_SPECS: readonly TagAccountSpec[] = [
     nameEn: "Corporate Tax Expense",
     nameAr: "مصروف ضريبة الشركات",
     type: "expense",
+    // A3 (H3): income tax is presented after profit before tax (IAS 1.82(d)).
+    subType: "income_tax",
   },
   {
     tag: "corporate_tax_payable",

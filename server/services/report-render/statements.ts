@@ -175,7 +175,36 @@ export async function renderProfitAndLoss(
     totalRow({ en: "Operating profit", ar: "الربح التشغيلي" }, pl.operatingProfit, loc),
     ...sectionRows(pl.sections.otherIncome, { en: "Other income", ar: "إيرادات أخرى" }, loc),
     ...sectionRows(pl.sections.otherExpenses, { en: "Other expenses", ar: "مصروفات أخرى" }, loc),
+    // A3 (H3): profit before tax, then income tax expense (IAS 1.82(d), IAS 12.77).
+    totalRow(
+      { en: "Profit before tax", ar: "الربح قبل الضريبة" },
+      pl.profitBeforeTax ?? pl.netProfit,
+      loc
+    ),
+    ...(pl.sections.incomeTax
+      ? sectionRows(
+          pl.sections.incomeTax,
+          { en: "Income tax expense", ar: "مصروف ضريبة الدخل" },
+          loc
+        )
+      : []),
     totalRow({ en: "Net profit", ar: "صافي الربح" }, pl.netProfit, loc),
+    // A3 (H11): other comprehensive income and total comprehensive income (IAS 1.81A).
+    ...(pl.sections.otherComprehensiveIncome
+      ? sectionRows(
+          pl.sections.otherComprehensiveIncome,
+          {
+            en: "Other comprehensive income (items not reclassified to profit or loss)",
+            ar: "الدخل الشامل الآخر (بنود لا يعاد تصنيفها إلى الربح أو الخسارة)",
+          },
+          loc
+        )
+      : []),
+    totalRow(
+      { en: "Total comprehensive income", ar: "إجمالي الدخل الشامل" },
+      pl.totalComprehensiveIncome ?? pl.netProfit,
+      loc
+    ),
   ];
   return {
     id: "profit-loss",
@@ -293,7 +322,11 @@ export async function renderCashFlow(
   ) => [
     heading(title, loc),
     ...part.breakdown.map((line) => ({
-      cells: { code: line.accountCode, account: line.accountName, amount: line.amount },
+      cells: {
+        code: line.accountCode,
+        account: loc === "ar" && line.accountNameAr ? line.accountNameAr : line.accountName,
+        amount: line.amount,
+      },
     })),
     {
       cells: {
@@ -308,6 +341,12 @@ export async function renderCashFlow(
     ...block({ en: "Operating activities", ar: "الأنشطة التشغيلية" }, cf.operating),
     ...block({ en: "Investing activities", ar: "الأنشطة الاستثمارية" }, cf.investing),
     ...block({ en: "Financing activities", ar: "الأنشطة التمويلية" }, cf.financing),
+    // A3 (C5): IAS 7.28, shown apart from operating, investing and financing.
+    totalRow(
+      { en: "Effect of exchange-rate changes on cash", ar: "أثر تغيرات أسعار الصرف على النقد" },
+      cf.fxEffect?.total ?? 0,
+      loc
+    ),
     totalRow({ en: "Net change in cash", ar: "صافي التغير في النقد" }, cf.netCashChange, loc),
     totalRow({ en: "Closing cash", ar: "النقد الختامي" }, cf.closingCash, loc),
   ];
@@ -431,6 +470,40 @@ function agingReport(kind: "ar-aging" | "ap-aging", report: AgingReport): Render
   }));
   rows.push({ cells: { name: "Total", ...report.totals }, style: "total" });
   const rec = report.reconciliation;
+  // A3 (H6, H1): reconciling items between the document aging and the control account.
+  if (report.unappliedCredits) {
+    rows.push({
+      cells: {
+        name: "Less unapplied credits / ناقص الأرصدة الدائنة غير المخصصة",
+        total: -report.unappliedCredits,
+      },
+    });
+  }
+  for (const item of rec.reconcilingItems ?? []) {
+    rows.push({ cells: { name: `${item.label} / ${item.labelAr}`, total: item.amount } });
+  }
+  rows.push({
+    cells: {
+      name: `GL ${rec.controlAccountCode ?? ""} balance / رصيد الأستاذ العام`,
+      total: rec.glBalance,
+    },
+    style: "subtotal",
+  });
+  if (report.allowanceForDoubtfulDebts) {
+    rows.push({
+      cells: {
+        name: "Less allowance for doubtful debts / ناقص مخصص الديون المشكوك في تحصيلها",
+        total: -report.allowanceForDoubtfulDebts,
+      },
+    });
+    rows.push({
+      cells: {
+        name: "Net trade receivables / صافي الذمم المدينة التجارية",
+        total: report.netCarryingAmount,
+      },
+      style: "total",
+    });
+  }
   return {
     id: kind,
     title: STATEMENT_TITLES[kind],
@@ -476,6 +549,8 @@ export async function renderAgedPayables(company: RenderCompany, asOf: string) {
 
 export interface EquityComponents {
   capital: number;
+  /** A3 (H11): revaluation / OCI reserve, a separate component (IAS 1.106(d)). */
+  revaluationReserve: number;
   retainedEarnings: number;
   total: number;
 }
@@ -485,7 +560,15 @@ export interface ChangesInEquity {
   to: string;
   opening: EquityComponents;
   profitForPeriod: number;
+  /** A3 (H11): other comprehensive income for the period (revaluation surplus via OCI). */
+  otherComprehensiveIncome: number;
+  /** profitForPeriod + otherComprehensiveIncome. */
+  totalComprehensiveIncome: number;
+  /** Movements in share capital / owner accounts (never the revaluation reserve). */
   capitalMovements: number;
+  /** Reserve movements that are not OCI: realised surplus transferred to retained earnings. */
+  reserveTransfers: number;
+  /** Retained-earnings movements other than profit (dividends, transfers, prior-year items). */
   otherRetainedEarningsMovements: number;
   closing: EquityComponents;
   /** Closing total equity on the balance sheet at `to` (the tie-out). */
@@ -497,6 +580,7 @@ function equityOf(bs: BalanceSheet): EquityComponents {
   const retained = bs.equity.retainedEarningsBroughtForward + bs.equity.currentYearEarnings;
   return {
     capital: round2(bs.equity.capital.total),
+    revaluationReserve: round2(bs.equity.reserves?.total ?? 0),
     retainedEarnings: round2(retained),
     total: round2(bs.equity.total),
   };
@@ -524,19 +608,32 @@ export async function computeChangesInEquity(
   const opening = equityOf(openingBs);
   const closing = equityOf(closingBs);
   const profitForPeriod = round2(pl.netProfit);
+  const otherComprehensiveIncome = round2(pl.otherComprehensiveIncome ?? 0);
   const capitalMovements = round2(closing.capital - opening.capital);
+  // Reserve movements that are not OCI move to retained earnings (IAS 16.41).
+  const reserveTransfers = round2(
+    closing.revaluationReserve - opening.revaluationReserve - otherComprehensiveIncome
+  );
   const otherRetainedEarningsMovements = round2(
     closing.retainedEarnings - opening.retainedEarnings - profitForPeriod
   );
   const recomputed = round2(
-    opening.total + profitForPeriod + capitalMovements + otherRetainedEarningsMovements
+    opening.total +
+      profitForPeriod +
+      otherComprehensiveIncome +
+      capitalMovements +
+      reserveTransfers +
+      otherRetainedEarningsMovements
   );
   return {
     from: p.from,
     to: p.to,
     opening,
     profitForPeriod,
+    otherComprehensiveIncome,
+    totalComprehensiveIncome: round2(profitForPeriod + otherComprehensiveIncome),
     capitalMovements,
+    reserveTransfers,
     otherRetainedEarningsMovements,
     closing,
     balanceSheetTotalEquity: round2(closingBs.totalEquity),
@@ -553,14 +650,16 @@ export async function renderChangesInEquity(
   const row = (
     text: Bilingual,
     capital: number,
+    reserve: number,
     retained: number,
     style?: RenderRow["style"]
   ): RenderRow => ({
     cells: {
       item: loc === "ar" ? text.ar : text.en,
       capital,
+      reserve,
       retained,
-      total: round2(capital + retained),
+      total: round2(capital + reserve + retained),
     },
     style,
   });
@@ -574,6 +673,11 @@ export async function renderChangesInEquity(
         columns: [
           { key: "item", header: L.item, weight: 2.4 },
           { key: "capital", header: { en: "Share capital", ar: "رأس المال" }, numeric: true },
+          {
+            key: "reserve",
+            header: { en: "Revaluation reserve", ar: "احتياطي إعادة التقييم" },
+            numeric: true,
+          },
           {
             key: "retained",
             header: { en: "Retained earnings", ar: "الأرباح المحتجزة" },
@@ -592,23 +696,52 @@ export async function renderChangesInEquity(
               ar: `الرصيد في ${addDays(p.from, -1)}`,
             },
             e.opening.capital,
+            e.opening.revaluationReserve ?? 0,
             e.opening.retainedEarnings,
             "subtotal"
           ),
-          row({ en: "Profit for the period", ar: "ربح الفترة" }, 0, e.profitForPeriod),
+          row({ en: "Profit for the period", ar: "ربح الفترة" }, 0, 0, e.profitForPeriod),
+          row(
+            {
+              en: "Other comprehensive income (revaluation surplus)",
+              ar: "الدخل الشامل الآخر (فائض إعادة التقييم)",
+            },
+            0,
+            e.otherComprehensiveIncome ?? 0,
+            0
+          ),
+          row(
+            { en: "Total comprehensive income", ar: "إجمالي الدخل الشامل" },
+            0,
+            e.otherComprehensiveIncome ?? 0,
+            e.profitForPeriod,
+            "subtotal"
+          ),
           row(
             { en: "Capital introduced / (withdrawn)", ar: "رأس المال المضاف / (المسحوب)" },
             e.capitalMovements,
+            0,
+            0
+          ),
+          row(
+            {
+              en: "Revaluation surplus realised and transferred",
+              ar: "فائض إعادة التقييم المحقق والمحول",
+            },
+            0,
+            e.reserveTransfers ?? 0,
             0
           ),
           row(
             { en: "Other movements in retained earnings", ar: "حركات أخرى في الأرباح المحتجزة" },
+            0,
             0,
             e.otherRetainedEarningsMovements
           ),
           row(
             { en: `Balance at ${formatIsoDate(p.to)}`, ar: `الرصيد في ${p.to}` },
             e.closing.capital,
+            e.closing.revaluationReserve ?? 0,
             e.closing.retainedEarnings,
             "total"
           ),
@@ -798,7 +931,8 @@ export async function computeExecutiveSummary(
   }
   const ct = computeCtLiability({
     totalRevenue: Math.max(0, ytd.totalIncome),
-    totalExpenses: Math.max(0, ytd.totalExpenses),
+    // A3 (H3): estimate on profit before tax, so a posted CT provision is not deducted.
+    totalExpenses: Math.max(0, ytd.totalExpenses - (ytd.incomeTaxExpense ?? 0)),
     exemptionThreshold: CT_ZERO_RATE_BAND,
     taxRate: CT_STANDARD_RATE,
   });

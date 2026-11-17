@@ -42,12 +42,21 @@ import {
   indirectActivity,
   isCashAccount,
   isContraAsset,
+  isGratuityProvisionAccount,
   isNonCurrent,
   isRetainedEarningsAccount,
+  isRevaluationReserveAccount,
   plSection,
   type CashFlowActivity,
   type PlSection,
 } from "./classify";
+import {
+  FX_REVALUATION_SOURCES,
+  cashFlowAdjustments,
+  gratuityCurrentPortionFils,
+  otherComprehensiveIncome,
+  type PpeEntryLine,
+} from "./ifrs-adjustments";
 
 /**
  * @deprecated W5-C (R14-19): statements are labelled in the company's base (functional)
@@ -217,12 +226,23 @@ export interface PlTotals {
   costOfSales: number;
   grossProfit: number;
   operatingExpenses: number;
+  /** Revenue − cost of sales − operating expenses (before other items and income tax). */
   operatingProfit: number;
   otherIncome: number;
   otherExpenses: number;
+  /** A3 (H3): operating profit + other income − other expenses (IAS 1.82(d)). */
+  profitBeforeTax: number;
+  /** A3 (H3): corporate / income tax expense, presented after profit before tax (IAS 12.77). */
+  incomeTaxExpense: number;
   totalIncome: number;
+  /** Every expense including income tax, so totalIncome − totalExpenses = netProfit. */
   totalExpenses: number;
+  /** Profit for the period (after tax). */
   netProfit: number;
+  /** A3 (H11): other comprehensive income (revaluation surplus movements, IAS 1.81A). */
+  otherComprehensiveIncome: number;
+  /** A3 (H11): netProfit + otherComprehensiveIncome. */
+  totalComprehensiveIncome: number;
 }
 
 export interface ProfitAndLoss extends PlTotals {
@@ -235,6 +255,10 @@ export interface ProfitAndLoss extends PlTotals {
     operatingExpenses: StatementSection;
     otherIncome: StatementSection;
     otherExpenses: StatementSection;
+    /** A3 (H3): income tax expense (5200 or an income-tax sub_type). */
+    incomeTax: StatementSection;
+    /** A3 (H11): items of other comprehensive income (revaluation reserve movements). */
+    otherComprehensiveIncome: StatementSection;
   };
   columns?: Array<
     PlTotals & { label: string; from: IsoDate; to: IsoDate; byAccount: Record<string, number> }
@@ -260,14 +284,20 @@ function plAmount(a: ReportAccount, t: AccountTotals | undefined): Fils {
   return a.type === "income" ? t.credit - t.debit : t.debit - t.credit;
 }
 
-function plFromAmounts(accounts: ReportAccount[], amountOf: (a: ReportAccount) => Fils) {
+function plFromAmounts(
+  accounts: ReportAccount[],
+  amountOf: (a: ReportAccount) => Fils,
+  oci: Map<string, Fils> = new Map()
+) {
   const groups: Record<PlSection, Array<[ReportAccount, Fils]>> = {
     revenue: [],
     cost_of_sales: [],
     operating_expenses: [],
     other_income: [],
     other_expenses: [],
+    income_tax: [],
   };
+  const ociItems: Array<[ReportAccount, Fils]> = [];
   const byAccount: Record<string, number> = {};
   for (const a of accounts) {
     const s = plSection(a);
@@ -276,12 +306,19 @@ function plFromAmounts(accounts: ReportAccount[], amountOf: (a: ReportAccount) =
     groups[s].push([a, f]);
     if (f !== 0) byAccount[a.id] = aed(f);
   }
+  for (const a of accounts) {
+    const f = oci.get(a.id);
+    if (f) ociItems.push([a, f]);
+  }
   const sum = (k: PlSection) => groups[k].reduce((s, [, f]) => s + f, 0);
   const rev = sum("revenue");
   const cos = sum("cost_of_sales");
   const opex = sum("operating_expenses");
   const oi = sum("other_income");
   const oe = sum("other_expenses");
+  const tax = sum("income_tax");
+  const ociTotal = ociItems.reduce((s, [, f]) => s + f, 0);
+  const pbt = rev - cos - opex + oi - oe;
   const totalsFils = {
     revenue: rev,
     costOfSales: cos,
@@ -290,14 +327,18 @@ function plFromAmounts(accounts: ReportAccount[], amountOf: (a: ReportAccount) =
     operatingProfit: rev - cos - opex,
     otherIncome: oi,
     otherExpenses: oe,
+    profitBeforeTax: pbt,
+    incomeTaxExpense: tax,
     totalIncome: rev + oi,
-    totalExpenses: cos + opex + oe,
-    netProfit: rev + oi - cos - opex - oe,
+    totalExpenses: cos + opex + oe + tax,
+    netProfit: pbt - tax,
+    otherComprehensiveIncome: ociTotal,
+    totalComprehensiveIncome: pbt - tax + ociTotal,
   };
   const totals = Object.fromEntries(
     Object.entries(totalsFils).map(([k, v]) => [k, aed(v)])
   ) as unknown as PlTotals;
-  return { groups, totals, totalsFils, byAccount };
+  return { groups, ociItems, totals, totalsFils, byAccount };
 }
 
 function diffTotals(a: PlTotals, b: PlTotals): PlTotals {
@@ -372,7 +413,8 @@ export async function profitAndLoss(
   const from = args.from ?? null;
   const accounts = await loadAccounts(companyId, q);
   const totals = await accountTotals(companyId, { from, to }, q);
-  const main = plFromAmounts(accounts, (a) => plAmount(a, totals.get(a.id)));
+  const oci = await otherComprehensiveIncome(companyId, accounts, { from, to }, q);
+  const main = plFromAmounts(accounts, (a) => plAmount(a, totals.get(a.id)), oci);
   const result: ProfitAndLoss = {
     reportCurrency: await reportCurrencyOf(companyId, q),
     from,
@@ -384,6 +426,8 @@ export async function profitAndLoss(
       operatingExpenses: section(main.groups.operating_expenses),
       otherIncome: section(main.groups.other_income),
       otherExpenses: section(main.groups.other_expenses),
+      incomeTax: section(main.groups.income_tax),
+      otherComprehensiveIncome: section(main.ociItems),
     },
   };
 
@@ -401,7 +445,8 @@ export async function profitAndLoss(
     result.columns = [];
     for (const b of cols) {
       const t = await accountTotals(companyId, { from: b.from, to: b.to }, q);
-      const p = plFromAmounts(accounts, (a) => plAmount(a, t.get(a.id)));
+      const bo = await otherComprehensiveIncome(companyId, accounts, b, q);
+      const p = plFromAmounts(accounts, (a) => plAmount(a, t.get(a.id)), bo);
       result.columns.push({
         label: b.label,
         from: b.from,
@@ -416,6 +461,7 @@ export async function profitAndLoss(
     let cmp: { from: IsoDate | null; to: IsoDate };
     let label: string;
     let amountOf: (a: ReportAccount) => Fils;
+    let cmpOci: Map<string, Fils> = new Map();
     if (args.compareTo === "budget") {
       if (!args.budgetId) throw new DomainError("BUDGET_ID_REQUIRED", 400);
       if (!from) throw new DomainError("REPORT_RANGE_REQUIRED", 400);
@@ -434,8 +480,9 @@ export async function profitAndLoss(
       }
       const t = await accountTotals(companyId, cmp, q);
       amountOf = (a) => plAmount(a, t.get(a.id));
+      cmpOci = await otherComprehensiveIncome(companyId, accounts, cmp, q);
     }
-    const c = plFromAmounts(accounts, amountOf);
+    const c = plFromAmounts(accounts, amountOf, cmpOci);
     result.comparison = {
       basis: args.compareTo,
       label,
@@ -460,10 +507,12 @@ export interface BalanceSheet {
   liabilities: { current: StatementSection; nonCurrent: StatementSection; total: number };
   equity: {
     capital: StatementSection;
+    /** A3 (H11): revaluation / OCI reserves, a separate component of equity (IAS 1.106(d)). */
+    reserves: StatementSection;
     retainedEarningsBroughtForward: number;
     currentYearEarnings: number;
     total: number;
-    /** Capital lines + synthetic retained earnings b/f + current year earnings. */
+    /** Capital lines + reserve lines + synthetic retained earnings b/f + current year earnings. */
     lines: StatementLine[];
   };
   totalAssets: number;
@@ -496,6 +545,7 @@ async function balanceSheetCore(
   const curL: Array<[ReportAccount, Fils]> = [];
   const nonL: Array<[ReportAccount, Fils]> = [];
   const capital: Array<[ReportAccount, Fils]> = [];
+  const reserves: Array<[ReportAccount, Fils]> = [];
   let reAccounts = 0;
 
   for (const a of accounts) {
@@ -508,11 +558,28 @@ async function balanceSheetCore(
       else curL.push([a, -net]);
     } else if (a.type === "liability") {
       const net = t.credit - t.debit;
-      if (net >= 0) (isNonCurrent(a) ? nonL : curL).push([a, net]);
-      else curA.push([a, -net]);
+      if (net < 0) curA.push([a, -net]);
+      else if (isNonCurrent(a) && isGratuityProvisionAccount(a) && net > 0) {
+        // A3 (H10): the end-of-service provision is non-current (IAS 1.69, IAS 19.153); only
+        // the provision of known leavers (termination date within 12 months) is current.
+        const cur = Math.min(net, await gratuityCurrentPortionFils(companyId, asOf, q));
+        if (cur > 0) {
+          curL.push([
+            {
+              ...a,
+              id: `${a.id}:current`,
+              nameEn: `${a.nameEn} (current portion)`,
+              nameAr: a.nameAr ? `${a.nameAr} (الجزء المتداول)` : "الجزء المتداول",
+            },
+            cur,
+          ]);
+        }
+        nonL.push([a, net - cur]);
+      } else (isNonCurrent(a) ? nonL : curL).push([a, net]);
     } else if (a.type === "equity") {
       const net = t.credit - t.debit;
       if (isRetainedEarningsAccount(a)) reAccounts += net;
+      else if (isRevaluationReserveAccount(a)) reserves.push([a, net]);
       else capital.push([a, net]);
     }
   }
@@ -522,9 +589,10 @@ async function balanceSheetCore(
   const sum = (xs: Array<[ReportAccount, Fils]>) => xs.reduce((s, [, f]) => s + f, 0);
   const totalAssets = sum(curA) + sum(nonA);
   const totalLiabilities = sum(curL) + sum(nonL);
-  const totalEquity = sum(capital) + reBf + cye;
+  const totalEquity = sum(capital) + sum(reserves) + reBf + cye;
   const diff = totalAssets - totalLiabilities - totalEquity;
   const capitalSection = section(capital);
+  const reserveSection = section(reserves);
   return {
     reportCurrency: await reportCurrencyOf(companyId, q),
     asOf,
@@ -537,11 +605,13 @@ async function balanceSheetCore(
     },
     equity: {
       capital: capitalSection,
+      reserves: reserveSection,
       retainedEarningsBroughtForward: aed(reBf),
       currentYearEarnings: aed(cye),
       total: aed(totalEquity),
       lines: [
         ...capitalSection.lines,
+        ...reserveSection.lines,
         {
           accountId: RETAINED_EARNINGS_BF_ID,
           accountCode: "",
@@ -611,6 +681,13 @@ export interface CashFlowLine {
   accountName: string;
   accountNameAr?: string | null;
   amount: number;
+  /**
+   * A3 (C5): what the line is — net income, a non-cash adjustment (depreciation, impairment,
+   * disposal gain/loss, unrealised FX on cash: IAS 7.20), a working-capital or other balance
+   * change, or an investing flow derived from the posting (purchases / disposal proceeds of
+   * non-current assets: IAS 7.16).
+   */
+  kind?: "net_income" | "non_cash" | "balance_change" | "purchase" | "proceeds" | "fx_effect";
 }
 
 export interface CashFlowStatement {
@@ -620,11 +697,14 @@ export interface CashFlowStatement {
   method: "indirect" | "direct";
   openingCash: number;
   closingCash: number;
+  /** operating + investing + financing + effect of exchange-rate changes. */
   netCashChange: number;
   netIncome: number;
   operating: { total: number; breakdown: CashFlowLine[] };
   investing: { total: number; breakdown: CashFlowLine[] };
   financing: { total: number; breakdown: CashFlowLine[] };
+  /** A3 (C5): effect of exchange-rate changes on cash held in foreign currency (IAS 7.28). */
+  fxEffect: { total: number; breakdown: CashFlowLine[] };
   cashProof: {
     openingCash: number;
     netCashChange: number;
@@ -643,6 +723,166 @@ export interface CashFlowStatement {
 }
 
 export const NET_INCOME_LINE_ID = "net-income";
+export const FX_ON_CASH_LINE_ID = "fx-effect-on-cash";
+export const UNREALISED_FX_ON_CASH_LINE_ID = "noncash:fx-unrealised-cash";
+
+type CashFlowKind = NonNullable<CashFlowLine["kind"]>;
+type Bucket = Map<string, { fils: Fils; kind: CashFlowKind; account?: ReportAccount }>;
+type CashFlowBuckets = Record<CashFlowActivity | "fx", Bucket>;
+
+function addTo(b: Bucket, key: string, fils: Fils, kind: CashFlowKind, account?: ReportAccount) {
+  const cur = b.get(key);
+  if (cur) cur.fils += fils;
+  else b.set(key, { fils, kind, account });
+}
+
+const emptyBuckets = (): CashFlowBuckets => ({
+  operating: new Map(),
+  investing: new Map(),
+  financing: new Map(),
+  fx: new Map(),
+});
+
+/**
+ * Indirect method (A3, C5). Net income, then:
+ *  - entries that touch a non-current asset (PPE, accumulated depreciation / impairment) are
+ *    read per entry: their P&L lines are non-cash adjustments (depreciation, impairment, loss
+ *    or gain on disposal: IAS 7.20(b),(c)), their equity lines are non-cash transactions
+ *    (revaluation surplus, IAS 7.43) and what is left (PPE effect + P&L + equity) is the
+ *    investing flow (purchase < 0, disposal proceeds > 0: IAS 7.16). A purchase on credit is
+ *    an investing outflow offset by the payable in operating until it is paid.
+ *  - FX revaluation of cash balances is taken out of operating and shown on its own line, the
+ *    effect of exchange-rate changes on cash (IAS 7.28).
+ *  - every other balance-sheet account contributes its balance change to the activity of
+ *    `indirectActivity` (working capital in operating, long-term debt and equity in financing).
+ */
+async function indirectBuckets(
+  companyId: string,
+  range: { from: IsoDate | null; to: IsoDate },
+  accounts: ReportAccount[],
+  byId: Map<string, ReportAccount>,
+  cashIds: Set<string>,
+  totals: Map<string, AccountTotals>,
+  netIncome: Fils,
+  q: Queryable
+): Promise<CashFlowBuckets> {
+  const buckets = emptyBuckets();
+  addTo(buckets.operating, NET_INCOME_LINE_ID, netIncome, "net_income");
+  const isPpe = (a: ReportAccount) => a.type === "asset" && !cashIds.has(a.id) && isNonCurrent(a);
+  const ppeIds = accounts.filter(isPpe).map((a) => a.id);
+  const adj = await cashFlowAdjustments(companyId, range, ppeIds, Array.from(cashIds), q);
+
+  // Equity effects of non-cash PPE transactions (revaluation), removed from financing.
+  const equityNonCash = new Map<string, Fils>();
+  const byEntry = new Map<string, PpeEntryLine[]>();
+  for (const l of adj.ppeEntryLines) {
+    const list = byEntry.get(l.entryId) ?? [];
+    list.push(l);
+    byEntry.set(l.entryId, list);
+  }
+  for (const lines of Array.from(byEntry.values())) {
+    let investing = 0;
+    let primary: ReportAccount | undefined;
+    let primaryWeight = -1;
+    for (const l of lines) {
+      const a = byId.get(l.accountId);
+      if (!a) continue;
+      if (isPpe(a)) {
+        investing += l.effect;
+        // The cost account names the flow; accumulated depreciation only when it is alone.
+        const w = isContraAsset(a) ? Math.abs(l.effect) / 1e6 : Math.abs(l.effect);
+        if (w > primaryWeight) {
+          primaryWeight = w;
+          primary = a;
+        }
+      } else if (a.type === "income" || a.type === "expense") {
+        // Non-cash P&L item: add back what net income deducted (or deduct a gain).
+        investing += l.effect;
+        addTo(buckets.operating, `noncash:${a.id}`, -l.effect, "non_cash", a);
+      } else if (a.type === "equity") {
+        investing += l.effect;
+        equityNonCash.set(a.id, (equityNonCash.get(a.id) ?? 0) + l.effect);
+      }
+    }
+    if (investing !== 0 && primary) {
+      const kind: CashFlowKind = investing < 0 ? "purchase" : "proceeds";
+      addTo(buckets.investing, `${kind}:${primary.id}`, investing, kind, primary);
+    }
+  }
+
+  if (adj.fxOnCashFils !== 0) {
+    addTo(buckets.operating, UNREALISED_FX_ON_CASH_LINE_ID, -adj.fxOnCashFils, "non_cash");
+    addTo(buckets.fx, FX_ON_CASH_LINE_ID, adj.fxOnCashFils, "fx_effect");
+  }
+
+  for (const a of accounts) {
+    if (cashIds.has(a.id) || isPpe(a)) continue;
+    if (a.type !== "asset" && a.type !== "liability" && a.type !== "equity") continue;
+    const t = totals.get(a.id);
+    const effect = (t ? t.credit - t.debit : 0) - (equityNonCash.get(a.id) ?? 0);
+    if (effect === 0) continue;
+    addTo(buckets[indirectActivity(a)], a.id, effect, "balance_change", a);
+  }
+  return buckets;
+}
+
+const CASH_FLOW_LABELS: Record<string, { en: string; ar: string }> = {
+  [NET_INCOME_LINE_ID]: { en: "Net income", ar: "صافي الدخل" },
+  [UNREALISED_FX_ON_CASH_LINE_ID]: {
+    en: "Unrealised exchange differences on cash",
+    ar: "فروق صرف غير محققة على النقد",
+  },
+  [FX_ON_CASH_LINE_ID]: {
+    en: "Effect of exchange-rate changes on cash",
+    ar: "أثر تغيرات أسعار الصرف على النقد",
+  },
+};
+
+const KIND_ORDER: Record<CashFlowKind, number> = {
+  net_income: 0,
+  non_cash: 1,
+  balance_change: 2,
+  purchase: 3,
+  proceeds: 4,
+  fx_effect: 5,
+};
+
+function cashFlowLine(
+  key: string,
+  v: { fils: Fils; kind: CashFlowKind; account?: ReportAccount }
+): CashFlowLine {
+  const fixed = CASH_FLOW_LABELS[key];
+  const a = v.account;
+  if (fixed || !a) {
+    return {
+      accountId: key,
+      accountCode: "",
+      accountName: fixed?.en ?? "Unclassified",
+      accountNameAr: fixed?.ar ?? null,
+      amount: aed(v.fils),
+      kind: v.kind,
+    };
+  }
+  if (v.kind === "purchase" || v.kind === "proceeds") {
+    const purchase = v.kind === "purchase";
+    return {
+      accountId: key,
+      accountCode: a.code,
+      accountName: `${purchase ? "Purchase of" : "Proceeds from disposal of"} ${a.nameEn}`,
+      accountNameAr: `${purchase ? "شراء" : "متحصلات استبعاد"} ${a.nameAr ?? a.nameEn}`,
+      amount: aed(v.fils),
+      kind: v.kind,
+    };
+  }
+  return {
+    accountId: v.kind === "non_cash" ? key : a.id,
+    accountCode: a.code,
+    accountName: a.nameEn,
+    accountNameAr: a?.nameAr ?? null,
+    amount: aed(v.fils),
+    kind: v.kind,
+  };
+}
 
 export async function cashFlow(
   args: { companyId: string; from?: IsoDate | null; to: IsoDate; method?: "indirect" | "direct" },
@@ -680,26 +920,22 @@ export async function cashFlow(
       });
   }
 
-  const buckets: Record<CashFlowActivity, Map<string, Fils>> = {
-    operating: new Map(),
-    investing: new Map(),
-    financing: new Map(),
-  };
   const netIncome = netIncomeOf(accounts, range);
+  let buckets: CashFlowBuckets;
 
   if (method === "indirect") {
-    buckets.operating.set(NET_INCOME_LINE_ID, netIncome);
-    for (const a of accounts) {
-      if (cashIds.has(a.id)) continue;
-      if (a.type !== "asset" && a.type !== "liability" && a.type !== "equity") continue;
-      const t = range.get(a.id);
-      if (!t) continue;
-      const effect = t.credit - t.debit; // increase in an asset uses cash; in a liability provides it
-      if (effect === 0) continue;
-      const act = indirectActivity(a);
-      buckets[act].set(a.id, (buckets[act].get(a.id) ?? 0) + effect);
-    }
+    buckets = await indirectBuckets(
+      companyId,
+      { from, to },
+      accounts,
+      byId,
+      cashIds,
+      range,
+      netIncome,
+      q
+    );
   } else {
+    buckets = emptyBuckets();
     const lines = await ledgerLines(companyId, { from, to }, q);
     const byEntry = new Map<string, typeof lines>();
     for (const l of lines) {
@@ -711,6 +947,11 @@ export async function cashFlow(
       const cashLines = entryLines.filter((l) => cashIds.has(l.accountId));
       if (!cashLines.length) continue;
       const netCash = cashLines.reduce((s, l) => s + l.debit - l.credit, 0);
+      if ((FX_REVALUATION_SOURCES as readonly string[]).includes(entryLines[0].source)) {
+        // A3 (C5): revaluing foreign cash is not a cash flow (IAS 7.28).
+        addTo(buckets.fx, FX_ON_CASH_LINE_ID, netCash, "fx_effect");
+        continue;
+      }
       let dominant: (typeof entryLines)[number] | undefined;
       let w = -1;
       for (const l of entryLines) {
@@ -729,47 +970,31 @@ export async function cashFlow(
             ? "investing"
             : indirectActivity(cp);
       const key = cp?.id ?? "unclassified";
-      buckets[act].set(key, (buckets[act].get(key) ?? 0) + netCash);
+      addTo(buckets[act], key, netCash, "balance_change", cp);
     }
   }
 
-  const build = (act: CashFlowActivity) => {
+  const build = (act: CashFlowActivity | "fx") => {
     const breakdown: CashFlowLine[] = [];
     let total = 0;
-    for (const [id, f] of Array.from(buckets[act].entries())) {
-      total += f;
-      if (id === NET_INCOME_LINE_ID) {
-        breakdown.push({
-          accountId: id,
-          accountCode: "",
-          accountName: "Net income",
-          accountNameAr: "صافي الدخل",
-          amount: aed(f),
-        });
-        continue;
-      }
-      const a = byId.get(id);
-      breakdown.push({
-        accountId: id,
-        accountCode: a?.code ?? "",
-        accountName: a?.nameEn ?? "Unclassified",
-        accountNameAr: a?.nameAr ?? null,
-        amount: aed(f),
-      });
+    for (const [key, v] of Array.from(buckets[act].entries())) {
+      total += v.fils;
+      if (v.fils === 0 && v.kind !== "net_income") continue;
+      breakdown.push(cashFlowLine(key, v));
     }
-    breakdown.sort((x, y) =>
-      x.accountId === NET_INCOME_LINE_ID
-        ? -1
-        : y.accountId === NET_INCOME_LINE_ID
-          ? 1
-          : x.accountCode.localeCompare(y.accountCode)
+    breakdown.sort(
+      (x, y) =>
+        KIND_ORDER[x.kind ?? "balance_change"] - KIND_ORDER[y.kind ?? "balance_change"] ||
+        x.accountCode.localeCompare(y.accountCode) ||
+        x.accountName.localeCompare(y.accountName)
     );
     return { total, section: { total: aed(total), breakdown } };
   };
   const op = build("operating");
   const inv = build("investing");
   const fin = build("financing");
-  const computedNet = op.total + inv.total + fin.total;
+  const fx = build("fx");
+  const computedNet = op.total + inv.total + fin.total + fx.total;
   return {
     reportCurrency: await reportCurrencyOf(companyId, q),
     from,
@@ -782,6 +1007,7 @@ export async function cashFlow(
     operating: op.section,
     investing: inv.section,
     financing: fin.section,
+    fxEffect: fx.section,
     cashProof: {
       openingCash: aed(openFils),
       netCashChange: aed(computedNet),

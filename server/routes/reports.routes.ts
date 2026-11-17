@@ -764,6 +764,12 @@ export function registerReportRoutes(app: Express) {
       add("Other income", pl.sections.otherIncome.lines, pl.otherIncome);
       add("Other expenses", pl.sections.otherExpenses.lines, pl.otherExpenses);
       rows.push({
+        account: "PROFIT BEFORE TAX",
+        amount: pl.profitBeforeTax,
+        comparison: pl.comparison?.totals.profitBeforeTax,
+      });
+      add("Income tax expense", pl.sections.incomeTax.lines, pl.incomeTaxExpense);
+      rows.push({
         account: "NET PROFIT",
         amount: pl.netProfit,
         comparison: pl.comparison?.totals.netProfit,

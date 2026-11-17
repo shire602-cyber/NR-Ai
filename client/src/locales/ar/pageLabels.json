@@ -497,6 +497,7 @@
   "pageLabels.netCashFlow": "صافي التدفق النقدي",
   "pageLabels.netCashPosition": "صافي المركز النقدي",
   "pageLabels.netFinancingCashFlow": "صافي التدفق النقدي التمويلي",
+  "pageLabels.fxEffectOnCash": "أثر تغيرات أسعار الصرف على النقد",
   "pageLabels.netIncome": "صافي الدخل",
   "pageLabels.netInvestingCashFlow": "صافي التدفق النقدي الاستثماري",
   "pageLabels.netOperatingCashFlow": "صافي التدفق النقدي التشغيلي",

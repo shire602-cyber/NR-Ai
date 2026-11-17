@@ -38,10 +38,16 @@ export interface PlSectionsPayload {
     operatingExpenses: PlSection;
     otherIncome: PlSection;
     otherExpenses: PlSection;
+    /** A3 (H3): income tax expense, shown after profit before tax. */
+    incomeTax?: PlSection;
+    /** A3 (H11): items of other comprehensive income. */
+    otherComprehensiveIncome?: PlSection;
   };
   grossProfit?: number;
   operatingProfit?: number;
+  profitBeforeTax?: number;
   netProfit: number;
+  totalComprehensiveIncome?: number;
 }
 
 function SectionTable({
@@ -162,6 +168,22 @@ export function ProfitLossSections({ report }: { report: PlSectionsPayload | und
         locale={locale}
         tone="destructive"
       />
+      {s.incomeTax && (s.incomeTax.lines.length > 0 || s.incomeTax.total !== 0) ? (
+        <>
+          <ResultLine
+            labelKey="reportCenter.profitBeforeTax"
+            value={report.profitBeforeTax ?? report.netProfit + s.incomeTax.total}
+            locale={locale}
+          />
+          <SectionTable
+            titleKey="reportCenter.incomeTaxExpense"
+            section={s.incomeTax}
+            totalKey="reportCenter.totalIncomeTax"
+            locale={locale}
+            tone="destructive"
+          />
+        </>
+      ) : null}
       <div className="border-t-4 pt-4">
         <div className="flex justify-between items-center text-lg font-semibold">
           <span>
@@ -174,6 +196,24 @@ export function ProfitLossSections({ report }: { report: PlSectionsPayload | und
           </span>
         </div>
       </div>
+      {s.otherComprehensiveIncome && s.otherComprehensiveIncome.lines.length > 0 ? (
+        <>
+          <SectionTable
+            titleKey="reportCenter.otherComprehensiveIncome"
+            section={s.otherComprehensiveIncome}
+            totalKey="reportCenter.totalOtherComprehensiveIncome"
+            locale={locale}
+            tone="muted"
+          />
+          <ResultLine
+            labelKey="reportCenter.totalComprehensiveIncome"
+            value={
+              report.totalComprehensiveIncome ?? report.netProfit + s.otherComprehensiveIncome.total
+            }
+            locale={locale}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

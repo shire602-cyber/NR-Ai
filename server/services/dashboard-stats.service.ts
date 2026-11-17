@@ -456,7 +456,9 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
   const previousYear = summarise(plPriorYear, prevYear.from, prevYear.to);
 
   const ctRevenue = Math.max(0, plYtd.totalIncome);
-  const ctExpenses = Math.max(0, plYtd.totalExpenses);
+  // Estimate on profit before tax (A3 H3, IAS 12): a posted corporate-tax provision is the
+  // estimate's own result, so deducting it would understate the tax (as the executive summary).
+  const ctExpenses = Math.max(0, plYtd.totalExpenses - (plYtd.incomeTaxExpense ?? 0));
   const ct = computeCtLiability({
     totalRevenue: ctRevenue,
     totalExpenses: ctExpenses,

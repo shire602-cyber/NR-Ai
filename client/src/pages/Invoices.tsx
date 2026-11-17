@@ -106,6 +106,7 @@ import {
   prepareInvoicesForExport,
 } from "@/lib/export";
 import { ShareInvoiceDialog } from "@/components/invoices/ShareInvoiceDialog";
+import { WriteOffInvoiceDialog } from "@/components/invoices/WriteOffInvoiceDialog";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   Plus,
@@ -296,6 +297,9 @@ export default function Invoices() {
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
   const [invoiceToShare, setInvoiceToShare] = useState<{ id: string; number: string } | null>(null);
+  const [invoiceToWriteOff, setInvoiceToWriteOff] = useState<{ id: string; number: string } | null>(
+    null
+  );
 
   // Virtual scrolling for large invoice lists.
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -2325,6 +2329,16 @@ export default function Invoices() {
                                       <T k="invoices.actionCreateCreditNote" />
                                     </DropdownMenuItem>
                                   )}
+                                  {(invoice as any).invoiceType !== "credit_note" &&
+                                    ["sent", "posted", "partial"].includes(invoice.status) && (
+                                      <DropdownMenuItem
+                                        onSelect={() => setInvoiceToWriteOff(invoice)}
+                                        data-testid={`button-write-off-${invoice.id}`}
+                                      >
+                                        <XCircle aria-hidden />
+                                        <T k="invoices.actionWriteOff" />
+                                      </DropdownMenuItem>
+                                    )}
                                   {/* X5 (J1 L4): only a never-issued draft can be removed;
                                       issued invoices are voided or credited. */}
                                   {invoice.status === "draft" && (
@@ -2910,6 +2924,11 @@ export default function Invoices() {
         </DialogContent>
       </Dialog>
 
+      <WriteOffInvoiceDialog
+        invoice={invoiceToWriteOff}
+        companyId={selectedCompanyId}
+        onClose={() => setInvoiceToWriteOff(null)}
+      />
       <ShareInvoiceDialog
         invoice={invoiceToShare}
         companyId={selectedCompanyId}
