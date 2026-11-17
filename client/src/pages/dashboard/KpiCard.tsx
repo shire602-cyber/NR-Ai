@@ -27,6 +27,8 @@ export interface KpiCardProps {
   testId?: string;
   /** Accessible context for the delta, e.g. "vs prior period". */
   deltaContext?: string;
+  /** Pre-formatted delta (e.g. percentage points); defaults to a percent change. */
+  deltaLabel?: string;
 }
 
 const SPARK_COLOR: Record<NonNullable<KpiCardProps["accent"]>, string> = {
@@ -46,6 +48,7 @@ export function KpiCard({
   href,
   testId,
   deltaContext,
+  deltaLabel,
 }: KpiCardProps) {
   const { locale } = useTranslation();
   const sparkColor = SPARK_COLOR[accent];
@@ -65,7 +68,7 @@ export function KpiCard({
         delta === undefined || !Number.isFinite(delta)
           ? undefined
           : {
-              label: formatPercentDelta(delta),
+              label: deltaLabel ?? formatPercentDelta(delta),
               direction: delta > 0 ? "up" : delta < 0 ? "down" : "flat",
               tone: trend === "up" ? "positive" : trend === "down" ? "negative" : "neutral",
               context: deltaContext,

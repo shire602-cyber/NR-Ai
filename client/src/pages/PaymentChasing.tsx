@@ -1,24 +1,11 @@
-import { T } from "@/components/layout/T";
-import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Send } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Money } from "@/components/ui/money";
+import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,283 +16,81 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
-import { formatCurrency } from "@/lib/format";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
+import { OverdueTab } from "./payment-reminders/OverdueTab";
+import { ScheduleTab } from "./payment-reminders/ScheduleTab";
+import { HistoryTab } from "./payment-reminders/HistoryTab";
+import { BulkResultsDialog, ReminderReadyDialog } from "./payment-reminders/dialogs";
 import {
-  Send,
-  Inbox,
-  BarChart3,
-  Settings as SettingsIcon,
-  FileText,
-  Clock,
-  AlertTriangle,
-  CheckCircle2,
-  Ban,
-  AlertCircle,
-} from "lucide-react";
+  AGING_BUCKETS,
+  chasingKeys,
+  type AgingBucket,
+  type BulkSendResponse,
+  type OverdueResponse,
+  type QueueResponse,
+} from "./payment-reminders/types";
 
-// Threshold above which "Chase all" requires explicit confirmation. Picked to
-// match a conservative "is this batch big enough to be embarrassing if wrong"
-// gut-check; tweak if customer feedback suggests another number.
+// Above this many due reminders, "Send due reminders" asks for confirmation first.
 const BULK_CONFIRM_THRESHOLD = 10;
 
-// Known placeholder tokens — must mirror RenderContext keys in the service.
-// The template editor highlights any tokens outside this set so a typo like
-// `{customername}` doesn't silently render as literal text in production.
-const KNOWN_PLACEHOLDERS = [
-  "customerName",
-  "invoiceNumber",
-  "amount",
-  "currency",
-  "dueDate",
-  "daysOverdue",
-  "paymentLink",
-  "senderName",
-] as const;
+type TabId = "overdue" | "schedule" | "history";
+const TABS: TabId[] = ["overdue", "schedule", "history"];
 
-// ─── Types (inline; mirror server contracts) ────────────────────────────────
-
-type AgingBucket = "1-7" | "8-30" | "31-60" | "60+";
-type ChaseLevel = 1 | 2 | 3 | 4;
-
-interface AgingRow {
-  invoice: {
-    id: string;
-    number: string;
-    customerName: string;
-    currency: string;
-    total: number;
-    dueDate: string | null;
-    status: string;
-    contactId?: string | null;
-    chaseLevel?: number;
-    lastChasedAt?: string | null;
-    doNotChase?: boolean;
-  };
-  paidAmount: number;
-  outstanding: number;
-  daysOverdue: number;
-  bucket: AgingBucket;
-  recommendedLevel: ChaseLevel;
-  nextLevel?: ChaseLevel;
+function initialTab(): TabId {
+  if (typeof window === "undefined") return "overdue";
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return TABS.includes(tab as TabId) ? (tab as TabId) : "overdue";
 }
 
-interface OverdueResponse {
-  rows: AgingRow[];
-  buckets: Record<AgingBucket, number>;
-  totalOutstanding: number;
-}
-
-interface QueueResponse {
-  queue: AgingRow[];
-  groups: Array<{
-    contactId: string | null;
-    customerName: string;
-    rows: AgingRow[];
-    totalOutstanding: number;
-    currency: string;
-    recommendedLevel: ChaseLevel;
-  }>;
-  config: {
-    frequencyDays: number;
-    maxLevel: number;
-    preferredMethod: string;
-    autoChaseEnabled: boolean;
-  };
-}
-
-interface ChaseRecord {
-  id: string;
-  invoiceId: string;
-  level: number;
-  method: string;
-  language: string;
-  messageText: string;
-  daysOverdueAtSend: number;
-  amountAtSend: number;
-  status: string;
-  sentAt: string;
-  paidAt: string | null;
-}
-
-interface Effectiveness {
-  totalChases: number;
-  uniqueInvoices: number;
-  paidAfterChase: number;
-  paidWithin7: number;
-  paidWithin14: number;
-  paidWithin30: number;
-  conversionRate: number;
-  avgDaysToPayment: number | null;
-  byLevel: Record<string, { sent: number; paid: number }>;
-}
-
-interface Template {
-  id: string;
-  companyId: string | null;
-  level: number;
-  language: string;
-  subject: string | null;
-  body: string;
-  isDefault: boolean;
-}
-
-interface ChaseConfig {
-  companyId: string;
-  autoChaseEnabled: boolean;
-  chaseFrequencyDays: number;
-  maxLevel: number;
-  preferredMethod: string;
-  doNotChaseContactIds: string;
-  defaultLanguage: string;
-}
-
-interface BulkSendResult {
-  invoiceId: string;
-  level: number;
-  status: "sent" | "failed" | "skipped_max_level" | "skipped_no_template" | string;
-  error?: string;
-}
-
-interface BulkSendResponse {
-  sent: number;
-  skipped: number;
-  failed: number;
-  results: BulkSendResult[];
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function levelLabel(level: number, locale: string): string {
-  const en = ["", "Friendly reminder", "Firm reminder", "Urgent notice", "Final notice"];
-  const ar = ["", "تذكير ودي", "تذكير حازم", "إشعار عاجل", "إشعار نهائي"];
-  return (locale === "ar" ? ar : en)[level] || `Level ${level}`;
-}
-
-function levelColor(level: number): string {
-  switch (level) {
-    case 1:
-      return "bg-info-subtle text-info-subtle-foreground ";
-    case 2:
-      return "bg-warning-subtle text-warning-subtle-foreground ";
-    case 3:
-      return "bg-warning-subtle text-warning-subtle-foreground ";
-    case 4:
-      return "bg-danger-subtle text-danger-subtle-foreground ";
-    default:
-      return "bg-muted text-foreground";
-  }
-}
-
-function bucketColor(b: AgingBucket): string {
-  switch (b) {
-    case "1-7":
-      return "bg-info-subtle ";
-    case "8-30":
-      return "bg-warning-subtle ";
-    case "31-60":
-      return "bg-warning-subtle ";
-    case "60+":
-      return "bg-danger-subtle ";
-  }
-}
-
-// ─── Page ───────────────────────────────────────────────────────────────────
-
+/**
+ * Payment reminders (spec 3.7): one primary action, four aging tiles and three tabs —
+ * Overdue (with the next reminder per invoice), Schedule (steps, wording, automatic emails)
+ * and History. `/reminders` redirects to the Schedule tab.
+ */
 export default function PaymentChasing() {
   const { companyId } = useDefaultCompany();
   const { t, locale } = useTranslation();
+  const tt = t as Record<string, string>;
   const { toast } = useToast();
-
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewBody, setPreviewBody] = useState("");
-  const [previewLanguage, setPreviewLanguage] = useState<"en" | "ar">("en");
-  const [historyInvoiceId, setHistoryInvoiceId] = useState<string | null>(null);
-  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const keys = chasingKeys(companyId);
+  const [tab, setTab] = useState<TabId>(initialTab);
+  const [ready, setReady] = useState<{ body: string; language: "en" | "ar" } | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkResults, setBulkResults] = useState<BulkSendResponse | null>(null);
 
-  // ── Queries ────────────────────────────────────────────────────────────
   const overdueQuery = useQuery<OverdueResponse>({
-    queryKey: ["/api/chasing/overdue", companyId],
+    queryKey: keys.overdue,
     queryFn: () => apiRequest("GET", `/api/chasing/overdue/${companyId}`),
     enabled: !!companyId,
   });
-
   const queueQuery = useQuery<QueueResponse>({
-    queryKey: ["/api/chasing/queue", companyId],
+    queryKey: keys.queue,
     queryFn: () => apiRequest("GET", `/api/chasing/queue/${companyId}`),
     enabled: !!companyId,
   });
 
-  const historyQuery = useQuery<ChaseRecord[]>({
-    queryKey: ["/api/chasing/history", companyId],
-    queryFn: () => apiRequest("GET", `/api/chasing/history/${companyId}?sinceDays=180`),
-    enabled: !!companyId,
-  });
+  const refreshChasing = () => {
+    queryClient.invalidateQueries({ queryKey: keys.overdue });
+    queryClient.invalidateQueries({ queryKey: keys.queue });
+    queryClient.invalidateQueries({ queryKey: keys.history });
+  };
 
-  const effQuery = useQuery<Effectiveness>({
-    queryKey: ["/api/chasing/effectiveness", companyId],
-    queryFn: () => apiRequest("GET", `/api/chasing/effectiveness/${companyId}?sinceDays=180`),
-    enabled: !!companyId,
-  });
-
-  const templatesQuery = useQuery<Template[]>({
-    queryKey: ["/api/chasing/templates", companyId],
-    queryFn: () => apiRequest("GET", `/api/chasing/templates/${companyId}`),
-    enabled: !!companyId,
-  });
-
-  const configQuery = useQuery<ChaseConfig>({
-    queryKey: ["/api/chasing/config", companyId],
-    queryFn: () => apiRequest("GET", `/api/chasing/config/${companyId}`),
-    enabled: !!companyId,
-  });
-
-  // ── Mutations ──────────────────────────────────────────────────────────
   const sendOne = useMutation({
     mutationFn: (invoiceId: string) =>
-      apiRequest("POST", `/api/chasing/send/${invoiceId}`, {
-        method: "email",
-        language: locale,
-      }),
-    onSuccess: (data: any) => {
-      toast({
-        title: translateNow("toasts.reminderReady"),
-        description: t["pages.chasingPreviewDescription"],
-      });
-      setPreviewBody(data.message);
-      // Use the language we requested — server may fall back to default but the
-      // text we just got back is rendered in the requested locale's template.
-      setPreviewLanguage(locale === "ar" ? "ar" : "en");
-      setPreviewOpen(true);
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/history", companyId] });
+      apiRequest("POST", `/api/chasing/send/${invoiceId}`, { method: "email", language: locale }),
+    onSuccess: (data: { message: string }) => {
+      toast({ title: translateNow("toasts.reminderReady") });
+      // The message comes back in the language we asked for.
+      setReady({ body: data.message, language: locale === "ar" ? "ar" : "en" });
+      refreshChasing();
     },
-    onError: (e: any) =>
+    onError: (e: Error) =>
       toast({
         title: translateNow("toasts.couldNotSend"),
-        description: e?.message ?? t["pages.chasingUnknownError"],
+        description: e?.message,
         variant: "destructive",
       }),
   });
@@ -328,14 +113,12 @@ export default function PaymentChasing() {
         variant: failed > 0 ? "destructive" : "default",
       });
       setBulkResults(data);
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/history", companyId] });
+      refreshChasing();
     },
     onError: (e) =>
       toast({
         title: translateNow("toasts.bulkSendFailed"),
-        description: e?.message ?? "—",
+        description: e?.message,
         variant: "destructive",
       }),
   });
@@ -344,1016 +127,128 @@ export default function PaymentChasing() {
     mutationFn: ({ invoiceId, value }: { invoiceId: string; value: boolean }) =>
       apiRequest("PATCH", `/api/chasing/invoice/${invoiceId}/do-not-chase`, { doNotChase: value }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
+      queryClient.invalidateQueries({ queryKey: keys.overdue });
+      queryClient.invalidateQueries({ queryKey: keys.queue });
     },
   });
 
-  const saveConfig = useMutation({
-    mutationFn: (patch: Partial<ChaseConfig> & { doNotChaseContactIds?: string[] }) =>
-      apiRequest("PATCH", `/api/chasing/config/${companyId}`, patch),
-    onSuccess: () => {
-      toast({ title: t["hr.settingsSaved"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/config", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
-    },
-  });
+  const rows = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
+  const queue = useMemo(() => queueQuery.data?.queue ?? [], [queueQuery.data?.queue]);
 
-  const saveTemplate = useMutation({
-    mutationFn: (t: Template) => {
-      // companyId-owned templates are PATCHable; system defaults (companyId=null) get cloned via POST.
-      if (t.companyId === companyId) {
-        return apiRequest("PATCH", `/api/chasing/templates/${companyId}/${t.id}`, {
-          level: t.level,
-          language: t.language,
-          subject: t.subject,
-          body: t.body,
-        });
-      }
-      return apiRequest("POST", `/api/chasing/templates/${companyId}`, {
-        level: t.level,
-        language: t.language,
-        subject: t.subject,
-        body: t.body,
-      });
-    },
-    onSuccess: () => {
-      toast({ title: t["pages.chasingTemplateSaved"] });
-      setEditingTemplate(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/chasing/templates", companyId] });
-    },
-    onError: (e: any) =>
-      toast({
-        title: translateNow("toasts.couldNotSaveTemplate"),
-        description: e?.message ?? t["pages.chasingUnknownError"],
-        variant: "destructive",
-      }),
-  });
+  // Count and amount per aging bucket. An amount is shown only when every invoice in the
+  // bucket shares one currency; a sum across currencies would be meaningless.
+  const bucketTiles = useMemo(() => {
+    return AGING_BUCKETS.map((bucket) => {
+      const inBucket = rows.filter((r) => r.bucket === bucket);
+      const currencies = new Set(inBucket.map((r) => r.invoice.currency));
+      const amount = inBucket.reduce((sum, r) => sum + r.outstanding, 0);
+      return {
+        bucket,
+        count: overdueQuery.data?.buckets?.[bucket] ?? inBucket.length,
+        amount,
+        currency: currencies.size === 1 ? [...currencies][0] : null,
+        mixed: currencies.size > 1,
+      };
+    });
+  }, [rows, overdueQuery.data?.buckets]);
 
-  // ── Per-invoice history ────────────────────────────────────────────────
-  const invoiceHistoryQuery = useQuery<ChaseRecord[]>({
-    queryKey: ["/api/chasing/invoice", historyInvoiceId, "history"],
-    queryFn: () => apiRequest("GET", `/api/chasing/invoice/${historyInvoiceId}/history`),
-    enabled: !!historyInvoiceId,
-  });
-
-  // ── Derived ────────────────────────────────────────────────────────────
-  const overdue = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
-  const buckets: Record<AgingBucket, number> = overdueQuery.data?.buckets ?? {
-    "1-7": 0,
-    "8-30": 0,
-    "31-60": 0,
-    "60+": 0,
+  const sendDue = () => {
+    if (queue.length > BULK_CONFIRM_THRESHOLD) setBulkConfirmOpen(true);
+    else bulkSend.mutate();
   };
-  const totalOutstanding = overdueQuery.data?.totalOutstanding ?? 0;
-  const queue = queueQuery.data?.queue ?? [];
-
-  const sortedOverdue = useMemo(
-    () => [...overdue].sort((a, b) => b.daysOverdue - a.daysOverdue),
-    [overdue]
-  );
-
-  // Pick a currency label for the Total Outstanding card. If every overdue row
-  // is in the same currency, show that. Otherwise fall back to "Mixed" rather
-  // than misleadingly tagging the sum with one of them.
-  const totalOutstandingCurrency = useMemo(() => {
-    const currencies = new Set(overdue.map((r) => r.invoice.currency));
-    if (currencies.size === 0) return configQuery.data?.defaultLanguage === "ar" ? "AED" : "AED";
-    if (currencies.size === 1) return [...currencies][0];
-    return "Mixed";
-  }, [overdue, configQuery.data?.defaultLanguage]);
-
-  // Placeholder validation for the template editor: tokens not in the
-  // RenderContext set will silently render as literal text in production.
-  const editingPlaceholders = useMemo(() => {
-    if (!editingTemplate) return { all: [] as string[], unknown: [] as string[] };
-    const matches = Array.from(editingTemplate.body.matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
-    const all = Array.from(new Set(matches));
-    const unknown = all.filter(
-      (p) => !KNOWN_PLACEHOLDERS.includes(p as (typeof KNOWN_PLACEHOLDERS)[number])
-    );
-    return { all, unknown };
-  }, [editingTemplate]);
-
-  // ─── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="container mx-auto py-6 space-y-6" data-testid="payment-chasing-page">
+    <div className="space-y-8" data-testid="payment-chasing-page">
       <PageHeader
-        eyebrow={t["pages.chasingEyebrow"]}
-        title={t["pages.chasingTitle"]}
-        description={t["pages.chasingDescription"]}
+        eyebrow="Sales"
+        title={tt["invoices.reminders.title"]}
+        description={tt["invoices.reminders.description"]}
         actions={
           <Button
-            onClick={() => {
-              if (queue.length > BULK_CONFIRM_THRESHOLD) {
-                setBulkConfirmOpen(true);
-              } else {
-                bulkSend.mutate();
-              }
-            }}
+            onClick={sendDue}
             disabled={queue.length === 0 || bulkSend.isPending}
             data-testid="button-chase-all"
           >
-            <Send className="mr-2 h-4 w-4" />
+            <Send aria-hidden />
             {bulkSend.isPending
               ? formatMessage(t["pages.chasingSending"], { count: queue.length })
-              : formatMessage(t["pages.chasingChaseAll"], { count: queue.length })}
+              : formatMessage(tt["invoices.reminders.sendDue"], { count: queue.length })}
           </Button>
         }
       />
 
-      {/* Aging buckets */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {(["1-7", "8-30", "31-60", "60+"] as AgingBucket[]).map((b) => (
-          <Card key={b} className={bucketColor(b)} data-testid={`bucket-${b}`}>
-            <CardHeader className="pb-2">
-              <CardDescription>
-                {formatMessage(t["pages.chasingBucketDays"], { bucket: b })}
-              </CardDescription>
-              <CardTitle className="text-3xl">
-                {overdueQuery.isLoading ? <Skeleton className="h-9 w-12" /> : (buckets[b] ?? 0)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              {t["pages.chasingInvoicesUnit"]}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {overdueQuery.isError && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            {t["pages.chasingLoadError"]}{" "}
-            {overdueQuery.error instanceof Error
-              ? overdueQuery.error.message
-              : t["pages.chasingUnknownError"]}
-          </AlertDescription>
-        </Alert>
+      {/* An empty ledger shows no zero tiles (spec 2.6). */}
+      {(overdueQuery.isLoading || rows.length > 0) && (
+        <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {bucketTiles.map((tile) => (
+            <StatCard
+              key={tile.bucket}
+              testId={`bucket-${tile.bucket}`}
+              label={tt[`invoices.reminders.bucket.${tile.bucket as AgingBucket}`]}
+              loading={overdueQuery.isLoading}
+              value={
+                <span className="money">
+                  {formatMessage(tt["invoices.reminders.bucketCount"], { count: tile.count })}
+                </span>
+              }
+              hint={
+                tile.count === 0 ? undefined : tile.currency ? (
+                  <Money amount={tile.amount} currency={tile.currency} />
+                ) : tile.mixed ? (
+                  tt["invoices.reminders.bucketMixed"]
+                ) : undefined
+              }
+            />
+          ))}
+        </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <T k="pageLabels.totalOutstanding" />
-          </CardTitle>
-          <CardDescription>
-            {overdueQuery.isLoading
-              ? t["pages.chasingLoading"]
-              : formatMessage(t["pages.chasingOverdueCount"], { count: overdue.length })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-3xl font-semibold" data-testid="total-outstanding">
-          {overdueQuery.isLoading ? (
-            <Skeleton className="h-9 w-48" />
-          ) : (
-            <>
-              {formatCurrency(totalOutstanding, totalOutstandingCurrency)}
-              {totalOutstandingCurrency === "Mixed" && (
-                <p className="text-xs font-normal text-muted-foreground mt-1">
-                  {t["pages.chasingMixedCurrencies"]}
-                </p>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="overdue" className="w-full">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="overdue">
-            <AlertTriangle className="mr-2 h-4 w-4" />
-            <T k="invoices.payStatus.overdue" />
+          <TabsTrigger value="overdue" data-testid="tab-reminders-overdue">
+            {tt["invoices.reminders.tabOverdue"]}
           </TabsTrigger>
-          <TabsTrigger value="queue">
-            <Inbox className="mr-2 h-4 w-4" />
-            <T k="pageLabels.queue" />
+          <TabsTrigger value="schedule" data-testid="tab-reminders-schedule">
+            {tt["invoices.reminders.tabSchedule"]}
           </TabsTrigger>
-          <TabsTrigger value="history">
-            <Clock className="mr-2 h-4 w-4" />
-            <T k="pages.history" />
-          </TabsTrigger>
-          <TabsTrigger value="effectiveness">
-            <BarChart3 className="mr-2 h-4 w-4" />
-            <T k="pages.effectiveness" />
-          </TabsTrigger>
-          <TabsTrigger value="templates">
-            <FileText className="mr-2 h-4 w-4" />
-            <T k="pageLabels.templates" />
-          </TabsTrigger>
-          <TabsTrigger value="settings">
-            <SettingsIcon className="mr-2 h-4 w-4" />
-            <T k="pages.settings" />
+          <TabsTrigger value="history" data-testid="tab-reminders-history">
+            {tt["invoices.reminders.tabHistory"]}
           </TabsTrigger>
         </TabsList>
 
-        {/* ── Overdue ─────────────────────────────────────────────────── */}
-        <TabsContent value="overdue">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.overdueInvoices" />
-              </CardTitle>
-              <CardDescription>{t["pages.chasingSortedHint"]}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {overdueQuery.isLoading && <Skeleton className="h-32" />}
-              {!overdueQuery.isLoading && sortedOverdue.length === 0 && (
-                <div className="text-muted-foreground text-sm py-8 text-center">
-                  <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success" />
-                  <T k="pageLabels.noOverdueInvoicesNice" />
-                </div>
-              )}
-              {sortedOverdue.length > 0 && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        <T k="invoices.publicInvoice" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pages.customer" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="reportCenter.outstanding" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pageLabels.daysOverdue" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="reportCenter.bucket" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pageLabels.lastChase" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="banking.common.actions" />
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedOverdue.map((row) => (
-                      <TableRow
-                        key={row.invoice.id}
-                        data-testid={`overdue-row-${row.invoice.number}`}
-                      >
-                        <TableCell className="font-mono">{row.invoice.number}</TableCell>
-                        <TableCell>{row.invoice.customerName}</TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(row.outstanding, row.invoice.currency)}
-                        </TableCell>
-                        <TableCell className="text-right">{row.daysOverdue}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{row.bucket}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {row.invoice.chaseLevel && row.invoice.chaseLevel > 0 ? (
-                            <Badge className={levelColor(row.invoice.chaseLevel)}>
-                              L{row.invoice.chaseLevel}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setHistoryInvoiceId(row.invoice.id)}
-                            data-testid={`button-history-${row.invoice.number}`}
-                          >
-                            <Clock className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={row.invoice.doNotChase ? "destructive" : "ghost"}
-                            onClick={() =>
-                              toggleDoNotChase.mutate({
-                                invoiceId: row.invoice.id,
-                                value: !row.invoice.doNotChase,
-                              })
-                            }
-                            data-testid={`button-dnc-${row.invoice.number}`}
-                            title={
-                              row.invoice.doNotChase
-                                ? t["pages.chasingResume"]
-                                : t["pages.chasingDoNotChase"]
-                            }
-                          >
-                            <Ban className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => sendOne.mutate(row.invoice.id)}
-                            disabled={row.invoice.doNotChase || sendOne.isPending}
-                            data-testid={`button-send-${row.invoice.number}`}
-                          >
-                            Send
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="overdue" className="mt-0">
+          <OverdueTab
+            rows={rows}
+            queue={queue}
+            loading={overdueQuery.isLoading}
+            error={overdueQuery.isError}
+            sending={sendOne.isPending}
+            onSend={(id) => sendOne.mutate(id)}
+            onToggleDoNotChase={(invoiceId, value) =>
+              toggleDoNotChase.mutate({ invoiceId, value })
+            }
+          />
         </TabsContent>
-
-        {/* ── Queue ──────────────────────────────────────────────────── */}
-        <TabsContent value="queue">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.nextChaseQueue" />
-              </CardTitle>
-              <CardDescription>
-                Invoices eligible for the next chase action (frequency ={" "}
-                {queueQuery.data?.config.frequencyDays ?? 7} days, max level ={" "}
-                {queueQuery.data?.config.maxLevel ?? 4})
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {queueQuery.isLoading && <Skeleton className="h-32" />}
-              {queueQuery.isError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Could not load chase queue:{" "}
-                    {queueQuery.error instanceof Error
-                      ? queueQuery.error.message
-                      : t["pages.chasingUnknownError"]}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {!queueQuery.isLoading && !queueQuery.isError && queue.length === 0 ? (
-                <div className="text-muted-foreground text-sm py-8 text-center">
-                  <T k="pageLabels.nothingWaitingInTheQueue" />
-                </div>
-              ) : (
-                !queueQuery.isLoading &&
-                !queueQuery.isError && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <T k="invoices.publicInvoice" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="pages.customer" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="reportCenter.nextLevel" />
-                        </TableHead>
-                        <TableHead className="text-right">
-                          <T k="reportCenter.outstanding" />
-                        </TableHead>
-                        <TableHead className="text-right">Days</TableHead>
-                        <TableHead className="text-right">
-                          <T k="pages.action" />
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {queue.map((row) => (
-                        <TableRow
-                          key={row.invoice.id}
-                          data-testid={`queue-row-${row.invoice.number}`}
-                        >
-                          <TableCell className="font-mono">{row.invoice.number}</TableCell>
-                          <TableCell>{row.invoice.customerName}</TableCell>
-                          <TableCell>
-                            {row.nextLevel ? (
-                              <Badge className={levelColor(row.nextLevel)}>
-                                L{row.nextLevel} — {levelLabel(row.nextLevel, locale)}
-                              </Badge>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(row.outstanding, row.invoice.currency)}
-                          </TableCell>
-                          <TableCell className="text-right">{row.daysOverdue}</TableCell>
-                          <TableCell className="text-right">
-                            <Button size="sm" onClick={() => sendOne.mutate(row.invoice.id)}>
-                              Send
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="schedule" className="mt-0">
+          <ScheduleTab companyId={companyId} />
         </TabsContent>
-
-        {/* ── History ────────────────────────────────────────────────── */}
-        <TabsContent value="history">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.chaseHistory" />
-              </CardTitle>
-              <CardDescription>Last 180 days</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {historyQuery.isLoading && <Skeleton className="h-32" />}
-              {historyQuery.isError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Could not load history:{" "}
-                    {historyQuery.error instanceof Error
-                      ? historyQuery.error.message
-                      : t["pages.chasingUnknownError"]}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {!historyQuery.isLoading &&
-                !historyQuery.isError &&
-                historyQuery.data?.length === 0 && (
-                  <div className="text-muted-foreground text-sm py-8 text-center">
-                    <T k="pageLabels.noChaseHistoryYet" />
-                  </div>
-                )}
-              {historyQuery.data && historyQuery.data.length > 0 && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Sent</TableHead>
-                      <TableHead>
-                        <T k="portal.level" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="consolidation.method" />
-                      </TableHead>
-                      <TableHead>Lang</TableHead>
-                      <TableHead>
-                        <T k="banking.common.status" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="pageLabels.daysOverdue" />
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <T k="banking.common.amount" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pageLabels.paid" />
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {historyQuery.data.map((c) => (
-                      <TableRow key={c.id} data-testid={`history-row-${c.id}`}>
-                        <TableCell>{new Date(c.sentAt).toLocaleString()}</TableCell>
-                        <TableCell>
-                          <Badge className={levelColor(c.level)}>L{c.level}</Badge>
-                        </TableCell>
-                        <TableCell>{c.method}</TableCell>
-                        <TableCell>{c.language}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={c.status === "failed" ? "destructive" : "outline"}
-                            data-testid={`history-status-${c.id}`}
-                          >
-                            {c.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{c.daysOverdueAtSend}</TableCell>
-                        <TableCell className="text-right">
-                          {Number(c.amountAtSend).toFixed(2)}
-                        </TableCell>
-                        <TableCell>
-                          {c.paidAt ? (
-                            <Badge className="bg-success-subtle text-success-subtle-foreground">
-                              Paid {new Date(c.paidAt).toLocaleDateString()}
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ── Effectiveness ──────────────────────────────────────────── */}
-        <TabsContent value="effectiveness">
-          {effQuery.isError && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Could not load effectiveness metrics:{" "}
-                {effQuery.error instanceof Error
-                  ? effQuery.error.message
-                  : t["pages.chasingUnknownError"]}
-              </AlertDescription>
-            </Alert>
-          )}
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card data-testid="metric-conversion-rate">
-              <CardHeader>
-                <CardDescription>
-                  <T k="pageLabels.conversionRate" />
-                </CardDescription>
-                <CardTitle className="text-3xl">
-                  {effQuery.isLoading ? (
-                    <Skeleton className="h-9 w-20" />
-                  ) : (
-                    `${((effQuery.data?.conversionRate ?? 0) * 100).toFixed(1)}%`
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                {effQuery.isLoading ? (
-                  <Skeleton className="h-3 w-32" />
-                ) : (
-                  `${effQuery.data?.paidAfterChase ?? 0} / ${effQuery.data?.uniqueInvoices ?? 0} chased invoices paid`
-                )}
-              </CardContent>
-            </Card>
-            <Card data-testid="metric-avg-days">
-              <CardHeader>
-                <CardDescription>
-                  <T k="pageLabels.avgDaysToPayment" />
-                </CardDescription>
-                <CardTitle className="text-3xl">
-                  {effQuery.isLoading ? (
-                    <Skeleton className="h-9 w-16" />
-                  ) : (
-                    (effQuery.data?.avgDaysToPayment ?? "—")
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">after first chase</CardContent>
-            </Card>
-            <Card data-testid="metric-windowed">
-              <CardHeader>
-                <CardDescription>
-                  <T k="pageLabels.paidWithinWindow" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <div>
-                  7 days: <strong>{effQuery.data?.paidWithin7 ?? 0}</strong>
-                </div>
-                <div>
-                  14 days: <strong>{effQuery.data?.paidWithin14 ?? 0}</strong>
-                </div>
-                <div>
-                  30 days: <strong>{effQuery.data?.paidWithin30 ?? 0}</strong>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.byEscalationLevel" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <T k="portal.level" />
-                    </TableHead>
-                    <TableHead className="text-right">Sent</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Rate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[1, 2, 3, 4].map((level) => {
-                    const lv = effQuery.data?.byLevel?.[String(level)] ?? { sent: 0, paid: 0 };
-                    const rate = lv.sent === 0 ? 0 : (lv.paid / lv.sent) * 100;
-                    return (
-                      <TableRow key={level}>
-                        <TableCell>
-                          <Badge className={levelColor(level)}>
-                            L{level} — {levelLabel(level, locale)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{lv.sent}</TableCell>
-                        <TableCell className="text-right">{lv.paid}</TableCell>
-                        <TableCell className="text-right">{rate.toFixed(1)}%</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ── Templates ──────────────────────────────────────────────── */}
-        <TabsContent value="templates">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.messageTemplates" />
-              </CardTitle>
-              <CardDescription>
-                Customize each escalation level. Placeholders:
-                <code className="ml-2 text-xs">
-                  {
-                    "{customerName} {invoiceNumber} {amount} {currency} {dueDate} {daysOverdue} {paymentLink} {senderName}"
-                  }
-                </code>
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {templatesQuery.isLoading && <Skeleton className="h-32" />}
-              {templatesQuery.isError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Could not load templates:{" "}
-                    {templatesQuery.error instanceof Error
-                      ? templatesQuery.error.message
-                      : t["pages.chasingUnknownError"]}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {!templatesQuery.isLoading &&
-                !templatesQuery.isError &&
-                (templatesQuery.data?.length ?? 0) === 0 && (
-                  <div className="text-muted-foreground text-sm py-8 text-center">
-                    <T k="pages.chasingNoTemplates" />
-                  </div>
-                )}
-              {!templatesQuery.isLoading &&
-                !templatesQuery.isError &&
-                (templatesQuery.data?.length ?? 0) > 0 && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <T k="portal.level" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="pages.language" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="journal.source" />
-                        </TableHead>
-                        <TableHead>
-                          <T k="firm.emailTasksSubject" />
-                        </TableHead>
-                        <TableHead className="text-right">Edit</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {templatesQuery.data?.map((t) => (
-                        <TableRow key={t.id} data-testid={`template-row-${t.level}-${t.language}`}>
-                          <TableCell>
-                            <Badge className={levelColor(t.level)}>L{t.level}</Badge>
-                          </TableCell>
-                          <TableCell>{t.language}</TableCell>
-                          <TableCell>{t.companyId ? "Custom" : "Default"}</TableCell>
-                          <TableCell className="max-w-xs truncate">{t.subject ?? "—"}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEditingTemplate(t)}
-                            >
-                              Edit
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ── Settings ───────────────────────────────────────────────── */}
-        <TabsContent value="settings">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="pageLabels.chaseConfiguration" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pages.chasingConfigDescription" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {configQuery.isLoading && <Skeleton className="h-32" />}
-              {configQuery.isError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Could not load settings:{" "}
-                    {configQuery.error instanceof Error
-                      ? configQuery.error.message
-                      : t["pages.chasingUnknownError"]}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {!configQuery.isLoading && !configQuery.isError && (
-                <>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>
-                        <T k="pageLabels.autoChaseEnabled" />
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        <T k="pageLabels.automaticallyQueueChasesAsInvoicesAge" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={configQuery.data?.autoChaseEnabled ?? false}
-                      onCheckedChange={(v) => saveConfig.mutate({ autoChaseEnabled: v })}
-                      data-testid="switch-auto-chase"
-                    />
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div>
-                      <Label>Chase frequency (days)</Label>
-                      <Input
-                        key={`freq-${configQuery.data?.chaseFrequencyDays ?? 7}`}
-                        type="number"
-                        min={1}
-                        max={365}
-                        defaultValue={configQuery.data?.chaseFrequencyDays ?? 7}
-                        onBlur={(e) => {
-                          const n = Number(e.target.value);
-                          // Server schema enforces 1..365; validate client-side too
-                          // so the user gets immediate feedback rather than a 400.
-                          if (!Number.isFinite(n) || n < 1 || n > 365) {
-                            toast({
-                              title: translateNow("toasts.invalidFrequency"),
-                              description: translateNow("toasts.pickAValueBetween1And365"),
-                              variant: "destructive",
-                            });
-                            e.target.value = String(configQuery.data?.chaseFrequencyDays ?? 7);
-                            return;
-                          }
-                          saveConfig.mutate({ chaseFrequencyDays: n });
-                        }}
-                        data-testid="input-frequency"
-                      />
-                    </div>
-                    <div>
-                      <Label>
-                        <T k="pageLabels.maxEscalationLevel" />
-                      </Label>
-                      <Select
-                        value={String(configQuery.data?.maxLevel ?? 4)}
-                        onValueChange={(v) => saveConfig.mutate({ maxLevel: Number(v) })}
-                      >
-                        <SelectTrigger data-testid="select-max-level">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {[1, 2, 3, 4].map((l) => (
-                            <SelectItem key={l} value={String(l)}>
-                              L{l} — {levelLabel(l, locale)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>
-                        <T k="pageLabels.defaultLanguage" />
-                      </Label>
-                      <Select
-                        value={configQuery.data?.defaultLanguage ?? "en"}
-                        onValueChange={(v) => saveConfig.mutate({ defaultLanguage: v })}
-                      >
-                        <SelectTrigger data-testid="select-language">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="en">
-                            <T k="pageLabels.english" />
-                          </SelectItem>
-                          <SelectItem value="ar">العربية</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="history" className="mt-0">
+          <HistoryTab companyId={companyId} rows={rows} />
         </TabsContent>
       </Tabs>
 
-      {/* ── Preview dialog ──────────────────────────────────────────── */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              <T k="pageLabels.reminderReady" />
-            </DialogTitle>
-            <DialogDescription>
-              <T k="pages.chasingPreviewDescription" />
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={previewBody}
-            readOnly
-            dir={previewLanguage === "ar" ? "rtl" : "ltr"}
-            className="min-h-[260px] font-mono text-sm"
-            data-testid="textarea-preview"
-          />
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-xs">
-              <T k="pages.chasingNotAutomatic" />
-            </AlertDescription>
-          </Alert>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              data-testid="button-copy-preview"
-              onClick={async () => {
-                try {
-                  if (!navigator.clipboard?.writeText) {
-                    throw new Error("Clipboard API unavailable");
-                  }
-                  await navigator.clipboard.writeText(previewBody);
-                  toast({ title: t["pages.chasingCopied"] });
-                } catch (err) {
-                  toast({
-                    title: translateNow("toasts.couldNotCopy"),
-                    description:
-                      err instanceof Error
-                        ? err.message
-                        : translateNow("toasts.selectTextCopyManually"),
-                    variant: "destructive",
-                  });
-                }
-              }}
-            >
-              Copy
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ReminderReadyDialog ready={ready} onClose={() => setReady(null)} />
 
-      {/* ── Per-invoice history dialog ──────────────────────────────── */}
-      <Dialog open={!!historyInvoiceId} onOpenChange={(open) => !open && setHistoryInvoiceId(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              <T k="pageLabels.invoiceChaseTimeline" />
-            </DialogTitle>
-          </DialogHeader>
-          {invoiceHistoryQuery.isLoading && <Skeleton className="h-32" />}
-          {invoiceHistoryQuery.isError && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Could not load timeline:{" "}
-                {invoiceHistoryQuery.error instanceof Error
-                  ? invoiceHistoryQuery.error.message
-                  : t["pages.chasingUnknownError"]}
-              </AlertDescription>
-            </Alert>
-          )}
-          {invoiceHistoryQuery.data && invoiceHistoryQuery.data.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              <T k="pageLabels.noChasesYetForThisInvoice" />
-            </p>
-          )}
-          <div className="space-y-3">
-            {invoiceHistoryQuery.data?.map((c) => (
-              <div
-                key={c.id}
-                className="border-l-2 border-muted pl-4 py-2"
-                data-testid={`timeline-entry-${c.id}`}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge className={levelColor(c.level)}>L{c.level}</Badge>
-                  <span className="text-sm font-medium">{new Date(c.sentAt).toLocaleString()}</span>
-                  <span className="text-xs text-muted-foreground">
-                    via {c.method} ({c.language})
-                  </span>
-                  <Badge
-                    variant={c.status === "failed" ? "destructive" : "outline"}
-                    className="text-xs"
-                  >
-                    {c.status}
-                  </Badge>
-                </div>
-                <pre
-                  className="mt-2 text-xs whitespace-pre-wrap font-sans"
-                  dir={c.language === "ar" ? "rtl" : "ltr"}
-                >
-                  {c.messageText}
-                </pre>
-                {c.paidAt && (
-                  <Badge className="mt-2 bg-success-subtle text-success-subtle-foreground">
-                    Paid {new Date(c.paidAt).toLocaleDateString()}
-                  </Badge>
-                )}
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Template editor dialog ─────────────────────────────────── */}
-      <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              Edit template — L{editingTemplate?.level}{" "}
-              {editingTemplate?.language === "ar" ? "(Arabic)" : "(English)"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingTemplate?.companyId
-                ? "Custom template — saving updates this template."
-                : "System default — saving creates a company override."}
-            </DialogDescription>
-          </DialogHeader>
-          {editingTemplate && (
-            <div className="space-y-4">
-              <div>
-                <Label>Subject (used for email)</Label>
-                <Input
-                  value={editingTemplate.subject ?? ""}
-                  onChange={(e) =>
-                    setEditingTemplate({ ...editingTemplate, subject: e.target.value })
-                  }
-                  dir={editingTemplate.language === "ar" ? "rtl" : "ltr"}
-                  data-testid="input-template-subject"
-                />
-              </div>
-              <div>
-                <Label>Body</Label>
-                <Textarea
-                  value={editingTemplate.body}
-                  onChange={(e) => setEditingTemplate({ ...editingTemplate, body: e.target.value })}
-                  className="min-h-[260px] font-mono text-sm"
-                  dir={editingTemplate.language === "ar" ? "rtl" : "ltr"}
-                  data-testid="textarea-template-body"
-                />
-                {editingPlaceholders.unknown.length > 0 && (
-                  <Alert
-                    variant="destructive"
-                    className="mt-2"
-                    data-testid="alert-unknown-placeholders"
-                  >
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="text-xs">
-                      Unknown placeholder{editingPlaceholders.unknown.length === 1 ? "" : "s"}:{" "}
-                      <code>{editingPlaceholders.unknown.map((p) => `{${p}}`).join(", ")}</code> —
-                      these will render as literal text. Known placeholders:{" "}
-                      <code>{KNOWN_PLACEHOLDERS.map((p) => `{${p}}`).join(", ")}</code>.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingTemplate(null)}>
-              <T k="pages.cancel" />
-            </Button>
-            <Button
-              onClick={() => editingTemplate && saveTemplate.mutate(editingTemplate)}
-              disabled={saveTemplate.isPending || !editingTemplate?.body?.trim()}
-              data-testid="button-save-template"
-            >
-              {saveTemplate.isPending
-                ? t["pages.chasingSavingEllipsis"]
-                : t["pages.chasingSaveTemplate"]}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Bulk-send confirmation ──────────────────────────────────── */}
       <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
         <AlertDialogContent data-testid="alert-bulk-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Send {queue.length} chase reminders?</AlertDialogTitle>
-            <AlertDialogDescription>
-              <T k="pages.chasingBulkConfirm" />
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {formatMessage(tt["invoices.reminders.bulkTitle"], { count: queue.length })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{tt["invoices.reminders.bulkBody"]}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
-              <T k="pages.cancel" />
-            </AlertDialogCancel>
+            <AlertDialogCancel>{tt["invoices.reminders.cancel"]}</AlertDialogCancel>
             <AlertDialogAction
               data-testid="button-confirm-bulk"
               onClick={() => {
@@ -1361,105 +256,17 @@ export default function PaymentChasing() {
                 bulkSend.mutate();
               }}
             >
-              <T k="pages.sendAll" />
+              {formatMessage(tt["invoices.reminders.sendDue"], { count: queue.length })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Bulk-send results ───────────────────────────────────────── */}
-      <Dialog open={!!bulkResults} onOpenChange={(open) => !open && setBulkResults(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              <T k="pageLabels.bulkChaseResults" />
-            </DialogTitle>
-            <DialogDescription>
-              {bulkResults && (
-                <>
-                  <T k="invoices.statusFilter.sent" />{" "}
-                  <strong className="text-foreground">{bulkResults.sent}</strong>
-                  {" • "}Skipped <strong className="text-foreground">{bulkResults.skipped}</strong>
-                  {" • "}Failed{" "}
-                  <strong
-                    className={bulkResults.failed > 0 ? "text-destructive" : "text-foreground"}
-                  >
-                    {bulkResults.failed}
-                  </strong>
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          {bulkResults && bulkResults.results.length > 0 && (
-            <div className="max-h-[60vh] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <T k="invoices.publicInvoice" />
-                    </TableHead>
-                    <TableHead>
-                      <T k="portal.level" />
-                    </TableHead>
-                    <TableHead>
-                      <T k="banking.common.status" />
-                    </TableHead>
-                    <TableHead>
-                      <T k="pageLabels.detail" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {bulkResults.results.map((r) => {
-                    // Match invoice number from the queue snapshot at time of send.
-                    const matchedInvoice =
-                      queue.find((q) => q.invoice.id === r.invoiceId) ??
-                      overdue.find((o) => o.invoice.id === r.invoiceId);
-                    const number = matchedInvoice?.invoice.number ?? r.invoiceId.slice(0, 8);
-                    return (
-                      <TableRow key={r.invoiceId} data-testid={`bulk-result-${r.invoiceId}`}>
-                        <TableCell className="font-mono text-xs">{number}</TableCell>
-                        <TableCell>
-                          {r.level > 0 ? (
-                            <Badge className={levelColor(r.level)}>L{r.level}</Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              r.status === "sent"
-                                ? "default"
-                                : r.status === "failed"
-                                  ? "destructive"
-                                  : "outline"
-                            }
-                          >
-                            {r.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {r.error ? (
-                            <span className="text-destructive">{r.error}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkResults(null)}>
-              <T k="banking.common.close" />
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BulkResultsDialog
+        results={bulkResults}
+        rows={[...queue, ...rows]}
+        onClose={() => setBulkResults(null)}
+      />
     </div>
   );
 }

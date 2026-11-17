@@ -13,6 +13,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -504,11 +505,9 @@ export default function BankAccounts() {
                   />
                 </Field>
                 <Field id="ba-obd" label={tr("banking.accounts.openingBalanceDate")}>
-                  <Input
-                    type="date"
-                    dir="ltr"
+                  <DatePicker
                     value={form.openingBalanceDate}
-                    onChange={(e) => setForm({ ...form, openingBalanceDate: e.target.value })}
+                    onChange={(value) => setForm({ ...form, openingBalanceDate: value })}
                   />
                 </Field>
               </FormGrid>
@@ -677,21 +676,11 @@ function StatementDialog({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <Label htmlFor="st-start">{tr("banking.statement.periodStart")}</Label>
-            <Input
-              id="st-start"
-              type="date"
-              value={periodStart}
-              onChange={(e) => setPeriodStart(e.target.value)}
-            />
+            <DatePicker id="st-start" value={periodStart} onChange={setPeriodStart} />
           </div>
           <div>
             <Label htmlFor="st-end">{tr("banking.statement.periodEnd")}</Label>
-            <Input
-              id="st-end"
-              type="date"
-              value={periodEnd}
-              onChange={(e) => setPeriodEnd(e.target.value)}
-            />
+            <DatePicker id="st-end" value={periodEnd} onChange={setPeriodEnd} />
           </div>
           <div>
             <Label htmlFor="st-close">{tr("banking.statement.closingBalance")}</Label>

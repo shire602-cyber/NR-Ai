@@ -30,6 +30,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -1016,7 +1017,7 @@ export default function FixedAssets() {
                       <FormItem>
                         <FormLabel required>{t["screens.faPurchaseDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1235,7 +1236,7 @@ export default function FixedAssets() {
                       {t["screens.faDisposalDate"]} <span className="text-danger">*</span>
                     </FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

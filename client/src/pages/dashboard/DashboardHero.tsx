@@ -19,7 +19,7 @@ import type { DashboardModel } from "./useCustomerDashboardModel";
  * secondary and the rest in a ⋯ menu. The period selector and the one-line insight sit
  * directly under it, so the figures below need no headline of their own.
  */
-export function DashboardHero({ m }: { m: DashboardModel }) {
+export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?: boolean }) {
   const { t, locale, stats, periodChoice, setPeriodChoice } = m;
   const companyName = m.companyName;
   const tt = t as Record<string, string>;
@@ -109,15 +109,18 @@ export function DashboardHero({ m }: { m: DashboardModel }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <PeriodSelector choice={periodChoice} onChange={setPeriodChoice} locale={locale} />
+      {/* An empty company has no period to choose and nothing that needs it yet. */}
+      {!empty && (
+        <div className="flex flex-col gap-3">
+          <PeriodSelector choice={periodChoice} onChange={setPeriodChoice} locale={locale} />
         {/* R3 (CTO 16): linked "needs you" chips replace the one-line insight sentence. */}
-        <NeedsYouStrip
-          companyId={m.selectedCompanyId}
-          invoices={m.recentInvoices}
-          compliance={m.compliance}
-        />
-      </div>
+          <NeedsYouStrip
+            companyId={m.selectedCompanyId}
+            invoices={m.recentInvoices}
+            compliance={m.compliance}
+          />
+        </div>
+      )}
     </header>
   );
 }

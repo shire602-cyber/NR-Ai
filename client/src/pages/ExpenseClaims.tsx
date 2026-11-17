@@ -33,6 +33,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -1152,7 +1153,7 @@ export default function ExpenseClaims() {
                               {t.date}
                             </FormLabel>
                             <FormControl>
-                              <Input type="date" dir="ltr" {...field} />
+                              <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

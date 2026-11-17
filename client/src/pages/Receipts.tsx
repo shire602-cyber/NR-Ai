@@ -1979,10 +1979,9 @@ export default function Receipts() {
 
                         <div className="space-y-1">
                           <Label className="text-xs">Date</Label>
-                          <Input
-                            type="date"
+                          <DatePicker
                             value={receipt.data.date || ""}
-                            onChange={(e) => updateReceiptData(index, { date: e.target.value })}
+                            onChange={(value) => updateReceiptData(index, { date: value })}
                             className="h-8"
                             data-testid={`input-date-${index}`}
                           />
@@ -2556,7 +2555,11 @@ export default function Receipts() {
                     <FormItem>
                       <FormLabel required>{t.date}</FormLabel>
                       <FormControl>
-                        <Input {...field} type="date" dir="ltr" data-testid="input-edit-date" />
+                        <DatePicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          data-testid="input-edit-date"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

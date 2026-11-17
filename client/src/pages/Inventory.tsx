@@ -24,6 +24,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -1660,11 +1661,10 @@ function InventoryAccountingTabs({
                 value={count.countedQty}
                 onChange={(e) => setCount({ ...count, countedQty: Number(e.target.value) })}
               />
-              <Input
+              <DatePicker
                 aria-label={c.countDate}
-                type="date"
                 value={count.countDate}
-                onChange={(e) => setCount({ ...count, countDate: e.target.value })}
+                onChange={(value) => setCount({ ...count, countDate: value })}
               />
               <Button
                 disabled={!count.productId || createCount.isPending}

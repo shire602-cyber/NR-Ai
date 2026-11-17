@@ -123,7 +123,6 @@ const PaymentChasing = lazyWithReload(() => import("@/pages/PaymentChasing"));
 const CustomerContacts = lazyWithReload(() => import("@/pages/CustomerContacts"));
 const IntegrationsHub = lazyWithReload(() => import("@/pages/IntegrationsHub"));
 const Notifications = lazyWithReload(() => import("@/pages/Notifications"));
-const Reminders = lazyWithReload(() => import("@/pages/Reminders"));
 const DocumentChasing = lazyWithReload(() => import("@/pages/DocumentChasing"));
 const Referrals = lazyWithReload(() => import("@/pages/Referrals"));
 const Feedback = lazyWithReload(() => import("@/pages/Feedback"));
@@ -638,6 +637,11 @@ function Router() {
             </Route>
             <Route path="/chart-of-accounts" component={ChartOfAccounts} />
             <Route path="/accounts/:id/ledger" component={AccountLedger} />
+            {/* Spec 3.7: the invoice editor is a full page inside the shell. */}
+            <Route path="/invoices/new">{() => <Invoices editor="new" params={{}} />}</Route>
+            <Route path="/invoices/:id/edit">
+              {(params) => <Invoices editor={params.id} params={params} />}
+            </Route>
             <Route path="/invoices" component={Invoices} />
             <Route path="/recurring-invoices" component={RecurringInvoices} />
             <Route path="/payment-chasing" component={PaymentChasing} />
@@ -697,7 +701,10 @@ function Router() {
             </Route>
             <Route path="/integrations-hub" component={IntegrationsHub} />
             <Route path="/notifications" component={Notifications} />
-            <Route path="/reminders" component={Reminders} />
+            {/* Spec 3.7: automatic reminder emails live in Payment reminders → Schedule. */}
+            <Route path="/reminders">
+              <RedirectTo to="/payment-chasing?tab=schedule" />
+            </Route>
             <Route path="/referrals" component={Referrals} />
             <Route path="/feedback" component={Feedback} />
             <Route path="/analytics" component={AnalyticsHub} />

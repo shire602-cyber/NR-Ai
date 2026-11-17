@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { formatMessage } from "@/lib/i18n";
 import { Link } from "wouter";
 import {
   BudgetVsActualWidget,
@@ -8,7 +9,7 @@ import {
   OverdueSummary,
   PeriodComparison,
 } from "./PlanningWidgets";
-import { ScoreRing, FilingStatusBadge, FixItRow } from "./CompliancePulse";
+import { ScoreRing, FilingStatusBadge } from "./CompliancePulse";
 import { openAuditChecks } from "./auditChecks";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
@@ -88,7 +89,7 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
           href="/compliance-calendar"
           className="inline-flex items-center gap-1 text-small font-medium text-accent hover:underline"
         >
-          {tt.calendarLink ?? "Calendar"}
+          {t["dashboard.calendarLink"]}
           <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
         </Link>
       </CardHeader>
@@ -125,23 +126,15 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
           />
         </div>
         {checks.length > 0 && (
-          <details className="group border-t border-border pt-2">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md py-1.5 text-small font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-              <span>
-                {tt.raiseYourScore ?? t["dashboardPlanning.raiseYourScore"]}{" "}
-                <span className="font-normal text-muted-foreground">({checks.length})</span>
-              </span>
-              <ChevronDown
-                className="h-4 w-4 text-muted-foreground transition-transform duration-base group-open:rotate-180"
-                aria-hidden
-              />
-            </summary>
-            <div className="-mx-5 divide-hairline">
-              {checks.map((check) => (
-                <FixItRow key={check.key} check={check} />
-              ))}
-            </div>
-          </details>
+          // The open items live in the compliance calendar (spec 3.6), one click away.
+          <Link
+            href="/compliance-calendar?filter=open"
+            className="group flex items-center justify-between gap-2 border-t border-border pt-3 text-small font-medium text-foreground hover:text-accent"
+            data-testid="link-raise-score"
+          >
+            {formatMessage(tt["dashboard.raiseScoreLink"], { count: checks.length })}
+            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground rtl:-scale-x-100" aria-hidden />
+          </Link>
         )}
       </CardContent>
     </Card>

@@ -5,15 +5,15 @@ import { useCustomerDashboardModel } from "./dashboard/useCustomerDashboardModel
 import { DashboardHero } from "./dashboard/DashboardHero";
 import { DashboardOverview } from "./dashboard/DashboardOverview";
 import { DashboardPlanning } from "./dashboard/DashboardPlanning";
-import { ReportWorkspaceToggle } from "./dashboard/ReportWorkspaceToggle";
-import { ReportWorkspaceSection } from "./dashboard/ReportWorkspaceSection";
 import { DashboardCharts } from "./dashboard/DashboardCharts";
-import { DashboardActions } from "./dashboard/DashboardActions";
 import { DashboardRecent } from "./dashboard/DashboardRecent";
+import { DashboardEmpty, isEmptyCompany } from "./dashboard/DashboardEmpty";
+import { GettingStarted } from "./dashboard/GettingStarted";
 import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 
 // Dashboard page shell. State and derived data live in
 // dashboard/useCustomerDashboardModel; each visual section is a component under dashboard/.
+// Reports live under Reports (spec 3.6): the dashboard no longer carries the report workspace.
 
 export default function Dashboard() {
   const { data: user, isLoading } = useCurrentUser();
@@ -24,26 +24,24 @@ export default function Dashboard() {
 
 function CustomerDashboard() {
   const m = useCustomerDashboardModel();
+  const empty = isEmptyCompany(m);
   return (
-    // Rhythm (CTO 4): 40px between sections, 16px inside them.
-    <div className="space-y-8 md:space-y-10">
+    // Rhythm (spec 2.2): 32px between sections, 16px inside them.
+    <div className="space-y-8">
       <TrialBanner />
-      <DashboardHero m={m} />
-      <DashboardOverview m={m} />
-      <DashboardCharts m={m} />
-      <DashboardPlanning m={m} />
-      <EInvoiceReadinessCard companyId={m.selectedCompanyId} />
-      <DashboardRecent m={m} />
-      {/* Reports: one collapsed row; the launcher and workspace open together (CTO 5). */}
-      <div className="space-y-4">
-        <ReportWorkspaceToggle m={m} />
-        {m.showReportWorkspace && (
-          <>
-            <DashboardActions m={m} />
-            <ReportWorkspaceSection m={m} />
-          </>
-        )}
-      </div>
+      <DashboardHero m={m} empty={empty} />
+      {empty ? (
+        <DashboardEmpty m={m} />
+      ) : (
+        <>
+          <GettingStarted m={m} />
+          <DashboardOverview m={m} />
+          <DashboardCharts m={m} />
+          <DashboardPlanning m={m} />
+          <EInvoiceReadinessCard companyId={m.selectedCompanyId} />
+          <DashboardRecent m={m} />
+        </>
+      )}
     </div>
   );
 }
