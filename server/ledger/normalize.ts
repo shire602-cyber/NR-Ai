@@ -39,8 +39,14 @@ function fail(code: string, message: string, details?: unknown): never {
   throw new DomainError(code, 422, details, message);
 }
 
+/**
+ * Today's posting date: the UAE calendar date (UTC+4, no DST), the same day the reports
+ * (`uaeToday`) and the entry-local-date SQL use. A UTC date here refused, between 00:00 and
+ * 04:00 in the UAE, an entry dated the local today as FUTURE_DATE (e.g. a payroll accrual
+ * dated today by A4 L6).
+ */
 export function todayIso(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
+  return new Date(now.getTime() + 4 * 3600_000).toISOString().slice(0, 10);
 }
 
 /**

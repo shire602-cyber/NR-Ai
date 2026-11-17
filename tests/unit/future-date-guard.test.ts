@@ -37,3 +37,17 @@ describe("assertNotFutureDate (A-4)", () => {
     expect(() => assertNotFutureDate(undefined, { now: NOW })).not.toThrow();
   });
 });
+
+describe("UAE calendar day (posting 'today' is UTC+4)", () => {
+  // 20:30 UTC on 17 Nov is 00:30 on 18 Nov in the UAE: the local today is not a future date.
+  const LATE = new Date("2026-11-17T20:30:00Z");
+  it("ledger todayIso and the future-date guards use the UAE date", async () => {
+    const { todayIso, assertNotFuture } = await import("../../server/ledger/normalize");
+    expect(todayIso(LATE)).toBe("2026-11-18");
+    expect(() => assertNotFuture("2026-11-18", LATE)).not.toThrow();
+    expect(() => assertNotFuture("2026-11-19", LATE)).toThrow();
+    expect(isFutureDate(new Date("2026-11-18T00:00:00Z"), LATE)).toBe(false);
+    expect(isFutureDate(new Date("2026-11-19T00:00:00Z"), LATE)).toBe(true);
+    expect(todayIso(new Date("2026-11-17T19:59:00Z"))).toBe("2026-11-17");
+  });
+});

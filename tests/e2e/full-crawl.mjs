@@ -66,7 +66,7 @@ const ROUTES = [
   "/integrations-hub",
   "/notifications",
   "/reminders",
-  "/company-profile",
+  // /company-profile redirects to /settings/company since CL-B merged the two pages.
   "/settings/company",
   "/team",
   "/document-vault",

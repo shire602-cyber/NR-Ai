@@ -16,7 +16,8 @@ import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness"
 
 const h = useHarness();
 const pg = () => h.mode === "postgres";
-const today = () => new Date().toISOString().slice(0, 10);
+// The ledger's posting "today" is the UAE calendar date (UTC+4).
+const today = () => new Date(Date.now() + 4 * 3600_000).toISOString().slice(0, 10);
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 const parallel = <T>(n: number, fn: (i: number) => Promise<T>) =>
   Promise.all(Array.from({ length: n }, (_, i) => fn(i)));

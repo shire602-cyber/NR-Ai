@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { pool } from "../db";
 import { AppError } from "../middleware/errorHandler";
 import { DomainError } from "../errors";
+import { todayIso } from "../ledger/normalize";
 
 /**
  * Period lock policy (W2-B: R08-05, R02-11, R02-19).
@@ -246,9 +247,10 @@ export async function assertNotInHardClosedYear(companyId: string, isoDate: stri
  * Exposed for unit testing.
  */
 export function isFutureDate(date: Date, now: Date, graceDays = 0): boolean {
-  const limit = new Date(now);
+  // Posting dates are UAE calendar dates (stored at UTC midnight): "today" is the UAE date
+  // (UTC+4), so 00:00-04:00 local is not refused as tomorrow (same rule as ledger todayIso).
+  const limit = new Date(`${todayIso(now)}T23:59:59.999Z`);
   limit.setUTCDate(limit.getUTCDate() + graceDays);
-  limit.setUTCHours(23, 59, 59, 999);
   return date.getTime() > limit.getTime();
 }
 

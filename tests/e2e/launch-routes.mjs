@@ -22,7 +22,8 @@ export const LAUNCH_ROUTES = [
   "/quotes",
   "/payroll",
   "/inventory",
-  "/company-profile",
+  // The merged company page (CL-B); /company-profile only redirects here.
+  "/settings/company",
 ];
 
 /**
