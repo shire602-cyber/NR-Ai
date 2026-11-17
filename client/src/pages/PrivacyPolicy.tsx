@@ -5,12 +5,12 @@ export default function PrivacyPolicy() {
   return (
     <LegalLayout slug="privacy" effectiveDate="2026-04-26">
       <p>
-        This Privacy Policy describes how Najma Al Raeda Accounting LLC (<strong>"NRA"</strong>,
-        <strong>"we"</strong>, <strong>"us"</strong>, or <strong>"our"</strong>) collects, uses, and
-        protects personal data through the Muhasib.ai platform (the <strong>"Service"</strong>). We
-        are committed to handling your data in accordance with UAE Federal Decree-Law No. 45 of 2021
-        on the Protection of Personal Data (PDPL) and applicable Federal Tax Authority (FTA)
-        requirements.
+        This Privacy Policy describes how Najma Al Raeda Accounting and Bookkeeping (
+        <strong>"NRA"</strong>,<strong>"we"</strong>, <strong>"us"</strong>, or{" "}
+        <strong>"our"</strong>) collects, uses, and protects personal data through the Muhasib.ai
+        platform (the <strong>"Service"</strong>). We are committed to handling your data in
+        accordance with UAE Federal Decree-Law No. 45 of 2021 on the Protection of Personal Data
+        (PDPL) and applicable Federal Tax Authority (FTA) requirements.
       </p>
 
       <h2>1. Data We Collect</h2>
@@ -122,9 +122,8 @@ export default function PrivacyPolicy() {
       <h2>8. International Transfers</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
-        Your data is primarily hosted in data centres located within the UAE or jurisdictions
-        providing an adequate level of protection. Where transfers outside the UAE are necessary, we
-        apply appropriate safeguards as required by PDPL.
+        Customer data is hosted in the United Arab Emirates. Where transfers outside the UAE are
+        necessary, we apply appropriate safeguards as required by PDPL.
       </p>
 
       <h2>9. Children</h2>
@@ -144,7 +143,7 @@ export default function PrivacyPolicy() {
       <p>
         For privacy questions, contact our Data Protection Officer at{" "}
         <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a> or write to: Najma Al Raeda
-        Accounting LLC, Dubai, United Arab Emirates.
+        Accounting and Bookkeeping, Dubai, United Arab Emirates.
       </p>
     </LegalLayout>
   );
