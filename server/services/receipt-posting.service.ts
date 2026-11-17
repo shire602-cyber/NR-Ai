@@ -22,7 +22,8 @@ import { documentCurrency, loadBaseCurrency } from "../ledger";
 import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
 
-type JournalLineInsert = Omit<InsertJournalLine, "entryId">;
+/** systemVat (B1: NC1): the VAT line this service derives; the kernel lets it sit on 1050 / 2020. */
+type JournalLineInsert = Omit<InsertJournalLine, "entryId"> & { systemVat?: boolean };
 
 interface Component {
   accountId: string;
@@ -307,6 +308,7 @@ export async function planReceiptJournal(
             debit: filsToNumber(recoverableTotal),
             credit: 0,
             description: `Input VAT${isReverseCharge ? " (reverse-charge)" : ""} - ${merchant}`,
+            systemVat: true,
           },
           recoverableForeign,
           0
@@ -323,6 +325,7 @@ export async function planReceiptJournal(
             debit: 0,
             credit: filsToNumber(vatBaseTotal),
             description: `Output VAT (reverse-charge) - ${merchant}`,
+            systemVat: true,
           },
           0,
           vatForeign

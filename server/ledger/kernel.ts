@@ -27,6 +27,11 @@ import {
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
 import { journalMachine, transitionRow } from "./state-machines";
 import { assertVatPeriodOpen } from "./vat-lock";
+import {
+  SUBLEDGER_SOURCES,
+  assertKernelControlPosting,
+  stampControlAdjustment,
+} from "./control-accounts";
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
   EntryKind,
@@ -266,6 +271,16 @@ export async function insertNormalizedEntry(
   }
   if (!internal.skipBalanceCheck) assertLinesBalanced(n.lines, { allowSameAccount: true });
   await assertAccountsUsable(tx, n.companyId, n.lines, !!internal.allowInactiveAccounts);
+  // B1 (NC1): control accounts take lines only from their sub-ledger, or as a reasoned
+  // adjustment. A reversal mirrors an entry that already passed this gate.
+  const controlReason = internal.reversedEntryId
+    ? null
+    : await assertKernelControlPosting(tx, {
+        companyId: n.companyId,
+        source: n.source,
+        lines: n.lines,
+        ctx,
+      });
 
   const isPosted = n.status === "posted";
   // A1 (C1): a submitted / filed VAT return closes its period for VAT-affecting postings.
@@ -276,6 +291,7 @@ export async function insertNormalizedEntry(
       source: n.source,
       accountIds: n.lines.map((l) => l.accountId),
       reversedEntryId: internal.reversedEntryId ?? null,
+      reportsVat: n.reportsVat === true,
     });
   }
   const values = {
@@ -325,6 +341,7 @@ export async function insertNormalizedEntry(
   }
   if (!result) throw new DomainError("ENTRY_NUMBER_CONFLICT", 409);
   const { entry } = result;
+  if (controlReason) await stampControlAdjustment(tx, entry.id, controlReason, actorId);
 
   if (internal.reversalOf) {
     const rows: JournalEntry[] = await tx
@@ -490,6 +507,7 @@ export async function postDraft(
       dateIso: entryIso(pre),
       source: pre.source ?? null,
       accountIds: normalized.map((l) => l.accountId),
+      entryId,
     });
 
     const patch: Record<string, unknown> = {
@@ -808,6 +826,23 @@ export async function updateDraftEntry(
   await assertPeriodNotLocked(pre.companyId, n.dateAt);
   return withLedgerTx(async (tx) => {
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);
+    // B1 (NC1): an edited draft is held to the control-account rule like a new entry.
+    let controlReason: string | null = null;
+    const generic = !SUBLEDGER_SOURCES.has(pre.source ?? "");
+    if (generic) {
+      const stamped = rowsOf<{ r: string | null }>(
+        await tx.execute(
+          sql`SELECT control_adjustment_reason AS r FROM journal_entries WHERE id = ${entryId}`
+        )
+      )[0]?.r;
+      controlReason = await assertKernelControlPosting(tx, {
+        companyId: pre.companyId,
+        source: pre.source ?? null,
+        lines: n.lines,
+        ctx,
+        stampedReason: stamped ?? null,
+      });
+    }
     const rows: JournalEntry[] = await tx
       .update(journalEntries)
       .set({
@@ -833,6 +868,7 @@ export async function updateDraftEntry(
       .insert(journalLines)
       .values(n.lines.map((l) => lineRow(entryId, l)))
       .returning();
+    if (generic) await stampControlAdjustment(tx, entryId, controlReason, actorId);
     await writeAudit(
       tx,
       ctx,

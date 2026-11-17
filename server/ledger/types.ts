@@ -37,6 +37,13 @@ export interface PostJournalLineInput {
   foreignCredit?: LedgerAmount | null;
   /** 1 foreignCurrency = exchangeRate base units; > 0, at most 6 decimals. */
   exchangeRate?: LedgerAmount | null;
+  /**
+   * B1 (NC1): the posting service derived this line itself from a VAT treatment (the input /
+   * output VAT of a bank-line entry or a receipt). Such a line may sit on a VAT control account
+   * although the entry's source is not a VAT sub-ledger; every other line is the user's choice
+   * and is held to the control-account rule. Never set from request input.
+   */
+  systemVat?: boolean;
 }
 
 export interface PostJournalInput {
@@ -65,6 +72,12 @@ export interface PostJournalInput {
    * callers must leave this unset: >2dp is a 422.
    */
   amountRounding?: "reject" | "halfUp";
+  /**
+   * B1 (NH1): the VAT return reports this entry from its own document record whatever its lines
+   * (a bank-line entry with a VAT treatment, a fixed-asset disposal for consideration), so a
+   * filed VAT period refuses it even when it carries no VAT line (exempt / zero-rated amounts).
+   */
+  reportsVat?: boolean;
 }
 
 export interface LedgerContext {
@@ -78,6 +91,12 @@ export interface LedgerContext {
   companyId?: string;
   /** Write a kernel audit row for postJournal (postDraft/reverse/void always audit). */
   audit?: boolean;
+  /**
+   * A2 (H8) / B1 (NC1): an explicit control-account adjustment for an entry whose source is not a
+   * sub-ledger. `role` is the user's company role (null = firm staff through access rules). The
+   * kernel checks it and stamps the reason on the entry in the posting transaction.
+   */
+  controlAdjustment?: { reason: string; role: string | null } | null;
 }
 
 export interface NormalizedLine {
@@ -90,6 +109,8 @@ export interface NormalizedLine {
   foreignDebitFils: number;
   foreignCreditFils: number;
   exchangeRate: string | null;
+  /** See PostJournalLineInput.systemVat. */
+  systemVat?: boolean;
 }
 
 export interface NormalizedEntry {
@@ -107,6 +128,8 @@ export interface NormalizedEntry {
   lines: NormalizedLine[];
   totalDebitFils: number;
   totalCreditFils: number;
+  /** See PostJournalInput.reportsVat. */
+  reportsVat?: boolean;
 }
 
 export interface PostJournalResult {

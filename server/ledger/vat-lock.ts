@@ -14,8 +14,15 @@
  *     amended return is submitted.
  *
  * "Affects VAT": a line on a VAT control account (1050 / 2020 or any account flagged
- * is_vat_account), or a tax-document source the VAT engine reads (zero-rated and exempt invoices
- * post no VAT line but land in Box 4 / Box 5).
+ * is_vat_account), a tax-document source the VAT engine reads (zero-rated and exempt invoices
+ * post no VAT line but land in Box 4 / Box 5), or (B1: NH1) an entry the VAT engine reports from
+ * its own record whatever its lines: a bank-line entry with a VAT treatment and a fixed-asset
+ * disposal for consideration (`reportsVat` when posted; their match / register row when one of
+ * them is reversed). An exempt bank-line receipt dated in a filed quarter would otherwise move
+ * Box 5, and with partial exemption the recovery ratio, after the return was declared.
+ *
+ * Settlements of a filed return (B1: NL1) are not part of any period's boxes (the engine skips
+ * them), so they and their reversals are never refused although they touch 2020 / 1050.
  */
 import { sql } from "drizzle-orm";
 import { DomainError } from "../errors";
@@ -41,6 +48,33 @@ export const VAT_DOCUMENT_SOURCES: ReadonlySet<string> = new Set([
  * return unchanged, so only the reversal's own date is checked.
  */
 export const REVERSAL_REPORTED_ON_OWN_DATE: ReadonlySet<string> = new Set(["vat_bad_debt_relief"]);
+
+/** B1 (NL1): sources that change no VAT 201 box although they touch the VAT accounts. */
+export const VAT_LOCK_EXEMPT_SOURCES: ReadonlySet<string> = new Set(["vat_return_settlement"]);
+
+/**
+ * B1 (NH1): an entry the VAT engine reports from its own record (bank-line VAT treatment, a
+ * fixed-asset disposal for consideration), checked when the entry is reversed or voided.
+ */
+async function reportedByVatEngine(
+  tx: LedgerTx,
+  companyId: string,
+  entryId: string
+): Promise<boolean> {
+  const res = await tx.execute(sql`
+    SELECT 1 FROM bank_transaction_matches
+     WHERE company_id = ${companyId} AND journal_entry_id = ${entryId}
+       AND vat_treatment IS NOT NULL
+    UNION ALL
+    SELECT 1 FROM fixed_assets
+     WHERE company_id = ${companyId} AND disposal_entry_id = ${entryId}
+       AND disposal_invoice_id IS NULL
+       AND disposal_vat_treatment IS NOT NULL AND disposal_vat_treatment <> 'out_of_scope'
+       AND COALESCE(disposal_amount, 0) <> 0
+    LIMIT 1
+  `);
+  return rowsOf(res).length > 0;
+}
 
 /** Return statuses that close the period (an "amended" return is superseded by its draft). */
 export const VAT_LOCKING_STATUSES = ["submitted", "filed"] as const;
@@ -149,18 +183,25 @@ export async function assertVatPeriodOpen(
     source: string | null;
     accountIds: string[];
     reversedEntryId?: string | null;
+    /** The VAT engine reports this entry from its own record (see PostJournalInput). */
+    reportsVat?: boolean;
+    /** A draft being posted: reported by the engine when its bank match carries a treatment. */
+    entryId?: string | null;
   }
 ): Promise<void> {
+  if (VAT_LOCK_EXEMPT_SOURCES.has(input.source ?? "")) return;
   const candidates: Array<{ date: string; source: string | null }> = [
     { date: input.dateIso, source: input.source },
   ];
   let originalSource: string | null = null;
+  let originalReported = false;
   if (input.reversedEntryId) {
     const res = await tx.execute(sql`
       SELECT date::date::text AS d, source FROM journal_entries
        WHERE id = ${input.reversedEntryId} AND company_id = ${input.companyId}
     `);
     const o = rowsOf<Record<string, string | null>>(res)[0];
+    if (VAT_LOCK_EXEMPT_SOURCES.has(o?.source ?? "")) return;
     if (o?.d && !REVERSAL_REPORTED_ON_OWN_DATE.has(o.source ?? "")) {
       originalSource = o.source ?? null;
       candidates.push({ date: o.d, source: originalSource });
@@ -172,7 +213,18 @@ export async function assertVatPeriodOpen(
     const docSource =
       VAT_DOCUMENT_SOURCES.has(input.source ?? "") ||
       VAT_DOCUMENT_SOURCES.has(originalSource ?? "");
-    if (docSource || (await touchesVatAccount(tx, input.companyId, input.accountIds))) {
+    if (input.reversedEntryId && !originalReported) {
+      originalReported = await reportedByVatEngine(tx, input.companyId, input.reversedEntryId);
+    }
+    const draftReported =
+      !!input.entryId && (await reportedByVatEngine(tx, input.companyId, input.entryId));
+    if (
+      docSource ||
+      input.reportsVat === true ||
+      originalReported ||
+      draftReported ||
+      (await touchesVatAccount(tx, input.companyId, input.accountIds))
+    ) {
       throw vatPeriodFiledError(period, c.date);
     }
     return;

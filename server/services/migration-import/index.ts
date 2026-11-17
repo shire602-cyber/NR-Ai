@@ -415,6 +415,33 @@ async function companyAccounts(companyId: string): Promise<Map<string, AccountRo
   return new Map(rows.map((r) => [r.code, r]));
 }
 
+/**
+ * B1 (NM5): the inventory control accounts (1070, any inventory sub-type account and each
+ * product's inventory account). Their balance is the stock valuation (IAS 2), so an opening trial
+ * balance may only carry it when the products' opening stock (quantities and costs) is recorded.
+ */
+async function inventoryAccountIds(companyId: string): Promise<Set<string>> {
+  const { rows } = await pq<{ id: string }>(
+    `SELECT id FROM accounts WHERE company_id = $1 AND (code = '1070' OR sub_type = 'inventory')
+     UNION
+     SELECT inventory_account_id FROM products
+      WHERE company_id = $1 AND inventory_account_id IS NOT NULL`,
+    [companyId]
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Stock value recorded on the company's stocked products (fils). */
+async function stockValueFils(companyId: string): Promise<number> {
+  const { rows } = await pq<{ f: string }>(
+    `SELECT COALESCE(SUM(ROUND(COALESCE(stock_value, 0) * 100)), 0)::bigint::text AS f
+       FROM products WHERE company_id = $1 AND product_type = 'inventory'
+        AND track_inventory IS NOT FALSE`,
+    [companyId]
+  );
+  return Number(rows[0]?.f ?? 0);
+}
+
 interface OpeningState {
   /** Committed opening trial balance, if any. */
   tb: { id: string; mode: string; arFils: number; apFils: number; cutOver: string } | null;
@@ -549,10 +576,12 @@ export async function validateImport(companyId: string, jobId: string): Promise<
     case "trial_balance": {
       const existing = await companyAccounts(companyId);
       const state = await openingState(companyId);
+      const inventoryIds = await inventoryAccountIds(companyId);
       let debit = 0;
       let credit = 0;
       let arFils = 0;
       let apFils = 0;
+      let inventoryFils = 0;
       const perCode = new Map<string, number>();
       rows.forEach((r, i) => {
         const code = String(r.code);
@@ -572,6 +601,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
         perCode.set(code, (perCode.get(code) ?? 0) + d - c);
         if (acct?.sub_type === "receivable") arFils += d - c;
         if (acct?.sub_type === "payable") apFils += c - d;
+        if (acct && inventoryIds.has(acct.id)) inventoryFils += d - c;
         if (acct && (acct.type === "income" || acct.type === "expense")) {
           warn(
             i + 1,
@@ -619,11 +649,28 @@ export async function validateImport(companyId: string, jobId: string): Promise<
         if (!existing.has(OBE_CODE))
           warn(null, "OBE_CREATED", "Account 3040 Opening Balance Equity will be created");
       }
+      // B1 (NM5): inventory in the opening balance is carried by the opening stock, like A/R and
+      // A/P by open documents. Without stock behind it the valuation (0) and GL 1070 would
+      // never tie, and the stock could not be costed when it is sold.
+      if (inventoryFils !== 0) {
+        const stockFils = await stockValueFils(companyId);
+        if (stockFils !== inventoryFils) {
+          err(
+            null,
+            "INVENTORY_WITHOUT_STOCK",
+            `Inventory in the trial balance (${fromFils(inventoryFils)}) must equal the opening stock recorded on your products (${fromFils(stockFils)}). ` +
+              "Record each product's opening quantity and unit cost first (Inventory, opening stock); the stock then carries the inventory balance."
+          );
+        } else if (!existing.has(OBE_CODE)) {
+          warn(null, "OBE_CREATED", "Account 3040 Opening Balance Equity will be created");
+        }
+      }
       Object.assign(summary, {
         totalDebitFils: debit,
         totalCreditFils: credit,
         arControlFils: arFils,
         apControlFils: apFils,
+        inventoryFils,
         accounts: perCode.size,
       });
       break;
@@ -873,8 +920,16 @@ async function commitTrialBalance(
   userId: string
 ) {
   const mode = job.ar_ap_mode ?? "balance";
-  if (mode === "documents") await ensureObe(companyId);
-  const existing = await companyAccounts(companyId);
+  const inventoryIds = await inventoryAccountIds(companyId);
+  let existing = await companyAccounts(companyId);
+  const touchesInventory = rows.some((r) => {
+    const a = existing.get(String(r.code));
+    return !!a && inventoryIds.has(a.id) && Number(r.debitFils) !== Number(r.creditFils);
+  });
+  if (mode === "documents" || touchesInventory) {
+    await ensureObe(companyId);
+    existing = await companyAccounts(companyId);
+  }
   const net = new Map<string, number>();
   for (const r of rows) {
     net.set(
@@ -883,12 +938,17 @@ async function commitTrialBalance(
     );
   }
   let deferred = 0; // net debit moved to Opening Balance Equity
+  let deferredInventory = 0; // B1 (NM5): carried by the opening stock already recorded
   const lines: PostJournalLineInput[] = [];
   for (const [code, fils] of net) {
     if (fils === 0) continue;
     const acct = existing.get(code)!;
     if (mode === "documents" && (acct.sub_type === "receivable" || acct.sub_type === "payable")) {
       deferred += fils;
+      continue;
+    }
+    if (inventoryIds.has(acct.id)) {
+      deferredInventory += fils;
       continue;
     }
     lines.push(
@@ -910,6 +970,22 @@ async function commitTrialBalance(
             accountId: obe.id,
             creditFils: -deferred,
             description: "A/R and A/P carried by open documents",
+          }
+    );
+  }
+  if (deferredInventory !== 0) {
+    const obe = existing.get(OBE_CODE)!;
+    lines.push(
+      deferredInventory > 0
+        ? {
+            accountId: obe.id,
+            debitFils: deferredInventory,
+            description: "Inventory carried by opening stock",
+          }
+        : {
+            accountId: obe.id,
+            creditFils: -deferredInventory,
+            description: "Inventory carried by opening stock",
           }
     );
   }
