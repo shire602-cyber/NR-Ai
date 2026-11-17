@@ -67,4 +67,14 @@ describe("catalog text memo (WP-D)", () => {
     // 64,000 string fields; without the memo this took several seconds.
     expect(elapsed).toBeLessThan(1500);
   });
+
+  it("walks a shared sub-object once and reuses its localized copy", () => {
+    const ct = createCatalogText(t.ar as Record<string, string>, "ar");
+    const shared = { name: reportCatalog[0].name, id: reportCatalog[0].id };
+    const out = ct.deep({ a: shared, b: [shared], c: { d: shared } });
+    expect(out.a).toBe(out.b[0]);
+    expect(out.a).toBe(out.c.d);
+    expect(out.a.name).toBe(ct.cx(reportCatalog[0].name));
+    expect(out.a.id).toBe(reportCatalog[0].id);
+  });
 });
