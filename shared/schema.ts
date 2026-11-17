@@ -371,6 +371,44 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Company = typeof companies.$inferSelect;
 
+// E-invoicing partner appointment (reseller model). The app sells e-invoicing
+// through an MoF-accredited service provider (ASP); it is not an ASP itself.
+// Each client company must (1) accept the partner's own terms and (2) appoint
+// that partner in EmaraTax (MD 243 Art 5/6). This row records both steps so
+// submission can be blocked until they are done. Kept out of `companies` so the
+// generic company PATCH allowlist can never set consent fields.
+export const einvoiceAspAppointments = pgTable(
+  "einvoice_asp_appointments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(), // matches EInvoiceProvider.name
+    termsVersion: text("terms_version").notNull(),
+    termsAcceptedAt: timestamp("terms_accepted_at").notNull(),
+    termsAcceptedBy: uuid("terms_accepted_by").references(() => users.id, { onDelete: "set null" }),
+    emarataxConfirmedAt: timestamp("emaratax_confirmed_at"),
+    emarataxConfirmedBy: uuid("emaratax_confirmed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyProviderUnique: unique("einvoice_asp_appointments_company_provider_unique").on(
+      table.companyId,
+      table.provider
+    ),
+  })
+);
+
+export type EInvoiceAspAppointment = typeof einvoiceAspAppointments.$inferSelect;
+
 // Schema for the QuickBooks-style Company Preferences page (PATCH /api/companies/:id).
 // All fields are optional so the page can be saved partially and so legacy clients
 // that omit a field continue to work.

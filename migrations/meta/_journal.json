@@ -624,6 +624,13 @@
    "when": 1781430040000,
    "tag": "0089_einvoice_party_details",
    "breakpoints": false
+  },
+  {
+   "idx": 89,
+   "version": "7",
+   "when": 1781430050000,
+   "tag": "0090_einvoice_asp_appointments",
+   "breakpoints": false
   }
  ]
 }

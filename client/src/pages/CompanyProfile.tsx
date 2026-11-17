@@ -31,6 +31,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Building2, FileText, Upload, Save } from "lucide-react";
 import type { Company } from "@shared/schema";
+import { EInvoicingPartnerCard } from "@/components/einvoice/EInvoicingPartnerCard";
 
 const companyProfileSchema = z.object({
   // Basic Info
@@ -596,6 +597,7 @@ export default function CompanyProfile() {
           </div>
         </form>
       </Form>
+      {companyId && <EInvoicingPartnerCard companyId={companyId} />}
     </div>
   );
 }

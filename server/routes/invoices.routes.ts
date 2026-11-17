@@ -16,6 +16,11 @@ import { getEInvoiceProvider } from "../services/einvoice-provider";
 import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { submitEInvoice, refreshEInvoiceStatus } from "../services/einvoice-submit.service";
 import {
+  activeEInvoicePartner,
+  appointmentGate,
+  getAppointment,
+} from "../services/einvoice-appointment.service";
+import {
   hasSmtpConfig,
   sendInvoiceEmail,
   sendPaymentReminderEmail,
@@ -1055,6 +1060,16 @@ export function registerInvoiceRoutes(app: Express) {
           message: err?.message || "E-invoicing is not configured.",
           code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
         });
+      }
+      // Reseller model: the client must have accepted the partner's terms and
+      // appointed the partner in EmaraTax before anything is transmitted.
+      const partner = activeEInvoicePartner();
+      if (partner.requiresAppointment) {
+        const gate = appointmentGate(
+          await getAppointment(invoice.companyId, partner.provider),
+          partner
+        );
+        if (gate) return res.status(409).json(gate);
       }
       const contact = (invoice as any).contactId
         ? await storage.getCustomerContact((invoice as any).contactId)
