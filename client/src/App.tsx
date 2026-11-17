@@ -14,6 +14,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { isAppSectionPath } from "@/components/layout/app-sections";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -28,10 +29,13 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
 const NotFound = lazyWithReload(() => import("@/pages/not-found"));
-// WP-A: design-system gallery for review screenshots; only exists in builds made with
-// VITE_UI_GALLERY=1 (the constant folds to null otherwise and the chunk is never emitted).
+const PublicNotFound = lazyWithReload(() => import("@/pages/PublicNotFound"));
+// WP-A: design-system gallery for review screenshots. Not a production route: it only exists
+// in builds made with VITE_UI_GALLERY=1 (the constant folds to null otherwise, the chunk is
+// never emitted and the path below is never registered).
 const UiGallery =
   import.meta.env.VITE_UI_GALLERY === "1" ? lazyWithReload(() => import("@/dev/UiGallery")) : null;
+const UI_GALLERY_PATH = "/__ui";
 const Login = lazyWithReload(() => import("@/pages/Login"));
 const Register = lazyWithReload(() => import("@/pages/Register"));
 const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
@@ -625,6 +629,16 @@ function Router() {
     );
   }
 
+  // Signed out on a path that is not part of the app: the public 404, not the sign-in screen
+  // (spec 3.1). Known app sections still send the visitor to sign in with the deep link kept.
+  if (!userLoading && !user && !isAppSectionPath(pathname)) {
+    return (
+      <Suspense fallback={<MinimalPageLoader />}>
+        <PublicNotFound />
+      </Suspense>
+    );
+  }
+
   // Protected routes (with sidebar)
   return (
     <ProtectedRoute>
@@ -819,7 +833,7 @@ function Router() {
               </FirmRoute>
             </Route>
 
-            {UiGallery ? <Route path="/__ui" component={UiGallery} /> : null}
+            {UiGallery ? <Route path={UI_GALLERY_PATH} component={UiGallery} /> : null}
             <Route component={NotFound} />
           </Switch>
         </Suspense>
