@@ -34,14 +34,14 @@ const TIERS = ["free", "starter", "professional", "enterprise"] as const;
  * (a check icon per included tier, a dash otherwise) instead of parsing page source.
  */
 const GATE_ROW_LABELS: Record<string, string> = {
-  payroll: "Payroll & WPS",
-  fixedAssets: "Fixed Assets & Depreciation",
-  bulkOps: "Bulk Operations",
-  recurringInvoices: "Recurring Invoices",
-  multiCurrency: "Multi-Currency Documents",
-  invoicePayment: "Online Invoice Payment Links",
-  webhooks: "Signed Webhooks",
-  apiAccess: "API Access",
+  payroll: "Payroll and WPS",
+  fixedAssets: "Fixed assets and depreciation",
+  bulkOps: "Bulk operations",
+  recurringInvoices: "Recurring invoices",
+  multiCurrency: "Multi-currency documents",
+  invoicePayment: "Online invoice payment links",
+  webhooks: "Signed webhooks",
+  apiAccess: "API access",
 };
 
 async function pricingGates(): Promise<Array<{ gate: string; tiers: Record<string, boolean> }>> {

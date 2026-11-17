@@ -58,13 +58,14 @@ try {
     if (login.status() >= 300) throw new Error(`login failed ${login.status()}`);
 
     await page.goto(`${BASE}/onboarding`);
-    await page.waitForSelector('[data-testid="firm-onboarding-start"]', { timeout: 20000 });
+    // WP-B: three steps (Team · Clients · Done).
+    await page.waitForSelector('[data-testid="onboarding-next"]', { timeout: 20000 });
     const steps = [await visibleLines(page)];
-    await page.click('[data-testid="firm-onboarding-start"]');
-    await page.waitForTimeout(600);
-    steps.push(await visibleLines(page));
     await page.click('[data-testid="onboarding-next"]');
     await page.waitForTimeout(600);
+    steps.push(await visibleLines(page));
+    await page.click('[data-testid="firm-onboarding-finish"]');
+    await page.waitForTimeout(900);
     steps.push(await visibleLines(page));
     for (const [i, lines] of steps.entries()) {
       const { english, samples } = classifyLines(lines);

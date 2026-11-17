@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -15,19 +15,17 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { ArrowLeft, CheckCircle2, KeyRound } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AuthAlert,
+  AuthHeader,
+  AuthSwitch,
+} from "@/components/auth/AuthBlocks";
+import { useTranslation } from "@/lib/i18n";
 
 /** R01-06: a reset signs out every device that was signed in before it. */
 const RESET_COPY = {
@@ -57,10 +55,10 @@ function getTokenFromUrl(): string {
 
 export default function ResetPassword() {
   const { locale, t } = useTranslation();
-  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const token = useMemo(() => getTokenFromUrl(), []);
 
   const form = useForm<ResetFormData>({
@@ -68,19 +66,10 @@ export default function ResetPassword() {
     defaultValues: { password: "", confirmPassword: "" },
   });
 
-  useEffect(() => {
-    if (!token) {
-      toast({
-        variant: "destructive",
-        title: translateNow("shell.toastInvalidResetLink"),
-        description: translateNow("shell.toastThisLinkIsMissingItsTokenRequest"),
-      });
-    }
-  }, [token, toast]);
-
   const onSubmit = async (data: ResetFormData) => {
     if (!token) return;
     setIsLoading(true);
+    setError(null);
     try {
       const res = await fetch(apiUrl("/api/auth/reset-password"), {
         method: "POST",
@@ -89,21 +78,13 @@ export default function ResetPassword() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || "Could not reset password");
+        throw new Error(err?.message || t["marketing.resetErrorBody"]);
       }
       setDone(true);
-      toast({
-        title: translateNow("shell.toastPasswordReset"),
-        description: translateNow("shell.toastYouCanNowSignInWithYour"),
-      });
       // Redirect to login after a brief moment so the user sees confirmation.
       setTimeout(() => setLocation("/login"), 1500);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: t["marketing.resetErrorTitle"],
-        description: error?.message || t["marketing.resetErrorBody"],
-      });
+    } catch (failure: any) {
+      setError(failure?.message || t["marketing.resetErrorBody"]);
     } finally {
       setIsLoading(false);
     }
@@ -113,103 +94,99 @@ export default function ResetPassword() {
     <AuthLayout variant="reset">
       <Link
         href="/login"
-        className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+        className="mb-6 inline-flex min-h-11 items-center gap-2 text-small font-medium text-muted-foreground hover:text-foreground md:min-h-0"
         data-testid="button-back-login"
       >
         <ArrowLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
         <T k="pages.backToSignIn" />
       </Link>
-      <Card className="w-full">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">
-            <T k="pageLabels.setANewPassword" />
-          </CardTitle>
-          <CardDescription>{t["marketing.resetDescription"]}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {done ? (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
-              <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
-              <div className="text-sm">
-                <p className="font-medium text-success-subtle-foreground ">
-                  <T k="pageLabels.passwordReset" />
-                </p>
-                <p className="text-success mt-0.5">{t["marketing.resetRedirecting"]}</p>
-                <p className="text-muted-foreground mt-1" data-testid="text-sessions-revoked">
-                  {locale === "ar" ? RESET_COPY.signedOut.ar : RESET_COPY.signedOut.en}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.newPassword" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder="••••••••"
-                          disabled={isLoading || !token}
-                          data-testid="input-password"
-                        />
-                      </FormControl>
-                      <FormDescription>{t["marketing.resetHint"]}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.confirmNewPassword" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder="••••••••"
-                          disabled={isLoading || !token}
-                          data-testid="input-confirm-password"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading || !token}
-                  data-testid="button-reset-password"
-                >
-                  <KeyRound className="w-4 h-4 me-2" aria-hidden="true" />
-                  {isLoading ? t["marketing.resetSubmitting"] : t["marketing.resetSubmit"]}
-                </Button>
-              </form>
-            </Form>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
-          <div className="text-sm text-muted-foreground text-center">
-            {t["marketing.resetNeedLink"]}{" "}
-            <Link href="/forgot-password" className="text-primary hover:underline font-medium">
-              <T k="pageLabels.startOver" />
-            </Link>
-          </div>
-        </CardFooter>
-      </Card>
+      <AuthHeader
+        title={<T k="pageLabels.setANewPassword" />}
+        description={t["marketing.resetDescription"]}
+      />
+      {!token ? (
+        <AuthAlert tone="danger" title={t["shell.toastInvalidResetLink"]}>
+          {t["shell.toastThisLinkIsMissingItsTokenRequest"]}
+        </AuthAlert>
+      ) : error ? (
+        <AuthAlert tone="danger" title={t["marketing.resetErrorTitle"]}>
+          {error}
+        </AuthAlert>
+      ) : null}
+      {done ? (
+        <AuthAlert tone="success" title={<T k="pageLabels.passwordReset" />}>
+          <p>{t["marketing.resetRedirecting"]}</p>
+          <p className="mt-1 text-muted-foreground" data-testid="text-sessions-revoked">
+            {locale === "ar" ? RESET_COPY.signedOut.ar : RESET_COPY.signedOut.en}
+          </p>
+        </AuthAlert>
+      ) : (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <T k="pageLabels.newPassword" />
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      className={AUTH_INPUT}
+                      disabled={isLoading || !token}
+                      data-testid="input-password"
+                    />
+                  </FormControl>
+                  <FormDescription>{t["marketing.resetHint"]}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="confirmPassword"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <T k="pageLabels.confirmNewPassword" />
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      className={AUTH_INPUT}
+                      disabled={isLoading || !token}
+                      data-testid="input-confirm-password"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button
+              type="submit"
+              className={AUTH_BUTTON}
+              disabled={isLoading || !token}
+              data-testid="button-reset-password"
+            >
+              {isLoading ? t["marketing.resetSubmitting"] : t["marketing.resetSubmit"]}
+            </Button>
+          </form>
+        </Form>
+      )}
+      <AuthSwitch>
+        {t["marketing.resetNeedLink"]}{" "}
+        <Link href="/forgot-password" className="font-medium text-accent hover:underline">
+          <T k="pageLabels.startOver" />
+        </Link>
+      </AuthSwitch>
     </AuthLayout>
   );
 }

@@ -93,9 +93,9 @@ try {
   });
   if (login.status() >= 300) throw new Error(`login failed ${login.status()}`);
 
-  // ---- Onboarding completion with the automation panel expanded --------------------------------------
+  // ---- Onboarding completion ----------------------------------------------------------------------
   await page.goto(`${BASE}/onboarding`);
-  await page.waitForSelector('[data-testid="onboarding-start"]', { timeout: 20000 });
+  await page.waitForSelector('[data-testid="onboarding-express"]', { timeout: 20000 });
   const click = async (testId) => {
     const loc = page.locator(`[data-testid="${testId}"]`);
     if (!(await loc.count())) return false;
@@ -103,22 +103,12 @@ try {
     await settle(page, 900);
     return true;
   };
-  await click("onboarding-start");
-  await click("onboarding-next");
-  await click("onboarding-next");
-  await click("onboarding-skip-bank");
-  await click("onboarding-skip-doc");
+  // WP-B: onboarding is three screens and no longer carries the report-workspace panel; the
+  // report surfaces are probed on /reports below.
+  await click("onboarding-express");
+  await click("onboarding-skip");
+  await click("onboarding-task-explore");
   report("onboarding complete", await visibleLines(page));
-  for (const persona of ["owner", "freelancer", "accountant"]) {
-    await click(`onboarding-report-workspace-${persona}`);
-    await click("onboarding-report-more-toggle");
-    await clickAll(
-      page,
-      'button[aria-expanded="false"]:not([aria-haspopup]):not([role="combobox"])'
-    );
-    report(`onboarding automations ${persona}`, await visibleLines(page));
-  }
-  await click("onboarding-open-report-operations");
   await settle(page, 1500);
 
   // Seed a delivery run so the delivery history rows (status, schedule, error copy) render.

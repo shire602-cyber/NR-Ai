@@ -181,7 +181,6 @@ describe("report discoverability", () => {
   // WP-A (Fable spec 3.5): the mobile More sheet lists navigation only; the catalog-driven
   // "Report shortcuts" collapsible was deleted (reports are reached from the Reports tab).
   const mobileNavSource = read("client/src/components/MobileNav.tsx");
-  const onboardingSource = read("client/src/pages/Onboarding.tsx");
   // WP-A: the sidebar renders the shared nav config (layout/nav-config.ts); read both.
   const sidebarSource =
     read("client/src/components/layout/AppSidebar.tsx") +
@@ -927,91 +926,6 @@ describe("report discoverability", () => {
     expect(catalogSource).toContain("monthly tax-close actions");
     expect(catalogSource).toContain("reviewer queues");
     expect(catalogSource).toContain("reportPersonaHref");
-    expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
-    expect(onboardingSource).toContain("workspace.navLabel");
-    expect(onboardingSource).toContain("selectedWorkspace.automationNavLabel");
-    expect(onboardingSource).toContain("workspace.automationOutcome");
-    expect(onboardingSource).toContain("selectedReportSuites");
-    expect(onboardingSource).toContain("reportSuiteProfiles");
-    expect(onboardingSource).toContain("reportSuiteHref(suite)");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-suites"');
-    expect(onboardingSource).toContain("onboarding-report-suite-${suite.id}");
-    expect(onboardingSource).toContain("selectedQuickAccessProfile");
-    expect(onboardingSource).toContain("reportQuickAccessProfiles");
-    expect(onboardingSource).toContain("selectedQuickAccessReports");
-    expect(onboardingSource).toContain("reportCatalog.find((report) => report.id === reportId)");
-    expect(onboardingSource).toContain("reportPersonaHref(report, selectedWorkspace.persona)");
-    expect(onboardingSource).toContain(
-      "onboarding-report-quick-access-reports-${selectedWorkspace.persona}"
-    );
-    expect(onboardingSource).toContain(
-      "onboarding-report-quick-access-report-${selectedWorkspace.persona}-${report.id}"
-    );
-    expect(onboardingSource).toContain('data-testid="onboarding-report-quick-access-impact"');
-    expect(onboardingSource).toContain(
-      "onboarding-report-quick-access-${selectedWorkspace.persona}"
-    );
-    expect(onboardingSource).toContain('reportSectionHref(selectedWorkspace, "quick-access")');
-    expect(onboardingSource).toContain("selectedSavedViews");
-    expect(onboardingSource).toContain("reportSavedViewProfiles");
-    expect(onboardingSource).toContain("reportSavedViewHref(view)");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-saved-views"');
-    expect(onboardingSource).toContain("onboarding-report-saved-view-${view.id}");
-    expect(onboardingSource).toContain("selectedAutomationImpactProfile");
-    expect(onboardingSource).toContain("reportAutomationImpactProfiles");
-    expect(onboardingSource).toContain(
-      "onboarding-report-automation-impact-${selectedWorkspace.persona}"
-    );
-    expect(onboardingSource).toContain('reportSectionHref(selectedWorkspace, "automation-impact")');
-    expect(onboardingSource).toContain("selectedDecisionShortcuts");
-    expect(onboardingSource).toContain("reportDecisionShortcutHref(shortcut)");
-    expect(onboardingSource).toContain("selectedTriggerRules");
-    expect(onboardingSource).toContain("reportAutomationTriggerRuleHref(rule)");
-    expect(onboardingSource).toContain("selectedDeliverySubscriptions");
-    expect(onboardingSource).toContain("reportDeliverySubscriptionHref(subscription)");
-    expect(onboardingSource).toContain("selectedAutomationStarters");
-    expect(onboardingSource).toContain("reportAutomationStarterHref(starter)");
-    expect(onboardingSource).toContain("selectedReportPackTemplates");
-    expect(onboardingSource).toContain("reportPackTemplateHref(template)");
-    expect(onboardingSource).toContain("getPreferredReportPersona() ??");
-    expect(onboardingSource).toContain('?? "owner"');
-    expect(onboardingSource).toContain("setSelectedPersona(workspace.persona)");
-    expect(onboardingSource).toContain("setPreferredReportPersona(workspace.persona)");
-    expect(onboardingSource).toContain("setPreferredReportPersona(selectedWorkspace.persona)");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-workspaces"');
-    expect(onboardingSource).toContain("onboarding-report-workspace-${workspace.persona}");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-decision-shortcuts"');
-    expect(onboardingSource).toContain("onboarding-report-decision-shortcut-${shortcut.id}");
-    expect(onboardingSource).toContain("selectedComparisonPresets");
-    expect(onboardingSource).toContain("reportComparisonPresets");
-    expect(onboardingSource).toContain("reportComparisonPresetHref(preset)");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-comparison-presets"');
-    expect(onboardingSource).toContain("onboarding-report-comparison-preset-${preset.id}");
-    expect(onboardingSource).toContain("preset.automationTrigger");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-trigger-rules"');
-    expect(onboardingSource).toContain("onboarding-report-trigger-rule-${rule.id}");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-delivery-subscriptions"');
-    expect(onboardingSource).toContain(
-      "onboarding-report-delivery-subscription-${subscription.id}"
-    );
-    expect(onboardingSource).toContain('data-testid="onboarding-report-automation-starters"');
-    expect(onboardingSource).toContain("onboarding-report-automation-starter-${starter.id}");
-    expect(onboardingSource).toContain('data-testid="onboarding-report-pack-templates"');
-    expect(onboardingSource).toContain("onboarding-report-pack-template-${template.id}");
-    expect(onboardingSource).toContain('data-testid="onboarding-open-report-operations"');
-    expect(onboardingSource).toContain('data-testid="onboarding-open-report-workspace"');
-    expect(onboardingSource).toContain('data-testid="onboarding-open-automation-center"');
-    expect(onboardingSource).toContain(
-      'reportSectionHref(selectedWorkspace, "automation-operations")'
-    );
-    expect(onboardingSource + read("client/src/locales/en/pageLabels.json")).toContain(
-      "Open report operations"
-    );
-    expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
-    expect(onboardingSource).toContain(
-      'reportSectionHref(selectedWorkspace, "automation-command-center")'
-    );
-    expect(onboardingSource).toContain("workspace.automations.length");
     expect(sidebarSource).not.toContain("reportPersonaWorkspaces.map");
     expect(sidebarSource).not.toContain("reportPersonaWorkspaces.flatMap");
     expect(i18nSource).toContain("ownerReports");
