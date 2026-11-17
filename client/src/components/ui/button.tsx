@@ -9,6 +9,11 @@ import { cn } from "@/lib/utils";
  * Heights: sm 32 · default 36 · lg 40 · xl 48 (every size is 44 on touch screens). One primary action per view;
  * pair it with `outline` or `ghost` secondaries. Icons inherit 16px.
  */
+// Spec 2.3: a disabled solid button is neutral (`--disabled-surface`), never pale green — pale
+// green reads as "loading".
+const SOLID_DISABLED =
+  " disabled:opacity-100 disabled:border-transparent disabled:shadow-none disabled:bg-[hsl(var(--disabled-surface))] disabled:text-[hsl(var(--disabled-foreground))]";
+
 const buttonVariants = cva(
   "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium" +
     " select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" +
@@ -19,11 +24,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground border border-primary-border shadow-xs hover:bg-[hsl(var(--primary-hover))] active:shadow-none",
+          "bg-primary text-primary-foreground border border-primary-border shadow-xs hover:bg-[hsl(var(--primary-hover))] active:shadow-none" +
+          SOLID_DISABLED,
         destructive:
-          "bg-destructive text-destructive-foreground border border-destructive-border shadow-xs hover:bg-destructive/90 active:shadow-none",
+          "bg-destructive text-destructive-foreground border border-destructive-border shadow-xs hover:bg-destructive/90 active:shadow-none" +
+          SOLID_DISABLED,
         accent:
-          "bg-accent text-accent-foreground border border-accent-border shadow-xs hover:bg-accent/90 active:shadow-none",
+          "bg-accent text-accent-foreground border border-accent-border shadow-xs hover:bg-accent/90 active:shadow-none" +
+          SOLID_DISABLED,
         outline:
           "border border-input bg-card text-foreground shadow-xs hover:bg-secondary hover:border-border-strong active:shadow-none",
         secondary:
