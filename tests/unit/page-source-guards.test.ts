@@ -121,7 +121,9 @@ describe("consolidated navigation redirects (App source)", () => {
   });
 
   it("R18-09: the mobile More sheet and command palette point at the hub, not the retired routes", () => {
-    expect(read("client/src/components/MobileNav.tsx")).toContain('href: "/ai"');
+    // WP-A: the More sheet renders the shared nav config (Assistant entry → /ai).
+    expect(read("client/src/components/MobileNav.tsx")).toContain("useNavGroups");
+    expect(read("client/src/components/layout/nav-config.ts")).toContain('url: "/ai"');
     expect(read("client/src/components/CommandPalette.tsx")).toContain('href: "/ai?tab=chat"');
     expect(readDashboardSource()).toContain('<Link href="/ai?tab=cfo">');
   });
@@ -163,68 +165,17 @@ describe("Mobile launch UX guards", () => {
     expect(source).toContain("flex items-center gap-3 border-b border-border/70 px-4 py-2.5");
   });
 
-  it("keeps report workspaces reachable from mobile navigation", () => {
+  it("keeps the mobile More sheet a navigation list (WP-A, Fable spec 3.5)", () => {
+    // Spec 3.5 deleted the catalog "Report shortcuts" collapsible: report workspaces are reached
+    // from the Reports tab of the bottom bar. The sheet renders the sidebar's nav config as one
+    // column of 44 px rows (rendered behaviour: tests/unit/launch-fix-x1-client.test.ts).
     const source = read("client/src/components/MobileNav.tsx");
     const styles = read("client/src/styles/mobile.css");
-
-    expect(source).toContain("interface MoreLink");
-    expect(source).toContain("key?: string");
-    expect(source).toContain("description?: string");
-    expect(source).toContain("reportPersonaWorkspaces.map");
-    expect(source).toContain("workspace.navLabel");
-    expect(source).toContain("workspace.automationNavLabel");
-    expect(source).toContain(
-      'description: ct("workspace", workspace.persona, "focus", workspace.focus)'
-    );
-    expect(source).toContain('"automationOutcome"');
-    expect(source).toContain('"packSchedule.automation"');
-    expect(source).toContain("reportPersonaWorkspaces.flatMap");
-    expect(source).toContain("report.personas.includes(workspace.persona)");
-    expect(source).toContain("reportPersonaHref(report, workspace.persona)");
-    expect(source).toContain("key: `report-catalog-${workspace.persona}-${report.id}`");
-    expect(source).toContain(
-      'label: `${ct("report", report.id, "name", report.name)} - ${wsTitle(workspace)}`'
-    );
-    expect(source).toContain(
-      'description: `${ct("category", report.category, "label", report.category)} - ${ct("report", report.id, "comparison", report.comparison)} - ${ct("report", report.id, "automation", report.automation)}`'
-    );
-    expect(source).toContain("key={link.key ?? link.href}");
-    expect(source).toContain("reportWorkspaceHref(workspace)");
-    expect(source).toContain('reportSectionHref(workspace, "automation-command-center")');
-    expect(source).toContain("reportDecisionShortcuts.map");
-    expect(source).toContain("reportDecisionShortcutHref(shortcut)");
-    expect(source).toContain('description: ct("shortcut", shortcut.id, "answer", shortcut.answer)');
-    expect(source).toContain("reportAutomationTriggerRules.map");
-    expect(source).toContain("reportAutomationTriggerRuleHref(rule)");
-    expect(source).toContain(
-      'description: `${ct("rule", rule.id, "condition", rule.condition)} - ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`'
-    );
-    expect(source).toContain("reportDeliverySubscriptions.map");
-    expect(source).toContain("reportDeliverySubscriptionHref(subscription)");
-    expect(source).toContain(
-      'description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} - ${ct("delivery", subscription.id, "channel", subscription.channel)}`'
-    );
-    expect(source).toContain("reportAutomationStarters.map");
-    expect(source).toContain("reportAutomationStarterHref(starter)");
-    expect(source).toContain(
-      'description: `${ct("starter", starter.id, "audience", starter.audience)} - ${ct("starter", starter.id, "outcome", starter.outcome)}`'
-    );
-    expect(source).toContain("reportPackTemplates.map");
-    expect(source).toContain("reportPackTemplateHref(template)");
-    expect(source).toContain(
-      'description: `${ct("pack", template.id, "cadence", template.cadence)} - ${ct("pack", template.id, "delivery", template.delivery)}`'
-    );
-    expect(source).toContain("reportComparisonPresets.map");
-    expect(source).toContain("reportComparisonPresetHref(preset)");
-    expect(source).toContain(
-      'description: `${ct("preset", preset.id, "baseline", preset.baseline)} - ${ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}`'
-    );
-    expect(source).toContain("mobile-nav-more-label");
-    expect(source).toContain("mobile-nav-more-description");
-    expect(source).toContain("aria-label={link.description");
-    expect(styles).toContain(".mobile-nav-more-description");
-    expect(styles).toContain("text-overflow: ellipsis");
-    expect(source).toContain('location.startsWith(href + "?")');
+    expect(source).toContain("useNavGroups");
+    expect(source).not.toContain("reportPersonaWorkspaces");
+    expect(source).toContain('href: "/reports"');
+    expect(styles).toMatch(/\.mobile-nav-more-row \{[\s\S]*?min-height: 44px/);
+    expect(styles).not.toContain(".mobile-nav-indicator");
   });
 });
 

@@ -67,3 +67,45 @@ export function useActiveIntoView(ref: React.RefObject<HTMLElement | null>, marg
     return () => mo.disconnect();
   }, [ref, margin]);
 }
+
+/**
+ * Vertical edge fade (spec 3.5: the sidebar scroll area fades 16 px at the top / bottom while
+ * more content is hidden there). Returns a style to spread on the scroller.
+ */
+export function useEdgeFadeY(
+  ref: React.RefObject<HTMLElement | null>,
+  size = 16
+): React.CSSProperties | undefined {
+  const [fade, setFade] = React.useState({ top: false, bottom: false });
+  const update = React.useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    const next =
+      max <= 1
+        ? { top: false, bottom: false }
+        : { top: el.scrollTop > 1, bottom: el.scrollTop < max - 1 };
+    setFade((f) => (f.top === next.top && f.bottom === next.bottom ? f : next));
+  }, [ref]);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    const mo = typeof MutationObserver !== "undefined" ? new MutationObserver(update) : null;
+    mo?.observe(el, { childList: true, subtree: true });
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro?.disconnect();
+      mo?.disconnect();
+    };
+  }, [ref, update]);
+  if (!fade.top && !fade.bottom) return undefined;
+  const mask = `linear-gradient(to bottom, ${fade.top ? `transparent 0, #000 ${size}px` : "#000 0"}, ${
+    fade.bottom ? `#000 calc(100% - ${size}px), transparent 100%` : "#000 100%"
+  })`;
+  return { maskImage: mask, WebkitMaskImage: mask };
+}
