@@ -260,6 +260,7 @@ async function main() {
       data: {
         date: new Date().toISOString().slice(0, 10),
         memo,
+        status: "posted",
         lines: [
           { accountId: debitAccount.id, debit: 150, credit: 0 },
           { accountId: creditAccount.id, debit: 0, credit: 150 },
@@ -291,18 +292,14 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const quoteNumber = `Q-${Date.now()}`;
     const quoteRes = await page.request.post(`${BASE}/api/companies/${companyId}/quotes`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        number: quoteNumber,
+        // number, status and totals are server-owned (strict body).
         customerName: "Quote Customer LLC",
-        date: new Date().toISOString(),
+        date: new Date().toISOString().slice(0, 10),
         currency: "AED",
-        subtotal: 1000,
-        vatAmount: 50,
-        total: 1050,
-        status: "sent",
+        placeOfSupplyEmirate: "dubai",
         lines: [{ description: "Consulting services", quantity: 2, unitPrice: 500, vatRate: 0.05 }],
       },
     });
@@ -312,6 +309,7 @@ async function main() {
       });
     } else {
       const quote = await quoteRes.json();
+      const quoteNumber = quote.number;
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/quotes`);
@@ -349,10 +347,23 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const invoices = await (
-      await page.request.get(`${BASE}/api/companies/${companyId}/invoices?all=true`)
-    ).json();
-    const sourceInvoice = invoices?.find?.((invoice) => invoice?.invoiceType !== "credit_note");
+    // Credit notes are raised against an ISSUED invoice: create and issue one here.
+    const srcRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: {
+        customerName: "Credit Note Customer LLC",
+        date: new Date().toISOString().slice(0, 10),
+        placeOfSupplyEmirate: "dubai",
+        lines: [{ description: "Consulting", quantity: 1, unitPrice: 400, vatRate: 5 }],
+      },
+    });
+    const sourceInvoice = srcRes.status() < 300 ? await srcRes.json() : undefined;
+    if (sourceInvoice?.id) {
+      await page.request.patch(`${BASE}/api/invoices/${sourceInvoice.id}/status`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { status: "sent" },
+      });
+    }
     if (!sourceInvoice?.id) {
       await fail("credit-note-flow source", { detail: "no source invoice available" });
     } else {
@@ -399,18 +410,13 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const poNumber = `PO-${Date.now()}`;
     const poRes = await page.request.post(`${BASE}/api/companies/${companyId}/purchase-orders`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        number: poNumber,
         vendorName: "Supplier Trading FZE",
-        date: new Date().toISOString(),
-        expectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+        date: new Date().toISOString().slice(0, 10),
+        expectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
         currency: "AED",
-        subtotal: 500,
-        vatAmount: 25,
-        total: 525,
         lines: [{ description: "Office supplies", quantity: 5, unitPrice: 100, vatRate: 0.05 }],
       },
     });
@@ -420,6 +426,7 @@ async function main() {
       });
     } else {
       const po = await poRes.json();
+      const poNumber = po.number; // server-assigned
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/purchase-orders`);
@@ -516,7 +523,11 @@ async function main() {
     }
 
     // Reconciliation rule: create then run auto-match (no transactions is fine
-    // — the endpoint must respond coherently, not 500).
+    // — the endpoint must respond coherently, not 500). A rule posts to a real contra GL account.
+    const ruleAccounts = await (
+      await page.request.get(`${BASE}/api/companies/${companyId}/accounts`)
+    ).json();
+    const ruleAccount = ruleAccounts.find((a) => a.type === "expense");
     const ruleRes = await page.request.post(
       `${BASE}/api/companies/${companyId}/reconciliation-rules`,
       {
@@ -526,6 +537,8 @@ async function main() {
           matchField: "description",
           matchType: "contains",
           matchValue: "SALARY",
+          accountId: ruleAccount?.id,
+          vatTreatment: "none",
           category: "Payroll",
         },
       }
@@ -604,8 +617,6 @@ async function main() {
     const connRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-connections`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        provider: "manual",
-        connectionType: "statement",
         bankName: "Emirates NBD",
         accountName: "Current AED",
       },
@@ -672,9 +683,6 @@ async function main() {
           totalRevenue: 0,
           totalExpenses: 0,
           totalDeductions: 0,
-          taxableIncome: 0,
-          taxPayable: 0,
-          status: "draft",
         },
       }
     );
@@ -823,7 +831,6 @@ async function main() {
     const acctRes = await page.request.post(`${BASE}/api/companies/${companyId}/accounts`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        companyId,
         code: `9${Date.now() % 100000}`,
         nameEn: marker,
         type: "expense",
@@ -893,10 +900,7 @@ async function main() {
         customerName: "EInvoice Customer LLC",
         date: new Date().toISOString().slice(0, 10),
         currency: "AED",
-        subtotal: 1300,
-        vatAmount: 50,
-        total: 1350,
-        status: "sent",
+        placeOfSupplyEmirate: "dubai",
         lines: [
           {
             description: "Consulting",
@@ -921,6 +925,10 @@ async function main() {
       });
     } else {
       const invoice = await invRes.json();
+      await page.request.patch(`${BASE}/api/invoices/${invoice.id}/status`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { status: "sent" },
+      });
 
       // Company has no TRN yet → the gate must refuse generation with issues.
       const blocked = await page.request.post(
@@ -1043,7 +1051,7 @@ async function main() {
     // API key lifecycle: create returns the raw key exactly once.
     const keyRes = await page.request.post(`${BASE}/api/companies/${companyId}/api-keys`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { name: "E2E key", scopes: "read" },
+      data: { name: "E2E key", scopes: ["read:invoices"] },
     });
     const created = await keyRes.json().catch(() => ({}));
     if (keyRes.status() !== 201 || !created?.key || created?.keyHash) {

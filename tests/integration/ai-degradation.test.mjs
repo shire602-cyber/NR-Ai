@@ -36,12 +36,13 @@ async function main() {
   await api("PATCH", `/api/companies/${cid}`, { token, body: { trnVatNumber: "100123456700003", vatRegistered: true, emirate: "dubai" } });
 
   // The OpenAI-only endpoints. Each must never 500.
+  // OCR validates the upload first (a corrupt image is a 400), so send a real 1x1 PNG.
   const calls = [
     ["cfo-advice", "POST", "/api/ai/cfo-advice", { companyId: cid, question: "how is my cash flow?" }],
     ["detect-anomalies", "POST", "/api/ai/detect-anomalies", { companyId: cid }],
     ["parse-bank-statement", "POST", "/api/ai/parse-bank-statement", { companyId: cid, text: "01/01 PMT 500" }],
     ["nl-gateway", "POST", "/api/ai/nl-gateway", { companyId: cid, message: "what is my revenue" }],
-    ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgo=" }],
+    ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" }],
   ];
 
   const noKey = !process.env.OPENAI_API_KEY;

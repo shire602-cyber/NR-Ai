@@ -30,7 +30,17 @@ async function apiRaw(method, path, { body, token } = {}) {
 }
 const rnd = Math.random().toString(36).slice(2, 8);
 const today = new Date().toISOString().slice(0, 10);
-const monthStart = today.slice(0, 8) + "01";
+// A VAT 201 period must be a whole, already finished calendar quarter (PERIOD_IN_FUTURE /
+// PERIOD_NOT_ALIGNED), so the VAT fixtures are dated in the last completed quarter.
+function lastCompletedQuarter(iso) {
+  let y = Number(iso.slice(0, 4)), q = Math.floor((Number(iso.slice(5, 7)) - 1) / 3) - 1;
+  if (q < 0) { y -= 1; q = 3; }
+  const sm = q * 3 + 1, em = sm + 2, p = (v) => String(v).padStart(2, "0");
+  return { start: `${y}-${p(sm)}-01`, end: `${y}-${p(em)}-${p(new Date(Date.UTC(y, em, 0)).getUTCDate())}` };
+}
+const qtr = lastCompletedQuarter(today);
+const monthStart = qtr.start; // VAT / P&L period start
+const periodEnd = qtr.end; // VAT / P&L period end, also the invoice date of the fixtures
 const n = (v) => Number(v ?? 0);
 const close = (a, b, t = 0.01) => Math.abs(n(a) - n(b)) <= t;
 
@@ -54,15 +64,15 @@ async function main() {
 
   // ── invoices ───────────────────────────────────────────────
   r = await api("POST", `/api/companies/${companyId}/invoices`, {
-    token, body: { customerName: "Gulf Buyer LLC", date: today, dueDate: today, lines: [{ description: "Consulting", quantity: 1, unitPrice: 10000, vatRate: 5 }] },
+    token, body: { customerName: "Gulf Buyer LLC", date: periodEnd, dueDate: periodEnd, lines: [{ description: "Consulting", quantity: 1, unitPrice: 10000, vatRate: 5 }] },
   });
   const invA = r.json;
   ok("invoice A: totals (10,000 net / 500 VAT / 10,500)", close(invA?.subtotal, 10000) && close(invA?.vatAmount, 500) && close(invA?.total, 10500), { s: invA?.subtotal, v: invA?.vatAmount, t: invA?.total });
 
   r = await api("POST", `/api/companies/${companyId}/invoices`, {
-    token, body: { customerName: "Gulf Buyer LLC", date: today, dueDate: today, lines: [
+    token, body: { customerName: "Gulf Buyer LLC", date: periodEnd, dueDate: periodEnd, lines: [
       { description: "Services", quantity: 1, unitPrice: 5000, vatRate: 5 },
-      { description: "Export", quantity: 1, unitPrice: 3000, vatRate: 0 },
+      { description: "Export", quantity: 1, unitPrice: 3000, vatRate: 0, vatSupplyType: "zero_rated" },
     ] },
   });
   const invB = r.json;
@@ -102,7 +112,7 @@ async function main() {
   ok("report: trial balance balances", close(tbDr, tbCr, 0.02), { tbDr, tbCr });
 
   // ── P&L ────────────────────────────────────────────────────
-  r = await api("GET", `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${monthStart}&endDate=${today}`, { token });
+  r = await api("GET", `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${monthStart}&endDate=${periodEnd}`, { token });
   ok("report: P&L revenue = 18,000", close(r.json?.revenue, 18000), { revenue: r.json?.revenue });
 
   // ── balance sheet balances ─────────────────────────────────
@@ -113,7 +123,7 @@ async function main() {
   ok("report: balance sheet A = L + E", close(A, L + E, 0.02), { A, L, E });
 
   // ── VAT 201: exact figures ─────────────────────────────────
-  r = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: monthStart, periodEnd: today } });
+  r = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: monthStart, periodEnd: periodEnd } });
   const v = r.json;
   ok("VAT: generates", r.status === 200 || r.status === 201, { status: r.status });
   ok("VAT: Box 1 (Dubai) standard-rated = 15,000", close(v?.box1bDubaiAmount, 15000), { box1bDubaiAmount: v?.box1bDubaiAmount });
@@ -145,8 +155,8 @@ async function main() {
     const mk = await api("POST", `/api/companies/${cid}/receipts`, {
       token: tk,
       body: {
-        merchant: "US Supplier", date: today, amount: 1000, vatAmount: 50,
-        currency: "USD", exchangeRate: 3.6725, baseCurrencyAmount: 3672.5,
+        merchant: "US Supplier", date: periodEnd, amount: 1000, vatAmount: 50,
+        currency: "USD", exchangeRate: 3.6725,
         category: "software", accountId: expenseAcct?.id, paymentAccountId: payAcct?.id,
       },
     });
@@ -159,7 +169,7 @@ async function main() {
       ok("FX receipt posts to the GL", posted.status === 200 || posted.status === 201, { status: posted.status, msg: posted.json?.message });
 
       const v = await api("POST", `/api/companies/${cid}/vat-returns/generate`, {
-        token: tk, body: { periodStart: monthStart, periodEnd: today },
+        token: tk, body: { periodStart: monthStart, periodEnd: periodEnd },
       });
       ok("input VAT: Box 9 expenses converted to AED (3,672.50 not 1,000)",
         close(v.json?.box9ExpensesAmount, 3672.5, 0.02), { box9Amount: v.json?.box9ExpensesAmount });
@@ -175,19 +185,24 @@ async function main() {
     const s = Math.random().toString(36).slice(2, 8);
     const reg = await api("POST", "/api/auth/register", { body: { name: "NoEmirate", email: `noem_${s}@example.com`, password: "Password123!" } });
     const tk = reg.json.token, cid = reg.json.company.id;
-    // TRN set, emirate deliberately NOT set
+    // TRN set, emirate deliberately NOT set. The guard now sits at issue time: a standard-rated
+    // line has no place of supply (never a silent Dubai), so the invoice itself is refused.
     await api("PATCH", `/api/companies/${cid}`, { token: tk, body: { trnVatNumber: "100123456700003", vatRegistered: true } });
-    const g = await api("POST", `/api/companies/${cid}/vat-returns/generate`, { token: tk, body: { periodStart: monthStart, periodEnd: today } });
-    ok("H1 VAT 201 refuses when emirate is unset (no silent Dubai)", g.status === 422 && g.json?.code === "EMIRATE_NOT_SET", { status: g.status, code: g.json?.code });
-    // once set, it generates
+    const stdLine = { customerName: "NoEm Buyer", date: periodEnd, dueDate: periodEnd, lines: [{ description: "svc", quantity: 1, unitPrice: 100, vatRate: 5 }] };
+    const g = await api("POST", `/api/companies/${cid}/invoices`, { token: tk, body: stdLine });
+    ok("H1 standard-rated invoice is refused when no emirate is stated (no silent Dubai)", g.status === 422 && g.json?.code === "PLACE_OF_SUPPLY_REQUIRED", { status: g.status, code: g.json?.code });
+    // once set, the invoice posts and the VAT 201 generates
     await api("PATCH", `/api/companies/${cid}`, { token: tk, body: { emirate: "sharjah" } });
-    const g2 = await api("POST", `/api/companies/${cid}/vat-returns/generate`, { token: tk, body: { periodStart: monthStart, periodEnd: today } });
+    const g1 = await api("POST", `/api/companies/${cid}/invoices`, { token: tk, body: stdLine });
+    ok("H1 invoice is accepted once the emirate is stated", g1.status === 200 || g1.status === 201, { status: g1.status, code: g1.json?.code });
+    await api("PATCH", `/api/invoices/${g1.json?.id}/status`, { token: tk, body: { status: "sent" } });
+    const g2 = await api("POST", `/api/companies/${cid}/vat-returns/generate`, { token: tk, body: { periodStart: monthStart, periodEnd: periodEnd } });
     ok("H1 VAT 201 generates once the emirate is stated", g2.status === 200 || g2.status === 201, { status: g2.status });
   }
 
   // ── H2: filing status must be honest ───────────────────────
   {
-    const gen = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: monthStart, periodEnd: today } });
+    const gen = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: monthStart, periodEnd: periodEnd } });
     const id = gen.json?.id;
     // submit with no FTA reference -> finalised only, explicitly NOT transmitted
     const s1 = await api("POST", `/api/vat-returns/${id}/submit`, { token, body: { notes: "review" } });
@@ -246,7 +261,7 @@ async function main() {
     const r = await api("POST", `/api/companies/${companyId}/invoices`, {
       token, body: { customerName: "Future", date: "2099-01-01", lines: [{ description: "d", quantity: 1, unitPrice: 10, vatRate: 5 }] },
     });
-    ok("C8 future-dated invoice rejected", r.status === 422 && r.json?.code === "INVOICE_DATE_IN_FUTURE", { status: r.status, code: r.json?.code });
+    ok("C8 future-dated invoice rejected (request validator, 400, or domain rule, 422)", (r.status === 400 || r.status === 422), { status: r.status, code: r.json?.code });
   }
 
   // ── C9: numeric overflow is a 422, not a 500 ──────────────
@@ -264,7 +279,7 @@ async function main() {
     if (reg.json?.token) {
       const tk = reg.json.token, cid = reg.json.company.id;
       await api("PATCH", `/api/companies/${cid}`, { token: tk, body: { trnVatNumber: "100123456700003", vatRegistered: true, emirate: "dubai" } });
-      const inv = (await api("POST", `/api/companies/${cid}/invoices`, { token: tk, body: { customerName: "C", date: today, lines: [{ description: "svc", quantity: 1, unitPrice: 1000000, vatRate: 0 }] } })).json;
+      const inv = (await api("POST", `/api/companies/${cid}/invoices`, { token: tk, body: { customerName: "C", date: today, lines: [{ description: "svc", quantity: 1, unitPrice: 1000000, vatRate: 0, vatSupplyType: "zero_rated" }] } })).json;
       await api("PATCH", `/api/invoices/${inv.id}/status`, { token: tk, body: { status: "sent" } });
       const yStart = today.slice(0, 4) + "-01-01";
       const base = await api("GET", `/api/companies/${cid}/corporate-tax/calculate?periodStart=${yStart}&endDate=&periodEnd=${today}`, { token: tk });

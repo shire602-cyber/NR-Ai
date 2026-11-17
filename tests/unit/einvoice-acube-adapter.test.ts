@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AcubeEInvoiceProvider,
   acubeViolations,
@@ -79,8 +79,17 @@ const submission = (documentType = "380", number = "INV-2026-0001") => ({
   documentType,
 });
 
-beforeEach(() => resetAcubeTokenCache());
-afterEach(() => resetAcubeTokenCache());
+// The recorded login JWT carries a fixed exp (2026-11-17T12:00Z). Pin the clock to just after its
+// iat so token-cache behaviour does not depend on the real date (only Date is faked; timers stay real).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-16T12:05:00Z"));
+  resetAcubeTokenCache();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  resetAcubeTokenCache();
+});
 
 describe("E1 A-Cube configuration and selection", () => {
   it("is selected by EINVOICE_PROVIDER=acube and defaults to the sandbox hosts and documented paths", () => {

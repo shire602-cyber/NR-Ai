@@ -157,6 +157,11 @@ jobs:
     env:
       DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
       NODE_ENV: development
+      # The crawl hits hundreds of routes from one IP; raise the per-IP budgets so the
+      # run measures the app, not the rate limiter (same as the boot-and-perf job).
+      RL_API_MAX: "100000"
+      RL_READ_MAX: "100000"
+      RL_AUTH_MAX: "1000"
 
     steps:
       - uses: actions/checkout@v4
