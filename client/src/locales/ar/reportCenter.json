@@ -767,5 +767,7 @@
   "reportCenter.executiveSummaryDesc": "صفحة واحدة: الربح والنقد والذمم المدينة والدائنة.",
   "reportCenter.filesAndPacks": "ملفات لمحاسبك",
   "reportCenter.moreActions": "إجراءات أخرى",
-  "reportCenter.open": "فتح"
+  "reportCenter.open": "فتح",
+  "reportCenter.arAgingTitle": "أعمار الذمم المدينة",
+  "reportCenter.apAgingTitle": "أعمار الذمم الدائنة"
 }

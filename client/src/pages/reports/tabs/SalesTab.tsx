@@ -127,7 +127,7 @@ export default function SalesTab() {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>A/R Aging</CardTitle>
+              <CardTitle>{t["reportCenter.arAgingTitle"]}</CardTitle>
               <CardDescription>
                 <T k="reportCenter.salesAgingHint" />
               </CardDescription>

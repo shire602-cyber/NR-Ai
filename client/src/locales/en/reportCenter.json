@@ -767,5 +767,7 @@
   "reportCenter.executiveSummaryDesc": "One page: profit, cash, receivables and payables.",
   "reportCenter.filesAndPacks": "Files for your accountant",
   "reportCenter.moreActions": "More actions",
-  "reportCenter.open": "Open"
+  "reportCenter.open": "Open",
+  "reportCenter.arAgingTitle": "Receivables ageing",
+  "reportCenter.apAgingTitle": "Payables ageing"
 }

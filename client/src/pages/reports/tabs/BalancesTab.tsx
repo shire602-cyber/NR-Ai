@@ -142,7 +142,7 @@ export default function BalancesTab() {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>A/P Aging</CardTitle>
+              <CardTitle>{t["reportCenter.apAgingTitle"]}</CardTitle>
               <CardDescription>{t["balancesTab.openVendorBillsAgedFrom"]}</CardDescription>
               <div className="mt-2">
                 <AgingTiesToGl companyId={selectedCompanyId ?? undefined} kind="payables" />
